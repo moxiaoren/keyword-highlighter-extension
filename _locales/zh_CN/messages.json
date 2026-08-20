@@ -1,0 +1,17 @@
+{
+  "extName": {
+    "message": "关键词备注高亮助手"
+  },
+  "extDesc": {
+    "message": "自动高亮网页关键词并悬浮显示备注，支持自定义样式、正则匹配、分组管理，所有数据本地保存。"
+  },
+  "shortcutToggleHighlight": {
+    "message": "开启/关闭高亮"
+  },
+  "shortcutToggleSite": {
+    "message": "临时禁用当前站点"
+  },
+  "shortcutOpenSettings": {
+    "message": "打开设置页"
+  }
+}
