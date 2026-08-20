@@ -1,0 +1,145 @@
+/* ============================================
+   关键词高亮 - 内容脚本样式
+   ============================================ */
+
+/* 高亮词基础样式 */
+.kh-highlight {
+  display: inline;
+  padding:  1px 3px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  position: relative;
+}
+
+.kh-highlight:hover {
+  filter: brightness(0.9);
+  transform: scale(1.02);
+}
+
+.kh-highlight-active {
+  outline:  2px solid #4a90d9;
+  outline-offset:  1px;
+  z-index: 1;
+}
+
+/* ============================================
+   悬浮备注卡片
+   ============================================ */
+#kh-note-card {
+  position: fixed;
+  z-index: 2147483647;
+  background: #ffffff;
+  border: 1px solid #cccccc;
+  border-radius:  8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  max-width:  320px;
+  min-width:  200px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-size:  14px;
+  line-height: 1.5;
+  color: #333333;
+  opacity: 0.96;
+  animation: kh-fadeIn 0.15s ease-out;
+  pointer-events: auto;
+}
+
+.kh-note-pinned {
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+}
+
+@keyframes kh-fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.kh-note-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding:  8px 12px  4px 12px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.kh-note-keyword {
+  font-weight: 600;
+  font-size:  13px;
+  color: #666666;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+.kh-note-actions {
+  display: flex;
+  gap:  4px;
+  flex-shrink: 0;
+}
+
+.kh-note-actions button {
+  background: none;
+  border: none;
+  padding:  2px 4px;
+  cursor: pointer;
+  font-size:  14px;
+  opacity: 0.6;
+  transition: opacity 0.15s;
+  border-radius:  4px;
+  line-height: 1;
+}
+
+.kh-note-actions button:hover {
+  opacity: 1;
+  background: #f0f0f0;
+}
+
+.kh-note-body {
+  padding:  8px 12px 12px 12px;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  max-height:  200px;
+  overflow-y: auto;
+}
+
+.kh-note-body a {
+  color: #1a73e8;
+  text-decoration: none;
+}
+
+.kh-note-body a:hover {
+  text-decoration: underline;
+}
+
+.kh-note-body b,
+.kh-note-body strong {
+  font-weight: 600;
+}
+
+.kh-note-body i,
+.kh-note-body em {
+  font-style: italic;
+}
+
+.kh-note-arrow {
+  display: none;
+}
+
+/* 滚动条美化 */
+.kh-note-body::-webkit-scrollbar {
+  width:  4px;
+}
+
+.kh-note-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.kh-note-body::-webkit-scrollbar-thumb {
+  background: #d0d0d0;
+  border-radius:  2px;
+}
