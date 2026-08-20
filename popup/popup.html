@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>关键词备注高亮助手</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <!-- 顶部开关区域 -->
+    <div class="header">
+      <div class="logo-area">
+        <span class="logo-icon">🔍</span>
+        <h1 class="title">高亮助手</h1>
+      </div>
+      <label class="toggle-switch" title="全局开关">
+        <input type="checkbox" id="globalToggle" checked>
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+
+    <!-- 当前站点状态 -->
+    <div class="site-status" id="siteStatus">
+      <span class="site-icon">🌐</span>
+      <span class="site-name" id="siteName">加载中...</span>
+      <span class="site-badge" id="siteBadge">生效中</span>
+    </div>
+
+    <!-- 统计 -->
+    <div class="stats-row">
+      <div class="stat-item">
+        <span class="stat-label">今日命中</span>
+        <span class="stat-value" id="todayHits">0</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">关键词数</span>
+        <span class="stat-value" id="keywordCount">0</span>
+      </div>
+    </div>
+
+    <!-- 快捷操作按钮 -->
+    <div class="actions">
+      <button class="btn btn-primary" id="btnAddKeyword" title="快速添加关键词">
+        ➕ 快速添加
+      </button>
+      <button class="btn btn-secondary" id="btnToggleSite" title="临时禁用当前站点">
+        🚫 <span id="btnToggleSiteText">禁用本站</span>
+      </button>
+    </div>
+
+    <!-- 底部链接 -->
+    <div class="footer">
+      <button class="btn-link" id="btnOpenSettings">⚙️ 完整设置</button>
+      <button class="btn-link" id="btnHelp">❓ 帮助</button>
+      <span class="ver-badge" id="verBadge" title="当前版本"></span>
+    </div>
+
+    <!-- 更新提示条 -->
+    <div class="update-banner" id="updateBanner" hidden>
+      <div class="update-info">
+        <span class="update-dot">🔄</span>
+        <span class="update-text" id="updateText">检查更新中…</span>
+      </div>
+      <div class="update-actions">
+        <button class="btn btn-primary btn-sm" id="btnUpdate" hidden>更新</button>
+        <button class="btn-link btn-sm" id="btnUpdateDismiss" hidden>稍后</button>
+      </div>
+    </div>
+
+    <button class="btn-link btn-check" id="btnCheckUpdate">🔍 检查更新</button>
+  </div>
+
+  <script src="../lib/storage.js"></script>
+  <script src="../lib/update-checker.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

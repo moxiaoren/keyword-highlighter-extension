@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>欢迎 - 关键词备注高亮助手</title>
+  <link rel="stylesheet" href="welcome.css">
+</head>
+<body>
+  <div class="welcome-container">
+    <div class="welcome-card">
+      <div class="welcome-icon">🔍</div>
+      <h1>欢迎使用关键词备注高亮助手</h1>
+      <p class="welcome-subtitle">自动高亮网页关键词，悬浮显示备注卡片</p>
+      
+      <div class="feature-list">
+        <div class="feature-item">
+          <span class="feature-icon">✨</span>
+          <div>
+            <strong>智能高亮</strong>
+            <p>自动查找网页中的关键词并高亮显示，支持正则表达式、全词匹配等多种模式</p>
+          </div>
+        </div>
+        <div class="feature-item">
+          <span class="feature-icon">💬</span>
+          <div>
+            <strong>悬浮备注</strong>
+            <p>鼠标悬停高亮词即可查看备注卡片，支持 Markdown 格式</p>
+          </div>
+        </div>
+        <div class="feature-item">
+          <span class="feature-icon">🎨</span>
+          <div>
+            <strong>自定义样式</strong>
+            <p>自定义高亮颜色、备注卡片样式，打造个性化阅读体验</p>
+          </div>
+        </div>
+        <div class="feature-item">
+          <span class="feature-icon">📌</span>
+          <div>
+            <strong>重要笔记</strong>
+            <p>重要关键词命中时，在页面右上角弹出可拖动、可展开/收起的置顶悬浮笔记，多条自动聚合</p>
+          </div>
+        </div>
+        <div class="feature-item">
+          <span class="feature-icon">⚖️</span>
+          <div>
+            <strong>站点黑白名单</strong>
+            <p>精确控制哪些网站高亮、哪些不生效；支持按域名或网址匹配，可针对同一站点的某个分页单独设置</p>
+          </div>
+        </div>
+        <div class="feature-item">
+          <span class="feature-icon">🔒</span>
+          <div>
+            <strong>隐私安全</strong>
+            <p>所有数据仅保存在本地浏览器，不上传任何服务器</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="quick-start">
+        <h2>🚀 快速开始</h2>
+        <div class="steps">
+          <div class="step">
+            <span class="step-number">1</span>
+            <div>
+              <strong>添加关键词</strong>
+              <p>点击工具栏图标，选择「快速添加」，输入关键词和备注内容</p>
+            </div>
+          </div>
+          <div class="step">
+            <span class="step-number">2</span>
+            <div>
+              <strong>打开网页</strong>
+              <p>浏览任意网页，关键词会自动高亮显示</p>
+            </div>
+          </div>
+          <div class="step">
+            <span class="step-number">3</span>
+            <div>
+              <strong>查看备注</strong>
+              <p>鼠标悬停在高亮词上查看备注，点击可固定卡片</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="welcome-actions">
+        <button class="btn btn-primary" id="btnStart">开始使用</button>
+        <button class="btn btn-secondary" id="btnAddFirst">添加第一条关键词</button>
+      </div>
+
+      <div class="welcome-footer">
+        <p>🔒 所有数据仅保存在本地浏览器中，不上传任何服务器</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 更新日志弹窗 -->
+  <div class="welcome-modal-overlay" id="changelogOverlay" style="display:none;">
+    <div class="welcome-modal">
+      <div class="welcome-modal-header">
+        <span class="welcome-modal-icon">✨</span>
+        <h2>更新日志</h2>
+        <button class="welcome-modal-close" id="changelogClose" title="关闭">✕</button>
+      </div>
+      <div class="welcome-modal-body" id="changelogBody"></div>
+      <div class="welcome-modal-footer">
+        <button class="btn btn-primary" id="changelogGotIt">我知道了</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="welcome.js"></script>
+</body>
+</html>
