@@ -1166,24 +1166,55 @@ opacity: 0.96;
 .format-hint-panel ul { margin: 6px 0 0; padding-left: 18px; }
 .format-hint-panel code { background: #eef2f7; padding: 1px 5px; border-radius: 3px; font-size: 11px; }
 
-/* 帮助与隐私：悬浮目录 */
+/* 帮助与隐私：右侧悬浮目录（竖排，内容过长省略，窄屏回落顶部横排） */
+.help-wrap { display: flex; align-items: flex-start; gap: 18px; }
+.help-wrap .help-content { order: 1; flex: 1 1 auto; min-width: 0; }
 .help-toc {
+  order: 2;
+  flex: 0 0 200px;
+  width: 200px;
   position: sticky;
-  top: 10px;
-  background: #fff;
-  border: 1px solid #e8e8e8;
-  border-radius: 8px;
-  padding: 10px 12px;
-  margin-bottom: 16px;
+  top: 12px;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  background: #fafbff;
+  border: 1px solid #e4e9f5;
+  border-radius: 10px;
+  padding: 12px 10px;
+  box-shadow: 0 2px 10px rgba(59,130,246,.08);
   z-index: 5;
-  box-shadow: 0 2px 8px rgba(0,0,0,.06);
+  scrollbar-width: thin;
 }
-.help-toc-label { font-weight: 600; font-size: 13px; color: #555; }
-.help-toc-links { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.help-toc-label {
+  display: block;
+  font-weight: 600;
+  font-size: 13px;
+  color: #444;
+  padding-bottom: 8px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid #eef1f8;
+}
+.help-toc-links { display: flex; flex-direction: column; gap: 3px; }
 .help-toc-links a {
-  font-size: 12px; color: #3b82f6; text-decoration: none;
-  background: #f0f5ff; border: 1px solid #dbe6fb; border-radius: 12px; padding: 2px 10px;
+  display: block;
+  font-size: 12px;
+  color: #4b6bb0;
+  text-decoration: none;
+  padding: 5px 9px;
+  border-radius: 7px;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  background: transparent;
+  border: none;
 }
-.help-toc-links a:hover { background: #dbe8ff; }
-.help-toc-links a.active { background: #3b82f6; color: #fff; border-color: #3b82f6; }
+.help-toc-links a:hover { background: #eceffb; color: #2563eb; }
+.help-toc-links a.active { background: #3b82f6; color: #fff; }
+/* 窄屏：目录回到顶部横排 */
+@media (max-width: 820px) {
+  .help-wrap { flex-direction: column; }
+  .help-toc { order: -1; flex: none; width: 100%; max-height: none; overflow: visible; position: static; }
+  .help-toc-links { flex-direction: row; flex-wrap: wrap; }
+  .help-toc-links a { flex: 0 1 auto; }
+}
