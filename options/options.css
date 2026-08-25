@@ -1218,3 +1218,78 @@ opacity: 0.96;
   .help-toc-links { flex-direction: row; flex-wrap: wrap; }
   .help-toc-links a { flex: 0 1 auto; }
 }
+
+/* ===== 添加/编辑关键词弹窗：分区卡片 + 悬浮说明 ===== */
+.form-section {
+  background: #fafbfd;
+  border: 1px solid #eef1f5;
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+}
+.form-section-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #7a8aa0;
+  letter-spacing: 0.5px;
+  margin-bottom: 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px dashed #e3e8ef;
+}
+.form-section .form-group { margin-bottom: 10px; }
+.form-section .form-group:last-child { margin-bottom: 0; }
+.form-section .form-group-noborder { margin-top: 10px; padding-top: 10px; border-top: 1px dashed #e3e8ef; }
+
+/* 标签与说明按钮同行 */
+.label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.label-row label { margin-bottom: 0; }
+.label-row .checkbox-label { font-weight: 500; }
+
+/* ⓘ 悬浮说明气泡 */
+.hint-btn {
+  position: relative;
+  background: none;
+  border: none;
+  cursor: help;
+  color: #98a3b2;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1;
+  padding: 3px 7px;
+  border-radius: 6px;
+  white-space: nowrap;
+  transition: color 0.15s, background 0.15s;
+}
+.hint-btn:hover { color: #4a90d9; background: rgba(74, 144, 217, 0.08); }
+.hint-btn::after {
+  content: attr(data-tip);
+  position: absolute;
+  right: 0;
+  top: calc(100% + 7px);
+  width: 268px;
+  background: #2c3542;
+  color: #eef3fa;
+  font-size: 12px;
+  line-height: 1.7;
+  font-weight: 400;
+  padding: 9px 11px;
+  border-radius: 9px;
+  box-shadow: 0 8px 22px rgba(20, 26, 36, 0.22);
+  white-space: normal;
+  text-align: left;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-4px);
+  transition: opacity 0.15s, transform 0.15s, visibility 0.15s;
+  z-index: 30;
+  pointer-events: none;
+}
+.hint-btn.hint-up::after { top: auto; bottom: calc(100% + 7px); transform: translateY(4px); }
+.hint-btn:hover::after,
+.hint-btn.hint-up:hover::after { opacity: 1; visibility: visible; transform: translateY(0); }

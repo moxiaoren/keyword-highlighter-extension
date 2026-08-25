@@ -1310,16 +1310,8 @@
     // 单元格标注 / 重要笔记 勾选时展开对应细节
     $('#editKwCellVerify')?.addEventListener('change', toggleKwSections);
     $('#editKwImportant')?.addEventListener('change', toggleKwSections);
+    // 说明文字均采用「ⓘ + 悬浮气泡」展示（CSS hover），无需 JS。
 
-    // 备注格式说明小标
-    $('#btnKwNoteHint')?.addEventListener('click', () => {
-      const panel = $('#kwNoteHintPanel');
-      if (panel) panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
-    });
-    $('#btnKwImportantNoteHint')?.addEventListener('click', () => {
-      const panel = $('#kwImportantNoteHintPanel');
-      if (panel) panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
-    });
 
     // 分组管理
     $('#btnAddGroup')?.addEventListener('click', () => showGroupModal());

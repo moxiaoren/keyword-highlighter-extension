@@ -19,6 +19,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // 更新日志（倒序：最新在上）
   const CHANGELOG = [
     {
+      version: 'v1.6.27',
+      items: ['「添加/编辑关键词」弹窗优化：按「基本信息/样式与状态/匹配规则/高级功能」分区卡片排布，说明文字改为「ⓘ + 悬浮气泡」，页面更清晰。']
+    },
+    {
       version: 'v1.6.26',
       items: ['「添加关键词」弹窗界面优化：布局构图与排版更清晰，支持 Markdown 等说明文字改为「ⓘ + 悬浮气泡」展示，页面更简洁。']
     },
