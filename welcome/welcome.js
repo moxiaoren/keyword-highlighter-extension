@@ -19,6 +19,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // 更新日志（倒序：最新在上）
   const CHANGELOG = [
     {
+      version: 'v1.6.29',
+      items: ['「添加/编辑关键词」弹窗：修复取消/保存随内容滚动的问题，按钮固定在底部、仅上方的配置区参与滚动。']
+    },
+    {
       version: 'v1.6.28',
       items: ['「添加/编辑关键词」弹窗：取消/保存固定在底部不随内容滚动；匹配规则并入基本信息右侧，版面更紧凑。']
     },

@@ -535,7 +535,24 @@
     }
     
     modal.style.display = 'flex';
+    fitModalFooter();
     $('#editKwText').focus();
+  }
+
+  // 让「取消/保存」固定在弹窗底部：限制 body 的可滚动高度，
+  // 使滚动条只出现在中间的配置区，标题/底部不随内容滚动。
+  function fitModalFooter() {
+    const dlg = document.querySelector('#keywordModal .modal-dialog');
+    const body = document.querySelector('#keywordModal .modal-body');
+    if (!dlg || !body) return;
+    const maxH = Math.min(620, Math.round(window.innerHeight * 0.82));
+    const headerEl = dlg.querySelector('.modal-header');
+    const footerEl = dlg.querySelector('.modal-footer');
+    const headerH = headerEl ? headerEl.offsetHeight : 0;
+    const footerH = footerEl ? footerEl.offsetHeight : 0;
+    dlg.style.maxHeight = maxH + 'px';
+    body.style.maxHeight = Math.max(140, maxH - headerH - footerH - 2) + 'px';
+    body.scrollTop = 0;
   }
 
   async function loadGroupOptions(selectedId = '') {
