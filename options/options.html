@@ -38,7 +38,7 @@
         </li>
       </ul>
       <div class="sidebar-footer">
-        <span class="version">v1.6.22</span>
+        <span class="version">v1.6.23</span>
       </div>
     </nav>
 
@@ -319,6 +319,10 @@
           <h2>帮助与隐私说明</h2>
         </div>
         
+        <div class="help-toc" id="helpToc">
+          <span class="help-toc-label">📚 本章目录</span>
+          <div class="help-toc-links" id="helpTocLinks"></div>
+        </div>
         <div class="help-content">
           <h3>🔒 隐私承诺</h3>
           <div class="privacy-box">
@@ -363,6 +367,15 @@
               <li><strong>全词匹配</strong>：只匹配完整独立的词（支持中文等 CJK 文本），不做部分匹配。</li>
               <li><strong>正则表达式</strong>：高级模式，把关键词按正则解析（需自行转义特殊字符）。</li>
               <li>多个关键词同时命中时，长匹配优先，避免重叠与嵌套高亮。</li>
+            </ul>
+
+            <h4>🧩 单元格组合关键词匹配</h4>
+            <ul>
+              <li>勾选「单元格特别标注」并填写<strong>后格期望值</strong>后，只有当该关键词命中位置的<strong>横向右侧相邻单元格</strong>匹配期望值时这个词才生效（高亮 / 重要笔记），否则<strong>整条不显示</strong>。</li>
+              <li>支持两种结构：<strong>HTML 表格</strong>（<code>td</code> 的右侧相邻格），或文字中用 <code>|</code> / Tab 分隔的“假表格”（如 <code>是否刚需|否</code>）。</li>
+              <li><strong>匹配方式</strong>可选：<strong>包含</strong>（右侧格只要包含期望值即算命中，如 <code>否（暂缓）</code> 也算 <code>否</code>）或 <strong>全词</strong>（右侧格整体与期望值相等才算）。</li>
+              <li>可添加多条“同一关键词 + 不同后格”的规则（去重按<strong>前格 + 后格</strong>组合判断），便于同一词在不同语境下分别处理。</li>
+              <li>与「重要笔记」互相独立，可叠加使用。</li>
             </ul>
 
             <h4>🌐 网页高亮</h4>
@@ -427,7 +440,7 @@
 
           <h3>📦 版本信息</h3>
           <div class="help-section">
-            <p>当前版本：<strong>v1.6.22</strong></p>
+            <p>当前版本：<strong>v1.6.23</strong></p>
             <p>更新日志：</p>
             <ul>
               <li><strong>v1.6.19</strong>：①前格相同、后格不同可并存——去重改为按「前格+后格」组合判断；②后格匹配方式可选「包含 / 全词(整体相等)」；③关键词弹窗梳理，单元格标注与重要笔记改为「勾选才展开细节」，界面更清爽；④重要笔记小圆钮改为<strong>双击展开</strong>，避免拖动时误展开；⑤修复重新高亮（切站点/黑白名单/刷新）时单元格验证失效——首次高亮会把文字拆成相邻文本节点，重新高亮需拼接相邻兄弟文本后再验证。</li>
@@ -514,7 +527,10 @@
             <ul>
               <li><strong>只在一个网站用</strong>：加一条白名单 <code>example.com</code>（域名·精确），其他网站都不高亮。</li>
               <li><strong>只排除一个网站</strong>：加一条黑名单 <code>example.com</code>（域名·精确），其余网站都高亮。</li>
-              <li><strong>某站后台分页不用高亮</strong>：加一条黑名单，匹配对象选网址，<code>https://example.com/admin</code>（网址·前缀）。</li>
+            <h4>Q12：单元格组合关键词匹配是做什么的？怎么用？</h4>
+            <p>用于“既要词对、也要后面那格对才算”的场景。例如数据表里 <code>是否刚需|否</code>，你想让词「是否刚需」只在它右侧是 <code>否</code> 时才高亮。做法：编辑该关键词时勾选「单元格特别标注」，在“后格期望值”填 <code>否</code>，右侧格包含 / 等于“否”才高亮，否则整条不出。</p>
+            <p>几个细节：①支持 HTML 表格和文本 <code>|</code> / Tab 假表格；②“包含”与“全词”的区别——包含只要右侧格命中期望值即可（<code>否（暂缓）</code> 也算 <code>否</code>），全词要求右侧格整体等于期望值（<code>否（暂缓）</code> 不算）；③同一词可配多条不同后格规则并存，互不冲突；④右侧无相邻格或未命中时，该词<strong>不生效</strong>（不高亮）；⑤可与「重要笔记」叠加，命中且验证通过才弹笔记。</p>
+            <li><strong>某站后台分页不用高亮</strong>：加一条黑名单，匹配对象选网址，<code>https://example.com/admin</code>（网址·前缀）。</li>
             </ul>
           </div>
 

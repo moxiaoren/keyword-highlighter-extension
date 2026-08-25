@@ -544,8 +544,9 @@ textarea.text-input {
   border-bottom: none;
 }
 
-.col-check { width: 34px; text-align: center; }
-.col-kw { min-width: 140px; }
+.col-check { width: 36px; text-align: center; min-width: 36px; }
+.col-kw { min-width: 150px; }
+.col-cell { min-width: 92px; }
 .col-cell { width: 104px; }
 .col-impnote { min-width: 150px; }
 .col-color { width: 56px; min-width: 56px; }
@@ -555,15 +556,24 @@ textarea.text-input {
 .col-status { width: 62px; }
 .col-actions { width: 92px; min-width: 92px; white-space: nowrap; }
 
+.kw-cell {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
 .kw-col-name {
   font-weight: 500;
   color: #1a1a1a;
-  display: inline-block;
-  max-width: calc(100% - 20px);
+  flex: 1 1 auto;
+  min-width: 0;
+  display: block;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  vertical-align: middle;
+}
+.kw-cell .imp-badge {
+  flex: 0 0 auto;
 }
 
 .kw-col-name.disabled {
@@ -1155,3 +1165,25 @@ opacity: 0.96;
 .format-hint-panel strong { color: #2c3e50; }
 .format-hint-panel ul { margin: 6px 0 0; padding-left: 18px; }
 .format-hint-panel code { background: #eef2f7; padding: 1px 5px; border-radius: 3px; font-size: 11px; }
+
+/* 帮助与隐私：悬浮目录 */
+.help-toc {
+  position: sticky;
+  top: 10px;
+  background: #fff;
+  border: 1px solid #e8e8e8;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 16px;
+  z-index: 5;
+  box-shadow: 0 2px 8px rgba(0,0,0,.06);
+}
+.help-toc-label { font-weight: 600; font-size: 13px; color: #555; }
+.help-toc-links { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.help-toc-links a {
+  font-size: 12px; color: #3b82f6; text-decoration: none;
+  background: #f0f5ff; border: 1px solid #dbe6fb; border-radius: 12px; padding: 2px 10px;
+  white-space: nowrap;
+}
+.help-toc-links a:hover { background: #dbe8ff; }
+.help-toc-links a.active { background: #3b82f6; color: #fff; border-color: #3b82f6; }

@@ -195,7 +195,7 @@
       return `
         <tr class="${isSel ? 'selected' : ''}" data-id="${kw.id}">
           <td class="col-check"><input type="checkbox" class="row-check" data-id="${kw.id}" ${isSel ? 'checked' : ''}></td>
-          <td class="col-kw"><span class="kw-col-name ${kw.enabled ? '' : 'disabled'}" title="${escapeHtml(kw.text)}">${escapeHtml(kw.text)}</span>${impBadge}</td>
+          <td class="col-kw"><span class="kw-cell"><span class="kw-col-name ${kw.enabled ? '' : 'disabled'}" title="${escapeHtml(kw.text)}">${escapeHtml(kw.text)}</span>${impBadge}</span></td>
           <td class="col-cell">${cellHtml}</td>
           <td class="col-impnote">${impNoteHtml}</td>
           <td class="col-color">${colorHtml}</td>
@@ -359,6 +359,43 @@
   function bulkClear() {
     kwState.selected.clear();
     loadKeywords();
+  }
+
+  // 帮助与隐私：悬浮目录（列出当前激活 tab 面板内的 h4 小节，点击平滑跳转）
+  function buildHelpToc() {
+    const toc = $('#helpToc');
+    const linksBox = $('#helpTocLinks');
+    const content = $('#section-help .help-content');
+    if (!toc || !linksBox || !content) return;
+    const panels = content.querySelector('.help-tab-panels');
+    const tabs = content.querySelectorAll('.help-tab');
+    if (!panels || !tabs.length) { toc.style.display = 'none'; return; }
+
+    function render(idx) {
+      linksBox.innerHTML = '';
+      const panel = panels.children[idx];
+      if (!panel) return;
+      const h4s = panel.querySelectorAll('h4');
+      if (h4s.length <= 1) { toc.style.display = 'none'; return; }
+      toc.style.display = '';
+      h4s.forEach((h4, i) => {
+        if (!h4.id) h4.id = 'help-h4-' + idx + '-' + i;
+        const a = document.createElement('a');
+        a.href = '#' + h4.id;
+        a.textContent = h4.textContent.trim();
+        a.addEventListener('click', (e) => {
+          e.preventDefault();
+          h4.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          linksBox.querySelectorAll('a').forEach(x => x.classList.remove('active'));
+          a.classList.add('active');
+        });
+        linksBox.appendChild(a);
+      });
+    }
+
+    const activeIdx = Array.from(tabs).findIndex(t => t.classList.contains('active'));
+    render(activeIdx >= 0 ? activeIdx : 0);
+    tabs.forEach((t, i) => t.addEventListener('click', () => render(i)));
   }
 
   // 关键词表格：列宽拖拽调整（colgroup + 表头拖拽手柄）
@@ -1377,6 +1414,7 @@
     // 初始加载
     loadKeywords();
     initHelpCollapse();
+    buildHelpToc();
   }
 
   document.addEventListener('DOMContentLoaded', init);

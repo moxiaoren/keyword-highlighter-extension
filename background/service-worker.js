@@ -48,6 +48,11 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     });
   }
 
+  // 更新后自动打开欢迎页，展示近期更新（welcome 页会按版本差异弹出更新日志）
+  if (details.reason === 'update') {
+    chrome.tabs.create({ url: chrome.runtime.getURL('welcome/welcome.html') });
+  }
+
   // 每次安装/更新后立即检查更新
   checkForUpdates();
 
