@@ -8,58 +8,57 @@
 </head>
 <body>
   <div class="qa-wrap">
-    <div class="qa-header">
+    <header class="qa-header">
       <span class="qa-icon">➕</span>
-      <h1 class="qa-title">快速添加关键词</h1>
-    </div>
+      <div class="qa-title-box">
+        <h1 class="qa-title">快速添加关键词</h1>
+        <span class="qa-subtitle">输入要高亮的词，可附加备注与重要笔记</span>
+      </div>
+    </header>
 
-    <div class="qa-form">
+    <form class="qa-form" id="qaForm" novalidate>
+      <!-- 关键词 -->
       <div class="qa-field">
-        <label class="qa-label" for="qwText">关键词文字 <em>*</em></label>
+        <label class="qa-label" for="qwText">关键词 <em>*</em></label>
         <input type="text" id="qwText" class="qa-input" placeholder="输入要高亮的关键词" maxlength="100" autofocus>
       </div>
 
+      <!-- 备注 -->
       <div class="qa-field">
-        <label class="qa-label" for="qwNote">备注内容
-          <button type="button" class="btn-format-hint" id="qwNoteHint" title="查看备注格式说明">ⓘ</button>
-        </label>
-        <div class="format-hint-panel" id="qwNoteHintPanel" style="display:none;">
-          <strong>备注格式说明</strong>
-          <ul>
-            <li><code>**加粗**</code> → <b>加粗</b>，<code>*斜体*</code> → <i>斜体</i></li>
-            <li><code>[文字](网址)</code> → 可点击链接；纯网址自动变链接</li>
-            <li>支持多行；输入换行<strong>原样保留</strong></li>
-          </ul>
+        <div class="qa-label-row">
+          <label class="qa-label" for="qwNote">备注内容</label>
+          <button type="button" class="qa-hint" id="qwNoteHint"
+            data-tip="支持 Markdown：**加粗**、*斜体*、[文字](网址)；纯网址自动变可点击链接；多行输入换行原样保留。">ⓘ 格式说明</button>
         </div>
-        <textarea id="qwNote" class="qa-textarea" rows="3" placeholder="点击高亮词时显示的备注（支持 Markdown）"></textarea>
+        <textarea id="qwNote" class="qa-textarea" rows="3" placeholder="点击高亮词时显示的备注（可选）"></textarea>
       </div>
 
+      <!-- 重要 -->
       <div class="qa-field">
         <label class="qa-check">
           <input type="checkbox" id="qwImportant">
-          <span class="qa-check-label">📌 标记为重要</span>
+          <span class="qa-check-mark"></span>
+          <span class="qa-check-label">📌 标记为重要 <span class="qa-check-sub">（可填重要笔记）</span></span>
         </label>
       </div>
 
+      <!-- 重要笔记（勾选后展开） -->
       <div class="qa-field" id="importantNoteField">
-        <label class="qa-label" for="qwImportantNote">重要笔记
-          <button type="button" class="btn-format-hint" id="qwImportantNoteHint" title="查看重要笔记格式说明">ⓘ</button>
-        </label>
-        <div class="format-hint-panel" id="qwImportantNoteHintPanel" style="display:none;">
-          <strong>重要笔记格式说明</strong>
-          <ul>
-            <li>支持 Markdown：<code>**加粗**</code>、<code>*斜体*</code>、<code>[文字](网址)</code></li>
-            <li>多行输入换行<strong>原样保留</strong></li>
-          </ul>
+        <div class="qa-label-row">
+          <label class="qa-label" for="qwImportantNote">重要笔记</label>
+          <button type="button" class="qa-hint qa-hint-above" id="qwImportantNoteHint"
+            data-tip="命中关键词时在页面右上角置顶显示。支持 Markdown：**加粗**、*斜体*、[文字](网址)；多行输入换行原样保留。">ⓘ 说明</button>
         </div>
-        <textarea id="qwImportantNote" class="qa-textarea" rows="4" placeholder="重要笔记（可选）默认隐藏——勾选「标记为重要」后才会展开，支持 Markdown，命中时右上角置顶显示并保留换行"></textarea>
+        <textarea id="qwImportantNote" class="qa-textarea" rows="4" placeholder="输入重要笔记内容（可选）"></textarea>
+        <p class="qa-field-tip">💡 勾选「标记为重要」后才会展开此输入；留空则命中时不高亮提示。</p>
       </div>
 
+      <!-- 操作 -->
       <div class="qa-actions">
-        <button class="qa-btn qa-cancel" id="qwCancel">取消</button>
-        <button class="qa-btn qa-save" id="qwSave">保存</button>
+        <button type="button" class="qa-btn qa-cancel" id="qwCancel">取消</button>
+        <button type="submit" class="qa-btn qa-save" id="qwSave">保存</button>
       </div>
-    </div>
+    </form>
   </div>
 
   <script src="../lib/storage.js"></script>
