@@ -38,7 +38,7 @@
         </li>
       </ul>
       <div class="sidebar-footer">
-        <span class="version">v1.6.18</span>
+        <span class="version">v1.6.19</span>
       </div>
     </nav>
 
@@ -423,9 +423,10 @@
 
           <h3>📦 版本信息</h3>
           <div class="help-section">
-            <p>当前版本：<strong>v1.6.18</strong></p>
+            <p>当前版本：<strong>v1.6.19</strong></p>
             <p>更新日志：</p>
             <ul>
+              <li><strong>v1.6.19</strong>：①前格相同、后格不同可并存——去重改为按「前格+后格」组合判断；②后格匹配方式可选「包含 / 全词(整体相等)」；③关键词弹窗梳理，单元格标注与重要笔记改为「勾选才展开细节」，界面更清爽；④重要笔记小圆钮改为<strong>双击展开</strong>，避免拖动时误展开；⑤修复重新高亮（切站点/黑白名单/刷新）时单元格验证失效——首次高亮会把文字拆成相邻文本节点，重新高亮需拼接相邻兄弟文本后再验证。</li>
               <li><strong>v1.6.18</strong>：新增「单元格特别标注」验证——关键词可独立勾选「单元格特别标注」并填写“后一个单元格期望值”。命中该关键词时，先校验其右侧的横向相邻单元格：右侧格<strong>包含</strong>期望值才生效（高亮/重要笔记）；不包含则<strong>整条不生效</strong>。支持 HTML 表格 <code>td</code> 或文本用 <code>|</code> / Tab 分隔（如 <code>是否刚需|否</code>）。与重要笔记互相独立、不依赖分组；取代原 v1.6.17 的自动识别相邻值展示。</li>
               <li><strong>v1.6.17</strong>：新增「相邻单元格特别标注」——命中重要关键词时，自动识别其横向右侧相邻单元格的值（支持 HTML 表格 <code>td</code>，或 <code>|</code> / Tab 分隔的假表格），以「→ 相邻值」形式附加在重要笔记中展示，便于快速了解关键词对应的相邻信息；默认开启，可在「备注卡片样式」页关闭，不影响原有高亮功能。</li>
               <li><strong>v1.6.16</strong>：修复导入数据丢失——JSON 导入补回 globalEnabled、siteDisabledMap 并规整分组字段；CSV 导入恢复分组关联（缺失时自动创建同名分组），不再让关键词脱离分组导致分组高亮色丢失；分组颜色字段在导入时有结构兜底。</li>
@@ -599,35 +600,49 @@
         </div>
         <div class="form-group">
           <label class="checkbox-label">
+            <input type="checkbox" id="editKwCellVerify">
+            <span>🔲 单元格特别标注（验证右侧相邻格）</span>
+          </label>
+          <span class="form-hint">勾选后，页面命中此关键词时，会校验其<strong>横向右侧相邻单元格</strong>的内容是否匹配下方期望值：匹配才生效（高亮），不匹配则<strong>整条不显示</strong>。</span>
+          <div id="cellVerifyDetail" style="display:none; margin-top:8px;">
+            <div class="form-row">
+              <div class="form-group" style="flex:2;">
+                <label>后一个单元格期望值</label>
+                <input type="text" id="editKwCellVerifyValue" placeholder="如：否" class="text-input">
+              </div>
+              <div class="form-group">
+                <label>匹配方式</label>
+                <select id="editKwCellVerifyMode" class="text-input">
+                  <option value="include">包含</option>
+                  <option value="exact">全词（整体相等）</option>
+                </select>
+              </div>
+            </div>
+            <span class="form-hint">支持 HTML 表格 <code>td</code>（右侧相邻格），或文本中用 <code>|</code> / Tab 分隔（如 <code>是否刚需|否</code>）。与「重要笔记」互不影响，可独立使用。</span>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="checkbox-label">
             <input type="checkbox" id="editKwImportant">
             <span>📌 标记为重要</span>
           </label>
           <span class="form-hint">标记为重要后，页面命中此关键词时会在右上角弹出置顶悬浮笔记。</span>
-        </div>
-        <div class="form-group">
-          <label class="checkbox-label">
-            <input type="checkbox" id="editKwCellVerify">
-            <span>🔲 单元格特别标注（验证右侧相邻格）</span>
-          </label>
-          <span class="form-hint">勾选后，页面命中此关键词时，会校验其<strong>横向右侧相邻单元格</strong>的内容：右侧格<strong>包含</strong>下方填写的期望值时该词生效（高亮）；不包含则<strong>整条不生效</strong>（不显示）。</span>
-          <input type="text" id="editKwCellVerifyValue" placeholder="后一个单元格需要匹配的内容，如上例填：否" class="text-input" style="margin-top:8px;">
-          <span class="form-hint">支持 HTML 表格 <code>td</code>（右侧相邻格），或文本中用 <code>|</code> / Tab 分隔的内容（如 <code>是否刚需|否</code>）。与「重要笔记」互不影响，可独立使用。</span>
-        </div>
-        <div class="form-group">
-          <label>重要笔记（长文本，命中时置顶显示）
-            <button type="button" class="btn-format-hint" id="btnKwImportantNoteHint" title="查看重要笔记格式说明">ⓘ</button>
-          </label>
-          <div class="format-hint-panel" id="kwImportantNoteHintPanel" style="display:none;">
-            <strong>重要笔记格式说明</strong>
-            <ul>
-              <li>支持 Markdown：<code>**加粗**</code>、<code>*斜体*</code>、<code>[文字](网址)</code></li>
-              <li>纯网址自动变成可点击链接</li>
-              <li>多行输入换行<strong>原样保留</strong></li>
-              <li>命中时显示在右上角置顶面板中，可拖动、可展开/收起</li>
-            </ul>
+          <div id="importantNoteWrap" style="display:none; margin-top:8px;">
+            <label>重要笔记（长文本，命中时置顶显示）
+              <button type="button" class="btn-format-hint" id="btnKwImportantNoteHint" title="查看重要笔记格式说明">ⓘ</button>
+            </label>
+            <div class="format-hint-panel" id="kwImportantNoteHintPanel" style="display:none;">
+              <strong>重要笔记格式说明</strong>
+              <ul>
+                <li>支持 Markdown：<code>**加粗**</code>、<code>*斜体*</code>、<code>[文字](网址)</code></li>
+                <li>纯网址自动变成可点击链接</li>
+                <li>多行输入换行<strong>原样保留</strong></li>
+                <li>命中时显示在右上角置顶面板中，可拖动、可展开/收起</li>
+              </ul>
+            </div>
+            <textarea id="editKwImportantNote" placeholder="输入重要注意事项…（可写很长）" rows="4" class="text-input"></textarea>
+            <span class="form-hint">与“备注”不同：这里的内容会在关键词命中时显示在置顶面板中；支持 Markdown。</span>
           </div>
-          <textarea id="editKwImportantNote" placeholder="输入重要注意事项…（可写很长，仅在“标记为重要”时生效）" rows="4" class="text-input"></textarea>
-          <span class="form-hint">与“备注”不同：这里的内容会在关键词命中时显示在可拖动、可展开/收起的置顶面板中；支持 Markdown。</span>
         </div>
       </div>
       <div class="modal-footer">

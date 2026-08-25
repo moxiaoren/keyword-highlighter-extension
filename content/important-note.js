@@ -295,7 +295,8 @@ const ImportantNote = {
         </div>
       `;
       this.root.querySelector('.khin-fab').addEventListener('pointerdown', (e) => this.startDrag(e));
-      this.root.querySelector('.khin-fab').addEventListener('click', () => {
+      // 双击展开（改自单击），避免拖动位置时误展开
+      this.root.querySelector('.khin-fab').addEventListener('dblclick', () => {
         this.minimized = false;
         this.renderContent();
         this.applyPosition();

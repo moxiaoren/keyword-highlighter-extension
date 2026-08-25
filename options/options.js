@@ -339,6 +339,14 @@
     loadKeywords();
   }
 
+  // 根据勾选状态显示/隐藏 单元格标注细节 与 重要笔记输入（减少弹窗杂乱）
+  function toggleKwSections() {
+    const nw = $('#importantNoteWrap');
+    const cv = $('#cellVerifyDetail');
+    if (nw) nw.style.display = $('#editKwImportant').checked ? 'block' : 'none';
+    if (cv) cv.style.display = $('#editKwCellVerify').checked ? 'block' : 'none';
+  }
+
   function showKeywordModal(keyword = null) {
     editingKeywordId = keyword ? keyword.id : null;
     const modal = $('#keywordModal');
@@ -356,6 +364,10 @@
     $('#editKwImportantNote').value = keyword?.importantNote || '';
     $('#editKwCellVerify').checked = keyword?.cellVerifyEnabled || false;
     $('#editKwCellVerifyValue').value = keyword?.cellVerify || '';
+    $('#editKwCellVerifyMode').value = keyword?.cellVerifyMatchMode || 'include';
+
+    // 根据勾选状态显示/隐藏 单元格标注细节 与 重要笔记输入
+    toggleKwSections();
 
     // 加载分组选项
     loadGroupOptions(keyword?.groupId || '');
@@ -427,7 +439,8 @@
       important: $('#editKwImportant').checked,
       importantNote: $('#editKwImportantNote').value.trim(),
       cellVerifyEnabled: $('#editKwCellVerify').checked,
-      cellVerify: $('#editKwCellVerify').checked ? $('#editKwCellVerifyValue').value.trim() : ''
+      cellVerify: $('#editKwCellVerify').checked ? $('#editKwCellVerifyValue').value.trim() : '',
+      cellVerifyMatchMode: $('#editKwCellVerifyMode').value || 'include'
     };
 
     try {
@@ -867,7 +880,8 @@
       if (seen.has(text)) { skipped++; continue; }
       seen.add(text);
 
-      const existing = keywords.find(k => k.text === text);
+      // 批量添加的词不带后格验证，仅与「同文本且无验证」的已有词冲突（前格相同后格不同的可并存）
+      const existing = keywords.find(k => k.text === text && !(k.cellVerify || ''));
       if (existing) {
         if (dupPolicy === 'skip') {
           skipped++;
@@ -1128,6 +1142,10 @@
     $('#keywordModal')?.addEventListener('click', (e) => {
       if (e.target === $('#keywordModal')) closeKeywordModal();
     });
+
+    // 单元格标注 / 重要笔记 勾选时展开对应细节
+    $('#editKwCellVerify')?.addEventListener('change', toggleKwSections);
+    $('#editKwImportant')?.addEventListener('change', toggleKwSections);
 
     // 备注格式说明小标
     $('#btnKwNoteHint')?.addEventListener('click', () => {
