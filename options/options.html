@@ -38,7 +38,7 @@
         </li>
       </ul>
       <div class="sidebar-footer">
-        <span class="version">v1.6.27</span>
+        <span class="version">v1.6.28</span>
       </div>
     </nav>
 
@@ -441,7 +441,7 @@
 
           <h3>📦 版本信息</h3>
           <div class="help-section">
-            <p>当前版本：<strong>v1.6.27</strong></p>
+            <p>当前版本：<strong>v1.6.28</strong></p>
             <p>更新日志：</p>
             <ul>
               <li><strong>v1.6.19</strong>：①前格相同、后格不同可并存——去重改为按「前格+后格」组合判断；②后格匹配方式可选「包含 / 全词(整体相等)」；③关键词弹窗梳理，单元格标注与重要笔记改为「勾选才展开细节」，界面更清爽；④重要笔记小圆钮改为<strong>双击展开</strong>，避免拖动时误展开；⑤修复重新高亮（切站点/黑白名单/刷新）时单元格验证失效——首次高亮会把文字拆成相邻文本节点，重新高亮需拼接相邻兄弟文本后再验证。</li>
@@ -557,19 +557,40 @@
         <h3 id="keywordModalTitle">编辑关键词</h3>
         <button class="modal-close" id="keywordModalClose">✕</button>
       </div>
-            <div class="modal-body">
+                  <div class="modal-body">
         <div class="form-section">
           <div class="form-section-title">基本信息</div>
-          <div class="form-group">
-            <label>关键词文字 <span class="required">*</span></label>
-            <input type="text" id="editKwText" placeholder="输入关键词" maxlength="100" class="text-input">
-          </div>
-          <div class="form-group">
-            <div class="label-row">
-              <label for="editKwNote">备注内容</label>
-              <button type="button" class="hint-btn" id="btnKwNoteHint" data-tip="支持 Markdown：**加粗**、*斜体*、[文字](网址)；纯网址自动变成可点击链接；多行输入换行原样保留。">ⓘ 格式说明</button>
+          <div class="form-grid">
+            <div class="form-grid-main">
+              <div class="form-group">
+                <label>关键词文字 <span class="required">*</span></label>
+                <input type="text" id="editKwText" placeholder="输入关键词" maxlength="100" class="text-input">
+              </div>
+              <div class="form-group">
+                <div class="label-row">
+                  <label for="editKwNote">备注内容</label>
+                  <button type="button" class="hint-btn" id="btnKwNoteHint" data-tip="支持 Markdown：**加粗**、*斜体*、[文字](网址)；纯网址自动变成可点击链接；多行输入换行原样保留。">ⓘ 格式说明</button>
+                </div>
+                <textarea id="editKwNote" placeholder="备注内容（支持 Markdown）" rows="4" class="text-input"></textarea>
+              </div>
             </div>
-            <textarea id="editKwNote" placeholder="备注内容（支持 Markdown）" rows="4" class="text-input"></textarea>
+            <div class="form-grid-side">
+              <div class="match-panel">
+                <div class="match-panel-title">匹配规则</div>
+                <label class="checkbox-label">
+                  <input type="checkbox" id="editKwCaseSensitive">
+                  <span>区分大小写</span>
+                </label>
+                <label class="checkbox-label">
+                  <input type="checkbox" id="editKwWholeWord">
+                  <span>全词匹配</span>
+                </label>
+                <label class="checkbox-label">
+                  <input type="checkbox" id="editKwUseRegex">
+                  <span>使用正则表达式</span>
+                </label>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -597,26 +618,6 @@
               <label class="checkbox-label">
                 <input type="checkbox" id="editKwEnabled" checked>
                 <span>启用此关键词</span>
-              </label>
-            </div>
-          </div>
-        </div>
-
-        <div class="form-section">
-          <div class="form-section-title">匹配规则</div>
-          <div class="form-group">
-            <div class="match-rules">
-              <label class="checkbox-label">
-                <input type="checkbox" id="editKwCaseSensitive">
-                <span>区分大小写</span>
-              </label>
-              <label class="checkbox-label">
-                <input type="checkbox" id="editKwWholeWord">
-                <span>全词匹配</span>
-              </label>
-              <label class="checkbox-label">
-                <input type="checkbox" id="editKwUseRegex">
-                <span>使用正则表达式</span>
               </label>
             </div>
           </div>

@@ -1074,6 +1074,10 @@ opacity: 0.96;
   align-items: center;
   padding: 16px 20px;
   border-bottom: 1px solid #f0f0f0;
+  position: sticky;
+  top: 0;
+  background: #fff;
+  z-index: 5;
 }
 
 .modal-header h3 {
@@ -1103,6 +1107,11 @@ opacity: 0.96;
   gap: 8px;
   padding: 16px 20px;
   border-top: 1px solid #f0f0f0;
+  position: sticky;
+  bottom: 0;
+  background: #fff;
+  z-index: 5;
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.05);
 }
 
 /* 响应式 */
@@ -1293,3 +1302,36 @@ opacity: 0.96;
 .hint-btn.hint-up::after { top: auto; bottom: calc(100% + 7px); transform: translateY(4px); }
 .hint-btn:hover::after,
 .hint-btn.hint-up:hover::after { opacity: 1; visibility: visible; transform: translateY(0); }
+
+/* 基本信息区两列：左侧主内容 + 右侧匹配规则面板 */
+.form-grid { display: flex; gap: 18px; align-items: stretch; }
+.form-grid-main { flex: 1 1 auto; min-width: 0; }
+.form-grid-side { flex: 0 0 180px; }
+
+.match-panel {
+  background: #f4f7fb;
+  border: 1px solid #e8eef6;
+  border-radius: 9px;
+  padding: 12px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.match-panel-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #7a8aa0;
+  margin-bottom: 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px dashed #e3e8ef;
+}
+.match-panel .checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 2px;
+  font-size: 13px;
+  color: #444;
+  cursor: pointer;
+}
+.match-panel .checkbox-label input { width: 15px; height: 15px; accent-color: #4a90d9; }
