@@ -119,8 +119,8 @@
       const data = await Storage.getAll();
       currentConfig = data;
 
-      // 无论是否高亮都初始化置顶笔记组件（供各分支统一清理）
-      await ImportantNote.init();
+      // 无论是否高亮都初始化置顶笔记组件（供各分支统一清理）；传入配置以读取相邻单元格标注开关
+      await ImportantNote.init(data);
 
       if (!data.globalEnabled) {
         console.debug('[KeywordHighlighter] 全局已暂停');

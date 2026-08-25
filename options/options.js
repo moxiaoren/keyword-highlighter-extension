@@ -354,6 +354,8 @@
     $('#editKwUseRegex').checked = keyword?.useRegex || false;
     $('#editKwImportant').checked = keyword?.important || false;
     $('#editKwImportantNote').value = keyword?.importantNote || '';
+    $('#editKwCellVerify').checked = keyword?.cellVerifyEnabled || false;
+    $('#editKwCellVerifyValue').value = keyword?.cellVerify || '';
 
     // 加载分组选项
     loadGroupOptions(keyword?.groupId || '');
@@ -423,7 +425,9 @@
       wholeWord: $('#editKwWholeWord').checked,
       useRegex: $('#editKwUseRegex').checked,
       important: $('#editKwImportant').checked,
-      importantNote: $('#editKwImportantNote').value.trim()
+      importantNote: $('#editKwImportantNote').value.trim(),
+      cellVerifyEnabled: $('#editKwCellVerify').checked,
+      cellVerify: $('#editKwCellVerify').checked ? $('#editKwCellVerifyValue').value.trim() : ''
     };
 
     try {
@@ -503,6 +507,15 @@
     $('#groupModalTitle').textContent = group ? '编辑分组' : '新建分组';
     $('#editGroupName').value = group?.name || '';
     $('#editGroupImportant').checked = !!(group && group.important);
+    // 分组统一重要笔记
+    $('#editGroupImportantNote').value = (group && group.importantNote) || '';
+    // 仅勾选「标记为重要」时显示统一文本输入框
+    const updateImpNoteRow = () => {
+      $('#editGroupImportantNoteRow').style.display =
+        $('#editGroupImportant').checked ? '' : 'none';
+    };
+    $('#editGroupImportant').onchange = updateImpNoteRow;
+    updateImpNoteRow();
 
     // 载入颜色状态
     const useColor = !!(group && group.bgColor);
@@ -528,7 +541,8 @@
       name,
       bgColor: useColor ? $('#editGroupBgColor').value : '',
       textColor: useColor ? $('#editGroupTextColor').value : '',
-      important: $('#editGroupImportant').checked
+      important: $('#editGroupImportant').checked,
+      importantNote: $('#editGroupImportant').checked ? $('#editGroupImportantNote').value.trim() : ''
     };
 
     try {

@@ -6,6 +6,7 @@
  * 特性：
  * - 单页仅一个实例（幂等注入）
  * - 多条命中聚合展示，可单条关闭（本次页面会话内不再弹）
+ * - 笔记内容一致的多个命中自动合并为一条，并在条目标签中列举命中了哪些关键词
  * - Shadow DOM 隔离样式，不污染页面
  * - 可拖动，默认右上角，不跨页面记忆位置
  */
@@ -114,17 +115,29 @@ const ImportantNote = {
       border-bottom: 1px solid #f3f3f3;
     }
     .khin-item:last-child { border-bottom: none; }
-    .khin-item-top {
-      display: flex; align-items: center; gap: 6px; margin-bottom: 5px;
+    .khin-item-head {
+      display: flex; align-items: flex-start; justify-content: space-between;
+      gap: 6px; margin-bottom: 5px;
+    }
+    .khin-item-tags {
+      display: flex; flex-wrap: wrap; gap: 5px; flex: 1; min-width: 0;
     }
     .khin-item-kw {
       font-size: 12px; font-weight: 600; color: #e64a19;
       background: #fff1e6; border-radius: 4px; padding: 1px 7px;
       max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .khin-item-adj {
+      font-size: 12px; font-weight: 600; color: #2e7d32;
+      background: #e8f5e9; border-radius: 4px; padding: 1px 7px;
+      max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      flex-shrink: 0;
     }
     .khin-item-close {
-      margin-left: auto; background: none; border: none; cursor: pointer;
+      background: none; border: none; cursor: pointer;
       color: #bbb; font-size: 13px; padding: 2px 4px; border-radius: 4px; line-height: 1;
+      flex-shrink: 0;
     }
     .khin-item-close:hover { color: #e53935; background: #ffe9e9; }
     .khin-item-body {
@@ -137,7 +150,7 @@ const ImportantNote = {
     .khin-empty { padding: 20px; text-align: center; color: #aaa; font-size: 13px; }
   `,
 
-  async init() {
+  async init(config = null) {
     if (this.host) return;
     this.host = document.createElement('div');
     this.host.id = 'kh-important-note-host';
@@ -176,12 +189,9 @@ const ImportantNote = {
   },
 
   setDefaultPosition() {
-    // 默认右上角
-    const width = 360;
+    // 默认左上角
     const gap = 20;
-    let left = window.innerWidth - width - gap;
-    if (left < gap) left = gap;
-    this.pos = { left, top: 24 };
+    this.pos = { left: gap, top: gap };
   },
 
   applyPosition() {
@@ -205,17 +215,32 @@ const ImportantNote = {
   refresh() {
     if (!this.host) return;
     const els = document.querySelectorAll('[data-kh-important="1"]');
-    const newItems = [];
-    const seen = new Set();
+    const noteMap = new Map();  // note -> { note, keywords:Set }
     els.forEach(el => {
       // 隐藏元素（display:none / visibility:hidden / hidden）里的命中不应展示，避免误报
       if (Utils.isElementHidden(el)) return;
       const note = (el.getAttribute('data-kh-important-note') || '').trim();
       if (!note) return;
       if (this.ignored.has(note)) return;
-      if (seen.has(note)) return;
-      seen.add(note);
-      newItems.push({ keyword: (el.textContent || '').trim(), note });
+      const keyword = (el.textContent || '').trim();
+      // 单元格特别标注（v1.6.18）：直接读取验证通过时记录的期望值；未启用验证则为空
+      const adj = el.getAttribute('data-kh-cell-verify') || '';
+      // 按「笔记文本」聚合：若多个关键词命中的笔记内容一致，则合并为一条
+      if (!noteMap.has(note)) {
+        noteMap.set(note, { note, entryMap: new Map() });
+      }
+      const grp = noteMap.get(note);
+      if (!grp.entryMap.has(keyword)) {
+        grp.entryMap.set(keyword, adj || '');
+      }
+    });
+
+    // 合并结果：每条 = { note, entries:[{kw, adj}] }，关键词列表用于列举命中了哪些词
+    const newItems = [];
+    noteMap.forEach(g => {
+      const entries = [];
+      g.entryMap.forEach((adj, kw) => entries.push({ kw, adj }));
+      newItems.push({ note: g.note, entries });
     });
 
     // 无命中：直接隐藏
@@ -239,7 +264,10 @@ const ImportantNote = {
    */
   _itemsChanged(newItems) {
     if (this.items.length !== newItems.length) return true;
-    const key = (it) => (it.note || '') + '\u0001' + (it.keyword || '');
+    // 按「笔记文本 + 排序后的关键词+相邻值」比较
+    const key = (it) => (it.note || '') + '\u0001' + (it.entries || [])
+      .map(e => (e.kw || '') + '\u0003' + (e.adj || ''))
+      .sort().join('\u0002');
     const oldKeys = new Set(this.items.map(key));
     for (const it of newItems) {
       if (!oldKeys.has(key(it))) return true;
@@ -312,10 +340,15 @@ const ImportantNote = {
     if (!this.bodyEl) return;
     const itemsHtml = this.items.map(item => {
       const bodyHtml = Utils.sanitizeHTML(item.note);
+      // 同一笔记可能命中多个关键词，逐个标签列举；有关相邻值则附加标注
+      const kwTags = (item.entries || []).map(e => {
+        const adjTag = e.adj ? `<span class="khin-item-adj">→ ${this.escapeText(e.adj)}</span>` : '';
+        return `<span class="khin-item-kw">🔖 ${this.escapeText(e.kw)}</span>${adjTag}`;
+      }).join(' ');
       return `
         <div class="khin-item" data-note="${encodeURIComponent(item.note)}">
-          <div class="khin-item-top">
-            <span class="khin-item-kw">🔖 ${this.escapeText(item.keyword)}</span>
+          <div class="khin-item-head">
+            <div class="khin-item-tags">${kwTags}</div>
             <button class="khin-item-close" title="本次页面不再显示">✕</button>
           </div>
           <div class="khin-item-body">${bodyHtml}</div>

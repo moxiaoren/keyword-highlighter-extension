@@ -38,7 +38,7 @@
         </li>
       </ul>
       <div class="sidebar-footer">
-        <span class="version">v1.6.12</span>
+        <span class="version">v1.6.18</span>
       </div>
     </nav>
 
@@ -423,9 +423,15 @@
 
           <h3>📦 版本信息</h3>
           <div class="help-section">
-            <p>当前版本：<strong>v1.6.12</strong></p>
+            <p>当前版本：<strong>v1.6.18</strong></p>
             <p>更新日志：</p>
             <ul>
+              <li><strong>v1.6.18</strong>：新增「单元格特别标注」验证——关键词可独立勾选「单元格特别标注」并填写“后一个单元格期望值”。命中该关键词时，先校验其右侧的横向相邻单元格：右侧格<strong>包含</strong>期望值才生效（高亮/重要笔记）；不包含则<strong>整条不生效</strong>。支持 HTML 表格 <code>td</code> 或文本用 <code>|</code> / Tab 分隔（如 <code>是否刚需|否</code>）。与重要笔记互相独立、不依赖分组；取代原 v1.6.17 的自动识别相邻值展示。</li>
+              <li><strong>v1.6.17</strong>：新增「相邻单元格特别标注」——命中重要关键词时，自动识别其横向右侧相邻单元格的值（支持 HTML 表格 <code>td</code>，或 <code>|</code> / Tab 分隔的假表格），以「→ 相邻值」形式附加在重要笔记中展示，便于快速了解关键词对应的相邻信息；默认开启，可在「备注卡片样式」页关闭，不影响原有高亮功能。</li>
+              <li><strong>v1.6.16</strong>：修复导入数据丢失——JSON 导入补回 globalEnabled、siteDisabledMap 并规整分组字段；CSV 导入恢复分组关联（缺失时自动创建同名分组），不再让关键词脱离分组导致分组高亮色丢失；分组颜色字段在导入时有结构兜底。</li>
+              <li><strong>v1.6.15</strong>：「检测更新」改为读取 crx 自动更新通道（update.xml），不再依赖 GitHub Releases API，国内网络下也能正常检测；「更新」按钮在 crx 版下自动切换为下载新版 .crx 引导安装。</li>
+              <li><strong>v1.6.14</strong>：重要笔记聚合优化——同一页面命中多个关键词、笔记内容一致时合并为一条展示，并在条目标签中列举命中了哪些关键词。</li>
+              <li><strong>v1.6.13</strong>：分组可统一配置重要笔记展示文本——分组标记为「重要」后可填写一段统一说明，组内重要关键词命中时统一展示该文本（关键词自身已填写的重要笔记优先）；重要笔记悬浮窗默认位置改为左上角，且分组统一文本下不同关键词各自展示，不再互相覆盖。</li>
               <li><strong>v1.6.12</strong>：新增「原生一键更新」（方案B）——点「更新」时若未检测到自动更新通道，可生成「kh-register-native.cmd」，双击一次即完成原生宿主注册；之后点「更新」通过 Chrome 原生通信直接自动覆盖新版，真正点一下全自动。</li>
               <li><strong>v1.6.11</strong>：自动更新体验优化——点「更新」时若未检测到本机自动更新服务，会自动生成并下载「kh-auto-update.cmd」，双击即可自动创建文件夹、写入更新脚本并启动服务，省去手动建目录/写脚本/打开脚本的步骤。</li>
               <li><strong>v1.6.10</strong>：修正「常见问题 Q&amp;A」中站点规则判定顺序的描述——未命中任何规则时取决于<strong>是否存在白名单</strong>（有白名单则白名单外一律不高亮；无白名单则默认高亮），与“是否有黑名单”无关。</li>
@@ -599,6 +605,15 @@
           <span class="form-hint">标记为重要后，页面命中此关键词时会在右上角弹出置顶悬浮笔记。</span>
         </div>
         <div class="form-group">
+          <label class="checkbox-label">
+            <input type="checkbox" id="editKwCellVerify">
+            <span>🔲 单元格特别标注（验证右侧相邻格）</span>
+          </label>
+          <span class="form-hint">勾选后，页面命中此关键词时，会校验其<strong>横向右侧相邻单元格</strong>的内容：右侧格<strong>包含</strong>下方填写的期望值时该词生效（高亮）；不包含则<strong>整条不生效</strong>（不显示）。</span>
+          <input type="text" id="editKwCellVerifyValue" placeholder="后一个单元格需要匹配的内容，如上例填：否" class="text-input" style="margin-top:8px;">
+          <span class="form-hint">支持 HTML 表格 <code>td</code>（右侧相邻格），或文本中用 <code>|</code> / Tab 分隔的内容（如 <code>是否刚需|否</code>）。与「重要笔记」互不影响，可独立使用。</span>
+        </div>
+        <div class="form-group">
           <label>重要笔记（长文本，命中时置顶显示）
             <button type="button" class="btn-format-hint" id="btnKwImportantNoteHint" title="查看重要笔记格式说明">ⓘ</button>
           </label>
@@ -707,7 +722,12 @@
             <input type="checkbox" id="editGroupImportant">
             <span>📌 标记为重要（组内关键词自动生效，取消则自动取消）</span>
           </label>
-          <span class="form-hint">勾选后，本组所有关键词视为重要；但重要笔记内容仍需在每个关键词上单独填写。</span>
+          <span class="form-hint">勾选后，本组所有关键词视为重要；若关键词自身未填写重要笔记，将统一使用下方分组文本。</span>
+        </div>
+        <div class="form-group" id="editGroupImportantNoteRow" style="display:none;">
+          <label>统一重要笔记（可选）</label>
+          <textarea id="editGroupImportantNote" rows="3" placeholder="组内重要关键词命中时统一展示的文本（留空则需在每个关键词上单独填写）" class="text-input"></textarea>
+          <span class="form-hint">仅当勾选「标记为重要」时生效；关键词自身已填写的重要笔记优先于本分组统一文本。</span>
         </div>
         <div class="form-group">
           <label>高亮颜色</label>

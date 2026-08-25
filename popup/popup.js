@@ -209,7 +209,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!info || (info.latestVersion === null && info.hasUpdate === false)) {
       // 远端无 release 或请求失败，两者都返回 hasUpdate=false，但 latestVersion 为 null 表示失败
       if (info && info.latestVersion === null) {
-        updateText.textContent = '检查更新失败（无法连接 GitHub，请稍后重试）';
+        updateText.textContent = '检查更新失败（无法连接更新源，请稍后重试）';
       } else {
         renderUpdateInfo(info);
       }
@@ -404,7 +404,19 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    // ---- 依次尝试：方案②原生宿主 → 方案①HTTP 服务 ----
+    // crx 自动更新通道：直接引导下载新版本 crx（方案B 的 unpacked 覆盖流程对 crx 版无效）
+    if (/\.crx(\?|$)/i.test(currentUpdateInfo.zipUrl)) {
+      alert(
+        '已检测到 crx 自动更新通道的新版本 v' + (currentUpdateInfo.latestVersion || '') + '。\n\n' +
+        '将为你打开新版本 .crx 下载：\n' + currentUpdateInfo.zipUrl + '\n\n' +
+        '👉 下载后到 chrome://extensions 将 .crx 拖入窗口即可覆盖安装；\n' +
+        '👉 若该扩展已由策略托管（显示「由贵单位管理」），则会在后台自动更新到新版，无需手动操作。'
+      );
+      chrome.tabs.create({ url: currentUpdateInfo.zipUrl }).catch(() => {});
+      return;
+    }
+
+    // ---- 依次尝试：方案②原生宿主 → 方案①HTTP 服务（unpacked 版） ----
     updateText.textContent = '正在自动更新…（方案②）';
     btnUpdate.hidden = true;
     btnUpdateDismiss.hidden = true;
