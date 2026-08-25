@@ -38,7 +38,7 @@
         </li>
       </ul>
       <div class="sidebar-footer">
-        <span class="version">v1.6.19</span>
+        <span class="version">v1.6.20</span>
       </div>
     </nav>
 
@@ -95,6 +95,9 @@
               <tr>
                 <th class="col-check"><input type="checkbox" id="checkAllPage" title="全选本页"></th>
                 <th class="col-kw">关键词</th>
+                <th class="col-cell" title="命中后横向右侧相邻单元格的期望值">后格期望值</th>
+                <th class="col-impnote">重要笔记</th>
+                <th class="col-color">高亮颜色</th>
                 <th class="col-group">分组</th>
                 <th class="col-note">备注</th>
                 <th class="col-rule">匹配方式</th>
@@ -423,7 +426,7 @@
 
           <h3>📦 版本信息</h3>
           <div class="help-section">
-            <p>当前版本：<strong>v1.6.19</strong></p>
+            <p>当前版本：<strong>v1.6.20</strong></p>
             <p>更新日志：</p>
             <ul>
               <li><strong>v1.6.19</strong>：①前格相同、后格不同可并存——去重改为按「前格+后格」组合判断；②后格匹配方式可选「包含 / 全词(整体相等)」；③关键词弹窗梳理，单元格标注与重要笔记改为「勾选才展开细节」，界面更清爽；④重要笔记小圆钮改为<strong>双击展开</strong>，避免拖动时误展开；⑤修复重新高亮（切站点/黑白名单/刷新）时单元格验证失效——首次高亮会把文字拆成相邻文本节点，重新高亮需拼接相邻兄弟文本后再验证。</li>
@@ -607,7 +610,7 @@
           <div id="cellVerifyDetail" style="display:none; margin-top:8px;">
             <div class="form-row">
               <div class="form-group" style="flex:2;">
-                <label>后一个单元格期望值</label>
+                <label>后格期望值<span class="field-tip" title="即命中后横向右侧相邻单元格的期望值">ⓘ</span></label>
                 <input type="text" id="editKwCellVerifyValue" placeholder="如：否" class="text-input">
               </div>
               <div class="form-group">

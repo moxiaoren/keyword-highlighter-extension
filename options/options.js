@@ -71,7 +71,7 @@
     }
 
     // 渲染列表
-    renderKeywordList(keywords, groups);
+    renderKeywordList(keywords, groups, data.highlightStyle || Storage.defaults.highlightStyle);
   }
 
   function getKeywordFilters() {
@@ -110,7 +110,7 @@
     return list;
   }
 
-  function renderKeywordList(keywords, groups) {
+  function renderKeywordList(keywords, groups, highlightStyle) {
     const filtered = applyKeywordFiltersAndSort(keywords);
     kwState.filtered = filtered;
 
@@ -172,10 +172,33 @@
       const noteHtml = kw.note
         ? `<span class="kw-col-note" title="${escapeHtml(kw.note)}">${escapeHtml(kw.note)}</span>`
         : '<span style="color:#ddd">—</span>';
+      // 后格期望值
+      const cellMode = kw.cellVerifyMatchMode === 'exact';
+      const cellHtml = (kw.cellVerifyEnabled && kw.cellVerify)
+        ? `<span class="cell-val" title="后格期望值：${escapeHtml(kw.cellVerify)}（${cellMode ? '全词：整格相等' : '包含'}）">${escapeHtml(kw.cellVerify)}</span><span class="badge ${cellMode ? 'cell-exact' : 'cell-include'}">${cellMode ? '全词' : '包含'}</span>`
+        : '<span style="color:#ddd">—</span>';
+      // 重要笔记（自身优先，其次分组统一笔记）
+      let impNoteHtml = '<span style="color:#ddd">—</span>';
+      if (kw.importantNote) {
+        impNoteHtml = `<span class="impnote-val" title="${escapeHtml(kw.importantNote)}">📌 ${escapeHtml(kw.importantNote)}</span>`;
+      } else if (grp && grp.important && grp.importantNote) {
+        impNoteHtml = `<span class="impnote-val grp" title="来自分组“${escapeHtml(groupMap[kw.groupId] || '')}”：${escapeHtml(grp.importantNote)}">📌 ${escapeHtml(grp.importantNote)}</span>`;
+      } else if (isImportant) {
+        impNoteHtml = '<span class="impnote-val">📌 重要（未填笔记）</span>';
+      }
+      // 高亮颜色（关键词自身 > 分组 > 全局默认）
+      const style = highlightStyle || {};
+      const bg = kw.bgColor || (grp && grp.bgColor) || style.defaultBgColor || '#ffff00';
+      const tc = kw.textColor || (grp && grp.textColor) || style.defaultTextColor || '#000000';
+      const colSrc = kw.bgColor ? '来自关键词' : (grp && grp.bgColor) ? '来自分组' : '全局默认';
+      const colorHtml = `<span class="color-swatch" style="background:${escapeHtml(bg)};color:${escapeHtml(tc)};" title="背景 ${bg} / 文字 ${tc}（${colSrc}）">字</span><span class="color-hex" title="${colSrc}">${escapeHtml(bg)}</span>`;
       return `
         <tr class="${isSel ? 'selected' : ''}" data-id="${kw.id}">
           <td class="col-check"><input type="checkbox" class="row-check" data-id="${kw.id}" ${isSel ? 'checked' : ''}></td>
           <td class="col-kw"><span class="kw-col-name ${kw.enabled ? '' : 'disabled'}" title="${escapeHtml(kw.text)}">${escapeHtml(kw.text)}</span>${impBadge}</td>
+          <td class="col-cell">${cellHtml}</td>
+          <td class="col-impnote">${impNoteHtml}</td>
+          <td class="col-color">${colorHtml}</td>
           <td class="col-group">📁 ${groupName}</td>
           <td class="col-note">${noteHtml}</td>
           <td class="col-rule">${ruleBadges.length ? ruleBadges.join('') : '<span style="color:#ccc">普通</span>'}</td>

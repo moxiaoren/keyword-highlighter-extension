@@ -488,7 +488,7 @@ textarea.text-input {
   background: #fff;
   border-radius: 8px;
   border: 1px solid #e8e8e8;
-  overflow: hidden;
+  overflow-x: auto;
 }
 
 .keyword-table {
@@ -526,10 +526,13 @@ textarea.text-input {
 }
 
 .col-check { width: 34px; text-align: center; }
-.col-kw { min-width: 200px; width: 26%; }
-.col-group { width: 120px; }
-.col-note { min-width: 200px; width: 38%; }
-.col-rule { width: 140px; }
+.col-kw { min-width: 160px; width: 16%; }
+.col-cell { min-width: 104px; width: 11%; }
+.col-impnote { min-width: 180px; width: 16%; }
+.col-color { min-width: 92px; width: 11%; }
+.col-group { width: 108px; }
+.col-note { min-width: 150px; width: 14%; }
+.col-rule { width: 108px; }
 .col-status { width: 70px; }
 .col-actions { width: 130px; text-align: right; }
 
@@ -551,6 +554,49 @@ textarea.text-input {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* 后格期望值 */
+.cell-val {
+  color: #1565c0;
+  font-weight: 500;
+  margin-right: 5px;
+}
+.badge.cell-include { background: #e3f2fd; color: #1565c0; }
+.badge.cell-exact { background: #ede7f6; color: #4527a0; }
+
+/* 重要笔记 */
+.impnote-val {
+  color: #6a1b9a;
+  max-width: 300px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: inline-block;
+  vertical-align: middle;
+}
+.impnote-val.grp { color: #7b1fa2; }
+
+/* 高亮颜色 */
+.color-swatch {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: 1px solid rgba(0,0,0,.15);
+  text-align: center;
+  line-height: 20px;
+  font-size: 12px;
+  margin-right: 5px;
+  vertical-align: middle;
+}
+.color-hex {
+  font-size: 11px;
+  color: #888;
+  font-family: monospace;
+}
+
+/* 表单字段旁的小提示 */
+.field-tip { cursor: help; color: #999; font-size: 12px; margin-left: 2px; }
 
 .kw-col-rule {
   font-size: 11px;

@@ -19,6 +19,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // 更新日志（倒序：最新在上）
   const CHANGELOG = [
     {
+      version: 'v1.6.20',
+      items: ['优化关键词管理表格展示：新增「后格期望值 / 重要笔记 / 高亮颜色」三列并调整列顺序，管理页一目了然。']
+    },
+    {
       version: 'v1.6.19',
       items: [
         '前格相同、后格不同可并存：去重改为按「前格+后格」组合判断，可加多条同前词不同后格的规则。',
