@@ -19,6 +19,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // 更新日志（倒序：最新在上）
   const CHANGELOG = [
     {
+      version: 'v1.6.21',
+      items: ['批量操作新增「备注/重要笔记」：勾选多条后可批量设置统一备注、重要笔记（可选同时标记为重要），也可一键清空。']
+    },
+    {
       version: 'v1.6.20',
       items: ['优化关键词管理表格展示：新增「后格期望值 / 重要笔记 / 高亮颜色」三列并调整列顺序，管理页一目了然。']
     },

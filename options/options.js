@@ -362,6 +362,52 @@
     loadKeywords();
   }
 
+  // 批量设置 备注 / 重要笔记
+  function bulkEditNote() {
+    if (kwState.selected.size === 0) return;
+    $('#bulkNoteTitle').textContent = `批量设置备注 / 重要笔记（${kwState.selected.size} 项）`;
+    $('#bulkNoteValue').value = '';
+    $('#bulkImpNoteValue').value = '';
+    $('#bulkNoteClear').checked = false;
+    $('#bulkImpNoteClear').checked = false;
+    $('#bulkImpNoteMark').checked = true;
+    $('#bulkNoteResult').textContent = '';
+    $('#bulkNoteModal').style.display = 'flex';
+  }
+  function closeBulkNote() {
+    $('#bulkNoteModal').style.display = 'none';
+  }
+  async function saveBulkNote() {
+    if (kwState.selected.size === 0) { closeBulkNote(); return; }
+    const noteText = $('#bulkNoteValue').value.trim();
+    const impText = $('#bulkImpNoteValue').value.trim();
+    const clearNote = $('#bulkNoteClear').checked;
+    const clearImp = $('#bulkImpNoteClear').checked;
+    const markImp = $('#bulkImpNoteMark').checked;
+    if (!noteText && !impText && !clearNote && !clearImp) {
+      $('#bulkNoteResult').textContent = '没有要应用的内容';
+      return;
+    }
+
+    const keywords = await Storage.getKeywords();
+    let changed = 0;
+    keywords.forEach(k => {
+      if (!kwState.selected.has(k.id)) return;
+      let ch = false;
+      if (clearNote) { if (k.note) { k.note = ''; ch = true; } }
+      else if (noteText) { k.note = noteText; ch = true; }
+      if (clearImp) { if (k.importantNote) { k.importantNote = ''; ch = true; } }
+      else if (impText) { k.importantNote = impText; if (markImp) k.important = true; ch = true; }
+      if (ch) { k.updatedAt = Date.now(); changed++; }
+    });
+    if (changed > 0) {
+      await Storage.set({ keywords });
+      loadKeywords();
+      notifyContentRefresh();
+    }
+    closeBulkNote();
+  }
+
   // 根据勾选状态显示/隐藏 单元格标注细节 与 重要笔记输入（减少弹窗杂乱）
   function toggleKwSections() {
     const nw = $('#importantNoteWrap');
@@ -1154,10 +1200,17 @@
           case 'enable': bulkSetEnabled(true); break;
           case 'disable': bulkSetEnabled(false); break;
           case 'move': bulkMoveGroup(); break;
+          case 'note': bulkEditNote(); break;
           case 'delete': bulkDelete(); break;
           case 'clear': bulkClear(); break;
         }
       });
+    });
+    $('#bulkNoteClose')?.addEventListener('click', closeBulkNote);
+    $('#bulkNoteCancel')?.addEventListener('click', closeBulkNote);
+    $('#bulkNoteSave')?.addEventListener('click', saveBulkNote);
+    $('#bulkNoteModal')?.addEventListener('click', (e) => {
+      if (e.target === $('#bulkNoteModal')) closeBulkNote();
     });
     $('#keywordModalClose')?.addEventListener('click', closeKeywordModal);
     $('#keywordModalCancel')?.addEventListener('click', closeKeywordModal);

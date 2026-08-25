@@ -38,7 +38,7 @@
         </li>
       </ul>
       <div class="sidebar-footer">
-        <span class="version">v1.6.20</span>
+        <span class="version">v1.6.21</span>
       </div>
     </nav>
 
@@ -84,6 +84,7 @@
           <button class="btn btn-sm" data-bulk="enable" disabled title="启用选中的关键词">✅ 启用</button>
           <button class="btn btn-sm" data-bulk="disable" disabled title="禁用选中的关键词">⭕ 禁用</button>
           <button class="btn btn-sm" data-bulk="move" disabled title="移动选中的关键词到分组">📁 移动</button>
+          <button class="btn btn-sm" data-bulk="note" disabled title="批量设置选中的关键词 备注 / 重要笔记">📝 备注/笔记</button>
           <button class="btn btn-sm btn-danger-soft" data-bulk="delete" disabled title="删除选中的关键词">🗑️ 删除</button>
           <button class="btn btn-sm btn-link" data-bulk="clear" disabled title="取消选择">取消</button>
         </div>
@@ -426,7 +427,7 @@
 
           <h3>📦 版本信息</h3>
           <div class="help-section">
-            <p>当前版本：<strong>v1.6.20</strong></p>
+            <p>当前版本：<strong>v1.6.21</strong></p>
             <p>更新日志：</p>
             <ul>
               <li><strong>v1.6.19</strong>：①前格相同、后格不同可并存——去重改为按「前格+后格」组合判断；②后格匹配方式可选「包含 / 全词(整体相等)」；③关键词弹窗梳理，单元格标注与重要笔记改为「勾选才展开细节」，界面更清爽；④重要笔记小圆钮改为<strong>双击展开</strong>，避免拖动时误展开；⑤修复重新高亮（切站点/黑白名单/刷新）时单元格验证失效——首次高亮会把文字拆成相邻文本节点，重新高亮需拼接相邻兄弟文本后再验证。</li>
@@ -719,6 +720,34 @@
         <span class="bulk-result" id="bulkResult" style="flex:1;color:#4caf50;font-size:13px;"></span>
         <button class="btn btn-secondary" id="bulkModalCancel">取消</button>
         <button class="btn btn-primary" id="bulkModalSave">批量添加</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 批量设置 备注/重要笔记 弹窗 -->
+  <div class="modal-overlay" id="bulkNoteModal" style="display:none;">
+    <div class="modal-dialog modal-sm">
+      <div class="modal-header">
+        <h3 id="bulkNoteTitle">批量设置备注 / 重要笔记</h3>
+        <button class="modal-close" id="bulkNoteClose">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>备注</label>
+          <input type="text" id="bulkNoteValue" class="text-input" placeholder="填写则应用到选中项；留空则不修改">
+          <label class="checkbox-label" style="margin-top:6px;"><input type="checkbox" id="bulkNoteClear"> 清空现有备注</label>
+        </div>
+        <div class="form-group" style="margin-top:12px;">
+          <label>重要笔记</label>
+          <textarea id="bulkImpNoteValue" class="text-input" rows="3" placeholder="填写则应用到选中项；留空则不修改"></textarea>
+          <label class="checkbox-label" style="margin-top:6px;"><input type="checkbox" id="bulkImpNoteClear"> 清空现有重要笔记</label>
+          <label class="checkbox-label" style="margin-top:4px;"><input type="checkbox" id="bulkImpNoteMark" checked> 应用重要笔记时同时标记为重要</label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <span id="bulkNoteResult" style="flex:1;color:#4caf50;font-size:13px;"></span>
+        <button class="btn btn-secondary" id="bulkNoteCancel">取消</button>
+        <button class="btn btn-primary" id="bulkNoteSave">应用</button>
       </div>
     </div>
   </div>
