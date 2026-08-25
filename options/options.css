@@ -495,9 +495,12 @@ textarea.text-input {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
+  table-layout: fixed;
+  min-width: 940px;
 }
 
 .keyword-table thead th {
+  position: relative;
   background: #fafafa;
   padding: 10px 12px;
   text-align: left;
@@ -511,6 +514,22 @@ textarea.text-input {
   padding: 10px 12px;
   border-bottom: 1px solid #f2f2f2;
   vertical-align: middle;
+  overflow: hidden;
+}
+
+/* 列宽拖拽手柄 */
+.th-resizer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 2;
+}
+.th-resizer:hover,
+.th-resizer.resizing {
+  background: rgba(100, 140, 255, .45);
 }
 
 .keyword-table tbody tr:hover {
@@ -526,20 +545,25 @@ textarea.text-input {
 }
 
 .col-check { width: 34px; text-align: center; }
-.col-kw { min-width: 160px; width: 16%; }
-.col-cell { min-width: 104px; width: 11%; }
-.col-impnote { min-width: 180px; width: 16%; }
-.col-color { min-width: 92px; width: 11%; }
-.col-group { width: 108px; }
-.col-note { min-width: 150px; width: 14%; }
-.col-rule { width: 108px; }
-.col-status { width: 70px; }
-.col-actions { width: 130px; text-align: right; }
+.col-kw { min-width: 140px; }
+.col-cell { width: 104px; }
+.col-impnote { min-width: 150px; }
+.col-color { width: 56px; min-width: 56px; }
+.col-group { width: 102px; }
+.col-note { min-width: 130px; }
+.col-rule { width: 96px; }
+.col-status { width: 62px; }
+.col-actions { width: 92px; min-width: 92px; white-space: nowrap; }
 
 .kw-col-name {
   font-weight: 500;
   color: #1a1a1a;
-  word-break: break-all;
+  display: inline-block;
+  max-width: calc(100% - 20px);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
 }
 
 .kw-col-name.disabled {
@@ -549,10 +573,12 @@ textarea.text-input {
 
 .kw-col-note {
   color: #666;
-  max-width: 520px;
+  max-width: 100%;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  display: inline-block;
+  vertical-align: middle;
 }
 
 /* 后格期望值 */
@@ -567,7 +593,7 @@ textarea.text-input {
 /* 重要笔记 */
 .impnote-val {
   color: #6a1b9a;
-  max-width: 300px;
+  max-width: 100%;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -633,6 +659,15 @@ textarea.text-input {
 .status-pill.disabled {
   background: #f5f5f5;
   color: #999;
+}
+
+.status-toggle {
+  cursor: pointer;
+  user-select: none;
+}
+.status-toggle:hover {
+  outline: 1px solid currentColor;
+  opacity: .85;
 }
 
 /* 分页 */

@@ -191,7 +191,7 @@
       const bg = kw.bgColor || (grp && grp.bgColor) || style.defaultBgColor || '#ffff00';
       const tc = kw.textColor || (grp && grp.textColor) || style.defaultTextColor || '#000000';
       const colSrc = kw.bgColor ? '来自关键词' : (grp && grp.bgColor) ? '来自分组' : '全局默认';
-      const colorHtml = `<span class="color-swatch" style="background:${escapeHtml(bg)};color:${escapeHtml(tc)};" title="背景 ${bg} / 文字 ${tc}（${colSrc}）">字</span><span class="color-hex" title="${colSrc}">${escapeHtml(bg)}</span>`;
+      const colorHtml = `<span class="color-swatch" style="background:${escapeHtml(bg)};color:${escapeHtml(tc)};" title="背景 ${bg} / 文字 ${tc}（${colSrc}）">字</span>`;
       return `
         <tr class="${isSel ? 'selected' : ''}" data-id="${kw.id}">
           <td class="col-check"><input type="checkbox" class="row-check" data-id="${kw.id}" ${isSel ? 'checked' : ''}></td>
@@ -202,9 +202,8 @@
           <td class="col-group">📁 ${groupName}</td>
           <td class="col-note">${noteHtml}</td>
           <td class="col-rule">${ruleBadges.length ? ruleBadges.join('') : '<span style="color:#ccc">普通</span>'}</td>
-          <td class="col-status"><span class="status-pill ${kw.enabled ? 'enabled' : 'disabled'}">${kw.enabled ? '启用' : '禁用'}</span></td>
+          <td class="col-status"><span class="status-pill status-toggle ${kw.enabled ? 'enabled' : 'disabled'}" data-action="toggle" data-id="${kw.id}" title="点击切换启用/禁用">${kw.enabled ? '启用' : '禁用'}</span></td>
           <td class="col-actions">
-            <button class="btn-icon" data-action="toggle" data-id="${kw.id}" title="${kw.enabled ? '禁用' : '启用'}">${kw.enabled ? '✅' : '⭕'}</button>
             <button class="btn-icon" data-action="edit" data-id="${kw.id}" title="编辑">✏️</button>
             <button class="btn-icon" data-action="delete" data-id="${kw.id}" title="删除">🗑️</button>
           </td>
@@ -360,6 +359,54 @@
   function bulkClear() {
     kwState.selected.clear();
     loadKeywords();
+  }
+
+  // 关键词表格：列宽拖拽调整（colgroup + 表头拖拽手柄）
+  function initTableResize() {
+    const table = $('#keywordTable');
+    if (!table || table.dataset.resized) return;
+    table.dataset.resized = '1';
+    const defs = [
+      { w: 34 }, { w: 20, pct: 1 }, { w: 104 }, { w: 17, pct: 1 }, { w: 56 },
+      { w: 102 }, { w: 16, pct: 1 }, { w: 96 }, { w: 62 }, { w: 92 }
+    ];
+    const cg = document.createElement('colgroup');
+    defs.forEach(d => {
+      const c = document.createElement('col');
+      c.style.width = (d.pct ? d.w + '%' : d.w + 'px');
+      cg.appendChild(c);
+    });
+    table.insertBefore(cg, table.firstChild);
+
+    const ths = table.querySelectorAll('thead th');
+    ths.forEach((th, i) => {
+      const col = cg.children[i];
+      const rz = document.createElement('div');
+      rz.className = 'th-resizer';
+      rz.title = '拖动调整列宽';
+      th.appendChild(rz);
+      rz.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!col) return;
+        const startX = e.clientX;
+        const startW = col.offsetWidth;
+        rz.classList.add('resizing');
+        document.body.style.userSelect = 'none';
+        function onMove(ev) {
+          const nw = Math.max(40, startW + (ev.clientX - startX));
+          col.style.width = nw + 'px';
+        }
+        function onUp() {
+          document.removeEventListener('mousemove', onMove);
+          document.removeEventListener('mouseup', onUp);
+          rz.classList.remove('resizing');
+          document.body.style.userSelect = '';
+        }
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+      });
+    });
   }
 
   // 批量设置 备注 / 重要笔记
@@ -1193,6 +1240,7 @@
     });
 
     // 批量操作按钮
+    initTableResize();
     document.querySelectorAll('[data-bulk]').forEach(btn => {
       btn.addEventListener('click', () => {
         const action = btn.dataset.bulk;
