@@ -1246,6 +1246,9 @@
   async function init() {
     initNavigation();
 
+    // 支持从 popup/欢迎页跳转到指定分区（如 #help -> 帮助与隐私）
+    if (location.hash === '#help') switchSection('help');
+
     // 关键词管理
     $('#btnAddKeyword')?.addEventListener('click', () => showKeywordModal());
     $('#btnEmptyAdd')?.addEventListener('click', () => showKeywordModal());

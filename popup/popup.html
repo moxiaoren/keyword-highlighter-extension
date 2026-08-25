@@ -8,52 +8,55 @@
 </head>
 <body>
   <div class="popup-container">
-    <!-- 顶部开关区域 -->
+    <!-- 顶部：品牌 + 全局开关 -->
     <div class="header">
       <div class="logo-area">
-        <span class="logo-icon">🔍</span>
-        <h1 class="title">高亮助手</h1>
+        <div class="logo-badge">🔍</div>
+        <div class="logo-text">
+          <h1 class="title">关键词高亮</h1>
+          <span class="subtitle" id="globalState">全局已开启</span>
+        </div>
       </div>
-      <label class="toggle-switch" title="全局开关">
+      <label class="toggle-switch" title="全局高亮开关">
         <input type="checkbox" id="globalToggle" checked>
         <span class="toggle-slider"></span>
       </label>
     </div>
 
     <!-- 当前站点状态 -->
-    <div class="site-status" id="siteStatus">
-      <span class="site-icon">🌐</span>
-      <span class="site-name" id="siteName">加载中...</span>
+    <div class="card site-card">
+      <div class="site-left">
+        <span class="site-icon">🌐</span>
+        <div class="site-meta">
+          <span class="site-label">当前站点</span>
+          <span class="site-name" id="siteName">加载中...</span>
+        </div>
+      </div>
       <span class="site-badge" id="siteBadge">生效中</span>
     </div>
 
     <!-- 统计 -->
     <div class="stats-row">
-      <div class="stat-item">
+      <div class="card stat-item">
+        <span class="stat-icon">⚡</span>
         <span class="stat-label">今日命中</span>
         <span class="stat-value" id="todayHits">0</span>
       </div>
-      <div class="stat-item">
+      <div class="card stat-item">
+        <span class="stat-icon">📌</span>
         <span class="stat-label">关键词数</span>
         <span class="stat-value" id="keywordCount">0</span>
       </div>
     </div>
 
-    <!-- 快捷操作按钮 -->
+    <!-- 快捷操作 -->
     <div class="actions">
       <button class="btn btn-primary" id="btnAddKeyword" title="快速添加关键词">
-        ➕ 快速添加
+        <span class="btn-icon">＋</span>快速添加
       </button>
-      <button class="btn btn-secondary" id="btnToggleSite" title="临时禁用当前站点">
-        🚫 <span id="btnToggleSiteText">禁用本站</span>
+      <button class="btn btn-secondary" id="btnToggleSite" title="临时禁用/启用本站">
+        <span class="btn-icon" id="btnToggleSiteIcon">🚫</span><span id="btnToggleSiteText">禁用本站</span>
       </button>
-    </div>
-
-    <!-- 底部链接 -->
-    <div class="footer">
-      <button class="btn-link" id="btnOpenSettings">⚙️ 完整设置</button>
-      <button class="btn-link" id="btnHelp">❓ 帮助</button>
-      <span class="ver-badge" id="verBadge" title="当前版本"></span>
     </div>
 
     <!-- 更新提示条 -->
@@ -68,7 +71,14 @@
       </div>
     </div>
 
-    <button class="btn-link btn-check" id="btnCheckUpdate">🔍 检查更新</button>
+    <button class="btn-link btn-check" id="btnCheckUpdate">🔄 检查更新</button>
+
+    <!-- 底部链接 -->
+    <div class="footer">
+      <button class="btn-link" id="btnHelp">❓ 帮助</button>
+      <button class="btn-link" id="btnOpenSettings">⚙️ 完整设置</button>
+      <span class="ver-badge" id="verBadge" title="当前版本"></span>
+    </div>
   </div>
 
   <script src="../lib/storage.js"></script>

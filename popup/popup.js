@@ -10,6 +10,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   const keywordCount = document.getElementById('keywordCount');
   const btnToggleSite = document.getElementById('btnToggleSite');
   const btnToggleSiteText = document.getElementById('btnToggleSiteText');
+  const btnToggleSiteIcon = document.getElementById('btnToggleSiteIcon');
+  const globalState = document.getElementById('globalState');
   const btnAddKeyword = document.getElementById('btnAddKeyword');
   const btnOpenSettings = document.getElementById('btnOpenSettings');
   const btnHelp = document.getElementById('btnHelp');
@@ -34,6 +36,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     // 全局开关
     globalToggle.checked = data.globalEnabled;
+    updateGlobalState(data.globalEnabled);
     
     // 当前站点
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -53,24 +56,26 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 统计
     const hits = await Storage.getTodayHits();
     todayHits.textContent = hits || '0';
-    keywordCount.textContent = (data.keywords || []).filter(k => k.enabled).length;
+    keywordCount.textContent = (data.keywords || []).length;
+  }
+
+  function updateGlobalState(enabled) {
+    if (!globalState) return;
+    globalState.textContent = enabled ? '全局高亮已开启' : '全局高亮已关闭';
   }
 
   function updateSiteStatus(disabled) {
-    if (disabled) {
-      siteBadge.textContent = '已禁用';
-      siteBadge.classList.add('disabled');
-      btnToggleSiteText.textContent = '启用本站';
-    } else {
-      siteBadge.textContent = '生效中';
-      siteBadge.classList.remove('disabled');
-      btnToggleSiteText.textContent = '禁用本站';
-    }
+    siteBadge.textContent = disabled ? '已禁用' : '生效中';
+    siteBadge.classList.toggle('disabled', disabled);
+    btnToggleSiteIcon.textContent = disabled ? '✅' : '🚫';
+    btnToggleSiteText.textContent = disabled ? '启用本站' : '禁用本站';
+    btnToggleSite.classList.toggle('site-disabled', disabled);
   }
 
   // 全局开关
   globalToggle.addEventListener('change', async () => {
     const enabled = globalToggle.checked;
+    updateGlobalState(enabled);
     await Storage.set({ globalEnabled: enabled });
     
     // 通知所有标签页刷新
@@ -108,7 +113,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 帮助
   btnHelp.addEventListener('click', () => {
-    chrome.tabs.create({ url: chrome.runtime.getURL('welcome/welcome.html') });
+    chrome.tabs.create({ url: chrome.runtime.getURL('options/options.html#help') });
   });
 
   // 快速添加：打开独立弹窗窗口（空间宽裕，避免挤压换行；默认居中显示）
