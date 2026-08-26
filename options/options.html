@@ -38,7 +38,7 @@
         </li>
       </ul>
       <div class="sidebar-footer">
-        <span class="version">v1.6.29</span>
+        <span class="version">v1.6.30</span>
       </div>
     </nav>
 
@@ -441,10 +441,17 @@
 
           <h3>📦 版本信息</h3>
           <div class="help-section">
-            <p>当前版本：<strong>v1.6.29</strong></p>
+            <p>当前版本：<strong>v1.6.30</strong></p>
             <p>更新日志：</p>
             <ul>
-              <li><strong>v1.6.19</strong>：①前格相同、后格不同可并存——去重改为按「前格+后格」组合判断；②后格匹配方式可选「包含 / 全词(整体相等)」；③关键词弹窗梳理，单元格标注与重要笔记改为「勾选才展开细节」，界面更清爽；④重要笔记小圆钮改为<strong>双击展开</strong>，避免拖动时误展开；⑤修复重新高亮（切站点/黑白名单/刷新）时单元格验证失效——首次高亮会把文字拆成相邻文本节点，重新高亮需拼接相邻兄弟文本后再验证。</li>
+              <li><strong>v1.6.30</strong>：批量添加支持「单元格组合内容匹配」——勾选后可按 <code>前格 | 后格期望值</code> 批量导入，并统一设置重要笔记与后格匹配方式（包含/全词）；同一前格配不同后格的关键词可并存。</li>
+              <li><strong>v1.6.25</strong>：右上角弹窗焕新，状态反馈更直观；修复「帮助」按钮误跳欢迎页；关键词数量改为显示总数。</li>
+              <li><strong>v1.6.24</strong>：帮助页悬浮目录改为右侧竖排、吸顶跟随，窄屏自动回落为顶部横排。</li>
+              <li><strong>v1.6.23</strong>：更新后自动弹出更新日志；补充「单元格组合关键词匹配」详解；关键词列表重要笔记标识不再挤压换行。</li>
+              <li><strong>v1.6.22</strong>：关键词表格支持表头拖拽调整列宽、直接点击状态列启用/禁用、颜色列只显色块。</li>
+              <li><strong>v1.6.21</strong>：批量操作新增设置「备注/重要笔记」，可批量勾选后统一填写或清空。</li>
+              <li><strong>v1.6.20</strong>：关键词管理表格新增「后格期望值 / 重要笔记 / 高亮颜色」三列。</li>
+              <li><strong>v1.6.19</strong>：①前格相同、后格不同可并存——去重改为按「前格+后格」组合判断；②后格匹配方式可选「包含 / 全词(整体相等)」；③修复重新高亮（切站点/黑白名单/刷新）时单元格验证失效。</li>
               <li><strong>v1.6.18</strong>：新增「单元格特别标注」验证——关键词可独立勾选「单元格特别标注」并填写“后一个单元格期望值”。命中该关键词时，先校验其右侧的横向相邻单元格：右侧格<strong>包含</strong>期望值才生效（高亮/重要笔记）；不包含则<strong>整条不生效</strong>。支持 HTML 表格 <code>td</code> 或文本用 <code>|</code> / Tab 分隔（如 <code>是否刚需|否</code>）。与重要笔记互相独立、不依赖分组；取代原 v1.6.17 的自动识别相邻值展示。</li>
               <li><strong>v1.6.17</strong>：新增「相邻单元格特别标注」——命中重要关键词时，自动识别其横向右侧相邻单元格的值（支持 HTML 表格 <code>td</code>，或 <code>|</code> / Tab 分隔的假表格），以「→ 相邻值」形式附加在重要笔记中展示，便于快速了解关键词对应的相邻信息；默认开启，可在「备注卡片样式」页关闭，不影响原有高亮功能。</li>
               <li><strong>v1.6.16</strong>：修复导入数据丢失——JSON 导入补回 globalEnabled、siteDisabledMap 并规整分组字段；CSV 导入恢复分组关联（缺失时自动创建同名分组），不再让关键词脱离分组导致分组高亮色丢失；分组颜色字段在导入时有结构兜底。</li>
@@ -687,6 +694,26 @@
           <p><strong>格式说明：</strong>每行一个关键词，用分隔符分隔“关键词”和“备注”。</p>
           <pre class="bulk-example" id="bulkExample">关键词1 | 备注内容1
 关键词2 | 备注内容2</pre>
+        </div>
+        <div class="form-group">
+          <label class="checkbox-label" style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+            <input type="checkbox" id="bulkCellMode"> 🔗 批量添加「单元格组合内容匹配」（前格 + 后格期望值）
+          </label>
+        </div>
+        <div class="bulk-cell-opts" id="bulkCellOpts" style="display:none;">
+          <div class="form-row">
+            <div class="form-group">
+              <label>后格匹配方式</label>
+              <select id="bulkCellMatchMode" class="text-input">
+                <option value="include">包含</option>
+                <option value="exact">全词（整格相等）</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>统一重要笔记</label>
+              <input type="text" id="bulkCellImportantNote" class="text-input" placeholder="本批所有关键词统一的重要笔记（可留空）">
+            </div>
+          </div>
         </div>
         <div class="form-group">
           <label>分隔符</label>

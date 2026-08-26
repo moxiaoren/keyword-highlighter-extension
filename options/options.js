@@ -964,10 +964,20 @@
   }
 
   // ========== 批量添加关键词 ==========
+  // 单元格组合内容匹配：切换开关时显示/隐藏相关配置，并更新示例
+  function toggleBulkCellMode() {
+    const on = $('#bulkCellMode').checked;
+    $('#bulkCellOpts').style.display = on ? 'block' : 'none';
+    updateBulkExample();
+  }
+
   async function showBulkModal() {
     $('#bulkModal').style.display = 'flex';
     $('#bulkText').value = '';
     $('#bulkResult').textContent = '';
+    $('#bulkCellMode').checked = false;
+    $('#bulkCellOpts').style.display = 'none';
+    $('#bulkCellImportantNote').value = '';
 
     // 加载分组选项
     const groups = await Storage.getGroups();
@@ -997,7 +1007,12 @@
   // 更新分隔符示例
   function updateBulkExample() {
     const sep = $('#bulkSeparator').value === '\\t' ? '\t' : $('#bulkSeparator').value;
-    $('#bulkExample').textContent = `关键词1${sep}备注内容1\n关键词2${sep}备注内容2`;
+    const cell = $('#bulkCellMode').checked;
+    if (cell) {
+      $('#bulkExample').textContent = `前格1${sep}后格期望值1\n前格2${sep}后格期望值2`;
+    } else {
+      $('#bulkExample').textContent = `关键词1${sep}备注内容1\n关键词2${sep}备注内容2`;
+    }
   }
 
   // 批量解析并添加
@@ -1026,19 +1041,30 @@
     const useRegex = $('#bulkUseRegex').checked;
     const dupPolicy = $('#bulkDupPolicy').value;
 
+    // 单元格组合内容匹配相关配置
+    const cellMode = $('#bulkCellMode').checked;
+    const cellMatchMode = $('#bulkCellMatchMode').value || 'include';
+    const cellNote = $('#bulkCellImportantNote').value.trim();
+
     const lines = rawText.split('\n').map(l => l.trim()).filter(Boolean);
     const keywords = await Storage.getKeywords();
     let added = 0, skipped = 0, replaced = 0, failed = 0;
     const seen = new Set();
 
     for (const line of lines) {
-      let text, note = '';
+      let text, cellVerify = '', note = '';
 
       // 尝试按分隔符拆分
       const parts = line.split(sep);
       if (parts.length >= 2) {
         text = (parts[0] || '').trim();
-        note = parts.slice(1).join(sep).trim();
+        if (cellMode) {
+          // 单元格组合模式：前格[sep]后格期望值[sep]备注(可选)
+          cellVerify = parts[1] ? parts[1].trim() : '';
+          note = parts.slice(2).join(sep).trim();
+        } else {
+          note = parts.slice(1).join(sep).trim();
+        }
       } else {
         // 无分隔符
         text = line.trim();
@@ -1046,20 +1072,25 @@
 
       if (!text) { failed++; continue; }
 
-      // 跳过同一批内的重复
-      if (seen.has(text)) { skipped++; continue; }
-      seen.add(text);
+      // 单元格模式下支持「同前格、不同后格」并存，用「前格+后格」组合去重
+      const key = cellMode ? (text + '\u0000' + cellVerify) : text;
+      if (seen.has(key)) { skipped++; continue; }
+      seen.add(key);
 
-      // 批量添加的词不带后格验证，仅与「同文本且无验证」的已有词冲突（前格相同后格不同的可并存）
-      const existing = keywords.find(k => k.text === text && !(k.cellVerify || ''));
+      // 重复判断：单元格模式按「前格+后格」组合；普通模式仅与「同文本且无验证」的词冲突
+      const existing = cellMode
+        ? keywords.find(k => k.text === text && (k.cellVerify || '') === cellVerify)
+        : keywords.find(k => k.text === text && !(k.cellVerify || ''));
       if (existing) {
         if (dupPolicy === 'skip') {
           skipped++;
           continue;
         } else {
-          // 覆盖：更新备注和设置
+          // 覆盖：更新备注、重要笔记与设置；单元格模式下补上后格验证字段
           Object.assign(existing, {
             note: note || existing.note,
+            important: !!cellNote || existing.important,
+            importantNote: cellNote || existing.importantNote,
             groupId: groupId || existing.groupId,
             bgColor: bgColor || existing.bgColor,
             textColor: textColor || existing.textColor,
@@ -1067,13 +1098,18 @@
             enabled: true,
             updatedAt: Date.now()
           });
+          if (cellMode) {
+            existing.cellVerifyEnabled = !!cellVerify;
+            existing.cellVerify = cellVerify;
+            existing.cellVerifyMatchMode = cellMatchMode;
+          }
           replaced++;
           continue;
         }
       }
 
       // 新增
-      keywords.push({
+      const kw = {
         id: 'kw_' + Date.now().toString(36) + '_' + Math.random().toString(36).substr(2, 9),
         text,
         note,
@@ -1086,7 +1122,15 @@
         enabled: true,
         createdAt: Date.now(),
         updatedAt: Date.now()
-      });
+      };
+      if (cellMode) {
+        kw.important = !!cellNote;
+        kw.importantNote = cellNote;
+        kw.cellVerifyEnabled = !!cellVerify;
+        kw.cellVerify = cellVerify;
+        kw.cellVerifyMatchMode = cellMatchMode;
+      }
+      keywords.push(kw);
       added++;
     }
 
@@ -1422,6 +1466,7 @@
       if (e.target === $('#bulkModal')) closeBulkModal();
     });
     $('#bulkSeparator')?.addEventListener('change', updateBulkExample);
+    $('#bulkCellMode')?.addEventListener('change', toggleBulkCellMode);
 
     // 初始加载
     loadKeywords();
