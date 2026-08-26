@@ -28,6 +28,7 @@
     KeywordEngine.destroy(); // 清空高亮 + 断开所有观察器
     NoteCard.destroy?.();
     ImportantNote.hide();
+    ImageOCR.destroy();     // 停 OCR：清队列/worker/角标/占位
   }
 
   /**
@@ -164,6 +165,9 @@
       if (data.shadowDOMEnabled) {
         KeywordEngine.setupShadowDOMObserver(currentKeywords, data);
       }
+
+      // 图片 OCR 命中（方案B）：无关键词则自动跳过
+      await ImageOCR.init(currentKeywords, data);
 
       console.debug(`[KeywordHighlighter] 已加载 ${currentKeywords.length} 个关键词`);
     } catch (err) {
