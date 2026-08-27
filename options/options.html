@@ -38,7 +38,7 @@
         </li>
       </ul>
       <div class="sidebar-footer">
-        <span class="version">v1.6.40</span>
+        <span class="version">v1.6.41</span>
       </div>
     </nav>
 
@@ -442,9 +442,10 @@
 
           <h3>📦 版本信息</h3>
           <div class="help-section">
-            <p>当前版本：<strong>v1.6.40</strong></p>
+            <p>当前版本：<strong>v1.6.41</strong></p>
             <p>更新日志：</p>
             <ul>
+              <li><strong>v1.6.41</strong>：「抓取后续字段」多行块展示时，把<strong>标签作为表格左列合并多行</strong>（如「描述」占左列跨整块），右侧多行内容每行展示为一个带框单元格，更接近 Excel 表格。单值标签仍为 <code>地址：地球东部</code>。</li>
               <li><strong>v1.6.40</strong>：修复「抓取后续字段」当右侧为大单元格、内部为<strong>多行文本</strong>时的展示——按真实换行拆成<strong>多行带框表格</strong>（每行一格、边框对齐，如「基本信息 / 驳回字段 / 1、好好 …」），不再整块挤成一行。单值标签仍为 <code>地址：地球东部</code>；多级合并单元格（rowspan）仍按 Excel 合并表格展示。</li>
               <li><strong>v1.6.39</strong>：「抓取后续字段」升级支持<strong>多级合并单元格</strong>（rowspan / colspan）的表格：以标签格为锚抓取其右下方整块，按 <strong>Excel 表格形式</strong>渲染，并<strong>保留行列合并</strong>（如「描述」合并 4 行、右侧「小节1/小节2」各合并 2 行、内容 4 行的多级结构）。单值标签仍为 <code>地址：地球东部</code>。</li>
               <li><strong>v1.6.38</strong>：「抓取后续字段」抓取到的<strong>多行块</strong>在重要笔记 / 备注卡片中改为<strong>Excel 表格形式</strong>展示（带边框、行列对齐，首行高亮），不再纯文本分点；单值标签仍为 <code>地址：地球东部</code>。同时支持在手写重要笔记中使用 markdown 表格行（<code>| a | b |</code>）自动渲染成表格。</li>
