@@ -197,6 +197,42 @@ body {
 
 .qa-field-tip { margin-top: 6px; font-size: 11.5px; color: #93a0b1; line-height: 1.5; }
 
+/* ---------- 单元格特别标注展开区 ---------- */
+#cellField { display: none; }
+#cellField.show { display: block; animation: qaFadeIn 0.22s ease; }
+.qa-cell-opts { display: flex; flex-wrap: wrap; gap: 10px 16px; margin-top: 10px; }
+.qa-cell-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #4b5563;
+  cursor: pointer;
+  user-select: none;
+}
+.qa-cell-check input { position: absolute; opacity: 0; width: 0; height: 0; }
+.qa-cell-mark {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 15px;
+  border: 2px solid #c3ccd9;
+  border-radius: 4px;
+  background: #fff;
+  position: relative;
+}
+.qa-cell-check input:checked + .qa-cell-mark { background: var(--brand); border-color: var(--brand); }
+.qa-cell-check input:checked + .qa-cell-mark::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 3px;
+  height: 7px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
 /* ---------- 操作按钮 ---------- */
 .qa-actions {
   display: flex;

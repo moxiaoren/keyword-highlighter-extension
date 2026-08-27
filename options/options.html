@@ -38,7 +38,7 @@
         </li>
       </ul>
       <div class="sidebar-footer">
-        <span class="version">v1.6.34</span>
+        <span class="version">v1.6.35</span>
       </div>
     </nav>
 
@@ -374,7 +374,8 @@
             <ul>
               <li>勾选「单元格特别标注」并填写<strong>后格期望值</strong>后，只有当该关键词命中位置的<strong>横向右侧相邻单元格</strong>匹配期望值时这个词才生效（高亮 / 重要笔记），否则<strong>整条不显示</strong>。</li>
               <li>支持两种结构：<strong>HTML 表格</strong>（<code>td</code> 的右侧相邻格），或文字中用 <code>|</code> / Tab 分隔的“假表格”（如 <code>是否刚需|否</code>）。</li>
-              <li><strong>匹配方式</strong>可选：<strong>包含</strong>（右侧格只要包含期望值即算命中，如 <code>否（暂缓）</code> 也算 <code>否</code>）或 <strong>全词</strong>（右侧格整体与期望值相等才算）。</li>
+              <li><strong>匹配方式</strong>：默认「包含」（右侧格只要包含期望值即算命中，如 <code>否（暂缓）</code> 也算 <code>否</code>）；勾选「全词匹配」则要求右侧格整体与期望值相等。</li>
+              <li>可独立设置：<strong>后格区分大小写</strong>（勾选后 <code>wifi</code> 与 <code>WiFi</code> 视为不同）、<strong>后格使用正则</strong>（期望值按正则匹配，可搭配“全词”做整体匹配）。</li>
               <li>可添加多条“同一关键词 + 不同后格”的规则（去重按<strong>前格 + 后格</strong>组合判断），便于同一词在不同语境下分别处理。</li>
               <li>与「重要笔记」互相独立，可叠加使用。</li>
             </ul>
@@ -441,9 +442,10 @@
 
           <h3>📦 版本信息</h3>
           <div class="help-section">
-            <p>当前版本：<strong>v1.6.34</strong></p>
+            <p>当前版本：<strong>v1.6.35</strong></p>
             <p>更新日志：</p>
             <ul>
+              <li><strong>v1.6.35</strong>：「单元格特别标注」的后格期望值新增两个独立开关——<strong>后格区分大小写</strong>（未勾选则 <code>wifi</code> 可命中 <code>WiFi</code>）与<strong>后格使用正则</strong>（期望值按正则匹配）；匹配方式由下拉改为<strong>勾选</strong>（默认「包含」，勾选「全词匹配」则整格相等）。快速添加 / 正常添加 / 批量添加三个入口弹窗同步支持，并优化布局、适当扩大容器避免初始滚动条。</li>
               <li><strong>v1.6.34</strong>：稳定版回退——撤销 v1.6.31~1.6.33 的改动，恢复为 v1.6.30 的稳定实现，解决部分页面偶发「存在关键词却不高亮」的问题。</li>
               <li><strong>v1.6.30</strong>：批量添加支持「单元格组合内容匹配」——勾选后可按 <code>前格 | 后格期望值</code> 批量导入，并统一设置重要笔记与后格匹配方式（包含/全词）；同一前格配不同后格的关键词可并存。</li>
               <li><strong>v1.6.25</strong>：右上角弹窗焕新，状态反馈更直观；修复「帮助」按钮误跳欢迎页；关键词数量改为显示总数。</li>
@@ -642,18 +644,16 @@
               <button type="button" class="hint-btn hint-up" data-tip="勾选后，页面命中此关键词时，会校验其横向右侧相邻单元格的内容是否匹配下方期望值：匹配才生效（高亮），不匹配则整条不显示。">ⓘ 说明</button>
             </div>
             <div id="cellVerifyDetail" style="display:none; margin-top:8px;">
-              <div class="form-row">
-                <div class="form-group" style="flex:2;">
-                  <label>后格期望值<span class="field-tip" title="即命中后横向右侧相邻单元格的期望值">ⓘ</span></label>
-                  <input type="text" id="editKwCellVerifyValue" placeholder="如：否" class="text-input">
-                </div>
-                <div class="form-group">
-                  <label>匹配方式</label>
-                  <select id="editKwCellVerifyMode" class="text-input">
-                    <option value="include">包含</option>
-                    <option value="exact">全词（整体相等）</option>
-                  </select>
-                </div>
+              <div class="form-group">
+                <label>后格期望值<span class="field-tip" title="即命中后横向右侧相邻单元格的期望值">ⓘ</span></label>
+                <input type="text" id="editKwCellVerifyValue" placeholder="如：否" class="text-input">
+              </div>
+              <div class="form-row cell-check-row">
+                <label class="checkbox-label"><input type="checkbox" id="editKwCellVerifyExact"> 全词匹配（整格相等）</label>
+              </div>
+              <div class="form-row cell-check-row">
+                <label class="checkbox-label"><input type="checkbox" id="editKwCellVerifyCase"> 后格区分大小写</label>
+                <label class="checkbox-label"><input type="checkbox" id="editKwCellVerifyRegex"> 后格使用正则</label>
               </div>
               <span class="form-hint">支持 HTML 表格 <code>td</code>（右侧相邻格），或文本中用 <code>|</code> / Tab 分隔（如 <code>是否刚需|否</code>）；与「重要笔记」互不影响。</span>
             </div>
@@ -704,16 +704,18 @@
         <div class="bulk-cell-opts" id="bulkCellOpts" style="display:none;">
           <div class="form-row">
             <div class="form-group">
-              <label>后格匹配方式</label>
-              <select id="bulkCellMatchMode" class="text-input">
-                <option value="include">包含</option>
-                <option value="exact">全词（整格相等）</option>
-              </select>
+              <label class="checkbox-label"><input type="checkbox" id="bulkCellExact"> 后格全词匹配（整格相等）</label>
             </div>
             <div class="form-group">
-              <label>统一重要笔记</label>
-              <input type="text" id="bulkCellImportantNote" class="text-input" placeholder="本批所有关键词统一的重要笔记（可留空）">
+              <label class="checkbox-label"><input type="checkbox" id="bulkCellCase"> 后格区分大小写</label>
             </div>
+            <div class="form-group">
+              <label class="checkbox-label"><input type="checkbox" id="bulkCellRegex"> 后格使用正则</label>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>统一重要笔记</label>
+            <input type="text" id="bulkCellImportantNote" class="text-input" placeholder="本批所有关键词统一的重要笔记（可留空）">
           </div>
         </div>
         <div class="form-group">

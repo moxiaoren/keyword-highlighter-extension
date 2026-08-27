@@ -53,6 +53,26 @@
         <p class="qa-field-tip">💡 勾选「标记为重要」后才会展开此输入；留空则命中时不高亮提示。</p>
       </div>
 
+      <!-- 单元格特别标注 -->
+      <div class="qa-field">
+        <label class="qa-check">
+          <input type="checkbox" id="qwCell">
+          <span class="qa-check-mark"></span>
+          <span class="qa-check-label">🔲 单元格特别标注 <span class="qa-check-sub">（验证右侧相邻格）</span></span>
+        </label>
+      </div>
+
+      <!-- 单元格特别标注详情（勾选后展开） -->
+      <div class="qa-field" id="cellField">
+        <label class="qa-label" for="qwCellValue">后格期望值</label>
+        <input type="text" id="qwCellValue" class="qa-input" placeholder="如：否">
+        <div class="qa-cell-opts">
+          <label class="qa-cell-check"><input type="checkbox" id="qwCellExact"><span class="qa-cell-mark"></span>全词匹配</label>
+          <label class="qa-cell-check"><input type="checkbox" id="qwCellCase"><span class="qa-cell-mark"></span>区分大小写</label>
+          <label class="qa-cell-check"><input type="checkbox" id="qwCellRegex"><span class="qa-cell-mark"></span>用正则</label>
+        </div>
+      </div>
+
       <!-- 操作 -->
       <div class="qa-actions">
         <button type="button" class="qa-btn qa-cancel" id="qwCancel">取消</button>

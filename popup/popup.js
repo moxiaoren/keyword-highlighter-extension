@@ -131,7 +131,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       } catch (e) { quickAddWindowId = null; }
     }
 
-    const W = 440, H = 520;
+    const W = 460, H = 620;
     // 计算居中坐标：尽量放在当前浏览器窗口中央（popup 所在窗口即当前窗口）
     let left = undefined, top = undefined;
     try {

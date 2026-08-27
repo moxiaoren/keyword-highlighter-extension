@@ -517,7 +517,9 @@
     $('#editKwImportantNote').value = keyword?.importantNote || '';
     $('#editKwCellVerify').checked = keyword?.cellVerifyEnabled || false;
     $('#editKwCellVerifyValue').value = keyword?.cellVerify || '';
-    $('#editKwCellVerifyMode').value = keyword?.cellVerifyMatchMode || 'include';
+    $('#editKwCellVerifyExact').checked = (keyword?.cellVerifyMatchMode === 'exact');
+    $('#editKwCellVerifyCase').checked = keyword?.cellVerifyCaseSensitive || false;
+    $('#editKwCellVerifyRegex').checked = keyword?.cellVerifyUseRegex || false;
 
     // 根据勾选状态显示/隐藏 单元格标注细节 与 重要笔记输入
     toggleKwSections();
@@ -545,7 +547,7 @@
     const dlg = document.querySelector('#keywordModal .modal-dialog');
     const body = document.querySelector('#keywordModal .modal-body');
     if (!dlg || !body) return;
-    const maxH = Math.min(620, Math.round(window.innerHeight * 0.82));
+    const maxH = Math.min(680, Math.round(window.innerHeight * 0.85));
     const headerEl = dlg.querySelector('.modal-header');
     const footerEl = dlg.querySelector('.modal-footer');
     const headerH = headerEl ? headerEl.offsetHeight : 0;
@@ -610,7 +612,9 @@
       importantNote: $('#editKwImportantNote').value.trim(),
       cellVerifyEnabled: $('#editKwCellVerify').checked,
       cellVerify: $('#editKwCellVerify').checked ? $('#editKwCellVerifyValue').value.trim() : '',
-      cellVerifyMatchMode: $('#editKwCellVerifyMode').value || 'include'
+      cellVerifyMatchMode: $('#editKwCellVerifyExact').checked ? 'exact' : 'include',
+      cellVerifyCaseSensitive: $('#editKwCellVerifyCase').checked,
+      cellVerifyUseRegex: $('#editKwCellVerifyRegex').checked
     };
 
     try {
@@ -1043,7 +1047,9 @@
 
     // 单元格组合内容匹配相关配置
     const cellMode = $('#bulkCellMode').checked;
-    const cellMatchMode = $('#bulkCellMatchMode').value || 'include';
+    const cellMatchMode = $('#bulkCellExact').checked ? 'exact' : 'include';
+    const cellCase = $('#bulkCellCase').checked;
+    const cellRegex = $('#bulkCellRegex').checked;
     const cellNote = $('#bulkCellImportantNote').value.trim();
 
     const lines = rawText.split('\n').map(l => l.trim()).filter(Boolean);
@@ -1102,6 +1108,8 @@
             existing.cellVerifyEnabled = !!cellVerify;
             existing.cellVerify = cellVerify;
             existing.cellVerifyMatchMode = cellMatchMode;
+            existing.cellVerifyCaseSensitive = cellCase;
+            existing.cellVerifyUseRegex = cellRegex;
           }
           replaced++;
           continue;
@@ -1129,6 +1137,8 @@
         kw.cellVerifyEnabled = !!cellVerify;
         kw.cellVerify = cellVerify;
         kw.cellVerifyMatchMode = cellMatchMode;
+        kw.cellVerifyCaseSensitive = cellCase;
+        kw.cellVerifyUseRegex = cellRegex;
       }
       keywords.push(kw);
       added++;
