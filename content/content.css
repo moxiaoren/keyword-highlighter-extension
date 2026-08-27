@@ -144,3 +144,8 @@
   background: #d0d0d0;
   border-radius:  2px;
 }
+
+/* 备注卡片/重要笔记内的 Excel 表格（v1.6.38） */
+.kh-table { border-collapse: collapse; margin-top: 4px; width: 100%; }
+.kh-table td { border: 1px solid #d3dae3; padding: 3px 8px; font-size: 12px; line-height: 1.5; background: #fff; }
+.kh-table tr:first-child td { background: #f0f4f9; font-weight: 600; }
