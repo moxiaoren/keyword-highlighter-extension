@@ -101,12 +101,40 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // 快速添加：跳转设置页并自动打开「添加关键词」弹窗（v1.6.36 移除独立窗口）
+  // 快速添加：弹出独立窗口，直接打开「添加关键词」完整弹窗（v1.6.37，不走设置页）
   btnAddKeyword.addEventListener('click', () => {
-    chrome.storage.local.set({ pendingAddKeyword: true }, () => {
-      chrome.runtime.openOptionsPage();
-    });
+    openAddWindow();
   });
+
+  let addWindowId = null;
+  async function openAddWindow() {
+    const url = chrome.runtime.getURL('options/options.html?add');
+    if (addWindowId !== null) {
+      try { await chrome.windows.update(addWindowId, { focused: true }); return; }
+      catch (e) { addWindowId = null; }
+    }
+    const W = 700, H = 560;
+    let left = undefined, top = undefined;
+    try {
+      const f = await chrome.windows.getCurrent();
+      if (f && f.width && f.height) {
+        left = Math.round(f.left + (f.width - W) / 2);
+        top = Math.round(f.top + (f.height - H) / 2);
+        if (left < 0) left = 0;
+        if (top < 0) top = 0;
+      }
+    } catch (e) { /* 默认居中 */ }
+    const win = await chrome.windows.create({ url, type: 'popup', width: W, height: H, left, top });
+    addWindowId = win.id;
+    if (addWindowId !== null) {
+      chrome.windows.onRemoved.addListener(function onClose(wid) {
+        if (wid === addWindowId) {
+          addWindowId = null;
+          chrome.windows.onRemoved.removeListener(onClose);
+        }
+      });
+    }
+  }
 
   // 监听来自 background 的更新消息
   chrome.runtime.onMessage.addListener((message) => {

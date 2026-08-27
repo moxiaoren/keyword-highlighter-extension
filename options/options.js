@@ -636,6 +636,8 @@
   function closeKeywordModal() {
     $('#keywordModal').style.display = 'none';
     editingKeywordId = null;
+    // v1.6.37 独立窗口「?add」模式：关弹窗即关窗口
+    if (window.KH_ADD_MODE) { try { window.close(); } catch (e) {} }
   }
 
   // ========== 分组管理 ==========
@@ -1337,13 +1339,14 @@
       });
     });
 
-    // 从 popup「快速添加」跳转而来时自动打开添加弹窗（popup 已不再用独立窗口）
-    chrome.storage.local.get('pendingAddKeyword', (r) => {
-      if (r.pendingAddKeyword) {
-        chrome.storage.local.remove('pendingAddKeyword');
-        showKeywordModal();
-      }
-    });
+    // v1.6.37 独立窗口「?add」模式：隐藏后台设置页，只显示「添加关键词」弹窗
+    window.KH_ADD_MODE = new URLSearchParams(location.search).has('add');
+    if (window.KH_ADD_MODE) {
+      const layout = document.querySelector('.app-layout');
+      if (layout) layout.style.display = 'none';
+      document.body.style.background = '#f7f9fc';
+      showKeywordModal();
+    }
     $('#keywordSearch')?.addEventListener('input', () => { kwState.page = 1; loadKeywords(); });
     $('#groupFilter')?.addEventListener('change', () => { kwState.page = 1; loadKeywords(); });
     $('#statusFilter')?.addEventListener('change', () => { kwState.page = 1; loadKeywords(); });
