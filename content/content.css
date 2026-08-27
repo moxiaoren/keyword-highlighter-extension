@@ -144,32 +144,3 @@
   background: #d0d0d0;
   border-radius:  2px;
 }
-
-/* ============================================
-   图片 OCR 命中角标（方案B）
-   ============================================ */
-.kh-ocr-badge {
-  position: fixed;
-  z-index: 2147483645;
-  background: #f53f3f;
-  color: #fff;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1;
-  padding: 4px 8px;
-  border-radius: 999px;
-  box-shadow: 0 2px 8px rgba(245, 63, 63, 0.45);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  pointer-events: none;   /* 不遮挡图片交互 */
-  user-select: none;
-}
-
-.kh-ocr-important-holder {
-  /* 离屏占位：仅用于让 ImportantNote.refresh() 收集重要笔记，不参与页面布局 */
-  position: fixed;
-  left: -9999px;
-  top: 0;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-}
