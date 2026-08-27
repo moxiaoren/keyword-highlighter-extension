@@ -19,7 +19,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // 更新日志（倒序：最新在上）
   const CHANGELOG = [
     {
-      version: 'v1.6.42',
+      version: 'v1.6.43',
       items: ['批量添加支持「单元格组合内容匹配」：勾选后可按“前格 | 后格期望值”批量导入，并统一设置重要笔记与后格匹配方式；同一前格配不同后格可并存。']
     },
     {

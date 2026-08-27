@@ -38,7 +38,7 @@
         </li>
       </ul>
       <div class="sidebar-footer">
-        <span class="version">v1.6.42</span>
+        <span class="version">v1.6.43</span>
       </div>
     </nav>
 
@@ -442,9 +442,10 @@
 
           <h3>📦 版本信息</h3>
           <div class="help-section">
-            <p>当前版本：<strong>v1.6.42</strong></p>
+            <p>当前版本：<strong>v1.6.43</strong></p>
             <p>更新日志：</p>
             <ul>
+              <li><strong>v1.6.43</strong>：①「抓取后续字段」解析改为通用规则——<code>\n</code> 分行、<code>\t</code> 分列，数据本身已分好列即可直接渲染成规整 Excel 表格（移除固定标题分组）；标签（如「描述」）作为<strong>表格左列合并所有行</strong>。②重要笔记面板支持<strong>右下角拖拽调整大小</strong>（宽度/高度，便于查看较长表格）。单值标签仍为 <code>地址：地球东部</code>。</li>
               <li><strong>v1.6.42</strong>：「抓取后续字段」多行块支持按<strong>固定标题分组</strong>：以 <code>基本信息 / 测试信息 / 资质信息 / 运营备注</code> 为标题，标题单独一列、其后内容归该标题，形成 <strong>标签(合并) + 标题列 + 内容列</strong> 的 Excel 表格（如「描述│基本信息│内容」）。标题词后续可调整。单值标签仍为 <code>地址：地球东部</code>。</li>
               <li><strong>v1.6.41</strong>：「抓取后续字段」多行块展示时，把<strong>标签作为表格左列合并多行</strong>（如「描述」占左列跨整块），右侧多行内容每行展示为一个带框单元格，更接近 Excel 表格。单值标签仍为 <code>地址：地球东部</code>。</li>
               <li><strong>v1.6.40</strong>：修复「抓取后续字段」当右侧为大单元格、内部为<strong>多行文本</strong>时的展示——按真实换行拆成<strong>多行带框表格</strong>（每行一格、边框对齐，如「基本信息 / 驳回字段 / 1、好好 …」），不再整块挤成一行。单值标签仍为 <code>地址：地球东部</code>；多级合并单元格（rowspan）仍按 Excel 合并表格展示。</li>

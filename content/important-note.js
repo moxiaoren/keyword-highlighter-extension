@@ -69,7 +69,9 @@ const ImportantNote = {
     /* 展开态：面板 */
     .khin-panel {
       width: 360px;
+      min-width: 220px;
       max-width: calc(100vw - 32px);
+      max-height: calc(100vh - 24px);
       background: #fff;
       border: 1px solid #e3e3e3;
       border-radius: 10px;
@@ -77,6 +79,7 @@ const ImportantNote = {
       overflow: hidden;
       display: flex;
       flex-direction: column;
+      resize: both;               /* 右下角拖拽调整大小（v1.6.43） */
       animation: khin-in 0.16s ease-out;
     }
     @keyframes khin-in {
@@ -102,10 +105,11 @@ const ImportantNote = {
     }
     .khin-header-btn:hover { color: #333; background: rgba(0,0,0,0.05); }
     .khin-body {
-      max-height: 320px;
+      flex: 1 1 auto;
+      min-height: 0;
+      max-height: none;
       overflow-y: auto;
       padding: 6px 0;
-      flex-shrink: 1;
     }
     .khin-body::-webkit-scrollbar { width: 5px; }
     .khin-body::-webkit-scrollbar-thumb { background: #d8d8d8; border-radius: 3px; }
