@@ -38,7 +38,7 @@
         </li>
       </ul>
       <div class="sidebar-footer">
-        <span class="version">v1.6.35</span>
+        <span class="version">v1.6.36</span>
       </div>
     </nav>
 
@@ -442,9 +442,10 @@
 
           <h3>📦 版本信息</h3>
           <div class="help-section">
-            <p>当前版本：<strong>v1.6.35</strong></p>
+            <p>当前版本：<strong>v1.6.36</strong></p>
             <p>更新日志：</p>
             <ul>
+              <li><strong>v1.6.36</strong>：①新增「抓取后续字段」——命中关键词（含单元格组合词）时自动读取指定标签右侧单元格的内容，逐项拼入重要笔记（如「核实地址」+「地址：地球东部」），多个标签用 <code>|</code> 分隔。②移除「快速添加」独立小窗口：popup 的快速添加入口改为跳转设置页并自动打开「添加关键词」弹窗。③添加 / 批量弹窗布局重构：分章节（基本信息 / 样式与状态 / 单元格组合 / 重要）支持折叠，匹配规则横向并排，容器加大避免初始滚动条。</li>
               <li><strong>v1.6.35</strong>：「单元格特别标注」的后格期望值新增两个独立开关——<strong>后格区分大小写</strong>（未勾选则 <code>wifi</code> 可命中 <code>WiFi</code>）与<strong>后格使用正则</strong>（期望值按正则匹配）；匹配方式由下拉改为<strong>勾选</strong>（默认「包含」，勾选「全词匹配」则整格相等）。快速添加 / 正常添加 / 批量添加三个入口弹窗同步支持，并优化布局、适当扩大容器避免初始滚动条。</li>
               <li><strong>v1.6.34</strong>：稳定版回退——撤销 v1.6.31~1.6.33 的改动，恢复为 v1.6.30 的稳定实现，解决部分页面偶发「存在关键词却不高亮」的问题。</li>
               <li><strong>v1.6.30</strong>：批量添加支持「单元格组合内容匹配」——勾选后可按 <code>前格 | 后格期望值</code> 批量导入，并统一设置重要笔记与后格匹配方式（包含/全词）；同一前格配不同后格的关键词可并存。</li>
@@ -568,114 +569,119 @@
         <button class="modal-close" id="keywordModalClose">✕</button>
       </div>
                   <div class="modal-body">
-        <div class="form-section">
-          <div class="form-section-title">基本信息</div>
-          <div class="form-grid">
-            <div class="form-grid-main">
-              <div class="form-group">
-                <label>关键词文字 <span class="required">*</span></label>
-                <input type="text" id="editKwText" placeholder="输入关键词" maxlength="100" class="text-input">
-              </div>
-              <div class="form-group">
-                <div class="label-row">
-                  <label for="editKwNote">备注内容</label>
-                  <button type="button" class="hint-btn" id="btnKwNoteHint" data-tip="支持 Markdown：**加粗**、*斜体*、[文字](网址)；纯网址自动变成可点击链接；多行输入换行原样保留。">ⓘ 格式说明</button>
-                </div>
-                <textarea id="editKwNote" placeholder="备注内容（支持 Markdown）" rows="4" class="text-input"></textarea>
-              </div>
-            </div>
-            <div class="form-grid-side">
-              <div class="match-panel">
-                <div class="match-panel-title">匹配规则</div>
-                <label class="checkbox-label">
-                  <input type="checkbox" id="editKwCaseSensitive">
-                  <span>区分大小写</span>
-                </label>
-                <label class="checkbox-label">
-                  <input type="checkbox" id="editKwWholeWord">
-                  <span>全词匹配</span>
-                </label>
-                <label class="checkbox-label">
-                  <input type="checkbox" id="editKwUseRegex">
-                  <span>使用正则表达式</span>
-                </label>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="form-section">
-          <div class="form-section-title">样式与状态</div>
-          <div class="form-row">
+        <!-- ① 基本信息（默认展开） -->
+        <div class="form-section collapsible open">
+          <div class="form-section-title collapse-trigger"><span class="collapse-arrow">▾</span>基本信息</div>
+          <div class="form-section-body">
             <div class="form-group">
-              <label>所属分组</label>
-              <select id="editKwGroup" class="text-input">
-                <option value="">无分组</option>
-              </select>
+              <label>关键词文字 <span class="required">*</span></label>
+              <input type="text" id="editKwText" placeholder="输入关键词" maxlength="100" class="text-input">
             </div>
             <div class="form-group">
-              <label>高亮背景色</label>
-              <input type="color" id="editKwBgColor" value="#ffff00">
-            </div>
-          </div>
-          <div class="form-row">
-            <div class="form-group">
-              <label>文字颜色</label>
-              <input type="color" id="editKwTextColor" value="#000000">
-            </div>
-            <div class="form-group">
-              <label>启用</label>
-              <label class="checkbox-label">
-                <input type="checkbox" id="editKwEnabled" checked>
-                <span>启用此关键词</span>
-              </label>
-            </div>
-          </div>
-        </div>
-
-        <div class="form-section">
-          <div class="form-section-title">高级功能</div>
-          <div class="form-group">
-            <div class="label-row">
-              <label class="checkbox-label">
-                <input type="checkbox" id="editKwCellVerify">
-                <span>🔲 单元格特别标注（验证右侧相邻格）</span>
-              </label>
-              <button type="button" class="hint-btn hint-up" data-tip="勾选后，页面命中此关键词时，会校验其横向右侧相邻单元格的内容是否匹配下方期望值：匹配才生效（高亮），不匹配则整条不显示。">ⓘ 说明</button>
-            </div>
-            <div id="cellVerifyDetail" style="display:none; margin-top:8px;">
-              <div class="form-group">
-                <label>后格期望值<span class="field-tip" title="即命中后横向右侧相邻单元格的期望值">ⓘ</span></label>
-                <input type="text" id="editKwCellVerifyValue" placeholder="如：否" class="text-input">
-              </div>
-              <div class="form-row cell-check-row">
-                <label class="checkbox-label"><input type="checkbox" id="editKwCellVerifyExact"> 全词匹配（整格相等）</label>
-              </div>
-              <div class="form-row cell-check-row">
-                <label class="checkbox-label"><input type="checkbox" id="editKwCellVerifyCase"> 后格区分大小写</label>
-                <label class="checkbox-label"><input type="checkbox" id="editKwCellVerifyRegex"> 后格使用正则</label>
-              </div>
-              <span class="form-hint">支持 HTML 表格 <code>td</code>（右侧相邻格），或文本中用 <code>|</code> / Tab 分隔（如 <code>是否刚需|否</code>）；与「重要笔记」互不影响。</span>
-            </div>
-          </div>
-          <div class="form-group form-group-noborder">
-            <div class="label-row">
-              <label class="checkbox-label">
-                <input type="checkbox" id="editKwImportant">
-                <span>📌 标记为重要</span>
-              </label>
-              <button type="button" class="hint-btn hint-up" data-tip="标记为重要后，页面命中此关键词时会在右上角弹出置顶悬浮笔记；可配合下方「重要笔记」填写置顶显示的内容。">ⓘ 说明</button>
-            </div>
-            <div id="importantNoteWrap" style="display:none; margin-top:8px;">
               <div class="label-row">
-                <label for="editKwImportantNote">重要笔记（长文本，命中时置顶显示）</label>
-                <button type="button" class="hint-btn hint-up" id="btnKwImportantNoteHint" data-tip="与备注不同：这里的内容会在命中时显示在右上角置顶面板（可拖动、可展开/收起）。支持 Markdown：**加粗**、*斜体*、[文字](网址)；纯网址自动变链接；多行换行原样保留。">ⓘ 格式说明</button>
+                <label for="editKwNote">备注内容</label>
+                <button type="button" class="hint-btn" id="btnKwNoteHint" data-tip="支持 Markdown：**加粗**、*斜体*、[文字](网址)；纯网址自动变成可点击链接；多行输入换行原样保留。">ⓘ 格式说明</button>
               </div>
-              <textarea id="editKwImportantNote" placeholder="输入重要注意事项…（可写很长）" rows="4" class="text-input"></textarea>
+              <textarea id="editKwNote" placeholder="备注内容（支持 Markdown）" rows="3" class="text-input"></textarea>
+            </div>
+            <div class="match-panel">
+              <div class="match-panel-title">匹配规则</div>
+              <div class="match-row">
+                <label class="checkbox-label"><input type="checkbox" id="editKwCaseSensitive"><span>区分大小写</span></label>
+                <label class="checkbox-label"><input type="checkbox" id="editKwWholeWord"><span>全词</span></label>
+                <label class="checkbox-label"><input type="checkbox" id="editKwUseRegex"><span>正则</span></label>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ② 样式与状态（默认折叠） -->
+        <div class="form-section collapsible">
+          <div class="form-section-title collapse-trigger"><span class="collapse-arrow">▸</span>样式与状态</div>
+          <div class="form-section-body">
+            <div class="form-row">
+              <div class="form-group">
+                <label>所属分组</label>
+                <select id="editKwGroup" class="text-input"><option value="">无分组</option></select>
+              </div>
+              <div class="form-group">
+                <label>高亮背景色</label>
+                <input type="color" id="editKwBgColor" value="#ffff00">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>文字颜色</label>
+                <input type="color" id="editKwTextColor" value="#000000">
+              </div>
+              <div class="form-group">
+                <label>启用</label>
+                <label class="checkbox-label"><input type="checkbox" id="editKwEnabled" checked><span>启用此关键词</span></label>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ③ 单元格组合（默认展开） -->
+        <div class="form-section collapsible open">
+          <div class="form-section-title collapse-trigger"><span class="collapse-arrow">▾</span>单元格组合</div>
+          <div class="form-section-body">
+            <div class="form-group">
+              <div class="label-row">
+                <label class="checkbox-label"><input type="checkbox" id="editKwCellVerify"><span>🔲 单元格特别标注（验证右侧相邻格）</span></label>
+                <button type="button" class="hint-btn hint-up" data-tip="勾选后，页面命中此关键词时会校验其横向右侧相邻单元格内容是否符合下方期望值：匹配才生效（高亮/重要笔记），否则整条不显示。">ⓘ 说明</button>
+              </div>
+              <div id="cellVerifyDetail" style="display:none; margin-top:8px;">
+                <div class="form-row">
+                  <div class="form-group" style="flex:2;">
+                    <label for="editKwCellVerifyValue">后格期望值</label>
+                    <input type="text" id="editKwCellVerifyValue" placeholder="如：否" class="text-input">
+                  </div>
+                  <div class="form-group">
+                    <label>匹配</label>
+                    <div class="match-row">
+                      <label class="checkbox-label"><input type="checkbox" id="editKwCellVerifyExact"><span>全词</span></label>
+                    </div>
+                  </div>
+                </div>
+                <div class="match-row" style="margin-top:4px;">
+                  <label class="checkbox-label"><input type="checkbox" id="editKwCellVerifyCase"><span>区分大小写</span></label>
+                  <label class="checkbox-label"><input type="checkbox" id="editKwCellVerifyRegex"><span>用正则</span></label>
+                </div>
+                <span class="form-hint">支持 HTML 表格 <code>td</code>（右侧相邻格），或文字中用 <code>|</code>/ Tab 分隔（如 <code>是否刚需|否</code>）。</span>
+              </div>
+            </div>
+            <div class="form-group">
+              <div class="label-row">
+                <label for="editKwFetchLabels">抓取后续字段</label>
+                <button type="button" class="hint-btn hint-up" id="btnFetchHint" data-tip="命中时自动读取这些「标签」右侧相邻单元格的内容，逐项追加到重要笔记。多个标签用 | 分隔，如：地址|籍贯。">ⓘ 说明</button>
+              </div>
+              <input type="text" id="editKwFetchLabels" placeholder="多个用 | 分隔，如：地址|籍贯" class="text-input">
+            </div>
+          </div>
+        </div>
+
+        <!-- ④ 重要（默认展开） -->
+        <div class="form-section collapsible open">
+          <div class="form-section-title collapse-trigger"><span class="collapse-arrow">▾</span>重要</div>
+          <div class="form-section-body">
+            <div class="form-group">
+              <div class="label-row">
+                <label class="checkbox-label"><input type="checkbox" id="editKwImportant"><span>📌 标记为重要（命中时右上角悬浮展示）</span></label>
+                <button type="button" class="hint-btn hint-up" data-tip="标记为重要后，命中时会在右上角弹出置顶悬浮笔记；可配合「重要笔记」填写置顶内容，也可用「抓取后续字段」自动拼入页面字段。">ⓘ 说明</button>
+              </div>
+              <div id="importantNoteWrap" style="display:none; margin-top:8px;">
+                <div class="label-row">
+                  <label for="editKwImportantNote">重要笔记（长文本，命中时置顶显示）</label>
+                  <button type="button" class="hint-btn hint-up" id="btnKwImportantNoteHint" data-tip="与备注不同：命中时显示在右上角置顶面板（可拖动、可展开/收起）。支持 Markdown。">ⓘ 格式说明</button>
+                </div>
+                <textarea id="editKwImportantNote" placeholder="输入重要注意事项…（可写很长）" rows="3" class="text-input"></textarea>
+              </div>
             </div>
           </div>
         </div>
       </div>
+
       <div class="modal-footer">
         <button class="btn btn-secondary" id="keywordModalCancel">取消</button>
         <button class="btn btn-primary" id="keywordModalSave">保存</button>
@@ -716,6 +722,11 @@
           <div class="form-group">
             <label>统一重要笔记</label>
             <input type="text" id="bulkCellImportantNote" class="text-input" placeholder="本批所有关键词统一的重要笔记（可留空）">
+          </div>
+          <div class="form-group">
+            <label>统一抓取后续字段</label>
+            <input type="text" id="bulkFetchLabels" class="text-input" placeholder="多个用 | 分隔，如：地址|籍贯（本批词命中时自动拼入重要笔记）">
+            <span class="form-hint">命中时自动读取这些标签右侧单元格的内容，逐项拼入重要笔记。</span>
           </div>
         </div>
         <div class="form-group">

@@ -520,6 +520,7 @@
     $('#editKwCellVerifyExact').checked = (keyword?.cellVerifyMatchMode === 'exact');
     $('#editKwCellVerifyCase').checked = keyword?.cellVerifyCaseSensitive || false;
     $('#editKwCellVerifyRegex').checked = keyword?.cellVerifyUseRegex || false;
+    $('#editKwFetchLabels').value = keyword?.fetchLabels || '';
 
     // 根据勾选状态显示/隐藏 单元格标注细节 与 重要笔记输入
     toggleKwSections();
@@ -614,7 +615,8 @@
       cellVerify: $('#editKwCellVerify').checked ? $('#editKwCellVerifyValue').value.trim() : '',
       cellVerifyMatchMode: $('#editKwCellVerifyExact').checked ? 'exact' : 'include',
       cellVerifyCaseSensitive: $('#editKwCellVerifyCase').checked,
-      cellVerifyUseRegex: $('#editKwCellVerifyRegex').checked
+      cellVerifyUseRegex: $('#editKwCellVerifyRegex').checked,
+      fetchLabels: $('#editKwFetchLabels').value.trim()
     };
 
     try {
@@ -1051,6 +1053,7 @@
     const cellCase = $('#bulkCellCase').checked;
     const cellRegex = $('#bulkCellRegex').checked;
     const cellNote = $('#bulkCellImportantNote').value.trim();
+    const cellFetch = $('#bulkFetchLabels').value.trim();
 
     const lines = rawText.split('\n').map(l => l.trim()).filter(Boolean);
     const keywords = await Storage.getKeywords();
@@ -1110,6 +1113,7 @@
             existing.cellVerifyMatchMode = cellMatchMode;
             existing.cellVerifyCaseSensitive = cellCase;
             existing.cellVerifyUseRegex = cellRegex;
+            if (cellFetch) existing.fetchLabels = cellFetch;
           }
           replaced++;
           continue;
@@ -1139,6 +1143,7 @@
         kw.cellVerifyMatchMode = cellMatchMode;
         kw.cellVerifyCaseSensitive = cellCase;
         kw.cellVerifyUseRegex = cellRegex;
+        if (cellFetch) kw.fetchLabels = cellFetch;
       }
       keywords.push(kw);
       added++;
@@ -1323,6 +1328,22 @@
     // 关键词管理
     $('#btnAddKeyword')?.addEventListener('click', () => showKeywordModal());
     $('#btnEmptyAdd')?.addEventListener('click', () => showKeywordModal());
+
+    // v1.6.36 弹窗章节折叠/展开
+    document.querySelectorAll('.collapse-trigger').forEach(tr => {
+      tr.addEventListener('click', () => {
+        const sec = tr.closest('.collapsible');
+        if (sec) sec.classList.toggle('closed');
+      });
+    });
+
+    // 从 popup「快速添加」跳转而来时自动打开添加弹窗（popup 已不再用独立窗口）
+    chrome.storage.local.get('pendingAddKeyword', (r) => {
+      if (r.pendingAddKeyword) {
+        chrome.storage.local.remove('pendingAddKeyword');
+        showKeywordModal();
+      }
+    });
     $('#keywordSearch')?.addEventListener('input', () => { kwState.page = 1; loadKeywords(); });
     $('#groupFilter')?.addEventListener('change', () => { kwState.page = 1; loadKeywords(); });
     $('#statusFilter')?.addEventListener('change', () => { kwState.page = 1; loadKeywords(); });

@@ -101,68 +101,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // 快速添加关键词
+  // 快速添加：跳转设置页并自动打开「添加关键词」弹窗（v1.6.36 移除独立窗口）
   btnAddKeyword.addEventListener('click', () => {
-    openQuickAddWindow();
-  });
-
-  // 打开设置页
-  btnOpenSettings.addEventListener('click', () => {
-    chrome.runtime.openOptionsPage();
-  });
-
-  // 帮助
-  btnHelp.addEventListener('click', () => {
-    chrome.tabs.create({ url: chrome.runtime.getURL('options/options.html#help') });
-  });
-
-  // 快速添加：打开独立弹窗窗口（空间宽裕，避免挤压换行；默认居中显示）
-  let quickAddWindowId = null;
-  async function openQuickAddWindow() {
-    const url = chrome.runtime.getURL('popup/quick-add.html');
-    // 若已存在则聚焦；否则新建
-    if (quickAddWindowId !== null) {
-      try {
-        const win = await chrome.windows.get(quickAddWindowId);
-        if (win) {
-          await chrome.windows.update(quickAddWindowId, { focused: true });
-          return;
-        }
-      } catch (e) { quickAddWindowId = null; }
-    }
-
-    const W = 460, H = 620;
-    // 计算居中坐标：尽量放在当前浏览器窗口中央（popup 所在窗口即当前窗口）
-    let left = undefined, top = undefined;
-    try {
-      const focused = await chrome.windows.getCurrent();
-      if (focused && focused.width && focused.height) {
-        left = Math.round(focused.left + (focused.width - W) / 2);
-        top = Math.round(focused.top + (focused.height - H) / 2);
-        if (left < 0) left = 0;
-        if (top < 0) top = 0;
-      }
-    } catch (e) { /* 取不到坐标时由系统默认放置 */ }
-
-    const win = await chrome.windows.create({
-      url,
-      type: 'popup',
-      width: W,
-      height: H,
-      left,
-      top
+    chrome.storage.local.set({ pendingAddKeyword: true }, () => {
+      chrome.runtime.openOptionsPage();
     });
-    quickAddWindowId = win.id;
-    // 窗口关闭时清引用
-    if (quickAddWindowId !== null) {
-      chrome.windows.onRemoved.addListener(function onClose(winId) {
-        if (winId === quickAddWindowId) {
-          quickAddWindowId = null;
-          chrome.windows.onRemoved.removeListener(onClose);
-        }
-      });
-    }
-  }
+  });
 
   // 监听来自 background 的更新消息
   chrome.runtime.onMessage.addListener((message) => {
