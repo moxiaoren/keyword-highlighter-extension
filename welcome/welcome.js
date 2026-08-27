@@ -19,7 +19,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // 更新日志（倒序：最新在上）
   const CHANGELOG = [
     {
-      version: 'v1.6.32',
+      version: 'v1.6.33',
       items: ['修复「容器切换分页/内容替换时旧高亮残留、上一页文字留存到新位置」的问题：监听文本变化与节点移除，对变化的容器先清理旧高亮再重新高亮。同时回退移除「图片文字识别（OCR）」实验功能。']
     },
     {
