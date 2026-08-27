@@ -38,7 +38,7 @@
         </li>
       </ul>
       <div class="sidebar-footer">
-        <span class="version">v1.6.38</span>
+        <span class="version">v1.6.39</span>
       </div>
     </nav>
 
@@ -442,9 +442,10 @@
 
           <h3>📦 版本信息</h3>
           <div class="help-section">
-            <p>当前版本：<strong>v1.6.38</strong></p>
+            <p>当前版本：<strong>v1.6.39</strong></p>
             <p>更新日志：</p>
             <ul>
+              <li><strong>v1.6.39</strong>：「抓取后续字段」升级支持<strong>多级合并单元格</strong>（rowspan / colspan）的表格：以标签格为锚抓取其右下方整块，按 <strong>Excel 表格形式</strong>渲染，并<strong>保留行列合并</strong>（如「描述」合并 4 行、右侧「小节1/小节2」各合并 2 行、内容 4 行的多级结构）。单值标签仍为 <code>地址：地球东部</code>。</li>
               <li><strong>v1.6.38</strong>：「抓取后续字段」抓取到的<strong>多行块</strong>在重要笔记 / 备注卡片中改为<strong>Excel 表格形式</strong>展示（带边框、行列对齐，首行高亮），不再纯文本分点；单值标签仍为 <code>地址：地球东部</code>。同时支持在手写重要笔记中使用 markdown 表格行（<code>| a | b |</code>）自动渲染成表格。</li>
               <li><strong>v1.6.37</strong>：①「抓取后续字段」展示升级——以标签格为锚抓取右下方<strong>整块</strong>（支持合并多行的单元格）；单值显示 <code>地址：地球东部</code>，多行合并块按<strong>表格行分点</strong>展示（<code>描述：</code> 换行后每行缩进，如 <code>小节1 | 哈哈哈哈</code>）。②「快速添加」改为弹出独立窗口并<strong>直接打开完整「添加关键词」弹窗</strong>（不再跳转设置页），关闭/保存后即关窗口。</li>
               <li><strong>v1.6.36</strong>：①新增「抓取后续字段」——命中关键词（含单元格组合词）时自动读取指定标签右侧单元格的内容，逐项拼入重要笔记（如「核实地址」+「地址：地球东部」），多个标签用 <code>|</code> 分隔。②移除「快速添加」独立小窗口：popup 的快速添加入口改为跳转设置页并自动打开「添加关键词」弹窗。③添加 / 批量弹窗布局重构：分章节（基本信息 / 样式与状态 / 单元格组合 / 重要）支持折叠，匹配规则横向并排，容器加大避免初始滚动条。</li>
