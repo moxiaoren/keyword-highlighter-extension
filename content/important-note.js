@@ -154,7 +154,7 @@ const ImportantNote = {
     .khin-empty { padding: 20px; text-align: center; color: #aaa; font-size: 13px; }
     /* 抓取后续字段渲染的 Excel 表格 */
     .kh-table { border-collapse: collapse; margin-top: 4px; width: 100%; }
-    .kh-table td { border: 1px solid #d3dae3; padding: 3px 8px; font-size: 12px; line-height: 1.5; background: #fff; text-align: center; vertical-align: middle; }
+    .kh-table td { border: 1px solid #d3dae3; padding: 3px 8px; font-size: 12px; line-height: 1.5; background: #fff; text-align: left; vertical-align: middle; }
   `,
 
   async init(config = null) {
