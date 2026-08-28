@@ -38,7 +38,7 @@
         </li>
       </ul>
       <div class="sidebar-footer">
-        <span class="version">v1.6.46</span>
+        <span class="version">v1.6.47</span>
       </div>
     </nav>
 
@@ -442,7 +442,7 @@
 
           <h3>📦 版本信息</h3>
           <div class="help-section">
-            <p>当前版本：<strong>v1.6.46</strong></p>
+            <p>当前版本：<strong>v1.6.47</strong></p>
             <p>更新日志：</p>
             <ul>
               <li><strong>v1.6.45</strong>：修复「抓取后续字段」当网页数据<strong>不含 tab</strong>（标题独立成行）时——旧版只能识别 tab 行当标题，无 tab 则第二列（标题列）为空、标题与内容挤进同一格；现改为标题识别<strong>双通道</strong>：含 tab 的行、或匹配已知固定标题词（基本信息 / 测试信息 / 资质信息 / 运营备注）的行都作为标题，其下内容归该标题，渲染成 <strong>标签(合并) + 标题列 + 内容列</strong> 三列表格（如：审测一体审核结果描述 │ 基本信息 │ 驳回字段…）。单值标签仍为 <code>地址：地球东部</code>。</li>
