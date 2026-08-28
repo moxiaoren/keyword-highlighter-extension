@@ -154,8 +154,11 @@ const ImportantNote = {
     .khin-empty { padding: 20px; text-align: center; color: #aaa; font-size: 13px; }
     /* 抓取后续字段渲染的 Excel 表格 */
     .kh-table { border-collapse: collapse; margin-top: 4px; width: 100%; }
-    .kh-table td { border: 1px solid #d3dae3; padding: 3px 8px; font-size: 12px; line-height: 1.5; background: #fff; }
-    .kh-table tr:first-child td { background: #f0f4f9; font-weight: 600; }
+    .kh-table td { border: 1px solid #d3dae3; padding: 3px 8px; font-size: 12px; line-height: 1.5; background: #fff; vertical-align: top; }
+    /* 标签列(第一列,整列合并)：统一浅底色 + 单行缩略展示不换行 */
+    .kh-table td:first-child { background: #eef2f7; font-weight: 600; color: #334155; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px; }
+    /* 标题列(第二列)：统一极浅底色 */
+    .kh-table td:nth-child(2) { background: #f8fafc; }
   `,
 
   async init(config = null) {
