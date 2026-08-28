@@ -6,6 +6,7 @@
 
   // 当前编辑状态
   let editingKeywordId = null;
+  let editingKeyword = null;
   let editingGroupId = null;
   let editingSiteRuleId = null;
   let allGroups = []; // 分组缓存（用于自动应用分组颜色）
@@ -492,16 +493,15 @@
     closeBulkNote();
   }
 
-  // 根据勾选状态显示/隐藏 单元格标注细节 与 重要笔记输入（减少弹窗杂乱）
+  // 根据勾选状态显示/隐藏 重要笔记输入（减少弹窗杂乱；单元格期望值常显，无需切换）
   function toggleKwSections() {
     const nw = $('#importantNoteWrap');
-    const cv = $('#cellVerifyDetail');
     if (nw) nw.style.display = $('#editKwImportant').checked ? 'block' : 'none';
-    if (cv) cv.style.display = $('#editKwCellVerify').checked ? 'block' : 'none';
   }
 
   function showKeywordModal(keyword = null) {
     editingKeywordId = keyword ? keyword.id : null;
+    editingKeyword = keyword || null;
     const modal = $('#keywordModal');
     $('#keywordModalTitle').textContent = keyword ? '编辑关键词' : '添加关键词';
     
@@ -509,13 +509,11 @@
     $('#editKwNote').value = keyword?.note || '';
     $('#editKwBgColor').value = keyword?.bgColor || '#ffff00';
     $('#editKwTextColor').value = keyword?.textColor || '#000000';
-    $('#editKwEnabled').checked = keyword?.enabled !== false;
     $('#editKwCaseSensitive').checked = keyword?.caseSensitive || false;
     $('#editKwWholeWord').checked = keyword?.wholeWord || false;
     $('#editKwUseRegex').checked = keyword?.useRegex || false;
     $('#editKwImportant').checked = keyword?.important || false;
     $('#editKwImportantNote').value = keyword?.importantNote || '';
-    $('#editKwCellVerify').checked = keyword?.cellVerifyEnabled || false;
     $('#editKwCellVerifyValue').value = keyword?.cellVerify || '';
     $('#editKwCellVerifyExact').checked = (keyword?.cellVerifyMatchMode === 'exact');
     $('#editKwCellVerifyCase').checked = keyword?.cellVerifyCaseSensitive || false;
@@ -542,19 +540,15 @@
     $('#editKwText').focus();
   }
 
-  // 让「取消/保存」固定在弹窗底部：限制 body 的可滚动高度，
-  // 使滚动条只出现在中间的配置区，标题/底部不随内容滚动。
+  // 让「取消/保存」固定在弹窗底部（v1.7.0：不再限制 body 高度、避免出现滚动条，
+  // 弹窗随内容增高；仅保留 dialog ≤94% 视口的上限作为极端兜底）
   function fitModalFooter() {
     const dlg = document.querySelector('#keywordModal .modal-dialog');
     const body = document.querySelector('#keywordModal .modal-body');
     if (!dlg || !body) return;
-    const maxH = Math.min(680, Math.round(window.innerHeight * 0.85));
-    const headerEl = dlg.querySelector('.modal-header');
-    const footerEl = dlg.querySelector('.modal-footer');
-    const headerH = headerEl ? headerEl.offsetHeight : 0;
-    const footerH = footerEl ? footerEl.offsetHeight : 0;
+    const maxH = Math.round(window.innerHeight * 0.94);
     dlg.style.maxHeight = maxH + 'px';
-    body.style.maxHeight = Math.max(140, maxH - headerH - footerH - 2) + 'px';
+    body.style.maxHeight = '';
     body.scrollTop = 0;
   }
 
@@ -605,14 +599,14 @@
       groupId,
       bgColor,
       textColor,
-      enabled: $('#editKwEnabled').checked,
+      enabled: editingKeyword ? (editingKeyword.enabled !== false) : true,
       caseSensitive: $('#editKwCaseSensitive').checked,
       wholeWord: $('#editKwWholeWord').checked,
       useRegex: $('#editKwUseRegex').checked,
       important: $('#editKwImportant').checked,
       importantNote: $('#editKwImportantNote').value.trim(),
-      cellVerifyEnabled: $('#editKwCellVerify').checked,
-      cellVerify: $('#editKwCellVerify').checked ? $('#editKwCellVerifyValue').value.trim() : '',
+      cellVerifyEnabled: !!$('#editKwCellVerifyValue').value.trim(),
+      cellVerify: $('#editKwCellVerifyValue').value.trim(),
       cellVerifyMatchMode: $('#editKwCellVerifyExact').checked ? 'exact' : 'include',
       cellVerifyCaseSensitive: $('#editKwCellVerifyCase').checked,
       cellVerifyUseRegex: $('#editKwCellVerifyRegex').checked,
@@ -1403,7 +1397,6 @@
     });
 
     // 单元格标注 / 重要笔记 勾选时展开对应细节
-    $('#editKwCellVerify')?.addEventListener('change', toggleKwSections);
     $('#editKwImportant')?.addEventListener('change', toggleKwSections);
     // 说明文字均采用「ⓘ + 悬浮气泡」展示（CSS hover），无需 JS。
 

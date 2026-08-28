@@ -106,6 +106,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     openAddWindow();
   });
 
+  // 完整设置：打开设置页（v1.7.0 修复点击无效——此前只声明未绑定事件）
+  btnOpenSettings.addEventListener('click', () => {
+    chrome.runtime.openOptionsPage();
+    window.close();
+  });
+
+  // 帮助：打开设置页并跳转到「帮助与隐私」分区（v1.7.0 修复点击无效）
+  btnHelp.addEventListener('click', () => {
+    chrome.tabs.create({ url: chrome.runtime.getURL('options/options.html#help') });
+    window.close();
+  });
+
   let addWindowId = null;
   async function openAddWindow() {
     const url = chrome.runtime.getURL('options/options.html?add');
