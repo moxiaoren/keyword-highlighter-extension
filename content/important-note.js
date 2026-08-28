@@ -155,8 +155,6 @@ const ImportantNote = {
     /* 抓取后续字段渲染的 Excel 表格 */
     .kh-table { border-collapse: collapse; margin-top: 4px; width: 100%; }
     .kh-table td { border: 1px solid #d3dae3; padding: 3px 8px; font-size: 12px; line-height: 1.5; background: #fff; text-align: center; vertical-align: middle; }
-    /* 标签列(第一列,整列合并)：统一白底 + 单行缩略展示不换行 */
-    .kh-table td:first-child { background: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px; }
   `,
 
   async init(config = null) {
