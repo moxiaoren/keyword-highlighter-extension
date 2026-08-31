@@ -38,7 +38,7 @@
         </li>
       </ul>
       <div class="sidebar-footer">
-        <span class="version">v1.7.0</span>
+        <span class="version">v1.7.1</span>
       </div>
     </nav>
 
@@ -442,9 +442,10 @@
 
           <h3>📦 版本信息</h3>
           <div class="help-section">
-            <p>当前版本：<strong>v1.7.0</strong></p>
+            <p>当前版本：<strong>v1.7.1</strong></p>
             <p>更新日志：</p>
             <ul>
+              <li><strong>v1.7.1</strong>：「抓取后续字段」在<strong>重要笔记</strong>中的展示统一为<strong>表格形式</strong>——单值不再用 <code>地址：地球东部</code> 纯文本，一律与多行数据一致，渲染成 <strong>标签(合并) + 标题列 + 内容列</strong> 的三列表格，展示更规整统一。</li>
               <li><strong>v1.7.0</strong>：①修复 popup「帮助」「完整设置」按钮<strong>点击无效</strong>的问题；②整体重构「添加/编辑关键词」弹窗布局——关键词与分组<strong>多列并排</strong>、颜色/启用一行排布压缩空白，「单元格组合」「重要」改为<strong>默认折叠</strong>，弹窗随内容增高、<strong>不再出现滚动条</strong>，界面更紧凑。</li>
               <li><strong>v1.6.45</strong>：修复「抓取后续字段」当网页数据<strong>不含 tab</strong>（标题独立成行）时——旧版只能识别 tab 行当标题，无 tab 则第二列（标题列）为空、标题与内容挤进同一格；现改为标题识别<strong>双通道</strong>：含 tab 的行、或匹配已知固定标题词（基本信息 / 测试信息 / 资质信息 / 运营备注）的行都作为标题，其下内容归该标题，渲染成 <strong>标签(合并) + 标题列 + 内容列</strong> 三列表格（如：审测一体审核结果描述 │ 基本信息 │ 驳回字段…）。单值标签仍为 <code>地址：地球东部</code>。</li>
               <li><strong>v1.6.44</strong>：修复「抓取后续字段」当网页数据为「<strong>标题后跟 tab、内容在下方多行</strong>」时（如「基本信息」后跟制表符、下一行再接多条内容）——原先拆行时把标题末尾的 tab 一并移除，导致标题与内容挤在同一列往下排；现改为识别 tab 行为<strong>标题行</strong>、其后直至下一标题的内容归该标题，渲染成 <strong>标签(合并) + 标题列 + 内容列</strong> 三列表格，各标题下多行内容依次对齐（如：审测一体审核结果描述 │ 基本信息 │ 驳回字段…）。单值标签仍为 <code>地址：地球东部</code>。</li>
