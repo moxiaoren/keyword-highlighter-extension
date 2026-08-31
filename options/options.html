@@ -38,7 +38,7 @@
         </li>
       </ul>
       <div class="sidebar-footer">
-        <span class="version">v1.7.6</span>
+        <span class="version">v1.7.7</span>
       </div>
     </nav>
 
@@ -442,9 +442,10 @@
 
           <h3>📦 版本信息</h3>
           <div class="help-section">
-            <p>当前版本：<strong>v1.7.6</strong></p>
+            <p>当前版本：<strong>v1.7.7</strong></p>
             <p>更新日志：</p>
             <ul>
+              <li><strong>v1.7.7</strong>：改进「抓取后续字段」合并——多个字段<strong>表格列数不一致时也合并为同一个表格</strong>，列数少的行尾部自动<strong>留空对齐</strong>（此前存在真实多列格或列数不同的字段时退回多个独立小表）。</li>
               <li><strong>v1.7.6</strong>：改进「抓取后续字段」展示——配置多个字段（如 <code>资质类型|应用功能类型</code>）时，重要笔记中<strong>合并为同一个表格的多行展示</strong>（原拆成多个独立小表），各字段作为左侧字段列的独立块、上下排列，更规整。</li>
               <li><strong>v1.7.5</strong>：修复同一「重要」关键词在页面<strong>多个位置命中</strong>时（各位置所在表格不同、抓到的后续字段数不同），重要笔记面板会重复展示<strong>多个版本的笔记</strong>（无后续字段/命中一个/命中两个）；现<strong>按关键词聚合</strong>，只保留<strong>抓取字段最完整</strong>的一份。</li>
               <li><strong>v1.7.4</strong>：修复「抓取后续字段」的表格分组归属——无 <code>tab</code> 的分组标记行（如 <code>32位包:</code> / <code>64位包:</code>）现识别为<strong>分组标题行</strong>，在表格中<strong>占整行</strong>展示，其下的 运营备注/基本信息/测试信息/资质信息 等内容<strong>分别归属其下</strong>；并修正 <code>1、 xxx</code> 编号内容行被误判为标题的问题。</li>
