@@ -222,7 +222,11 @@ const ImportantNote = {
   refresh() {
     if (!this.host) return;
     const els = document.querySelectorAll('[data-kh-important="1"]');
-    const noteMap = new Map();  // note -> { note, keywords:Set }
+    // 同一关键词可能命中在页面多处，各命中点所在表格不同→抓到字段数不同（0/1/2 个），
+    // 若直接按 note 文本聚合，会出现「无字段/少字段」的多个冗余版本笔记。
+    // 修复(v1.7.5)：先按关键词分组，每组保留「抓取字段最完整」（表格数最多）的那份 note，
+    // 再按 note 文本聚合（不同关键词若笔记相同仍合并为一条）。
+    const bestByKw = new Map();  // keyword -> { note, tc, adj }
     els.forEach(el => {
       // 隐藏元素（display:none / visibility:hidden / hidden）里的命中不应展示，避免误报
       if (Utils.isElementHidden(el)) return;
@@ -232,14 +236,18 @@ const ImportantNote = {
       const keyword = (el.textContent || '').trim();
       // 单元格特别标注（v1.6.18）：直接读取验证通过时记录的期望值；未启用验证则为空
       const adj = el.getAttribute('data-kh-cell-verify') || '';
-      // 按「笔记文本」聚合：若多个关键词命中的笔记内容一致，则合并为一条
-      if (!noteMap.has(note)) {
-        noteMap.set(note, { note, entryMap: new Map() });
-      }
+      const tc = (note.match(/<table/g) || []).length;  // 表格数=抓取字段完整度
+      const cur = bestByKw.get(keyword);
+      if (!cur || tc > cur.tc) bestByKw.set(keyword, { note, tc, adj });
+    });
+
+    // 按「笔记文本」聚合：若多个关键词命中的笔记内容一致，则合并为一条
+    const noteMap = new Map();  // note -> { note, entryMap: Map<keyword, adj> }
+    bestByKw.forEach((v, keyword) => {
+      const note = v.note;
+      if (!noteMap.has(note)) noteMap.set(note, { note, entryMap: new Map() });
       const grp = noteMap.get(note);
-      if (!grp.entryMap.has(keyword)) {
-        grp.entryMap.set(keyword, adj || '');
-      }
+      if (!grp.entryMap.has(keyword)) grp.entryMap.set(keyword, v.adj || '');
     });
 
     // 合并结果：每条 = { note, entries:[{kw, adj}] }，关键词列表用于列举命中了哪些词
