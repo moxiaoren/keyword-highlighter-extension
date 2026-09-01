@@ -138,6 +138,13 @@ const ImportantNote = {
       max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
       flex-shrink: 0;
     }
+    /* 内容/标签支持选中复制（v1.7.9）；面板外壳 keep user-select:none 仅避免误选 */
+    .khin-item-body, .khin-item-tags, .khin-item-kw, .khin-item-adj, .kh-table {
+      user-select: text; -webkit-user-select: text;
+    }
+    .khin-item-body::selection, .khin-item-tags::selection,
+    .khin-item-kw::selection, .khin-item-adj::selection,
+    .kh-table ::selection { background: #a6d3ff; color: inherit; }
     .khin-item-close {
       background: none; border: none; cursor: pointer;
       color: #bbb; font-size: 13px; padding: 2px 4px; border-radius: 4px; line-height: 1;
@@ -356,7 +363,7 @@ const ImportantNote = {
     if (!this.bodyEl) return;
     const itemsHtml = this.items.map(item => {
       const bodyHtml = Utils.sanitizeHTML(item.note);
-      // 同一笔记可能命中多个关键词，逐个标签列举；有关相邻值则附加标注
+      // 同一笔记可能命中多个关键词，逐个标签列举；期望值标注用关键词生效背景色高亮（v1.7.9）
       const kwTags = (item.entries || []).map(e => {
         const adjTag = e.adj ? `<span class="khin-item-adj">→ ${this.escapeText(e.adj)}</span>` : '';
         return `<span class="khin-item-kw">🔖 ${this.escapeText(e.kw)}</span>${adjTag}`;
