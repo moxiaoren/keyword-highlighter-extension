@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "update_url": "https://moxiaoren.github.io/keyword-highlighter-extension/update.xml",
   "name": "__MSG_extName__",
-  "version": "1.7.9",
+  "version": "1.7.10",
   "description": "__MSG_extDesc__",
   "default_locale": "zh_CN",
   "icons": {

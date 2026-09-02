@@ -38,7 +38,7 @@
         </li>
       </ul>
       <div class="sidebar-footer">
-        <span class="version">v1.7.9</span>
+        <span class="version">v1.7.10</span>
       </div>
     </nav>
 
@@ -442,9 +442,10 @@
 
           <h3>📦 版本信息</h3>
           <div class="help-section">
-            <p>当前版本：<strong>v1.7.9</strong></p>
+            <p>当前版本：<strong>v1.7.10</strong></p>
             <p>更新日志：</p>
             <ul>
+              <li><strong>v1.7.10</strong>：左右单元格<strong>组合关键词</strong>（启用「单元格特别标注验证」）：鼠标放到右侧<strong>期望值</strong>单元格时出现<strong>悬浮备注</strong>、点击期望值出现<strong>备注卡片</strong>（备注交互热区从左侧关键词迁移到后期望值）；左侧关键词不再触发，普通关键词保持原样。</li>
               <li><strong>v1.7.9</strong>：「抓取后续字段」优化——① 抓取时<strong>自动排除交互控件</strong>（按钮/链接/带 <code>onclick</code> 或交互 <code>role</code>/常见控件 <code>class</code>），如「编辑」「查看更多」「收起」等不再被抓取；② 使用<strong>简单模式</strong>（字段末尾加 <code>#1</code>，如 <code>备注信息#1</code>）时，右侧单元格内多行/多子元素<strong>合并为一行</strong>展示；整块抓取（不带 <code>#1</code>）仍<strong>保留多行</strong>，互不影响；③ 启用「单元格特别标注验证」的关键词，命中后其<strong>原网页右侧单元格内命中的期望值文本</strong>会用关键词颜色高亮（仅高亮期望值片段，不整格；支持正则、全等、是否大小写匹配）；④ 重要笔记面板<strong>支持选中文本后复制</strong>。</li>
               <li><strong>v1.7.8</strong>：「抓取后续字段」新增<strong>简单模式</strong>——字段末尾加 <code>#1</code>（如 <code>资质类型#1</code>）则该字段只取右侧相邻一个单元格的值，展示为 <code>字段 | 值</code>；不带 <code>#1</code> 的字段仍按原样抓整块做完整表格。</li>
               <li><strong>v1.7.7</strong>：改进「抓取后续字段」合并——多个字段<strong>表格列数不一致时也合并为同一个表格</strong>，列数少的行尾部自动<strong>留空对齐</strong>（此前存在真实多列格或列数不同的字段时退回多个独立小表）。</li>
