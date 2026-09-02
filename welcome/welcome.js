@@ -19,7 +19,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // 更新日志（倒序：最新在上）
   const CHANGELOG = [
     {
-      version: 'v1.7.10',
+      version: 'v1.7.11',
       items: ['「抓取后续字段」新增简单模式:字段末尾加 #1(如 资质类型#1)则该字段只取右侧相邻一个单元格的值,展示为「字段|值」;不带 #1 的字段仍抓整块做完整表格。']
     },
     {
