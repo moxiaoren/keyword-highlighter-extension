@@ -149,3 +149,7 @@
 .kh-table { border-collapse: collapse; margin-top: 4px; width: 100%; }
 .kh-table td { border: 1px solid #d3dae3; padding: 3px 8px; font-size: 12px; line-height: 1.5; background: #fff; }
 .kh-table tr:first-child td { background: #f0f4f9; font-weight: 600; }
+
+/* 备注卡片/重要笔记内图片（v1.8.0），自适应不撑破容器 */
+.kh-note-body img,
+.kh-table img { max-width: 100%; height: auto; border-radius: 4px; margin: 4px 0; display: block; }

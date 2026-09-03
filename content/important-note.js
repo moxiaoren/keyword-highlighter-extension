@@ -158,6 +158,8 @@ const ImportantNote = {
     }
     .khin-item-body a { color: #1a73e8; text-decoration: none; }
     .khin-item-body a:hover { text-decoration: underline; }
+    /* 重要笔记内图片（v1.8.0），自适应不撑破面板 */
+    .khin-item-body img { max-width: 100%; height: auto; border-radius: 4px; margin: 4px 0; display: block; }
     .khin-empty { padding: 20px; text-align: center; color: #aaa; font-size: 13px; }
     /* 抓取后续字段渲染的 Excel 表格 */
     .kh-table { border-collapse: collapse; margin-top: 4px; width: 100%; }
