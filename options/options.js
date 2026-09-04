@@ -579,8 +579,12 @@
 
   async function saveKeyword() {
     const text = $('#editKwText').value.trim();
-    if (!text) {
-      alert('请输入关键词文字');
+    // 特殊「仅抓取」模式(v1.8.6)：关键词可留空，但须在「单元格组合」填写标题关键词(左格) + 抓取后续字段
+    const ceValue = $('#editKwCellVerifyValue').value.trim();
+    const fetchLabelsVal = $('#editKwFetchLabels').value.trim();
+    const fetchOnlyMode = !!(ceValue && fetchLabelsVal); // 关键词留空时合法模式
+    if (!text && !fetchOnlyMode) {
+      alert('请输入关键词文字（或勾选「单元格特别标注」并同时填写标题关键词与抓取后续字段，以「仅抓取」模式使用）');
       return;
     }
 
