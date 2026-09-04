@@ -515,6 +515,7 @@
     $('#editKwUseRegex').checked = keyword?.useRegex || false;
     $('#editKwImportant').checked = keyword?.important || false;
     $('#editKwImportantNote').value = keyword?.importantNote || '';
+    $('#editKwImgSize').value = keyword?.imgSize || '';
     $('#editKwCellVerifyValue').value = keyword?.cellVerify || '';
     $('#editKwCellVerifyExact').checked = (keyword?.cellVerifyMatchMode === 'exact');
     $('#editKwCellVerifyCase').checked = keyword?.cellVerifyCaseSensitive || false;
@@ -606,6 +607,7 @@
       useRegex: $('#editKwUseRegex').checked,
       important: $('#editKwImportant').checked,
       importantNote: $('#editKwImportantNote').value.trim(),
+      imgSize: (function(){ const v=($('#editKwImgSize').value||'').trim(); if(!v) return ''; const n=parseInt(v,10); return (!isNaN(n)&&n>=40&&n<=600)? n : ''; })(),
       cellVerifyEnabled: !!$('#editKwCellVerifyValue').value.trim(),
       cellVerify: $('#editKwCellVerifyValue').value.trim(),
       cellVerifyMatchMode: $('#editKwCellVerifyExact').checked ? 'exact' : 'include',

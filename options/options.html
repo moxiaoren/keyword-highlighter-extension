@@ -41,7 +41,7 @@
         </li>
       </ul>
       <div class="sidebar-footer">
-        <span class="version">v1.8.3</span>
+        <span class="version">v1.8.4</span>
       </div>
     </nav>
 
@@ -462,10 +462,11 @@
 
           <h3>📦 版本信息</h3>
           <div class="help-section">
-            <p>当前版本：<strong>v1.8.3</strong></p>
+            <p>当前版本：<strong>v1.8.4</strong></p>
             <p>更新日志：</p>
             <ul>
-              <li><strong>v1.8.3</strong>：单元格组合关键词改为以「右侧单元格为核心」——「关键词」填右格内容、「标题关键词(左格)」填左格标题，命中=左格标题命中且右格含关键词，高亮/备注/重要笔记/交互统一挂在右侧核心（左格标题不高亮）；存量组合关键词自动迁移（交换字段）。另：选项页新增「📌 重要笔记」设置区（可自定义图片缩略尺寸）；修复重要笔记表格中备注多行换行被折叠的问题。</li>
+              <li><strong>v1.8.4</strong>：修复组合关键词迁移误翻（新增全局迁移完成标记，仅首次自动迁移一次，之后不再翻转用户新建/编辑的词，避免高亮/重要笔记不显示、加载变慢）；重要笔记图片尺寸支持按每个关键词单独设置（编辑关键词时在「重要」区填写本词图片缩略尺寸，留空用全局默认 180）。</li>
+            <li><strong>v1.8.3</strong>：单元格组合关键词改为以「右侧单元格为核心」——「关键词」填右格内容、「标题关键词(左格)」填左格标题，命中=左格标题命中且右格含关键词，高亮/备注/重要笔记/交互统一挂在右侧核心（左格标题不高亮）；存量组合关键词自动迁移（交换字段）。另：选项页新增「📌 重要笔记」设置区（可自定义图片缩略尺寸）；修复重要笔记表格中备注多行换行被折叠的问题。</li>
             <li><strong>v1.8.2</strong>：重要笔记内的图片改为<strong>缩略显示</strong>（限宽高约 180px，等比完整显示、不裁剪），<strong>点击图片</strong>在<strong>新标签页</strong>打开原图完整尺寸；<code>data:image</code> 内嵌图已完整、点击不跳转。</li>
               <li><strong>v1.8.1</strong>：修复<strong>普通关键词与「单元格组合关键词」冲突</strong>——当普通关键词命中的正是组合关键词的期望值单元格时，原先会导致高亮流程抛异常中断、部分高亮缺失；现已改为所有文本处理完之后再统一执行期望值高亮，两者可正常共存、互不影响。</li>
               <li><strong>v1.8.0</strong>：重要笔记与备注卡片新增<strong>图片显示</strong>——填入 <code>![说明](图片网址)</code> 即可在笔记/备注中展示网络图片（支持 <code>http(s)://</code> 与 <code>data:image</code> 来源，非法来源自动忽略，防注入）；同时优化表格渲染（markdown 表格的<strong>分隔行</strong> <code>|---|---|</code> 自动剔除，不再显示成一行 <code>---</code>），并对表格块做<strong>安全清洗</strong>加固（手动伪造的表格占位块会被过滤，杜绝脚本注入风险）。</li>
@@ -696,6 +697,11 @@
                   <button type="button" class="hint-btn hint-up" id="btnKwImportantNoteHint" data-tip="与备注不同：命中时显示在右上角置顶面板（可拖动、可展开/收起）。支持 Markdown。">ⓘ</button>
                 </div>
                 <textarea id="editKwImportantNote" placeholder="输入重要注意事项…（可写很长）" rows="2" class="text-input"></textarea>
+                <div class="label-row" style="margin-top:8px;">
+                  <label for="editKwImgSize">图片缩略尺寸 (px)</label>
+                  <span style="font-size:11px;color:#999">（本词独立设置，40–600，留空用全局默认 180）</span>
+                </div>
+                <input type="number" id="editKwImgSize" min="40" max="600" step="10" placeholder="默认 180" class="text-input" style="width:180px;">
               </div>
             </div>
           </div>

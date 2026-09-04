@@ -260,18 +260,20 @@ const ImportantNote = {
       const keyword = (el.textContent || '').trim();
       // 单元格特别标注（v1.6.18）：直接读取验证通过时记录的期望值；未启用验证则为空
       const adj = el.getAttribute('data-kh-cell-verify') || '';
+      const imgSize = el.getAttribute('data-kh-important-img-size') || ''; // 该词单独设置的图片尺寸(v1.8.4)
       const tc = (note.match(/<table/g) || []).length;  // 表格数=抓取字段完整度
       const cur = bestByKw.get(keyword);
-      if (!cur || tc > cur.tc) bestByKw.set(keyword, { note, tc, adj });
+      if (!cur || tc > cur.tc) bestByKw.set(keyword, { note, tc, adj, imgSize });
     });
 
     // 按「笔记文本」聚合：若多个关键词命中的笔记内容一致，则合并为一条
-    const noteMap = new Map();  // note -> { note, entryMap: Map<keyword, adj> }
+    const noteMap = new Map();  // note -> { note, imgSize, entryMap: Map<keyword, adj> }
     bestByKw.forEach((v, keyword) => {
       const note = v.note;
-      if (!noteMap.has(note)) noteMap.set(note, { note, entryMap: new Map() });
+      if (!noteMap.has(note)) noteMap.set(note, { note, imgSize: '', entryMap: new Map() });
       const grp = noteMap.get(note);
       if (!grp.entryMap.has(keyword)) grp.entryMap.set(keyword, v.adj || '');
+      if (!grp.imgSize && v.imgSize) grp.imgSize = v.imgSize;  // 合并时取最先非空的关键词图片尺寸
     });
 
     // 合并结果：每条 = { note, entries:[{kw, adj}] }，关键词列表用于列举命中了哪些词
@@ -279,7 +281,7 @@ const ImportantNote = {
     noteMap.forEach(g => {
       const entries = [];
       g.entryMap.forEach((adj, kw) => entries.push({ kw, adj }));
-      newItems.push({ note: g.note, entries });
+      newItems.push({ note: g.note, entries, imgSize: g.imgSize || '' });
     });
 
     // 无命中：直接隐藏
@@ -386,7 +388,7 @@ const ImportantNote = {
         return `<span class="khin-item-kw">🔖 ${this.escapeText(e.kw)}</span>${adjTag}`;
       }).join(' ');
       return `
-        <div class="khin-item" data-note="${encodeURIComponent(item.note)}">
+        <div class="khin-item" style="${item.imgSize ? `--kh-img-size:${item.imgSize}px;` : ''}" data-note="${encodeURIComponent(item.note)}">
           <div class="khin-item-head">
             <div class="khin-item-tags">${kwTags}</div>
             <button class="khin-item-close" title="本次页面不再显示">✕</button>
