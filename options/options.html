@@ -38,7 +38,7 @@
         </li>
       </ul>
       <div class="sidebar-footer">
-        <span class="version">v1.8.0</span>
+        <span class="version">v1.8.1</span>
       </div>
     </nav>
 
@@ -442,9 +442,10 @@
 
           <h3>📦 版本信息</h3>
           <div class="help-section">
-            <p>当前版本：<strong>v1.8.0</strong></p>
+            <p>当前版本：<strong>v1.8.1</strong></p>
             <p>更新日志：</p>
             <ul>
+              <li><strong>v1.8.1</strong>：修复<strong>普通关键词与「单元格组合关键词」冲突</strong>——当普通关键词命中的正是组合关键词的期望值单元格时，原先会导致高亮流程抛异常中断、部分高亮缺失；现已改为所有文本处理完之后再统一执行期望值高亮，两者可正常共存、互不影响。</li>
               <li><strong>v1.8.0</strong>：重要笔记与备注卡片新增<strong>图片显示</strong>——填入 <code>![说明](图片网址)</code> 即可在笔记/备注中展示网络图片（支持 <code>http(s)://</code> 与 <code>data:image</code> 来源，非法来源自动忽略，防注入）；同时优化表格渲染（markdown 表格的<strong>分隔行</strong> <code>|---|---|</code> 自动剔除，不再显示成一行 <code>---</code>），并对表格块做<strong>安全清洗</strong>加固（手动伪造的表格占位块会被过滤，杜绝脚本注入风险）。</li>
               <li><strong>v1.7.11</strong>：左词与期望值<strong>高亮/互动样式统一</strong>——期望值片段改用与左侧关键词相同的 <code>kh-highlight</code> 样式（含悬停动效、过渡、内边距、手型），不再单独设置；备注悬浮窗与备注卡片的出现位置由「是否配置后期望值」自动决定（组合词在期望值处，普通词在关键词处）。</li>
               <li><strong>v1.7.10</strong>：左右单元格<strong>组合关键词</strong>（启用「单元格特别标注验证」）：鼠标放到右侧<strong>期望值</strong>单元格时出现<strong>悬浮备注</strong>、点击期望值出现<strong>备注卡片</strong>（备注交互热区从左侧关键词迁移到后期望值）；左侧关键词不再触发，普通关键词保持原样。</li>
