@@ -159,7 +159,7 @@ const ImportantNote = {
     .khin-item-body a { color: #1a73e8; text-decoration: none; }
     .khin-item-body a:hover { text-decoration: underline; }
     /* 重要笔记内图片（v1.8.2）：缩略显示，点击开新标签页看原图；不等比裁剪，完整等比缩放 */
-    .khin-item-body img { max-width: var(--kh-img-size, 180px); max-height: var(--kh-img-size, 180px); width: auto; height: auto; border-radius: 4px; margin: 4px 0; display: block; cursor: pointer; }
+    .khin-item-body img { max-width: var(--kh-img-size, 180px); max-height: var(--kh-img-size, 180px); width: auto; height: auto; border-radius: 4px; margin: 4px 8px 4px 0; display: inline-block; vertical-align: middle; cursor: pointer; }
     .khin-item-body img:hover { opacity: .92; }
     .khin-empty { padding: 20px; text-align: center; color: #aaa; font-size: 13px; }
     /* 抓取后续字段渲染的 Excel 表格 */

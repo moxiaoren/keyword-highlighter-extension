@@ -41,7 +41,7 @@
         </li>
       </ul>
       <div class="sidebar-footer">
-        <span class="version">v1.8.11</span>
+        <span class="version">v1.8.12</span>
       </div>
     </nav>
 
@@ -456,9 +456,11 @@
 
 <h3>📦 版本信息</h3>
           <div class="help-section">
-            <p>当前版本：<strong>v1.8.11</strong></p>
+            <p>当前版本：<strong>v1.8.12</strong></p>
             <p>更新日志：</p>
             <ul>
+              <li><strong>v1.8.12</strong>：修复重要笔记里 <strong>markdown 表格单元格中的图片不显示</strong>的问题（此前表格先于图片解析，单元格内的 <code>![说明](网址)</code> 只能显示成文字；现改为表格内图片正常渲染）；同时把重要笔记内的多张图片由竖排改为<strong>横排</strong>显示，多图不再一张占一行、更省空间。</li>
+              <li><strong>v1.8.12</strong>：修复重要笔记里 <strong>markdown 表格单元格中的图片不显示</strong>的问题（此前表格先于图片解析，单元格内的 <code>![说明](网址)</code> 只能显示成文字；现改为表格内图片正常渲染）；同时把重要笔记内的多张图片由竖排改为<strong>横排</strong>显示，多图不再一张占一行、更省空间。</li>
               <li><strong>v1.8.11</strong>：全插件<strong>文案大更新</strong>——重构了「功能说明」「常见问题 Q&A」「欢迎页介绍」以及各输入项的<strong>悬浮提示文字</strong>，让每一项功能（尤其是<strong>单元格组合 / 仅抓取模式 / 重要笔记 / 抓取后续字段</strong>）都讲得更清楚、更通俗；隐私与安全说明同步完善。</li>
               <li><strong>v1.8.10</strong>：修复「仅抓取」模式中「编辑」等按钮文本仍冒出的问题——按钮内部常再包一层 <code>&lt;span&gt;</code> 等标签，导致其文本未被识别为控件而显示出来并被拆行；现改为沿父链向上识别交互控件（按钮/链接/输入框），剔除其文本，且不影响同行合并与真正换行判断。</li>
             <li><strong>v1.8.9</strong>：修复「仅抓取」模式把右侧备注拆分成多行——网页常用 flex 把多个元素排在同一行，此前按「块=行」拆分导致同行内容被拆开；现改为<strong>按视觉行</strong>提取：同处一行（垂直位置接近）的文本自动合并为一行，真正换行才分行，仍忽略「编辑」等按钮文本。</li>
