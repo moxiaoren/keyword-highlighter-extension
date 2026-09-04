@@ -159,12 +159,12 @@ const ImportantNote = {
     .khin-item-body a { color: #1a73e8; text-decoration: none; }
     .khin-item-body a:hover { text-decoration: underline; }
     /* 重要笔记内图片（v1.8.2）：缩略显示，点击开新标签页看原图；不等比裁剪，完整等比缩放 */
-    .khin-item-body img { max-width: 180px; max-height: 180px; width: auto; height: auto; border-radius: 4px; margin: 4px 0; display: block; cursor: pointer; }
+    .khin-item-body img { max-width: var(--kh-img-size, 180px); max-height: var(--kh-img-size, 180px); width: auto; height: auto; border-radius: 4px; margin: 4px 0; display: block; cursor: pointer; }
     .khin-item-body img:hover { opacity: .92; }
     .khin-empty { padding: 20px; text-align: center; color: #aaa; font-size: 13px; }
     /* 抓取后续字段渲染的 Excel 表格 */
     .kh-table { border-collapse: collapse; margin-top: 4px; width: 100%; }
-    .kh-table td { border: 1px solid #d3dae3; padding: 3px 8px; font-size: 12px; line-height: 1.5; background: #fff; text-align: left; vertical-align: middle; }
+    .kh-table td { border: 1px solid #d3dae3; padding: 3px 8px; font-size: 12px; line-height: 1.5; background: #fff; text-align: left; vertical-align: middle; white-space: pre-line; /* 保留单元格内换行（备注多行内容不折叠）v1.8.3 */ }
   `,
 
   async init(config = null) {
@@ -175,6 +175,11 @@ const ImportantNote = {
     shadow.innerHTML = `<style>${this.STYLE}</style><div class="khin-wrap"></div>`;
     this.root = shadow.querySelector('.khin-wrap');
     document.body.appendChild(this.host);
+
+    // v1.8.3：图片缩略尺寸可配置（options「重要笔记」设置，默认 180px）
+    const inCfg = (config && config.importantNote) || {};
+    const imgSize = (inCfg.imgSize != null) ? Number(inCfg.imgSize) : 180;
+    if (imgSize > 0) this.host.style.setProperty('--kh-img-size', imgSize + 'px');
 
     // v1.8.2：点击重要笔记内的缩略图 → 新标签页打开原图（data: 图已内嵌、无需跳转）
     this.root.addEventListener('click', (e) => {

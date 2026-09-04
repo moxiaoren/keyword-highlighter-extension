@@ -27,6 +27,9 @@
         <li class="nav-item" data-section="note-card">
           <span class="nav-icon">💬</span> 备注卡片样式
         </li>
+        <li class="nav-item" data-section="important-note">
+          <span class="nav-icon">📌</span> 重要笔记
+        </li>
         <li class="nav-item" data-section="sites">
           <span class="nav-icon">🌐</span> 站点规则
         </li>
@@ -38,7 +41,7 @@
         </li>
       </ul>
       <div class="sidebar-footer">
-        <span class="version">v1.8.2</span>
+        <span class="version">v1.8.3</span>
       </div>
     </nav>
 
@@ -96,7 +99,7 @@
               <tr>
                 <th class="col-check"><input type="checkbox" id="checkAllPage" title="全选本页"></th>
                 <th class="col-kw">关键词</th>
-                <th class="col-cell" title="命中后横向右侧相邻单元格的期望值">后格期望值</th>
+                <th class="col-cell" title="单元格组合关键词的左格标题词（右格为核心，命中时右格须含关键词）">标题关键词(左格)</th>
                 <th class="col-impnote">重要笔记</th>
                 <th class="col-color">高亮颜色</th>
                 <th class="col-group">分组</th>
@@ -255,6 +258,23 @@
         </div>
       </section>
 
+      <!-- 重要笔记 -->
+      <section id="section-important-note" class="section">
+        <div class="section-header">
+          <h2>重要笔记</h2>
+          <button class="btn btn-secondary" id="btnResetImportantNote">恢复默认</button>
+        </div>
+        <div class="style-form">
+          <div class="form-row">
+            <div class="form-group">
+              <label>图片缩略尺寸 (px)</label>
+              <input type="number" id="inImgSize" value="180" min="40" max="600" step="10" class="text-input" style="width:110px">
+              <p style="font-size:12px;color:#888;margin-top:4px;line-height:1.6">重要笔记里图片的宽/高上限（px），等比缩放显示；点击图片可在新标签页查看原图。</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- 站点规则 -->
       <section id="section-sites" class="section">
         <div class="section-header">
@@ -372,11 +392,11 @@
 
             <h4>🧩 单元格组合关键词匹配</h4>
             <ul>
-              <li>勾选「单元格特别标注」并填写<strong>后格期望值</strong>后，只有当该关键词命中位置的<strong>横向右侧相邻单元格</strong>匹配期望值时这个词才生效（高亮 / 重要笔记），否则<strong>整条不显示</strong>。</li>
-              <li>支持两种结构：<strong>HTML 表格</strong>（<code>td</code> 的右侧相邻格），或文字中用 <code>|</code> / Tab 分隔的“假表格”（如 <code>是否刚需|否</code>）。</li>
-              <li><strong>匹配方式</strong>：默认「包含」（右侧格只要包含期望值即算命中，如 <code>否（暂缓）</code> 也算 <code>否</code>）；勾选「全词匹配」则要求右侧格整体与期望值相等。</li>
-              <li>可独立设置：<strong>后格区分大小写</strong>（勾选后 <code>wifi</code> 与 <code>WiFi</code> 视为不同）、<strong>后格使用正则</strong>（期望值按正则匹配，可搭配“全词”做整体匹配）。</li>
-              <li>可添加多条“同一关键词 + 不同后格”的规则（去重按<strong>前格 + 后格</strong>组合判断），便于同一词在不同语境下分别处理。</li>
+              <li>勾选「单元格特别标注」并填写<strong>标题关键词(左格)</strong>后，该关键词作为<strong>右格核心</strong>：仅当其<strong>左侧相邻单元格</strong>（或前段 <code>|</code>/Tab 分隔）命中此标题时，右格核心才生效（高亮 / 重要笔记 / 备注交互统一挂在右格），否则<strong>整条不显示</strong>。</li>
+              <li>支持两种结构：<strong>HTML 表格</strong>（左侧相邻格为标题），或文字中用 <code>|</code> / Tab 分隔的“假表格”（如 <code>是否刚需|否</code>，左段标题、右段核心）。</li>
+              <li><strong>匹配方式</strong>（作用于右格核心）：默认「包含」（右格只要包含关键词即算命中，如 <code>否（暂缓）</code> 也算 <code>否</code>）；勾选「全词匹配」则要求右格整体与该关键词相等。</li>
+              <li>可独立设置：<strong>核心区分大小写</strong>（勾选后 <code>wifi</code> 与 <code>WiFi</code> 视为不同）、<strong>核心使用正则</strong>（右格核心按正则匹配，可搭配“全词”做整体匹配）。</li>
+              <li>可添加多条“同一标题 + 不同核心”的规则（去重按<strong>标题 + 核心</strong>组合判断），便于同一标题下针对不同右格值分别处理。</li>
               <li>与「重要笔记」互相独立，可叠加使用。</li>
             </ul>
 
@@ -442,10 +462,11 @@
 
           <h3>📦 版本信息</h3>
           <div class="help-section">
-            <p>当前版本：<strong>v1.8.2</strong></p>
+            <p>当前版本：<strong>v1.8.3</strong></p>
             <p>更新日志：</p>
             <ul>
-              <li><strong>v1.8.2</strong>：重要笔记内的图片改为<strong>缩略显示</strong>（限宽高约 180px，等比完整显示、不裁剪），<strong>点击图片</strong>在<strong>新标签页</strong>打开原图完整尺寸；<code>data:image</code> 内嵌图已完整、点击不跳转。</li>
+              <li><strong>v1.8.3</strong>：单元格组合关键词改为以「右侧单元格为核心」——「关键词」填右格内容、「标题关键词(左格)」填左格标题，命中=左格标题命中且右格含关键词，高亮/备注/重要笔记/交互统一挂在右侧核心（左格标题不高亮）；存量组合关键词自动迁移（交换字段）。另：选项页新增「📌 重要笔记」设置区（可自定义图片缩略尺寸）；修复重要笔记表格中备注多行换行被折叠的问题。</li>
+            <li><strong>v1.8.2</strong>：重要笔记内的图片改为<strong>缩略显示</strong>（限宽高约 180px，等比完整显示、不裁剪），<strong>点击图片</strong>在<strong>新标签页</strong>打开原图完整尺寸；<code>data:image</code> 内嵌图已完整、点击不跳转。</li>
               <li><strong>v1.8.1</strong>：修复<strong>普通关键词与「单元格组合关键词」冲突</strong>——当普通关键词命中的正是组合关键词的期望值单元格时，原先会导致高亮流程抛异常中断、部分高亮缺失；现已改为所有文本处理完之后再统一执行期望值高亮，两者可正常共存、互不影响。</li>
               <li><strong>v1.8.0</strong>：重要笔记与备注卡片新增<strong>图片显示</strong>——填入 <code>![说明](图片网址)</code> 即可在笔记/备注中展示网络图片（支持 <code>http(s)://</code> 与 <code>data:image</code> 来源，非法来源自动忽略，防注入）；同时优化表格渲染（markdown 表格的<strong>分隔行</strong> <code>|---|---|</code> 自动剔除，不再显示成一行 <code>---</code>），并对表格块做<strong>安全清洗</strong>加固（手动伪造的表格占位块会被过滤，杜绝脚本注入风险）。</li>
               <li><strong>v1.7.11</strong>：左词与期望值<strong>高亮/互动样式统一</strong>——期望值片段改用与左侧关键词相同的 <code>kh-highlight</code> 样式（含悬停动效、过渡、内边距、手型），不再单独设置；备注悬浮窗与备注卡片的出现位置由「是否配置后期望值」自动决定（组合词在期望值处，普通词在关键词处）。</li>
@@ -564,8 +585,8 @@
               <li><strong>只在一个网站用</strong>：加一条白名单 <code>example.com</code>（域名·精确），其他网站都不高亮。</li>
               <li><strong>只排除一个网站</strong>：加一条黑名单 <code>example.com</code>（域名·精确），其余网站都高亮。</li>
             <h4>Q12：单元格组合关键词匹配是做什么的？怎么用？</h4>
-            <p>用于“既要词对、也要后面那格对才算”的场景。例如数据表里 <code>是否刚需|否</code>，你想让词「是否刚需」只在它右侧是 <code>否</code> 时才高亮。做法：编辑该关键词时勾选「单元格特别标注」，在“后格期望值”填 <code>否</code>，右侧格包含 / 等于“否”才高亮，否则整条不出。</p>
-            <p>几个细节：①支持 HTML 表格和文本 <code>|</code> / Tab 假表格；②“包含”与“全词”的区别——包含只要右侧格命中期望值即可（<code>否（暂缓）</code> 也算 <code>否</code>），全词要求右侧格整体等于期望值（<code>否（暂缓）</code> 不算）；③同一词可配多条不同后格规则并存，互不冲突；④右侧无相邻格或未命中时，该词<strong>不生效</strong>（不高亮）；⑤可与「重要笔记」叠加，命中且验证通过才弹笔记。</p>
+            <p>用于“既要词对、也要标题格对才算”的场景。例如数据表里 <code>是否刚需|否</code>，你想让右格值 <code>否</code> 只在它左格是 <code>是否刚需</code> 时才高亮。做法：编辑该关键词时勾选「单元格特别标注」，「关键词」填右格核心 <code>否</code>，再在“标题关键词(左格)”填 <code>是否刚需</code>——只有左侧命中「是否刚需」且右格包含 / 等于「否」时，右格核心「否」才高亮，否则整条不出。</p>
+            <p>几个细节：①支持 HTML 表格和文本 <code>|</code> / Tab 假表格（左段标题、右段核心）；②“包含”与“全词”的区别——包含只要右格命中核心即可（<code>否（暂缓）</code> 也算 <code>否</code>），全词要求右格整体等于核心（<code>否（暂缓）</code> 不算）；③同一标题可配多条不同核心规则并存，互不冲突；④右侧无相邻格或标题未命中时，该词<strong>不生效</strong>（不高亮）；⑤可与「重要笔记」叠加，命中且验证通过才弹笔记。</p>
             <li><strong>某站后台分页不用高亮</strong>：加一条黑名单，匹配对象选网址，<code>https://example.com/admin</code>（网址·前缀）。</li>
             </ul>
           </div>
@@ -638,10 +659,10 @@
             <div class="form-row">
               <div class="form-group" style="flex:3;">
                 <div class="label-row">
-                  <label for="editKwCellVerifyValue">后格期望值</label>
-                  <button type="button" class="hint-btn hint-up" data-tip="填写后生效：命中时校验其横向右侧相邻单元格是否符合此期望值，匹配才生效（高亮/重要笔记），否则不生效；留空则不校验。支持 HTML 表格 td（右侧相邻格）或文字中用 | / Tab 分隔（如：是否刚需|否）。">ⓘ</button>
+                  <label for="editKwCellVerifyValue">标题关键词 (左格)</label>
+                  <button type="button" class="hint-btn hint-up" data-tip="填写左格标题词后生效：该关键词作为「右格核心」，仅当其<strong>左侧相邻单元格</strong>（或前段 | / Tab 分隔）命中此标题词时，右格核心才生效（高亮/重要笔记/备注交互统一挂在右格）；否则整条不显示。留空则不校验。支持 HTML 表格 td（左侧相邻格）或文字中用 | / Tab 分隔（如：是否刚需|否）。">ⓘ</button>
                 </div>
-                <input type="text" id="editKwCellVerifyValue" placeholder="如：否（留空则不校验）" class="text-input">
+                <input type="text" id="editKwCellVerifyValue" placeholder="如：是否刚需（左格标题，留空则不校验）" class="text-input">
                 <div class="label-row" style="margin-top:6px;">
                   <label for="editKwFetchLabels">抓取后续字段</label>
                   <button type="button" class="hint-btn hint-up" id="btnFetchHint" data-tip="命中时自动读取这些「标签」右侧相邻单元格的内容，逐项追加到重要笔记。多个标签用 | 分隔，如：地址|籍贯。">ⓘ</button>
@@ -703,19 +724,19 @@
         </div>
         <div class="form-group">
           <label class="checkbox-label" style="display:flex;align-items:center;gap:6px;cursor:pointer;">
-            <input type="checkbox" id="bulkCellMode"> 🔗 批量添加「单元格组合内容匹配」（前格 + 后格期望值）
+            <input type="checkbox" id="bulkCellMode"> 🔗 批量添加「单元格组合匹配」（左格标题 + 右格核心）
           </label>
         </div>
         <div class="bulk-cell-opts" id="bulkCellOpts" style="display:none;">
           <div class="form-row">
             <div class="form-group">
-              <label class="checkbox-label"><input type="checkbox" id="bulkCellExact"> 后格全词匹配（整格相等）</label>
+              <label class="checkbox-label"><input type="checkbox" id="bulkCellExact"> 右格核心全词匹配（整格相等）</label>
             </div>
             <div class="form-group">
-              <label class="checkbox-label"><input type="checkbox" id="bulkCellCase"> 后格区分大小写</label>
+              <label class="checkbox-label"><input type="checkbox" id="bulkCellCase"> 右格核心区分大小写</label>
             </div>
             <div class="form-group">
-              <label class="checkbox-label"><input type="checkbox" id="bulkCellRegex"> 后格使用正则</label>
+              <label class="checkbox-label"><input type="checkbox" id="bulkCellRegex"> 右格核心使用正则</label>
             </div>
           </div>
           <div class="form-group">

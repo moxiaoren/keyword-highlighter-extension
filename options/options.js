@@ -41,6 +41,7 @@
       case 'groups': loadGroups(); break;
       case 'styles': loadStyles(); break;
       case 'note-card': loadNoteCardStyles(); break;
+      case 'important-note': loadImportantNoteStyles(); break;
       case 'sites': loadSiteRules(); break;
     }
   }
@@ -173,10 +174,10 @@
       const noteHtml = kw.note
         ? `<span class="kw-col-note" title="${escapeHtml(kw.note)}">${escapeHtml(kw.note)}</span>`
         : '<span style="color:#ddd">—</span>';
-      // 后格期望值
+      // 标题关键词（左格）——单元格组合翻转 v1.8.3
       const cellMode = kw.cellVerifyMatchMode === 'exact';
       const cellHtml = (kw.cellVerifyEnabled && kw.cellVerify)
-        ? `<span class="cell-val" title="后格期望值：${escapeHtml(kw.cellVerify)}（${cellMode ? '全词：整格相等' : '包含'}）">${escapeHtml(kw.cellVerify)}</span><span class="badge ${cellMode ? 'cell-exact' : 'cell-include'}">${cellMode ? '全词' : '包含'}</span>`
+        ? `<span class="cell-val" title="标题关键词(左格)：${escapeHtml(kw.cellVerify)}（右格核心${cellMode ? '整格相等' : '包含'}匹配）">${escapeHtml(kw.cellVerify)}</span><span class="badge ${cellMode ? 'cell-exact' : 'cell-include'}">${cellMode ? '全词' : '包含'}</span>`
         : '<span style="color:#ddd">—</span>';
       // 重要笔记（自身优先，其次分组统一笔记）
       let impNoteHtml = '<span style="color:#ddd">—</span>';
@@ -839,6 +840,21 @@
     notifyContentRefresh();
   }
 
+  // ========== 重要笔记 ==========
+  async function loadImportantNoteStyles() {
+    const data = await Storage.get(['importantNote']);
+    const cfg = data.importantNote || Storage.defaults.importantNote;
+    $('#inImgSize').value = (cfg && cfg.imgSize != null) ? cfg.imgSize : Storage.defaults.importantNote.imgSize;
+  }
+
+  async function saveImportantNoteStyle() {
+    const val = parseInt($('#inImgSize').value, 10);
+    const imgSize = (!isNaN(val) && val >= 40 && val <= 600) ? val : Storage.defaults.importantNote.imgSize;
+    $('#inImgSize').value = imgSize;
+    await Storage.set({ importantNote: { imgSize } });
+    notifyContentRefresh();
+  }
+
   // ========== 站点规则 ==========
   async function loadSiteRules() {
     const rules = await Storage.getSiteRules();
@@ -1011,7 +1027,7 @@
     const sep = $('#bulkSeparator').value === '\\t' ? '\t' : $('#bulkSeparator').value;
     const cell = $('#bulkCellMode').checked;
     if (cell) {
-      $('#bulkExample').textContent = `前格1${sep}后格期望值1\n前格2${sep}后格期望值2`;
+      $('#bulkExample').textContent = `左格标题1${sep}右格核心1${cell ? sep + '备注1' : ''}\n左格标题2${sep}右格核心2`;
     } else {
       $('#bulkExample').textContent = `关键词1${sep}备注内容1\n关键词2${sep}备注内容2`;
     }
@@ -1062,12 +1078,13 @@
       // 尝试按分隔符拆分
       const parts = line.split(sep);
       if (parts.length >= 2) {
-        text = (parts[0] || '').trim();
         if (cellMode) {
-          // 单元格组合模式：前格[sep]后格期望值[sep]备注(可选)
-          cellVerify = parts[1] ? parts[1].trim() : '';
+          // 单元格组合模式（v1.8.3 翻转）：左格标题[sep]右格核心[sep]备注(可选)
+          cellVerify = (parts[0] || '').trim(); // 左格标题词
+          text = (parts[1] || '').trim();        // 右格核心（即「关键词」位置内容）
           note = parts.slice(2).join(sep).trim();
         } else {
+          text = (parts[0] || '').trim();
           note = parts.slice(1).join(sep).trim();
         }
       } else {
@@ -1460,6 +1477,14 @@
     $('#btnResetNoteCardStyle')?.addEventListener('click', async () => {
       await Storage.set({ noteCardStyle: Storage.defaults.noteCardStyle });
       loadNoteCardStyles();
+      notifyContentRefresh();
+    });
+
+    // 重要笔记设置
+    $('#inImgSize')?.addEventListener('change', saveImportantNoteStyle);
+    $('#btnResetImportantNote')?.addEventListener('click', async () => {
+      await Storage.set({ importantNote: Storage.defaults.importantNote });
+      loadImportantNoteStyles();
       notifyContentRefresh();
     });
 
