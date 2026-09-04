@@ -41,7 +41,7 @@
         </li>
       </ul>
       <div class="sidebar-footer">
-        <span class="version">v1.8.10</span>
+        <span class="version">v1.8.11</span>
       </div>
     </nav>
 
@@ -349,7 +349,8 @@
           <div class="privacy-box">
             <p>✅ <strong>所有数据仅保存在您的本地浏览器中</strong>，不会上传到任何服务器。</p>
             <p>✅ 插件<strong>不采集</strong>网页内容、关键词和备注。</p>
-            <p>✅ 关键词匹配和备注显示<strong>完全在本地完成</strong>。</p>
+            <p>✅ 关键词匹配、高亮、备注展示<strong>完全在本地完成</strong>。</p>
+            <p>✅ 仅浏览网页时在你的本机查找并高亮，不做任何云端存储或分析。</p>
             <p>✅ 统计数据仅记录命中数量和网站域名，<strong>不记录具体网页内容</strong>。</p>
             <p>✅ 申请的权限（所有网站）仅用于在网页上查找和高亮关键词。</p>
           </div>
@@ -358,79 +359,72 @@
           <div class="help-section">
             <h4>🚀 快速上手</h4>
             <ol>
-              <li>在「关键词管理」中添加关键词，可附带备注内容。</li>
-              <li>打开任意网页，匹配到的关键词会自动高亮。</li>
-              <li>用鼠标<strong>点击</strong>高亮词（或按 Enter 聚焦后回车）即可查看并固定备注卡片。</li>
-              <li>鼠标<strong>悬停</strong>高亮词时，只显示浏览器原生的文本小悬浮框；不弹备注卡片。</li>
+              <li><strong>添加关键词</strong>：在「关键词管理」点「➕ 添加」，填关键词和备注即可用；进阶可设分组、颜色、匹配规则、单元格组合、重要笔记。</li>
+              <li><strong>打开网页</strong>：命中的关键词自动高亮；标记为「重要」的词会在右上角弹出笔记。</li>
+              <li><strong>看备注</strong>：<strong>点击</strong>高亮词（或按 Enter 聚焦后回车）弹出备注卡片；<strong>悬停</strong>只显示浏览器原生小提示，不弹卡片。</li>
+              <li><strong>快捷加词</strong>：工具栏弹窗点「＋ 快速添加」即可，不必进设置页。</li>
             </ol>
 
-            <h4>📝 关键词管理</h4>
+            <h4>🔑 关键词：基础用法</h4>
             <ul>
-              <li><strong>添加 / 编辑 / 删除</strong>：每个关键词可设置备注、分组、高亮颜色和匹配规则，可启用/禁用。</li>
-              <li><strong>批量导入</strong>：支持多行一次添加（关键字 | 备注），可选分隔符、分组、颜色和重复处理方式。</li>
-              <li><strong>搜索 / 筛选</strong>：可按关键词、备注搜索；按分组（含“未分组”）、状态（启用/禁用）、匹配方式筛选。</li>
-              <li><strong>排序</strong>：按最近更新 / 最近添加 / 名称 A→Z / Z→A 排序。</li>
-              <li><strong>分页</strong>：每页展示 50 条，数据量大时自动分页，不卡顿。</li>
-              <li><strong>批量操作</strong>：勾选多条后，可批量启用、禁用、移动分组、删除（二次确认）或取消选择。</li>
+              <li><strong>添加 / 编辑 / 删除 / 启用禁用</strong>：每个关键词可设备注、所属分组、高亮颜色、匹配规则。</li>
+              <li><strong>备注内容</strong>：支持 Markdown 与图片；多行换行原样保留；悬停高亮词可快速查看。</li>
+              <li><strong>匹配规则</strong>：<strong>区分大小写</strong>（默认忽略，勾选后区分）、<strong>全词</strong>（只匹配完整词，中文也按整词）、<strong>正则</strong>（高级，如 <code>\d+</code>、<code>\p{L}</code> 匹配任意中文/字母）——可叠加使用。</li>
+              <li><strong>管理</strong>：支持搜索、按分组/状态/匹配方式筛选、排序、分页；勾选后可<strong>批量</strong>启用、禁用、移动分组、设置备注/重要笔记、删除。</li>
             </ul>
 
-            <h4>📁 分组管理</h4>
+            <h4>🗂️ 分组</h4>
             <ul>
-              <li>可创建、编辑、删除分组，并设置分组的<strong>默认高亮颜色</strong>。</li>
-              <li>同一分组下的关键词<strong>颜色统一</strong>（分组颜色优先于关键词自身颜色）。</li>
-              <li>关键词加入分组后自动应用分组颜色；修改分组颜色时组内关键词同步更新。</li>
-              <li>通过批量操作可一键把多个关键词移动到指定分组。</li>
+              <li>可创建/编辑/删除分组，并设<strong>统一高亮颜色</strong>——组内关键词自动跟随，改分组色组内同步。</li>
+              <li>分组可整组标记<strong>重要</strong>并填统一<strong>重要笔记</strong>，省去逐个设置。</li>
+              <li>批量操作可一键把多个关键词移入指定分组。</li>
             </ul>
 
-            <h4>🎨 匹配规则</h4>
+            <h4>🧩 单元格组合：左格标题 + 右格内容</h4>
+            <p><strong>场景</strong>：数据表里想「先对标题、再标内容」。例如 <code>是否刚需 | 否</code>，只想让右格 <code>否</code> 在左格是「是否刚需」时才高亮/弹笔记。</p>
             <ul>
-              <li><strong>区分大小写</strong>：默认不区分大小写，可开启精确区分。</li>
-              <li><strong>全词匹配</strong>：只匹配完整独立的词（支持中文等 CJK 文本），不做部分匹配。</li>
-              <li><strong>正则表达式</strong>：高级模式，把关键词按正则解析（需自行转义特殊字符）。</li>
-              <li>多个关键词同时命中时，长匹配优先，避免重叠与嵌套高亮。</li>
+              <li><strong>怎么配</strong>：编辑关键词时展开「单元格组合」，在<strong>关键词</strong>填右格内容（如 <code>否</code>），在<strong>标题关键词(左格)</strong>填左格标题（如 <code>是否刚需</code>）。命中条件 = 左格标题命中 且 右格含核心；高亮/备注/重要笔记统一挂在右格。</li>
+              <li><strong>支持两种结构</strong>：真实 HTML 表格（取左侧相邻格当标题）；或文字中用竖线 <code>|</code> / Tab 分隔的「假表格」（左段标题、右段核心）。</li>
+              <li><strong>匹配方式</strong>：默认「包含」——右格只要包含核心即命中（<code>否（暂缓）</code> 也算 <code>否</code>）；勾选<strong>全词</strong>则要求右格整格等于核心。还可设<strong>区分大小写</strong>、<strong>用正则</strong>（配合「全词」可锁定右格为某类内容）。</li>
+              <li><strong>仅抓取模式</strong>：把「关键词」<strong>留空</strong>，只填「标题关键词」和「抓取后续字段」——当该标题格右侧有真实内容（非空、非 <code>-</code>、非纯标点）时，自动把右格内容抓进重要笔记，<strong>页面不产生任何高亮</strong>。适合「备注为空显示 -、仅当有真实内容时才展示备注」；右侧的「编辑」等按钮文字会自动剔除，右格按视觉行合并/分行并展示成表格。</li>
+              <li>同一标题可配多条不同核心的规则并存。</li>
             </ul>
 
-            <h4>🧩 单元格组合关键词匹配</h4>
+            <h4>📎 抓取后续字段</h4>
             <ul>
-              <li>勾选「单元格特别标注」并填写<strong>标题关键词(左格)</strong>后，该关键词作为<strong>右格核心</strong>：仅当其<strong>左侧相邻单元格</strong>（或前段 <code>|</code>/Tab 分隔）命中此标题时，右格核心才生效（高亮 / 重要笔记 / 备注交互统一挂在右格），否则<strong>整条不显示</strong>。</li>
-              <li>支持两种结构：<strong>HTML 表格</strong>（左侧相邻格为标题），或文字中用 <code>|</code> / Tab 分隔的“假表格”（如 <code>是否刚需|否</code>，左段标题、右段核心）。</li>
-              <li><strong>匹配方式</strong>（作用于右格核心）：默认「包含」（右格只要包含关键词即算命中，如 <code>否（暂缓）</code> 也算 <code>否</code>）；勾选「全词匹配」则要求右格整体与该关键词相等。</li>
-              <li>可独立设置：<strong>核心区分大小写</strong>（勾选后 <code>wifi</code> 与 <code>WiFi</code> 视为不同）、<strong>核心使用正则</strong>（右格核心按正则匹配，可搭配“全词”做整体匹配）。</li>
-              <li>可添加多条“同一标题 + 不同核心”的规则（去重按<strong>标题 + 核心</strong>组合判断），便于同一标题下针对不同右格值分别处理。</li>
-              <li>与「重要笔记」互相独立，可叠加使用。</li>
-            </ul>
-
-            <h4>🌐 网页高亮</h4>
-            <ul>
-              <li>自动查找并高亮关键词，动态加载的新内容也会自动高亮。</li>
-              <li>自动跳过 script、style、code、pre、input、textarea 等不适合高亮的区域。</li>
-              <li>支持 Shadow DOM 内的文本高亮（可在配置中开关）。</li>
-              <li>高亮不会破坏网页原有结构和脚本。</li>
-            </ul>
-
-            <h4>💬 备注卡片</h4>
-            <ul>
-              <li><strong>点击</strong>高亮词显示备注卡片，再点同词、点页面其他位置或点 ✕ 关闭。</li>
-              <li>卡片自动避让视口边缘，不会超出屏幕。</li>
-              <li>支持一键复制备注内容。</li>
-              <li>卡片样式（背景、文字、边框、圆角、阴影、宽度、透明度）可在「备注卡片样式」自定义。</li>
+              <li>命中关键词时，自动读取指定<strong>标签右侧单元格</strong>内容拼入重要笔记；多个标签用 <code>|</code> 分隔，如 <code>地址|籍贯</code>。</li>
+              <li>抓取内容在重要笔记里以<strong>表格形式</strong>规整展示（支持多行、多级合并单元格、多字段合并）。</li>
+              <li>字段末尾加 <code>#1</code>（如 <code>备注信息#1</code>）为<strong>简单模式</strong>：只取右侧相邻一个单元格，展示为 <code>字段 | 值</code>。</li>
+              <li>抓取时会自动剔除「编辑 / 查看更多」等按钮文字。</li>
             </ul>
 
             <h4>📌 重要笔记</h4>
             <ul>
-              <li>关键词或分组可<strong>标记为重要</strong>；分组勾选重要后，组内关键词自动生效，取消则自动取消。</li>
-              <li>重要关键词可单独填写一段<strong>重要笔记</strong>（长文本，与短备注相互独立）。</li>
-              <li>页面命中重要关键词且填有重要笔记时，会在<strong>右上角</strong>弹出置顶悬浮笔记组件。</li>
-              <li>多条命中会<strong>聚合</strong>在一个面板中，面板可<strong>拖动</strong>、可<strong>展开/收起</strong>为圆形小按钮。</li>
-              <li>可单条关闭某条笔记（当前页面会话内不再显示）。</li>
-              <li>重要笔记内容支持 Markdown，同样经过 XSS 防护。</li>
+              <li>关键词或整组都可<strong>标记为重要</strong>；重要词可单独填写一段<strong>重要笔记</strong>长文本。</li>
+              <li>命中且有笔记时，在<strong>右上角</strong>弹出置顶悬浮笔记；多条自动<strong>聚合</strong>在一个面板，可<strong>拖动</strong>、<strong>展开/收起</strong>成圆形小按钮（双击展开）、可单条关闭。</li>
+              <li>可配合「抓取后续字段 / 仅抓取模式」自动把页面内容拼入笔记；也支持图片显示与 Markdown。</li>
+              <li>页面隐藏元素（如菜单/模板）里的匹配不会误弹笔记。</li>
             </ul>
 
-            <h4>🌐 站点控制</h4>
+            <h4>💬 备注卡片</h4>
             <ul>
-              <li>默认所有网站生效；可在「站点规则」设置白名单或黑名单。</li>
-              <li>支持域名精确、子域名、URL 前缀、正则四种匹配方式。</li>
-              <li>工具栏弹窗可一键临时禁用当前站点，可全局暂停/恢复。</li>
+              <li><strong>点击</strong>高亮词显示备注卡片；再点同词、点页面其它位置或 ✕ 关闭。</li>
+              <li>卡片自动避让屏幕边缘；支持一键复制、展示图片。</li>
+              <li>卡片样式（背景、文字、边框、圆角、阴影、宽度、透明度）可在「备注卡片样式」页自定义。</li>
+            </ul>
+
+            <h4>🌐 网页高亮表现</h4>
+            <ul>
+              <li>自动高亮，动态加载的新内容也自动高亮；不破坏网页结构。</li>
+              <li>自动跳过 script、code、pre、输入框等不适合高亮的区域；支持 Shadow DOM 内文本（可开关）。</li>
+              <li>多个关键词同时命中时<strong>长匹配优先</strong>，避免重叠与嵌套高亮。</li>
+            </ul>
+
+            <h4>🎯 站点控制</h4>
+            <ul>
+              <li>默认所有网站生效；可在「站点规则」加<strong>白名单</strong>（只这些站高亮）或<strong>黑名单</strong>（这些站不高亮）。</li>
+              <li>支持按<strong>域名</strong>（整个网站）或<strong>网址</strong>（具体分页）匹配；匹配方式有域名精确、子域名、URL 前缀、正则。</li>
+              <li>工具栏弹窗可一键<strong>临时禁用本站</strong>、<strong>全局暂停/恢复</strong>；快捷键 <kbd>Ctrl+Shift+S</kbd> 最顺手。</li>
             </ul>
 
             <h4>⌨️ 快捷键</h4>
@@ -440,31 +434,32 @@
               <li><kbd>Ctrl+Shift+O</kbd>：打开设置页</li>
             </ul>
 
-            <h4>✍️ 备注格式</h4>
-            <p>备注内容支持基础 Markdown：</p>
+            <h4>✍️ 备注 / 笔记格式</h4>
+            <p>支持 Markdown 常用语法与图片：</p>
             <ul>
-              <li><code>**加粗**</code> → <b>加粗</b></li>
-              <li><code>*斜体*</code> → <i>斜体</i></li>
-              <li><code>[链接文字](https://example.com)</code> → 可点击链接</li>
-              <li>自动识别纯网址并生成可点击链接</li>
+              <li><code>**加粗**</code> → <b>加粗</b>；<code>*斜体*</code> → <i>斜体</i></li>
+              <li><code>[文字](网址)</code> → 可点击链接；纯网址自动转链接</li>
+              <li><code>![说明](图片网址)</code> → 显示图片（备注卡片 / 重要笔记均可，点击可看原图）</li>
+              <li>多行换行原样保留；<code>| 列1 | 列2 |</code> 可渲染成表格</li>
             </ul>
           </div>
 
           <h3>💾 数据管理</h3>
           <div class="help-section">
             <ul>
-              <li><strong>导出</strong>：可将全部关键词、分组、样式和站点规则导出为 JSON（含完整备份）或 CSV（仅关键词）。</li>
-              <li><strong>导入</strong>：支持从 JSON / CSV 恢复，导入前请先备份。</li>
-              <li><strong>重置</strong>：可一键清空所有本地数据并恢复默认设置。</li>
-              <li>所有数据仅保存在浏览器本地 <code>chrome.storage</code>，不依赖服务器。</li>
+              <li><strong>导出</strong>：把全部关键词、分组、样式、站点规则导出为 JSON（完整备份）或 CSV（仅关键词）。</li>
+              <li><strong>导入</strong>：从 JSON / CSV 恢复；建议导入前先导出备份。</li>
+              <li><strong>重置</strong>：一键清空所有本地数据并恢复默认设置。</li>
+              <li>所有数据仅保存在浏览器本地 <code>chrome.storage</code>，不依赖、不上传任何服务器。</li>
             </ul>
           </div>
 
-          <h3>📦 版本信息</h3>
+<h3>📦 版本信息</h3>
           <div class="help-section">
-            <p>当前版本：<strong>v1.8.10</strong></p>
+            <p>当前版本：<strong>v1.8.11</strong></p>
             <p>更新日志：</p>
             <ul>
+              <li><strong>v1.8.11</strong>：全插件<strong>文案大更新</strong>——重构了「功能说明」「常见问题 Q&A」「欢迎页介绍」以及各输入项的<strong>悬浮提示文字</strong>，让每一项功能（尤其是<strong>单元格组合 / 仅抓取模式 / 重要笔记 / 抓取后续字段</strong>）都讲得更清楚、更通俗；隐私与安全说明同步完善。</li>
               <li><strong>v1.8.10</strong>：修复「仅抓取」模式中「编辑」等按钮文本仍冒出的问题——按钮内部常再包一层 <code>&lt;span&gt;</code> 等标签，导致其文本未被识别为控件而显示出来并被拆行；现改为沿父链向上识别交互控件（按钮/链接/输入框），剔除其文本，且不影响同行合并与真正换行判断。</li>
             <li><strong>v1.8.9</strong>：修复「仅抓取」模式把右侧备注拆分成多行——网页常用 flex 把多个元素排在同一行，此前按「块=行」拆分导致同行内容被拆开；现改为<strong>按视觉行</strong>提取：同处一行（垂直位置接近）的文本自动合并为一行，真正换行才分行，仍忽略「编辑」等按钮文本。</li>
             <li><strong>v1.8.8</strong>：修复「仅抓取」模式右侧备注内容的展示格式——由纯文本改为<strong>多行表格</strong>渲染（复用抓取字段表格）：左侧为该行标题（合并多行）、右侧按行展示备注内容，完整保留换行与全部内容，自动剔除与标题重复的网页标题行、忽略「编辑」等按钮文本。</li>
@@ -544,68 +539,64 @@
 
           <h3>❓ 常见问题 Q&amp;A</h3>
           <div class="help-section">
-            <p>汇总使用过程中常见问题的解答，覆盖关键词、备注、重要笔记、站点规则、更新与隐私等。</p>
+            <p>汇总常见问题，覆盖高亮排查、单元格组合、仅抓取、重要笔记、站点规则、更新与隐私等。</p>
 
-            <h4>Q1：备注支持哪些格式？换行能保留吗？</h4>
-            <p>支持基础 Markdown：<code>**加粗**</code> → <b>加粗</b>、<code>*斜体*</code> → <i>斜体</i>、<code>[文字](网址)</code> → 可点击链接，纯网址也会自动变成链接。</p>
-            <p>换行可以保留：你输入的多行内容会<strong>原样显示</strong>（v1.6.4 起支持），无需加 <code>&lt;br&gt;</code>。</p>
+            <h4>Q1：高亮 / 备注没生效，先查什么？</h4>
+            <p>按顺序排查：① 工具栏弹窗里的<strong>总开关</strong>是否已开；② 本站是否被白名单/黑名单或「临时禁用」排除；③ 关键词是否<strong>已启用</strong>、匹配规则是否太严（全词 / 正则 / 区分大小写）；④ 单元格组合的<strong>左格标题是否对上</strong>、或「仅抓取」把右格判成了无内容；⑤ 动态加载的新内容通常会自动高亮，无需刷新。</p>
 
-            <h4>Q2：重要笔记为什么有时不弹、有时又弹？</h4>
-            <p>重要笔记只在<strong>同时满足</strong>三点时弹出：①关键词被标记为重要（关键词自身或所属分组勾选“重要”）；②该关键词填写了重要笔记内容；③页面真的命中该关键词，且该命中在<strong>可见区域</strong>。</p>
-            <p>常见排查：隐藏元素（如 <code>display:none</code> 的菜单/模板/隐藏层）里的匹配<strong>不再触发</strong>重要笔记（v1.6.7 修复）；若命中后消失（如弹窗关闭），面板会自动隐藏。</p>
+            <h4>Q2：备注 / 重要笔记支持哪些格式？</h4>
+            <p>支持基础 Markdown：<code>**加粗**</code>、<code>*斜体*</code>、<code>[文字](网址)</code>（纯网址自动转链接）、<code>![说明](图片网址)</code> 显示图片（可点击看原图）、<code>| 列1 | 列2 |</code> 渲染成表格。多行换行<strong>原样保留</strong>。</p>
 
-            <h4>Q3：检查更新/自动更新怎么用？没反应怎么办？</h4>
-            <p>打开工具栏弹窗，点「🔍 检查更新」会立即查询 GitHub 是否有新版本；有新版时点「更新」可自动下载并覆盖（配合本机辅助服务可一键完成，未启动时回退为手动下载）。</p>
-            <p>若点了没反应，多为网络无法访问 <code>github.com</code>（v1.6.5 起会明确提示失败/超时），可稍后重试或手动覆盖 v1.6.8 安装包。</p>
+            <h4>Q3：单元格组合（左格标题 + 右格内容）怎么用？</h4>
+            <p>适合「先对标题、再标内容」。以 <code>是否刚需 | 否</code> 为例：在<strong>关键词</strong>填 <code>否</code>、在<strong>标题关键词(左格)</strong>填 <code>是否刚需</code>。命中条件 = <strong>左格标题命中 且 右格含核心</strong>，二者同时满足才高亮/弹笔记，否则整条不出。真实表格取左邻格当标题；文字用 <code>|</code> / Tab 分隔亦可。配套选项：全词（右格整格相等）、区分大小写、用正则（配合全词可锁定右格为某类内容）。</p>
 
-            <h4>Q4：数据存在哪里？会不会泄露？</h4>
-            <p>所有关键词、备注、设置都保存在<strong>本地浏览器</strong>（<code>chrome.storage</code>），<strong>不上传任何服务器</strong>。插件只在你浏览网页时查找并高亮关键词，不采集网页内容、关键词和备注。</p>
+            <h4>Q4：「仅抓取」模式怎么配？为什么不显示高亮？</h4>
+            <p><strong>仅抓取</strong>＝把「关键词」<strong>留空</strong>，仅填「标题关键词」和「抓取后续字段」并勾选「重要」。当该标题格右侧<strong>有真实内容</strong>（非空、非 <code>-</code>、非纯标点）时，自动抓右格内容进重要笔记，<strong>页面不产生任何高亮</strong>——这正是它的设计（只收集、不打扰原页面）。右侧只有「编辑」等按钮、或内容为 <code>-</code>/空格时，视为无内容不命中；抓取时会自动剔除按钮文字、按视觉行合并/分行并展示成表格。</p>
 
-            <h4>Q5：黑名单和白名单有什么区别？</h4>
-            <p>🚫 <strong>黑名单</strong>：加入的站点<strong>不</strong>高亮，其他网站照常生效（适合「只排除个别网站」）。</p>
-            <p>✅ <strong>白名单</strong>：<strong>只有</strong>加入的站点才高亮，其他网站一律不高亮（适合「只在一两个网站用」）。</p>
-            <p>是否有“模式”开关？没有——规则是否生效由你添加的<strong>每一条规则自身的类型</strong>决定（v1.6.8 已移除易误导的模式单选）。</p>
+            <h4>Q5：重要笔记什么时候弹？怎么不弹了？</h4>
+            <p>需<strong>同时满足</strong>：① 关键词或所属分组标记为<strong>重要</strong>；② 填有重要笔记 / 或走「抓取 / 仅抓取」模式产生了内容；③ 页面确实命中且内容在可见区。隐藏元素（菜单/模板）里的匹配不会弹。面板支持拖动、展开/收起成小圆钮、单条关闭。</p>
 
-            <h4>Q6：匹配对象“域名/网址”有什么区别？</h4>
-            <p><strong>域名</strong>：按网站域名匹配，例如 <code>example.com</code> 作用于整个网站。</p>
-            <p><strong>网址</strong>：按完整网址（含路径）匹配，例如 <code>https://example.com/admin</code> —— 可针对同一站点下的<strong>某个分页</strong>单独处理，其他页面不受影响。</p>
+            <h4>Q6：白名单和黑名单有什么区别？</h4>
+            <p>🚫 <strong>黑名单</strong>＝这些站点<strong>不高亮</strong>，其余照常（适合「只排除个别网站」）；✅ <strong>白名单</strong>＝<strong>只有</strong>这些站点高亮（适合「只在某几个站用」）。生效与否由<strong>每条规则自身的类型</strong>决定，没有全局"模式"开关。</p>
 
-            <h4>Q7：匹配方式有哪几种？</h4>
+            <h4>Q7：匹配对象选「域名」还是「网址」？</h4>
+            <p><strong>域名</strong>＝整个网站（如 <code>example.com</code>）；<strong>网址</strong>＝具体分页（如 <code>example.com/admin</code>），可让同一站的不同列表页 / 后台页单独生效或失效，互不影响。</p>
+
+            <h4>Q8：设了站点规则但没生效？</h4>
+            <p>排查顺序：① 是否「临时禁用」了本站（该开关优先级最高）；② 网址级 / 域名级规则是否写对；③ 未命中任何规则时——<strong>只要存在白名单</strong>，白名单以外的站点一律不高亮；<strong>没有白名单</strong>则默认高亮。黑名单只影响它命中的站点。</p>
+
+            <h4>Q9：如何更新到新版本？</h4>
+            <p>工具栏弹窗点「🔍 检查更新」，有新版本点「更新」自动下载覆盖（配合本机辅助服务可一键完成）。若提示网络异常，稍后重试或手动覆盖安装包。建议更新前在「数据管理」先导出备份。</p>
+
+            <h4>Q10：数据会泄露吗？</h4>
+            <p>不会。所有关键词、备注、设置、统计仅保存在<strong>本地浏览器</strong>，<strong>不上传任何服务器</strong>；匹配、高亮、笔记展示完全在本地完成，仅申请浏览网页所需的最小权限。</p>
+
+            <h4>Q11：常见场景速配</h4>
             <ul>
-              <li><strong>域名精确匹配</strong>：仅匹配该域名本身。</li>
-              <li><strong>子域名匹配</strong>：覆盖该域名及其所有子域名（如 <code>mail.example.com</code>）。</li>
-              <li><strong>URL 前缀匹配</strong>：以指定开头即命中。</li>
-              <li><strong>正则表达式</strong>：用正则灵活匹配（需自行转义）。</li>
-            </ul>
-
-            <h4>Q8：设了站点规则为什么没生效？</h4>
-            <p>按优先级排查：① popup 里是否「临时禁用」了本站（徽标显示“已禁用”，优先级最高，会盖过规则）；② 网址级规则；③ 域名级规则；④ 未命中任何规则时：<strong>不存在白名单</strong>则默认高亮；<strong>只要存在任意一条白名单</strong>，则未命中的站点一律不高亮（白名单以外的网站都不生效）。黑名单只影响它命中的那一站点，不改变其他网站的默认状态。</p>
-
-            <h4>Q9：同一网站的不同分页想用不同规则，能做到吗？</h4>
-            <p>可以。添加规则时匹配对象选<strong>网址</strong>：例如某站列表页想高亮、后台页不高亮，就给后台网址加一条黑名单（网址·前缀），其他页面不受影响。</p>
-
-            <h4>Q10：改完规则需要刷新页面才生效吗？</h4>
-            <p>大部分情况<strong>无需手动刷新</strong>——保存后会自动重新评估并刷新当前页高亮；SPA 站内分页切换也随网址变化<strong>即时生效</strong>（v1.4.0 起）。仅偶尔出现旧高亮残留时按 <kbd>Ctrl+F5</kbd> 刷一次。</p>
-
-            <h4>Q11：常见站点配置场景怎么弄？</h4>
-            <ul>
-              <li><strong>只在一个网站用</strong>：加一条白名单 <code>example.com</code>（域名·精确），其他网站都不高亮。</li>
-              <li><strong>只排除一个网站</strong>：加一条黑名单 <code>example.com</code>（域名·精确），其余网站都高亮。</li>
-            <h4>Q12：单元格组合关键词匹配是做什么的？怎么用？</h4>
-            <p>用于“既要词对、也要标题格对才算”的场景。例如数据表里 <code>是否刚需|否</code>，你想让右格值 <code>否</code> 只在它左格是 <code>是否刚需</code> 时才高亮。做法：编辑该关键词时勾选「单元格特别标注」，「关键词」填右格核心 <code>否</code>，再在“标题关键词(左格)”填 <code>是否刚需</code>——只有左侧命中「是否刚需」且右格包含 / 等于「否」时，右格核心「否」才高亮，否则整条不出。</p>
-            <p>几个细节：①支持 HTML 表格和文本 <code>|</code> / Tab 假表格（左段标题、右段核心）；②“包含”与“全词”的区别——包含只要右格命中核心即可（<code>否（暂缓）</code> 也算 <code>否</code>），全词要求右格整体等于核心（<code>否（暂缓）</code> 不算）；③同一标题可配多条不同核心规则并存，互不冲突；④右侧无相邻格或标题未命中时，该词<strong>不生效</strong>（不高亮）；⑤可与「重要笔记」叠加，命中且验证通过才弹笔记。</p>
-            <li><strong>某站后台分页不用高亮</strong>：加一条黑名单，匹配对象选网址，<code>https://example.com/admin</code>（网址·前缀）。</li>
+              <li><strong>只在某站用</strong>：白名单加该域名（域名·精确）。</li>
+              <li><strong>排除某个站</strong>：黑名单加该域名。</li>
+              <li><strong>后台页不高亮</strong>：黑名单，匹配对象选「网址」，填后台网址前缀。</li>
+              <li><strong>表格先对标题再标内容</strong>：用「单元格组合」（关键词=右格、标题关键词=左格）。</li>
+              <li><strong>备注为空显示 -、仅展示有内容的备注</strong>：用「仅抓取」模式（关键词留空 + 标题关键词 + 抓取后续字段 + 重要）。</li>
             </ul>
           </div>
 
-          <h3>🛡️ 安全说明</h3>
+<h3>🛡️ 安全说明</h3>
           <ul>
             <li>备注内容渲染经过 XSS 防护，不支持 script 注入。</li>
             <li>高亮插入不会破坏网页原有结构和脚本。</li>
             <li>插件仅申请必要的最小权限。</li>
           </ul>
 
-          <h3>📧 反馈与支持</h3>
+          <h3>🛡️ 安全说明</h3>
+          <ul>
+            <li><strong>本地处理</strong>：关键词匹配、高亮、备注展示全部在本地完成，不上传任何网页或关键词数据。</li>
+            <li><strong>内容安全</strong>：备注 / 笔记与抓取的网页内容经 XSS 防护清洗后再渲染，不会执行页面上注入的脚本；外部图片链接受控。</li>
+            <li><strong>最小权限</strong>：仅申请在网页上运行所需的权限，用于查找与高亮关键词，不读取无关数据。</li>
+            <li><strong>可备份</strong>：全部数据支持本地导出（JSON）随时备份、恢复或迁移。</li>
+          </ul>
+
+<h3>📧 反馈与支持</h3>
           <p>如有问题或建议，欢迎通过插件评论区反馈。</p>
         </div>
         </div>
@@ -639,7 +630,7 @@
               <div class="form-group" style="flex:3;">
                 <div class="label-row">
                   <label for="editKwNote">备注内容</label>
-                  <button type="button" class="hint-btn" id="btnKwNoteHint" data-tip="支持 Markdown：**加粗**、*斜体*、[文字](网址)；纯网址自动变成可点击链接；多行输入换行原样保留。">ⓘ</button>
+                  <button type="button" class="hint-btn" id="btnKwNoteHint" data-tip="支持 Markdown 与图片：**加粗**、*斜体*、[文字](网址)、![说明](图片网址)；纯网址自动转链接；多行换行原样保留。">ⓘ</button>
                 </div>
                 <textarea id="editKwNote" placeholder="备注内容（支持 Markdown）" rows="2" class="text-input"></textarea>
               </div>
@@ -667,12 +658,12 @@
               <div class="form-group" style="flex:3;">
                 <div class="label-row">
                   <label for="editKwCellVerifyValue">标题关键词 (左格)</label>
-                  <button type="button" class="hint-btn hint-up" data-tip="填写左格标题词后生效：该关键词作为「右格核心」，仅当其<strong>左侧相邻单元格</strong>（或前段 | / Tab 分隔）命中此标题词时，右格核心才生效（高亮/重要笔记/备注交互统一挂在右格）；否则整条不显示。留空则不校验。支持 HTML 表格 td（左侧相邻格）或文字中用 | / Tab 分隔（如：是否刚需|否）。">ⓘ</button>
+                  <button type="button" class="hint-btn hint-up" data-tip="填左格标题后开启「单元格组合」：<strong>关键词</strong>作为右格核心，仅当<strong>左侧相邻单元格</strong>（或前段 | / Tab 分隔）命中此标题时才生效（高亮/重要笔记/交互统一挂右格），否则整条不显示；留空则不校验。把「关键词」留空、再填下面的「抓取后续字段」即进入<strong>仅抓取模式</strong>（抓右格内容进重要笔记、页面不高亮）。支持 HTML 表格，或 | / Tab 分隔（如：是否刚需|否）。">ⓘ</button>
                 </div>
                 <input type="text" id="editKwCellVerifyValue" placeholder="如：是否刚需（左格标题，留空则不校验）" class="text-input">
                 <div class="label-row" style="margin-top:6px;">
                   <label for="editKwFetchLabels">抓取后续字段</label>
-                  <button type="button" class="hint-btn hint-up" id="btnFetchHint" data-tip="命中时自动读取这些「标签」右侧相邻单元格的内容，逐项追加到重要笔记。多个标签用 | 分隔，如：地址|籍贯。">ⓘ</button>
+                  <button type="button" class="hint-btn hint-up" id="btnFetchHint" data-tip="命中时自动读取这些「标签」右侧相邻单元格内容，逐项拼入重要笔记（表格展示）。多个标签用 | 分隔，如：地址|籍贯；字段后加 #1（如 备注信息#1）= 简单模式，只取相邻一格显示为「字段 | 值」。抓取时自动剔除「编辑」等按钮文字。">ⓘ</button>
                 </div>
                 <input type="text" id="editKwFetchLabels" placeholder="多个用 | 分隔，如：地址|籍贯" class="text-input">
               </div>
@@ -695,12 +686,12 @@
             <div class="form-group">
               <div class="label-row">
                 <label class="checkbox-label"><input type="checkbox" id="editKwImportant"><span>📌 标记为重要（命中时右上角悬浮展示）</span></label>
-                <button type="button" class="hint-btn hint-up" data-tip="标记为重要后，命中时会在右上角弹出置顶悬浮笔记；可配合「重要笔记」填写置顶内容，也可用「抓取后续字段」自动拼入页面字段。">ⓘ</button>
+                <button type="button" class="hint-btn hint-up" data-tip="标记为重要后，命中时在右上角弹出置顶悬浮笔记（可拖动、展开/收起、多条聚合）。可自己填写「重要笔记」，也可用「抓取后续字段 / 仅抓取」自动拼入页面内容。">ⓘ</button>
               </div>
               <div id="importantNoteWrap" style="display:none; margin-top:8px;">
                 <div class="label-row">
                   <label for="editKwImportantNote">重要笔记（长文本，命中时置顶显示）</label>
-                  <button type="button" class="hint-btn hint-up" id="btnKwImportantNoteHint" data-tip="与备注不同：命中时显示在右上角置顶面板（可拖动、可展开/收起）。支持 Markdown。">ⓘ</button>
+                  <button type="button" class="hint-btn hint-up" id="btnKwImportantNoteHint" data-tip="与备注不同：命中时显示在右上角置顶面板（可拖动、可展开/收起）；支持 Markdown 与图片。">ⓘ</button>
                 </div>
                 <textarea id="editKwImportantNote" placeholder="输入重要注意事项…（可写很长）" rows="2" class="text-input"></textarea>
                 <div class="label-row" style="margin-top:8px;">
