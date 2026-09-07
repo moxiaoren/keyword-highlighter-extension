@@ -525,6 +525,14 @@
     // 根据勾选状态显示/隐藏 单元格标注细节 与 重要笔记输入
     toggleKwSections();
 
+    // v1.8.13 编辑已有关键词时，按内容自动展开对应折叠区（无内容保持默认折叠）
+    const hasCell = !!(keyword && (keyword.cellVerify || keyword.fetchLabels));
+    const hasImp  = !!(keyword && (keyword.important || keyword.importantNote));
+    const cellSec = $('#kwCellSection');
+    const impSec  = $('#kwImportantSection');
+    if (cellSec) cellSec.classList.toggle('closed', !hasCell);
+    if (impSec)  impSec.classList.toggle('closed', !hasImp);
+
     // 加载分组选项
     loadGroupOptions(keyword?.groupId || '');
 

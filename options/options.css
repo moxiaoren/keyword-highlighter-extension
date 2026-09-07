@@ -251,6 +251,12 @@ textarea.text-input {
   resize: vertical;
 }
 
+/* v1.8.13 重要笔记输入框填满弹窗右侧空白，便于查看/编辑长文本 */
+#keywordModal #editKwImportantNote {
+  width: 100%;
+  box-sizing: border-box;
+}
+
 /* 表单 */
 .form-group {
   margin-bottom: 8px;
