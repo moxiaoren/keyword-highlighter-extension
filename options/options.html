@@ -27,9 +27,6 @@
         <li class="nav-item" data-section="note-card">
           <span class="nav-icon">💬</span> 备注卡片样式
         </li>
-        <li class="nav-item" data-section="important-note">
-          <span class="nav-icon">📌</span> 重要笔记
-        </li>
         <li class="nav-item" data-section="sites">
           <span class="nav-icon">🌐</span> 站点规则
         </li>
@@ -41,7 +38,7 @@
         </li>
       </ul>
       <div class="sidebar-footer">
-        <span class="version">v1.8.14</span>
+        <span class="version">v1.8.15</span>
       </div>
     </nav>
 
@@ -258,23 +255,6 @@
         </div>
       </section>
 
-      <!-- 重要笔记 -->
-      <section id="section-important-note" class="section">
-        <div class="section-header">
-          <h2>重要笔记</h2>
-          <button class="btn btn-secondary" id="btnResetImportantNote">恢复默认</button>
-        </div>
-        <div class="style-form">
-          <div class="form-row">
-            <div class="form-group">
-              <label>图片缩略尺寸 (px)</label>
-              <input type="number" id="inImgSize" value="180" min="40" max="600" step="10" class="text-input" style="width:110px">
-              <p style="font-size:12px;color:#888;margin-top:4px;line-height:1.6">重要笔记里图片的宽/高上限（px），等比缩放显示；点击图片可在新标签页查看原图。</p>
-            </div>
-          </div>
-        </div>
-      </section>
-
       <!-- 站点规则 -->
       <section id="section-sites" class="section">
         <div class="section-header">
@@ -456,9 +436,10 @@
 
 <h3>📦 版本信息</h3>
           <div class="help-section">
-            <p>当前版本：<strong>v1.8.14</strong></p>
+            <p>当前版本：<strong>v1.8.15</strong></p>
             <p>更新日志：</p>
             <ul>
+              <li><strong>v1.8.15</strong>：① 重要笔记新增<strong>实时预览</strong>——在「添加/编辑关键词」弹窗里，填重要笔记时下方会实时显示渲染效果（<code>![说明](网址)</code> 直接显示成图片、加粗/表格等格式按实际效果呈现），网址再长也不影响查看观感；② 移除主页「重要笔记」页的<strong>图片缩略尺寸</strong>设置——该设置已下沉到每个关键词的编辑弹窗（每词独立设置，留空用默认 180），主页的全局设置入口属重复冗余，已删除并清理相关残留逻辑。</li>
               <li><strong>v1.8.14</strong>：修复<strong>取消/保存按钮跟随滚动</strong>的问题——当添加/编辑关键词弹窗内容很多时，原版本「取消/保存」会一起滚出视口；现改为只有「基本信息 / 单元格组合 / 重要」三个模块在内容过长时内部滚动，标题栏和底部的取消/保存按钮始终固定在弹窗上，操作更顺手。</li>
               <li><strong>v1.8.13</strong>：「添加/编辑关键词」界面优化——① <strong>重要笔记输入框加宽</strong>，填满弹窗右侧空白，内容多时查看、修改更方便；② <strong>编辑已有关键词时按内容自动展开</strong>：只要「单元格组合」里填了标题关键词/抓取后续字段，或「重要」里勾了重要/写了重要笔记，对应折叠区就会自动展开，不用再手动点开；无进阶内容的词仍保持默认折叠，更紧凑。</li>
               <li><strong>v1.8.12</strong>：修复重要笔记里 <strong>markdown 表格单元格中的图片不显示</strong>的问题（此前表格先于图片解析，单元格内的 <code>![说明](网址)</code> 只能显示成文字；现改为表格内图片正常渲染）；同时把重要笔记内的多张图片由竖排改为<strong>横排</strong>显示，多图不再一张占一行、更省空间。</li>
@@ -697,9 +678,14 @@
                   <button type="button" class="hint-btn hint-up" id="btnKwImportantNoteHint" data-tip="与备注不同：命中时显示在右上角置顶面板（可拖动、可展开/收起）；支持 Markdown 与图片。">ⓘ</button>
                 </div>
                 <textarea id="editKwImportantNote" placeholder="输入重要注意事项…（可写很长）" rows="2" class="text-input"></textarea>
+                <div class="label-row" style="margin-top:10px;">
+                  <label>实时预览</label>
+                  <button type="button" class="hint-btn hint-up" data-tip="此处实时展示重要笔记的渲染效果：填入 <code>![说明](图片网址)</code> 即可直接看到图片；<code>**加粗**</code>、表格等多行格式也会按页面展示的样子呈现。">ⓘ</button>
+                </div>
+                <div id="impNotePreview" class="imp-note-preview"><span class="pv-empty">勾选「标记为重要」后，这里会实时预览效果（图片、加粗、表格等格式直接显示）</span></div>
                 <div class="label-row" style="margin-top:8px;">
                   <label for="editKwImgSize">图片缩略尺寸 (px)</label>
-                  <span style="font-size:11px;color:#999">（本词独立设置，40–600，留空用全局默认 180）</span>
+                  <span style="font-size:11px;color:#999">（本词独立设置，40–600，留空用默认 180）</span>
                 </div>
                 <input type="number" id="editKwImgSize" min="40" max="600" step="10" placeholder="默认 180" class="text-input" style="width:180px;">
               </div>
@@ -933,6 +919,7 @@
   </div>
 
   <script src="../lib/storage.js"></script>
+  <script src="../lib/utils.js"></script>
   <script src="options.js"></script>
 </body>
 </html>

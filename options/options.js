@@ -41,7 +41,6 @@
       case 'groups': loadGroups(); break;
       case 'styles': loadStyles(); break;
       case 'note-card': loadNoteCardStyles(); break;
-      case 'important-note': loadImportantNoteStyles(); break;
       case 'sites': loadSiteRules(); break;
     }
   }
@@ -500,6 +499,14 @@
     if (nw) nw.style.display = $('#editKwImportant').checked ? 'block' : 'none';
   }
 
+  // v1.8.13 重要笔记输入框实时渲染预览（便于查看长文本/表格/图片整体效果）
+  function renderImportantNotePreview() {
+    const out = $('#impNotePreview');
+    if (!out) return;
+    const v = $('#editKwImportantNote')?.value || '';
+    out.innerHTML = v.trim() ? Utils.sanitizeHTML(v) : '<span class="pv-empty">（尚未填写，输入后实时预览）</span>';
+  }
+
   function showKeywordModal(keyword = null) {
     editingKeywordId = keyword ? keyword.id : null;
     editingKeyword = keyword || null;
@@ -524,6 +531,8 @@
 
     // 根据勾选状态显示/隐藏 单元格标注细节 与 重要笔记输入
     toggleKwSections();
+    // v1.8.13 打开弹窗时刷新重要笔记实时预览
+    renderImportantNotePreview();
 
     // v1.8.13 编辑已有关键词时，按内容自动展开对应折叠区（无内容保持默认折叠）
     const hasCell = !!(keyword && (keyword.cellVerify || keyword.fetchLabels));
@@ -851,21 +860,6 @@
     };
     await Storage.set({ noteCardStyle: style });
     updateNoteCardPreview();
-    notifyContentRefresh();
-  }
-
-  // ========== 重要笔记 ==========
-  async function loadImportantNoteStyles() {
-    const data = await Storage.get(['importantNote']);
-    const cfg = data.importantNote || Storage.defaults.importantNote;
-    $('#inImgSize').value = (cfg && cfg.imgSize != null) ? cfg.imgSize : Storage.defaults.importantNote.imgSize;
-  }
-
-  async function saveImportantNoteStyle() {
-    const val = parseInt($('#inImgSize').value, 10);
-    const imgSize = (!isNaN(val) && val >= 40 && val <= 600) ? val : Storage.defaults.importantNote.imgSize;
-    $('#inImgSize').value = imgSize;
-    await Storage.set({ importantNote: { imgSize } });
     notifyContentRefresh();
   }
 
@@ -1429,6 +1423,8 @@
 
     // 单元格标注 / 重要笔记 勾选时展开对应细节
     $('#editKwImportant')?.addEventListener('change', toggleKwSections);
+    // v1.8.13 键入重要笔记时实时刷新预览
+    $('#editKwImportantNote')?.addEventListener('input', renderImportantNotePreview);
     // 说明文字均采用「ⓘ + 悬浮气泡」展示（CSS hover），无需 JS。
 
 
@@ -1491,14 +1487,6 @@
     $('#btnResetNoteCardStyle')?.addEventListener('click', async () => {
       await Storage.set({ noteCardStyle: Storage.defaults.noteCardStyle });
       loadNoteCardStyles();
-      notifyContentRefresh();
-    });
-
-    // 重要笔记设置
-    $('#inImgSize')?.addEventListener('change', saveImportantNoteStyle);
-    $('#btnResetImportantNote')?.addEventListener('click', async () => {
-      await Storage.set({ importantNote: Storage.defaults.importantNote });
-      loadImportantNoteStyles();
       notifyContentRefresh();
     });
 

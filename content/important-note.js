@@ -176,10 +176,9 @@ const ImportantNote = {
     this.root = shadow.querySelector('.khin-wrap');
     document.body.appendChild(this.host);
 
-    // v1.8.3：图片缩略尺寸可配置（options「重要笔记」设置，默认 180px）
-    const inCfg = (config && config.importantNote) || {};
-    const imgSize = (inCfg.imgSize != null) ? Number(inCfg.imgSize) : 180;
-    if (imgSize > 0) this.host.style.setProperty('--kh-img-size', imgSize + 'px');
+    // v1.8.15：全局图片默认尺寸固定为 180px（每词可单独在编辑弹窗设置，主页「重要笔记」配置模块已移除），
+    // 不再读取可能残留的 importantNote.imgSize 旧配置，避免语义残留。
+    this.host.style.setProperty('--kh-img-size', '180px');
 
     // v1.8.2：点击重要笔记内的缩略图 → 新标签页打开原图（data: 图已内嵌、无需跳转）
     this.root.addEventListener('click', (e) => {

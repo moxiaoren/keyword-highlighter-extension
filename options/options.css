@@ -1255,6 +1255,45 @@ opacity: 0.96;
 .form-section .form-group:last-child { margin-bottom: 0; }
 .form-section .form-group-noborder { margin-top: 10px; padding-top: 10px; border-top: 1px dashed #e3e8ef; }
 
+/* v1.8.13 重要笔记实时预览区 */
+.imp-note-preview {
+  margin-top: 6px;
+  padding: 10px 12px;
+  background: #f7f9fc;
+  border: 1px dashed #d5dded;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: #333;
+  max-height: 180px;
+  overflow-y: auto;
+  word-break: break-word;
+}
+.imp-note-preview .pv-empty {
+  color: #b5c0d0;
+}
+.imp-note-preview img {
+  max-width: 180px;
+  max-height: 180px;
+  object-fit: contain;
+  border-radius: 4px;
+  margin: 4px 8px 4px 0;
+  vertical-align: middle;
+  background: #fff;
+  border: 1px solid #e3e8ef;
+  display: inline-block;
+}
+.imp-note-preview table {
+  border-collapse: collapse;
+  margin: 4px 0;
+  font-size: 12px;
+}
+.imp-note-preview th, .imp-note-preview td {
+  border: 1px solid #d5dded;
+  padding: 3px 8px;
+  background: #fff;
+}
+
 /* 标签与说明按钮同行 */
 .label-row {
   display: flex;
