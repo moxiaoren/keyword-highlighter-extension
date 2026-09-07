@@ -1255,44 +1255,60 @@ opacity: 0.96;
 .form-section .form-group:last-child { margin-bottom: 0; }
 .form-section .form-group-noborder { margin-top: 10px; padding-top: 10px; border-top: 1px dashed #e3e8ef; }
 
-/* v1.8.13 重要笔记实时预览区 */
-.imp-note-preview {
-  margin-top: 6px;
+/* v1.8.16 重要笔记富文本编辑（所见即所得） */
+.kw-note-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.btn-mini {
+  padding: 3px 10px;
+  font-size: 12px;
+  border-radius: 5px;
+  border: 1px solid #d5dded;
+  background: #f5f7fb;
+  color: #444;
+  cursor: pointer;
+  white-space: nowrap;
+  line-height: 1.6;
+}
+.btn-mini:hover { background: #e9eef7; border-color: #b8c4da; }
+.kw-note-editor {
+  min-height: 88px;
+  max-height: 200px;
+  overflow-y: auto;
   padding: 10px 12px;
-  background: #f7f9fc;
-  border: 1px dashed #d5dded;
+  border: 1px solid #d5dded;
   border-radius: 8px;
+  background: #fff;
   font-size: 13px;
   line-height: 1.7;
   color: #333;
-  max-height: 180px;
-  overflow-y: auto;
   word-break: break-word;
+  outline: none;
 }
-.imp-note-preview .pv-empty {
+.kw-note-editor:focus { border-color: #7aa2e0; box-shadow: 0 0 0 2px rgba(122,162,224,.15); }
+.kw-note-editor:empty::before {
+  content: attr(data-placeholder);
   color: #b5c0d0;
+  pointer-events: none;
 }
-.imp-note-preview img {
+.kw-note-editor img {
   max-width: 180px;
   max-height: 180px;
   object-fit: contain;
   border-radius: 4px;
   margin: 4px 8px 4px 0;
   vertical-align: middle;
-  background: #fff;
   border: 1px solid #e3e8ef;
+  background: #fafbfc;
   display: inline-block;
+  cursor: pointer;
 }
-.imp-note-preview table {
-  border-collapse: collapse;
-  margin: 4px 0;
-  font-size: 12px;
-}
-.imp-note-preview th, .imp-note-preview td {
-  border: 1px solid #d5dded;
-  padding: 3px 8px;
-  background: #fff;
-}
+.kw-note-editor img:hover { box-shadow: 0 0 0 2px #7aa2e0; }
+.kw-note-editor table { border-collapse: collapse; margin: 4px 0; font-size: 12px; }
+.kw-note-editor th, .kw-note-editor td { border: 1px solid #d5dded; padding: 3px 8px; background: #fff; }
 
 /* 标签与说明按钮同行 */
 .label-row {

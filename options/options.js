@@ -497,14 +497,137 @@
   function toggleKwSections() {
     const nw = $('#importantNoteWrap');
     if (nw) nw.style.display = $('#editKwImportant').checked ? 'block' : 'none';
+    // v1.8.16 勾选/取消「重要」联动展开/收起对应折叠区（方便所见即所得编辑）
+    const impSec = $('#kwImportantSection');
+    if (impSec) impSec.classList.toggle('closed', !$('#editKwImportant').checked);
   }
 
-  // v1.8.13 重要笔记输入框实时渲染预览（便于查看长文本/表格/图片整体效果）
-  function renderImportantNotePreview() {
-    const out = $('#impNotePreview');
-    if (!out) return;
-    const v = $('#editKwImportantNote')?.value || '';
-    out.innerHTML = v.trim() ? Utils.sanitizeHTML(v) : '<span class="pv-empty">（尚未填写，输入后实时预览）</span>';
+  // ========== 重要笔记富文本编辑（v1.8.16，所见即所得） ==========
+  function kwe() { return $('#editKwImportantNote'); }
+
+  // markdown → 编辑区 HTML（打开弹窗/加载已有内容）
+  function setNoteEditorHTML(md) {
+    const ed = kwe();
+    if (!ed) return;
+    ed.innerHTML = (md && String(md).trim()) ? Utils.sanitizeHTML(md) : '';
+  }
+
+  // 编辑区 HTML → markdown（保存时序列化，只认白名单结构，其余按纯文本）
+  function mdFromNoteEditor() {
+    const ed = kwe();
+    if (!ed) return '';
+    const parts = [];
+    ed.childNodes.forEach(c => noteNodeToMD(c, parts));
+    let md = parts.join('');
+    md = md.replace(/\n{3,}/g, '\n\n').replace(/[ \t]+\n/g, '\n').replace(/\n +/g, '\n').trim();
+    return md;
+  }
+
+  function noteNodeToMD(node, out) {
+    if (node.nodeType === Node.TEXT_NODE) { out.push(node.textContent); return; }
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+    const t = node.tagName.toLowerCase();
+    const kids = Array.from(node.childNodes);
+    switch (t) {
+      case 'br': out.push('\n'); return;
+      case 'img': {
+        const src = node.getAttribute('src') || '';
+        const alt = node.getAttribute('alt') || '';
+        out.push('![' + alt + '](' + src + ')');
+        return;
+      }
+      case 'b': case 'strong': out.push('**'); kids.forEach(c => noteNodeToMD(c, out)); out.push('**'); return;
+      case 'i': case 'em': out.push('*'); kids.forEach(c => noteNodeToMD(c, out)); out.push('*'); return;
+      case 'a': {
+        out.push('['); kids.forEach(c => noteNodeToMD(c, out)); out.push('](' + (node.getAttribute('href') || '') + ')');
+        return;
+      }
+      case 'table': out.push('\n' + noteTableToMD(node) + '\n'); return;
+      case 'p': case 'div': out.push('\n'); kids.forEach(c => noteNodeToMD(c, out)); out.push('\n'); return;
+      default: kids.forEach(c => noteNodeToMD(c, out));
+    }
+  }
+
+  function noteTableToMD(tbl) {
+    const rows = [];
+    tbl.querySelectorAll('tr').forEach(tr => {
+      const cells = Array.from(tr.children).map(td => {
+        let s = '';
+        td.childNodes.forEach(c => {
+          if (c.nodeType === Node.TEXT_NODE) s += c.textContent;
+          else if (c.nodeType === Node.ELEMENT_NODE) {
+            const ct = c.tagName.toLowerCase();
+            if (ct === 'img') s += '![' + (c.getAttribute('alt') || '') + '](' + (c.getAttribute('src') || '') + ')';
+            else if (ct === 'br') s += ' ';
+            else s += c.textContent;
+          }
+        });
+        return s.trim();
+      });
+      rows.push(cells.join(' | '));
+    });
+    if (rows.length) {
+      const isSep = rows.length > 1 && /^:?-+\s*\|/.test(rows[1]);
+      if (!isSep) rows.splice(1, 0, rows[0].split('|').map(() => '---').join(' | '));
+    }
+    return rows.map(r => '| ' + r + ' |').join('\n');
+  }
+
+  // 在光标处插入图片
+  function insertNoteImage() {
+    const ed = kwe();
+    if (!ed) return;
+    const url = (window.prompt('输入图片地址（https:// 或 data: 图片）：') || '').trim();
+    if (!url) return;
+    if (!/^(https?:\/\/|data:image\/)/i.test(url)) { alert('仅支持 http(s) 或 data: 图片地址'); return; }
+    const img = document.createElement('img');
+    img.src = url; img.alt = '';
+    const sel = window.getSelection();
+    let inserted = false;
+    if (sel && sel.rangeCount && ed.contains(sel.anchorNode)) {
+      const r = sel.getRangeAt(0);
+      r.deleteContents();
+      r.insertNode(img);
+      r.setStartAfter(img); r.collapse(true);
+      sel.removeAllRanges(); sel.addRange(r);
+      inserted = true;
+    }
+    if (!inserted) ed.appendChild(img);
+    ed.focus();
+  }
+
+  // 点图 → 修改/删除
+  function handleNoteEditorClick(e) {
+    const t = e.target;
+    if (!t || t.tagName !== 'IMG') return;
+    e.preventDefault();
+    const cur = t.getAttribute('src') || '';
+    const inp = window.prompt('修改 / 删除图片\n· 修改：输入新的图片地址\n· 删除：清空留空后点确定', cur);
+    if (inp === null) return;
+    const v = inp.trim();
+    if (!v) { t.remove(); kwe().focus(); return; }
+    if (!/^(https?:\/\/|data:image\/)/i.test(v)) { alert('仅支持 http(s) 或 data: 图片地址'); return; }
+    t.setAttribute('src', v);
+    kwe().focus();
+  }
+
+  // 粘贴：只插入纯文本（防带入脏 HTML）
+  function handleNoteEditorPaste(e) {
+    e.preventDefault();
+    const text = (e.clipboardData || window.clipboardData).getData('text/plain');
+    const ed = kwe();
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount && ed.contains(sel.anchorNode)) {
+      const r = sel.getRangeAt(0);
+      r.deleteContents();
+      const n = document.createTextNode(text);
+      r.insertNode(n);
+      r.setStartAfter(n); r.collapse(true);
+      sel.removeAllRanges(); sel.addRange(r);
+    } else {
+      ed.append(document.createTextNode(text));
+    }
+    ed.focus();
   }
 
   function showKeywordModal(keyword = null) {
@@ -521,7 +644,8 @@
     $('#editKwWholeWord').checked = keyword?.wholeWord || false;
     $('#editKwUseRegex').checked = keyword?.useRegex || false;
     $('#editKwImportant').checked = keyword?.important || false;
-    $('#editKwImportantNote').value = keyword?.importantNote || '';
+    $('#editKwImportantNote').innerHTML = '';
+    setNoteEditorHTML(keyword?.importantNote || '');
     $('#editKwImgSize').value = keyword?.imgSize || '';
     $('#editKwCellVerifyValue').value = keyword?.cellVerify || '';
     $('#editKwCellVerifyExact').checked = (keyword?.cellVerifyMatchMode === 'exact');
@@ -531,8 +655,6 @@
 
     // 根据勾选状态显示/隐藏 单元格标注细节 与 重要笔记输入
     toggleKwSections();
-    // v1.8.13 打开弹窗时刷新重要笔记实时预览
-    renderImportantNotePreview();
 
     // v1.8.13 编辑已有关键词时，按内容自动展开对应折叠区（无内容保持默认折叠）
     const hasCell = !!(keyword && (keyword.cellVerify || keyword.fetchLabels));
@@ -627,7 +749,7 @@
       wholeWord: $('#editKwWholeWord').checked,
       useRegex: $('#editKwUseRegex').checked,
       important: $('#editKwImportant').checked,
-      importantNote: $('#editKwImportantNote').value.trim(),
+      importantNote: mdFromNoteEditor(),
       imgSize: (function(){ const v=($('#editKwImgSize').value||'').trim(); if(!v) return ''; const n=parseInt(v,10); return (!isNaN(n)&&n>=40&&n<=600)? n : ''; })(),
       cellVerifyEnabled: !!$('#editKwCellVerifyValue').value.trim(),
       cellVerify: $('#editKwCellVerifyValue').value.trim(),
@@ -1423,8 +1545,13 @@
 
     // 单元格标注 / 重要笔记 勾选时展开对应细节
     $('#editKwImportant')?.addEventListener('change', toggleKwSections);
-    // v1.8.13 键入重要笔记时实时刷新预览
-    $('#editKwImportantNote')?.addEventListener('input', renderImportantNotePreview);
+    // 重要笔记富文本编辑（所见即所得）：图片按钮 / 点图改删 / 粘贴净化
+    $('#btnKwNoteInsertImg')?.addEventListener('click', insertNoteImage);
+    const kweEl = $('#editKwImportantNote');
+    if (kweEl) {
+      kweEl.addEventListener('click', handleNoteEditorClick);
+      kweEl.addEventListener('paste', handleNoteEditorPaste);
+    }
     // 说明文字均采用「ⓘ + 悬浮气泡」展示（CSS hover），无需 JS。
 
 
