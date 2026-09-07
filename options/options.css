@@ -1038,8 +1038,9 @@ opacity: 0.96;
   border-radius: 12px;
   width: 580px;
   max-height: 94vh;
-  overflow-y: auto;
-  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
 }
 
@@ -1106,6 +1107,8 @@ opacity: 0.96;
   padding: 14px 18px;
   overflow-y: auto;
   overflow-x: hidden;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .modal-footer {
@@ -1114,6 +1117,7 @@ opacity: 0.96;
   gap: 8px;
   padding: 16px 20px;
   border-top: 1px solid #f0f0f0;
+  flex-shrink: 0;
 }
 
 /* 响应式 */
