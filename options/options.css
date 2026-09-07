@@ -1295,8 +1295,8 @@ opacity: 0.96;
   pointer-events: none;
 }
 .kw-note-editor img {
-  max-width: 180px;
-  max-height: 180px;
+  max-width: var(--kh-note-img-size, 70px);
+  max-height: var(--kh-note-img-size, 70px);
   object-fit: contain;
   border-radius: 4px;
   margin: 4px 8px 4px 0;

@@ -38,7 +38,7 @@
         </li>
       </ul>
       <div class="sidebar-footer">
-        <span class="version">v1.8.16</span>
+        <span class="version">v1.8.17</span>
       </div>
     </nav>
 
@@ -436,9 +436,10 @@
 
 <h3>📦 版本信息</h3>
           <div class="help-section">
-            <p>当前版本：<strong>v1.8.16</strong></p>
+            <p>当前版本：<strong>v1.8.17</strong></p>
             <p>更新日志：</p>
             <ul>
+              <li><strong>v1.8.17</strong>：重要笔记工具栏新增 <strong>加粗 / 斜体 / 表格</strong>——选中文字点 <b>B</b> 立即加粗、点 <i>I</i> 立即斜体，点「▦ 表格」插入可填表格，全部所见即所得（配合原有「🖼 插入图片」）。图片默认展示尺寸由 180px 改为 <strong>70px</strong>，且「添加/编辑关键词」弹窗里看到的图片大小与网页上命中时展示的<strong>完全一致</strong>（都跟随每个关键词的「图片缩略尺寸」设置，默认 70px）。</li>
               <li><strong>v1.8.16</strong>：重要笔记升级为<strong>「所见即所得」编辑</strong>——把之前「输入区+下方预览」合二为一：在「添加/编辑关键词」弹窗里，重要笔记直接在编辑框内显示最终效果——用「🖼 插入图片」按钮添加的图片<strong>直接在编辑框内显示成图</strong>，已有内容里的加粗/表格等格式按效果呈现；工具栏有「🖼 插入图片」按钮、点编辑框里的图片可修改或删除、粘贴自动清理成纯文本。存储的仍是干净 Markdown，老笔记数据完全兼容、网页显示不变；勾选「重要」时会自动展开输入区。</li>
               <li><strong>v1.8.15</strong>：① 重要笔记新增<strong>实时预览</strong>——在「添加/编辑关键词」弹窗里，填重要笔记时下方会实时显示渲染效果（<code>![说明](网址)</code> 直接显示成图片、加粗/表格等格式按实际效果呈现），网址再长也不影响查看观感；② 移除主页「重要笔记」页的<strong>图片缩略尺寸</strong>设置——该设置已下沉到每个关键词的编辑弹窗（每词独立设置，留空用默认 180），主页的全局设置入口属重复冗余，已删除并清理相关残留逻辑。</li>
               <li><strong>v1.8.14</strong>：修复<strong>取消/保存按钮跟随滚动</strong>的问题——当添加/编辑关键词弹窗内容很多时，原版本「取消/保存」会一起滚出视口；现改为只有「基本信息 / 单元格组合 / 重要」三个模块在内容过长时内部滚动，标题栏和底部的取消/保存按钮始终固定在弹窗上，操作更顺手。</li>
@@ -680,6 +681,9 @@
                 </div>
                 <div class="kw-note-toolbar">
                   <button type="button" class="btn btn-mini" id="btnKwNoteInsertImg" title="在光标处插入一张图片">🖼 插入图片</button>
+              <button type="button" class="btn btn-mini" id="btnKwNoteBold" title="加粗（先选中文字再点）"><b>B</b></button>
+              <button type="button" class="btn btn-mini" id="btnKwNoteItalic" title="斜体（先选中文字再点）"><i>I</i></button>
+              <button type="button" class="btn btn-mini" id="btnKwNoteTable" title="插入表格">▦ 表格</button>
                   <span style="font-size:11px;color:#999">所见即所得：图片、加粗、表格直接在框内显示；点图片可修改或删除。</span>
                 </div>
                 <div id="editKwImportantNote" class="kw-note-editor" contenteditable="true" data-placeholder="输入重要注意事项…（所见即所得，可直接看到图片效果）"></div>
@@ -687,7 +691,7 @@
                   <label for="editKwImgSize">图片缩略尺寸 (px)</label>
                   <span style="font-size:11px;color:#999">（本词独立设置，40–600，留空用默认 180）</span>
                 </div>
-                <input type="number" id="editKwImgSize" min="40" max="600" step="10" placeholder="默认 180" class="text-input" style="width:180px;">
+                <input type="number" id="editKwImgSize" min="40" max="600" step="10" placeholder="默认 70" class="text-input" style="width:180px;">
               </div>
             </div>
           </div>

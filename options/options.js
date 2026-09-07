@@ -630,6 +630,28 @@
     ed.focus();
   }
 
+  // v1.8.17 工具栏：加粗 / 斜体（选中文字即见效）
+  function runNoteCmd(cmd) {
+    const ed = kwe();
+    if (!ed) return;
+    ed.focus();
+    try { document.execCommand(cmd, false, null); } catch (e) {}
+  }
+
+  // v1.8.17 工具栏：插入表格（所见即所得）
+  function insertNoteTable() {
+    const ed = kwe();
+    if (!ed) return;
+    const rows = Math.min(Math.max(parseInt(window.prompt('表格行数（含表头）：', '2'), 10) || 2, 1), 20);
+    const cols = Math.min(Math.max(parseInt(window.prompt('表格列数：', '3'), 10) || 3, 1), 10);
+    let h = '<table><tbody>';
+    h += '<tr>' + ('<th>表头</th>').repeat(cols) + '</tr>';
+    for (let r = 1; r < rows; r++) h += '<tr>' + ('<td>内容</td>').repeat(cols) + '</tr>';
+    h += '</tbody></table><p></p>';
+    ed.focus();
+    try { document.execCommand('insertHTML', false, h); } catch (e) { ed.insertAdjacentHTML('beforeend', h); }
+  }
+
   function showKeywordModal(keyword = null) {
     editingKeywordId = keyword ? keyword.id : null;
     editingKeyword = keyword || null;
@@ -647,6 +669,9 @@
     $('#editKwImportantNote').innerHTML = '';
     setNoteEditorHTML(keyword?.importantNote || '');
     $('#editKwImgSize').value = keyword?.imgSize || '';
+    // v1.8.17 编辑器内重要笔记图片大小与「命中时展示」同步（默认 70px，可用该词「图片缩略尺寸」覆盖）
+    const kweImg = kwe();
+    if (kweImg) kweImg.style.setProperty('--kh-note-img-size', (parseInt(keyword?.imgSize, 10) || 70) + 'px');
     $('#editKwCellVerifyValue').value = keyword?.cellVerify || '';
     $('#editKwCellVerifyExact').checked = (keyword?.cellVerifyMatchMode === 'exact');
     $('#editKwCellVerifyCase').checked = keyword?.cellVerifyCaseSensitive || false;
@@ -1547,6 +1572,9 @@
     $('#editKwImportant')?.addEventListener('change', toggleKwSections);
     // 重要笔记富文本编辑（所见即所得）：图片按钮 / 点图改删 / 粘贴净化
     $('#btnKwNoteInsertImg')?.addEventListener('click', insertNoteImage);
+    $('#btnKwNoteBold')?.addEventListener('click', () => runNoteCmd('bold'));
+    $('#btnKwNoteItalic')?.addEventListener('click', () => runNoteCmd('italic'));
+    $('#btnKwNoteTable')?.addEventListener('click', insertNoteTable);
     const kweEl = $('#editKwImportantNote');
     if (kweEl) {
       kweEl.addEventListener('click', handleNoteEditorClick);

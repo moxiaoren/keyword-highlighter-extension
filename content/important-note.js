@@ -159,7 +159,7 @@ const ImportantNote = {
     .khin-item-body a { color: #1a73e8; text-decoration: none; }
     .khin-item-body a:hover { text-decoration: underline; }
     /* 重要笔记内图片（v1.8.2）：缩略显示，点击开新标签页看原图；不等比裁剪，完整等比缩放 */
-    .khin-item-body img { max-width: var(--kh-img-size, 180px); max-height: var(--kh-img-size, 180px); width: auto; height: auto; border-radius: 4px; margin: 4px 8px 4px 0; display: inline-block; vertical-align: middle; cursor: pointer; }
+    .khin-item-body img { max-width: var(--kh-img-size, 70px); max-height: var(--kh-img-size, 70px); width: auto; height: auto; border-radius: 4px; margin: 4px 8px 4px 0; display: inline-block; vertical-align: middle; cursor: pointer; }
     .khin-item-body img:hover { opacity: .92; }
     .khin-empty { padding: 20px; text-align: center; color: #aaa; font-size: 13px; }
     /* 抓取后续字段渲染的 Excel 表格 */
@@ -176,9 +176,9 @@ const ImportantNote = {
     this.root = shadow.querySelector('.khin-wrap');
     document.body.appendChild(this.host);
 
-    // v1.8.15：全局图片默认尺寸固定为 180px（每词可单独在编辑弹窗设置，主页「重要笔记」配置模块已移除），
-    // 不再读取可能残留的 importantNote.imgSize 旧配置，避免语义残留。
-    this.host.style.setProperty('--kh-img-size', '180px');
+    // v1.8.17：全局重要笔记图片默认尺寸 70px（每词可单独在编辑弹窗「图片缩略尺寸」覆盖，取值 40-600；
+    // 主页「重要笔记」配置模块已移除）。与编辑器内所见即所得展示使用同一 imgSize，保持大小一致。
+    this.host.style.setProperty('--kh-img-size', '70px');
 
     // v1.8.2：点击重要笔记内的缩略图 → 新标签页打开原图（data: 图已内嵌、无需跳转）
     this.root.addEventListener('click', (e) => {
