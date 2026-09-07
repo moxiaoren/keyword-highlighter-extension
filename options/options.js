@@ -596,8 +596,64 @@
     ed.focus();
   }
 
+  // v1.8.18 表格行列增删：记录光标/点击所在单元格
+  let curTableCell = null;
+  function handleCellClick(t) {
+    let n = t && t.nodeType === 1 ? t : null; curTableCell = null;
+    while (n) { if (n.tagName === 'TD' || n.tagName === 'TH') { curTableCell = n; return; } n = n.parentElement; }
+  }
+  function trackTableCell() {
+    // 只更新到新的表格单元格；若光标不在表格内不主动清空（避免点击工具栏按钮时的 blur/selection 时序丢失已选中的单元格）
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return;
+    let n = sel.anchorNode;
+    if (n && n.nodeType === Node.TEXT_NODE) n = n.parentElement;
+    while (n && n.nodeType === Node.ELEMENT_NODE) {
+      if (n.tagName === 'TD' || n.tagName === 'TH') { curTableCell = n; return; }
+      n = n.parentElement;
+    }
+  }
+  function tableInsertRow(after) {
+    const td = curTableCell; if (!td) { alert('请先点击表格里的单元格'); return; }
+    const tr = td.closest('tr'); if (!tr) return;
+    const nr = tr.cloneNode(false);
+    Array.from(tr.cells).forEach(c => { const nc = document.createElement(c.tagName.toLowerCase()); nc.innerHTML = '<br>'; nr.appendChild(nc); });
+    if (after) tr.after(nr); else tr.before(nr);
+  }
+  function tableDeleteRow() {
+    const td = curTableCell; if (!td) return;
+    const tr = td.closest('tr'); const tbl = tr.closest('table'); if (!tr || !tbl) return;
+    if (tbl.rows.length <= 1) { tbl.remove(); curTableCell = null; return; }
+    tr.remove();
+  }
+  function tableInsertCol(after) {
+    const td = curTableCell; if (!td) { alert('请先点击表格里的单元格'); return; }
+    const tr = td.parentElement; const tbl = td.closest('table'); if (!tr || !tbl) return;
+    const idx = Array.prototype.indexOf.call(tr.cells, td);
+    tbl.querySelectorAll('tr').forEach(r => {
+      const ref = r.cells[idx];
+      const nc = document.createElement((ref ? ref.tagName : 'td').toLowerCase()); nc.innerHTML = '<br>';
+      if (ref) { if (after) ref.after(nc); else r.insertBefore(nc, ref); }
+      else r.appendChild(nc);
+    });
+  }
+  function tableDeleteCol() {
+    const td = curTableCell; if (!td) return;
+    const tr = td.parentElement; const tbl = td.closest('table'); if (!tr || !tbl) return;
+    const idx = Array.prototype.indexOf.call(tr.cells, td);
+    tbl.querySelectorAll('tr').forEach(r => { if (r.cells[idx]) r.deleteCell(idx); });
+    if (tbl.rows.length === 0) tbl.remove();
+    curTableCell = null;
+  }
+  function tableDeleteAll() {
+    const td = curTableCell; if (!td) return;
+    const tbl = td.closest('table'); if (!tbl) return;
+    tbl.remove(); curTableCell = null;
+  }
+
   // 点图 → 修改/删除
   function handleNoteEditorClick(e) {
+    handleCellClick(e.target);
     const t = e.target;
     if (!t || t.tagName !== 'IMG') return;
     e.preventDefault();
@@ -1575,10 +1631,20 @@
     $('#btnKwNoteBold')?.addEventListener('click', () => runNoteCmd('bold'));
     $('#btnKwNoteItalic')?.addEventListener('click', () => runNoteCmd('italic'));
     $('#btnKwNoteTable')?.addEventListener('click', insertNoteTable);
+    // v1.8.18 表格行列增删（先点击表格里单元格，再点操作按钮）
+    $('#btnKwTableRowAbove')?.addEventListener('click', () => tableInsertRow(false));
+    $('#btnKwTableRowBelow')?.addEventListener('click', () => tableInsertRow(true));
+    $('#btnKwTableRowDel')?.addEventListener('click', tableDeleteRow);
+    $('#btnKwTableColRight')?.addEventListener('click', () => tableInsertCol(true));
+    $('#btnKwTableColDel')?.addEventListener('click', tableDeleteCol);
+    $('#btnKwTableDel')?.addEventListener('click', tableDeleteAll);
     const kweEl = $('#editKwImportantNote');
     if (kweEl) {
       kweEl.addEventListener('click', handleNoteEditorClick);
       kweEl.addEventListener('paste', handleNoteEditorPaste);
+      kweEl.addEventListener('keyup', trackTableCell);
+      kweEl.addEventListener('keydown', trackTableCell);
+      document.addEventListener('selectionchange', () => { if (document.activeElement === kweEl) trackTableCell(); });
     }
     // 说明文字均采用「ⓘ + 悬浮气泡」展示（CSS hover），无需 JS。
 
