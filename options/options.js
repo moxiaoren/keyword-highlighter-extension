@@ -654,6 +654,8 @@
   // 点图 → 修改/删除
   function handleNoteEditorClick(e) {
     handleCellClick(e.target);
+    if (curTableCell && curTableCell.closest('table')) positionTableHandle();
+    else hideTableHandle();
     const t = e.target;
     if (!t || t.tagName !== 'IMG') return;
     e.preventDefault();
@@ -686,6 +688,62 @@
     ed.focus();
   }
 
+  // v1.8.19 表格右下角 [+ −] 手柄：跟随表格右下角，增删行/列/整表
+  let thHandle = null, thMenuEl = null;
+  function thEls() {
+    if (!thHandle) { thHandle = document.getElementById('kwTableHandle'); thMenuEl = document.getElementById('thMenu'); }
+    return thHandle;
+  }
+  function positionTableHandle() {
+    const h = thEls(); if (!h) return;
+    const tb = curTableCell ? curTableCell.closest('table') : null;
+    if (!tb || !kwe().contains(tb)) { hideTableHandle(); return; }
+    const lastRow = tb.rows[tb.rows.length - 1];
+    const lastCell = lastRow.cells[lastRow.cells.length - 1];
+    const c = lastCell.getBoundingClientRect();
+    h.style.left = c.right + 4 + 'px';
+    h.style.top = c.bottom - 6 + 'px';
+    h.style.display = 'flex';
+  }
+  function hideTableHandle() {
+    const h = thEls(); if (!h) return;
+    h.style.display = 'none';
+    if (thMenuEl) thMenuEl.style.display = 'none';
+  }
+  function showTableMenu(plus) {
+    const h = thEls(); if (!h) return;
+    if (!thMenuEl) return;
+    const items = plus ? [
+      { label: '＋ 在下方加一行', fn: () => { tableInsertRow(true); } },
+      { label: '＋ 在右侧加一列', fn: () => { tableInsertCol(true); } }
+    ] : [
+      { label: '－ 删除该行', fn: () => { tableDeleteRow(); } },
+      { label: '－ 删除该列', fn: () => { tableDeleteCol(); } },
+      { label: '－ 删除整表', fn: () => { tableDeleteAll(); } }
+    ];
+    thMenuEl.innerHTML = '';
+    items.forEach(it => {
+      const d = document.createElement('div');
+      d.className = 'th-menu-item';
+      d.textContent = it.label;
+      d.addEventListener('click', (e) => { e.stopPropagation(); it.fn(); hideTableHandle(); });
+      thMenuEl.appendChild(d);
+    });
+    thMenuEl.style.display = 'block';
+  }
+  function initTableHandle() {
+    const h = thEls(); if (!h) return;
+    document.getElementById('thBtnPlus')?.addEventListener('click', (e) => { e.stopPropagation(); showTableMenu(true); });
+    document.getElementById('thBtnMinus')?.addEventListener('click', (e) => { e.stopPropagation(); showTableMenu(false); });
+    // 点击编辑区/文档其它处 → 隐藏手柄（点在表格或手柄内不隐藏）
+    document.addEventListener('click', (e) => {
+      if (h.contains(e.target)) return;
+      let n = e.target; let inTbl = false;
+      while (n) { if (n.tagName === 'TABLE') { inTbl = true; break; } n = n.parentElement; }
+      if (!inTbl) hideTableHandle();
+    });
+  }
+
   // v1.8.17 工具栏：加粗 / 斜体（选中文字即见效）
   function runNoteCmd(cmd) {
     const ed = kwe();
@@ -709,6 +767,7 @@
   }
 
   function showKeywordModal(keyword = null) {
+    hideTableHandle();
     editingKeywordId = keyword ? keyword.id : null;
     editingKeyword = keyword || null;
     const modal = $('#keywordModal');
@@ -1632,19 +1691,15 @@
     $('#btnKwNoteItalic')?.addEventListener('click', () => runNoteCmd('italic'));
     $('#btnKwNoteTable')?.addEventListener('click', insertNoteTable);
     // v1.8.18 表格行列增删（先点击表格里单元格，再点操作按钮）
-    $('#btnKwTableRowAbove')?.addEventListener('click', () => tableInsertRow(false));
-    $('#btnKwTableRowBelow')?.addEventListener('click', () => tableInsertRow(true));
-    $('#btnKwTableRowDel')?.addEventListener('click', tableDeleteRow);
-    $('#btnKwTableColRight')?.addEventListener('click', () => tableInsertCol(true));
-    $('#btnKwTableColDel')?.addEventListener('click', tableDeleteCol);
-    $('#btnKwTableDel')?.addEventListener('click', tableDeleteAll);
     const kweEl = $('#editKwImportantNote');
     if (kweEl) {
       kweEl.addEventListener('click', handleNoteEditorClick);
       kweEl.addEventListener('paste', handleNoteEditorPaste);
-      kweEl.addEventListener('keyup', trackTableCell);
+      kweEl.addEventListener('keyup', () => { trackTableCell(); positionTableHandle(); });
       kweEl.addEventListener('keydown', trackTableCell);
+      kweEl.addEventListener('scroll', positionTableHandle);
       document.addEventListener('selectionchange', () => { if (document.activeElement === kweEl) trackTableCell(); });
+      initTableHandle();
     }
     // 说明文字均采用「ⓘ + 悬浮气泡」展示（CSS hover），无需 JS。
 
