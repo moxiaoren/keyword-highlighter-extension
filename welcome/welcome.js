@@ -19,7 +19,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // 更新日志（倒序：最新在上）
   const CHANGELOG = [
     {
-      version: 'v1.8.19',
+      version: 'v1.8.20',
       items: ['重要笔记表格操作改为 Word/PPT 式右下角手柄：点击表格单元格后，右下角出现 ＋ － 浮层，＋ 可加行/加列，－ 可删行/删列/删整表，更直观；移除原顶部表格操作按钮。']
     },
     {

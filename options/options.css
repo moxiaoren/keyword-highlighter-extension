@@ -1309,6 +1309,13 @@ opacity: 0.96;
   cursor: pointer;
 }
 .kw-note-editor img:hover { box-shadow: 0 0 0 2px #7aa2e0; }
+.kw-note-editor a { /* v1.8.20 编辑区链接：清晰可点，点击可改/删 */
+  color: #2563eb;
+  text-decoration: underline;
+  cursor: pointer;
+  word-break: break-all;
+}
+.kw-note-editor a:hover { background: #eef2fb; }
 .kw-note-editor table { border-collapse: collapse; margin: 4px 0; font-size: 12px; }
 .kw-note-editor th, .kw-note-editor td { border: 1px solid #d5dded; padding: 3px 8px; background: #fff; }
 

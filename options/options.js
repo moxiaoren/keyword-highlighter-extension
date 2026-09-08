@@ -539,7 +539,13 @@
       case 'b': case 'strong': out.push('**'); kids.forEach(c => noteNodeToMD(c, out)); out.push('**'); return;
       case 'i': case 'em': out.push('*'); kids.forEach(c => noteNodeToMD(c, out)); out.push('*'); return;
       case 'a': {
-        out.push('['); kids.forEach(c => noteNodeToMD(c, out)); out.push('](' + (node.getAttribute('href') || '') + ')');
+        const href = node.getAttribute('href') || '';
+        // v1.8.20: 链接文字就是网址本身（纯 URL 自动转成的链接）→ 保留纯网址，不再包成 [url](url) 弄脏笔记
+        if (href && kids.length === 1 && kids[0].nodeType === Node.TEXT_NODE && kids[0].textContent === href) {
+          out.push(href);
+          return;
+        }
+        out.push('['); kids.forEach(c => noteNodeToMD(c, out)); out.push('](' + href + ')');
         return;
       }
       case 'table': out.push('\n' + noteTableToMD(node) + '\n'); return;
@@ -558,6 +564,12 @@
           else if (c.nodeType === Node.ELEMENT_NODE) {
             const ct = c.tagName.toLowerCase();
             if (ct === 'img') s += '![' + (c.getAttribute('alt') || '') + '](' + (c.getAttribute('src') || '') + ')';
+            else if (ct === 'a') { // v1.8.20 表格单元格内链接序列化回 [文字](网址)
+              const h = c.getAttribute('href') || '';
+              const txt = c.textContent || '';
+              if (h && txt === h) s += h; // 纯网址链接保留纯网址（与段落处理一致）
+              else s += '[' + txt + '](' + h + ')';
+            }
             else if (ct === 'br') s += ' ';
             else s += c.textContent;
           }
@@ -651,12 +663,91 @@
     tbl.remove(); curTableCell = null;
   }
 
-  // 点图 → 修改/删除
+  // v1.8.20：移除编辑区里的链接（保留其文字为纯文本），用于“删除链接”
+  function removeNoteLinkKeepText(a) {
+    const r = document.createRange();
+    r.selectNodeContents(a);
+    const frag = r.extractContents();
+    a.replaceWith(frag);
+    kwe().focus();
+  }
+
+  // v1.8.20：点击编辑区里的链接 → 修改 / 删除（防一点就跳走；历史笔记里的超链接重开后也能这样调整）
+  function editNoteLink(a) {
+    const curText = a.textContent || '';
+    const curHref = a.getAttribute('href') || '';
+    const nText = window.prompt('修改链接文字（清空 = 删除该超链接，文字会保留）', curText);
+    if (nText === null) return;
+    const text = nText.trim();
+    if (!text) { removeNoteLinkKeepText(a); kwe().focus(); return; }
+    const nHref = window.prompt('链接地址（https://…）', curHref);
+    if (nHref === null) return;
+    const href = nHref.trim();
+    if (!href || !/^(https?:|mailto:|tel:|ftp:)/i.test(href)) {
+      if (!href) { removeNoteLinkKeepText(a); kwe().focus(); return; }
+      alert('仅支持 http(s) / mailto / tel 等链接地址');
+      return;
+    }
+    a.textContent = text;
+    a.setAttribute('href', href);
+    a.setAttribute('target', '_blank');
+    a.setAttribute('rel', 'noopener noreferrer');
+    kwe().focus();
+  }
+
+  // v1.8.20：在编辑区光标处插入超链接（先选中文字则直接作为链接文字），所见即所得
+  function insertNoteLink() {
+    const ed = kwe();
+    if (!ed) return;
+    const sel = window.getSelection();
+    let text = '';
+    const hasSel = sel && sel.rangeCount && ed.contains(sel.anchorNode) && sel.toString().trim();
+    if (!hasSel) {
+      const r0 = window.prompt('链接文字（可先选中一段文字再点此按钮，会直接用它）：', '');
+      if (r0 === null) return;
+      text = r0.trim();
+    } else {
+      text = sel.toString().trim();
+    }
+    const urlR = window.prompt('链接地址（如 https://example.com）：', '');
+    if (urlR === null) return;
+    const url = urlR.trim();
+    if (!url) { alert('请输入链接地址'); return; }
+    if (!/^(https?:|mailto:|tel:|ftp:)/i.test(url) && url !== '#') {
+      alert('仅支持 http(s) / mailto / tel 等链接地址');
+      return;
+    }
+    const label = text || url;
+    const a = document.createElement('a');
+    a.href = url;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.textContent = label;
+    if (sel && sel.rangeCount && ed.contains(sel.anchorNode)) {
+      const r = sel.getRangeAt(0);
+      r.deleteContents();
+      r.insertNode(a);
+      r.setStartAfter(a); r.collapse(true);
+      sel.removeAllRanges(); sel.addRange(r);
+    } else {
+      ed.appendChild(a);
+    }
+    ed.focus();
+  }
+
+  // 点图 → 修改/删除；点链接 → 修改/删除（v1.8.20）
   function handleNoteEditorClick(e) {
     handleCellClick(e.target);
     if (curTableCell && curTableCell.closest('table')) positionTableHandle();
     else hideTableHandle();
     const t = e.target;
+    // v1.8.20：优先处理链接（含表格单元格里的链接），点击可修改/删除，不触发跳转
+    const a = t && t.closest ? t.closest('a') : null;
+    if (a && kwe().contains(a)) {
+      e.preventDefault();
+      editNoteLink(a);
+      return;
+    }
     if (!t || t.tagName !== 'IMG') return;
     e.preventDefault();
     const cur = t.getAttribute('src') || '';
@@ -1690,6 +1781,7 @@
     $('#btnKwNoteBold')?.addEventListener('click', () => runNoteCmd('bold'));
     $('#btnKwNoteItalic')?.addEventListener('click', () => runNoteCmd('italic'));
     $('#btnKwNoteTable')?.addEventListener('click', insertNoteTable);
+    $('#btnKwNoteLink')?.addEventListener('click', insertNoteLink); // v1.8.20 插入超链接
     // v1.8.18 表格行列增删（先点击表格里单元格，再点操作按钮）
     const kweEl = $('#editKwImportantNote');
     if (kweEl) {
