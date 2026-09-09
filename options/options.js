@@ -503,7 +503,10 @@
   }
 
   // ========== 重要笔记富文本编辑（v1.8.16，所见即所得） ==========
-  function kwe() { return $('#editKwImportantNote'); }
+  // 富文本笔记编辑器的“当前活动实例”：关键词编辑 / 分组编辑共用同一套所见即所得命令，
+  // 打开哪个弹窗就把 curNoteEd 指向哪个编辑器（两个弹窗不会同时打开）。默认回退到关键词编辑器。
+  let curNoteEd = null;
+  function kwe() { return curNoteEd || $('#editKwImportantNote'); }
 
   // markdown → 编辑区 HTML（打开弹窗/加载已有内容）
   function setNoteEditorHTML(md) {
@@ -864,6 +867,7 @@
     const modal = $('#keywordModal');
     $('#keywordModalTitle').textContent = keyword ? '编辑关键词' : '添加关键词';
     
+    curNoteEd = $('#editKwImportantNote');
     $('#editKwText').value = keyword?.text || '';
     $('#editKwNote').value = keyword?.note || '';
     $('#editKwBgColor').value = keyword?.bgColor || '#ffff00';
@@ -1022,6 +1026,7 @@
   function closeKeywordModal() {
     $('#keywordModal').style.display = 'none';
     editingKeywordId = null;
+    curNoteEd = null; // 关闭后回到默认关键词编辑器
     // v1.6.37 独立窗口「?add」模式：关弹窗即关窗口
     if (window.KH_ADD_MODE) { try { window.close(); } catch (e) {} }
   }
@@ -1084,9 +1089,15 @@
     $('#groupModalTitle').textContent = group ? '编辑分组' : '新建分组';
     $('#editGroupName').value = group?.name || '';
     $('#editGroupImportant').checked = !!(group && group.important);
-    // 分组统一重要笔记
-    $('#editGroupImportantNote').value = (group && group.importantNote) || '';
-    // v1.9.3 分组统一重要笔记底色
+    // 分组统一重要笔记：所见即所得富文本编辑器（与关键词共用同一套命令）
+    curNoteEd = $('#editGroupImpNoteRich');
+    setNoteEditorHTML((group && group.importantNote) || '');
+    const gImgV = (group && group.imgSize) || '';
+    const gImgN = parseInt(gImgV, 10);
+    if ($('#editGroupImgSize')) $('#editGroupImgSize').value = (gImgN >= 40 && gImgN <= 600) ? gImgN : '';
+    const gEdR = $('#editGroupImpNoteRich');
+    if (gEdR) gEdR.style.setProperty('--kh-note-img-size', ((gImgN >= 40 && gImgN <= 600) ? gImgN : 70) + 'px');
+    // v1.9.4 分组统一重要笔记底色
     const gBg = (group && group.impNoteBg) || '';
     const gBgNorm = /^#[0-9a-fA-F]{3,8}$/.test(gBg) ? gBg : '';
     $('#editGroupImpBgEnable').checked = !!gBgNorm;
@@ -1121,6 +1132,7 @@
       alert('请输入分组名称');
       return;
     }
+    curNoteEd = $('#editGroupImpNoteRich');
 
     // 读取颜色设置
     const useColor = $('#editGroupUseColor').checked;
@@ -1129,7 +1141,13 @@
       bgColor: useColor ? $('#editGroupBgColor').value : '',
       textColor: useColor ? $('#editGroupTextColor').value : '',
       important: $('#editGroupImportant').checked,
-      importantNote: $('#editGroupImportant').checked ? $('#editGroupImportantNote').value.trim() : '',
+      importantNote: $('#editGroupImportant').checked ? mdFromNoteEditor() : '',
+      imgSize: (function(){
+        const v = ($('#editGroupImgSize') && $('#editGroupImgSize').value || '').trim();
+        if (!v) return '';
+        const n = parseInt(v, 10);
+        return (!isNaN(n) && n >= 40 && n <= 600) ? n : '';
+      })(),
       // v1.9.3 分组笔记底色：勾选启用，优先取 hex 文本，否则取取色器值，非法则存空（同关键词逻辑）
       impNoteBg: (function(){
         const en = !!($('#editGroupImpBgEnable') && $('#editGroupImpBgEnable').checked);
@@ -1158,6 +1176,7 @@
   function closeGroupModal() {
     $('#groupModal').style.display = 'none';
     editingGroupId = null;
+    curNoteEd = null; // 关闭后回到默认关键词编辑器，避免命令误用分组编辑器
   }
 
   // ========== 高亮样式 ==========
@@ -1822,23 +1841,27 @@
     $('#editKwImpBgColor')?.addEventListener('input', () => { const c = $('#editKwImpBgColor').value; const hex = $('#editKwImpBgHex'); if (hex) hex.value = c; });
     $('#editKwImpBgHex')?.addEventListener('input', syncNoteBgInputs);
     $('#editKwImpBgHex')?.addEventListener('blur', syncNoteBgInputs);
-    // 重要笔记富文本编辑（所见即所得）：图片按钮 / 点图改删 / 粘贴净化
-    $('#btnKwNoteInsertImg')?.addEventListener('click', insertNoteImage);
-    $('#btnKwNoteBold')?.addEventListener('click', () => runNoteCmd('bold'));
-    $('#btnKwNoteItalic')?.addEventListener('click', () => runNoteCmd('italic'));
-    $('#btnKwNoteTable')?.addEventListener('click', insertNoteTable);
-    $('#btnKwNoteLink')?.addEventListener('click', insertNoteLink); // v1.8.20 插入超链接
-    // v1.8.18 表格行列增删（先点击表格里单元格，再点操作按钮）
-    const kweEl = $('#editKwImportantNote');
-    if (kweEl) {
-      kweEl.addEventListener('click', handleNoteEditorClick);
-      kweEl.addEventListener('paste', handleNoteEditorPaste);
-      kweEl.addEventListener('keyup', () => { trackTableCell(); positionTableHandle(); });
-      kweEl.addEventListener('keydown', trackTableCell);
-      kweEl.addEventListener('scroll', positionTableHandle);
-      document.addEventListener('selectionchange', () => { if (document.activeElement === kweEl) trackTableCell(); });
-      initTableHandle();
+    // 富文本笔记编辑器（所见即所得）：关键词编辑 / 分组编辑共用同一套命令与表格手柄。
+    // 打开哪个弹窗就把 curNoteEd 指向哪个编辑器（见 showKeywordModal / showGroupModal），
+    // 工具栏按钮点击时强制把 curNoteEd 指到对应编辑器后再执行。
+    function wireNoteEditor(edEl, ids) {
+      if (!edEl) return;
+      const use = (fn) => () => { curNoteEd = edEl; fn(); };
+      edEl.addEventListener('click', handleNoteEditorClick);
+      edEl.addEventListener('paste', handleNoteEditorPaste);
+      edEl.addEventListener('keyup', () => { trackTableCell(); positionTableHandle(); });
+      edEl.addEventListener('keydown', trackTableCell);
+      edEl.addEventListener('scroll', positionTableHandle);
+      document.addEventListener('selectionchange', () => { if (document.activeElement === edEl) trackTableCell(); });
+      $(ids.insertImg)?.addEventListener('click', use(insertNoteImage));
+      $(ids.bold)?.addEventListener('click', use(() => runNoteCmd('bold')));
+      $(ids.italic)?.addEventListener('click', use(() => runNoteCmd('italic')));
+      $(ids.table)?.addEventListener('click', use(insertNoteTable));
+      $(ids.link)?.addEventListener('click', use(insertNoteLink));
     }
+    initTableHandle();
+    wireNoteEditor($('#editKwImportantNote'), { insertImg: 'btnKwNoteInsertImg', bold: 'btnKwNoteBold', italic: 'btnKwNoteItalic', table: 'btnKwNoteTable', link: 'btnKwNoteLink' });
+    wireNoteEditor($('#editGroupImpNoteRich'), { insertImg: 'btnGNoteInsertImg', bold: 'btnGNoteBold', italic: 'btnGNoteItalic', table: 'btnGNoteTable', link: 'btnGNoteLink' });
     // 说明文字均采用「ⓘ + 悬浮气泡」展示（CSS hover），无需 JS。
 
 

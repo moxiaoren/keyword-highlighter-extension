@@ -439,7 +439,7 @@
             <p>当前版本：<strong>v1.9.4</strong></p>
             <p>更新日志：</p>
             <ul>
-              <li><strong>v1.9.4</strong>：<strong>分组管理支持重要笔记底色</strong>——编辑分组时在「标记为重要」下新增「使用底色」，可为分组统一重要笔记设置底色；组内未单独设底色的关键词的重要笔记会统一铺上分组底色（关键词自带底色仍优先）。</li>
+              <li><strong>v1.9.4</strong>：<strong>分组管理的重要笔记全面对齐关键词</strong>——①编辑分组的「统一重要笔记」升级为<strong>所见即所得富文本编辑器</strong>（图片/加粗/表格/超链接与关键词完全一致）；②新增「使用底色」；③新增「图片缩略尺寸」；组内未单独设置的关键词会统一继承分组底色与图片尺寸（关键词自带项仍优先）。</li>
               <li><strong>v1.9.3</strong>：<strong>组合词标签恢复「标题 → 关键词」排列</strong>——标题在前、箭头+关键词在后；箭头放在关键词一侧（不放标题模块，因标题前有 🔖，避免“🔖 标题 →”的怪样）。</li>
               <li><strong>v1.9.2</strong>：重要笔记组合词标签排列相关微调（最终排列见 v1.9.3 的「标题 → 关键词」）。</li>
               <li><strong>v1.9.1</strong>：① 重要笔记<strong>底色改为铺满整张卡片</strong>（含标题/标签区，不再只铺正文）；② 修复<strong>重要的单元格组合词在笔记里多出一个空关键词标签</strong>的问题（如命中“审核状态-审核不通过”时出现“🔖 → 审核状态”这种冗余，现已去掉空关键词的命中）。</li>
@@ -866,8 +866,24 @@
           <span class="form-hint">勾选后，本组所有关键词视为重要；若关键词自身未填写重要笔记，将统一使用下方分组文本。</span>
         </div>
         <div class="form-group" id="editGroupImportantNoteRow" style="display:none;">
-          <label>统一重要笔记（可选）</label>
-          <textarea id="editGroupImportantNote" rows="3" placeholder="组内重要关键词命中时统一展示的文本（留空则需在每个关键词上单独填写）" class="text-input"></textarea>
+          <div class="label-row">
+            <label for="editGroupImpNoteRich">统一重要笔记（可选）</label>
+            <button type="button" class="hint-btn hint-up" data-tip="勾选后本组所有关键词视为重要；未单独填写重要笔记的关键词将统一使用此分组笔记。所见即所得：图片、加粗、表格、超链接直接在框内显示，点图片或链接可修改、删除，与关键词的重要笔记编辑完全一致。">ⓘ</button>
+          </div>
+          <div class="kw-note-toolbar">
+            <button type="button" class="btn btn-mini" id="btnGNoteInsertImg" title="在光标处插入一张图片">🖼 插入图片</button>
+            <button type="button" class="btn btn-mini" id="btnGNoteBold" title="加粗（先选中文字再点）"><b>B</b></button>
+            <button type="button" class="btn btn-mini" id="btnGNoteItalic" title="斜体（先选中文字再点）"><i>I</i></button>
+            <button type="button" class="btn btn-mini" id="btnGNoteTable" title="插入表格">▦ 表格</button>
+            <button type="button" class="btn btn-mini" id="btnGNoteLink" title="插入超链接（可先选中文字再点）">🔗 链接</button>
+            <span style="font-size:11px;color:#999">所见即所得：图片、加粗、表格、链接直接在框内显示；点图片或链接可修改或删除。</span>
+          </div>
+          <div id="editGroupImpNoteRich" class="kw-note-editor" contenteditable="true" data-placeholder="输入组内统一重要笔记…（所见即所得）"></div>
+          <div class="label-row" style="margin-top:8px;">
+            <label for="editGroupImgSize">图片缩略尺寸 (px)</label>
+            <span style="font-size:11px;color:#999">（分组统一设置，40–600，留空用默认；关键词自带尺寸仍优先）</span>
+          </div>
+          <input type="number" id="editGroupImgSize" min="40" max="600" step="10" placeholder="默认 70" class="text-input" style="width:180px;">
           <span class="form-hint">仅当勾选「标记为重要」时生效；关键词自身已填写的重要笔记优先于本分组统一文本。</span>
         </div>
         <div class="form-group" id="editGroupImpBgRow" style="display:none;">
