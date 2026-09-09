@@ -38,7 +38,7 @@
         </li>
       </ul>
       <div class="sidebar-footer">
-        <span class="version">v1.8.20</span>
+        <span class="version">v1.9.0</span>
       </div>
     </nav>
 
@@ -436,9 +436,10 @@
 
 <h3>📦 版本信息</h3>
           <div class="help-section">
-            <p>当前版本：<strong>v1.8.20</strong></p>
+            <p>当前版本：<strong>v1.9.0</strong></p>
             <p>更新日志：</p>
             <ul>
+              <li><strong>v1.9.0</strong>：① 重要笔记新增<strong>底色</strong>——添加/编辑关键词时可在「重要」区勾选「使用底色」并选颜色（如提醒“优质”用浅绿、提醒“有风险”用浅黄），命中后该词的置顶重要笔记整体铺上所选底色，一眼区分；② 修复<strong>多个单元格组合词命中同一格时只有第一个生效</strong>的问题（如同时配了“应用名称-夸夸”“应用名称-网盘”，右格“夸夸网盘云盘”原来只高亮夸夸、网盘不亮）；③ 修复<strong>偶发重要笔记不显示</strong>的问题（同一右格被多个组合词命中/文字假表格多词同段时被跳过）。</li>
               <li><strong>v1.8.20</strong>：修复“所见即所得”下超链接的一系列问题——① 重要笔记工具栏新增 <strong>「🔗 链接」</strong>按钮，可<strong>先选中文字再点</strong>，在光标处插入可点链接（所见即所得，无需手写 Markdown）；②<strong>点击编辑区里的链接</strong>可修改 / 删除（不再一点就跳走），历史笔记里的超链接重开后也能这样调整；③ 表格单元格里的 <code>[文字](网址)</code> 链接也能渲染成可点链接并保真保存；④ 修复<strong>带括号的网址</strong>（如 <code>...X_(film)</code>）链接被截断、点开 404 的问题；⑤ 纯网址不再被包成 <code>[网址](网址)</code> 弄脏笔记原文。</li>
               <li><strong>v1.8.19</strong>：重要笔记的表格操作改为<strong>Word/PPT 式右下角手柄</strong>——点击表格里任意单元格，表格右下角出现 <strong>＋ －</strong> 浮层：点 ＋ 可「在下方加一行 / 在右侧加一列」，点 － 可「删除该行 / 删除该列 / 删除整个表格」，更直观。移除了原来顶部那排「上插行/删行/插列…」按钮。</li>
               <li><strong>v1.8.18</strong>：重要笔记的表格支持<strong>行列增删</strong>——先点击表格里的单元格，再点工具栏的「上插行 / 下插行 / 删行 / 插列 / 删列 / 删表」即可增删行列或删除整表，所见即所得，存储仍是干净的 Markdown 表格。</li>
@@ -696,6 +697,15 @@
                   <span style="font-size:11px;color:#999">（本词独立设置，40–600，留空用默认 180）</span>
                 </div>
                 <input type="number" id="editKwImgSize" min="40" max="600" step="10" placeholder="默认 70" class="text-input" style="width:180px;">
+                <div class="label-row" style="margin-top:8px;flex-wrap:wrap;gap:6px;">
+                  <label for="editKwImpBgColor">笔记底色</label>
+                  <span style="font-size:11px;color:#999">（勾选后，该词的置顶重要笔记整体铺此底色——如提醒“优质”用浅绿、提醒“有风险”用浅黄）</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;margin-top:4px;">
+                  <label class="checkbox-label" style="white-space:nowrap;"><input type="checkbox" id="editKwImpBgEnable"><span>使用底色</span></label>
+                  <input type="color" id="editKwImpBgColor" value="#e8f5e9" title="选择笔记底色" style="width:38px;height:26px;padding:0;border:1px solid #d0d0d0;border-radius:4px;background:#fff;cursor:pointer;">
+                  <input type="text" id="editKwImpBgHex" maxlength="9" placeholder="#e8f5e9" class="text-input" style="width:110px;" title="可直接输入 hex 色值（如 #fff9c4），与右侧取色器同步">
+                </div>
               </div>
             </div>
           </div>

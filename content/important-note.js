@@ -260,19 +260,21 @@ const ImportantNote = {
       // 单元格特别标注（v1.6.18）：直接读取验证通过时记录的期望值；未启用验证则为空
       const adj = el.getAttribute('data-kh-cell-verify') || '';
       const imgSize = el.getAttribute('data-kh-important-img-size') || ''; // 该词单独设置的图片尺寸(v1.8.4)
+      const bg = el.getAttribute('data-kh-important-bg') || ''; // 该词的笔记底色(v1.9.0)
       const tc = (note.match(/<table/g) || []).length;  // 表格数=抓取字段完整度
       const cur = bestByKw.get(keyword);
-      if (!cur || tc > cur.tc) bestByKw.set(keyword, { note, tc, adj, imgSize });
+      if (!cur || tc > cur.tc) bestByKw.set(keyword, { note, tc, adj, imgSize, bg });
     });
 
     // 按「笔记文本」聚合：若多个关键词命中的笔记内容一致，则合并为一条
-    const noteMap = new Map();  // note -> { note, imgSize, entryMap: Map<keyword, adj> }
+    const noteMap = new Map();  // note -> { note, imgSize, bg, entryMap: Map<keyword, adj> }
     bestByKw.forEach((v, keyword) => {
       const note = v.note;
-      if (!noteMap.has(note)) noteMap.set(note, { note, imgSize: '', entryMap: new Map() });
+      if (!noteMap.has(note)) noteMap.set(note, { note, imgSize: '', bg: '', entryMap: new Map() });
       const grp = noteMap.get(note);
       if (!grp.entryMap.has(keyword)) grp.entryMap.set(keyword, v.adj || '');
       if (!grp.imgSize && v.imgSize) grp.imgSize = v.imgSize;  // 合并时取最先非空的关键词图片尺寸
+      if (!grp.bg && v.bg) grp.bg = v.bg;                      // 笔记相同但底色不同：取最先非空者
     });
 
     // 合并结果：每条 = { note, entries:[{kw, adj}] }，关键词列表用于列举命中了哪些词
@@ -280,7 +282,7 @@ const ImportantNote = {
     noteMap.forEach(g => {
       const entries = [];
       g.entryMap.forEach((adj, kw) => entries.push({ kw, adj }));
-      newItems.push({ note: g.note, entries, imgSize: g.imgSize || '' });
+      newItems.push({ note: g.note, entries, imgSize: g.imgSize || '', bg: g.bg || '' });
     });
 
     // 无命中：直接隐藏
@@ -305,7 +307,7 @@ const ImportantNote = {
   _itemsChanged(newItems) {
     if (this.items.length !== newItems.length) return true;
     // 按「笔记文本 + 排序后的关键词+相邻值」比较
-    const key = (it) => (it.note || '') + '\u0001' + (it.entries || [])
+    const key = (it) => (it.note || '') + '\u0001' + (it.bg || '') + '\u0001' + (it.entries || [])
       .map(e => (e.kw || '') + '\u0003' + (e.adj || ''))
       .sort().join('\u0002');
     const oldKeys = new Set(this.items.map(key));
@@ -381,6 +383,9 @@ const ImportantNote = {
     if (!this.bodyEl) return;
     const itemsHtml = this.items.map(item => {
       const bodyHtml = Utils.sanitizeHTML(item.note);
+      // v1.9.0：笔记底色（整条笔记 body 铺该底色），校验为合法 hex 才应用，防注入；有底色时加内边距/圆角让底色呈块状
+      const bg = /^#[0-9a-fA-F]{3,8}$/.test(item.bg || '') ? item.bg : '';
+      const bgStyle = bg ? `background:${bg};padding:6px 10px;border-radius:6px;` : '';
       // 同一笔记可能命中多个关键词，逐个标签列举；期望值标注用关键词生效背景色高亮（v1.7.9）
       const kwTags = (item.entries || []).map(e => {
         const adjTag = e.adj ? `<span class="khin-item-adj">→ ${this.escapeText(e.adj)}</span>` : '';
@@ -392,7 +397,7 @@ const ImportantNote = {
             <div class="khin-item-tags">${kwTags}</div>
             <button class="khin-item-close" title="本次页面不再显示">✕</button>
           </div>
-          <div class="khin-item-body">${bodyHtml}</div>
+          <div class="khin-item-body" style="${bgStyle}">${bodyHtml}</div>
         </div>
       `;
     }).join('');

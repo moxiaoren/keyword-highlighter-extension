@@ -875,6 +875,12 @@
     $('#editKwImportantNote').innerHTML = '';
     setNoteEditorHTML(keyword?.importantNote || '');
     $('#editKwImgSize').value = keyword?.imgSize || '';
+    // v1.9.0 笔记底色回显（开关 + 取色器 + hex 输入三处同步）
+    const bgVal = (keyword && keyword.impNoteBg) || '';
+    $('#editKwImpBgEnable').checked = !!bgVal;
+    const normBg = (/^#[0-9a-fA-F]{3}$/.test(bgVal)) ? ('#' + bgVal[1] + bgVal[1] + bgVal[2] + bgVal[2] + bgVal[3] + bgVal[3]) : bgVal;
+    if ($('#editKwImpBgColor')) $('#editKwImpBgColor').value = normBg || '#e8f5e9';
+    if ($('#editKwImpBgHex')) $('#editKwImpBgHex').value = bgVal || '';
     // v1.8.17 编辑器内重要笔记图片大小与「命中时展示」同步（默认 70px，可用该词「图片缩略尺寸」覆盖）
     const kweImg = kwe();
     if (kweImg) kweImg.style.setProperty('--kh-note-img-size', (parseInt(keyword?.imgSize, 10) || 70) + 'px');
@@ -889,7 +895,7 @@
 
     // v1.8.13 编辑已有关键词时，按内容自动展开对应折叠区（无内容保持默认折叠）
     const hasCell = !!(keyword && (keyword.cellVerify || keyword.fetchLabels));
-    const hasImp  = !!(keyword && (keyword.important || keyword.importantNote));
+    const hasImp  = !!(keyword && (keyword.important || keyword.importantNote || keyword.impNoteBg));
     const cellSec = $('#kwCellSection');
     const impSec  = $('#kwImportantSection');
     if (cellSec) cellSec.classList.toggle('closed', !hasCell);
@@ -982,6 +988,15 @@
       important: $('#editKwImportant').checked,
       importantNote: mdFromNoteEditor(),
       imgSize: (function(){ const v=($('#editKwImgSize').value||'').trim(); if(!v) return ''; const n=parseInt(v,10); return (!isNaN(n)&&n>=40&&n<=600)? n : ''; })(),
+      // v1.9.0 笔记底色：勾选启用，优先取 hex 文本（支持 #abc / #aabbcc / #aabbccdd），否则用取色器值，非法则存空
+      impNoteBg: (function(){
+        const en = !!($('#editKwImpBgEnable') && $('#editKwImpBgEnable').checked);
+        if (!en) return '';
+        const h = ($('#editKwImpBgHex') && $('#editKwImpBgHex').value || '').trim();
+        const c = ($('#editKwImpBgColor') && $('#editKwImpBgColor').value) || '';
+        const v = /^#[0-9a-fA-F]{3,8}$/.test(h) ? h : c;
+        return /^#[0-9a-fA-F]{3,8}$/.test(v) ? v : '';
+      })(),
       cellVerifyEnabled: !!$('#editKwCellVerifyValue').value.trim(),
       cellVerify: $('#editKwCellVerifyValue').value.trim(),
       cellVerifyMatchMode: $('#editKwCellVerifyExact').checked ? 'exact' : 'include',
@@ -1776,6 +1791,18 @@
 
     // 单元格标注 / 重要笔记 勾选时展开对应细节
     $('#editKwImportant')?.addEventListener('change', toggleKwSections);
+    // v1.9.0 笔记底色：取色器 ↔ hex 输入 双向同步
+    const syncNoteBgInputs = () => {
+      const hex = $('#editKwImpBgHex'), color = $('#editKwImpBgColor');
+      if (!hex || !color) return;
+      let v = (hex.value || '').trim();
+      if (/^#[0-9a-fA-F]{3}$/.test(v)) v = '#' + v[1] + v[1] + v[2] + v[2] + v[3] + v[3];
+      if (/^#[0-9a-fA-F]{6}$/.test(v)) color.value = v;
+      else if (color.value) hex.value = color.value;
+    };
+    $('#editKwImpBgColor')?.addEventListener('input', () => { const c = $('#editKwImpBgColor').value; const hex = $('#editKwImpBgHex'); if (hex) hex.value = c; });
+    $('#editKwImpBgHex')?.addEventListener('input', syncNoteBgInputs);
+    $('#editKwImpBgHex')?.addEventListener('blur', syncNoteBgInputs);
     // 重要笔记富文本编辑（所见即所得）：图片按钮 / 点图改删 / 粘贴净化
     $('#btnKwNoteInsertImg')?.addEventListener('click', insertNoteImage);
     $('#btnKwNoteBold')?.addEventListener('click', () => runNoteCmd('bold'));
