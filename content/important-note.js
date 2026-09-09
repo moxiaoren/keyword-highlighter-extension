@@ -257,6 +257,7 @@ const ImportantNote = {
       if (!note) return;
       if (this.ignored.has(note)) return;
       const keyword = (el.textContent || '').trim();
+      if (!keyword) return; // v1.9.1 跳过 keyword 为空的命中（组合词同格/被拆产生的空标签），避免孤独的“🔖 → 审核状态”
       // 单元格特别标注（v1.6.18）：直接读取验证通过时记录的期望值；未启用验证则为空
       const adj = el.getAttribute('data-kh-cell-verify') || '';
       const imgSize = el.getAttribute('data-kh-important-img-size') || ''; // 该词单独设置的图片尺寸(v1.8.4)
@@ -383,21 +384,22 @@ const ImportantNote = {
     if (!this.bodyEl) return;
     const itemsHtml = this.items.map(item => {
       const bodyHtml = Utils.sanitizeHTML(item.note);
-      // v1.9.0：笔记底色（整条笔记 body 铺该底色），校验为合法 hex 才应用，防注入；有底色时加内边距/圆角让底色呈块状
+      // v1.9.1：笔记底色铺满整条卡片（含标题/标签区），校验为合法 hex 才应用，防注入
       const bg = /^#[0-9a-fA-F]{3,8}$/.test(item.bg || '') ? item.bg : '';
-      const bgStyle = bg ? `background:${bg};padding:6px 10px;border-radius:6px;` : '';
-      // 同一笔记可能命中多个关键词，逐个标签列举；期望值标注用关键词生效背景色高亮（v1.7.9）
+      // v1.9.1：组合词排列改为「标题关键词 → 关键词」（箭头跟随标题模块）；非组合词仍是「🔖 关键词」
       const kwTags = (item.entries || []).map(e => {
-        const adjTag = e.adj ? `<span class="khin-item-adj">→ ${this.escapeText(e.adj)}</span>` : '';
-        return `<span class="khin-item-kw">🔖 ${this.escapeText(e.kw)}</span>${adjTag}`;
+        if (e.adj) {
+          return `<span class="khin-item-kw">🔖 ${this.escapeText(e.adj)}</span><span class="khin-item-adj">→ ${this.escapeText(e.kw)}</span>`;
+        }
+        return `<span class="khin-item-kw">🔖 ${this.escapeText(e.kw)}</span>`;
       }).join(' ');
       return `
-        <div class="khin-item" style="${item.imgSize ? `--kh-img-size:${item.imgSize}px;` : ''}" data-note="${encodeURIComponent(item.note)}">
+        <div class="khin-item" style="${item.imgSize ? `--kh-img-size:${item.imgSize}px;` : ''}${bg ? `background:${bg};` : ''}" data-note="${encodeURIComponent(item.note)}">
           <div class="khin-item-head">
             <div class="khin-item-tags">${kwTags}</div>
             <button class="khin-item-close" title="本次页面不再显示">✕</button>
           </div>
-          <div class="khin-item-body" style="${bgStyle}">${bodyHtml}</div>
+          <div class="khin-item-body">${bodyHtml}</div>
         </div>
       `;
     }).join('');
