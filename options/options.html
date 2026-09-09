@@ -38,7 +38,7 @@
         </li>
       </ul>
       <div class="sidebar-footer">
-        <span class="version">v1.9.3</span>
+        <span class="version">v1.9.4</span>
       </div>
     </nav>
 
@@ -436,9 +436,10 @@
 
 <h3>📦 版本信息</h3>
           <div class="help-section">
-            <p>当前版本：<strong>v1.9.3</strong></p>
+            <p>当前版本：<strong>v1.9.4</strong></p>
             <p>更新日志：</p>
             <ul>
+              <li><strong>v1.9.4</strong>：<strong>分组管理支持重要笔记底色</strong>——编辑分组时在「标记为重要」下新增「使用底色」，可为分组统一重要笔记设置底色；组内未单独设底色的关键词的重要笔记会统一铺上分组底色（关键词自带底色仍优先）。</li>
               <li><strong>v1.9.3</strong>：<strong>组合词标签恢复「标题 → 关键词」排列</strong>——标题在前、箭头+关键词在后；箭头放在关键词一侧（不放标题模块，因标题前有 🔖，避免“🔖 标题 →”的怪样）。</li>
               <li><strong>v1.9.2</strong>：重要笔记组合词标签排列相关微调（最终排列见 v1.9.3 的「标题 → 关键词」）。</li>
               <li><strong>v1.9.1</strong>：① 重要笔记<strong>底色改为铺满整张卡片</strong>（含标题/标签区，不再只铺正文）；② 修复<strong>重要的单元格组合词在笔记里多出一个空关键词标签</strong>的问题（如命中“审核状态-审核不通过”时出现“🔖 → 审核状态”这种冗余，现已去掉空关键词的命中）。</li>
@@ -868,6 +869,17 @@
           <label>统一重要笔记（可选）</label>
           <textarea id="editGroupImportantNote" rows="3" placeholder="组内重要关键词命中时统一展示的文本（留空则需在每个关键词上单独填写）" class="text-input"></textarea>
           <span class="form-hint">仅当勾选「标记为重要」时生效；关键词自身已填写的重要笔记优先于本分组统一文本。</span>
+        </div>
+        <div class="form-group" id="editGroupImpBgRow" style="display:none;">
+          <div class="label-row" style="flex-wrap:wrap;gap:6px;">
+            <label for="editGroupImpBgColor">笔记底色</label>
+            <span style="font-size:11px;color:#999">（仅勾选「标记为重要」时生效；组内未单独设底色的关键词重要笔记统一铺此底色，如“优质”用浅绿、“有风险”用浅黄）</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:4px;">
+            <label class="checkbox-label" style="white-space:nowrap;"><input type="checkbox" id="editGroupImpBgEnable"><span>使用底色</span></label>
+            <input type="color" id="editGroupImpBgColor" value="#e8f5e9" title="选择笔记底色" style="width:38px;height:26px;padding:0;border:1px solid #d0d0d0;border-radius:4px;background:#fff;cursor:pointer;">
+            <input type="text" id="editGroupImpBgHex" maxlength="9" placeholder="#e8f5e9" class="text-input" style="width:110px;" title="可直接输入 hex 色值（如 #fff9c4），与右侧取色器同步">
+          </div>
         </div>
         <div class="form-group">
           <label>高亮颜色</label>

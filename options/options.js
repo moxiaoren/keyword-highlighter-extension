@@ -1086,9 +1086,19 @@
     $('#editGroupImportant').checked = !!(group && group.important);
     // 分组统一重要笔记
     $('#editGroupImportantNote').value = (group && group.importantNote) || '';
-    // 仅勾选「标记为重要」时显示统一文本输入框
+    // v1.9.3 分组统一重要笔记底色
+    const gBg = (group && group.impNoteBg) || '';
+    const gBgNorm = /^#[0-9a-fA-F]{3,8}$/.test(gBg) ? gBg : '';
+    $('#editGroupImpBgEnable').checked = !!gBgNorm;
+    const inpGColor = $('#editGroupImpBgColor');
+    const inpGHex = $('#editGroupImpBgHex');
+    if (inpGColor) inpGColor.value = gBgNorm || '#e8f5e9';
+    if (inpGHex) inpGHex.value = gBgNorm || '';
+    // 仅勾选「标记为重要」时显示统一文本/底色区
     const updateImpNoteRow = () => {
       $('#editGroupImportantNoteRow').style.display =
+        $('#editGroupImportant').checked ? '' : 'none';
+      $('#editGroupImpBgRow').style.display =
         $('#editGroupImportant').checked ? '' : 'none';
     };
     $('#editGroupImportant').onchange = updateImpNoteRow;
@@ -1119,7 +1129,16 @@
       bgColor: useColor ? $('#editGroupBgColor').value : '',
       textColor: useColor ? $('#editGroupTextColor').value : '',
       important: $('#editGroupImportant').checked,
-      importantNote: $('#editGroupImportant').checked ? $('#editGroupImportantNote').value.trim() : ''
+      importantNote: $('#editGroupImportant').checked ? $('#editGroupImportantNote').value.trim() : '',
+      // v1.9.3 分组笔记底色：勾选启用，优先取 hex 文本，否则取取色器值，非法则存空（同关键词逻辑）
+      impNoteBg: (function(){
+        const en = !!($('#editGroupImpBgEnable') && $('#editGroupImpBgEnable').checked);
+        if (!en) return '';
+        const h = ($('#editGroupImpBgHex') && $('#editGroupImpBgHex').value || '').trim();
+        const c = ($('#editGroupImpBgColor') && $('#editGroupImpBgColor').value) || '';
+        const v = /^#[0-9a-fA-F]{3,8}$/.test(h) ? h : c;
+        return /^#[0-9a-fA-F]{3,8}$/.test(v) ? v : '';
+      })()
     };
 
     try {
@@ -1831,6 +1850,20 @@
     $('#groupModalClose')?.addEventListener('click', closeGroupModal);
     $('#groupModalCancel')?.addEventListener('click', closeGroupModal);
     $('#groupModalSave')?.addEventListener('click', saveGroup);
+    // v1.9.3 分组笔记底色：取色器 ↔ hex 输入双向同步（同关键词逻辑）
+    const syncGroupBgInputs = () => {
+      const hex = $('#editGroupImpBgHex'), color = $('#editGroupImpBgColor');
+      if (!hex || !color) return;
+      if (!/^#[0-9a-fA-F]{3,8}$/.test(hex.value.trim())) {
+        hex.value = color.value;
+      }
+    };
+    $('#editGroupImpBgColor')?.addEventListener('input', () => {
+      const cColor = $('#editGroupImpBgColor'); const cHex = $('#editGroupImpBgHex');
+      if (cColor && cHex) cHex.value = cColor.value;
+    });
+    $('#editGroupImpBgHex')?.addEventListener('input', syncGroupBgInputs);
+    $('#editGroupImpBgHex')?.addEventListener('blur', syncGroupBgInputs);
     $('#groupModal')?.addEventListener('click', (e) => {
       if (e.target === $('#groupModal')) closeGroupModal();
     });
