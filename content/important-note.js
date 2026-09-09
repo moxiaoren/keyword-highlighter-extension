@@ -386,12 +386,10 @@ const ImportantNote = {
       const bodyHtml = Utils.sanitizeHTML(item.note);
       // v1.9.1：笔记底色铺满整条卡片（含标题/标签区），校验为合法 hex 才应用，防注入
       const bg = /^#[0-9a-fA-F]{3,8}$/.test(item.bg || '') ? item.bg : '';
-      // v1.9.1：组合词排列改为「标题关键词 → 关键词」（箭头跟随标题模块）；非组合词仍是「🔖 关键词」
+      // 组合词/普通词标签：关键词在前，箭头+相邻标注(标题)在后，箭头随关键词模块（v1.9.2 恢复此原排列）
       const kwTags = (item.entries || []).map(e => {
-        if (e.adj) {
-          return `<span class="khin-item-kw">🔖 ${this.escapeText(e.adj)}</span><span class="khin-item-adj">→ ${this.escapeText(e.kw)}</span>`;
-        }
-        return `<span class="khin-item-kw">🔖 ${this.escapeText(e.kw)}</span>`;
+        const adjTag = e.adj ? `<span class="khin-item-adj">→ ${this.escapeText(e.adj)}</span>` : '';
+        return `<span class="khin-item-kw">🔖 ${this.escapeText(e.kw)}</span>${adjTag}`;
       }).join(' ');
       return `
         <div class="khin-item" style="${item.imgSize ? `--kh-img-size:${item.imgSize}px;` : ''}${bg ? `background:${bg};` : ''}" data-note="${encodeURIComponent(item.note)}">
