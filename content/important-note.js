@@ -386,10 +386,13 @@ const ImportantNote = {
       const bodyHtml = Utils.sanitizeHTML(item.note);
       // v1.9.1：笔记底色铺满整条卡片（含标题/标签区），校验为合法 hex 才应用，防注入
       const bg = /^#[0-9a-fA-F]{3,8}$/.test(item.bg || '') ? item.bg : '';
-      // 组合词/普通词标签：关键词在前，箭头+相邻标注(标题)在后，箭头随关键词模块（v1.9.2 恢复此原排列）
+      // 组合词/普通词标签（v1.9.3）：排列为「标题在前 → 关键词在后」；
+      // 箭头(→ 关键词)放在关键词一侧，不放标题模块（因标题带 🔖，避免“🔖 标题 →”的怪样）。
       const kwTags = (item.entries || []).map(e => {
-        const adjTag = e.adj ? `<span class="khin-item-adj">→ ${this.escapeText(e.adj)}</span>` : '';
-        return `<span class="khin-item-kw">🔖 ${this.escapeText(e.kw)}</span>${adjTag}`;
+        if (e.adj) {
+          return `<span class="khin-item-kw">🔖 ${this.escapeText(e.adj)}</span><span class="khin-item-adj">→ ${this.escapeText(e.kw)}</span>`;
+        }
+        return `<span class="khin-item-kw">🔖 ${this.escapeText(e.kw)}</span>`;
       }).join(' ');
       return `
         <div class="khin-item" style="${item.imgSize ? `--kh-img-size:${item.imgSize}px;` : ''}${bg ? `background:${bg};` : ''}" data-note="${encodeURIComponent(item.note)}">
