@@ -1749,6 +1749,12 @@
   async function init() {
     initNavigation();
 
+    // v1.10.0 版本号单源化：侧栏版本从 manifest 动态读取，杜绝与发版版本不同步
+    (function syncSidebarVersion() {
+      const sv = document.getElementById('sidebarVersion');
+      if (sv) { try { sv.textContent = 'v' + (chrome.runtime.getManifest().version || ''); } catch (e) {} }
+    })();
+
     // 支持从 popup/欢迎页跳转到指定分区（如 #help -> 帮助与隐私）
     if (location.hash === '#help') switchSection('help');
 
@@ -1977,6 +1983,26 @@
     loadKeywords();
     initHelpCollapse();
     buildHelpToc();
+
+    // v1.10.0 changelog 单源化：版本信息区从共享 CHANGELOG 渲染近期更新
+    renderChangelogPreview();
+  }
+
+  // 版本信息区：动态读取当前版本 + 渲染共享 CHANGELOG（lib/changelog.js）近期条目
+  function renderChangelogPreview() {
+    const list = document.getElementById('changelogPreview');
+    if (!list) return;
+    const verEl = document.getElementById('verHelpCurrent');
+    let currentVer = '';
+    try { currentVer = 'v' + (chrome.runtime.getManifest().version || ''); } catch (e) {}
+    if (verEl) verEl.textContent = currentVer || '—';
+    const data = (typeof CHANGELOG !== 'undefined' && CHANGELOG) ? CHANGELOG : [];
+    const recent = data.slice(0, 6);
+    if (!recent.length) { list.textContent = '暂无更新记录'; return; }
+    list.innerHTML = '<ul>' + recent.map((e) => {
+      const items = (e.items || []).map((it) => it).join('<br>');
+      return '<li><strong>' + e.version + '</strong>：' + items + '</li>';
+    }).join('') + '</ul>';
   }
 
   document.addEventListener('DOMContentLoaded', init);
