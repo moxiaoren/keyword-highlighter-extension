@@ -1859,11 +1859,12 @@
       edEl.addEventListener('keydown', trackTableCell);
       edEl.addEventListener('scroll', positionTableHandle);
       document.addEventListener('selectionchange', () => { if (document.activeElement === edEl) trackTableCell(); });
-      $(ids.insertImg)?.addEventListener('click', use(insertNoteImage));
-      $(ids.bold)?.addEventListener('click', use(() => runNoteCmd('bold')));
-      $(ids.italic)?.addEventListener('click', use(() => runNoteCmd('italic')));
-      $(ids.table)?.addEventListener('click', use(insertNoteTable));
-      $(ids.link)?.addEventListener('click', use(insertNoteLink));
+      // $ 为 querySelector，id 必须带前导 #；历史 bug 曾用 $(ids.x)（无 #）导致工具栏按钮全部失效
+      $('#' + ids.insertImg)?.addEventListener('click', use(insertNoteImage));
+      $('#' + ids.bold)?.addEventListener('click', use(() => runNoteCmd('bold')));
+      $('#' + ids.italic)?.addEventListener('click', use(() => runNoteCmd('italic')));
+      $('#' + ids.table)?.addEventListener('click', use(insertNoteTable));
+      $('#' + ids.link)?.addEventListener('click', use(insertNoteLink));
     }
     initTableHandle();
     wireNoteEditor($('#editKwImportantNote'), { insertImg: 'btnKwNoteInsertImg', bold: 'btnKwNoteBold', italic: 'btnKwNoteItalic', table: 'btnKwNoteTable', link: 'btnKwNoteLink' });
