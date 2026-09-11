@@ -1779,7 +1779,7 @@
     if (window.KH_ADD_MODE) {
       const layout = document.querySelector('.app-layout');
       if (layout) layout.style.display = 'none';
-      document.body.style.background = '#f7f9fc';
+      document.body.classList.add('add-mode');
       showKeywordModal();
     }
     $('#keywordSearch')?.addEventListener('input', () => { kwState.page = 1; loadKeywords(); });

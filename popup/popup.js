@@ -125,7 +125,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       try { await chrome.windows.update(addWindowId, { focused: true }); return; }
       catch (e) { addWindowId = null; }
     }
-    const W = 700, H = 560;
+    const W = 820, H = 680;
     let left = undefined, top = undefined;
     try {
       const f = await chrome.windows.getCurrent();
@@ -136,7 +136,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (top < 0) top = 0;
       }
     } catch (e) { /* 默认居中 */ }
-    const win = await chrome.windows.create({ url, type: 'popup', width: W, height: H, left, top });
+    const win = await chrome.windows.create({ url, type: 'popup', width: W, height: H, left, top, resizable: false });
     addWindowId = win.id;
     if (addWindowId !== null) {
       chrome.windows.onRemoved.addListener(function onClose(wid) {

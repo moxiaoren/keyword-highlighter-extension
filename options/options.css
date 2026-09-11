@@ -838,6 +838,17 @@ textarea.text-input { resize: vertical; line-height: 1.6; }
 /* 旧版帮助横向标签（保留兼容，未在 HTML 使用） */
 .help-tabs { display: none; }
 
+/* ===== 快速添加独立窗口（options?add）沉浸式呈现 ===== */
+body.add-mode {
+  background:
+    radial-gradient(760px 440px at 85% -10%, rgba(95,176,238,.20), transparent 55%),
+    radial-gradient(600px 380px at 8% 110%, rgba(74,144,217,.12), transparent 60%),
+    linear-gradient(150deg, #eef3fb, #f8fafd) !important;
+}
+body.add-mode .modal-overlay { background: rgba(23,32,48,.28); backdrop-filter: none; }
+body.add-mode .modal-dialog { width: min(780px, 96vw); max-height: 92vh; }
+body.add-mode .modal-body { padding: 20px 24px; }
+
 /* ---------------- 响应式 ---------------- */
 @media (max-width: 768px) {
   .sidebar { width: 62px; }

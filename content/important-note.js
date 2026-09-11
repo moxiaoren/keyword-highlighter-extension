@@ -38,14 +38,14 @@ const ImportantNote = {
       width: 48px;
       height: 48px;
       border-radius: 50%;
-      background: linear-gradient(135deg, #ff8a3d, #ff5722);
+      background: linear-gradient(135deg, #3579c2, #5fb0ee);
       color: #fff;
       display: flex;
       align-items: center;
       justify-content: center;
       font-size: 22px;
       cursor: pointer;
-      box-shadow: 0 4px 14px rgba(255, 87, 34, 0.4);
+      box-shadow: 0 4px 14px rgba(74, 144, 217, 0.4);
       position: relative;
       transition: transform 0.15s ease, box-shadow 0.15s ease;
     }
@@ -73,7 +73,7 @@ const ImportantNote = {
       max-width: calc(100vw - 32px);
       max-height: calc(100vh - 24px);
       background: #fff;
-      border: 1px solid #e3e3e3;
+      border: 1px solid #e3e8f0;
       border-radius: 10px;
       box-shadow: 0 8px 28px rgba(0,0,0,0.18);
       overflow: hidden;
@@ -91,14 +91,14 @@ const ImportantNote = {
       align-items: center;
       gap: 8px;
       padding: 10px 12px;
-      background: linear-gradient(135deg, #fff7f0, #ffecdb);
+      background: linear-gradient(180deg, #ffffff, #eaf1fb);
       border-bottom: 1px solid #f3e0cf;
       cursor: move;
       flex-shrink: 0;
     }
     .khin-header-icon { font-size: 16px; }
-    .khin-header-title { font-size: 14px; font-weight: 600; color: #bf360c; flex: 1; }
-    .khin-header-count { font-size: 12px; color: #e64a19; background: #ffe0b2; border-radius: 10px; padding: 1px 8px; }
+    .khin-header-title { font-size: 14px; font-weight: 600; color: #3579c2; flex: 1; }
+    .khin-header-count { font-size: 12px; color: #3579c2; background: #eaf1fb; border-radius: 10px; padding: 1px 8px; }
     .khin-header-btn {
       background: none; border: none; cursor: pointer; font-size: 15px;
       color: #8a8a8a; padding: 2px 4px; border-radius: 4px; line-height: 1;
@@ -127,8 +127,8 @@ const ImportantNote = {
       display: flex; flex-wrap: wrap; gap: 5px; flex: 1; min-width: 0;
     }
     .khin-item-kw {
-      font-size: 12px; font-weight: 600; color: #e64a19;
-      background: #fff1e6; border-radius: 4px; padding: 1px 7px;
+      font-size: 12px; font-weight: 600; color: #3579c2;
+      background: #eaf1fb; border-radius: 4px; padding: 1px 7px;
       max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
       flex-shrink: 0;
     }
