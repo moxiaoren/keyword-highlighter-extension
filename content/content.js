@@ -21,6 +21,7 @@
   let _polledUrl = null;
   let _pollTimer = null;
   let suspendEnabled = true; // (v1.10.5) 标签页隐藏时暂停高亮开关，从配置读取默认开
+  let refetchTimer = null;   // (v1.10.6) 异步重抓重要笔记抓取字段的节流定时器
 
   /**
    * 清理当前会话的高亮、观察器与笔记卡片（站内分页切换/禁用时用于「下线」）
@@ -157,7 +158,19 @@
       await NoteCard.init();
 
       // 绑定置顶悬浮重要笔记刷新回调
-      KeywordEngine.onHighlight = () => { ImportantNote.refresh(); };
+      KeywordEngine.onHighlight = () => {
+        ImportantNote.refresh();
+        // (v1.10.6) 异步重抓重要笔记抓取字段：表格数据为异步填充时，初始可能抓到默认值/空值，
+        // 每次高亮批次完成后节流地重抓一次纠正（仅内容变化时刷新，值稳定后自然停止）。
+        if (!refetchTimer) {
+          refetchTimer = setTimeout(() => {
+            refetchTimer = null;
+            try {
+              if (currentKeywords.length) KeywordEngine.refreshImportantFetches(currentKeywords);
+            } catch (e) { console.error('[KeywordHighlighter] 重抓重要笔记失败:', e); }
+          }, 500);
+        }
+      };
 
       // 执行高亮
       await KeywordEngine.highlightKeywords(currentKeywords, data);
