@@ -850,8 +850,12 @@
   function insertNoteTable() {
     const ed = kwe();
     if (!ed) return;
-    const rows = Math.min(Math.max(parseInt(window.prompt('表格行数（含表头）：', '2'), 10) || 2, 1), 20);
-    const cols = Math.min(Math.max(parseInt(window.prompt('表格列数：', '3'), 10) || 3, 1), 10);
+    const rowsInput = window.prompt('表格行数（含表头）：', '2');
+    if (rowsInput === null) return; // 用户取消 → 不生成表格
+    const colsInput = window.prompt('表格列数：', '3');
+    if (colsInput === null) return; // 用户取消 → 不生成表格
+    const rows = Math.min(Math.max(parseInt(rowsInput, 10) || 2, 1), 20);
+    const cols = Math.min(Math.max(parseInt(colsInput, 10) || 3, 1), 10);
     let h = '<table><tbody>';
     h += '<tr>' + ('<th>表头</th>').repeat(cols) + '</tr>';
     for (let r = 1; r < rows; r++) h += '<tr>' + ('<td>内容</td>').repeat(cols) + '</tr>';

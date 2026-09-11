@@ -1,155 +1,129 @@
-/* ============================================
-   关键词高亮 - 内容脚本样式
-   ============================================ */
-
-/* 高亮词基础样式 */
-.kh-highlight {
-  display: inline;
-  padding:  1px 3px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  position: relative;
+/* ============================================================
+   关键词高亮 - 内容脚本样式 · v2（品牌蓝统一 + 精致化，保持轻量安全）
+   ============================================================ */
+:root {
+  --kh-brand: #4a90d9;
+  --kh-brand-deep: #3579c2;
+  --kh-brand-soft: #eaf1fb;
+  --kh-border: #e3e8f0;
+  --kh-text: #1f2937;
+  --kh-text-2: #4b5563;
+  --kh-text-3: #6b7280;
 }
 
+/* ---------- 高亮词基础样式 ---------- */
+.kh-highlight {
+  display: inline;
+  padding: 1px 3px;
+  cursor: pointer;
+  transition: filter .15s ease, box-shadow .15s ease, border-radius .15s ease;
+  position: relative;
+  border-radius: 3px;
+}
 .kh-highlight:hover {
-  filter: brightness(0.9);
-  transform: scale(1.02);
+  filter: brightness(.92) saturate(1.05);
+  box-shadow: 0 0 0 2px rgba(74, 144, 217, .35);
 }
 
 .kh-highlight-active {
-  outline:  2px solid #4a90d9;
-  outline-offset:  1px;
+  outline: 2px solid var(--kh-brand);
+  outline-offset: 1px;
   z-index: 1;
+  border-radius: 3px;
 }
 
-/* ============================================
-   悬浮备注卡片
-   ============================================ */
+/* ---------- 悬浮备注卡片 ---------- */
 #kh-note-card {
   position: fixed;
   z-index: 2147483647;
   background: #ffffff;
-  border: 1px solid #cccccc;
-  border-radius:  8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  max-width:  320px;
-  min-width:  200px;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  font-size:  14px;
-  line-height: 1.5;
-  color: #333333;
-  opacity: 0.96;
-  animation: kh-fadeIn 0.15s ease-out;
+  border: 1px solid var(--kh-border);
+  border-radius: 12px;
+  box-shadow: 0 8px 26px rgba(16, 24, 40, .16);
+  max-width: 320px;
+  min-width: 200px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--kh-text);
+  opacity: 0.97;
+  animation: kh-fadeIn .16s ease-out;
   pointer-events: auto;
+  overflow: hidden;
 }
 
 .kh-note-pinned {
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 10px 32px rgba(16, 24, 40, .24);
 }
 
 @keyframes kh-fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(-4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .kh-note-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding:  8px 12px  4px 12px;
-  border-bottom: 1px solid #f0f0f0;
+  padding: 9px 12px 7px;
+  border-bottom: 1px solid var(--kh-border);
+  background: linear-gradient(180deg, #fff, var(--kh-brand-soft));
 }
 
 .kh-note-keyword {
   font-weight: 600;
-  font-size:  13px;
-  color: #666666;
+  font-size: 13px;
+  color: var(--kh-brand-deep);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 200px;
 }
 
-.kh-note-actions {
-  display: flex;
-  gap:  4px;
-  flex-shrink: 0;
-}
-
+.kh-note-actions { display: flex; gap: 4px; flex-shrink: 0; }
 .kh-note-actions button {
   background: none;
   border: none;
-  padding:  2px 4px;
+  padding: 3px 5px;
   cursor: pointer;
-  font-size:  14px;
-  opacity: 0.6;
-  transition: opacity 0.15s;
-  border-radius:  4px;
+  font-size: 14px;
+  opacity: .55;
+  transition: opacity .15s, background .15s;
+  border-radius: 6px;
   line-height: 1;
 }
-
-.kh-note-actions button:hover {
-  opacity: 1;
-  background: #f0f0f0;
-}
+.kh-note-actions button:hover { opacity: 1; background: rgba(74, 144, 217, .12); }
 
 .kh-note-body {
-  padding:  8px 12px 12px 12px;
+  padding: 10px 12px 12px;
   word-break: break-word;
   overflow-wrap: break-word;
-  white-space: pre-wrap;   /* 保留换行等排版格式 */
-  max-height:  200px;
+  white-space: pre-wrap;
+  max-height: 200px;
   overflow-y: auto;
+  color: var(--kh-text-2);
 }
+.kh-note-body a { color: var(--kh-brand); text-decoration: none; transition: text-decoration .15s; }
+.kh-note-body a:hover { text-decoration: underline; }
+.kh-note-body b, .kh-note-body strong { font-weight: 600; color: var(--kh-text); }
+.kh-note-body i, .kh-note-body em { font-style: italic; }
 
-.kh-note-body a {
-  color: #1a73e8;
-  text-decoration: none;
-}
-
-.kh-note-body a:hover {
-  text-decoration: underline;
-}
-
-.kh-note-body b,
-.kh-note-body strong {
-  font-weight: 600;
-}
-
-.kh-note-body i,
-.kh-note-body em {
-  font-style: italic;
-}
-
-.kh-note-arrow {
-  display: none;
-}
+.kh-note-arrow { display: none; }
 
 /* 滚动条美化 */
-.kh-note-body::-webkit-scrollbar {
-  width:  4px;
-}
+.kh-note-body::-webkit-scrollbar { width: 5px; }
+.kh-note-body::-webkit-scrollbar-track { background: transparent; }
+.kh-note-body::-webkit-scrollbar-thumb { background: #d3d9e4; border-radius: 3px; }
 
-.kh-note-body::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.kh-note-body::-webkit-scrollbar-thumb {
-  background: #d0d0d0;
-  border-radius:  2px;
-}
-
-/* 备注卡片/重要笔记内的 Excel 表格（v1.6.38） */
+/* ---------- Excel 表格（备注/重要笔记内） ---------- */
 .kh-table { border-collapse: collapse; margin-top: 4px; width: 100%; }
-.kh-table td { border: 1px solid #d3dae3; padding: 3px 8px; font-size: 12px; line-height: 1.5; background: #fff; }
-.kh-table tr:first-child td { background: #f0f4f9; font-weight: 600; }
+.kh-table td { border: 1px solid #d8dee8; padding: 4px 9px; font-size: 12px; line-height: 1.55; background: #fff; }
+.kh-table tr:first-child td { background: var(--kh-brand-soft); font-weight: 600; color: var(--kh-text); }
 
-/* 备注卡片/重要笔记内图片（v1.8.0），自适应不撑破容器 */
-.kh-note-body img,
-.kh-table img { max-width: 100%; height: auto; border-radius: 4px; margin: 4px 0; display: block; }
+/* ---------- 图片自适应 ---------- */
+.kh-note-body img, .kh-table img {
+  max-width: 100%; height: auto; border-radius: 6px; margin: 4px 0; display: block;
+}
+
+/* ---------- 高亮命中态（与重要笔记角标相关的通用态） ---------- */
+.kh-imp-active { box-shadow: 0 0 0 2px rgba(74, 144, 217, .3); border-radius: 3px; }

@@ -51,7 +51,7 @@ const topVer = (read('lib/changelog.js').match(/version:\s*'v([0-9.]+)'/) || [])
 if (!topVer) warnings.push('lib/changelog.js 无任何版本条目');
 else if (topVer !== mv) errors.push(`版本不一致：manifest=${mv}，但 CHANGELOG 最新条目为 v${topVer}（应同步为新版本）`);
 
-const flatFiles = ['options/options.html', 'popup/popup.html', 'welcome/welcome.html'].map((f) => read(f)).join('\n').replace(//g, ''); // 剥离HTML注释，避免把历史版本标记当残留
+const flatFiles = ['options/options.html', 'popup/popup.html', 'welcome/welcome.html'].map((f) => read(f)).join('\n').replace(/<!--[\s\S]*?-->/g, ''); // 剥离HTML注释，避免把历史版本标记当残留
 const hardVer = flatFiles.match(/v\d+\.\d+\.\d+/g) || [];
 if (hardVer.length) {
   const stale = [...new Set(hardVer)].filter((v) => v !== 'v' + mv);
