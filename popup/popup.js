@@ -136,7 +136,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (top < 0) top = 0;
       }
     } catch (e) { /* 默认居中 */ }
-    const win = await chrome.windows.create({ url, type: 'popup', width: W, height: H, left, top, resizable: false });
+    let win;
+    try {
+      win = await chrome.windows.create({ url, type: 'popup', width: W, height: H, left, top });
+    } catch (e) {
+      // 个别浏览器(如部分 Chromium 内核)对 type:'popup' 窗口创建支持不佳会抛错，降级重试，避免点击无反应
+      try { win = await chrome.windows.create({ url, width: W, height: H, left, top }); }
+      catch (e2) { return; }
+    }
     addWindowId = win.id;
     if (addWindowId !== null) {
       chrome.windows.onRemoved.addListener(function onClose(wid) {
