@@ -1593,10 +1593,29 @@
   }
 
   // ========== 导入导出 ==========
+  // —— 导出：选择范围 ——
+  function exportSetAll(checked) {
+    document.querySelectorAll('#exportModal input[data-scope]').forEach(cb => cb.checked = !!checked);
+  }
+  function openExportModal() { const m = $('#exportModal'); if (m) m.style.display = 'flex'; }
+  function closeExportModal() { const m = $('#exportModal'); if (m) m.style.display = 'none'; }
   async function exportJSON() {
+    openExportModal();
+  }
+  async function doExport() {
+    const cb = id => { const e = $(id); return e ? e.checked : false; };
+    const scope = {
+      keywords: cb('#exportKw'),
+      siteRules: cb('#exportSite'),
+      siteDisabled: cb('#exportDisabled'),
+      styles: cb('#exportStyle')
+    };
+    if (!(scope.keywords || scope.siteRules || scope.siteDisabled || scope.styles)) { alert('请至少勾选一项要导出的内容。'); return; }
     try {
-      const jsonStr = await Storage.exportData();
-      downloadFile('keyword-highlighter-backup.json', jsonStr, 'application/json');
+      const jsonStr = await Storage.exportData(scope);
+      const full = scope.keywords && scope.siteRules && scope.siteDisabled && scope.styles;
+      downloadFile(full ? 'keyword-highlighter-backup.json' : 'keyword-highlighter-part.json', jsonStr, 'application/json');
+      closeExportModal();
     } catch (err) {
       alert('导出失败：' + err.message);
     }
@@ -1611,6 +1630,8 @@
     }
   }
 
+  // —— 导入：选择范围 + 合并/覆盖 ——
+  let pendingImportText = null;
   function importFile(accept, callback) {
     const input = $('#importFileInput');
     input.accept = accept;
@@ -1619,10 +1640,7 @@
       if (!file) return;
       try {
         const text = await file.text();
-        await callback(text);
-        alert('导入成功！');
-        loadKeywords();
-        notifyContentRefresh();
+        await callback(text, file); // 回调自行决定提示与后续动作
       } catch (err) {
         alert('导入失败：' + err.message);
       }
@@ -1631,15 +1649,67 @@
     input.click();
   }
 
+  function openImportModal(preview, text) {
+    pendingImportText = text;
+    const setChk = (id, v) => { const e = $(id); if (e) e.checked = !!v; };
+    setChk('#impKw', preview.hasKeywords);
+    setChk('#impSite', preview.hasSiteRules);
+    setChk('#impDisabled', preview.hasSiteDisabled);
+    setChk('#impStyle', preview.hasStyles);
+    const m = document.querySelector('input[name="impMode"][value="merge"]');
+    if (m) m.checked = true;
+    const mm = $('#importModal');
+    if (mm) mm.style.display = 'flex';
+  }
+  function closeImportModal() { const mm = $('#importModal'); if (mm) mm.style.display = 'none'; pendingImportText = null; }
   async function importJSON() {
     importFile('.json', async (text) => {
-      await Storage.importData(text);
+      const preview = await Storage.getImportPreview(text);
+      if (!(preview.hasKeywords || preview.hasSiteRules || preview.hasSiteDisabled || preview.hasStyles)) {
+        alert('该文件不包含可导入的关键词 / 站点规则 / 样式数据。');
+        return;
+      }
+      openImportModal(preview, text);
     });
+  }
+  async function doImport() {
+    const text = pendingImportText;
+    if (!text) { closeImportModal(); return; }
+    const include = {
+      keywords: $('#impKw')?.checked === true,
+      siteRules: $('#impSite')?.checked === true,
+      siteDisabled: $('#impDisabled')?.checked === true,
+      styles: $('#impStyle')?.checked === true
+    };
+    const modeEl = document.querySelector('input[name="impMode"]:checked');
+    const mode = modeEl ? modeEl.value : 'merge';
+    if (!(include.keywords || include.siteRules || include.siteDisabled || include.styles)) { alert('请至少勾选一项要导入的内容。'); return; }
+    try {
+      const stats = await Storage.importData(text, { include, mode });
+      closeImportModal();
+      if (mode === 'overwrite') {
+        alert('已覆盖导入所选内容。');
+      } else {
+        const nk = (stats.keywords || 0) + (stats.groups || 0);
+        const ns = stats.siteRules || 0;
+        alert((nk + ns) > 0
+          ? '合并导入完成：新增关键词/分组 ' + nk + '、站点规则 ' + ns + '。'
+          : '合并导入完成：所选内容与现有数据一致，没有新增。');
+      }
+      loadKeywords();
+      loadSiteRules();
+      notifyContentRefresh();
+    } catch (err) {
+      alert('导入失败：' + err.message);
+    }
   }
 
   async function importCSV() {
     importFile('.csv', async (text) => {
       await Storage.importCSV(text);
+      alert('已导入 CSV（关键词）。');
+      loadKeywords();
+      notifyContentRefresh();
     });
   }
 
@@ -1971,6 +2041,18 @@
     $('#btnExportCSV')?.addEventListener('click', exportCSV);
     $('#btnImportJSON')?.addEventListener('click', importJSON);
     $('#btnImportCSV')?.addEventListener('click', importCSV);
+    // 导出内容弹窗
+    $('#exportModalOk')?.addEventListener('click', doExport);
+    $('#exportModalCancel')?.addEventListener('click', closeExportModal);
+    $('#exportModalClose')?.addEventListener('click', closeExportModal);
+    $('#exportAll')?.addEventListener('click', () => exportSetAll(true));
+    $('#exportNone')?.addEventListener('click', () => exportSetAll(false));
+    (() => { const el = document.getElementById('exportModal'); if (el) el.addEventListener('click', e => { if (e.target === el) closeExportModal(); }); })();
+    // 导入内容弹窗
+    $('#importModalOk')?.addEventListener('click', doImport);
+    $('#importModalCancel')?.addEventListener('click', closeImportModal);
+    $('#importModalClose')?.addEventListener('click', closeImportModal);
+    (() => { const el = document.getElementById('importModal'); if (el) el.addEventListener('click', e => { if (e.target === el) closeImportModal(); }); })();
     $('#btnResetAll')?.addEventListener('click', resetAll);
 
     // 批量添加关键词

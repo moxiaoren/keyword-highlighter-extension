@@ -289,16 +289,16 @@
         
         <div class="ie-section">
           <h3>导出数据</h3>
-          <p>将所有关键词、分组和配置导出为文件。</p>
+          <p>可选择导出「关键词 / 站点规则 / 样式」等范围——比如只把<strong>站点黑白名单</strong>导出分享给朋友，而不带本地临时状态。</p>
           <div class="ie-buttons">
-            <button class="btn btn-primary" id="btnExportJSON">📥 导出 JSON</button>
+            <button class="btn btn-primary" id="btnExportJSON">📥 导出 JSON（可选内容）</button>
             <button class="btn btn-secondary" id="btnExportCSV">📊 导出 CSV（仅关键词）</button>
           </div>
         </div>
 
         <div class="ie-section">
           <h3>导入数据</h3>
-          <p>从之前导出的 JSON 或 CSV 文件恢复数据。<strong>注意：导入将覆盖现有数据。</strong></p>
+          <p>导入 JSON 时可<strong>只选要导入的部分</strong>并选择 <strong>合并 / 覆盖</strong>：<strong>合并</strong> 把文件内容追加进现有配置（去重、不删你原有的词），<strong>覆盖</strong> 用文件内容替换对应部分。</p>
           <div class="ie-buttons">
             <button class="btn btn-primary" id="btnImportJSON">📤 导入 JSON</button>
             <button class="btn btn-secondary" id="btnImportCSV">📊 导入 CSV</button>
@@ -499,6 +499,77 @@
         </div>
       </section>
     </main>
+  </div>
+
+  <!-- 导出内容选择弹窗 -->
+  <div class="modal-overlay" id="exportModal" style="display:none;">
+    <div class="modal-dialog modal-sm">
+      <div class="modal-header">
+        <h3>📤 导出内容</h3>
+        <button class="modal-close" id="exportModalClose" aria-label="关闭">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="form-hint" style="margin-bottom:10px;">勾选要导出的内容。只勾「站点规则」即可单独导出黑白名单分享给朋友。</p>
+        <label class="checkbox-label" style="padding:8px 4px;font-size:14px;">
+          <input type="checkbox" id="exportKw" data-scope checked> 关键词与分组
+        </label>
+        <label class="checkbox-label" style="padding:8px 4px;font-size:14px;">
+          <input type="checkbox" id="exportSite" data-scope checked> 站点规则（黑白名单）
+        </label>
+        <label class="checkbox-label" style="padding:8px 4px;font-size:14px;">
+          <input type="checkbox" id="exportDisabled" data-scope> 站点禁用状态
+          <span class="form-hint" style="display:inline;margin:0 0 0 6px;">（本地临时状态，一般无需分享）</span>
+        </label>
+        <label class="checkbox-label" style="padding:8px 4px;font-size:14px;">
+          <input type="checkbox" id="exportStyle" data-scope checked> 高亮样式 / 备注卡片样式
+        </label>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary btn-sm" id="exportAll">全选</button>
+        <button class="btn btn-secondary btn-sm" id="exportNone">全不选</button>
+        <span style="flex:1"></span>
+        <button class="btn btn-secondary" id="exportModalCancel">取消</button>
+        <button class="btn btn-primary" id="exportModalOk">导出</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 导入内容选择弹窗 -->
+  <div class="modal-overlay" id="importModal" style="display:none;">
+    <div class="modal-dialog modal-sm">
+      <div class="modal-header">
+        <h3>📥 导入内容</h3>
+        <button class="modal-close" id="importModalClose" aria-label="关闭">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="form-hint" style="margin-bottom:10px;">该文件包含以下内容，勾选要导入的部分：</p>
+        <label class="checkbox-label" style="padding:8px 4px;font-size:14px;">
+          <input type="checkbox" id="impKw"> 关键词与分组
+        </label>
+        <label class="checkbox-label" style="padding:8px 4px;font-size:14px;">
+          <input type="checkbox" id="impSite"> 站点规则（黑白名单）
+        </label>
+        <label class="checkbox-label" style="padding:8px 4px;font-size:14px;">
+          <input type="checkbox" id="impDisabled"> 站点禁用状态
+        </label>
+        <label class="checkbox-label" style="padding:8px 4px;font-size:14px;">
+          <input type="checkbox" id="impStyle"> 高亮样式 / 备注卡片样式
+        </label>
+        <div class="form-section" style="margin-top:14px;padding:12px 14px;background:var(--bg-3,.ef);border-radius:var(--r-sm,.4);border:1px solid var(--border,inherit);">
+          <p style="font-size:13px;margin:0 0 8px;color:var(--text-3);">导入方式</p>
+          <label class="checkbox-label" style="padding:4px 2px;font-size:14px;">
+            <input type="radio" name="impMode" value="merge" checked> <b>合并</b>（追加去重，不删除原有内容）
+          </label>
+          <label class="checkbox-label" style="padding:4px 2px;font-size:14px;">
+            <input type="radio" name="impMode" value="overwrite"> <b>覆盖</b>（用文件内容替换勾选部分）
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="importModalCancel">取消</button>
+        <button class="btn btn-primary" id="importModalOk">导入</button>
+      </div>
+    </div>
   </div>
 
   <!-- 关键词编辑弹窗 -->
