@@ -1185,7 +1185,7 @@
 
   // ========== 高亮样式 ==========
   async function loadStyles() {
-    const data = await Storage.get(['highlightStyle']);
+    const data = await Storage.get(['highlightStyle', 'suspendInactiveTab']);
     const style = data.highlightStyle || Storage.defaults.highlightStyle;
 
     $('#hlBgColor').value = style.defaultBgColor;
@@ -1196,6 +1196,9 @@
     $('#hlBorderColorText').value = style.defaultBorderColor;
     $('#hlBorderWidth').value = style.defaultBorderWidth;
     $('#hlBorderRadius').value = style.defaultBorderRadius;
+
+    const cb = $('#optSuspendInactiveTab');
+    if (cb) cb.checked = data.suspendInactiveTab !== false;
 
     updateHighlightPreview();
   }
@@ -1218,7 +1221,10 @@
       defaultBorderWidth: $('#hlBorderWidth').value,
       defaultBorderRadius: $('#hlBorderRadius').value
     };
-    await Storage.set({ highlightStyle: style });
+    const opt = {};
+    const cb = $('#optSuspendInactiveTab');
+    if (cb) opt.suspendInactiveTab = cb.checked;
+    await Storage.set(Object.assign({ highlightStyle: style }, opt));
     updateHighlightPreview();
     notifyContentRefresh();
   }

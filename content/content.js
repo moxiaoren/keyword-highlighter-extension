@@ -20,6 +20,7 @@
   // 轮询用：记住上次看到的 URL，用于兜底检测（覆盖不走 pushState/replaceState/hashchange 的 SPA 跳转）
   let _polledUrl = null;
   let _pollTimer = null;
+  let suspendEnabled = true; // (v1.10.5) 标签页隐藏时暂停高亮开关，从配置读取默认开
 
   /**
    * 清理当前会话的高亮、观察器与笔记卡片（站内分页切换/禁用时用于「下线」）
@@ -118,6 +119,7 @@
 
       const data = await Storage.getAll();
       currentConfig = data;
+      suspendEnabled = data.suspendInactiveTab !== false;
 
       // 无论是否高亮都初始化置顶笔记组件（供各分支统一清理）；传入配置以读取相邻单元格标注开关
       await ImportantNote.init(data);
@@ -212,14 +214,36 @@
     return true; // 保持消息通道开放
   });
 
+  // 标签页隐藏时暂停高亮（断开观察器+清理），重新可见时重建（节省后台资源，默认开启可在设置中关闭）
+  function setupVisibilitySuspend() {
+    if (window.__kh_visBound) return;
+    window.__kh_visBound = true;
+    document.addEventListener('visibilitychange', () => {
+      if (!suspendEnabled) return;
+      try {
+        if (document.hidden) {
+          // 仅当本页处于「应高亮」状态才下线；禁用态本无高亮，跳过避免无谓清理
+          if (siteEnabled) teardown();
+        } else {
+          // 切回可见：若状态为应高亮则重建（init 内部会再次评估是否禁用）
+          if (siteEnabled) refresh();
+        }
+      } catch (err) {
+        console.error('[KeywordHighlighter] 可见性切换处理失败:', err);
+      }
+    });
+  }
+
   // 启动
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
       init();
       setupUrlChangeListener();
+      setupVisibilitySuspend();
     });
   } else {
     init();
     setupUrlChangeListener();
+    setupVisibilitySuspend();
   }
 })();
