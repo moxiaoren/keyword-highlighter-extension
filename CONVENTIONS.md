@@ -27,18 +27,29 @@
 
 ## 四、发版前自检（必做）
 
-发版 / 交付前，在项目根目录运行：
+发版 / 交付前，在项目根目录依次运行：
+
+**1. 静态一致性检查：**
 
 ```bash
 node scripts/meta-check.js
 ```
 
-脚本会校验：
-1. manifest 与 storage/welcome/popup 版本一致；
-2. 帮助文案是否残留陈旧数字（如默认尺寸 180/70 漂移）；
-3. 是否残留重复区块 / 未用权限 / 未用配置项。
+校验：manifest 与 storage/welcome/popup 版本一致；帮助文案是否残留陈旧数字；是否残留重复区块 / 未用权限 / 未用配置项。出现红字=禁止发版，先修复再发。
 
-出现红字=禁止发版，先修复再发。
+**2. 引擎 / 翻页 / 值后到回归测试（真实浏览器）：**
+
+```bash
+node tests/keyword-engine-regression.js
+```
+
+覆盖：普通词高亮、动态增量、组合词「值后到」行级重扫、无 URL 翻页（整行替换清残留+新词命中 / 复用行改文本）、无误伤。**只有当本次改动触及 `lib/keyword-engine.js` / `content/content.js`（尤其 MutationObserver、高亮、翻页、重要笔记抓取逻辑）时必跑**；纯 UI/css/导入导出等不涉及引擎路径的改动可跳过。
+
+环境前置：playwright + chromium（首次见 `tests/keyword-engine-regression.js` 文件头说明；可用 `PW_PLAYWRIGHT_PATH`/`PW_CHROME` 覆盖探路）。
+
+**3. crx 打包自检（走线上 crx 自动更新时）：** 打包后执行 `node verify-crx.js`（解析 crx3 头验证扩展 ID 与私钥一致 + 内嵌 manifest 版本）再提交 gh-pages。
+
+全部通过才允许发版。
 
 ## 五、UI / 布局规范
 
