@@ -21,6 +21,9 @@
   let _polledUrl = null;
   let _pollTimer = null;
   let suspendEnabled = true; // (v1.10.5) 标签页隐藏时暂停高亮开关，从配置读取默认开
+  // v1.10.8：上次「URL 变化触发的全页先清后建」时间戳。同站点路由变化（翻页 ?page=2、切 Tab）
+  // 的兜底重建需限频，防止高频路由抖动（如搜索联想连续改 query）反复清建导致闪烁。
+  let _lastUrlRebuild = 0;
 
   /**
    * 清理当前会话的高亮、观察器与笔记卡片（站内分页切换/禁用时用于「下线」）
@@ -49,7 +52,22 @@
         url
       );
 
-      if (should === siteEnabled) return; // 状态未变，无需处理
+      if (should === siteEnabled) {
+        // v1.10.8：状态未变但 URL 变了（同站点翻页/切 Tab/筛选）。
+        // 翻页时框架若复用行、只对单元格文本赋值，而高亮已把框架持有的文本节点摘离文档，
+        // 改写会落在脱离文档的节点上、DOM 不产生任何变化事件，观察器收不到信号，
+        // 上一页高亮/抓取值就残留到下一页（且新值进不来）。此处主动做一次
+        // 「先清后建」兜底（refresh = teardown 清旧标记 + 重新高亮）。
+        // 外层已有 150ms 防抖合并连续跳转；再限频 800ms 防高频路由抖动反复清建。
+        if (should && siteEnabled) {
+          const now = Date.now();
+          if (now - _lastUrlRebuild >= 800) {
+            _lastUrlRebuild = now;
+            await refresh();
+          }
+        }
+        return; // 状态未变，无需处理（清建兜底已在上文完成）
+      }
 
       if (should) {
         // 从「关」到「开」（例如黑名单分页切回白名单分页）
