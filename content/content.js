@@ -27,12 +27,8 @@
   // v1.10.14：翻页残留自动清扫状态
   let _prcEnabled = true;      // 总开关
   let _prcClick = true;        // 分页点击捕获开关
-  let _prcPoll = true;         // 内容指纹轮询开关
-  let _prcPollMs = 1000;       // 轮询间隔
   let _prcMinGap = 2000;       // 最短重建间隔
   let _prcLastRebuild = 0;     // 上次重建时间戳（与 URL 重建共用同一限频口径，避免双套连击）
-  let _prcFingerprint = null;  // 上次指纹
-  let _prcPollTimer = null;    // 轮询定时器
   let _prcBound = false;       // 是否已绑定
 
   /**
@@ -151,13 +147,9 @@
   }
 
   /**
-   * (v1.10.14) 翻页残留自动清扫：专治「URL 不变 + 无 DOM 数据事件 + 直接替换表格内容」的极端翻页残留。
-   * 场景：框架复用行、只对单元格文本赋值，改写落在已被高亮摘离文档的旧节点上 → DOM 无变化事件、
-   * URL 也不变 → MutationObserver 与 URL 轮询都收不到信号 → 上一页高亮/抓取值残留到下一页。
-   * 双保险：
-   *  ① 分页控件点击捕获（capture 阶段，命中分页特征 → prcClean 先清后建）——快速精准；
-   *  ② 内容指纹轮询（低频轻量比对可见文本，变化 → prcClean）——通吃「无事件直接替换」任何形式。
-   * 两者只在「高亮态 + 内容确实变化」时触发，且共用 _prcMinGap 限频，默认开但可在性能优化区关闭。
+   * (v1.10.16) 历史说明：此前「复用行改单元格文本时改写落在被高亮摘离文档的旧节点上→DOM 无事件→残留」。
+   * 该根因已由 v1.10.15（普通词）+ v1.10.16（组合词）统一改为 CSS Highlight（文本节点不摘离）根治。
+   * 此处仅保留「分页控件点击捕获」作为主动重建信号（快速精准），v1.10.15 起已移除内容指纹轮询。
    */
   function setupPageResidualClean() {
     if (_prcBound) return;
@@ -167,8 +159,6 @@
       const c = currentConfig || {};
       _prcEnabled = c.pageResidualClean !== false;
       _prcClick = _prcEnabled && c.pageCleanClick !== false;
-      _prcPoll = _prcEnabled && c.pageCleanPoll !== false;
-      _prcPollMs = (c.pageCleanPollMs && c.pageCleanPollMs > 0) ? c.pageCleanPollMs : 1000;
       _prcMinGap = (c.pageCleanMinGap && c.pageCleanMinGap > 0) ? c.pageCleanMinGap : 2000;
     };
     readCfg();
@@ -197,45 +187,10 @@
       }, true);
     }
 
-    // ② 内容指纹轮询：轻量指纹（取主要表格/整个 body 的可见文本 hash），变化即重建
-    const computeFingerprint = () => {
-      try {
-        const tables = document.querySelectorAll('table');
-        // 优先对表格区域采样（翻页残留主要在表格/列表）；无表格退化为 body 文本
-        const sources = tables.length ? Array.from(tables) : [document.body];
-        let hash = 0;
-        for (const src of sources) {
-          const txt = ((src.textContent || '').replace(/^\s+|\s+$/g, '')).slice(0, 4000);
-          for (let i = 0; i < txt.length; i++) {
-            hash = ((hash << 5) - hash + txt.charCodeAt(i)) | 0;
-          }
-          hash = (hash * 31 + sources.length) | 0;
-        }
-        return hash;
-      } catch (e) { return null; }
-    };
-
-    const poll = () => {
-      _prcPollTimer = undefined;
-      readCfg();
-      if (!_prcPoll) { /* 关闭轮询：不再重启定时器，等待显式开启（此处仅当 enable 时下面会重启） */ }
-      if (_prcPoll) {
-        // 标签页隐藏（后台）时不采样不重建：与 suspendInactiveTab 的「隐藏暂停」保持一致
-        if (document.hidden) { _prcPollTimer = setTimeout(poll, _prcPollMs); return; }
-        if (siteEnabled) {
-          const fp = computeFingerprint();
-          if (fp !== null && _prcFingerprint !== null && fp !== _prcFingerprint) {
-            prcClean('fingerprint-change');
-          }
-          _prcFingerprint = fp;
-        }
-      }
-      if (_prcPoll) _prcPollTimer = setTimeout(poll, _prcPollMs);
-    };
-    if (_prcPoll) {
-      _prcFingerprint = computeFingerprint();
-      _prcPollTimer = setTimeout(poll, _prcPollMs);
-    }
+    // ② 内容指纹轮询：v1.10.15 起移除。
+    // 根因：普通词高亮已改 CSS Custom Highlight，文本节点不再被摘离，框架翻页对原节点赋值
+    // 会直接写入 DOM 并触发 characterData → MutationObserver 增量重建自动完成，无需指纹采样兜底。
+    // （组合词仍整格重建，同样走 DOM 事件。指纹轮询已冗余，故删除。）
   }
 
   /**

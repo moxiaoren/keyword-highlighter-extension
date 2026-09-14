@@ -104,10 +104,23 @@ function check(name, cond, detail) {
       const b = document.createElement('td'); b.textContent = val;
       tr.appendChild(a); tr.appendChild(b); return tr;
     };
-    window.__countHi = () => document.querySelectorAll('[data-kh-cell-verify-hi-span]').length;
-    window.__hitTitles = () => Array.from(document.querySelectorAll('tr'))
-      .filter(tr => tr.querySelector('[data-kh-cell-verify-hi-span]'))
-      .map(tr => tr.cells[0].textContent);
+    window.__countHi = () => { const h=KeywordEngine._plainHits||[]; return h.filter(m=>m.combo).length; };
+    // v1.10.15：普通词高亮改用 CSS Highlight，命中数=CSS.highlights 各 Highlight 的 Range 总数
+    window.__countPlain = () => { let n=0; (CSS.highlights||[]).forEach && Array.from(CSS.highlights.values()).forEach(hl=>{ if(hl&&hl.size) n+=hl.size; }); return n; };
+    // v1.10.16：组合词命中在内存注册表（combo:true），左格标题=meta.adj，右格核心=textNode.slice(start,end)
+    window.__hitTitles = () => {
+      const out = [];
+      const h = KeywordEngine._plainHits || [];
+      const seenTriSet = new Set();
+      for (const m of h) {
+        if (!m.combo) continue;
+        const tn = m.textNode, adj = m.adj || '';
+        const tr = tn && tn.parentNode ? tn.parentNode.closest('tr') : null;
+        if (tr && !seenTriSet.has(tr)) seenTriSet.add(tr);
+        out.push(adj || '');
+      }
+      return out;
+    };
   });
 
   // ===== 用例1：普通词初始高亮 =====
@@ -116,7 +129,7 @@ function check(name, cond, detail) {
     document.body.appendChild(Object.assign(document.createElement('p'), { textContent: '我喜欢苹果和香蕉' }));
     await KeywordEngine.highlightKeywords([{ id: 'n1', text: '苹果', enabled: true }], window.__cfg);
   });
-  check('普通词初始高亮', await page.evaluate(() => document.querySelectorAll('[data-kh-highlighted]').length) === 1);
+  check('普通词初始高亮', await page.evaluate(() => window.__countPlain()) === 1);
 
   // ===== 用例2：动态新增普通词节点 → 增量高亮 =====
   await page.evaluate(async () => {
@@ -128,7 +141,7 @@ function check(name, cond, detail) {
   await new Promise(r => setTimeout(r, 60));
   await page.evaluate(() => document.body.querySelector('div').appendChild(Object.assign(document.createElement('p'), { textContent: '这里有苹果' })));
   await new Promise(r => setTimeout(r, 600));
-  check('动态新增节点增量高亮', await page.evaluate(() => document.querySelectorAll('[data-kh-highlighted]').length) === 1);
+  check('动态新增节点增量高亮', await page.evaluate(() => window.__countPlain()) === 1);
 
   // ===== 用例3：组合词右格「值后到」（异步填充）→ 全量重刷补救 =====
   await page.evaluate(async () => {

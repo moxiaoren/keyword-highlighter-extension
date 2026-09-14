@@ -79,7 +79,11 @@ const NoteCard = {
       // 点击卡片内部（复制/关闭按钮）不处理
       if (e.target.closest('#kh-note-card')) return;
 
-      const target = e.target.closest('[data-kh-highlighted]');
+      // v1.10.15【CSS Custom Highlight】优先命中组合词 span，否则尝试普通词坐标命中（虚拟命中对象）
+      let target = e.target.closest('[data-kh-highlighted]');
+      if (!target) {
+        target = this.resolveHitAt(e.clientX, e.clientY);
+      }
       if (!target) {
         // 点击页面其他位置，关闭已固定的卡片
         if (this.pinnedCard) {
@@ -89,7 +93,10 @@ const NoteCard = {
       }
 
       e.stopPropagation();
-      if (this.pinnedCard && this.pinnedKeywordEl === target) {
+      const pinned = this.pinnedCard ? this.pinnedKeywordEl : null;
+      const sameHit = pinned === target ||
+        (pinned && pinned._virtual && target && target._virtual && pinned.meta === target.meta);
+      if (pinned && sameHit) {
         // 再次点击同一高亮词取消固定
         this.unpinCard();
       } else {
@@ -136,13 +143,53 @@ const NoteCard = {
   },
 
   /**
+   * (v1.10.15) 坐标命中检测：普通词 CSS Highlight 无 DOM 元素，
+   * 用引擎坐标命中返回「虚拟命中对象」，兼容现有 showCard/pinCard/positionCard。
+   */
+  resolveHitAt(x, y) {
+    let meta = null;
+    try {
+      if (typeof KeywordEngine !== 'undefined' && typeof KeywordEngine.queryPlainHitAt === 'function') {
+        meta = KeywordEngine.queryPlainHitAt(x, y);
+      }
+    } catch (e) { /* 引擎未就绪忽略 */ }
+    if (!meta) return null;
+    if (!meta.note) return null; // 无备注的高亮不设热区
+    const tn = meta.textNode;
+    return {
+      _virtual: true,
+      meta: meta,
+      textContent: (tn && tn.nodeValue) ? tn.nodeValue.slice(meta.start, meta.end) : '',
+      getAttribute: (name) => {
+        if (name === 'data-kh-note') return meta.note || null;
+        return null;
+      },
+      getBoundingClientRect: () => {
+        try {
+          if (meta.range) return meta.range.getBoundingClientRect();
+        } catch (e) {}
+        return { top: 0, left: 0, width: 0, height: 0, right: 0, bottom: 0 };
+      },
+      classList: {
+        add: () => {},
+        remove: () => {}
+      }
+    };
+  },
+
+  /**
    * 显示卡片
    */
   showCard(keywordEl) {
-    const note = keywordEl.getAttribute('data-kh-note');
+    let note = null;
+    if (keywordEl._virtual) {
+      note = keywordEl.getAttribute('data-kh-note');
+    } else {
+      note = keywordEl.getAttribute('data-kh-note');
+    }
     if (!note) return;
 
-    const keywordText = keywordEl.textContent;
+    const keywordText = keywordEl.textContent || (keywordEl._virtual ? '' : '');
     this.card.querySelector('.kh-note-keyword').textContent = keywordText;
     this.card.querySelector('.kh-note-body').innerHTML = Utils.sanitizeHTML(note);
 

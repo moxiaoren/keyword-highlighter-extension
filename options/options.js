@@ -1185,7 +1185,7 @@
 
   // ========== 高亮样式 ==========
   async function loadStyles() {
-    const data = await Storage.get(['highlightStyle', 'suspendInactiveTab', 'pageResidualClean', 'pageCleanClick', 'pageCleanPoll']);
+    const data = await Storage.get(['highlightStyle', 'suspendInactiveTab', 'pageResidualClean', 'pageCleanClick']);
     const style = data.highlightStyle || Storage.defaults.highlightStyle;
 
     $('#hlBgColor').value = style.defaultBgColor;
@@ -1200,13 +1200,11 @@
     const cb = $('#optSuspendInactiveTab');
     if (cb) cb.checked = data.suspendInactiveTab !== false;
 
-    // v1.10.14：翻页残留自动清扫开关
+    // v1.10.14：翻页残留自动清扫开关（v1.10.15 起移除指纹轮询，仅保留分页点击捕获）
     const pc = $('#optPageResidualClean');
     if (pc) pc.checked = data.pageResidualClean !== false;
     const pcClick = $('#optPageCleanClick');
     if (pcClick) pcClick.checked = data.pageCleanClick !== false;
-    const pcPoll = $('#optPageCleanPoll');
-    if (pcPoll) pcPoll.checked = data.pageCleanPoll !== false;
     syncPageCleanSub();
 
     updateHighlightPreview();
@@ -1248,8 +1246,6 @@
     if (pc) opt.pageResidualClean = pc.checked;
     const pcClick = $('#optPageCleanClick');
     if (pcClick) opt.pageCleanClick = pcClick.checked;
-    const pcPoll = $('#optPageCleanPoll');
-    if (pcPoll) opt.pageCleanPoll = pcPoll.checked;
     await Storage.set(Object.assign({ highlightStyle: style }, opt));
     updateHighlightPreview();
     notifyContentRefresh();

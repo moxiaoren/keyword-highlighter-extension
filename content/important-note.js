@@ -244,29 +244,36 @@ const ImportantNote = {
    */
   refresh() {
     if (!this.host) return;
-    const els = document.querySelectorAll('[data-kh-important="1"]');
-    // 同一关键词可能命中在页面多处，各命中点所在表格不同→抓到字段数不同（0/1/2 个），
-    // 若直接按 note 文本聚合，会出现「无字段/少字段」的多个冗余版本笔记。
-    // 修复(v1.7.5)：先按关键词分组，每组保留「抓取字段最完整」（表格数最多）的那份 note，
-    // 再按 note 文本聚合（不同关键词若笔记相同仍合并为一条）。
+    // v1.10.16【统一 CSS Highlight】普通词与组合词重要命中均已迁入引擎内存注册表；来源①仅剩「仅抓取」透明 span。此处合并两来源，统一聚合。
     const bestByKw = new Map();  // keyword -> { note, tc, adj }
-    els.forEach(el => {
-      // 隐藏元素（display:none / visibility:hidden / hidden）里的命中不应展示，避免误报
-      if (Utils.isElementHidden(el)) return;
-      const note = (el.getAttribute('data-kh-important-note') || '').trim();
+    // ① DOM 残留 span（仅抓取透明 span）命中
+    const els = document.querySelectorAll('[data-kh-important="1"]');
+    const collect = (keyword, note, adj, imgSize, bg) => {
+      note = (note || '').trim();
       if (!note) return;
       if (this.ignored.has(note)) return;
-      const keyword = (el.textContent || '').trim();
-      if (!keyword) return; // v1.9.1 跳过 keyword 为空的命中（组合词同格/被拆产生的空标签），避免孤独的“🔖 → 审核状态”
-      // 单元格特别标注（v1.6.18）：直接读取验证通过时记录的期望值；未启用验证则为空
-      const adj = el.getAttribute('data-kh-cell-verify') || '';
-      const imgSize = el.getAttribute('data-kh-important-img-size') || ''; // 该词单独设置的图片尺寸(v1.8.4)
-      const bg = el.getAttribute('data-kh-important-bg') || ''; // 该词的笔记底色(v1.9.0)
-      const tc = (note.match(/<table/g) || []).length;  // 表格数=抓取字段完整度
+      keyword = (keyword || '').trim();
+      if (!keyword) return; // v1.9.1 跳过 keyword 为空
+      const tc = (note.match(/<table/g) || []).length;
       const cur = bestByKw.get(keyword);
-      if (!cur || tc > cur.tc) bestByKw.set(keyword, { note, tc, adj, imgSize, bg });
+      if (!cur || tc > cur.tc) bestByKw.set(keyword, { note, tc, adj: adj || '', imgSize: imgSize || '', bg: bg || '' });
+    };
+    els.forEach(el => {
+      if (Utils.isElementHidden(el)) return;
+      collect(el.textContent || '', el.getAttribute('data-kh-important-note') || '',
+        el.getAttribute('data-kh-cell-verify') || '', el.getAttribute('data-kh-important-img-size') || '',
+        el.getAttribute('data-kh-important-bg') || '');
     });
-
+    // ② 普通词引擎注册表命中（CSS Highlight）
+    try {
+      const plainHits = (typeof KeywordEngine !== 'undefined' && typeof KeywordEngine.getImportantPlainHits === 'function')
+        ? KeywordEngine.getImportantPlainHits() : [];
+      for (const h of plainHits) {
+        if (!h || !h.textNode) continue;
+        if (Utils.isElementHidden(h.textNode.parentElement)) continue;
+        collect(h.text, h.note, h.adj, h.imgSize, h.bg);
+      }
+    } catch (e) { /* 引擎未就绪时跳过普通词命中 */ }
     // 按「笔记文本」聚合：若多个关键词命中的笔记内容一致，则合并为一条
     const noteMap = new Map();  // note -> { note, imgSize, bg, entryMap: Map<keyword, adj> }
     bestByKw.forEach((v, keyword) => {
@@ -274,8 +281,8 @@ const ImportantNote = {
       if (!noteMap.has(note)) noteMap.set(note, { note, imgSize: '', bg: '', entryMap: new Map() });
       const grp = noteMap.get(note);
       if (!grp.entryMap.has(keyword)) grp.entryMap.set(keyword, v.adj || '');
-      if (!grp.imgSize && v.imgSize) grp.imgSize = v.imgSize;  // 合并时取最先非空的关键词图片尺寸
-      if (!grp.bg && v.bg) grp.bg = v.bg;                      // 笔记相同但底色不同：取最先非空者
+      if (!grp.imgSize && v.imgSize) grp.imgSize = v.imgSize;
+      if (!grp.bg && v.bg) grp.bg = v.bg;
     });
 
     // 合并结果：每条 = { note, entries:[{kw, adj}] }，关键词列表用于列举命中了哪些词
