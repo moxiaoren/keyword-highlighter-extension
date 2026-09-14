@@ -1007,9 +1007,12 @@
       })(),
       cellVerifyEnabled: !!$('#editKwCellVerifyValue').value.trim(),
       cellVerify: $('#editKwCellVerifyValue').value.trim(),
+      // v1.11.0【标题词独立匹配】组合词区三开关仅作用于标题词（左格 cellVerify）：
+      // 全词=标题词精确匹配、区分大小写、用正则（不再作用于核心词整格相等）
       cellVerifyMatchMode: $('#editKwCellVerifyExact').checked ? 'exact' : 'include',
       cellVerifyCaseSensitive: $('#editKwCellVerifyCase').checked,
       cellVerifyUseRegex: $('#editKwCellVerifyRegex').checked,
+      // 核心词匹配用基本区开关（caseSensitive/wholeWord/useRegex），见 _compileKeywords/cellVerifyPass
       fetchLabels: $('#editKwFetchLabels').value.trim()
     };
 
@@ -1569,9 +1572,10 @@
           if (cellMode) {
             existing.cellVerifyEnabled = !!cellVerify;
             existing.cellVerify = cellVerify;
-            existing.cellVerifyMatchMode = cellMatchMode;
-            existing.cellVerifyCaseSensitive = cellCase;
-            existing.cellVerifyUseRegex = cellRegex;
+            // v1.11.0【改指向】：批量面板「右格核心」三按钮 → 控制核心词(kw.text)匹配，写入 kw.* (基本区同套字段)
+            existing.wholeWord = (cellMatchMode === 'exact');
+            existing.caseSensitive = cellCase;
+            existing.useRegex = cellRegex;
             if (cellFetch) existing.fetchLabels = cellFetch;
           }
           replaced++;
@@ -1599,9 +1603,10 @@
         kw.importantNote = cellNote;
         kw.cellVerifyEnabled = !!cellVerify;
         kw.cellVerify = cellVerify;
-        kw.cellVerifyMatchMode = cellMatchMode;
-        kw.cellVerifyCaseSensitive = cellCase;
-        kw.cellVerifyUseRegex = cellRegex;
+        // v1.11.0【改指向】：批量面板「右格核心」三按钮 → 核心词(kw.text)匹配，写入 kw.*
+        kw.wholeWord = (cellMatchMode === 'exact');
+        kw.caseSensitive = cellCase;
+        kw.useRegex = cellRegex;
         if (cellFetch) kw.fetchLabels = cellFetch;
       }
       keywords.push(kw);

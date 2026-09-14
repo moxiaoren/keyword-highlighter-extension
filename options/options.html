@@ -384,7 +384,7 @@
             <ul>
               <li><strong>怎么配</strong>：编辑关键词时展开「单元格组合」，在<strong>关键词</strong>填右格内容（如 <code>否</code>），在<strong>标题关键词(左格)</strong>填左格标题（如 <code>是否刚需</code>）。命中条件 = 左格标题命中 且 右格含核心；高亮/备注/重要笔记统一挂在右格。</li>
               <li><strong>支持两种结构</strong>：真实 HTML 表格（取左侧相邻格当标题）；或文字中用竖线 <code>|</code> / Tab 分隔的「假表格」（左段标题、右段核心）。</li>
-              <li><strong>匹配方式</strong>：默认「包含」——右格只要包含核心即命中（<code>否（暂缓）</code> 也算 <code>否</code>）；勾选<strong>全词</strong>则要求右格整格等于核心。还可设<strong>区分大小写</strong>、<strong>用正则</strong>（配合「全词」可锁定右格为某类内容）。</li>
+              <li><strong>匹配方式</strong>：核心词（右格）默认「包含」——右格只要包含核心即命中（<code>否（暂缓）</code> 也算 <code>否</code>）；勾选基本区<strong>全词</strong>则要求右格整格等于核心。标题词（左格）另有一组<strong>标题词匹配规则</strong>：区分大小写 / 全词（标题格精确匹配标题词）/ 用正则——两组互不影响。</li>
               <li><strong>仅抓取模式</strong>：把「关键词」<strong>留空</strong>，只填「标题关键词」和「抓取后续字段」——当该标题格右侧有真实内容（非空、非 <code>-</code>、非纯标点）时，自动把右格内容抓进重要笔记，<strong>页面不产生任何高亮</strong>。适合「备注为空显示 -、仅当有真实内容时才展示备注」；右侧的「编辑」等按钮文字会自动剔除，右格按视觉行合并/分行并展示成表格。</li>
               <li>同一标题可配多条不同核心的规则并存。</li>
             </ul>
@@ -471,7 +471,7 @@
             <p>支持基础 Markdown：<code>**加粗**</code>、<code>*斜体*</code>、<code>[文字](网址)</code>（纯网址自动转链接）、<code>![说明](图片网址)</code> 显示图片（可点击看原图）、<code>| 列1 | 列2 |</code> 渲染成表格。多行换行<strong>原样保留</strong>。</p>
 
             <h4>Q3：单元格组合（左格标题 + 右格内容）怎么用？</h4>
-            <p>适合「先对标题、再标内容」。以 <code>是否刚需 | 否</code> 为例：在<strong>关键词</strong>填 <code>否</code>、在<strong>标题关键词(左格)</strong>填 <code>是否刚需</code>。命中条件 = <strong>左格标题命中 且 右格含核心</strong>，二者同时满足才高亮/弹笔记，否则整条不出。真实表格取左邻格当标题；文字用 <code>|</code> / Tab 分隔亦可。配套选项：全词（右格整格相等）、区分大小写、用正则（配合全词可锁定右格为某类内容）。</p>
+            <p>适合「先对标题、再标内容」。以 <code>是否刚需 | 否</code> 为例：在<strong>关键词</strong>填 <code>否</code>、在<strong>标题关键词(左格)</strong>填 <code>是否刚需</code>。命中条件 = <strong>左格标题命中 且 右格含核心</strong>，二者同时满足才高亮/弹笔记，否则整条不出。真实表格取左邻格当标题；文字用 <code>|</code> / Tab 分隔亦可。核心词（右格）规则用基本区开关：全词（右格整格相等）、区分大小写、正则；标题词（左格）另用「标题词匹配规则」区：全词（标题格精确匹配标题词）、区分大小写、用正则。</p>
 
             <h4>Q4：「仅抓取」模式怎么配？为什么不显示高亮？</h4>
             <p><strong>仅抓取</strong>＝把「关键词」<strong>留空</strong>，仅填「标题关键词」和「抓取后续字段」并勾选「重要」。当该标题格右侧<strong>有真实内容</strong>（非空、非 <code>-</code>、非纯标点）时，自动抓右格内容进重要笔记，<strong>页面不产生任何高亮</strong>——这正是它的设计（只收集、不打扰原页面）。右侧只有「编辑」等按钮、或内容为 <code>-</code>/空格时，视为无内容不命中；抓取时会自动剔除按钮文字、按视觉行合并/分行并展示成表格。</p>
@@ -655,7 +655,7 @@
                 <input type="text" id="editKwFetchLabels" placeholder="多个用 | 分隔，如：地址|籍贯" class="text-input">
               </div>
               <div class="match-panel" style="flex:2; align-self:stretch;">
-                <div class="match-panel-title">匹配规则</div>
+                <div class="match-panel-title">标题词匹配规则</div>
                 <div class="match-row match-vert">
                   <label class="checkbox-label"><input type="checkbox" id="editKwCellVerifyCase"><span>区分大小写</span></label>
                   <label class="checkbox-label"><input type="checkbox" id="editKwCellVerifyExact"><span>全词</span></label>

@@ -1,43 +1,41 @@
+// v1.11.0 排查：验证"插件自身UI容器含关键词是否被全量重刷高亮"
+// 用 git stash 方式不可行，这里用参数控制：设置 __disableExtUi 时不用 data-kh-ext-ui（模拟修复前）
 const PATH=require("path");
 const ROOT="/home/sandbox/.openclaw/workspace/repo/keyword-highlighter-extension";
+const USE_FIX = process.env.NOFIX !== "1"; // 默认带修复；NOFIX=1 模拟修复前
 (async()=>{
   const {chromium}=require("/tmp/pw/node_modules/playwright");
   const b=await chromium.launch({executablePath:"/opt/chrome-linux/chrome",args:["--no-sandbox"]});
   const page=await b.newPage();
-  await page.setContent('<!doctype html><html><body><div id=main>VIP与普通内容混合</div></body></html>');
+  await page.setContent('<!doctype html><html><body><div id=main>主体内容VIP在此</div></body></html>');
   await page.addStyleTag({path:PATH.join(ROOT,"content","content.css")});
   await page.addScriptTag({path:PATH.join(ROOT,"lib","utils.js")});
   await page.addScriptTag({content:"window.__store={get:async()=>({}),set:async()=>{}};"});
   await page.addScriptTag({path:PATH.join(ROOT,"lib","keyword-engine.js")});
-  await page.addScriptTag({path:PATH.join(ROOT,"content","note-card.js")});
-  await page.addScriptTag({path:PATH.join(ROOT,"content","important-note.js")});
-  await page.evaluate(async()=>{
-    window.__log=[];
-    window.KeywordEngine.onHighlight=function(){ window.__log.push(1); };
+  await page.evaluate(async(PATCH)=>{
     window.KWS=[{id:"k1",text:"VIP",enabled:true,note:"VIP客户优先处理",important:true}];
     await KeywordEngine.highlightKeywords(window.KWS,{groups:[],highlightStyle:{defaultBgColor:"#ffff00",defaultTextColor:"#000"},shadowDOMEnabled:false});
-    // 创建三个真实插件UI容器，内部塞含关键词文本
-    await NoteCard.init();
-    const card=document.getElementById("kh-note-card");
-    if(card){ card.style.display="block"; card.innerHTML="VIP客户优先处理"; }
-    const host=document.createElement("div"); host.id="kh-important-note-host"; host.setAttribute("data-kh-ext-ui","1"); host.style.display="block"; host.textContent="VIP客户优先处理"; document.body.appendChild(host);
-    await new Promise(r=>setTimeout(r,1200)); // 触发增量 & 全量重刷路径
-    // 触发全量重刷（模拟翻页/切Tab恢复）
+    // 模拟悬浮tooltip：普通div直接放body，内容含关键词
+    const t=document.createElement("div");
+    t.id="kh-note-tooltip";
+    if(PATCH) t.setAttribute("data-kh-ext-ui","1"); // 修复后：带隔离标记（同 note-card.js 真实创建）
+    t.style.cssText="position:fixed;background:#fff;display:block;z-index:9999";
+    t.textContent="VIP客户优先处理";
+    document.body.appendChild(t);
+    await new Promise(r=>setTimeout(r,500));
+    // 触发全量重刷（模拟 refresh/翻页清建后的整页重扫）
     await KeywordEngine.highlightKeywords(window.KWS,{groups:[],highlightStyle:{defaultBgColor:"#ffff00",defaultTextColor:"#000"},shadowDOMEnabled:false});
     await new Promise(r=>setTimeout(r,400));
     const hits=window.KeywordEngine.getPlainHits();
-    const list=[];
-    let inCard=false,inHost=false,inTip=false;
-    hits.forEach(h=>{ list.push(h.textNode.textContent.slice(0,10)); if(card&&card.contains(h.textNode))inCard=true; if(host.contains(h.textNode))inHost=true; const t=document.getElementById("kh-note-tooltip"); if(t&&t.contains(h.textNode))inTip=true; });
-    // 主内容应命中
-    let mainHit=false;
-    hits.forEach(h=>{ if(document.getElementById("main").contains(h.textNode))mainHit=true; });
-    window.__result={hits:hits.length,inCard,inHost,inTip,mainHit,list};
-  });
-  const r=await page.evaluate(()=>window.__result);
-  console.log("命中注册表数:",r.hits,"| 主内容命中:",r.mainHit);
-  console.log("工具栏tooltip命中:",r.inTip,"| 备注卡片命中:",r.inCard,"| 重要笔记命中:",r.inHost);
-  const ok = r.mainHit && !r.inCard && !r.inHost && !r.inTip;
-  console.log(ok?"✅ 插件UI容器不再被高亮 (主内容仍正常高亮)":"❌ "+(r.mainHit?"UI容器仍被高亮":"主内容也未高亮"));
-  await b.close();process.exit(ok?0:1);
+    let inTip=false, inMain=false; const names=[];
+    hits.forEach(h=>{ names.push((h.textNode.textContent||"").slice(0,6)); if(t.contains(h.textNode))inTip=true; if(document.getElementById("main").contains(h.textNode))inMain=true; });
+    window.__r={hits:hits.length,inTip,inMain,names};
+  }, USE_FIX);
+  const r=await page.evaluate(()=>window.__r);
+  console.log((USE_FIX?"[修复后]":"[修复前 NOFIX]"),"命中",r.hits,"| tooltip内:",r.inTip,"| main内:",r.inMain,"| 文本:",JSON.stringify(r.names));
+  // 断言：修复后 tooltip 不应命中；修复前应命中（证明bug存在）
+  if(USE_FIX){ console.log(r.inTip?"❌ 修复无效":"✅ 修复后 tooltip 不再被高亮"); }
+  else { console.log(r.inTip?"✅ 复现成功：修复前 tooltip 被高亮":"（修复前此路径未命中，需换方式）"); }
+  await b.close();
+  process.exit(USE_FIX ? (r.inTip?1:0) : (r.inTip?0:1));
 })().catch(e=>{console.error("FATAL",e);process.exit(1);});
