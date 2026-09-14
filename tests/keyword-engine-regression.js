@@ -130,7 +130,7 @@ function check(name, cond, detail) {
   await new Promise(r => setTimeout(r, 600));
   check('动态新增节点增量高亮', await page.evaluate(() => document.querySelectorAll('[data-kh-highlighted]').length) === 1);
 
-  // ===== 用例3：组合词右格「值后到」→ 行级重扫补救（v1.10.8 核心）=====
+  // ===== 用例3：组合词右格「值后到」（异步填充）→ 全量重刷补救 =====
   await page.evaluate(async () => {
     document.body.innerHTML = '';
     const tr = window.__buildRow('刚需应用', '否'); // 默认值
@@ -139,11 +139,11 @@ function check(name, cond, detail) {
     const kw = window.__mkKw('c1', '刚需应用', '是', '#ff0');
     await KeywordEngine.highlightKeywords([kw], window.__cfg);
     KeywordEngine.setupMutationObserver([kw], window.__cfg);
-    tr.cells[1].firstChild.nodeValue = '是'; // 无 URL 变化触发字符改写
+    tr.cells[1].textContent = '是'; // textContent 赋值=移除旧TEXT+新增TEXT → 触发全量重刷（新增节点）
   });
   await new Promise(r => setTimeout(r, 700));
   const t3 = await page.evaluate(() => ({ hits: window.__countHi(), titles: window.__hitTitles() }));
-  check('组合词「值后到」行级重扫补救', t3.hits === 1 && JSON.stringify(t3.titles) === JSON.stringify(['刚需应用']), t3);
+  check('组合词「值后到」全量重刷补救', t3.hits === 1 && JSON.stringify(t3.titles) === JSON.stringify(['刚需应用']), t3);
 
   // ===== 用例4：无 URL 变化 + 整表行替换翻页（removedNodes → 先清后建，清残留 + 高亮新内容）=====
   await page.evaluate(async () => {
@@ -168,7 +168,7 @@ function check(name, cond, detail) {
   // 新建页含「网盘应用|是」与「夸夸|是」，但关键词仅配了 网盘应用 → 期望命中1(网盘应用)，夸夸行无关键词不命中
   check('无URL-整行替换翻页:新词正确高亮', t4_new.hits === 1 && JSON.stringify(t4_new.titles) === JSON.stringify(['网盘应用']), t4_new);
 
-  // ===== 用例5：无 URL 变化 + 复用行仅改单元格文本（字符改写 → 行级重扫）=====
+  // ===== 用例5：无 URL 变化 + 复用行仅改单元格文本（异步填充 textContent → 全量重刷）=====
   await page.evaluate(async () => {
     document.body.innerHTML = '';
     const row = window.__buildRow('刚需应用', '否');
@@ -179,10 +179,10 @@ function check(name, cond, detail) {
     KeywordEngine.setupMutationObserver(kws, window.__cfg);
   });
   await new Promise(r => setTimeout(r, 400));
-  await page.evaluate(() => { document.querySelectorAll('tr')[0].cells[1].firstChild.nodeValue = '是'; });
+  await page.evaluate(() => { document.querySelectorAll('tr')[0].cells[1].textContent = '是'; });
   await new Promise(r => setTimeout(r, 800));
   const t5 = await page.evaluate(() => ({ hits: window.__countHi(), titles: window.__hitTitles() }));
-  check('无URL-复用行改单元格文本:行级重扫命中', t5.hits === 2 && JSON.stringify(t5.titles.sort()) === JSON.stringify(['刚需应用','网盘应用'].sort()), t5);
+  check('无URL-复用行改单元格文本:全量重刷命中', t5.hits === 2 && JSON.stringify(t5.titles.sort()) === JSON.stringify(['刚需应用','网盘应用'].sort()), t5);
 
   // ===== 用例6：无关文本改动 → 无误伤 =====
   await page.evaluate(async () => {
