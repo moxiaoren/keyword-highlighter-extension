@@ -171,6 +171,7 @@ const ImportantNote = {
     if (this.host) return;
     this.host = document.createElement('div');
     this.host.id = 'kh-important-note-host';
+    this.host.setAttribute('data-kh-ext-ui', '1'); // v1.10.18：插件UI容器不参与高亮（备注含关键词不被高亮）
     const shadow = this.host.attachShadow({ mode: 'open' });
     shadow.innerHTML = `<style>${this.STYLE}</style><div class="khin-wrap"></div>`;
     this.root = shadow.querySelector('.khin-wrap');

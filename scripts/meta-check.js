@@ -84,9 +84,14 @@ for (const perm of (manifest.permissions || [])) {
   if (!scanInAll([perm])) warnings.push(`权限 "${perm}" 在代码中无引用（若已不需要建议移除）`);
 }
 
-// 5) storage 默认字段消费方
-const fields = ['adjacentCellNote', 'highlightStyle', 'noteCardStyle', 'importantNote', 'matchSettings', 'noteFormat', 'shadowDOMEnabled', 'stats', 'siteRules', 'siteDisabledMap', 'groups', 'keywords', 'globalEnabled'];
-for (const f of fields) {
+// 5) storage 默认字段消费方：从 storage.js 的 defaults 对象动态提取顶层键，避免硬编码过期产生误报（v1.10.18 修复：adjacentCellNote 曾是硬编码残留项，storage 中实际并不存在）
+const storageSrc = fs.readFileSync(path.join(root, 'lib/storage.js'), 'utf8');
+const defaultsBlock = (storageSrc.match(/defaults:\s*\{([\s\S]*?)\n  \}/) || [])[1] || '';
+const storageFields = (defaultsBlock.match(/^\s*([A-Za-z_$][\w]*):/gm) || []).map((m) => m.trim().replace(/:$/, '').trim());
+const seenFields = new Set();
+for (const f of storageFields) {
+  if (seenFields.has(f)) continue;
+  seenFields.add(f);
   if (!scanInAll([f])) warnings.push(`storage 默认字段 "${f}" 无消费方（可能已废弃的残留配置）`);
 }
 

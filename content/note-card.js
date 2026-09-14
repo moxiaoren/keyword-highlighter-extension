@@ -27,6 +27,7 @@ const NoteCard = {
     this.card = document.createElement('div');
     this.card.id = 'kh-note-card';
     this.card.className = 'kh-note-card';
+    this.card.setAttribute('data-kh-ext-ui', '1'); // v1.10.18：插件UI容器不参与高亮（备注含关键词不被高亮）
     this.card.setAttribute('role', 'tooltip');
     this.card.innerHTML = `
       <div class="kh-note-header">
@@ -47,6 +48,7 @@ const NoteCard = {
     // 悬浮备注 tooltip（v1.10.17，CSS Highlight 无 DOM 节点挂原生 title，自制轻量悬浮）
     this.tooltip = document.createElement('div');
     this.tooltip.id = 'kh-note-tooltip';
+    this.tooltip.setAttribute('data-kh-ext-ui', '1'); // v1.10.18：插件UI容器不参与高亮（备注含关键词不被高亮）
     this.tooltip.style.display = 'none';
     document.body.appendChild(this.tooltip);
 

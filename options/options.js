@@ -2028,7 +2028,6 @@
     // v1.10.14：翻页残留自动清扫总开关 → 联动子项置灰
     document.getElementById('optPageResidualClean')?.addEventListener('change', syncPageCleanSub);
     document.getElementById('optPageCleanClick')?.addEventListener('change', syncPageCleanSub);
-    document.getElementById('optPageCleanPoll')?.addEventListener('change', syncPageCleanSub);
 
     // 备注卡片样式
     ['ncBgColor', 'ncTextColor', 'ncBorderColor'].forEach(id => {
