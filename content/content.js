@@ -182,9 +182,14 @@
       };
 
       // 执行高亮
+      // 【v1.10.11 修复】先建立 MutationObserver 再执行首扫：真实动态表格中
+      // 首扫时组合词右格往往还是空/默认值，真实值（值后到）可能在首扫之后、
+      // observer 建立之前填充——该变化若不被观察会导致组合词验证失败后永不补救
+      // （用户症状：首次加载组合词/重要笔记缺失，切回标签页触发全量重扫才恢复）。
+      // 调整顺序后首扫之后的任何 DOM 变化（含值后到）都在观察范围内，增量链路会捕获并补救。
+      KeywordEngine.setupMutationObserver(currentKeywords, data);
       await KeywordEngine.highlightKeywords(currentKeywords, data);
       ImportantNote.refresh();
-      KeywordEngine.setupMutationObserver(currentKeywords, data);
       if (data.shadowDOMEnabled) {
         KeywordEngine.setupShadowDOMObserver(currentKeywords, data);
       }
