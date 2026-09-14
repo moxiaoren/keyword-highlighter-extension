@@ -178,6 +178,19 @@
             <input type="checkbox" id="optSuspendInactiveTab"> 标签页隐藏时自动暂停高亮（切回时重建），节省后台资源
           </label>
           <span class="form-hint">适合同时开很多网页的场景。切回页面时会重新加载高亮，可能有轻微重建延迟。</span>
+
+          <label class="checkbox-label" style="padding:6px 2px;font-weight:500;margin-top:8px;">
+            <input type="checkbox" id="optPageResidualClean"> 翻页残留自动清扫（URL不变/无事件时也清除旧高亮）
+          </label>
+          <span class="form-hint">针对部分网站翻页时 URL 不变、且框架不触发可见 DOM 事件、直接替换表格内容导致的旧高亮残留。</span>
+          <div id="pageCleanSub" style="padding:4px 0 2px 22px;">
+            <label class="checkbox-label" style="padding:4px 2px;">
+              <input type="checkbox" id="optPageCleanClick"> 分页控件点击捕获（点「下一页/页码」时自动重建）
+            </label>
+            <label class="checkbox-label" style="padding:4px 2px;">
+              <input type="checkbox" id="optPageCleanPoll"> 内容指纹轮询（低频比对内容变化后重建，通吃替换内容）
+            </label>
+          </div>
         </div>
         
         <!-- 实时预览 -->

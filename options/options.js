@@ -1185,7 +1185,7 @@
 
   // ========== 高亮样式 ==========
   async function loadStyles() {
-    const data = await Storage.get(['highlightStyle', 'suspendInactiveTab']);
+    const data = await Storage.get(['highlightStyle', 'suspendInactiveTab', 'pageResidualClean', 'pageCleanClick', 'pageCleanPoll']);
     const style = data.highlightStyle || Storage.defaults.highlightStyle;
 
     $('#hlBgColor').value = style.defaultBgColor;
@@ -1200,7 +1200,27 @@
     const cb = $('#optSuspendInactiveTab');
     if (cb) cb.checked = data.suspendInactiveTab !== false;
 
+    // v1.10.14：翻页残留自动清扫开关
+    const pc = $('#optPageResidualClean');
+    if (pc) pc.checked = data.pageResidualClean !== false;
+    const pcClick = $('#optPageCleanClick');
+    if (pcClick) pcClick.checked = data.pageCleanClick !== false;
+    const pcPoll = $('#optPageCleanPoll');
+    if (pcPoll) pcPoll.checked = data.pageCleanPoll !== false;
+    syncPageCleanSub();
+
     updateHighlightPreview();
+  }
+
+  // v1.10.14：总开关关闭时置灰子项
+  function syncPageCleanSub() {
+    const pc = document.getElementById('optPageResidualClean');
+    const sub = document.getElementById('pageCleanSub');
+    if (pc && sub) {
+      const on = pc.checked;
+      sub.style.opacity = on ? '1' : '0.5';
+      sub.style.pointerEvents = on ? 'auto' : 'none';
+    }
   }
 
   function updateHighlightPreview() {
@@ -1224,6 +1244,12 @@
     const opt = {};
     const cb = $('#optSuspendInactiveTab');
     if (cb) opt.suspendInactiveTab = cb.checked;
+    const pc = $('#optPageResidualClean');
+    if (pc) opt.pageResidualClean = pc.checked;
+    const pcClick = $('#optPageCleanClick');
+    if (pcClick) opt.pageCleanClick = pcClick.checked;
+    const pcPoll = $('#optPageCleanPoll');
+    if (pcPoll) opt.pageCleanPoll = pcPoll.checked;
     await Storage.set(Object.assign({ highlightStyle: style }, opt));
     updateHighlightPreview();
     notifyContentRefresh();
@@ -2002,6 +2028,11 @@
       loadStyles();
       notifyContentRefresh();
     });
+
+    // v1.10.14：翻页残留自动清扫总开关 → 联动子项置灰
+    document.getElementById('optPageResidualClean')?.addEventListener('change', syncPageCleanSub);
+    document.getElementById('optPageCleanClick')?.addEventListener('change', syncPageCleanSub);
+    document.getElementById('optPageCleanPoll')?.addEventListener('change', syncPageCleanSub);
 
     // 备注卡片样式
     ['ncBgColor', 'ncTextColor', 'ncBorderColor'].forEach(id => {

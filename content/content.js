@@ -24,6 +24,29 @@
   // v1.10.8：上次「URL 变化触发的全页先清后建」时间戳。同站点路由变化（翻页 ?page=2、切 Tab）
   // 的兜底重建需限频，防止高频路由抖动（如搜索联想连续改 query）反复清建导致闪烁。
   let _lastUrlRebuild = 0;
+  // v1.10.14：翻页残留自动清扫状态
+  let _prcEnabled = true;      // 总开关
+  let _prcClick = true;        // 分页点击捕获开关
+  let _prcPoll = true;         // 内容指纹轮询开关
+  let _prcPollMs = 1000;       // 轮询间隔
+  let _prcMinGap = 2000;       // 最短重建间隔
+  let _prcLastRebuild = 0;     // 上次重建时间戳（与 URL 重建共用同一限频口径，避免双套连击）
+  let _prcFingerprint = null;  // 上次指纹
+  let _prcPollTimer = null;    // 轮询定时器
+  let _prcBound = false;       // 是否已绑定
+
+  /**
+   * (v1.10.14) 页内「先清后建」重建（带限频）。
+   * 供分页点击捕获 / 内容指纹轮询调用：内容变化后清旧高亮并重新高亮，避免上一页残留。
+   */
+  function prcClean(trigger) {
+    if (!siteEnabled) return;
+    const now = Date.now();
+    if (now - _prcLastRebuild < _prcMinGap) return;  // 限频，防高动态/连点反复清建
+    _prcLastRebuild = now;
+    console.debug('[KeywordHighlighter] 翻页残留自动清扫:', trigger);
+    refresh();
+  }
 
   /**
    * 清理当前会话的高亮、观察器与笔记卡片（站内分页切换/禁用时用于「下线」）
@@ -125,6 +148,94 @@
       _pollTimer = setTimeout(poll, 600);
     };
     _pollTimer = setTimeout(poll, 600);
+  }
+
+  /**
+   * (v1.10.14) 翻页残留自动清扫：专治「URL 不变 + 无 DOM 数据事件 + 直接替换表格内容」的极端翻页残留。
+   * 场景：框架复用行、只对单元格文本赋值，改写落在已被高亮摘离文档的旧节点上 → DOM 无变化事件、
+   * URL 也不变 → MutationObserver 与 URL 轮询都收不到信号 → 上一页高亮/抓取值残留到下一页。
+   * 双保险：
+   *  ① 分页控件点击捕获（capture 阶段，命中分页特征 → prcClean 先清后建）——快速精准；
+   *  ② 内容指纹轮询（低频轻量比对可见文本，变化 → prcClean）——通吃「无事件直接替换」任何形式。
+   * 两者只在「高亮态 + 内容确实变化」时触发，且共用 _prcMinGap 限频，默认开但可在性能优化区关闭。
+   */
+  function setupPageResidualClean() {
+    if (_prcBound) return;
+    _prcBound = true;
+    // 实时读取配置（currentConfig 由异步 init 填充，refreshed 后也会更新；此处每次动作前重读）
+    const readCfg = () => {
+      const c = currentConfig || {};
+      _prcEnabled = c.pageResidualClean !== false;
+      _prcClick = _prcEnabled && c.pageCleanClick !== false;
+      _prcPoll = _prcEnabled && c.pageCleanPoll !== false;
+      _prcPollMs = (c.pageCleanPollMs && c.pageCleanPollMs > 0) ? c.pageCleanPollMs : 1000;
+      _prcMinGap = (c.pageCleanMinGap && c.pageCleanMinGap > 0) ? c.pageCleanMinGap : 2000;
+    };
+    readCfg();
+
+    // ① 分页控件点击捕获：capture 阶段优先截获，命中分页特征即触发重建
+    if (_prcClick) {
+      document.addEventListener('click', (e) => {
+        if (!siteEnabled) return;
+        readCfg();
+        if (!_prcClick) return;
+        const el = e.target;
+        const node = el && el.closest ? el.closest('button,a,li,[role="button"],.pagination,.pager,.page,.ant-pagination,[class*="pagination"],[class*="-page"],[class*="page-"]') : null;
+        if (!node) return;
+        const isPage = (() => {
+          // 文本特征：下一页/上一页/首页/末页/纯数字页码/省略号/箭头
+          const label = node.textContent.trim() || node.getAttribute('aria-label') || '';
+          if (/下一页|上一页|首页|末页|‹|›|«|»|…|\.\.\./.test(label)) return true;
+          // aria-label 含「页」
+          const aria = node.getAttribute('aria-label') || '';
+          if (/页|page/i.test(aria)) return true;
+          // 纯数字页码按钮（1~3 位数字）
+          if (/^\d{1,3}$/.test(label)) return true;
+          return false;
+        })();
+        if (isPage) prcClean('click:' + (node.textContent.trim() || node.getAttribute('aria-label') || '').slice(0, 12));
+      }, true);
+    }
+
+    // ② 内容指纹轮询：轻量指纹（取主要表格/整个 body 的可见文本 hash），变化即重建
+    const computeFingerprint = () => {
+      try {
+        const tables = document.querySelectorAll('table');
+        // 优先对表格区域采样（翻页残留主要在表格/列表）；无表格退化为 body 文本
+        const sources = tables.length ? Array.from(tables) : [document.body];
+        let hash = 0;
+        for (const src of sources) {
+          const txt = ((src.textContent || '').replace(/^\s+|\s+$/g, '')).slice(0, 4000);
+          for (let i = 0; i < txt.length; i++) {
+            hash = ((hash << 5) - hash + txt.charCodeAt(i)) | 0;
+          }
+          hash = (hash * 31 + sources.length) | 0;
+        }
+        return hash;
+      } catch (e) { return null; }
+    };
+
+    const poll = () => {
+      _prcPollTimer = undefined;
+      readCfg();
+      if (!_prcPoll) { /* 关闭轮询：不再重启定时器，等待显式开启（此处仅当 enable 时下面会重启） */ }
+      if (_prcPoll) {
+        // 标签页隐藏（后台）时不采样不重建：与 suspendInactiveTab 的「隐藏暂停」保持一致
+        if (document.hidden) { _prcPollTimer = setTimeout(poll, _prcPollMs); return; }
+        if (siteEnabled) {
+          const fp = computeFingerprint();
+          if (fp !== null && _prcFingerprint !== null && fp !== _prcFingerprint) {
+            prcClean('fingerprint-change');
+          }
+          _prcFingerprint = fp;
+        }
+      }
+      if (_prcPoll) _prcPollTimer = setTimeout(poll, _prcPollMs);
+    };
+    if (_prcPoll) {
+      _prcFingerprint = computeFingerprint();
+      _prcPollTimer = setTimeout(poll, _prcPollMs);
+    }
   }
 
   /**
@@ -267,10 +378,12 @@
       init();
       setupUrlChangeListener();
       setupVisibilitySuspend();
+      setupPageResidualClean();
     });
   } else {
     init();
     setupUrlChangeListener();
     setupVisibilitySuspend();
+    setupPageResidualClean();
   }
 })();
