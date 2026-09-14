@@ -44,6 +44,12 @@ const NoteCard = {
     this.card.style.display = 'none';
     document.body.appendChild(this.card);
 
+    // 悬浮备注 tooltip（v1.10.17，CSS Highlight 无 DOM 节点挂原生 title，自制轻量悬浮）
+    this.tooltip = document.createElement('div');
+    this.tooltip.id = 'kh-note-tooltip';
+    this.tooltip.style.display = 'none';
+    document.body.appendChild(this.tooltip);
+
     // 应用样式
     this.applyCardStyle();
   },
@@ -139,7 +145,37 @@ const NoteCard = {
     this.card.querySelector('.kh-note-close-btn').addEventListener('click', onClose);
     this.card.querySelector('.kh-note-copy-btn').addEventListener('click', onCopy);
 
-    this._handlers = { onClick, onKeydown, onClose, onCopy };
+    // (v1.10.17) 悬浮备注 tooltip：移入命中点显示，移出隐藏。用 setTimeout 节流避免频繁坐标命中。
+    let tooltipTimer = null;
+    let tooltipPos = null;
+    const onMouseMove = (e) => {
+      // 卡片/卡片内容上不显示 tooltip
+      if (this.tooltip && e.target && this.tooltip.contains(e.target)) return;
+      if (this.card && e.target && this.card.contains(e.target)) return;
+      tooltipPos = { x: e.clientX, y: e.clientY };
+      if (tooltipTimer) return;
+      tooltipTimer = setTimeout(() => {
+        tooltipTimer = null;
+        const p = tooltipPos; tooltipPos = null;
+        if (!p) return;
+        const hit = this.resolveHitAt(p.x, p.y);
+        if (hit && hit.meta && hit.meta.note) {
+          this.showTooltip(hit.textContent, hit.meta.note, p.x, p.y);
+        } else {
+          this.hideTooltip();
+        }
+      }, 60);
+    };
+    const onMouseLeave = () => { if (this.tooltip) this.hideTooltip(); };
+    // (v1.10.17) 滚动/窗口尺寸变化：已固定卡片跟随高亮词重新定位
+    const onScroll = () => { this.repositionOnScroll(); };
+    const onResize = () => { this.repositionOnScroll(); };
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseleave', onMouseLeave);
+    document.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', onResize);
+
+    this._handlers = { onClick, onKeydown, onClose, onCopy, onMouseMove, onMouseLeave, onScroll, onResize };
   },
 
   /**
@@ -175,6 +211,46 @@ const NoteCard = {
         remove: () => {}
       }
     };
+  },
+
+  /**
+   * (v1.10.17) 显示悬浮备注 tooltip（CSS Highlight 命中，坐标定位）。只显示备注内容（不显示关键词）。
+   */
+  showTooltip(keywordText, note, x, y) {
+    if (!this.tooltip) return;
+    try { this.tooltip.innerHTML = Utils.sanitizeHTML(note || ''); }
+    catch (e) { this.tooltip.textContent = note || ''; }
+    // 定位：默认右下偏移，翻转防溢出视口
+    const tw = this.tooltip.offsetWidth || 200;
+    const th = this.tooltip.offsetHeight || 40;
+    let left = x + 14;
+    let top = y + 14;
+    if (left + tw > window.innerWidth - 8) left = x - tw - 14;
+    if (top + th > window.innerHeight - 8) top = y - th - 14;
+    if (left < 8) left = 8;
+    if (top < 8) top = 8;
+    this.tooltip.style.left = left + 'px';
+    this.tooltip.style.top = top + 'px';
+    this.tooltip.style.display = 'block';
+    requestAnimationFrame(() => { if (this.tooltip) this.tooltip.classList.add('kh-tip-show'); });
+  },
+
+  /**
+   * (v1.10.17) 隐藏悬浮备注 tooltip。
+   */
+  hideTooltip() {
+    if (!this.tooltip) return;
+    this.tooltip.classList.remove('kh-tip-show');
+    this.tooltip.style.display = 'none';
+  },
+
+  /**
+   * (v1.10.17) 滚动/尺寸变化时：若卡片已固定，用命中对象实时坐标重新定位（跟随高亮词）。
+   */
+  repositionOnScroll() {
+    if (this.pinnedCard && this.pinnedKeywordEl) {
+      requestAnimationFrame(() => { if (this.card && this.pinnedKeywordEl) this.positionCard(this.pinnedKeywordEl); });
+    }
   },
 
   /**
@@ -257,12 +333,20 @@ const NoteCard = {
     if (this._handlers) {
       document.removeEventListener('click', this._handlers.onClick);
       document.removeEventListener('keydown', this._handlers.onKeydown);
+      document.removeEventListener('mousemove', this._handlers.onMouseMove);
+      document.removeEventListener('mouseleave', this._handlers.onMouseLeave);
+      document.removeEventListener('scroll', this._handlers.onScroll, true);
+      window.removeEventListener('resize', this._handlers.onResize);
       this._handlers = null;
     }
     if (this.card && this.card.parentNode) {
       this.card.parentNode.removeChild(this.card);
     }
+    if (this.tooltip && this.tooltip.parentNode) {
+      this.tooltip.parentNode.removeChild(this.tooltip);
+    }
     this.card = null;
+    this.tooltip = null;
     this.pinnedCard = null;
     this.pinnedKeywordEl = null;
     this.copyButton = null;
