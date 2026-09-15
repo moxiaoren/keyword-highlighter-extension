@@ -9,6 +9,8 @@
   let editingKeyword = null;
   let editingGroupId = null;
   let editingSiteRuleId = null;
+  let editingMatchKw = null; // 匹配方式弹窗当前编辑的关键词(v1.11.1)
+  let editingColorKw = null; // 高亮颜色弹窗当前编辑的关键词(v1.11.1)
   let allGroups = []; // 分组缓存（用于自动应用分组颜色）
 
   // DOM 引用
@@ -114,6 +116,7 @@
   function renderKeywordList(keywords, groups, highlightStyle) {
     const filtered = applyKeywordFiltersAndSort(keywords);
     kwState.filtered = filtered;
+    kwState.highlightStyle = highlightStyle; // v1.11.1 颜色弹窗取当前样式用
 
     // 清理已不存在的选中项
     const idSet = new Set(keywords.map(k => k.id));
@@ -153,10 +156,23 @@
 
     body.innerHTML = pageItems.map(kw => {
       const isSel = kwState.selected.has(kw.id);
-      const ruleBadges = [];
-      if (kw.useRegex) ruleBadges.push('<span class="badge regex">正则</span>');
-      if (kw.caseSensitive) ruleBadges.push('<span class="badge">大小写</span>');
-      if (kw.wholeWord) ruleBadges.push('<span class="badge">全词</span>');
+      // 匹配方式：核心规则列跟随关键词、标题词规则列跟随标题词（v1.11.1）。只展示已勾选规则胶囊，点击弹出单一勾选弹窗。
+      const isComboKw = !!(kw.cellVerify || kw.fetchLabels);
+      const coreChips = [];
+      if (kw.useRegex) coreChips.push('<span class="mr-chip">正则</span>');
+      if (kw.caseSensitive) coreChips.push('<span class="mr-chip">大小写</span>');
+      if (kw.wholeWord) coreChips.push('<span class="mr-chip">全词</span>');
+      const coreMatchHtml = coreChips.length ? coreChips.join('') : '<span class="mr-default">默认</span>';
+      const coreCell = `<span class="kw-match-pill" data-match-edit="${kw.id}" data-part="core" title="点击修改核心词匹配方式">${coreMatchHtml}</span>`;
+      let titleCellHtml = '<span style="color:#ddd">—</span>';
+      if (isComboKw) {
+        const tChips = [];
+        if (kw.cellVerifyUseRegex) tChips.push('<span class="mr-chip mr-chip-title">正则</span>');
+        if (kw.cellVerifyCaseSensitive) tChips.push('<span class="mr-chip mr-chip-title">大小写</span>');
+        if (kw.cellVerifyMatchMode === 'exact') tChips.push('<span class="mr-chip mr-chip-title">全词</span>');
+        const tHtml2 = tChips.length ? tChips.join('') : '<span class="mr-default">默认</span>';
+        titleCellHtml = `<span class="kw-match-pill" data-match-edit="${kw.id}" data-part="title" title="点击修改标题词匹配方式">${tHtml2}</span>`;
+      }
       const groupName = kw.groupId && groupMap[kw.groupId]
         ? escapeHtml(groupMap[kw.groupId])
         : '<span style="color:#bbb">—</span>';
@@ -174,9 +190,8 @@
         ? `<span class="kw-col-note" title="${escapeHtml(kw.note)}">${escapeHtml(kw.note)}</span>`
         : '<span style="color:#ddd">—</span>';
       // 标题关键词（左格）——单元格组合翻转 v1.8.3
-      const cellMode = kw.cellVerifyMatchMode === 'exact';
       const cellHtml = (kw.cellVerifyEnabled && kw.cellVerify)
-        ? `<span class="cell-val" title="标题关键词(左格)：${escapeHtml(kw.cellVerify)}（右格核心${cellMode ? '整格相等' : '包含'}匹配）">${escapeHtml(kw.cellVerify)}</span><span class="badge ${cellMode ? 'cell-exact' : 'cell-include'}">${cellMode ? '全词' : '包含'}</span>`
+        ? `<span class="cell-val" title="标题关键词(左格)：${escapeHtml(kw.cellVerify)}">${escapeHtml(kw.cellVerify)}</span>`
         : '<span style="color:#ddd">—</span>';
       // 重要笔记（自身优先，其次分组统一笔记）
       let impNoteHtml = '<span style="color:#ddd">—</span>';
@@ -189,20 +204,21 @@
       }
       // 高亮颜色（关键词自身 > 分组 > 全局默认）
       const style = highlightStyle || {};
-      const bg = kw.bgColor || (grp && grp.bgColor) || style.defaultBgColor || '#ffff00';
+      const bg = kw.bgColor || (grp && grp.bgColor) || style.defaultBgColor || '#ff9500';
       const tc = kw.textColor || (grp && grp.textColor) || style.defaultTextColor || '#000000';
       const colSrc = kw.bgColor ? '来自关键词' : (grp && grp.bgColor) ? '来自分组' : '全局默认';
-      const colorHtml = `<span class="color-swatch" style="background:${escapeHtml(bg)};color:${escapeHtml(tc)};" title="背景 ${bg} / 文字 ${tc}（${colSrc}）">字</span>`;
+      const colorHtml = `<span class="color-swatch color-edit" data-color-edit="${kw.id}" style="background:${escapeHtml(bg)};color:${escapeHtml(tc)};" title="点击修改高亮颜色（当前：背景 ${bg} / 文字 ${tc}，来源：${colSrc}）">字</span>`;
       return `
         <tr class="${isSel ? 'selected' : ''}" data-id="${kw.id}">
           <td class="col-check"><input type="checkbox" class="row-check" data-id="${kw.id}" ${isSel ? 'checked' : ''}></td>
           <td class="col-kw"><span class="kw-cell"><span class="kw-col-name ${kw.enabled ? '' : 'disabled'}" title="${escapeHtml(kw.text)}">${escapeHtml(kw.text)}</span>${impBadge}</span></td>
+          <td class="col-kw-match">${coreCell}</td>
           <td class="col-cell">${cellHtml}</td>
+          <td class="col-title-match">${titleCellHtml}</td>
           <td class="col-impnote">${impNoteHtml}</td>
           <td class="col-color">${colorHtml}</td>
           <td class="col-group">📁 ${groupName}</td>
           <td class="col-note">${noteHtml}</td>
-          <td class="col-rule">${ruleBadges.length ? ruleBadges.join('') : '<span style="color:#ccc">普通</span>'}</td>
           <td class="col-status"><span class="status-pill status-toggle ${kw.enabled ? 'enabled' : 'disabled'}" data-action="toggle" data-id="${kw.id}" title="点击切换启用/禁用">${kw.enabled ? '启用' : '禁用'}</span></td>
           <td class="col-actions">
             <button class="btn-icon" data-action="edit" data-id="${kw.id}" title="编辑">✏️</button>
@@ -234,6 +250,18 @@
           loadKeywords();
           notifyContentRefresh();
         }
+      });
+    });
+    body.querySelectorAll('[data-match-edit]').forEach(el => {
+      el.addEventListener('click', () => {
+        const kw = keywords.find(k => k.id === el.dataset.matchEdit);
+        if (kw) openMatchRuleModal(kw, el.dataset.part || 'core');
+      });
+    });
+    body.querySelectorAll('[data-color-edit]').forEach(el => {
+      el.addEventListener('click', () => {
+        const kw = keywords.find(k => k.id === el.dataset.colorEdit);
+        if (kw) openColorModal(kw);
       });
     });
 
@@ -405,8 +433,8 @@
     if (!table || table.dataset.resized) return;
     table.dataset.resized = '1';
     const defs = [
-      { w: 34 }, { w: 20, pct: 1 }, { w: 104 }, { w: 17, pct: 1 }, { w: 56 },
-      { w: 102 }, { w: 16, pct: 1 }, { w: 96 }, { w: 62 }, { w: 92 }
+      { w: 34 }, { w: 18, pct: 1 }, { w: 100 }, { w: 96 }, { w: 100 }, { w: 16, pct: 1 },
+      { w: 52 }, { w: 92 }, { w: 15, pct: 1 }, { w: 60 }, { w: 90 }
     ];
     const cg = document.createElement('colgroup');
     defs.forEach(d => {
@@ -493,6 +521,164 @@
     closeBulkNote();
   }
 
+  // ===== 匹配方式（表格点击胶囊修改单条，v1.11.1） =====
+  function openMatchRuleModal(kw, part) {
+    editingMatchKw = kw;
+    part = part === 'title' ? 'title' : 'core';
+    const isCombo = !!(kw.cellVerify || kw.fetchLabels);
+    const labelParts = [];
+    if (kw.text) labelParts.push(`关键词：${kw.text}`);
+    if (kw.cellVerify) labelParts.push(`标题词：${kw.cellVerify}`);
+    $('#matchRuleKwLabel').textContent = labelParts.length ? labelParts.join('  ·  ') : (kw.text || '');
+    $('#mrCoreCase').checked = !!kw.caseSensitive;
+    $('#mrCoreWhole').checked = !!kw.wholeWord;
+    $('#mrCoreRegex').checked = !!kw.useRegex;
+    $('#mrTitleCase').checked = !!kw.cellVerifyCaseSensitive;
+    $('#mrTitleWhole').checked = (kw.cellVerifyMatchMode === 'exact');
+    $('#mrTitleRegex').checked = !!kw.cellVerifyUseRegex;
+    const cp = $('#matchRuleCorePanel');
+    const tp = $('#matchRuleTitlePanel');
+    if (isCombo && part === 'title') { cp.style.display = 'none'; tp.style.display = ''; $('#matchRuleTitle').textContent = '标题词匹配方式'; }
+    else { cp.style.display = ''; tp.style.display = 'none'; $('#matchRuleTitle').textContent = '核心词匹配方式'; }
+    $('#matchRuleModal').style.display = 'flex';
+  }
+  function closeMatchRuleModal() {
+    $('#matchRuleModal').style.display = 'none';
+    editingMatchKw = null;
+  }
+  async function saveMatchRule() {
+    if (!editingMatchKw) { closeMatchRuleModal(); return; }
+    const kw = editingMatchKw;
+    const isCombo = !!(kw.cellVerify || kw.fetchLabels);
+    const updates = {
+      caseSensitive: $('#mrCoreCase').checked,
+      wholeWord: $('#mrCoreWhole').checked,
+      useRegex: $('#mrCoreRegex').checked,
+    };
+    if (isCombo) {
+      updates.cellVerifyCaseSensitive = $('#mrTitleCase').checked;
+      updates.cellVerifyMatchMode = $('#mrTitleWhole').checked ? 'exact' : 'include';
+      updates.cellVerifyUseRegex = $('#mrTitleRegex').checked;
+    }
+    await Storage.updateKeyword(kw.id, updates);
+    closeMatchRuleModal();
+    loadKeywords();
+    notifyContentRefresh();
+  }
+
+  // ===== 批量设置匹配方式（v1.11.1） =====
+  function bulkEditMatchRule() {
+    if (kwState.selected.size === 0) return;
+    $('#bulkMatchRuleCount').textContent = `已选 ${kwState.selected.size} 项；勾选 = 设为开启（取消勾选 = 保持原样）`;
+    ['bmrCoreCase','bmrCoreWhole','bmrCoreRegex','bmrTitleCase','bmrTitleWhole','bmrTitleRegex'].forEach(id => { $('#' + id).checked = false; });
+    $('#bmrCoreClear').checked = false;
+    $('#bmrTitleClear').checked = false;
+    $('#bulkMatchRuleResult').textContent = '';
+    $('#bulkMatchRuleModal').style.display = 'flex';
+  }
+  function closeBulkMatchRule() {
+    $('#bulkMatchRuleModal').style.display = 'none';
+  }
+  async function saveBulkMatchRule() {
+    if (kwState.selected.size === 0) { closeBulkMatchRule(); return; }
+    const coreSet = { caseSensitive: $('#bmrCoreCase').checked, wholeWord: $('#bmrCoreWhole').checked, useRegex: $('#bmrCoreRegex').checked };
+    const titleSet = { case: $('#bmrTitleCase').checked, whole: $('#bmrTitleWhole').checked, regex: $('#bmrTitleRegex').checked };
+    const coreClear = $('#bmrCoreClear').checked;
+    const titleClear = $('#bmrTitleClear').checked;
+    const anyCore = coreSet.caseSensitive || coreSet.wholeWord || coreSet.useRegex || coreClear;
+    const anyTitle = titleSet.case || titleSet.whole || titleSet.regex || titleClear;
+    if (!anyCore && !anyTitle) {
+      $('#bulkMatchRuleResult').textContent = '没有要应用的内容';
+      return;
+    }
+    const keywords = await Storage.getKeywords();
+    let changed = 0;
+    keywords.forEach(k => {
+      if (!kwState.selected.has(k.id)) return;
+      let ch = false;
+      // 核心词匹配
+      if (coreClear) {
+        if (k.caseSensitive || k.wholeWord || k.useRegex) { k.caseSensitive = k.wholeWord = k.useRegex = false; ch = true; }
+      } else {
+        if (coreSet.caseSensitive && !k.caseSensitive) { k.caseSensitive = true; ch = true; }
+        if (coreSet.wholeWord && !k.wholeWord) { k.wholeWord = true; ch = true; }
+        if (coreSet.useRegex && !k.useRegex) { k.useRegex = true; ch = true; }
+      }
+      // 标题词匹配（仅组合词）
+      const isCombo = !!(k.cellVerify || k.fetchLabels);
+      if (isCombo) {
+        if (titleClear) {
+          if (k.cellVerifyCaseSensitive || k.cellVerifyUseRegex || k.cellVerifyMatchMode === 'exact') {
+            k.cellVerifyCaseSensitive = false; k.cellVerifyUseRegex = false; k.cellVerifyMatchMode = 'include'; ch = true;
+          }
+        } else {
+          if (titleSet.case && !k.cellVerifyCaseSensitive) { k.cellVerifyCaseSensitive = true; ch = true; }
+          if (titleSet.whole && k.cellVerifyMatchMode !== 'exact') { k.cellVerifyMatchMode = 'exact'; ch = true; }
+          if (titleSet.regex && !k.cellVerifyUseRegex) { k.cellVerifyUseRegex = true; ch = true; }
+        }
+      }
+      if (ch) { k.updatedAt = Date.now(); changed++; }
+    });
+    if (changed > 0) {
+      await Storage.set({ keywords });
+      loadKeywords();
+      notifyContentRefresh();
+      $('#bulkMatchRuleResult').textContent = `已更新 ${changed} 项`;
+      setTimeout(closeBulkMatchRule, 600);
+    } else {
+      $('#bulkMatchRuleResult').textContent = '所选词均已符合目标设置';
+      setTimeout(closeBulkMatchRule, 600);
+    }
+  }
+
+  // ===== 高亮颜色（表格点击颜色列修改，v1.11.1） =====
+  function openColorModal(kw) {
+    editingColorKw = kw;
+    const labels = [];
+    if (kw.text) labels.push(`关键词：${kw.text}`);
+    if (kw.cellVerify) labels.push(`标题词：${kw.cellVerify}`);
+    $('#kwColorKwLabel').textContent = labels.length ? labels.join('  ·  ') : (kw.text || '');
+    const style = kwState.highlightStyle || Storage.defaults.highlightStyle || { defaultBgColor: '#ff9500', defaultTextColor: '#000000' };
+    const grp = kwGroups.find(g => g.id === kw.groupId) || null;
+    const bg = kw.bgColor || (grp && grp.bgColor) || style.defaultBgColor || '#ff9500';
+    const tx = kw.textColor || (grp && grp.textColor) || style.defaultTextColor || '#000000';
+    const colSrc = kw.bgColor ? '来自关键词' : (grp && grp.bgColor) ? '来自分组' : '全局默认';
+    $('#kwColorBg').value = bg;
+    $('#kwColorBgText').value = bg;
+    $('#kwColorTxt').value = tx;
+    $('#kwColorTxtText').value = tx;
+    $('#kwColorSource').textContent = `当前生效颜色来源：${colSrc}`;
+    $('#kwColorReset').checked = false;
+    $('#kwColorModal').style.display = 'flex';
+  }
+  function normalizeHex(v) {
+    v = (v || '').trim();
+    if (/^#?[0-9a-fA-F]{3}$/.test(v)) v = '#' + v.replace(/^#/, '').split('').map(c => c + c).join('');
+    if (!/^#[0-9a-fA-F]{6}$/.test(v) && !/^#[0-9a-fA-F]{8}$/.test(v)) return null;
+    return v.toLowerCase();
+  }
+  function closeColorModal() { $('#kwColorModal').style.display = 'none'; editingColorKw = null; }
+  async function saveColorModal() {
+    if (!editingColorKw) { closeColorModal(); return; }
+    const kw = editingColorKw;
+    const reset = $('#kwColorReset').checked;
+    const updates = {};
+    if (reset) {
+      updates.bgColor = '';
+      updates.textColor = '';
+    } else {
+      const bg = normalizeHex($('#kwColorBgText').value || $('#kwColorBg').value);
+      const tx = normalizeHex($('#kwColorTxtText').value || $('#kwColorTxt').value);
+      if (!bg || !tx) { $('#kwColorSource').textContent = '颜色格式不正确，请输入如 #ff9500 的 hex 值'; return; }
+      updates.bgColor = bg;
+      updates.textColor = tx;
+    }
+    await Storage.updateKeyword(kw.id, updates);
+    closeColorModal();
+    loadKeywords();
+    notifyContentRefresh();
+  }
+
   // 根据勾选状态显示/隐藏 重要笔记输入（减少弹窗杂乱；单元格期望值常显，无需切换）
   function toggleKwSections() {
     const nw = $('#importantNoteWrap');
@@ -558,27 +744,34 @@
   }
 
   function noteTableToMD(tbl) {
+    // v1.11.1：单元格内递归支持加粗/**、斜体/*、图片、链接（此前只取 textContent，表格内的加粗/斜体保存后会丢）
+    const tdToMD = (td) => {
+      let s = '';
+      td.childNodes.forEach(c => { s += tdNodeToMD(c); });
+      return s.trim();
+    };
+    // 单元格内单个节点 → markdown 片段（递归处理嵌套粗/斜/链接/图片）
+    const tdNodeToMD = (node) => {
+      if (node.nodeType === Node.TEXT_NODE) return node.textContent;
+      if (node.nodeType !== Node.ELEMENT_NODE) return '';
+      const ct = node.tagName.toLowerCase();
+      switch (ct) {
+        case 'br': return ' ';
+        case 'img': return '![' + (node.getAttribute('alt') || '') + '](' + (node.getAttribute('src') || '') + ')';
+        case 'b': case 'strong': return '**' + Array.from(node.childNodes).map(tdNodeToMD).join('') + '**';
+        case 'i': case 'em': return '*' + Array.from(node.childNodes).map(tdNodeToMD).join('') + '*';
+        case 'a': {
+          const h = node.getAttribute('href') || '';
+          const txt = node.textContent || '';
+          if (h && txt === h) return h; // 纯网址链接保留纯网址（与段落处理一致）
+          return '[' + txt + '](' + h + ')';
+        }
+        default: return Array.from(node.childNodes).map(tdNodeToMD).join('');
+      }
+    };
     const rows = [];
     tbl.querySelectorAll('tr').forEach(tr => {
-      const cells = Array.from(tr.children).map(td => {
-        let s = '';
-        td.childNodes.forEach(c => {
-          if (c.nodeType === Node.TEXT_NODE) s += c.textContent;
-          else if (c.nodeType === Node.ELEMENT_NODE) {
-            const ct = c.tagName.toLowerCase();
-            if (ct === 'img') s += '![' + (c.getAttribute('alt') || '') + '](' + (c.getAttribute('src') || '') + ')';
-            else if (ct === 'a') { // v1.8.20 表格单元格内链接序列化回 [文字](网址)
-              const h = c.getAttribute('href') || '';
-              const txt = c.textContent || '';
-              if (h && txt === h) s += h; // 纯网址链接保留纯网址（与段落处理一致）
-              else s += '[' + txt + '](' + h + ')';
-            }
-            else if (ct === 'br') s += ' ';
-            else s += c.textContent;
-          }
-        });
-        return s.trim();
-      });
+      const cells = Array.from(tr.children).map(tdToMD);
       rows.push(cells.join(' | '));
     });
     if (rows.length) {
@@ -874,7 +1067,7 @@
     curNoteEd = $('#editKwImportantNote');
     $('#editKwText').value = keyword?.text || '';
     $('#editKwNote').value = keyword?.note || '';
-    $('#editKwBgColor').value = keyword?.bgColor || '#ffff00';
+    $('#editKwBgColor').value = keyword?.bgColor || '#ff9500';
     $('#editKwTextColor').value = keyword?.textColor || '#000000';
     $('#editKwCaseSensitive').checked = keyword?.caseSensitive || false;
     $('#editKwWholeWord').checked = keyword?.wholeWord || false;
@@ -1126,7 +1319,7 @@
     const useColor = !!(group && group.bgColor);
     $('#editGroupUseColor').checked = useColor;
     $('#editGroupColorRow').style.display = useColor ? 'flex' : 'none';
-    $('#editGroupBgColor').value = (group && group.bgColor) || '#ffff00';
+    $('#editGroupBgColor').value = (group && group.bgColor) || '#ff9500';
     $('#editGroupTextColor').value = (group && group.textColor) || '#000000';
 
     modal.style.display = 'flex';
@@ -1922,6 +2115,7 @@
           case 'disable': bulkSetEnabled(false); break;
           case 'move': bulkMoveGroup(); break;
           case 'note': bulkEditNote(); break;
+          case 'matchrule': bulkEditMatchRule(); break;
           case 'delete': bulkDelete(); break;
           case 'clear': bulkClear(); break;
         }
@@ -1933,6 +2127,35 @@
     $('#bulkNoteModal')?.addEventListener('click', (e) => {
       if (e.target === $('#bulkNoteModal')) closeBulkNote();
     });
+    $('#matchRuleClose')?.addEventListener('click', closeMatchRuleModal);
+    $('#matchRuleCancel')?.addEventListener('click', closeMatchRuleModal);
+    $('#matchRuleSave')?.addEventListener('click', saveMatchRule);
+    $('#matchRuleModal')?.addEventListener('click', (e) => {
+      if (e.target === $('#matchRuleModal')) closeMatchRuleModal();
+    });
+    $('#bulkMatchRuleClose')?.addEventListener('click', closeBulkMatchRule);
+    $('#bulkMatchRuleCancel')?.addEventListener('click', closeBulkMatchRule);
+    $('#bulkMatchRuleSave')?.addEventListener('click', saveBulkMatchRule);
+    $('#bulkMatchRuleModal')?.addEventListener('click', (e) => {
+      if (e.target === $('#bulkMatchRuleModal')) closeBulkMatchRule();
+    });
+    $('#kwColorClose')?.addEventListener('click', closeColorModal);
+    $('#kwColorCancel')?.addEventListener('click', closeColorModal);
+    $('#kwColorSave')?.addEventListener('click', saveColorModal);
+    $('#kwColorModal')?.addEventListener('click', (e) => {
+      if (e.target === $('#kwColorModal')) closeColorModal();
+    });
+    // 取色器 ↔ hex 双向同步（背景/文字）
+    const syncColorInput = (pickerId, textId) => {
+      $('#' + pickerId)?.addEventListener('input', () => { $('#' + textId).value = $('#' + pickerId).value; });
+      $('#' + textId)?.addEventListener('input', () => {
+        const v = ($('#' + textId).value || '').trim();
+        const h = normalizeHex(v);
+        if (h) { try { $('#' + pickerId).value = h; } catch (e) {} }
+      });
+    };
+    syncColorInput('kwColorBg', 'kwColorBgText');
+    syncColorInput('kwColorTxt', 'kwColorTxtText');
     $('#keywordModalClose')?.addEventListener('click', closeKeywordModal);
     $('#keywordModalCancel')?.addEventListener('click', closeKeywordModal);
     $('#keywordModalSave')?.addEventListener('click', saveKeyword);

@@ -85,6 +85,7 @@
           <button class="btn btn-sm" data-bulk="disable" disabled title="禁用选中的关键词">⭕ 禁用</button>
           <button class="btn btn-sm" data-bulk="move" disabled title="移动选中的关键词到分组">📁 移动</button>
           <button class="btn btn-sm" data-bulk="note" disabled title="批量设置选中的关键词 备注 / 重要笔记">📝 备注/笔记</button>
+          <button class="btn btn-sm" data-bulk="matchrule" disabled title="批量设置选中的关键词匹配方式（核心词 / 标题词规则）">⚙️ 匹配</button>
           <button class="btn btn-sm btn-danger-soft" data-bulk="delete" disabled title="删除选中的关键词">🗑️ 删除</button>
           <button class="btn btn-sm btn-link" data-bulk="clear" disabled title="取消选择">取消</button>
         </div>
@@ -96,12 +97,13 @@
               <tr>
                 <th class="col-check"><input type="checkbox" id="checkAllPage" title="全选本页"></th>
                 <th class="col-kw">关键词</th>
+                <th class="col-kw-match" title="点击修改核心词匹配方式（在弹窗中勾选，保存即生效）">核心词匹配</th>
                 <th class="col-cell" title="单元格组合关键词的左格标题词（右格为核心，命中时右格须含关键词）">标题关键词(左格)</th>
+                <th class="col-title-match" title="点击修改标题词匹配方式（仅组合词，在弹窗中勾选）">标题词匹配</th>
                 <th class="col-impnote">重要笔记</th>
                 <th class="col-color">高亮颜色</th>
                 <th class="col-group">分组</th>
                 <th class="col-note">备注</th>
-                <th class="col-rule">匹配方式</th>
                 <th class="col-status">状态</th>
                 <th class="col-actions">操作</th>
               </tr>
@@ -143,8 +145,8 @@
           <div class="form-group">
             <label>默认背景色</label>
             <div class="color-input-row">
-              <input type="color" id="hlBgColor" value="#ffff00">
-              <input type="text" id="hlBgColorText" value="#ffff00" class="color-text-input">
+              <input type="color" id="hlBgColor" value="#ff9500">
+              <input type="text" id="hlBgColorText" value="#ff9500" class="color-text-input">
             </div>
           </div>
           <div class="form-group">
@@ -629,7 +631,7 @@
                   <label class="checkbox-label"><input type="checkbox" id="editKwUseRegex"><span>正则</span></label>
                 </div>
                 <div class="match-colors">
-                  <label class="color-dot" title="高亮背景色">背景<input type="color" id="editKwBgColor" value="#ffff00"></label>
+                  <label class="color-dot" title="高亮背景色">背景<input type="color" id="editKwBgColor" value="#ff9500"></label>
                   <label class="color-dot" title="文字颜色">文字<input type="color" id="editKwTextColor" value="#000000"></label>
                 </div>
               </div>
@@ -778,7 +780,7 @@
           </div>
           <div class="form-group">
             <label>默认高亮背景色</label>
-            <input type="color" id="bulkBgColor" value="#ffff00">
+            <input type="color" id="bulkBgColor" value="#ff9500">
           </div>
         </div>
         <div class="form-row">
@@ -835,6 +837,108 @@
         <span id="bulkNoteResult" style="flex:1;color:#4caf50;font-size:13px;"></span>
         <button class="btn btn-secondary" id="bulkNoteCancel">取消</button>
         <button class="btn btn-primary" id="bulkNoteSave">应用</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 匹配方式弹窗（表格点击胶囊快速修改单条） -->
+  <div class="modal-overlay" id="matchRuleModal" style="display:none;">
+    <div class="modal-dialog modal-sm">
+      <div class="modal-header">
+        <h3 id="matchRuleTitle">核心词匹配方式</h3>
+        <button class="modal-close" id="matchRuleClose">✕</button>
+      </div>
+      <div class="modal-body">
+        <div id="matchRuleKwLabel" class="matchrule-kw-label"></div>
+        <div class="match-panel" id="matchRuleCorePanel" style="margin-top:10px;">
+          <div class="match-panel-title">核心词匹配</div>
+          <div class="match-row match-vert">
+            <label class="checkbox-label"><input type="checkbox" id="mrCoreCase"><span>区分大小写</span></label>
+            <label class="checkbox-label"><input type="checkbox" id="mrCoreWhole"><span>全词（整词匹配）</span></label>
+            <label class="checkbox-label"><input type="checkbox" id="mrCoreRegex"><span>正则</span></label>
+          </div>
+        </div>
+        <div class="match-panel" id="matchRuleTitlePanel" style="margin-top:10px;display:none;">
+          <div class="match-panel-title">标题词匹配 <span class="matchrule-title-hint">（单元格组合左格）</span></div>
+          <div class="match-row match-vert">
+            <label class="checkbox-label"><input type="checkbox" id="mrTitleCase"><span>区分大小写</span></label>
+            <label class="checkbox-label"><input type="checkbox" id="mrTitleWhole"><span>全词（精确 = 标题格整词相等）</span></label>
+            <label class="checkbox-label"><input type="checkbox" id="mrTitleRegex"><span>正则</span></label>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="matchRuleCancel">取消</button>
+        <button class="btn btn-primary" id="matchRuleSave">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 批量匹配方式弹窗 -->
+  <div class="modal-overlay" id="bulkMatchRuleModal" style="display:none;">
+    <div class="modal-dialog modal-sm">
+      <div class="modal-header">
+        <h3>批量设置匹配方式</h3>
+        <button class="modal-close" id="bulkMatchRuleClose">✕</button>
+      </div>
+      <div class="modal-body">
+        <div id="bulkMatchRuleCount" class="form-hint" style="margin-bottom:8px;"></div>
+        <div class="match-panel">
+          <div class="match-panel-title">核心词匹配 <span class="matchrule-title-hint">（勾选 = 对选中词开启；取消勾选则保持原样）</span></div>
+          <div class="match-row match-vert">
+            <label class="checkbox-label"><input type="checkbox" id="bmrCoreCase"><span>区分大小写</span></label>
+            <label class="checkbox-label"><input type="checkbox" id="bmrCoreWhole"><span>全词</span></label>
+            <label class="checkbox-label"><input type="checkbox" id="bmrCoreRegex"><span>正则</span></label>
+          </div>
+          <label class="checkbox-label bulk-mr-reset"><input type="checkbox" id="bmrCoreClear"><span>清空选中词的核心词规则（全部关闭）</span></label>
+        </div>
+        <div class="match-panel" style="margin-top:10px;">
+          <div class="match-panel-title">标题词匹配 <span class="matchrule-title-hint">（单元格组合左格，仅对组合词生效）</span></div>
+          <div class="match-row match-vert">
+            <label class="checkbox-label"><input type="checkbox" id="bmrTitleCase"><span>区分大小写</span></label>
+            <label class="checkbox-label"><input type="checkbox" id="bmrTitleWhole"><span>全词</span></label>
+            <label class="checkbox-label"><input type="checkbox" id="bmrTitleRegex"><span>正则</span></label>
+          </div>
+          <label class="checkbox-label bulk-mr-reset"><input type="checkbox" id="bmrTitleClear"><span>清空选中组合词的标题词规则（对普通词无影响）</span></label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <span id="bulkMatchRuleResult" style="flex:1;color:#4caf50;font-size:13px;"></span>
+        <button class="btn btn-secondary" id="bulkMatchRuleCancel">取消</button>
+        <button class="btn btn-primary" id="bulkMatchRuleSave">应用</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 高亮颜色弹窗（表格点击颜色列修改单个关键词颜色，v1.11.1） -->
+  <div class="modal-overlay" id="kwColorModal" style="display:none;">
+    <div class="modal-dialog modal-sm">
+      <div class="modal-header">
+        <h3>高亮颜色</h3>
+        <button class="modal-close" id="kwColorClose">✕</button>
+      </div>
+      <div class="modal-body">
+        <div id="kwColorKwLabel" class="matchrule-kw-label"></div>
+        <div class="form-group" style="margin-top:10px;">
+          <label>背景色</label>
+          <div class="color-edit-row">
+            <input type="color" id="kwColorBg" value="#ff9500">
+            <input type="text" id="kwColorBgText" maxlength="9" class="text-input" style="width:110px;">
+          </div>
+        </div>
+        <div class="form-group" style="margin-top:8px;">
+          <label>文字色</label>
+          <div class="color-edit-row">
+            <input type="color" id="kwColorTxt" value="#000000">
+            <input type="text" id="kwColorTxtText" maxlength="9" class="text-input" style="width:110px;">
+          </div>
+          <div id="kwColorSource" class="form-hint" style="margin-top:5px;"></div>
+        </div>
+        <label class="checkbox-label" style="margin-top:10px;"><input type="checkbox" id="kwColorReset"> 恢复默认（跟随分组 / 全局默认色）</label>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="kwColorCancel">取消</button>
+        <button class="btn btn-primary" id="kwColorSave">保存</button>
       </div>
     </div>
   </div>
@@ -900,7 +1004,7 @@
           <div class="form-row" id="editGroupColorRow" style="display:none;">
             <div class="form-group">
               <label>背景色</label>
-              <input type="color" id="editGroupBgColor" value="#ffff00">
+              <input type="color" id="editGroupBgColor" value="#ff9500">
             </div>
             <div class="form-group">
               <label>文字颜色</label>
