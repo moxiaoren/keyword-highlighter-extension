@@ -396,12 +396,27 @@ const ImportantNote = {
       const bg = /^#[0-9a-fA-F]{3,8}$/.test(item.bg || '') ? item.bg : '';
       // 组合词/普通词标签（v1.9.3）：排列为「标题在前 → 关键词在后」；
       // 箭头(→ 关键词)放在关键词一侧，不放标题模块（因标题带 🔖，避免“🔖 标题 →”的怪样）。
-      const kwTags = (item.entries || []).map(e => {
-        if (e.adj) {
-          return `<span class="khin-item-kw">🔖 ${this.escapeText(e.adj)}</span><span class="khin-item-adj">→ ${this.escapeText(e.kw)}</span>`;
-        }
-        return `<span class="khin-item-kw">🔖 ${this.escapeText(e.kw)}</span>`;
-      }).join(' ');
+      // v1.13.0【4b】同一笔记内容(note一致)条目内，命中词聚合展示：
+      // 标题集去重 + 值集去重，交叉展示 →
+      //   标题1-a + 标题1-b → 🔖 标题1 → a|b
+      //   标题1-a + 标题2-a → 🔖 标题1|标题2 → a
+      //   普通词 a + b（无标题）→ 🔖 a|b
+      const entries = item.entries || [];
+      const hasAdj = entries.some(function (e) { return e && e.adj; });
+      const titleSet = new Set();
+      const valSet = new Set();
+      for (const e of entries) {
+        if (e && e.adj) titleSet.add(e.adj);
+        if (e && e.kw) valSet.add(e.kw);
+      }
+      const valStr = Array.from(valSet).map(function (v) { return this.escapeText(v); }.bind(this)).join('|');
+      let kwTags = '';
+      if (hasAdj) {
+        const titleStr = Array.from(titleSet).map(function (t) { return this.escapeText(t); }.bind(this)).join('|');
+        kwTags = `<span class="khin-item-kw">🔖 ${titleStr}</span><span class="khin-item-adj">→ ${valStr}</span>`;
+      } else {
+        kwTags = `<span class="khin-item-kw">🔖 ${valStr}</span>`;
+      }
       return `
         <div class="khin-item" style="${item.imgSize ? `--kh-img-size:${item.imgSize}px;` : ''}${bg ? `background:${bg};` : ''}" data-note="${encodeURIComponent(item.note)}">
           <div class="khin-item-head">

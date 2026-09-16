@@ -38,15 +38,17 @@ function check(name, cond, detail) {
   let dupErr = null;
   try { await Storage.addKeyword({ text: 'hjz#', enabled: true }); } catch (e) { dupErr = e.message; }
   check('重复添加 hjz# → 抛已存在', !!dupErr && /已存在/.test(dupErr), dupErr);
-  // 5. 编辑：把普通词改成 hjz# → kind=rare
+  // 5. 编辑：先把原 hjz#(kw) 改名释放唯一性，再把普通词 kw2 改成 hjz# → kind=rare
+  await Storage.updateKeyword(kw.id, { text: '改名啦' });
   await Storage.updateKeyword(kw2.id, { text: 'hjz#' });
   const upd = (await Storage.getKeywords()).find(k => k.id === kw2.id);
   check('编辑改为 hjz# → kind=rare', upd && upd.kind === 'rare', upd && upd.kind);
-  // 6. 编辑：把 hjz# 改回普通 → kind 清除
-  await Storage.updateKeyword(kw.id, { text: '改名啦' });
-  const back = (await Storage.getKeywords()).find(k => k.id === kw.id);
+  // 6. 编辑：把 hjz#(kw2) 改回普通 → kind 清除
+  await Storage.updateKeyword(kw2.id, { text: '普通词回' });
+  const back = (await Storage.getKeywords()).find(k => k.id === kw2.id);
   check('编辑改回普通词 → kind 清除', back && !('kind' in back), back && back.kind);
-  // 7. 罕见字组合：hjz# + 标题词 → kind=rare 且可并存（不同 cellVerify）
+  // 7. 罕见字组合：独立 hjz# 与 带标题词(hjz#+组合标题) 可并存且均为 kind=rare
+  await Storage.addKeyword({ text: 'hjz#', enabled: true });        // 独立罕见字词
   await Storage.addKeyword({ text: 'hjz#', cellVerifyEnabled: true, cellVerify: '组合标题', enabled: true });
   const comboKws = (await Storage.getKeywords()).filter(k => k.text === 'hjz#');
   check('罕见字组合(hjz#+标题) 可并存且 kind=rare',
