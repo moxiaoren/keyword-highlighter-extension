@@ -17,7 +17,7 @@ const { chromium } = require('/tmp/pw/node_modules/playwright');
   await page.addScriptTag({ path: PATH + '/lib/utils.js' });
   await page.addScriptTag({ path: PATH + '/lib/keyword-engine.js' });
 
-  const cfg = { groups: [], highlightStyle: { defaultBgColor: '#ff9500', defaultTextColor: '#000' } };
+  const cfg = { groups: [], pageRebuildSilentMs: 0, pageRebuildGapMs: 0, highlightStyle: { defaultBgColor: '#ff9500', defaultTextColor: '#000' } };
   const kw = [{ id: 'c5', text: '不通过', enabled: true, important: true, importantNote: '审核不通过说明', cellVerifyEnabled: true, cellVerify: '审核状态', cellVerifyMatchMode: 'include' }];
 
   await page.evaluate((args) => { const [k, c] = args; KeywordEngine.setupMutationObserver(k, c); return 1; }, [kw, cfg]);

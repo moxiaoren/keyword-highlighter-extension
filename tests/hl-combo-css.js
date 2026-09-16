@@ -17,7 +17,7 @@ const PW=process.env.PW_PLAYWRIGHT_PATH||'/tmp/pw/node_modules/playwright';
     {id:'c1',text:'是',enabled:true,cellVerifyEnabled:true,cellVerify:'刚需应用',note:'这是刚需备注',important:true,importantNote:'刚需重要笔记',bgColor:'#ff0'},
     {id:'c2',text:'是',enabled:true,cellVerifyEnabled:true,cellVerify:'网盘应用',important:true,importantNote:'网盘重要笔记',bgColor:'#0f0'}
   ];
-  await page.evaluate(({k,c})=>{ KeywordEngine.setupMutationObserver(k,c); return KeywordEngine.highlightKeywords(k,c); },{k:kws,c:{groups:[],highlightStyle:{defaultBgColor:'#ffff00',defaultTextColor:'#000'},shadowDOMEnabled:false}});
+  await page.evaluate(({k,c})=>{ KeywordEngine.setupMutationObserver(k,c); return KeywordEngine.highlightKeywords(k,c); },{k:kws,c:{groups:[],highlightStyle:{defaultBgColor:'#ffff00',defaultTextColor:'#000'},shadowDOMEnabled:false,pageRebuildSilentMs:0,pageRebuildGapMs:0}});
   await page.waitForTimeout(100);
   let r=await page.evaluate(()=>{
     const imp=KeywordEngine.getImportantPlainHits().map(h=>({text:h.text,note:h.note,adj:h.adj}));

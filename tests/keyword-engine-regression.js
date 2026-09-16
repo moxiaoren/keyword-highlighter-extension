@@ -95,7 +95,7 @@ function check(name, cond, detail) {
 
   // 注入通用构造与断言工具
   await page.evaluate(() => {
-    window.__cfg = { groups: [], highlightStyle: { defaultBgColor: '#ffff00', defaultTextColor: '#000' } };
+    window.__cfg = { groups: [], pageRebuildSilentMs: 0, pageRebuildGapMs: 0, highlightStyle: { defaultBgColor: '#ffff00', defaultTextColor: '#000' } };
     window.__mkKw = (id, title, val, bg) => ({ id, text: val, enabled: true,
       cellVerifyEnabled: true, cellVerify: title, cellVerifyMatchMode: 'contain', bgColor: bg });
     window.__buildRow = (title, val) => {

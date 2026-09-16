@@ -28,7 +28,7 @@ function check(name, cond, detail) {
   await page.addScriptTag({ path: PATH.join(REPO, 'lib/keyword-engine.js') });
 
   await page.evaluate(() => {
-    window.__cfg = { groups: [], highlightStyle: { defaultBgColor: '#ff9500', defaultTextColor: '#000' } };
+    window.__cfg = { groups: [], pageRebuildSilentMs: 0, pageRebuildGapMs: 0, highlightStyle: { defaultBgColor: '#ff9500', defaultTextColor: '#000' } };
     window.__combo = (kid) => (KeywordEngine._plainHits || [])
       .filter(m => m && m.kwId === kid && m.combo)
       .map(m => ({

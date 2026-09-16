@@ -190,6 +190,19 @@
               <input type="checkbox" id="optPageCleanClick"> 分页控件点击捕获（点「下一页/页码」时自动重建）
             </label>
           </div>
+
+          <label class="checkbox-label" style="padding:6px 2px;font-weight:500;margin-top:8px;">
+            <input type="checkbox" id="optPageRebuild"> 页面有变动时自动整页重建（修复多次提交后组合词/重要笔记偶发丢失）
+          </label>
+          <span class="form-hint">识别到页面内容变化后，自动对整页做一次「先清后建」重建，确保高亮与重要笔记始终一致、不再偶发丢失。内置静默窗口与节流防高频页面卡顿，可调整下方参数。</span>
+          <div id="pageRebuildSub" style="padding:4px 0 2px 22px;">
+            <label style="display:inline-block;margin-right:14px;font-size:12px;">静默窗口(ms)
+              <input type="number" id="optRebuildSilent" min="0" step="100" style="width:84px;margin-left:4px;">
+            </label>
+            <label style="display:inline-block;font-size:12px;">重建节流(ms)
+              <input type="number" id="optRebuildGap" min="0" step="100" style="width:84px;margin-left:4px;">
+            </label>
+          </div>
         </div>
         
         <!-- 实时预览 -->

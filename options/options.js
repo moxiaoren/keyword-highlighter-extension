@@ -1408,7 +1408,7 @@
 
   // ========== 高亮样式 ==========
   async function loadStyles() {
-    const data = await Storage.get(['highlightStyle', 'suspendInactiveTab', 'pageResidualClean', 'pageCleanClick']);
+    const data = await Storage.get(['highlightStyle', 'suspendInactiveTab', 'pageResidualClean', 'pageCleanClick', 'pageRebuildOnChange', 'pageRebuildSilentMs', 'pageRebuildGapMs']);
     const style = data.highlightStyle || Storage.defaults.highlightStyle;
 
     $('#hlBgColor').value = style.defaultBgColor;
@@ -1428,7 +1428,15 @@
     if (pc) pc.checked = data.pageResidualClean !== false;
     const pcClick = $('#optPageCleanClick');
     if (pcClick) pcClick.checked = data.pageCleanClick !== false;
+    // v1.13.5：页面变动自动整页重建开关 + 静默/节流参数
+    const pr = $('#optPageRebuild');
+    if (pr) pr.checked = data.pageRebuildOnChange !== false;
+    const prSilent = $('#optRebuildSilent');
+    if (prSilent) prSilent.value = (data.pageRebuildSilentMs != null ? data.pageRebuildSilentMs : 1000);
+    const prGap = $('#optRebuildGap');
+    if (prGap) prGap.value = (data.pageRebuildGapMs != null ? data.pageRebuildGapMs : 2000);
     syncPageCleanSub();
+    syncPageRebuildSub();
 
     updateHighlightPreview();
   }
@@ -1439,6 +1447,17 @@
     const sub = document.getElementById('pageCleanSub');
     if (pc && sub) {
       const on = pc.checked;
+      sub.style.opacity = on ? '1' : '0.5';
+      sub.style.pointerEvents = on ? 'auto' : 'none';
+    }
+  }
+
+  // v1.13.5：总开关关闭时置灰子项（静默/节流参数）
+  function syncPageRebuildSub() {
+    const pr = document.getElementById('optPageRebuild');
+    const sub = document.getElementById('pageRebuildSub');
+    if (pr && sub) {
+      const on = pr.checked;
       sub.style.opacity = on ? '1' : '0.5';
       sub.style.pointerEvents = on ? 'auto' : 'none';
     }
@@ -1469,6 +1488,13 @@
     if (pc) opt.pageResidualClean = pc.checked;
     const pcClick = $('#optPageCleanClick');
     if (pcClick) opt.pageCleanClick = pcClick.checked;
+    // v1.13.5：页面变动自动整页重建 + 静默/节流
+    const pr = $('#optPageRebuild');
+    if (pr) opt.pageRebuildOnChange = pr.checked;
+    const prSilent = parseInt($('#optRebuildSilent').value, 10);
+    const prGap = parseInt($('#optRebuildGap').value, 10);
+    if (!isNaN(prSilent) && prSilent >= 0) opt.pageRebuildSilentMs = prSilent; else opt.pageRebuildSilentMs = 1000;
+    if (!isNaN(prGap) && prGap >= 0) opt.pageRebuildGapMs = prGap; else opt.pageRebuildGapMs = 2000;
     await Storage.set(Object.assign({ highlightStyle: style }, opt));
     updateHighlightPreview();
     notifyContentRefresh();

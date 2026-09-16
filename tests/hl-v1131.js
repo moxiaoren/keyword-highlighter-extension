@@ -2,7 +2,7 @@
 const PATH = '/home/sandbox/.openclaw/workspace/repo/keyword-highlighter-extension';
 const { chromium } = require('/tmp/pw/node_modules/playwright');
 
-const mkCfg = { groups: [], highlightStyle: { defaultBgColor: '#ff9500', defaultTextColor: '#000' } };
+const mkCfg = { groups: [], pageRebuildSilentMs: 0, pageRebuildGapMs: 0, highlightStyle: { defaultBgColor: '#ff9500', defaultTextColor: '#000' } };
 
 (async () => {
   const browser = await chromium.launch({ executablePath: '/opt/chrome-linux/chrome', args: ['--no-sandbox'] });

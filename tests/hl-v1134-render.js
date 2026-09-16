@@ -1,7 +1,7 @@
 // 贴近真实：setupMutationObserver + 重要笔记面板，多行相同组合词，多次「相同重渲染 + 值改后改回」混合操作
 const PATH = '/home/sandbox/.openclaw/workspace/repo/keyword-highlighter-extension';
 const { chromium } = require('/tmp/pw/node_modules/playwright');
-const cfg = { groups: [], highlightStyle: { defaultBgColor: '#ff9500', defaultTextColor: '#000' } };
+const cfg = { groups: [], pageRebuildSilentMs: 0, pageRebuildGapMs: 0, highlightStyle: { defaultBgColor: '#ff9500', defaultTextColor: '#000' } };
 function rows(v, n) { let h = '<table><tbody>'; for (let i = 0; i < n; i++) { h += `<tr><td>审核状态</td><td>${v}</td></tr>`; } return h + '</tbody></table>'; }
 (async () => {
   const browser = await chromium.launch({ executablePath: '/opt/chrome-linux/chrome', args: ['--no-sandbox'] });
