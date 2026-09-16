@@ -114,22 +114,21 @@ function check(name, cond, detail) {
   // ===== ⑤ 问题2：整表刷新后组合词仍生效（右格值 textContent 更新）=====
   await page.evaluate(async () => {
     document.body.innerHTML = '';
-    const t = window.__mkTable([['审核状态', '不通过']]);
+    window.__mkTable([['审核状态', '']]);   // 初始右格空（模拟页面加载/刷新时异步填充前）
     const kw = [{
       id: 'c5', text: '不通过', enabled: true,
       cellVerifyEnabled: true, cellVerify: '审核状态', cellVerifyMatchMode: 'include',
       important: true, importantNote: '审核不通过'
     }];
-    await KeywordEngine.highlightKeywords(kw, window.__cfg);
+    await KeywordEngine.highlightKeywords(kw, window.__cfg);   // 初始：右格空 → 不命中(markDone 不缓存)
     KeywordEngine.setupMutationObserver(kw, window.__cfg);
-    // 模拟整表刷新：右格文本改为"审核不通过"（仍含"不通过"）→ 触发 mutation
-    const rightTd = t.rows[0].cells[1];
-    rightTd.textContent = '审核不通过';
+    // 值后到(刷新/翻页异步填充)：180ms 后填真实值 → mutation 增量重建应命中
+    setTimeout(() => { document.querySelector('table tr td:nth-child(2)').textContent = '审核不通过'; }, 180);
   });
-  await page.waitForTimeout(900); // flush(300)+postRebuild(350)+余量
+  await page.waitForTimeout(900); // 值后到(180) + flush(300) + 余量
   const r5 = await page.evaluate(() => window.__combo('c5'));
-  // 整表刷新后：命中回到 DOM（on=TD 非 null），且仍是重要命中（旧脱离节点的残留应已被清除）
-  check('整表刷新后组合词仍生效(右格更新)',
+  // 整表刷新(翻页)+值后到：组合词应命中且挂到 DOM（on=TD 非 null、重要命中、无残留重复）
+  check('整表刷新(翻页)+值后到后组合词仍生效',
     r5.length === 1 && r5[0].imp === true && r5[0].on === 'TD',
     r5);
   await page.evaluate(() => { if (KeywordEngine.observer) { KeywordEngine.observer.disconnect(); KeywordEngine.onHighlight = null; } });
