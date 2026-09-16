@@ -1796,8 +1796,10 @@
             existing.wholeWord = (cellMatchMode === 'exact');
             existing.caseSensitive = cellCase;
             existing.useRegex = cellRegex;
-            if (cellFetch) existing.fetchLabels = cellFetch;
           }
+          // v1.13.4【普通词批量抓取】统一抓取后续字段对普通词（不勾单元格组合）也生效，
+          // 不再只在 cellMode 时写入（此前普通词批量添加会丢弃抓取字段配置）。
+          if (cellFetch) existing.fetchLabels = cellFetch;
           replaced++;
           continue;
         }
@@ -1827,8 +1829,9 @@
         kw.wholeWord = (cellMatchMode === 'exact');
         kw.caseSensitive = cellCase;
         kw.useRegex = cellRegex;
-        if (cellFetch) kw.fetchLabels = cellFetch;
       }
+      // v1.13.4【普通词批量抓取】统一抓取后续字段对普通词也生效（不再只在 cellMode 写入）
+      if (cellFetch) kw.fetchLabels = cellFetch;
       keywords.push(kw);
       added++;
     }
