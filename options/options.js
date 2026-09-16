@@ -158,12 +158,18 @@
       const isSel = kwState.selected.has(kw.id);
       // 匹配方式：核心规则列跟随关键词、标题词规则列跟随标题词（v1.11.1）。只展示已勾选规则胶囊，点击弹出单一勾选弹窗。
       const isComboKw = !!(kw.cellVerify || kw.fetchLabels);
+      const isRareKw = kw.kind === 'rare';
       const coreChips = [];
-      if (kw.useRegex) coreChips.push('<span class="mr-chip">正则</span>');
-      if (kw.caseSensitive) coreChips.push('<span class="mr-chip">大小写</span>');
-      if (kw.wholeWord) coreChips.push('<span class="mr-chip">全词</span>');
+      if (isRareKw) {
+        // 罕见字核心（v1.12.0）：无大小写/正则/全词开关，固定为「检测罕见字符」
+        coreChips.push('<span class="mr-chip mr-chip-rare">罕见</span>');
+      } else {
+        if (kw.useRegex) coreChips.push('<span class="mr-chip">正则</span>');
+        if (kw.caseSensitive) coreChips.push('<span class="mr-chip">大小写</span>');
+        if (kw.wholeWord) coreChips.push('<span class="mr-chip">全词</span>');
+      }
       const coreMatchHtml = coreChips.length ? coreChips.join('') : '<span class="mr-default">默认</span>';
-      const coreCell = `<span class="kw-match-pill" data-match-edit="${kw.id}" data-part="core" title="点击修改核心词匹配方式">${coreMatchHtml}</span>`;
+      const coreCell = `<span class="kw-match-pill" data-match-edit="${kw.id}" data-part="core" title="${isRareKw ? '罕见字核心（v1.12.0）：匹配所有罕见字（扩展区+常用字表外）' : '点击修改核心词匹配方式'}">${coreMatchHtml}</span>`;
       let titleCellHtml = '<span style="color:#ddd">—</span>';
       if (isComboKw) {
         const tChips = [];
@@ -211,7 +217,7 @@
       return `
         <tr class="${isSel ? 'selected' : ''}" data-id="${kw.id}">
           <td class="col-check"><input type="checkbox" class="row-check" data-id="${kw.id}" ${isSel ? 'checked' : ''}></td>
-          <td class="col-kw"><span class="kw-cell"><span class="kw-col-name ${kw.enabled ? '' : 'disabled'}" title="${escapeHtml(kw.text)}">${escapeHtml(kw.text)}</span>${impBadge}</span></td>
+          <td class="col-kw"><span class="kw-cell"><span class="kw-col-name ${kw.enabled ? '' : 'disabled'}" title="${isRareKw ? '罕见字规则：匹配所有罕见字（扩展区 + 常用字表外），由关键词 hjz# 创建' : escapeHtml(kw.text)}">${isRareKw ? '罕见字 <span class="rare-hint">(hjz#)</span>' : escapeHtml(kw.text)}</span>${impBadge}</span></td>
           <td class="col-kw-match">${coreCell}</td>
           <td class="col-cell">${cellHtml}</td>
           <td class="col-title-match">${titleCellHtml}</td>
@@ -1057,6 +1063,25 @@
     try { document.execCommand('insertHTML', false, h); } catch (e) { ed.insertAdjacentHTML('beforeend', h); }
   }
 
+  // v1.12.0：罕见字规则提示（输入 hjz# 时显示提示 + 禁用无意义的文本匹配开关）
+  function updateRareHint() {
+    const input = $('#editKwText');
+    const hint = $('#editKwRareHint');
+    if (!input || !hint) return;
+    const isRare = (input.value || '').trim() === (Storage.RARE_KEYWORD || 'hjz#');
+    hint.style.display = isRare ? 'block' : 'none';
+    ['editKwCaseSensitive', 'editKwWholeWord', 'editKwUseRegex'].forEach(function (id) {
+      const el = $('#' + id);
+      if (el) el.disabled = isRare;
+    });
+  }
+  function updateRareHintBinding() {
+    const input = $('#editKwText');
+    if (!input || input._khRareBound) return;
+    input.addEventListener('input', updateRareHint);
+    input._khRareBound = true;
+  }
+
   function showKeywordModal(keyword = null) {
     hideTableHandle();
     editingKeywordId = keyword ? keyword.id : null;
@@ -1114,6 +1139,8 @@
       }
     }
     
+    updateRareHintBinding();
+    updateRareHint();
     modal.style.display = 'flex';
     fitModalFooter();
     $('#editKwText').focus();
