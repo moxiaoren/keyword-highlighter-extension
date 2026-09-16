@@ -246,7 +246,7 @@ const ImportantNote = {
   refresh() {
     if (!this.host) return;
     // v1.10.16【统一 CSS Highlight】普通词与组合词重要命中均已迁入引擎内存注册表；来源①仅剩「仅抓取」透明 span。此处合并两来源，统一聚合。
-    const bestByKw = new Map();  // keyword -> { note, tc, adj }
+    const bestByKw = new Map();  // keyword -> { note, tc, imgSize, bg, adjs:Set }（同一 keyword 可命中多个不同标题 adj，如「应用名称→a」「应用标题→a」核心都命中 a）
     // ① DOM 残留 span（仅抓取透明 span）命中
     const els = document.querySelectorAll('[data-kh-important="1"]');
     const collect = (keyword, note, adj, imgSize, bg) => {
@@ -256,8 +256,14 @@ const ImportantNote = {
       keyword = (keyword || '').trim();
       if (!keyword) return; // v1.9.1 跳过 keyword 为空
       const tc = (note.match(/<table/g) || []).length;
-      const cur = bestByKw.get(keyword);
-      if (!cur || tc > cur.tc) bestByKw.set(keyword, { note, tc, adj: adj || '', imgSize: imgSize || '', bg: bg || '' });
+      let cur = bestByKw.get(keyword);
+      if (!cur) { cur = { note: note, tc: tc, imgSize: '', bg: '', adjs: new Set() }; bestByKw.set(keyword, cur); }
+      // 同一 keyword 命中了多条不同笔记时，取表格更全(tc 更大)的那条作为展示（保持原语义）
+      if (tc > cur.tc) { cur.note = note; cur.tc = tc; }
+      // 但同一 keyword 命中的【不同标题 adj】全部保留（修复「应用名称→a + 应用标题→a」只显示一个 adj 的问题）
+      if (adj) cur.adjs.add(adj);
+      if (!cur.imgSize && imgSize) cur.imgSize = imgSize;
+      if (!cur.bg && bg) cur.bg = bg;
     };
     els.forEach(el => {
       if (Utils.isElementHidden(el)) return;
@@ -276,22 +282,31 @@ const ImportantNote = {
       }
     } catch (e) { /* 引擎未就绪时跳过普通词命中 */ }
     // 按「笔记文本」聚合：若多个关键词命中的笔记内容一致，则合并为一条
-    const noteMap = new Map();  // note -> { note, imgSize, bg, entryMap: Map<keyword, adj> }
+    const noteMap = new Map();  // note -> { note, imgSize, bg, entryMap: Map<keyword+adj, {kw,adj}> }
     bestByKw.forEach((v, keyword) => {
       const note = v.note;
       if (!noteMap.has(note)) noteMap.set(note, { note, imgSize: '', bg: '', entryMap: new Map() });
       const grp = noteMap.get(note);
-      if (!grp.entryMap.has(keyword)) grp.entryMap.set(keyword, v.adj || '');
       if (!grp.imgSize && v.imgSize) grp.imgSize = v.imgSize;
       if (!grp.bg && v.bg) grp.bg = v.bg;
+      if (v.adjs && v.adjs.size) {
+        // 同一 keyword 命中多个不同标题 adj → 全部保留
+        v.adjs.forEach(adj => {
+          const key = keyword + '\u0000' + (adj || '');
+          if (!grp.entryMap.has(key)) grp.entryMap.set(key, { kw: keyword, adj: adj || '' });
+        });
+      } else {
+        const key = keyword + '\u0000';
+        if (!grp.entryMap.has(key)) grp.entryMap.set(key, { kw: keyword, adj: '' });
+      }
     });
 
     // 合并结果：每条 = { note, entries:[{kw, adj}] }，关键词列表用于列举命中了哪些词
     const newItems = [];
     noteMap.forEach(g => {
       const entries = [];
-      g.entryMap.forEach((adj, kw) => entries.push({ kw, adj }));
-      newItems.push({ note: g.note, entries, imgSize: g.imgSize || '', bg: g.bg || '' });
+      g.entryMap.forEach(e => entries.push(e));
+      newItems.push({ note: g.note, entries: entries, imgSize: g.imgSize || '', bg: g.bg || '' });
     });
 
     // 无命中：直接隐藏
