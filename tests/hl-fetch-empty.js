@@ -1,17 +1,20 @@
 /**
- * v1.13.6: 仅抓取（标题+核心留空+抓取字段 fetchLabels）的空值守卫。
- * 场景：标题"应用名称"、核心留空、抓取字段"包名"。
- *   A. 包名右格有值 → 触发仅抓取，抓到包名值。
- *   B. 包名右格为空 → 不抓取（无 data-kh-fetch-only span、无笔记），也不回退抓标题右格。
- *   C. 未配 fetchLabels → 回退抓标题右格（旧行为保留）。
+ * v1.13.7: 仅抓取（标题"应用名称" + 核心留空 + 抓取字段"包名"）的判定逻辑，按用户澄清分离：
+ *   ① 触发判据 = 标题词(应用名称)右侧是否有内容；标题右格没内容 → 不抓取。
+ *   ② 抓取内容 = 按 fetchLabels(包名) 找标签右邻；包名右格有值 → 展示表格「包名 | 内容」；
+ *      包名右格为空 → 抓取不到，不显示（不回退抓标题右格）。
+ * 场景：
+ *   A. 标题右格有内容 + 包名有值 → 触发，展示 包名|com.example.app
+ *   B. 标题右格为空           → 不触发（无 data-kh-fetch-only）
+ *   D. 标题右格有内容 + 包名空 → 触发但抓不到 → 不显示（count 0）
  */
 const PATH = '/home/sandbox/.openclaw/workspace/repo/keyword-highlighter-extension';
 const { chromium } = require('/tmp/pw/node_modules/playwright');
 const cfg = { groups: [], highlightStyle: { defaultBgColor: '#ff9500', defaultTextColor: '#000' }, pageRebuildSilentMs: 0, pageRebuildGapMs: 0 };
 
-const table = (pkg) => '<table><tr><td>应用名称</td><td>某应用</td></tr><tr><td>包名</td><td>' + (pkg || '') + '</td></tr></table>';
+const table = (title, pkg) => '<table><tr><td>应用名称</td><td>' + (title || '') + '</td></tr><tr><td>包名</td><td>' + (pkg || '') + '</td></tr></table>';
 
-async function run(label, html, kw) {
+async function run(html, kw) {
   const b = await chromium.launch({ executablePath: '/opt/chrome-linux/chrome', args: ['--no-sandbox'] });
   const p = await b.newPage();
   await p.addScriptTag({ path: PATH + '/lib/utils.js' });
@@ -21,10 +24,7 @@ async function run(label, html, kw) {
   await p.waitForTimeout(120);
   const r = await p.evaluate(() => {
     const spans = Array.prototype.slice.call(document.querySelectorAll('[data-kh-fetch-only]'));
-    return {
-      count: spans.length,
-      note: spans.length ? (spans[0].getAttribute('data-kh-important-note') || '') : ''
-    };
+    return { count: spans.length, note: spans.length ? (spans[0].getAttribute('data-kh-important-note') || '') : '' };
   });
   await b.close();
   return r;
@@ -32,19 +32,22 @@ async function run(label, html, kw) {
 
 (async () => {
   const pass = [];
-  // 场景A：包名有值
   const kwA = { id: 'k1', text: '', cellVerifyEnabled: true, cellVerify: '应用名称', fetchLabels: '包名', important: true };
-  let r = await run('A-包名有值', table('com.example.app'), kwA);
+  // A: 标题右格有内容 + 包名有值
+  let r = await run(table('某应用', 'com.example.app'), kwA);
   const aOk = r.count === 1 && r.note.indexOf('包名') !== -1 && r.note.indexOf('com.example.app') !== -1;
-  pass.push(['A-包名有值→抓到', aOk, JSON.stringify(r)]);
+  pass.push(['A 标题右格有内容+包名有值 → 抓包名表格', aOk, JSON.stringify(r)]);
 
-  // 场景B：包名右格为空
-  const kwB = { id: 'k1', text: '', cellVerifyEnabled: true, cellVerify: '应用名称', fetchLabels: '包名', important: true };
-  r = await run('B-包名为空', table(''), kwB);
-  const bOk = r.count === 0 || r.note.trim() === '';
-  pass.push(['B-包名为空→不抓', bOk, JSON.stringify(r)]);
+  // B: 标题右格为空 → 不触发
+  r = await run(table('', 'com.example.app'), kwA);
+  const bOk = r.count === 0;
+  pass.push(['B 标题右格为空 → 不抓', bOk, JSON.stringify(r)]);
 
-  // 场景C：未配 fetchLabels 时不算「仅抓取」（specialFetch 要求 fetchLabels 非空），不测试回退分支
+  // D: 标题右格有内容 + 包名右格空 → 触发但抓不到 → 不显示
+  r = await run(table('某应用', ''), kwA);
+  const dOk = r.count === 0;
+  pass.push(['D 标题右格有内容+包名空 → 不显示', dOk, JSON.stringify(r)]);
+
   let allOk = true;
   for (const [name, ok, detail] of pass) { console.log((ok ? '✅' : '❌') + ' ' + name + ' | ' + detail); if (!ok) allOk = false; }
   console.log(allOk ? 'ALL PASS' : 'FAIL');
