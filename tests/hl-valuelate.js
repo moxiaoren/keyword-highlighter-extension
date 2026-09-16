@@ -18,8 +18,7 @@ const { chromium } = require('/tmp/pw/node_modules/playwright');
   await page.evaluate(() => {
     window.__L = [];
     const log = (m) => window.__L.push(m);
-    const origInc = KeywordEngine.incrementalHighlight.bind(KeywordEngine);
-    KeywordEngine.incrementalHighlight = function (nodes) { log('inc nodes=' + (nodes && nodes.length)); return origInc.apply(this, arguments); };
+    // v1.13.9: incrementalHighlight 已废弃（v1.13.5 整页重建不再调用），不再打桩。
     const origText = KeywordEngine._highlightTextNode.bind(KeywordEngine);
     KeywordEngine._highlightTextNode = function (tn, c, cfg2, vj) { log('textNode=' + (tn.nodeValue || '').slice(0, 10)); return origText.apply(this, arguments); };
     const origPass = KeywordEngine.cellVerifyPass.bind(KeywordEngine);
