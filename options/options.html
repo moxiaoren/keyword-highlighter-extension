@@ -657,10 +657,22 @@
         <div class="form-section collapsible closed" id="kwCellSection">
           <div class="form-section-title collapse-trigger"><span class="collapse-arrow">▸</span>单元格组合</div>
           <div class="form-section-body">
+            <div class="form-row" style="align-items:center;">
+              <div class="form-group" style="flex:1;">
+                <div class="label-row">
+                  <label for="editKwComboAxis">组合方向</label>
+                  <button type="button" class="hint-btn hint-up" data-tip="选择组合方式：<strong>左右格</strong>=标题(左格)命中 → 右侧相邻单元格(右格)命中核心词才生效；<strong>上下格</strong>=表头某列命中列关键词 → 该列下方数据区某一行命中行关键词才生效（交叉的单元格文本高亮，仅支持真实 &lt;table&gt; 表格）。">ⓘ</button>
+                </div>
+                <select id="editKwComboAxis" class="text-input">
+                  <option value="lr">左右格（标题[左格] → 核心[右格]）</option>
+                  <option value="tb">上下格（列关键词[表头] → 行关键词[该列]）</option>
+                </select>
+              </div>
+            </div>
             <div class="form-row">
               <div class="form-group" style="flex:3;">
                 <div class="label-row">
-                  <label for="editKwCellVerifyValue">标题关键词 (左格)</label>
+                  <label for="editKwCellVerifyValue" id="lblKwColKey">标题关键词 (左格)</label>
                   <button type="button" class="hint-btn hint-up" data-tip="填左格标题后开启「单元格组合」：<strong>关键词</strong>作为右格核心，仅当<strong>左侧相邻单元格</strong>（或前段 | / Tab 分隔）命中此标题时才生效（高亮/重要笔记/交互统一挂右格），否则整条不显示；留空则不校验。把「关键词」留空、再填下面的「抓取后续字段」即进入<strong>仅抓取模式</strong>（抓右格内容进重要笔记、页面不高亮）。支持 HTML 表格，或 | / Tab 分隔（如：是否刚需|否）。">ⓘ</button>
                 </div>
                 <input type="text" id="editKwCellVerifyValue" placeholder="如：是否刚需（左格标题，留空则不校验）" class="text-input">
@@ -751,13 +763,22 @@
         <div class="bulk-cell-opts" id="bulkCellOpts" style="display:none;">
           <div class="form-row">
             <div class="form-group">
-              <label class="checkbox-label"><input type="checkbox" id="bulkCellExact"> 右格核心全词匹配（整格相等）</label>
+              <label>组合方向</label>
+              <select id="bulkComboAxis" class="text-input" style="min-width:150px;">
+                <option value="lr">左右格（标题->核心）</option>
+                <option value="tb">上下格（列关键词->该列行关键词）</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="checkbox-label" id="bulkCellExactLbl"><input type="checkbox" id="bulkCellExact"> 核心全词匹配（整格相等）</label>
             </div>
             <div class="form-group">
-              <label class="checkbox-label"><input type="checkbox" id="bulkCellCase"> 右格核心区分大小写</label>
+              <label class="checkbox-label" id="bulkCellCaseLbl"><input type="checkbox" id="bulkCellCase"> 核心区分大小写</label>
             </div>
             <div class="form-group">
-              <label class="checkbox-label"><input type="checkbox" id="bulkCellRegex"> 右格核心使用正则</label>
+              <label class="checkbox-label" id="bulkCellRegexLbl"><input type="checkbox" id="bulkCellRegex"> 核心使用正则</label>
             </div>
           </div>
           <div class="form-group">

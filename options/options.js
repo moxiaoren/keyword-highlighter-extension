@@ -694,6 +694,30 @@
     if (impSec) impSec.classList.toggle('closed', !$('#editKwImportant').checked);
   }
 
+  // v1.50.0：组合方向切换 → 更新单元格组合区与匹配规则面板的文案（左/右 vs 上/下）
+  function updateComboAxisLabels() {
+    let tb = false;
+    const sel = $('#editKwComboAxis');
+    if (sel) tb = sel.value === 'tb';
+    const lbl = $('#lblKwColKey');
+    if (lbl) lbl.textContent = tb ? '列关键词 (表头标题)' : '标题关键词 (左格)';
+    // 单元格组合区「标题词匹配规则」面板标题
+    const cellSec = $('#kwCellSection');
+    if (cellSec) {
+      const t = cellSec.querySelector('.match-panel-title');
+      if (t) t.textContent = tb ? '列关键词匹配规则' : '标题词匹配规则';
+    }
+    // 基本区「匹配规则」面板标题（作用于：lr=核心词 / tb=行关键词）
+    const baseCase = $('#editKwCaseSensitive');
+    if (baseCase) {
+      const panel = baseCase.closest('.match-panel');
+      if (panel) {
+        const t = panel.querySelector('.match-panel-title');
+        if (t) t.textContent = tb ? '行关键词匹配规则' : '匹配规则';
+      }
+    }
+  }
+
   // ========== 重要笔记富文本编辑（v1.8.16，所见即所得） ==========
   // 富文本笔记编辑器的“当前活动实例”：关键词编辑 / 分组编辑共用同一套所见即所得命令，
   // 打开哪个弹窗就把 curNoteEd 指向哪个编辑器（两个弹窗不会同时打开）。默认回退到关键词编辑器。
@@ -1111,6 +1135,9 @@
     $('#editKwCellVerifyCase').checked = keyword?.cellVerifyCaseSensitive || false;
     $('#editKwCellVerifyRegex').checked = keyword?.cellVerifyUseRegex || false;
     $('#editKwFetchLabels').value = keyword?.fetchLabels || '';
+    // v1.50.0 组合方向回显
+    if ($('#editKwComboAxis')) $('#editKwComboAxis').value = (keyword && keyword.comboAxis === 'tb') ? 'tb' : 'lr';
+    updateComboAxisLabels();
 
     // 根据勾选状态显示/隐藏 单元格标注细节 与 重要笔记输入
     toggleKwSections();
@@ -1221,6 +1248,8 @@
       cellVerifyMatchMode: $('#editKwCellVerifyExact').checked ? 'exact' : 'include',
       cellVerifyCaseSensitive: $('#editKwCellVerifyCase').checked,
       cellVerifyUseRegex: $('#editKwCellVerifyRegex').checked,
+      // v1.50.0 组合方向：lr=左右格(默认) / tb=上下格（列关键词×行关键词）
+      comboAxis: ($('#editKwComboAxis') && $('#editKwComboAxis').value === 'tb') ? 'tb' : 'lr',
       // 核心词匹配用基本区开关（caseSensitive/wholeWord/useRegex），见 _compileKeywords/cellVerifyPass
       fetchLabels: $('#editKwFetchLabels').value.trim()
     };
@@ -1737,6 +1766,8 @@
     const cellRegex = $('#bulkCellRegex').checked;
     const cellNote = $('#bulkCellImportantNote').value.trim();
     const cellFetch = $('#bulkFetchLabels').value.trim();
+    // v1.50.0 批量组合方向
+    const comboAxis = ($('#bulkComboAxis') && $('#bulkComboAxis').value === 'tb') ? 'tb' : 'lr';
 
     const lines = rawText.split('\n').map(l => l.trim()).filter(Boolean);
     const keywords = await Storage.getKeywords();
@@ -1770,9 +1801,9 @@
       if (seen.has(key)) { skipped++; continue; }
       seen.add(key);
 
-      // 重复判断：单元格模式按「前格+后格」组合；普通模式仅与「同文本且无验证」的词冲突
+      // 重复判断：单元格模式按「前格+后格+方向」组合；普通模式仅与「同文本且无验证」的词冲突
       const existing = cellMode
-        ? keywords.find(k => k.text === text && (k.cellVerify || '') === cellVerify)
+        ? keywords.find(k => k.text === text && (k.cellVerify || '') === cellVerify && (k.comboAxis || 'lr') === comboAxis)
         : keywords.find(k => k.text === text && !(k.cellVerify || ''));
       if (existing) {
         if (dupPolicy === 'skip') {
@@ -1794,6 +1825,7 @@
           if (cellMode) {
             existing.cellVerifyEnabled = !!cellVerify;
             existing.cellVerify = cellVerify;
+            existing.comboAxis = comboAxis; // v1.50.0
             // v1.11.0【改指向】：批量面板「右格核心」三按钮 → 控制核心词(kw.text)匹配，写入 kw.* (基本区同套字段)
             existing.wholeWord = (cellMatchMode === 'exact');
             existing.caseSensitive = cellCase;
@@ -1827,6 +1859,7 @@
         kw.importantNote = cellNote;
         kw.cellVerifyEnabled = !!cellVerify;
         kw.cellVerify = cellVerify;
+        kw.comboAxis = comboAxis; // v1.50.0
         // v1.11.0【改指向】：批量面板「右格核心」三按钮 → 核心词(kw.text)匹配，写入 kw.*
         kw.wholeWord = (cellMatchMode === 'exact');
         kw.caseSensitive = cellCase;
@@ -2191,6 +2224,7 @@
     $('#keywordModalClose')?.addEventListener('click', closeKeywordModal);
     $('#keywordModalCancel')?.addEventListener('click', closeKeywordModal);
     $('#keywordModalSave')?.addEventListener('click', saveKeyword);
+    $('#editKwComboAxis')?.addEventListener('change', updateComboAxisLabels);
     $('#keywordModal')?.addEventListener('click', (e) => {
       if (e.target === $('#keywordModal')) closeKeywordModal();
     });
