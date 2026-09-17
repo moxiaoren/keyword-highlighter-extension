@@ -14,8 +14,12 @@ const { chromium } = require('/tmp/pw/node_modules/playwright');
     const results = [];
     const renderTags = (entries) => {
       const host = document.createElement('div');
-      ImportantNote.renderItems.call({ bodyEl: host, items: [{ note: 'N', entries: entries, imgSize: '', bg: '' }], escapeText: ImportantNote.escapeText });
-      return host.querySelector('.khin-item-kw').outerHTML + (host.querySelector('.khin-item-adj') ? host.querySelector('.khin-item-adj').outerHTML : '');
+      ImportantNote.renderItems.call({ bodyEl: host, items: [{ note: 'N', entries: entries, imgSize: '', bg: '' }], escapeText: ImportantNote.escapeText, buildTagHtml: ImportantNote.buildTagHtml });
+      const kws = host.querySelectorAll('.khin-item-kw');
+      const adjs = host.querySelectorAll('.khin-item-adj');
+      let html = '';
+      for (let i = 0; i < kws.length; i++) html += kws[i].outerHTML + (adjs[i] ? adjs[i].outerHTML : '');
+      return html;
     };
     const clearTag = h => (h.replace(/<[^>]+>/g, ''));
 
@@ -34,10 +38,10 @@ const { chromium } = require('/tmp/pw/node_modules/playwright');
     const t3 = clearTag(h);
     results.push({ name: '普通词多词 → a|b', ok: /a\|b/.test(t3) && !/→/.test(t3), t3 });
 
-    // 4. 混合 → 标题集| + 值集|
+    // 4. v1.14.0：混合（标题1→a、标题1→b、标题2→a）→ 按标题分组平铺 标题1→a|b + 标题2→a，不再交叉成 标题1|标题2→a|b
     h = renderTags([{ kw: 'a', adj: '标题1' }, { kw: 'b', adj: '标题1' }, { kw: 'a', adj: '标题2' }]);
     const t4 = clearTag(h);
-    results.push({ name: '混合 → 标题1|标题2→a|b', ok: /标题1\|标题2/.test(t4) && /→ a\|b/.test(t4), t4 });
+    results.push({ name: '混合 → 平铺 标题1→a|b + 标题2→a (不交叉)', ok: /标题1→ a\|b/.test(t4) && /标题2→ a/.test(t4) && !/标题1\|标题2/.test(t4), t4 });
 
     return results;
   });

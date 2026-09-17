@@ -1101,12 +1101,8 @@
     $('#editKwImportantNote').innerHTML = '';
     setNoteEditorHTML(keyword?.importantNote || '');
     $('#editKwImgSize').value = keyword?.imgSize || '';
-    // v1.9.0 笔记底色回显（开关 + 取色器 + hex 输入三处同步）
-    const bgVal = (keyword && keyword.impNoteBg) || '';
-    $('#editKwImpBgEnable').checked = !!bgVal;
-    const normBg = (/^#[0-9a-fA-F]{3}$/.test(bgVal)) ? ('#' + bgVal[1] + bgVal[1] + bgVal[2] + bgVal[2] + bgVal[3] + bgVal[3]) : bgVal;
-    if ($('#editKwImpBgColor')) $('#editKwImpBgColor').value = normBg || '#e8f5e9';
-    if ($('#editKwImpBgHex')) $('#editKwImpBgHex').value = bgVal || '';
+    // v1.14.0【2】重要笔记底色：勾选=复用该关键词高亮底色，不再单独配色
+    if ($('#editKwImpBgEnable')) $('#editKwImpBgEnable').checked = !!(keyword && keyword.impNoteUseHlColor);
     // v1.8.17 编辑器内重要笔记图片大小与「命中时展示」同步（默认 70px，可用该词「图片缩略尺寸」覆盖）
     const kweImg = kwe();
     if (kweImg) kweImg.style.setProperty('--kh-note-img-size', (parseInt(keyword?.imgSize, 10) || 70) + 'px');
@@ -1121,7 +1117,7 @@
 
     // v1.8.13 编辑已有关键词时，按内容自动展开对应折叠区（无内容保持默认折叠）
     const hasCell = !!(keyword && (keyword.cellVerify || keyword.fetchLabels));
-    const hasImp  = !!(keyword && (keyword.important || keyword.importantNote || keyword.impNoteBg));
+    const hasImp  = !!(keyword && (keyword.important || keyword.importantNote || keyword.impNoteUseHlColor));
     const cellSec = $('#kwCellSection');
     const impSec  = $('#kwImportantSection');
     if (cellSec) cellSec.classList.toggle('closed', !hasCell);
@@ -1216,15 +1212,8 @@
       important: $('#editKwImportant').checked,
       importantNote: mdFromNoteEditor(),
       imgSize: (function(){ const v=($('#editKwImgSize').value||'').trim(); if(!v) return ''; const n=parseInt(v,10); return (!isNaN(n)&&n>=40&&n<=600)? n : ''; })(),
-      // v1.9.0 笔记底色：勾选启用，优先取 hex 文本（支持 #abc / #aabbcc / #aabbccdd），否则用取色器值，非法则存空
-      impNoteBg: (function(){
-        const en = !!($('#editKwImpBgEnable') && $('#editKwImpBgEnable').checked);
-        if (!en) return '';
-        const h = ($('#editKwImpBgHex') && $('#editKwImpBgHex').value || '').trim();
-        const c = ($('#editKwImpBgColor') && $('#editKwImpBgColor').value) || '';
-        const v = /^#[0-9a-fA-F]{3,8}$/.test(h) ? h : c;
-        return /^#[0-9a-fA-F]{3,8}$/.test(v) ? v : '';
-      })(),
+      // v1.14.0【2】重要笔记底色：勾选=复用该关键词高亮底色
+      impNoteUseHlColor: !!($('#editKwImpBgEnable') && $('#editKwImpBgEnable').checked),
       cellVerifyEnabled: !!$('#editKwCellVerifyValue').value.trim(),
       cellVerify: $('#editKwCellVerifyValue').value.trim(),
       // v1.11.0【标题词独立匹配】组合词区三开关仅作用于标题词（左格 cellVerify）：
@@ -1324,14 +1313,8 @@
     if ($('#editGroupImgSize')) $('#editGroupImgSize').value = (gImgN >= 40 && gImgN <= 600) ? gImgN : '';
     const gEdR = $('#editGroupImpNoteRich');
     if (gEdR) gEdR.style.setProperty('--kh-note-img-size', ((gImgN >= 40 && gImgN <= 600) ? gImgN : 70) + 'px');
-    // v1.9.4 分组统一重要笔记底色
-    const gBg = (group && group.impNoteBg) || '';
-    const gBgNorm = /^#[0-9a-fA-F]{3,8}$/.test(gBg) ? gBg : '';
-    $('#editGroupImpBgEnable').checked = !!gBgNorm;
-    const inpGColor = $('#editGroupImpBgColor');
-    const inpGHex = $('#editGroupImpBgHex');
-    if (inpGColor) inpGColor.value = gBgNorm || '#e8f5e9';
-    if (inpGHex) inpGHex.value = gBgNorm || '';
+    // v1.14.0【2】分组统一重要笔记底色：勾选=组内关键词复用高亮底色
+    if ($('#editGroupImpBgEnable')) $('#editGroupImpBgEnable').checked = !!(group && group.impNoteUseHlColor);
     // 仅勾选「标记为重要」时显示统一文本/底色区
     const updateImpNoteRow = () => {
       $('#editGroupImportantNoteRow').style.display =
@@ -1375,15 +1358,8 @@
         const n = parseInt(v, 10);
         return (!isNaN(n) && n >= 40 && n <= 600) ? n : '';
       })(),
-      // v1.9.3 分组笔记底色：勾选启用，优先取 hex 文本，否则取取色器值，非法则存空（同关键词逻辑）
-      impNoteBg: (function(){
-        const en = !!($('#editGroupImpBgEnable') && $('#editGroupImpBgEnable').checked);
-        if (!en) return '';
-        const h = ($('#editGroupImpBgHex') && $('#editGroupImpBgHex').value || '').trim();
-        const c = ($('#editGroupImpBgColor') && $('#editGroupImpBgColor').value) || '';
-        const v = /^#[0-9a-fA-F]{3,8}$/.test(h) ? h : c;
-        return /^#[0-9a-fA-F]{3,8}$/.test(v) ? v : '';
-      })()
+      // v1.14.0【2】分组统一重要笔记底色：勾选=组内复用高亮底色
+      impNoteUseHlColor: !!($('#editGroupImpBgEnable') && $('#editGroupImpBgEnable').checked)
     };
 
     try {
@@ -2221,18 +2197,6 @@
 
     // 单元格标注 / 重要笔记 勾选时展开对应细节
     $('#editKwImportant')?.addEventListener('change', toggleKwSections);
-    // v1.9.0 笔记底色：取色器 ↔ hex 输入 双向同步
-    const syncNoteBgInputs = () => {
-      const hex = $('#editKwImpBgHex'), color = $('#editKwImpBgColor');
-      if (!hex || !color) return;
-      let v = (hex.value || '').trim();
-      if (/^#[0-9a-fA-F]{3}$/.test(v)) v = '#' + v[1] + v[1] + v[2] + v[2] + v[3] + v[3];
-      if (/^#[0-9a-fA-F]{6}$/.test(v)) color.value = v;
-      else if (color.value) hex.value = color.value;
-    };
-    $('#editKwImpBgColor')?.addEventListener('input', () => { const c = $('#editKwImpBgColor').value; const hex = $('#editKwImpBgHex'); if (hex) hex.value = c; });
-    $('#editKwImpBgHex')?.addEventListener('input', syncNoteBgInputs);
-    $('#editKwImpBgHex')?.addEventListener('blur', syncNoteBgInputs);
     // 富文本笔记编辑器（所见即所得）：关键词编辑 / 分组编辑共用同一套命令与表格手柄。
     // 打开哪个弹窗就把 curNoteEd 指向哪个编辑器（见 showKeywordModal / showGroupModal），
     // 工具栏按钮点击时强制把 curNoteEd 指到对应编辑器后再执行。
@@ -2266,20 +2230,6 @@
     $('#groupModalClose')?.addEventListener('click', closeGroupModal);
     $('#groupModalCancel')?.addEventListener('click', closeGroupModal);
     $('#groupModalSave')?.addEventListener('click', saveGroup);
-    // v1.9.3 分组笔记底色：取色器 ↔ hex 输入双向同步（同关键词逻辑）
-    const syncGroupBgInputs = () => {
-      const hex = $('#editGroupImpBgHex'), color = $('#editGroupImpBgColor');
-      if (!hex || !color) return;
-      if (!/^#[0-9a-fA-F]{3,8}$/.test(hex.value.trim())) {
-        hex.value = color.value;
-      }
-    };
-    $('#editGroupImpBgColor')?.addEventListener('input', () => {
-      const cColor = $('#editGroupImpBgColor'); const cHex = $('#editGroupImpBgHex');
-      if (cColor && cHex) cHex.value = cColor.value;
-    });
-    $('#editGroupImpBgHex')?.addEventListener('input', syncGroupBgInputs);
-    $('#editGroupImpBgHex')?.addEventListener('blur', syncGroupBgInputs);
     $('#groupModal')?.addEventListener('click', (e) => {
       if (e.target === $('#groupModal')) closeGroupModal();
     });

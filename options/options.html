@@ -711,13 +711,11 @@
                 </div>
                 <input type="number" id="editKwImgSize" min="40" max="600" step="10" placeholder="默认 70" class="text-input" style="width:180px;">
                 <div class="label-row" style="margin-top:8px;flex-wrap:wrap;gap:6px;">
-                  <label for="editKwImpBgColor">笔记底色</label>
-                  <span style="font-size:11px;color:#999">（勾选后，该词的置顶重要笔记整体铺此底色——如提醒“优质”用浅绿、提醒“有风险”用浅黄）</span>
+                  <label for="editKwImpBgEnable">重要笔记底色</label>
+                  <span style="font-size:11px;color:#999">（勾选后，该词被标记为重要的置顶笔记卡片整体铺「该关键词的高亮底色」；不勾选则沿用默认、不铺色）</span>
                 </div>
                 <div style="display:flex;align-items:center;gap:8px;margin-top:4px;">
-                  <label class="checkbox-label" style="white-space:nowrap;"><input type="checkbox" id="editKwImpBgEnable"><span>使用底色</span></label>
-                  <input type="color" id="editKwImpBgColor" value="#e8f5e9" title="选择笔记底色" style="width:38px;height:26px;padding:0;border:1px solid #d0d0d0;border-radius:4px;background:#fff;cursor:pointer;">
-                  <input type="text" id="editKwImpBgHex" maxlength="9" placeholder="#e8f5e9" class="text-input" style="width:110px;" title="可直接输入 hex 色值（如 #fff9c4），与右侧取色器同步">
+                  <label class="checkbox-label" style="white-space:nowrap;"><input type="checkbox" id="editKwImpBgEnable"><span>复用关键词高亮底色</span></label>
                 </div>
               </div>
             </div>
@@ -999,13 +997,11 @@
         </div>
         <div class="form-group" id="editGroupImpBgRow" style="display:none;">
           <div class="label-row" style="flex-wrap:wrap;gap:6px;">
-            <label for="editGroupImpBgColor">笔记底色</label>
-            <span style="font-size:11px;color:#999">（仅勾选「标记为重要」时生效；组内未单独设底色的关键词重要笔记统一铺此底色，如“优质”用浅绿、“有风险”用浅黄）</span>
+            <label for="editGroupImpBgEnable">重要笔记底色</label>
+            <span style="font-size:11px;color:#999">（仅当「标记为重要」时生效；勾选后，组内未单独勾选的关键词，其重要笔记卡片统一铺该词高亮底色）</span>
           </div>
           <div style="display:flex;align-items:center;gap:8px;margin-top:4px;">
-            <label class="checkbox-label" style="white-space:nowrap;"><input type="checkbox" id="editGroupImpBgEnable"><span>使用底色</span></label>
-            <input type="color" id="editGroupImpBgColor" value="#e8f5e9" title="选择笔记底色" style="width:38px;height:26px;padding:0;border:1px solid #d0d0d0;border-radius:4px;background:#fff;cursor:pointer;">
-            <input type="text" id="editGroupImpBgHex" maxlength="9" placeholder="#e8f5e9" class="text-input" style="width:110px;" title="可直接输入 hex 色值（如 #fff9c4），与右侧取色器同步">
+            <label class="checkbox-label" style="white-space:nowrap;"><input type="checkbox" id="editGroupImpBgEnable"><span>组内关键词统一复用高亮底色</span></label>
           </div>
         </div>
         <div class="form-group">

@@ -246,28 +246,27 @@ const ImportantNote = {
   refresh() {
     if (!this.host) return;
     // v1.10.16【统一 CSS Highlight】普通词与组合词重要命中均已迁入引擎内存注册表；来源①仅剩「仅抓取」透明 span。此处合并两来源，统一聚合。
-    const bestByKw = new Map();  // keyword -> { note, tc, imgSize, bg, adjs:Set }（同一 keyword 可命中多个不同标题 adj，如「应用名称→a」「应用标题→a」核心都命中 a）
+    // v1.14.0【1】聚合修复：不再按命中词(keyword)压多条内容——原来同 keyword 命中多篇不同内容时
+    // 只留表格最全一篇却把多个标题全塞进 Set（导致内容不一致的词聚到一张卡、内容丢失）。现改为：
+    // 逐条收集「内容(note)+值(kw)+标题(adj)」原始命中并去重，先按【内容】分组（内容一致才同卡），
+    // 卡片内标签再按「同标题多值/多标题同值/无标题多值」聚合；值标题都不同、或有标题+无标题混合则平铺多条、不交叉。
+    const rawMap = new Map(); // key = note\u0000kw\u0000adj -> { note, kw, adj, imgSize, bg }
+    const addRaw = (kw, note, adj, imgSize, bg) => {
+      note = (note || '').trim();
+      if (!note) return;                 // 忽略空内容
+      if (this.ignored.has(note)) return;
+      kw = (kw || '').trim();
+      if (!kw) return;                   // v1.9.1 跳过 keyword 为空
+      adj = (adj || '').trim();
+      const key = note + '\u0000' + kw + '\u0000' + adj;
+      if (rawMap.has(key)) return;       // 去重
+      rawMap.set(key, { note: note, kw: kw, adj: adj, imgSize: imgSize || '', bg: bg || '' });
+    };
     // ① DOM 残留 span（仅抓取透明 span）命中
     const els = document.querySelectorAll('[data-kh-important="1"]');
-    const collect = (keyword, note, adj, imgSize, bg) => {
-      note = (note || '').trim();
-      if (!note) return;
-      if (this.ignored.has(note)) return;
-      keyword = (keyword || '').trim();
-      if (!keyword) return; // v1.9.1 跳过 keyword 为空
-      const tc = (note.match(/<table/g) || []).length;
-      let cur = bestByKw.get(keyword);
-      if (!cur) { cur = { note: note, tc: tc, imgSize: '', bg: '', adjs: new Set() }; bestByKw.set(keyword, cur); }
-      // 同一 keyword 命中了多条不同笔记时，取表格更全(tc 更大)的那条作为展示（保持原语义）
-      if (tc > cur.tc) { cur.note = note; cur.tc = tc; }
-      // 但同一 keyword 命中的【不同标题 adj】全部保留（修复「应用名称→a + 应用标题→a」只显示一个 adj 的问题）
-      if (adj) cur.adjs.add(adj);
-      if (!cur.imgSize && imgSize) cur.imgSize = imgSize;
-      if (!cur.bg && bg) cur.bg = bg;
-    };
     els.forEach(el => {
       if (Utils.isElementHidden(el)) return;
-      collect(el.textContent || '', el.getAttribute('data-kh-important-note') || '',
+      addRaw(el.textContent || '', el.getAttribute('data-kh-important-note') || '',
         el.getAttribute('data-kh-cell-verify') || '', el.getAttribute('data-kh-important-img-size') || '',
         el.getAttribute('data-kh-important-bg') || '');
     });
@@ -278,34 +277,24 @@ const ImportantNote = {
       for (const h of plainHits) {
         if (!h || !h.textNode) continue;
         if (Utils.isElementHidden(h.textNode.parentElement)) continue;
-        collect(h.text, h.note, h.adj, h.imgSize, h.bg);
+        addRaw(h.text, h.note, h.adj, h.imgSize, h.bg);
       }
     } catch (e) { /* 引擎未就绪时跳过普通词命中 */ }
-    // 按「笔记文本」聚合：若多个关键词命中的笔记内容一致，则合并为一条
-    const noteMap = new Map();  // note -> { note, imgSize, bg, entryMap: Map<keyword+adj, {kw,adj}> }
-    bestByKw.forEach((v, keyword) => {
-      const note = v.note;
-      if (!noteMap.has(note)) noteMap.set(note, { note, imgSize: '', bg: '', entryMap: new Map() });
-      const grp = noteMap.get(note);
-      if (!grp.imgSize && v.imgSize) grp.imgSize = v.imgSize;
-      if (!grp.bg && v.bg) grp.bg = v.bg;
-      if (v.adjs && v.adjs.size) {
-        // 同一 keyword 命中多个不同标题 adj → 全部保留
-        v.adjs.forEach(adj => {
-          const key = keyword + '\u0000' + (adj || '');
-          if (!grp.entryMap.has(key)) grp.entryMap.set(key, { kw: keyword, adj: adj || '' });
-        });
-      } else {
-        const key = keyword + '\u0000';
-        if (!grp.entryMap.has(key)) grp.entryMap.set(key, { kw: keyword, adj: '' });
-      }
+    // 第一维度=【笔记内容】：内容一致才放同一张卡片
+    const noteMap = new Map(); // note -> { note, imgSize, bg, entrySet:Set<"kw\u0000adj"> }
+    rawMap.forEach(r => {
+      let grp = noteMap.get(r.note);
+      if (!grp) { grp = { note: r.note, imgSize: r.imgSize, bg: r.bg, entrySet: new Set() }; noteMap.set(r.note, grp); }
+      if (!grp.imgSize && r.imgSize) grp.imgSize = r.imgSize;
+      if (!grp.bg && r.bg) grp.bg = r.bg;
+      grp.entrySet.add(r.kw + '\u0000' + (r.adj || ''));
     });
 
-    // 合并结果：每条 = { note, entries:[{kw, adj}] }，关键词列表用于列举命中了哪些词
+    // 合并结果：每条 = { note, entries:[{kw, adj}], imgSize, bg }
     const newItems = [];
     noteMap.forEach(g => {
       const entries = [];
-      g.entryMap.forEach(e => entries.push(e));
+      g.entrySet.forEach(k => { const i = k.indexOf('\u0000'); entries.push({ kw: k.slice(0, i), adj: k.slice(i + 1) }); });
       newItems.push({ note: g.note, entries: entries, imgSize: g.imgSize || '', bg: g.bg || '' });
     });
 
@@ -409,29 +398,10 @@ const ImportantNote = {
       const bodyHtml = Utils.sanitizeHTML(item.note);
       // v1.9.1：笔记底色铺满整条卡片（含标题/标签区），校验为合法 hex 才应用，防注入
       const bg = /^#[0-9a-fA-F]{3,8}$/.test(item.bg || '') ? item.bg : '';
-      // 组合词/普通词标签（v1.9.3）：排列为「标题在前 → 关键词在后」；
-      // 箭头(→ 关键词)放在关键词一侧，不放标题模块（因标题带 🔖，避免“🔖 标题 →”的怪样）。
-      // v1.13.0【4b】同一笔记内容(note一致)条目内，命中词聚合展示：
-      // 标题集去重 + 值集去重，交叉展示 →
-      //   标题1-a + 标题1-b → 🔖 标题1 → a|b
-      //   标题1-a + 标题2-a → 🔖 标题1|标题2 → a
-      //   普通词 a + b（无标题）→ 🔖 a|b
-      const entries = item.entries || [];
-      const hasAdj = entries.some(function (e) { return e && e.adj; });
-      const titleSet = new Set();
-      const valSet = new Set();
-      for (const e of entries) {
-        if (e && e.adj) titleSet.add(e.adj);
-        if (e && e.kw) valSet.add(e.kw);
-      }
-      const valStr = Array.from(valSet).map(function (v) { return this.escapeText(v); }.bind(this)).join('|');
-      let kwTags = '';
-      if (hasAdj) {
-        const titleStr = Array.from(titleSet).map(function (t) { return this.escapeText(t); }.bind(this)).join('|');
-        kwTags = `<span class="khin-item-kw">🔖 ${titleStr}</span><span class="khin-item-adj">→ ${valStr}</span>`;
-      } else {
-        kwTags = `<span class="khin-item-kw">🔖 ${valStr}</span>`;
-      }
+      // v1.14.0【1】同一卡片（内容一致）前提下，标签按形态聚合、不交叉：
+      //   同标题多值 → 🔖 标题 → a|b；多标题同值 → 🔖 标题1|标题2 → a；无标题多词 → 🔖 a|b；
+      //   值标题都不同 / 有标题+无标题混合 → 平铺多条直接展示。
+      const kwTags = this.buildTagHtml(item.entries || []);
       return `
         <div class="khin-item" style="${item.imgSize ? `--kh-img-size:${item.imgSize}px;` : ''}${bg ? `background:${bg};` : ''}" data-note="${encodeURIComponent(item.note)}">
           <div class="khin-item-head">
@@ -453,6 +423,60 @@ const ImportantNote = {
         this.refresh();
       });
     });
+  },
+
+  /**
+   * v1.14.0【1】构建卡片标签区 HTML（平铺多条、不交叉）：
+   * - 无标题普通词：多值聚合 → 🔖 a|b
+   * - 组合词（有标题）：
+   *     · 同标题多值 → 🔖 标题 → a|b
+   *     · 多标题同值 → 🔖 标题1|标题2 → a（标题合并）
+   *     · 各标题单值但值不同（标题1→值1+标题2→值2）→ 逐条平铺，不交叉
+   *     · 某标题多值 → 按标题分组「标题 → 值1|值2」多条平铺
+   * - 有标题 + 无标题混合：普通词与组合词各自成标签平铺
+   */
+  buildTagHtml(entries) {
+    const plainVals = new Set(); // 无标题普通词值集
+    const combo = new Map();     // adj -> Set<值>，组合词按标题分组
+    for (const e of entries || []) {
+      if (!e || !e.kw) continue;
+      if (e.adj) {
+        if (!combo.has(e.adj)) combo.set(e.adj, new Set());
+        combo.get(e.adj).add(e.kw);
+      } else {
+        plainVals.add(e.kw);
+      }
+    }
+    const out = [];
+    // 无标题普通词组：多值聚合
+    if (plainVals.size) {
+      out.push(`<span class="khin-item-kw">🔖 ${Array.from(plainVals).map(v => this.escapeText(v)).join('|')}</span>`);
+    }
+    const adjs = Array.from(combo.keys());
+    if (adjs.length) {
+      const valUnion = new Set();
+      adjs.forEach(a => combo.get(a).forEach(v => valUnion.add(v)));
+      const allSingle = adjs.every(a => combo.get(a).size === 1);
+      if (allSingle && valUnion.size === 1) {
+        // 多标题同值 → 标题合并
+        const val = Array.from(valUnion)[0];
+        out.push(`<span class="khin-item-kw">🔖 ${adjs.map(t => this.escapeText(t)).join('|')}</span><span class="khin-item-adj">→ ${this.escapeText(val)}</span>`);
+      } else if (allSingle) {
+        // 各标题单值但值彼此不同 → 逐条平铺，不交叉
+        for (const a of adjs) {
+          const v = Array.from(combo.get(a))[0];
+          out.push(`<span class="khin-item-kw">🔖 ${this.escapeText(a)}</span><span class="khin-item-adj">→ ${this.escapeText(v)}</span>`);
+        }
+      } else {
+        // 存在某标题多值：按标题分开，同标题多值聚合
+        for (const a of adjs) {
+          const vals = Array.from(combo.get(a));
+          if (!vals.length) continue;
+          out.push(`<span class="khin-item-kw">🔖 ${this.escapeText(a)}</span><span class="khin-item-adj">→ ${vals.map(v => this.escapeText(v)).join('|')}</span>`);
+        }
+      }
+    }
+    return out.join('');
   },
 
   escapeText(str) {
