@@ -1,9 +1,9 @@
 {
-  "version": "1.99.99.1",
-  "channel": "beta",
-  "zip": "https://moxiaoren.github.io/keyword-highlighter-extension/keyword-highlighter-beta-v1.99.99.1.zip",
-  "sha256": "E50D51009F8A6C42D3EB0A02CF5D7964EFB88DD18F9196156E93B6B840397006",
-  "notes": "测试版 1.99.99.1",
+  "version": "1.99.99.2",
+  "zip": "https://moxiaoren.github.io/keyword-highlighter-extension/keyword-highlighter-v1.99.99.2.zip",
+  "sha256": "53CD983F789DFD36CBA31243F43FBD296CE15B5B50B4EDC3B376C5ADBD9B39FA",
+  "notes": "【版本推进·1.99.99.2】按规程把测试版第四位 +1（1.99.99.1 → 1.99.99.2）：功能与上一版相同，用于再跑一遍「线上发版 → 浏览器自动拉 update-beta.xml → 无感升级」链路。同时补建 GitHub Releases —— 此前 Releases 只到 v1.6.12，之后的新版本都只发在 gh-pages 上没有 release 条目，现在补齐并把这一步固化进发布脚本。稳定通道仍为 1.51.0，测试线跑完后用 major 把稳定版正好落在 2.0.0。",
   "publishedAt": "2026-09-19",
-  "htmlUrl": "https://github.com/moxiaoren/keyword-highlighter-extension/releases"
+  "htmlUrl": "https://github.com/moxiaoren/keyword-highlighter-extension/releases",
+  "channel": "beta"
 }
