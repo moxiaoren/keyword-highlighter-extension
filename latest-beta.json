@@ -1,9 +1,9 @@
 {
   "version": "2.1.0",
-  "zip": "https://moxiaoren.github.io/keyword-highlighter-extension/keyword-highlighter-v2.1.0.zip",
-  "sha256": "50A08B0B4824A706BC4FB1B28A908FC812472129F2EE541236C0626D83CCCDBB",
-  "notes": "【升级·发版更新能力：crx 与 zip 双通道并行 + SHA256 校验】原先只有 crx 通道在跑（manifest.update_url 指向 gh-pages 的 gupdate XML），zip 通道在 v2 早期被砍掉了（当时走 GitHub Releases API，api.github.com 国内不稳）—— 代价是更新说明、校验、手动下载全都没了。现在两条通道**并行探测、取版本更高的一条**：crx 走 gupdate XML，zip 走自托管的 latest.json（版本/下载地址/SHA256/更新说明）；任意一条可用就能发现新版本，一条挂了不影响另一条。每个通道都配 3 个镜像（gh-pages → jsDelivr → raw.githubusercontent）依次回退，并记下实际使用的源。**点击更新会先校验 SHA256 再打开下载地址**，不一致直接拒绝；清单没给哈希时跳过校验但照常可用。结果带 6 小时 TTL 缓存（与后台 alarm 周期一致），手动点\"检查更新\"可强制刷新；两种失败语义也分清了：两条通道都挂报\"不可达\"，**不会误报成\"已是最新\"**。版本比较新增预发布支持（带 -beta 后缀的旧于同号正式版）。发版流程同时升级：打包脚本会顺带产出 dist/latest.json（哈希取自这次真正打出来的包、说明取自更新日志的最新三条，都是唯一来源），发版动作变成\"把 latest.json + update.xml + zip 一起丢到 gh-pages\"。\n\n【优化·欢迎页文案：先讲\"能做什么\"，再讲\"怎么开始\"】用户要求：\"欢迎文案也优化下。简单介绍重要功能\"。原来全页只有\"怎么加词\"的操作步骤，**没有一处告诉新用户这插件到底能干什么**。现已补上「它能做什么」区块（2×2 四张功能卡，每张一句话并加粗关键限定）：**关键词高亮**（普通词 / 正则 / 全词 / 区分大小写；命中只做视觉上色，不插入节点、不改网页内容）· **单元格组合**（左格标题＋右格核心 / 表头列＋数据行，两格都命中才生效，避免半截误…",
+  "channel": "beta",
+  "zip": "https://moxiaoren.github.io/keyword-highlighter-extension/keyword-highlighter-beta-v2.1.0.zip",
+  "sha256": "4088B0A03A9A66BA8CBBBC6C01AA06C21BE11ED3ACFA649A0413085F5CB4B593",
+  "notes": "测试版 2.1.0",
   "publishedAt": "2026-09-19",
-  "htmlUrl": "https://github.com/moxiaoren/keyword-highlighter-extension/releases",
-  "channel": "beta"
+  "htmlUrl": "https://github.com/moxiaoren/keyword-highlighter-extension/releases"
 }
