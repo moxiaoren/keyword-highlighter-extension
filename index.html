@@ -18,5 +18,20 @@
 <li>最新版本安装包：<code>release/</code> 目录下的 <code>.crx</code> 文件</li>
 </ul>
 <p>扩展通过清单中的 <code>update_url</code> 定期检查此处的版本，发现新版即<span class="ok">自动静默更新</span>，无需手动覆盖。</p>
+<section style="margin:28px 0;padding:18px 20px;border:1px solid #e3e8f0;border-radius:12px;background:#fff">
+  <h2 style="margin:0 0 8px;font-size:17px">一键安装 + 自动更新（Edge / Chrome）</h2>
+  <p style="margin:0 0 10px;color:#4b5563;font-size:14px;line-height:1.75">
+    本扩展不在商店里，但可以用下面的脚本让浏览器**自动安装并持续自动更新**（稳定版或测试版都可以）：
+  </p>
+  <ol style="margin:0 0 12px 18px;padding:0;color:#4b5563;font-size:14px;line-height:1.9">
+    <li>下载 <a href="kh-autoupdate.bat" download style="color:#3579c2"><b>kh-autoupdate.bat</b></a></li>
+    <li>右键 → <b>以管理员身份运行</b>（写机器级注册表需要）</li>
+    <li>菜单里选：Edge 或 Chrome × 稳定版或测试版</li>
+    <li><b>完全退出浏览器再启动</b> —— 扩展会自动装上，之后线上发版即自动更新</li>
+  </ol>
+  <p style="margin:0;color:#6b7280;font-size:13px;line-height:1.7">
+    卸载：再运行一次脚本选「7」。注意：卸载会清空扩展自己的数据（关键词/分组），请先到设置页导出 JSON 备份。
+  </p>
+</section>
 </body>
 </html>
