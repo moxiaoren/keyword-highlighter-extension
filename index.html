@@ -6,18 +6,19 @@
 <title>关键词高亮 · 浏览器扩展</title>
 <style>
   body { font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
-    max-width: 760px; margin: 32px auto 64px; padding: 0 18px; color: #1f2937; line-height: 1.75; }
+    max-width: 780px; margin: 32px auto 64px; padding: 0 18px; color: #1f2937; line-height: 1.75; }
   h1 { font-size: 24px; margin: 0 0 6px; }
   h2 { font-size: 17px; margin: 30px 0 10px; padding-top: 6px; border-top: 1px solid #e7ebf2; }
   h2:first-of-type { border-top: 0; }
   .sub { color: #6b7280; margin: 0 0 18px; }
   code { background: #f4f6fb; padding: 2px 6px; border-radius: 4px; font-size: 13px; }
   a { color: #3579c2; }
-  ul { padding-left: 20px; }
-  li { margin: 4px 0; }
+  ul { padding-left: 20px; } li { margin: 4px 0; }
   .card { margin: 18px 0; padding: 18px 20px; border: 1px solid #e3e8f0; border-radius: 12px; background: #fff; }
   .primary { border-color: #bcd4ef; background: #f7fbff; }
-  .btn { display: inline-block; margin: 6px 8px 6px 0; padding: 9px 16px; border-radius: 8px;
+  .dl { display: flex; gap: 14px; flex-wrap: wrap; }
+  .dl .card { flex: 1 1 320px; margin: 0; }
+  .btn { display: inline-block; margin: 8px 8px 0 0; padding: 9px 16px; border-radius: 8px;
     background: #3579c2; color: #fff; text-decoration: none; font-weight: 600; font-size: 14px; }
   .btn.ghost { background: #fff; color: #3579c2; border: 1px solid #bcd4ef; }
   .ver { font-weight: 600; color: #16a34a; }
@@ -29,84 +30,104 @@
 </head>
 <body>
 <h1>关键词高亮 · 浏览器扩展</h1>
-<p class="sub">在任意网页上高亮你关心的关键词；重要字段自动抓取成「重要笔记」面板。适用于 Edge / Chrome（免安装、免登录、数据只存本地）。</p>
+<p class="sub">在任意网页上高亮你关心的关键词；重要字段自动抓取成「重要笔记」面板。适用于 Edge / Chrome（免登录、数据只存本地）。</p>
 
 <div class="card primary">
-  <h2 style="margin-top:0;border:0;padding:0">一键安装 + 自动更新（推荐）</h2>
-  <p style="margin:6px 0 10px">当前测试版：<span class="ver" id="ver">读取中…</span>
-     <span class="muted" id="verNote"></span></p>
-  <p style="margin:0 0 10px">
+  <h2 style="margin-top:0;border:0;padding:0">一键安装 + 自动更新（推荐，稳定版 / 测试版都支持）</h2>
+  <p style="margin:6px 0 10px">
     <a class="btn" href="kh-autoupdate.bat" download><b>下载 kh-autoupdate.bat（一键安装）</b></a>
-    <a class="btn ghost" href="keyword-highlighter-beta-v1.99.99.14.crx" id="crxLink" download>下载 .crx</a>
-    <a class="btn ghost" href="https://github.com/moxiaoren/keyword-highlighter-extension/releases" target="_blank" rel="noopener">历史版本 / Release</a>
   </p>
   <ol style="margin:0 0 8px 18px">
     <li>下载上面的 <code>kh-autoupdate.bat</code></li>
     <li><b>右键 → 以管理员身份运行</b>（要写机器级注册表，让浏览器认这个扩展）</li>
-    <li>菜单里选：Edge 还是 Chrome × 稳定版还是测试版</li>
-    <li><b>完全退出浏览器再启动</b>（有时要启动两次）—— 扩展自动装好，之后线上发新版即<b>自动静默更新</b></li>
+    <li>运行后菜单里选：**Edge / Chrome** 以及 **稳定版 / 测试版**（两个通道都能装，也可以都装）</li>
+    <li><b>完全退出浏览器再启动</b>（有时要启动两次）—— 装好后线上发新版即<b>自动静默更新</b></li>
   </ol>
-  <p class="muted" style="margin:0">卸载 / 查状态：重新运行同一个 bat，用它菜单里的对应项。</p>
+  <p class="muted" style="margin:0">卸载 / 查状态：重新运行同一个 bat，用它的菜单里对应项。</p>
 </div>
 
-<h2>它做什么</h2>
-<ul>
-  <li><b>关键词高亮</b>：命中只做「视觉高亮」（不改动网页 DOM），页面自身的样式与脚本不受影响。</li>
-  <li><b>组合词</b>：给核心词加一个「定位限制」——只有左格标题命中后，右格（或该列）里的核心词才算命中；
-      上下格组合（表头 × 数据行）同理。</li>
-  <li><b>跨文本节点命中</b>：页面把词拆成 <code>审&lt;span&gt;核&lt;/span&gt;不通过</code> 这种也照样命中，
-      整词上色、两段各自的颜色都保留。</li>
-  <li><b>后续字段抓取</b>：命中后顺带把同表里的字段（如「驳回原因 / 运营备注」）抓成结构化表格；
-      支持多行、合并单元格、图片（<code>字段#图</code> 仅图片、<code>字段#3</code> 只取前 3 张）。</li>
-  <li><b>重要笔记面板</b>：勾了「重要」的关键词把抓到的内容汇总成面板，可拖动、可收起成小圆球；
-      图片可点开看大图（缩放 / 旋转 / 同格翻页）。</li>
-  <li><b>备注卡片 / 悬停提示</b>：给词写 Markdown 备注，点一下或悬停即看。</li>
-  <li><b>分组与配色</b>：底色 / 文字颜色可选（20 色板 + 可拖动取色器 + 色值输入），分组可统一配色与图片尺寸。</li>
-  <li><b>罕见字规则</b>：关键词填 <code>hjz#</code> 即对「罕见汉字」着色，也可当作组合词的核心词。</li>
-  <li><b>站点规则</b>：黑白名单（含网址级）、临时禁用本站、全局开关；所有配置只存在浏览器本地。</li>
-</ul>
+<h2>下载安装包</h2>
+<div class="dl">
+  <div class="card">
+    <h2 style="margin-top:0;border:0;padding:0">稳定版 <span class="ver" id="verStable">读取中…</span></h2>
+    <p class="muted" style="margin:4px 0 0" id="noteStable">功能经过完整回归，适合日常长期使用。</p>
+    <p style="margin:0">
+      <a class="btn" id="dlStableCrx" href="release/keyword-highlighter-extension-1.51.0.crx" download>下载 .crx</a>
+      <a class="btn ghost" href="update.xml">更新清单 update.xml</a>
+    </p>
+  </div>
+  <div class="card">
+    <h2 style="margin-top:0;border:0;padding:0">测试版 <span class="ver" id="verBeta">读取中…</span></h2>
+    <p class="muted" style="margin:4px 0 0" id="noteBeta">新功能先在这里验证（每版都过完整回归），可能仍有个别问题。</p>
+    <p style="margin:0">
+      <a class="btn" id="dlBetaCrx" href="keyword-highlighter-beta-v1.99.99.17.crx" download>下载 .crx</a>
+      <a class="btn ghost" id="dlBetaZip" href="keyword-highlighter-beta-v1.99.99.17.zip" download>下载 .zip</a>
+      <a class="btn ghost" href="update-beta.xml">更新清单</a>
+    </p>
+  </div>
+</div>
+<p class="muted" style="margin-top:8px">
+  测试版与稳定版是**两个扩展**（ID 不同），可以同时安装；测试版晋级稳定版后需要换装一次。
+  稳定版只提供 crx（更新通道按 <code>release/</code> 目录下的 crx 分发）；测试版另有 zip 便于解压加载。
+</p>
 
 <h2>手动安装（不用 bat 时）</h2>
 <ol>
-  <li>下载上面的 <code>.crx</code>（打不开 crx 就下载 .zip 并解压成一个目录）</li>
+  <li>下载上面的 <code>.crx</code>（测试版也可以下 <code>.zip</code> 并解压成一个目录）</li>
   <li>打开 <code>edge://extensions</code> 或 <code>chrome://extensions</code>，打开右上角<b>开发者模式</b></li>
   <li>把 <code>.crx</code> 拖进页面（或「加载解压缩的扩展程序」选解压出来的目录）</li>
   <li>手动装不会自动更新：每次发新版需要重新下载安装</li>
 </ol>
 
-<h2>关于更新通道</h2>
+<h2>它做什么</h2>
 <ul>
-  <li>本页是扩展的<b>自动更新源</b>：浏览器按下面的清单定期检查，发现新版本即静默更新。</li>
-  <li>测试版清单：<a href="update-beta.xml"><code>update-beta.xml</code></a> ·
-      稳定版清单：<a href="update.xml"><code>update.xml</code></a> ·
-      版本信息：<a href="latest-beta.json"><code>latest-beta.json</code></a> / <a href="latest.json"><code>latest.json</code></a></li>
-  <li><b>测试版与稳定版是两个扩展</b>（ID 不同）：可以同时装；测试版晋级稳定版后需要换装一次。</li>
-  <li>更新日志在扩展内「帮助与隐私 → 更新日志」；每个版本的安装包同时挂在
-      <a href="https://github.com/moxiaoren/keyword-highlighter-extension/releases" target="_blank" rel="noopener">GitHub Releases</a>。</li>
+  <li><b>关键词高亮</b>：命中只做「视觉高亮」（不改动网页 DOM），页面自身的样式与脚本不受影响；隐藏容器里的内容不会误命中。</li>
+  <li><b>组合词</b>：给核心词加「定位限制」——左格标题命中后，右格（或该列）里的核心词才算命中；上下格（表头 × 数据行）同理。</li>
+  <li><b>跨文本节点命中</b>：页面把词拆成 <code>审&lt;span&gt;核&lt;/span&gt;不通过</code> 也照样命中，整词上色、两段各自颜色都保留。</li>
+  <li><b>后续字段抓取</b>：命中后顺带把同表字段抓成结构化表格（多行 / 合并单元格 / 图片；<code>字段#图</code> 仅图片、<code>字段#3</code> 只取前 3 张）。</li>
+  <li><b>重要笔记面板</b>：把抓到的内容汇总成可拖动面板；图片可点开看大图（缩放 / 旋转 / 同格翻页）。</li>
+  <li><b>备注卡片 / 悬停提示</b>：给词写 Markdown 备注，点一下或悬停即看。</li>
+  <li><b>分组与配色</b>：20 色板 + 可拖动取色器 + 色值输入；分组可统一配色与图片尺寸。</li>
+  <li><b>罕见字规则</b>：关键词填 <code>hjz#</code> 即对罕见汉字着色，也可作组合词核心。</li>
+  <li><b>站点规则</b>：黑白名单（含网址级）、临时禁用本站、全局开关。</li>
 </ul>
 
 <h2>常见问题</h2>
 <table>
   <tr><th>现象</th><th>原因 / 处理</th></tr>
-  <tr><td>扩展商店搜不到</td><td>没上架商店，用上面的 bat 或手动加载；bat 需要管理员权限</td></tr>
-  <tr><td>装了但页面没反应</td><td>装完要<b>完全退出浏览器再启动</b>；还要确认该站点没被「站点规则 / 临时禁用」拦掉</td></tr>
-  <tr><td>大表格页面变慢</td><td>已对上千行表格做过性能优化（抓取去二次方、扫描按格复用缓存）；如仍异常请带上页面结构反馈</td></tr>
+  <tr><td>商店搜不到</td><td>没上架商店：用 bat 一键装，或按上面的步骤手动加载</td></tr>
+  <tr><td>装了没反应</td><td>要<b>完全退出浏览器再启动</b>；并确认该站点没被「站点规则 / 临时禁用」拦掉</td></tr>
+  <tr><td>稳定版 / 测试版怎么选</td><td>日常用稳定版；想先试新功能用测试版（两者可共存、各自自动更新）</td></tr>
   <tr><td>数据会不会上传</td><td>不会。关键词、备注、抓取内容都只存在浏览器本地（<code>chrome.storage</code>）</td></tr>
 </table>
 
 <p class="muted" style="margin-top:26px">
   本页只托管安装包与更新清单，不收集任何访问数据。
+  历史稳定版安装包在 <a href="https://github.com/moxiaoren/keyword-highlighter-extension/releases" target="_blank" rel="noopener">GitHub Releases</a>。
 </p>
 
 <script>
-  /* 从清单里读当前版本号填到页面上（同源；读不到就保持"读取中…"） */
+  /* 稳定版：从 update.xml（gupdate 清单）读版本与 crx 路径；测试版：从 latest-beta.json 读版本与校验值。
+     两个都读不到就保持页面上的静态默认值，不影响下载。 */
   (function () {
+    fetch('update.xml', { cache: 'no-store' }).then(function (r) { return r.ok ? r.text() : ''; }).then(function (xml) {
+      if (!xml) return;
+      var ver = (xml.match(/<updatecheck[^>]*version=["']([^"']+)["']/) || [])[1];
+      var cb = (xml.match(/codebase=["']([^"']+)["']/) || [])[1];
+      if (ver) document.getElementById('verStable').textContent = 'v' + ver;
+      if (cb) {
+        var file = cb.split('/').pop();
+        document.getElementById('dlStableCrx').setAttribute('href', 'release/' + file);
+      }
+    }).catch(function () { /* 忽略 */ });
+
     fetch('latest-beta.json', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
       if (!j || !j.version) return;
-      document.getElementById('ver').textContent = 'v' + j.version + '（测试版）';
-      var link = document.getElementById('crxLink');
-      if (link) link.setAttribute('href', 'keyword-highlighter-beta-v' + j.version + '.crx');
-      if (j.sha256) document.getElementById('verNote').textContent = '· 安装包校验 ' + String(j.sha256).slice(0, 12) + '…';
+      document.getElementById('verBeta').textContent = 'v' + j.version;
+      var base = 'keyword-highlighter-beta-v' + j.version;
+      document.getElementById('dlBetaCrx').setAttribute('href', base + '.crx');
+      document.getElementById('dlBetaZip').setAttribute('href', base + '.zip');
+      if (j.sha256) document.getElementById('noteBeta').textContent += ' 安装包校验 ' + String(j.sha256).slice(0, 12) + '…';
     }).catch(function () { /* 忽略 */ });
   })();
 </script>
