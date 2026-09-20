@@ -14,7 +14,7 @@
 | 通道 | 当前版本 | 直接下载 | 更新清单 |
 |---|---|---|---|
 | **稳定版**（日常用） | 见 `update.xml`（当前 `1.51.0`） | [.crx](https://moxiaoren.github.io/keyword-highlighter-extension/release/keyword-highlighter-extension-1.51.0.crx) | [`update.xml`](https://moxiaoren.github.io/keyword-highlighter-extension/update.xml) |
-| **测试版**（先试新功能） | 见 `latest-beta.json` | [.crx](https://moxiaoren.github.io/keyword-highlighter-extension/keyword-highlighter-beta-v1.99.99.20.crx) · [.zip](https://moxiaoren.github.io/keyword-highlighter-extension/keyword-highlighter-beta-v1.99.99.20.zip) | [`update-beta.xml`](https://moxiaoren.github.io/keyword-highlighter-extension/update-beta.xml) |
+| **测试版**（先试新功能） | 见 `latest-beta.json` | [.crx](https://moxiaoren.github.io/keyword-highlighter-extension/keyword-highlighter-beta-v1.99.99.21.crx) · [.zip](https://moxiaoren.github.io/keyword-highlighter-extension/keyword-highlighter-beta-v1.99.99.21.zip) | [`update-beta.xml`](https://moxiaoren.github.io/keyword-highlighter-extension/update-beta.xml) |
 
 - 项目主页每次打开都会用清单里的**实际版本号**把上面的链接刷新一遍：<https://moxiaoren.github.io/keyword-highlighter-extension/>
 - **一键安装脚本（两个通道通用）**：**[`kh-autoupdate.bat`](https://moxiaoren.github.io/keyword-highlighter-extension/kh-autoupdate.bat)** —— 运行后菜单里选 `Edge / Chrome` × `稳定版 / 测试版`，装完自动静默更新。
@@ -42,6 +42,7 @@
 | 后续字段抓取 | 命中后顺带抓同表里的字段，渲染成结构化表格；支持多行 / 合并单元格 / 图片（`字段#图` 仅图片、`字段#3` 只取前 3 张） |
 | 重要笔记面板 | 勾「重要」的关键词把抓到的内容汇总成面板，可拖动 / 收起；图片可点开看大图（缩放 / 旋转 / 同格翻页） |
 | 图片文字识别 | 组合词可开「识别图片文字」：值是一张截图（文字不在网页里）时，识别标题词定位到的右格 / 整列数据格里的图片，**图里出现关键词也算命中**；结果进面板的「🖼 图片命中」独立分区（不产生文字高亮）。识别**全在本机**，语言包按需下载或手动导入，见下 |
+| 省资源（v1.99.99.21） | 页面上与命中/抓取/图片都**无关**的变动（时钟、动画、广告位、框架重渲染…）不再触发整页重建；只有"同行抓取值变了"这种才走一小步「抓取 + 面板刷新」（实测 1–2ms，而整页重建在 2000 行表格上约 1.5s）。抓取字段变化时高亮**完全不动**（不闪） |
 | 备注卡片 / 悬停 | 给词写 Markdown 备注，点一下或悬停即看 |
 | 分组与配色 | 底色 / 文字颜色（20 色板 + 可拖动取色器 + 色值输入）；分组可统一配色与图片尺寸 |
 | 罕见字规则 | 关键词填 `hjz#` 即对「罕见汉字」着色，也可作为组合词的核心词 |
@@ -69,10 +70,10 @@
 ## 自检与开发
 
 ```bash
-node tests/run.js                 # 单元测试（260 项，始终全跑）
+node tests/run.js                 # 单元测试（269 项，始终全跑）
 node scripts/meta-check.js        # 机械红线（46 项：纯视觉不改 DOM / 单源字段 / 私钥不入包 …）
 node tests/integrity.js           # 资源引用 / id 双向 / CSS 变量 / manifest
-cd _e2e && node run.js            # 真浏览器回归（playwright-core + 系统 Edge；100 项）
+cd _e2e && node run.js            # 真浏览器回归（playwright-core + 系统 Edge；101 项）
 cd _e2e && node run.js --aspects=hit,interact   # 按「方面」裁剪；--only=<组名> 定点验证
 cd _e2e && node probe-perf-mem.js 2000          # 性能体检（阶段耗时 / 空闲重建 / 堆增长）
 cd _e2e && node probe-ocr12.js                  # 图片识别：从线上真实地址下载语言包 → 校验 → 识别的生产路径验收
