@@ -9,14 +9,27 @@
 
 ---
 
+## 两个通道，都能下载
+
+| 通道 | 当前版本 | 直接下载 | 更新清单 |
+|---|---|---|---|
+| **稳定版**（日常用） | 见 `update.xml`（当前 `1.51.0`） | [.crx](https://moxiaoren.github.io/keyword-highlighter-extension/release/keyword-highlighter-extension-1.51.0.crx) | [`update.xml`](https://moxiaoren.github.io/keyword-highlighter-extension/update.xml) |
+| **测试版**（先试新功能） | 见 `latest-beta.json` | [.crx](https://moxiaoren.github.io/keyword-highlighter-extension/keyword-highlighter-beta-v1.99.99.17.crx) · [.zip](https://moxiaoren.github.io/keyword-highlighter-extension/keyword-highlighter-beta-v1.99.99.17.zip) | [`update-beta.xml`](https://moxiaoren.github.io/keyword-highlighter-extension/update-beta.xml) |
+
+- 项目主页每次打开都会用清单里的**实际版本号**把上面的链接刷新一遍：<https://moxiaoren.github.io/keyword-highlighter-extension/>
+- **一键安装脚本（两个通道通用）**：**[`kh-autoupdate.bat`](https://moxiaoren.github.io/keyword-highlighter-extension/kh-autoupdate.bat)** —— 运行后菜单里选 `Edge / Chrome` × `稳定版 / 测试版`，装完自动静默更新。
+- 两个通道是**两个扩展**（ID 不同），可以同时安装；测试版晋级稳定版后需要换装一次。
+- 稳定版历史安装包：<https://github.com/moxiaoren/keyword-highlighter-extension/releases>（测试版不进 Releases，只在上面两个通道分发）。
+
 ## 一键安装（推荐）
 
 1. 下载 **[`kh-autoupdate.bat`](https://moxiaoren.github.io/keyword-highlighter-extension/kh-autoupdate.bat)**
 2. **右键 → 以管理员身份运行**（要写机器级注册表，让浏览器认这个扩展）
-3. 菜单里选：Edge / Chrome × 稳定版 / 测试版
+3. 菜单里选：Edge / Chrome × **稳定版 / 测试版**
 4. **完全退出浏览器再启动**（有时要启动两次）—— 之后线上发新版会**自动静默更新**
 
-> 手动安装：下载 `.crx` 拖进 `edge://extensions`（或 `chrome://extensions`）的开发者模式页面；
+> 手动安装：下载上表里的 `.crx` 拖进 `edge://extensions`（或 `chrome://extensions`）的开发者模式页面
+> （测试版也可以下 `.zip` 解压后用「加载解压缩的扩展程序」）；
 > 手动装不会自动更新，每次都要重新装。
 
 ## 它做什么
