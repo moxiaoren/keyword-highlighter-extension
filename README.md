@@ -1,0 +1,87 @@
+# 关键词高亮 · 浏览器扩展
+
+在任意网页上高亮你关心的关键词；命中后可以把同一张表里的字段自动抓成结构化的「重要笔记」面板。
+适用于 **Edge / Chrome**，免安装免登录，**所有配置与抓取内容只存在浏览器本地**。
+
+- 🌐 项目主页（安装包 + 自动更新源）：<https://moxiaoren.github.io/keyword-highlighter-extension/>
+- 📦 历史版本 / 每个版本的改动：<https://github.com/moxiaoren/keyword-highlighter-extension/releases>
+- 🧩 当前测试版：见主页或 `latest-beta.json`；稳定通道目前为 `1.51.0`
+
+---
+
+## 一键安装（推荐）
+
+1. 下载 **[`kh-autoupdate.bat`](https://moxiaoren.github.io/keyword-highlighter-extension/kh-autoupdate.bat)**
+2. **右键 → 以管理员身份运行**（要写机器级注册表，让浏览器认这个扩展）
+3. 菜单里选：Edge / Chrome × 稳定版 / 测试版
+4. **完全退出浏览器再启动**（有时要启动两次）—— 之后线上发新版会**自动静默更新**
+
+> 手动安装：下载 `.crx` 拖进 `edge://extensions`（或 `chrome://extensions`）的开发者模式页面；
+> 手动装不会自动更新，每次都要重新装。
+
+## 它做什么
+
+| 能力 | 说明 |
+|---|---|
+| 关键词高亮 | 只做**视觉高亮**（Range + `CSS.highlights`），**不改动网页 DOM**，页面自己的样式与脚本不受影响 |
+| 组合词 | 给核心词加一个「定位限制」：左格标题命中后，右格（或该列）里的核心词才算命中；上下格（表头 × 数据行）同理 |
+| 跨文本节点命中 | 页面把词拆成 `审<span>核</span>不通过` 也照样命中，整词上色、两段各自颜色都保留 |
+| 后续字段抓取 | 命中后顺带抓同表里的字段，渲染成结构化表格；支持多行 / 合并单元格 / 图片（`字段#图` 仅图片、`字段#3` 只取前 3 张） |
+| 重要笔记面板 | 勾「重要」的关键词把抓到的内容汇总成面板，可拖动 / 收起；图片可点开看大图（缩放 / 旋转 / 同格翻页） |
+| 备注卡片 / 悬停 | 给词写 Markdown 备注，点一下或悬停即看 |
+| 分组与配色 | 底色 / 文字颜色（20 色板 + 可拖动取色器 + 色值输入）；分组可统一配色与图片尺寸 |
+| 罕见字规则 | 关键词填 `hjz#` 即对「罕见汉字」着色，也可作为组合词的核心词 |
+| 站点规则 | 黑白名单（含网址级）、临时禁用本站、全局开关 |
+
+## 自检与开发
+
+```bash
+node tests/run.js                 # 单元测试（256 项，始终全跑）
+node scripts/meta-check.js        # 机械红线（46 项：纯视觉不改 DOM / 单源字段 / 私钥不入包 …）
+node tests/integrity.js           # 资源引用 / id 双向 / CSS 变量 / manifest
+cd _e2e && node run.js            # 真浏览器回归（playwright-core + 系统 Edge；98 项）
+cd _e2e && node run.js --aspects=hit,interact   # 按「方面」裁剪；--only=<组名> 定点验证
+cd _e2e && node probe-perf-mem.js 2000          # 性能体检（阶段耗时 / 空闲重建 / 堆增长）
+```
+
+`node scripts/package.js` 是出包闸门：meta-check → 单测 → integrity → 真浏览器回归（按改动涉及的
+**方面**自动选范围）→ 打包；任一红灯直接不出包。
+
+> 受影响的项目要跑回归：改动涉及命中的跑 `hit`、渲染的跑 `visual`、交互的跑 `interact`、
+> 抓取的跑 `fetch`、站点门禁的跑 `site`、管理端的跑 `ui`；不好判断就全量。
+
+## 发版流程
+
+```bash
+node scripts/bump-version.js beta        # 测试版：第 4 位 +1（1.99.99.15 → 1.99.99.16）
+# 改 src/ui/changelog.js 写本版说明（改完先跑 node scripts/check-changelog-quotes.js）
+node scripts/release-beta.js             # 门禁 + 打包 + 签名 crx + 生成 update-beta.xml
+node scripts/publish-gh.js               # 推到 gh-pages（主页 / 安装包 / 更新清单）
+node scripts/gh-release.js               # 建/更新这个版本的 GitHub Release
+node scripts/gh-release.js --all         # 补齐历史版本（幂等）
+```
+
+- 测试版跑在 `1.99.99.x` 这条线上，最终稳定版**正好落在 `2.0.0`**；稳定版：`bump-version.js release`。
+- 两通道是**两个扩展**（ID 不同），可同时安装；测试版晋级稳定版后需换装一次。
+
+## 目录结构
+
+```
+manifest.json         扩展清单（MV3）
+src/core/             内核：scanner（扫描/跨节点）· compiler · arbiter（重叠裁决）· registry · renderer · scheduler
+src/features/         combo（单元格组合词）· fetch（抓取）· important-note（重要笔记面板 / 灯箱）· note-card · rare-char
+src/ui/               管理端组件（三端共用）：fieldmap（字段单源）· components（控件工厂）
+content/ background/ options/ popup/ welcome/   各端入口
+tests/                单元测试 + 机械红线 + 完整性检查
+_e2e/                 真浏览器回归、夹具与探针（不在交付包内）
+scripts/              门禁 / 打包 / 发布 / 体检工具
+```
+
+## 隐私
+
+不联网收集任何数据：关键词、备注、抓取到的内容都存在浏览器的 `chrome.storage.local` 里，
+只有「自动更新」会去项目主页读一次版本清单。
+
+## 许可
+
+个人项目，未上架扩展商店；如需在团队内分发，请使用上面的 Release 产物自行部署。
