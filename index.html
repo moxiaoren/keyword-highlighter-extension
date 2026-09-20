@@ -26,6 +26,11 @@
   ol { padding-left: 20px; }
   table { border-collapse: collapse; font-size: 14px; }
   td, th { border: 1px solid #e3e8f0; padding: 5px 10px; text-align: left; }
+  /* 更新清单就地展示（点开原始 .xml 浏览器只会给一棵"没有样式信息"的树，看着像没内容） */
+  button.btn { cursor: pointer; font-family: inherit; }
+  .manifest { margin: 10px 0 0; padding: 10px 12px; background: #f4f6fb; border: 1px solid #e3e8f0;
+    border-radius: 8px; font-size: 12.5px; line-height: 1.6; white-space: pre-wrap; word-break: break-all; }
+  .manifest[hidden] { display: none; }
 </style>
 </head>
 <body>
@@ -53,17 +58,19 @@
     <p class="muted" style="margin:4px 0 0" id="noteStable">功能经过完整回归，适合日常长期使用。</p>
     <p style="margin:0">
       <a class="btn" id="dlStableCrx" href="release/keyword-highlighter-extension-1.51.0.crx" download>下载 .crx</a>
-      <a class="btn ghost" href="update.xml">更新清单 update.xml</a>
+      <button class="btn ghost" id="showStable" type="button">查看更新清单</button>
     </p>
+    <pre class="manifest" id="manStable" hidden></pre>
   </div>
   <div class="card">
     <h2 style="margin-top:0;border:0;padding:0">测试版 <span class="ver" id="verBeta">读取中…</span></h2>
     <p class="muted" style="margin:4px 0 0" id="noteBeta">新功能先在这里验证（每版都过完整回归），可能仍有个别问题。</p>
     <p style="margin:0">
-      <a class="btn" id="dlBetaCrx" href="keyword-highlighter-beta-v1.99.99.17.crx" download>下载 .crx</a>
-      <a class="btn ghost" id="dlBetaZip" href="keyword-highlighter-beta-v1.99.99.17.zip" download>下载 .zip</a>
-      <a class="btn ghost" href="update-beta.xml">更新清单</a>
+      <a class="btn" id="dlBetaCrx" href="keyword-highlighter-beta-v1.99.99.20.crx" download>下载 .crx</a>
+      <a class="btn ghost" id="dlBetaZip" href="keyword-highlighter-beta-v1.99.99.20.zip" download>下载 .zip</a>
+      <button class="btn ghost" id="showBeta" type="button">查看更新清单</button>
     </p>
+    <pre class="manifest" id="manBeta" hidden></pre>
   </div>
 </div>
 <p class="muted" style="margin-top:8px">
@@ -108,9 +115,68 @@
 
 <script>
   /* 稳定版：从 update.xml（gupdate 清单）读版本与 crx 路径；测试版：从 latest-beta.json 读版本与校验值。
-     两个都读不到就保持页面上的静态默认值，不影响下载。 */
+     两个都读不到就保持页面上的静态默认值，不影响下载。
+     【为什么"更新清单"做成页内展示，而不是直接链到 .xml】浏览器打开原始 XML 只会显示
+     「此 XML 文件似乎没有任何相关联的样式信息。文档树如下所示。」——用户反馈"点了提示没内容"。
+     现在改成点按钮就地展开要点（版本 / 更新包地址 / 校验值）+ 原始文件链接（标明"浏览器会显示成无样式的树，属正常"）。 */
   (function () {
+    var stableXml = '', betaJson = null;
+
+    /* 原始文件地址：用 URL 解析而不是拼字符串 —— file:// 下 pathname 拼出来会变成
+       ".../index.htmlupdate.xml"（这个坑在本地预览时一眼就能看到） */
+    function rawUrl(file) {
+      try { return decodeURI(new URL(file, location.href).href); } catch (e) { return file; }
+    }
+
+    function renderStable() {
+      var box = document.getElementById('manStable');
+      var ver = (stableXml.match(/<updatecheck[^>]*version=["']([^"']+)["']/) || [])[1];
+      var cb = (stableXml.match(/codebase=["']([^"']+)["']/) || [])[1];
+      if (!stableXml) {
+        box.textContent = '读不到更新清单 update.xml。\n' +
+          '· 线上站点：' + rawUrl('update.xml') + '\n' +
+          '· 本地直接打开这个页面时读不到属正常（清单由发版脚本生成，只在站点上有）。';
+        return;
+      }
+      box.textContent = '稳定版更新清单（update.xml · gupdate 协议）\n' +
+        '· 版本：' + (ver || '(未解析到)') + '\n' +
+        '· 更新包：' + (cb || '(未解析到)') + '\n' +
+        '· 手动下载：' + (cb ? cb.split('/').pop() : '(见上)') + '\n\n' +
+        '—— 原始文件（浏览器打开会是"无样式的 XML 树"，属正常）——\n' + rawUrl('update.xml');
+    }
+
+    function renderBeta() {
+      var box = document.getElementById('manBeta');
+      if (!betaJson || !betaJson.version) {
+        box.textContent = '读不到测试版清单 latest-beta.json。\n' +
+          '· 线上站点：' + rawUrl('latest-beta.json') + '\n' +
+          '· 本地直接打开这个页面时读不到属正常（清单由发版脚本生成，只在站点上有）。';
+        return;
+      }
+      var j = betaJson;
+      var base = 'keyword-highlighter-beta-v' + j.version;
+      box.textContent = '测试版更新清单（latest-beta.json + update-beta.xml）\n' +
+        '· 版本：' + j.version + (j.publishedAt ? '（' + j.publishedAt + '）' : '') + '\n' +
+        '· 安装包：' + base + '.crx / ' + base + '.zip\n' +
+        (j.sha256 ? '· zip 校验（sha256）：' + j.sha256 + '\n' : '') +
+        (j.notes ? '· 说明：' + j.notes + '\n' : '') +
+        '\n—— 原始文件（浏览器打开会是"无样式的 XML / JSON"，属正常）——\n' +
+        rawUrl('latest-beta.json') + '\n' + rawUrl('update-beta.xml');
+    }
+
+    document.getElementById('showStable').addEventListener('click', function () {
+      var box = document.getElementById('manStable');
+      box.hidden = !box.hidden;
+      this.textContent = box.hidden ? '查看更新清单' : '收起更新清单';
+    });
+    document.getElementById('showBeta').addEventListener('click', function () {
+      var box = document.getElementById('manBeta');
+      box.hidden = !box.hidden;
+      this.textContent = box.hidden ? '查看更新清单' : '收起更新清单';
+    });
+
     fetch('update.xml', { cache: 'no-store' }).then(function (r) { return r.ok ? r.text() : ''; }).then(function (xml) {
+      stableXml = xml || '';
       if (!xml) return;
       var ver = (xml.match(/<updatecheck[^>]*version=["']([^"']+)["']/) || [])[1];
       var cb = (xml.match(/codebase=["']([^"']+)["']/) || [])[1];
@@ -119,16 +185,17 @@
         var file = cb.split('/').pop();
         document.getElementById('dlStableCrx').setAttribute('href', 'release/' + file);
       }
-    }).catch(function () { /* 忽略 */ });
+    }).catch(function () { /* 忽略 */ }).then(renderStable);
 
     fetch('latest-beta.json', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
       if (!j || !j.version) return;
+      betaJson = j;
       document.getElementById('verBeta').textContent = 'v' + j.version;
       var base = 'keyword-highlighter-beta-v' + j.version;
       document.getElementById('dlBetaCrx').setAttribute('href', base + '.crx');
       document.getElementById('dlBetaZip').setAttribute('href', base + '.zip');
       if (j.sha256) document.getElementById('noteBeta').textContent += ' 安装包校验 ' + String(j.sha256).slice(0, 12) + '…';
-    }).catch(function () { /* 忽略 */ });
+    }).catch(function () { /* 忽略 */ }).then(renderBeta);
   })();
 </script>
 </body>
