@@ -1,0 +1,9 @@
+{
+  "version": "2.0.0",
+  "zip": "https://moxiaoren.github.io/keyword-highlighter-extension/keyword-highlighter-v2.0.0.zip",
+  "crx": "https://moxiaoren.github.io/keyword-highlighter-extension/release/keyword-highlighter-extension-2.0.0.crx",
+  "sha256": "F15F4184652F0F1E6AF1629371648F9A1426A763A097A9CAF5847352246A2D73",
+  "notes": "【回归】单测 **441** 条 · 机械红线 **46** 项 · 真浏览器回归 **内容层 70 + UI 层 54**，全绿；本轮改动做了 **8 轮反向验证**（每轮都只让目标用例变红、复原后逐字节核对 sha256）。升级路径另做了真浏览器演练：用 1.52.0 老代码导出的备份（含「仅抓取」词）导入新版，**3/3 一条没丢、逐字段差异 0**。\n\n【说明·本页下面那串 1.99.99.x】那是测试通道的内测版本号（1.99.99.1 ~ .44），普通用户从没装过它们；**正式版本就是 2.0.0**。保留它们只是为了留完整的历史记录。\n\n【升级提示·两处默认值变化】① 「变更处理方式」本版起默认**智能**（老版本是「任何页面变动都整页重建」）；② 「分页点击捕获」（启发式猜分页）默认**关**（它的病根早已由 CSS.highlights 根治）。想回到老行为，把①切到保守即可。",
+  "publishedAt": "2026-09-22",
+  "htmlUrl": "https://github.com/moxiaoren/keyword-highlighter-extension/releases"
+}
