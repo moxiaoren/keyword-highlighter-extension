@@ -116,7 +116,7 @@ function readManifest(name) {
 const base = (u) => (u ? u.split('/').pop() : null);
 
 /* ── 一条通道的校验 ─────────────────────────────────────────────────── */
-function checkChannel(label, expectId, xmlName, manifestName) {
+function checkChannel(label, expectId, xmlName, manifestName, xmlMayLag) {
   if (!QUIET) console.log('\n' + label + '：');
   const xml = readXml(path.join(REL, xmlName));
   if (!xml) { bad(label + ' 缺少 release/' + xmlName); return; }
@@ -127,8 +127,14 @@ function checkChannel(label, expectId, xmlName, manifestName) {
   if (!mf) bad(label + ' 缺少 release/' + manifestName);
   else if (mf.__parseError) bad(label + ' ' + manifestName + ' 不是合法 JSON：' + mf.__parseError);
   else {
-    if (mf.version !== xml.version) bad(label + ' ' + xmlName + ' 的 version=' + xml.version + ' 与 ' + manifestName + ' 的 ' + mf.version + ' 不一致');
-    else ok(manifestName + ' version=' + mf.version + '（与 ' + xmlName + ' 一致）');
+    if (mf.version === xml.version) ok(manifestName + ' version=' + mf.version + '（与 ' + xmlName + ' 一致）');
+    else if (xmlMayLag) {
+      /* 测试通道的 zip 清单（latest-beta.json，release.js 每次发测试版都会重写）与 crx 更新源
+       * （update-beta.xml，**手工维护**——release.js 的测试通道分支按规程明确"不要动 update.xml"）
+       * 是两套独立机制，版本不一致是常态：zip 清单先走一步，crx 更新源等有签名 crx 时再手工跟进。
+       * 所以这里只提示不判失败；这一条通道真正要硬的是 appid（上一行）与产物可达性（--live）。 */
+      info('⚠️ ' + xmlName + ' version=' + xml.version + ' 落后于 ' + manifestName + ' 的 ' + mf.version + '（测试通道 crx 更新源手工维护，允许落后；zip 清单先走一步）');
+    } else bad(label + ' ' + xmlName + ' 的 version=' + xml.version + ' 与 ' + manifestName + ' 的 ' + mf.version + ' 不一致');
 
     const zb = base(xml.codebase);
     if (zb && /\.zip$/i.test(zb)) {
@@ -226,8 +232,8 @@ async function checkLive(label, expectId, xmlName, manifestName) {
   if (ids.error) { console.error('  ✗ ' + ids.error); console.log('CHANNELS fail ' + ids.error); process.exit(1); }
   if (!QUIET) console.log('  kh-autoupdate.bat: STABLE_ID=' + ids.stable + '  BETA_ID=' + ids.beta);
 
-  checkChannel('稳定通道', ids.stable, 'update.xml', 'latest.json');
-  checkChannel('测试通道', ids.beta, 'update-beta.xml', 'latest-beta.json');
+  checkChannel('稳定通道', ids.stable, 'update.xml', 'latest.json', false);
+  checkChannel('测试通道', ids.beta, 'update-beta.xml', 'latest-beta.json', true);
 
   if (LIVE) {
     if (!QUIET) console.log('\n线上核对（--live）：');
@@ -241,6 +247,6 @@ async function checkLive(label, expectId, xmlName, manifestName) {
     console.log('CHANNELS fail ' + problems.length + ' 项');
     process.exit(1);
   }
-  if (!QUIET) console.log('\n两条通道的 appid / 版本 / 产物一致 ✓');
+  if (!QUIET) console.log('\n两条通道的 appid / 产物一致 ✓（版本口径：稳定通道两份必须相等；测试通道允许 crx 更新源落后）');
   console.log('CHANNELS ok stable=' + ids.stable + ' beta=' + ids.beta);
 })();

@@ -1,9 +1,12 @@
 name: Release
 
-# 线上发版：打 tag（如 v2.1.1）即自动产出 zip/crx/latest.json/update.xml 并发布到 gh-pages。
+# 线上发版：打 tag 即自动产出 zip/crx/清单/更新源并发布到 gh-pages。
+#   tag 名带 -beta（如 v2.0.0.10-beta）⇒ **测试通道**：只发 zip + latest-beta.json
+#       （按 RELEASE.md，测试版不生成 update.xml —— 改了会把测试版推给全体用户）
+#   其余 tag（如 v2.0.1）         ⇒ **稳定通道**：发 zip + crx + latest.json + update.xml + GitHub Release
 # 需要两个仓库 Secret：
-#   KH_KEY_PEM  签名私钥内容（**必须**与前一次发布用的同一把，否则扩展 ID 会变、Chrome 拒绝更新）
-#   GH_TOKEN    有 repo 写权限的 token（用于推 gh-pages；默认 GITHUB_TOKEN 亦可，需开写权限）
+#   KH_KEY_PEM  **稳定通道发布必需**：签名私钥内容（必须与前一次发布用的同一把，否则扩展 ID 会变、Chrome 拒绝更新）
+#   GH_TOKEN    有 repo 写权限的 token（用于推 gh-pages / 建 Release；默认 GITHUB_TOKEN 亦可，需开写权限）
 #
 # 为什么在这里做而不是本地：本机打包能跑，但"谁在什么时候发了什么版本"必须留痕；
 # 且 gh-pages 的四个文件必须与 zip 的哈希严格对应，手工上传极易漏一个。
@@ -12,6 +15,12 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      channel:
+        description: '手动触发时的发布通道（tag 触发时不看这里）'
+        type: choice
+        options: ['beta', 'stable']
+        default: 'beta'
 
 permissions:
   contents: write
@@ -26,29 +35,90 @@ jobs:
         with:
           node-version: '20'
 
+      # 【为什么必须有这一步】release.js:55-59 解析 --channel 时**两个分支都返回 stable**
+      # （`argv.indexOf('--promote')>=0 ? 'stable' : 'stable'`）⇒ 工作流不带参数时，
+      # 打任何一个 tag 都会走稳定通道，而稳定版是推给全体用户的。通道必须由 tag 名决定，
+      # 并且 tag 名里的版本必须与 manifest.json 里的版本一致（否则"标 v2.0.1 却发了别的版本"）。
+      - name: 判定发布通道（tag 名带 -beta ⇒ 测试通道）
+        id: ch
+        run: |
+          REF="${{ github.ref_name }}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            CH="${{ inputs.channel }}"
+            echo "手动触发：按 inputs.channel=$CH 发布"
+          else
+            case "$REF" in
+              *-beta*) CH=beta ;;
+              *)       CH=stable ;;
+            esac
+            TAGVER="$(printf '%s' "$REF" | sed -e 's/^v//' -e 's/-beta$//')"
+            MFVER="$(node -p "require('./manifest.json').version")"
+            if [ "$TAGVER" != "$MFVER" ]; then
+              echo "::error::tag 名里的版本（$TAGVER）与 manifest.json（$MFVER）不一致 —— 拒绝发布（先改 manifest.json 再打 tag）"
+              exit 1
+            fi
+            echo "tag $REF 的版本与 manifest.json 一致 ✓"
+          fi
+          echo "channel=$CH" >> "$GITHUB_OUTPUT"
+          echo "本次发布通道 = $CH"
+
       # 【门禁到底跑不跑】`release.js` 自己那遍门禁可被 `--skip-gates` 跳过，但它调用 `scripts/package.js`
       # 时**不传任何参数** ⇒ package.js 里那三盏红灯（meta-check / 单元测试 / integrity）照跑，
       # 任何一盏红都禁止出包。真浏览器回归（_e2e）在 runner 上找不到 `_e2e/run.js`，会明确打印"跳过"。
       # 【为什么删掉 --skip-gates】它只挡住 release.js 自己那一遍，读工作流的人（包括我自己）却极易
       # 误判成"CI 不跑门禁"。本地发版不跳过，CI 也不跳过 —— 两边同一条流程，日志里能看见门禁真的在跑。
-      # 【为什么删掉 `|| 同一条命令`】失败后自动重来一次，会把红灯洗成绿灯、把"发版失败"变成"发版成功"。
-      - name: 门禁 + 打包 + 生成清单与 crx
+      # 【通道分流】测试通道只发 zip（release.js:271 在 NO_CRX 或 beta 时走 finishZipOnly，不碰密钥）；
+      # 稳定通道要签 crx，必须真的拿到密钥 —— 缺 KH_KEY_PEM 时 release.js:287-294 会试图生成新密钥或
+      # 直接 die，前者会让扩展 ID 变化、Chrome 拒绝更新，所以这里先硬拦一道，把话说清楚。
+      - name: 门禁 + 打包 + 生成清单与 crx（按通道）
         env:
           KH_KEY_PEM: ${{ secrets.KH_KEY_PEM }}
         run: |
-          node scripts/release.js --no-crx
+          if [ "${{ steps.ch.outputs.channel }}" = "beta" ]; then
+            node scripts/release.js --no-crx --channel beta
+          else
+            if [ -z "$KH_KEY_PEM" ]; then
+              echo "::error::稳定通道发布必须配置仓库 Secret KH_KEY_PEM（签名私钥）。缺它会生成新密钥 ⇒ 扩展 ID 改变 ⇒ 已装用户永远收不到更新。"
+              exit 1
+            fi
+            node scripts/release.js --channel stable
+          fi
           ls -la release/
 
+      # 【为什么按通道读清单】原先写死 release/latest.json：测试通道发布时它还是上一版**稳定版**的清单，
+      # 于是"校验通过"校验的是另一条通道的旧产物；再叠上 find(f=>f.endsWith('.zip')) 抓到哪个包全看目录顺序。
+      # 现在按通道读各自的清单，并要求 zip 文件名里含清单声明的版本（顺带挡住拿旧包顶包）。
       - name: 校验产物（哈希与清单一致、包里无私钥）
+        env:
+          CH: ${{ steps.ch.outputs.channel }}
         run: |
           node -e "
             const fs=require('fs'),crypto=require('crypto');
-            const j=JSON.parse(fs.readFileSync('release/latest.json','utf8'));
-            const zip=fs.readdirSync('release').find(f=>f.endsWith('.zip'));
-            const h=crypto.createHash('sha256').update(fs.readFileSync('release/'+zip)).digest('hex').toUpperCase();
-            if(h!==j.sha256) { console.error('sha256 不一致'); process.exit(1); }
-            if(fs.readdirSync('release').some(f=>/\.(pem|key)$/i.test(f))) { console.error('产物里含私钥'); process.exit(1); }
-            console.log('产物校验通过', zip, h.slice(0,16));
+            const ch=process.env.CH;
+            const man=ch==='beta'?'latest-beta.json':'latest.json';
+            const j=JSON.parse(fs.readFileSync('release/'+man,'utf8'));
+            const zips=fs.readdirSync('release').filter(f=>f.endsWith('.zip') && f.indexOf(j.version)>=0);
+            if(!zips.length) { console.error(man+' 声明的版本 '+j.version+' 在 release/ 里没有对应 zip'); process.exit(1); }
+            const h=crypto.createHash('sha256').update(fs.readFileSync('release/'+zips[0])).digest('hex').toUpperCase();
+            if(h!==j.sha256) { console.error('sha256 不一致：'+man+' 说 '+j.sha256+'，实测 '+h); process.exit(1); }
+            const keys=fs.readdirSync('release').filter(f=>/\.(pem|key)$/i.test(f) && f!=='key.pem');
+            if(keys.length) { console.error('产物里含意外私钥：'+keys.join(',')); process.exit(1); }
+            if(fs.existsSync('release/key.pem')) console.log('提示：release/key.pem 是本次由 Secret 注入的签名密钥，peaceiris 的 exclude_assets 已排除它');
+            console.log('产物校验通过 '+man+' '+zips[0]+' '+h.slice(0,16));
+          "
+
+      # 【为什么必须单独一步】release.js 打 crx 失败时只打印一句 ⚠️（release.js:340-341、355-356）
+      # 「跳过 crx（zip 通道仍然可用）」就继续往下走，而 update.xml 里那个 codebase 是它照着线上路径推出来的
+      # ⇒ 没有 crx 也能"发布成功"，用户端却是 404。稳定通道因此必须硬断言 crx 真的产出来了。
+      - name: 稳定通道必须真的产出 crx（否则拒绝发布）
+        if: steps.ch.outputs.channel == 'stable'
+        run: |
+          node -e "
+            const fs=require('fs'),path=require('path');
+            const hits=[];
+            (function walk(d){ for (const e of fs.readdirSync(d,{withFileTypes:true})) { const p=path.join(d,e.name); if (e.isDirectory()) walk(p); else if (/\.crx$/i.test(e.name)) hits.push(p); } })('release');
+            if(!hits.length) { console.error('稳定通道没有产出任何 crx ⇒ update.xml 会指向不存在的文件（用户端 404），拒绝发布'); process.exit(1); }
+            console.log('crx 已产出：'+hits.join(', '));
           "
 
       # 【为什么必须有这一步】2026-10-04 实测发现线上 update-beta.xml 的 appid 是**旧密钥**推出的 ID，
@@ -82,3 +152,12 @@ jobs:
           # key.pem 绝不外发：release 里本来就不该有它（由 Secret 注入内存使用）
           exclude_assets: 'key.pem'
           keep_files: true
+
+      # 【为什么只给稳定版建】RELEASE.md：Release 只放稳定版；scripts/gh-release.js 自身也会跳过
+      # 四段版本号（测试版）。说明文字唯一来源是 src/ui/changelog.js，附件是 zip + crx。
+      # 不加 --prune-test：那是删除动作（会连测试版 Release 与 tag 一起删），不该由 CI 自动做。
+      - name: 建/更新 GitHub Release（仅稳定通道）
+        if: steps.ch.outputs.channel == 'stable'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/gh-release.js
