@@ -1,15 +1,20 @@
 name: Release
 
 # 线上发版：打 tag 即自动产出 zip/crx/清单/更新源并发布到 gh-pages。
-#   tag 名带 -beta（如 v2.0.0.10-beta）⇒ **测试通道**：只发 zip + latest-beta.json
-#       （按 RELEASE.md，测试版不生成 update.xml —— 改了会把测试版推给全体用户）
+#   tag 名带 -beta（如 v2.0.0.10-beta）⇒ **测试通道**：release-beta.js 出测试版 zip + crx
+#       + latest-beta.json + update-beta.xml（测试版走自己的更新源，稳定用户不受影响）
 #   其余 tag（如 v2.0.1）         ⇒ **稳定通道**：发 zip + crx + latest.json + update.xml + GitHub Release
-# 需要两个仓库 Secret：
-#   KH_KEY_PEM  **稳定通道发布必需**：签名私钥内容（必须与前一次发布用的同一把，否则扩展 ID 会变、Chrome 拒绝更新）
-#   GH_TOKEN    有 repo 写权限的 token（用于推 gh-pages / 建 Release；默认 GITHUB_TOKEN 亦可，需开写权限）
+# 需要两个仓库 Secret（两条通道各自一把签名私钥，扩展 ID 由私钥决定）：
+#   KH_KEY_PEM       **稳定通道必需**：正式版私钥内容（必须与前一次发布同一把，否则扩展 ID 会变、Chrome 拒绝更新）
+#   KH_KEY_BETA_PEM  **测试通道必需**：测试版私钥内容（决定测试版 ID ohjcahea…）
+#   GH_TOKEN         有 repo 写权限的 token（用于推 gh-pages / 建 Release；默认 GITHUB_TOKEN 亦可，需开写权限）
 #
 # 为什么在这里做而不是本地：本机打包能跑，但"谁在什么时候发了什么版本"必须留痕；
 # 且 gh-pages 的四个文件必须与 zip 的哈希严格对应，手工上传极易漏一个。
+#
+# 【两条通道必须严格互不触碰】两次发布都会把 release/ 整个目录推到 gh-pages（keep_files: true），
+# 所以本次没有重新生成的那条通道的文件一律**先从 release/ 删掉**，让线上那份原样保留 ——
+# 否则一次测试版发布可能把仓库里过期的 latest.json / update.xml 推上去，把稳定通道回退掉。
 
 on:
   push:
@@ -62,25 +67,54 @@ jobs:
           echo "channel=$CH" >> "$GITHUB_OUTPUT"
           echo "本次发布通道 = $CH"
 
-      # 【门禁到底跑不跑】`release.js` 自己那遍门禁可被 `--skip-gates` 跳过，但它调用 `scripts/package.js`
-      # 时**不传任何参数** ⇒ package.js 里那三盏红灯（meta-check / 单元测试 / integrity）照跑，
-      # 任何一盏红都禁止出包。真浏览器回归（_e2e）在 runner 上找不到 `_e2e/run.js`，会明确打印"跳过"。
-      # 【为什么删掉 --skip-gates】它只挡住 release.js 自己那一遍，读工作流的人（包括我自己）却极易
-      # 误判成"CI 不跑门禁"。本地发版不跳过，CI 也不跳过 —— 两边同一条流程，日志里能看见门禁真的在跑。
-      # 【通道分流】测试通道只发 zip（release.js:271 在 NO_CRX 或 beta 时走 finishZipOnly，不碰密钥）；
-      # 稳定通道要签 crx，必须真的拿到密钥 —— 缺 KH_KEY_PEM 时 release.js:287-294 会试图生成新密钥或
-      # 直接 die，前者会让扩展 ID 变化、Chrome 拒绝更新，所以这里先硬拦一道，把话说清楚。
-      - name: 门禁 + 打包 + 生成清单与 crx（按通道）
+      # 【为什么密钥要单独一步落地】两条通道用的是**两把不同的私钥**，而密钥文件都被 .gitignore
+      # 排除（CI 检出里没有）：
+      #   · 稳定通道走 release.js：它自己会读环境变量 KH_KEY_PEM 并写成 release/key.pem（这个分支只做非空拦截）
+      #   · 测试通道走 release-beta.js：它**从盘上读** release/key-beta.pem 与 release/key-beta.pub.txt
+      # 公钥不额外存一份 Secret：Node 的 createPublicKey(私钥) → SPKI DER → base64 就是 manifest 的 key 字段格式。
+      # 2026-10-04 本机实测：由 release/key-beta.pem 推出的公钥与仓库里 key-beta.pub.txt **逐字节相同**，
+      # 推出的 ID 正是 ohjcaheamdifcldcofpblbejlpmgnhjc（测试版 ID）⇒ 只存私钥不会引入第二处真值。
+      - name: 准备签名密钥（按通道从 Secrets 落到 release/）
         env:
+          CH: ${{ steps.ch.outputs.channel }}
           KH_KEY_PEM: ${{ secrets.KH_KEY_PEM }}
+          KH_KEY_BETA_PEM: ${{ secrets.KH_KEY_BETA_PEM }}
         run: |
-          if [ "${{ steps.ch.outputs.channel }}" = "beta" ]; then
-            node scripts/release.js --no-crx --channel beta
+          mkdir -p release
+          if [ "$CH" = "beta" ]; then
+            if [ -z "$KH_KEY_BETA_PEM" ]; then
+              echo "::error::测试通道发布必须配置仓库 Secret KH_KEY_BETA_PEM（测试版签名私钥）"
+              exit 1
+            fi
+            printf '%s\n' "$KH_KEY_BETA_PEM" > release/key-beta.pem
+            node -e 'const fs=require("fs"),crypto=require("crypto");const der=crypto.createPublicKey(fs.readFileSync("release/key-beta.pem")).export({type:"spki",format:"der"});const pub=der.toString("base64");fs.writeFileSync("release/key-beta.pub.txt",pub);const hex=crypto.createHash("sha256").update(der).digest("hex").slice(0,32);let id="";for(const c of hex)id+=String.fromCharCode(97+parseInt(c,16));console.log("    测试版密钥已落地：私钥 "+fs.statSync("release/key-beta.pem").size+" B，公钥 "+pub.length+" B，推出的扩展 ID="+id);'
           else
             if [ -z "$KH_KEY_PEM" ]; then
               echo "::error::稳定通道发布必须配置仓库 Secret KH_KEY_PEM（签名私钥）。缺它会生成新密钥 ⇒ 扩展 ID 改变 ⇒ 已装用户永远收不到更新。"
               exit 1
             fi
+            echo "    稳定版私钥将由 release.js 从环境变量 KH_KEY_PEM 落地到 release/key.pem"
+          fi
+
+      # 【门禁到底跑不跑】`release.js` 自己那遍门禁可被 `--skip-gates` 跳过，但它调用 `scripts/package.js`
+      # 时**不传任何参数** ⇒ package.js 里那三盏红灯（meta-check / 单元测试 / integrity）照跑，
+      # 任何一盏红都禁止出包。真浏览器回归（_e2e）在 runner 上找不到 `_e2e/run.js`，会明确打印"跳过"。
+      # 【为什么删掉 --skip-gates】它只挡住 release.js 自己那一遍，读工作流的人（包括我自己）却极易
+      # 误判成"CI 不跑门禁"。本地发版不跳过，CI 也不跳过 —— 两边同一条流程，日志里能看见门禁真的在跑。
+      # 【通道分流】测试通道走 **release-beta.js**（仓库自己的测试版流水线：改 manifest 的
+      # key/update_url/version_name → 测试版 zip → 用测试版私钥签 crx → 写 latest-beta.json 与 update-beta.xml）。
+      # 注意：`release.js --channel beta --no-crx` 那条路只发 zip、**不生成 update-beta.xml**，
+      # 也就意味着测试版用户收不到自动升级 —— 那不是我们要的测试通道。
+      - name: 门禁 + 打包 + 生成清单与 crx（按通道）
+        env:
+          KH_KEY_PEM: ${{ secrets.KH_KEY_PEM }}
+        run: |
+          if [ "${{ steps.ch.outputs.channel }}" = "beta" ]; then
+            node scripts/release-beta.js
+            # release-beta.js 不经过 release.js 的 syncBatFromWorkspace：一键安装脚本只有一份权威副本
+            # scripts/kh-autoupdate.bat，这里补拷一次，免得站点上那份冻结在旧版（下面的同哈希步骤会校验）
+            cp -f scripts/kh-autoupdate.bat release/kh-autoupdate.bat
+          else
             node scripts/release.js --channel stable
           fi
           ls -la release/
@@ -101,25 +135,33 @@ jobs:
             if(!zips.length) { console.error(man+' 声明的版本 '+j.version+' 在 release/ 里没有对应 zip'); process.exit(1); }
             const h=crypto.createHash('sha256').update(fs.readFileSync('release/'+zips[0])).digest('hex').toUpperCase();
             if(h!==j.sha256) { console.error('sha256 不一致：'+man+' 说 '+j.sha256+'，实测 '+h); process.exit(1); }
-            const keys=fs.readdirSync('release').filter(f=>/\.(pem|key)$/i.test(f) && f!=='key.pem');
+            const allowed=['key.pem','key-beta.pem'];
+            const keys=fs.readdirSync('release').filter(f=>/\.(pem|key)$/i.test(f) && allowed.indexOf(f)<0);
             if(keys.length) { console.error('产物里含意外私钥：'+keys.join(',')); process.exit(1); }
-            if(fs.existsSync('release/key.pem')) console.log('提示：release/key.pem 是本次由 Secret 注入的签名密钥，peaceiris 的 exclude_assets 已排除它');
+            for (const k of allowed) if (fs.existsSync('release/'+k)) console.log('提示：release/'+k+' 是本次由 Secret 注入的签名密钥，peaceiris 的 exclude_assets 已排除它');
             console.log('产物校验通过 '+man+' '+zips[0]+' '+h.slice(0,16));
           "
 
       # 【为什么必须单独一步】release.js 打 crx 失败时只打印一句 ⚠️（release.js:340-341、355-356）
       # 「跳过 crx（zip 通道仍然可用）」就继续往下走，而 update.xml 里那个 codebase 是它照着线上路径推出来的
-      # ⇒ 没有 crx 也能"发布成功"，用户端却是 404。稳定通道因此必须硬断言 crx 真的产出来了。
-      - name: 稳定通道必须真的产出 crx（否则拒绝发布）
-        if: steps.ch.outputs.channel == 'stable'
+      # ⇒ 没有 crx 也能"发布成功"，用户端却是 404。两条通道因此都必须硬断言 crx 真的产出来了；
+      # 测试通道还要把 update-beta.xml 的版本也钉住（它是测试版用户唯一的升级入口）。
+      - name: 本通道必须真的产出 crx（否则拒绝发布）
+        env:
+          CH: ${{ steps.ch.outputs.channel }}
         run: |
-          node -e "
-            const fs=require('fs'),path=require('path');
-            const hits=[];
-            (function walk(d){ for (const e of fs.readdirSync(d,{withFileTypes:true})) { const p=path.join(d,e.name); if (e.isDirectory()) walk(p); else if (/\.crx$/i.test(e.name)) hits.push(p); } })('release');
-            if(!hits.length) { console.error('稳定通道没有产出任何 crx ⇒ update.xml 会指向不存在的文件（用户端 404），拒绝发布'); process.exit(1); }
-            console.log('crx 已产出：'+hits.join(', '));
-          "
+          node -e 'const fs=require("fs"),path=require("path");const ch=process.env.CH;const hits=[];
+            (function walk(d){ for (const e of fs.readdirSync(d,{withFileTypes:true})) { const p=path.join(d,e.name); if (e.isDirectory()) walk(p); else if (/\.crx$/i.test(e.name)) hits.push(p); } })("release");
+            if(!hits.length){ console.error(ch+" 通道没有产出任何 crx ⇒ 更新源会指向不存在的文件（用户端 404），拒绝发布"); process.exit(1); }
+            console.log("crx 已产出："+hits.join(", "));
+            if(ch==="beta"){
+              if(!fs.existsSync("release/update-beta.xml")){ console.error("测试通道缺 release/update-beta.xml —— crx 有了却没有更新源，测试版用户收不到升级"); process.exit(1); }
+              const xml=fs.readFileSync("release/update-beta.xml","utf8");
+              const man=JSON.parse(fs.readFileSync("release/latest-beta.json","utf8"));
+              const needle="version=\""+man.version+"\"";
+              if(xml.indexOf(needle)<0){ console.error("update-beta.xml 里没有 "+needle+"（内容："+xml.replace(/\s+/g," ").slice(0,240)+"）"); process.exit(1); }
+              console.log("update-beta.xml 已指向 version="+man.version+" ✓");
+            }'
 
       # 【为什么必须有这一步】2026-10-04 实测发现线上 update-beta.xml 的 appid 是**旧密钥**推出的 ID，
       # 而线上测试版 crx 自身推导出来是当前密钥的 ID ⇒ 浏览器拿自己的扩展 ID 去 update xml 找条目，
@@ -143,15 +185,32 @@ jobs:
             console.log('kh-autoupdate.bat 同哈希校验通过');
           "
 
+      # 【为什么发布前要删掉另一条通道的文件】发布是把 release/ 整个目录推上去（keep_files: true ⇒
+      # 线上有、本地没有的文件原样保留）。本地那份另一条通道的清单/更新源是从仓库里检出出来的**镜像**，
+      # 一旦它比线上旧（CI 不回写 main），这次发布就会把另一条通道悄悄回退掉。
+      # 只发布本次真正重新生成的那几个文件，是这条流水线唯一安全的做法。
+      - name: 只发布本通道的产物（另一条通道交给 keep_files 原样保留）
+        env:
+          CH: ${{ steps.ch.outputs.channel }}
+        run: |
+          if [ "$CH" = "beta" ]; then
+            rm -f release/latest.json release/update.xml
+            echo "测试通道：已移除 release/latest.json 与 release/update.xml（线上那份由 keep_files 保留）"
+          else
+            rm -f release/latest-beta.json release/update-beta.xml
+            echo "稳定通道：已移除 release/latest-beta.json 与 release/update-beta.xml（线上那份由 keep_files 保留）"
+          fi
+          ls -la release/
+
       - name: 发布到 gh-pages
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_branch: gh-pages
           publish_dir: ./release
-          # 私钥绝不外发：稳定通道 key.pem 由 Secret 注入，测试通道 key-beta.pem 只在本机回退路径才可能
-          # 出现在 release/ 里；两个都排除，任何一把都不会被推到公开的 gh-pages。
-          exclude_assets: 'key.pem,key-beta.pem'
+          # 私钥绝不外发：两条通道的私钥都由 Secret 注入到 release/，两个都排除；
+          # 公钥文本（key-beta.pub.txt）不是秘密，但站点上没人需要它，一并排除保持干净。
+          exclude_assets: 'key.pem,key-beta.pem,key-beta.pub.txt'
           keep_files: true
 
       # 【为什么只给稳定版建】RELEASE.md：Release 只放稳定版；scripts/gh-release.js 自身也会跳过
