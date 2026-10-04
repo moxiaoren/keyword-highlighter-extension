@@ -120,6 +120,33 @@ function readManifest(name) {
 }
 const base = (u) => (u ? u.split('/').pop() : null);
 
+/* ── 版本不变量：测试版必须留在「当前稳定版」这条线上 ─────────────────────
+ * 用户 2026-10-04 明确要求：「后续稳定版发版 2.0.2 之前，测试版都会在 2.0.2 之下，这个你需要确保」。
+ * 理由不是洁癖：Chrome 只在「新号 > 已装号」时升级。测试版一旦跨到**下一个稳定版**的前缀
+ * （稳定版 2.0.1 却发了测试版 2.0.2.1），装过这个测试版的机器就永远收不到 2.0.2 ——
+ * 只能靠再发 2.0.3 去救，等于给自己挖坑。
+ * 判据（只看前三段）：测试版前缀不得**高于**稳定版前缀。
+ *   相等 = 正线（稳定 2.0.1 ⇒ 测试版 2.0.1.1、2.0.1.2 …）；
+ *   更低 = 旧线（无害，例如稳定 2.0.2 已发、测试版镜像还停在 2.0.1.1）。
+ * 反方向（稳定版号必须**高于**线上测试版）由 `scripts/release.js` 那条 fail-closed 的
+ * 回退守卫拦；这里拦的是「测试版越到下一个稳定版前面去」。 */
+function triPrefix(v) {
+  return String(v).split('-')[0].split('.').slice(0, 3).map((n) => parseInt(n, 10) || 0);
+}
+function checkVersionInvariant(stableVer, betaVer, where) {
+  if (!stableVer || !betaVer) return;            // 缺一侧无从判断（各自通道的检查已报过缺文件）
+  const a = triPrefix(betaVer), b = triPrefix(stableVer);
+  const d = (a[0] - b[0]) || (a[1] - b[1]) || (a[2] - b[2]);
+  if (d > 0) {
+    bad(where + ' 版本不变量被破坏：测试版 ' + betaVer + ' 的前缀高于当前稳定版 ' + stableVer
+      + ' ⇒ 装了该测试版的机器收不到稳定版（Chrome 只按「新号 > 已装号」升级）。'
+      + '测试版必须留在当前稳定版的线上（稳定 ' + stableVer + ' ⇒ 测试版 ' + stableVer + '.1、' + stableVer + '.2 …）；'
+      + '要晋级稳定版请用 node scripts/bump-version.js release 抬到 ' + b[0] + '.' + b[1] + '.' + (b[2] + 1));
+  } else {
+    ok('版本不变量 ✓（测试版 ' + betaVer + ' 不高于当前稳定版 ' + stableVer + ' 的前缀，不会挡住稳定版升级）');
+  }
+}
+
 /* ── 一条通道的校验 ─────────────────────────────────────────────────── */
 function checkChannel(label, expectId, xmlName, manifestName, xmlMayLag) {
   if (!QUIET) console.log('\n' + label + '：');
@@ -134,10 +161,11 @@ function checkChannel(label, expectId, xmlName, manifestName, xmlMayLag) {
   else {
     if (mf.version === xml.version) ok(manifestName + ' version=' + mf.version + '（与 ' + xmlName + ' 一致）');
     else if (xmlMayLag) {
-      /* 测试通道的 zip 清单（latest-beta.json，release.js 每次发测试版都会重写）与 crx 更新源
-       * （update-beta.xml，**手工维护**——release.js 的测试通道分支按规程明确"不要动 update.xml"）
-       * 是两套独立机制，版本不一致是常态：zip 清单先走一步，crx 更新源等有签名 crx 时再手工跟进。
-       * 所以这里只提示不判失败；这一条通道真正要硬的是 appid（上一行）与产物可达性（--live）。 */
+      /* 测试通道的 zip 清单（latest-beta.json）与 crx 更新源（update-beta.xml）是两套独立机制：
+       * 前者每次发测试版必写；后者只在**真的签出 crx** 时才写（`--no-crx` 的 zip-only 旧路径根本不写），
+       * 所以「crx 源暂时落后于 zip 清单」是设计内的常态，只提示不判失败。
+       * （round 25 起两条都由 CI 生成——`release-beta.js`——不再是手工维护的死文件；旧的
+       *  "crx 更新源手工维护"说法已作废。）这一条通道真正要硬的是 appid（上一行）与产物可达性（--live）。 */
       info('⚠️ ' + xmlName + ' version=' + xml.version + ' 落后于 ' + manifestName + ' 的 ' + mf.version + '（测试通道 crx 更新源手工维护，允许落后；zip 清单先走一步）');
     } else bad(label + ' ' + xmlName + ' 的 version=' + xml.version + ' 与 ' + manifestName + ' 的 ' + mf.version + ' 不一致');
 
@@ -256,6 +284,15 @@ async function checkLive(label, expectId, xmlName, manifestName, softVersion) {
 
   checkChannel('稳定通道', ids.stable, 'update.xml', 'latest.json', false);
   checkChannel('测试通道', ids.beta, 'update-beta.xml', 'latest-beta.json', true);
+
+  /* 两条通道各自判完，再判**两条通道之间**的版本不变量。取的就是 release/ 里的两份镜像，
+   * 也就是"即将发布的版本"——CI 里本步在发布之前，判失败即拒绝发布。 */
+  if (!QUIET) console.log('\n两条通道之间的版本不变量：');
+  {
+    const sm = readManifest('latest.json') || {};
+    const bm = readManifest('latest-beta.json') || {};
+    checkVersionInvariant(sm.version, bm.version, '两条通道');
+  }
 
   if (LIVE) {
     if (!QUIET) console.log('\n线上核对（--live）：');
