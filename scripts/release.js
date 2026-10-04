@@ -253,17 +253,26 @@ function finishZipOnly() {
           if (r.ok) { const j = await r.json(); if (j && j.version) { betaVer = String(j.version); break; } }
         } catch (e) { /* 试下一个镜像 */ }
       }
-      if (betaVer) {
-        const cmp = require(path.join(ROOT, 'background', 'update-checker.js')).compareVersions;
-        const d = cmp(VERSION, betaVer);
-        log('    线上测试通道版本 = ' + betaVer + '，本次稳定版 = ' + VERSION + ' → ' + (d < 0 ? '更低 ✗' : '不低 ✓'));
-        if (d < 0 && argv.indexOf('--force-version') < 0) {
-          die('版本号回退被拒绝：稳定版 ' + VERSION + ' 低于线上测试版 ' + betaVer + ' ✗\n' +
-              '  浏览器不会降级扩展 → 装过测试版 ' + betaVer + ' 的人**永远收不到**这个稳定版 ✗\n' +
-              '  正确做法：稳定版用**测试版最后那个号**（推荐，' + betaVer + '），或往上跳（如 3.0.0）✓\n' +
-              '  确实要强行发（只面向全新安装）时加 --force-version。');
-        }
-      } else log('    （取不到线上测试版版本，跳过回退检查）');
+      if (!betaVer) {
+        /* fail-closed（2026-10-04 起）：取不到线上测试版版本 ⇒ **中止发布**。
+         * 以前这里只打一行"跳过回退检查"就继续发 —— 那等于把上面那条铁律交给运气：
+         * 镜像抖动 / 网络不通时，一个**比线上测试版更低**的稳定版会照常发出去，
+         * 而它一旦发出去就收不回（浏览器不降级 ⇒ 装过测试版的人再也收不到稳定版）✗。 */
+        die('版本回退检查无法完成：取不到线上测试通道版本（latest-beta.json 两个镜像都没通）✗\n' +
+            '  浏览器不会降级扩展 ⇒ 无法确认本次稳定版 ' + VERSION + ' 是否高于线上测试版，宁可不发 ✗\n' +
+            '  正确做法：等 Pages / jsDelivr 恢复后重跑（CI 里通常只是镜像抖动，重跑一次即可）✓\n' +
+            '  确认线上测试通道为空、或本次只面向全新安装渠道时，加 --force-version 显式放行。');
+      }
+      const cmp = require(path.join(ROOT, 'background', 'update-checker.js')).compareVersions;
+      const d = cmp(VERSION, betaVer);
+      log('    线上测试通道版本 = ' + betaVer + '，本次稳定版 = ' + VERSION + ' → ' + (d < 0 ? '更低 ✗' : '不低 ✓'));
+      if (d < 0 && argv.indexOf('--force-version') < 0) {
+        die('版本号回退被拒绝：稳定版 ' + VERSION + ' 低于线上测试版 ' + betaVer + ' ✗\n' +
+            '  浏览器不会降级扩展 → 装过测试版 ' + betaVer + ' 的人**永远收不到**这个稳定版 ✗\n' +
+            '  正确做法：稳定版用**比它更高的三段号**（测试版 ' + betaVer + ' ⇒ 晋级后应为更高的 x.y.z，' +
+            '例如 node scripts/bump-version.js release）✓\n' +
+            '  确实要强行发（只面向全新安装）时加 --force-version。');
+      }
     } catch (e) { log('    （回退检查异常，已跳过：' + (e && e.message) + '）'); }
   }
 
