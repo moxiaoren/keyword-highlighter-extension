@@ -2,7 +2,7 @@
   "version": "2.0.1",
   "zip": "https://moxiaoren.github.io/keyword-highlighter-extension/keyword-highlighter-v2.0.1.zip",
   "crx": "https://moxiaoren.github.io/keyword-highlighter-extension/release/keyword-highlighter-extension-2.0.1.crx",
-  "sha256": "8A659E90875232D1DC56AA43F4C594DF19E19E7DC24D8869A12A61BDA1888B40",
+  "sha256": "96B8B677B51040A516B2258B4F7029C59FF842E645F2561060211214A7C8F5DA",
   "notes": "【回归】单测 **612** 条 · 机械红线 **45** 项（本次打包实测，未跑到的项不列）\n\n【为什么版本号跳到 2.0.1】浏览器**永远不会降级**扩展：更新源里的版本号比本机已装的小，它就直接忽略。链路修好之后必须发出一个**比线上测试版更高的号**（线上测试版是 2.0.0.10），所以稳定版走第三位 +1 = 2.0.1。若你本机装过测试版，它也会被 2.0.1 覆盖升级（不会再被落下）。\n\n【本版无功能变更·只加固「发布与更新」这条链】扩展的功能、界面、抓取口径与 2.0.0 完全一致，一个字都没改。改的是**包是怎么发出去、更新源是怎么被核对的**：① 修复测试通道的自动更新（线上 update-beta.xml 里的 appid 属于更早的一把密钥，与线上真正供下载的测试版包对不上；浏览器是拿**自己的扩展 ID** 去更新源里找条目的，对不上就安静地不升级）——正式通道不受影响，但装过测试版的人此前**永远收不到**测试版更新。② 新增 scripts/check-channels.js：把「两条更新通道的 appid / 版本 / 产物一致性」变成**发布前后都会跑**的硬检查，同类问题在发布当天就红灯。③ CI 按 tag 名分流通道（带 -beta ⇒ 测试通道，其余 ⇒ 稳定通道），并把「稳定通道必须真的产出 crx，否则拒绝发布」「按通道校验产物哈希」「发布前重建并自检 kh-autoupdate.bat」变成流程里的硬门。④ 稳定版发布后自动建 GitHub Release（说明文字就取自你正在看的这份更新日志，唯一来源）。⑤ 两条通道的私钥改为从仓库 Secret 注入：CI 检出里从来没有私钥，key.pem / key-beta.pem 一律排除在发布物之外。",
   "publishedAt": "2026-10-04",
   "htmlUrl": "https://github.com/moxiaoren/keyword-highlighter-extension/releases"

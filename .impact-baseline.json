@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-04T13:14:53.782Z",
+  "generatedAt": "2026-10-04T13:16:43.289Z",
   "version": "2.0.1",
   "fileCount": 132,
   "files": {
@@ -39,7 +39,7 @@
     "scripts/edge-load-beta.js": "d5aa3b42e8e43c37d567011cd6283a0a1587a942b85ac3afefef6de79370f8cf",
     "scripts/edge-policy.js": "eb21d84311f2971ebf80726d4f92c5782cd7cae1b3acb7b6b8762038e95fe4fb",
     "scripts/fetch-lang.js": "25fed30b2d769a8fcd604056afded42dd52ee483e0f1f22c092e039bb2b2f3a9",
-    "scripts/gh-release.js": "43f126b9ee56fdd9519c05f364e7ced57a0378e9cce4281190760a4cca6aa858",
+    "scripts/gh-release.js": "abcc909b5ab4790ddfa1aee008ea9c67a6a8b393631d5b8d86206f5a2d6450ff",
     "scripts/impact.js": "375db8109afa161c4cc7476407085f8efaec99284cf7d1b236c16ae34de94b9d",
     "scripts/kh-autoupdate.bat": "4fa0a2d10cf27d10a8a84387c4e427d67553e81ba63c2a41112b7295823bac46",
     "scripts/meta-check.js": "913740f194713489b22dd9128836a1365a753b7857212e5bf2d5909f1768106c",
