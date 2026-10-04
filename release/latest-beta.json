@@ -1,9 +1,9 @@
 {
-  "version": "2.0.0.9",
-  "channel": "beta",
-  "zip": "https://moxiaoren.github.io/keyword-highlighter-extension/keyword-highlighter-beta-v2.0.0.9.zip",
-  "sha256": "8A7531A37EA4916276BBC55D13A095AA7F564B80C081AC8175DA1DB7485AC29B",
-  "notes": "测试版 2.0.0.9",
-  "publishedAt": "2026-09-30",
-  "htmlUrl": "https://github.com/moxiaoren/keyword-highlighter-extension/releases"
+  "version": "2.0.0.10",
+  "zip": "https://moxiaoren.github.io/keyword-highlighter-extension/keyword-highlighter-v2.0.0.10.zip",
+  "sha256": "10EE018EB1AD037483DBEF34D5E878DEF4668A11B86ABED8E2679FFCCF4F0E6F",
+  "notes": "【回归】单测 **612** 条 · 机械红线 **45** 项（本次打包实测，未跑到的项不列）\n\n【本版无功能变更·只加固发版与更新链路】扩展的功能、界面、抓取口径与上一版（2.0.0.9）完全一致。改的是**发布链路本身**：① 修复「测试通道自动更新一直是坏的」—— 线上 update-beta.xml 里的 appid 属于更早的一把密钥，与线上真正供下载的测试版包对不上；浏览器是拿**自己的扩展 ID** 去更新源里找条目的，对不上就安静地不升级，所以装过测试版的人**永远收不到测试版更新**（正式 / 稳定通道不受影响）。现在更新源与包已一致。② 新增 scripts/check-channels.js：把「两条更新通道的 appid / 版本 / 产物一致性」变成**发布前后都会跑的硬检查**（CI 与本地发版都跑），同类问题以后在发布当天就红灯，而不是等用户发现收不到更新。③ CI 按 tag 名分流通道（带 -beta 的 tag ⇒ 测试通道只发 zip；其余 ⇒ 稳定通道），并补上「稳定通道必须真的产出 crx，否则拒绝发布」「按通道校验产物哈希」「稳定版发布后建 GitHub Release」几步。",
+  "publishedAt": "2026-10-04",
+  "htmlUrl": "https://github.com/moxiaoren/keyword-highlighter-extension/releases",
+  "channel": "beta"
 }

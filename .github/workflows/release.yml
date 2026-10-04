@@ -149,8 +149,9 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_branch: gh-pages
           publish_dir: ./release
-          # key.pem 绝不外发：release 里本来就不该有它（由 Secret 注入内存使用）
-          exclude_assets: 'key.pem'
+          # 私钥绝不外发：稳定通道 key.pem 由 Secret 注入，测试通道 key-beta.pem 只在本机回退路径才可能
+          # 出现在 release/ 里；两个都排除，任何一把都不会被推到公开的 gh-pages。
+          exclude_assets: 'key.pem,key-beta.pem'
           keep_files: true
 
       # 【为什么只给稳定版建】RELEASE.md：Release 只放稳定版；scripts/gh-release.js 自身也会跳过

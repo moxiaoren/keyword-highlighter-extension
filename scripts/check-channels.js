@@ -204,7 +204,7 @@ async function checkArtifact(label, url, expectId, manifestName, t) {
 }
 
 /* ── 线上核对（发布后）──────────────────────────────────────────────── */
-async function checkLive(label, expectId, xmlName, manifestName) {
+async function checkLive(label, expectId, xmlName, manifestName, softVersion) {
   if (typeof fetch !== 'function') { info('本机 Node 无 fetch，跳过 --live 核对'); return; }
   const t = Date.now();
   try {
@@ -221,8 +221,14 @@ async function checkLive(label, expectId, xmlName, manifestName) {
   try {
     const j = await (await fetch(SITE + '/' + manifestName + '?t=' + t, { cache: 'no-store' })).json();
     const mf = readManifest(manifestName);
-    if (mf && !mf.__parseError && j.version !== mf.version) bad('线上 ' + manifestName + ' version=' + j.version + ' ≠ 本地 ' + mf.version + '（CDN 缓存或发布没生效）');
-    else ok('线上 ' + manifestName + ' version=' + j.version);
+    if (mf && !mf.__parseError && j.version !== mf.version) {
+      /* 测试通道的"本地清单"只是仓库里的镜像，不是发布源：CI 发布（tag / workflow_dispatch）会把新清单
+       * 直接发到 gh-pages 而不回写 main，本地又可能先 bump 版本再发 —— 两个方向都属常态。
+       * 该通道真正要硬的是 appid（上面）与产物可达性/哈希（checkArtifact），版本只提示。 */
+      if (softVersion) info('⚠️ 线上 ' + manifestName + ' version=' + j.version + ' ≠ 本地仓库 ' + mf.version
+        + '（测试通道：CI 发布不回写 main、或本地已 bump 还没发，两种都属常态；以线上为准）');
+      else bad('线上 ' + manifestName + ' version=' + j.version + ' ≠ 本地 ' + mf.version + '（CDN 缓存或发布没生效）');
+    } else ok('线上 ' + manifestName + ' version=' + j.version);
   } catch (e) { info('线上 ' + manifestName + ' 拉取失败：' + e.message); }
 }
 
@@ -237,8 +243,8 @@ async function checkLive(label, expectId, xmlName, manifestName) {
 
   if (LIVE) {
     if (!QUIET) console.log('\n线上核对（--live）：');
-    await checkLive('稳定通道', ids.stable, 'update.xml', 'latest.json');
-    await checkLive('测试通道', ids.beta, 'update-beta.xml', 'latest-beta.json');
+    await checkLive('稳定通道', ids.stable, 'update.xml', 'latest.json', false);
+    await checkLive('测试通道', ids.beta, 'update-beta.xml', 'latest-beta.json', true);
   }
 
   if (problems.length) {
@@ -247,6 +253,6 @@ async function checkLive(label, expectId, xmlName, manifestName) {
     console.log('CHANNELS fail ' + problems.length + ' 项');
     process.exit(1);
   }
-  if (!QUIET) console.log('\n两条通道的 appid / 产物一致 ✓（版本口径：稳定通道两份必须相等；测试通道允许 crx 更新源落后）');
+  if (!QUIET) console.log('\n两条通道的 appid / 产物一致 ✓（版本口径：稳定通道本地/线上/两份清单都必须相等；测试通道 crx 更新源允许落后、线上版本只提示）');
   console.log('CHANNELS ok stable=' + ids.stable + ' beta=' + ids.beta);
 })();
