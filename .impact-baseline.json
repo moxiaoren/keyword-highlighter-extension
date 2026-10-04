@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-04T13:21:16.032Z",
-  "version": "2.0.1",
+  "generatedAt": "2026-10-04T13:22:34.786Z",
+  "version": "2.0.1.1",
   "fileCount": 132,
   "files": {
     ".gitattributes": "76ad96d3c458f45ebb6bde60aabbab98ed9725225953670d978e1af6ed86f4a2",
@@ -22,7 +22,7 @@
     "icons/icon32.png": "f1f182da889bb0e9735abe53525e01896e2c658ba1a7154ff692d8c44efb99c8",
     "icons/icon48-paused.png": "c8ebc2362502a2edc139c3686fc82e94d07d7ccc55097f140411b7f6b85ee6c0",
     "icons/icon48.png": "f81d0aa4477cf056e4278b8881559014ace4d88d2d164187447b1316914b5c5d",
-    "manifest.json": "39736a2382fd7e89ab9e97950ed67b2537b90b74196fb63274d564dd53b5e0b4",
+    "manifest.json": "f8fa38933cc61f2d1b062aa01744f835ba5f906cd64b021698fa21a91389d638",
     "offscreen/ocr.html": "237bcba64b3b69e3df984f6ebe18649635304c46d15d5bd26de22aff88bd1474",
     "offscreen/ocr.js": "66b399cf36567924f39449d114c92bfffd4871fc9b8ce15d45850e961e6c51e7",
     "options/options.css": "dfe7dac876b1811b9bdf17854baf139a5a7d76fb6c08e62fcf59b30b5cb1750c",
@@ -72,7 +72,7 @@
     "src/features/site-rules.js": "c60131154c89d53623f23adc499d11672034c47fe75dc031b1eea9c90bc70b85",
     "src/platform/markdown.js": "e68f89095b1012d483e9519321660dfb134a5b50d6d700c1b0bce9b9d2cd3e6d",
     "src/platform/storage.js": "cee30962174b37136b8eb7316150316d4911bed737557800c1cccc8eb87fc216",
-    "src/ui/changelog.js": "38e79fc265f647e59ef045743adc0f7e7d96563ec4fdba516f50ad7373af0d3e",
+    "src/ui/changelog.js": "227cfe909a0af7742369f55cacf2faaafea74be1787a50bd18c36787add01ff4",
     "src/ui/components/chip.js": "75cd8cfd412fdeebec5ab0f90a3a579566a2f81e7b0aa7141d1bbf994d41626d",
     "src/ui/components/color-field.js": "1030937c5e2160200cf8fd7f2f6e172e213035b1202562dad0f90df3efaa3b22",
     "src/ui/components/components.css": "553060bbaac58ba2398f97dadf4ddc06caec9da8cf1fec9563e0df2c88d38998",
