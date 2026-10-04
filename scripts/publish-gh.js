@@ -17,13 +17,16 @@
  * 安全约定：
  *   · 发布器**只读 release/**，且**拒绝上传** key.pem / *.key / *.pem（私钥永不外发）；
  *   · 只写 gh-pages 分支，不碰其它分支；
- *   · 发布后自动核对线上内容（latest.json 的 sha256 与本地一致、update.xml 里版本对得上）。
+ *   · 发布前/后都跑 `scripts/check-channels.js`：两条更新通道的 **appid**、版本、产物必须一致
+ *     （2026-10-04 实测事故：线上 update-beta.xml 的 appid 是旧密钥的 ID，测试通道的自动更新
+ *      因此一直是坏的，而当时的自检只比 latest.json 的 sha256 与 update.xml 的版本，从不比 appid）。
  * ========================================================================= */
 
 'use strict';
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { execFileSync } = require('child_process');
 
 const ROOT = path.join(__dirname, '..');
 const REL = path.join(ROOT, 'release');
@@ -221,6 +224,21 @@ async function api(method, url, body) {
     if (wanted.length) log('预检通过：清单引用的 ' + wanted.length + ' 个文件都在上传列表里（' + wanted.join('、') + '）');
   })();
 
+  /* ---- 预检：两条更新通道的 appid / 版本 / 产物一致（发布前硬门禁）----
+   * 为什么需要：2026-10-04 实测 —— 线上 `update-beta.xml` 的 appid 是**旧密钥**推出的 ID，而线上测试版
+   * crx 自身推导出来是当前密钥的 ID ⇒ 浏览器拿自己的扩展 ID 去 update xml 里找条目，对不上就**安静地不升级**：
+   * 测试通道的自动更新一直是坏的，但发布日志里全是 ✓（当时只比 latest.json 的 sha256 与 update.xml 的版本）。
+   * 期望值取自己入库的 `scripts/kh-autoupdate.bat`（用户真正双击运行的一键安装脚本）里的 BETA_ID/STABLE_ID
+   * —— 密钥文件被 .gitignore 排除，CI 的检出里没有它们，而 bat 在库里有，所以这条校验在任何环境都成立。 */
+  (function preflightChannels() {
+    try {
+      execFileSync(process.execPath, [path.join(ROOT, 'scripts', 'check-channels.js')], { stdio: 'inherit', cwd: ROOT });
+    } catch (e) {
+      die('更新通道自检未通过（见上）—— xml 的 appid/版本与 kh-autoupdate.bat 或清单不一致时发出去，' +
+        '浏览器会因为找不到自己的扩展 ID 而**安静地不升级**。修好再发。');
+    }
+  })();
+
   /* ---- OCR 语言包（release/lang/*.traineddata.gz → 站点 lang/<文件>）----
    * 【为什么不放进交付包】两个包合计约 3.7MB，而多数用户用不到（不用图片识别就永不下载）；
    * 它们由扩展在用户点「下载」时按需取，见 vendor/README.md 与 vendor/tesseract/lang-manifest.json。
@@ -390,6 +408,14 @@ async function api(method, url, body) {
         log('  ' + e.remote.padEnd(28) + ' HTTP ' + r.status + (r.ok ? '  ✓' : '  ⚠️ 尚未生效（CDN 缓存）'));
       } catch (err) { log('  ' + e.remote + ' 拉取失败：' + err.message); }
     }
+  }
+  /* 通道自检（线上）：整轮里最容易被漏掉的一项 —— 线上与本地不一致时，用户侧表现为"永远不升级"，
+   * 而本地一切正常、日志全是 ✓。appid 是其中最致命的一项（2026-10-04 实测事故）。 */
+  log('\n通道自检（线上）：');
+  try {
+    execFileSync(process.execPath, [path.join(ROOT, 'scripts', 'check-channels.js'), '--live', '--deep'], { stdio: 'inherit', cwd: ROOT });
+  } catch (e) {
+    log('  ⚠️ 线上通道自检未通过（见上）。注意 CDN 缓存；稍后可重跑：node scripts/check-channels.js --live --deep');
   }
   log('\n提示：GitHub Pages 有 CDN 缓存，Chrome 侧最长可能几十分钟后才看到新版本，属正常。');
 })().catch((err) => die('发布异常：' + (err && err.message)));

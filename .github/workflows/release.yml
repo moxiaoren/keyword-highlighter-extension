@@ -1,4 +1,4 @@
-﻿name: Release
+name: Release
 
 # 线上发版：打 tag（如 v2.1.1）即自动产出 zip/crx/latest.json/update.xml 并发布到 gh-pages。
 # 需要两个仓库 Secret：
@@ -26,11 +26,17 @@ jobs:
         with:
           node-version: '20'
 
+      # 【门禁到底跑不跑】`release.js` 自己那遍门禁可被 `--skip-gates` 跳过，但它调用 `scripts/package.js`
+      # 时**不传任何参数** ⇒ package.js 里那三盏红灯（meta-check / 单元测试 / integrity）照跑，
+      # 任何一盏红都禁止出包。真浏览器回归（_e2e）在 runner 上找不到 `_e2e/run.js`，会明确打印"跳过"。
+      # 【为什么删掉 --skip-gates】它只挡住 release.js 自己那一遍，读工作流的人（包括我自己）却极易
+      # 误判成"CI 不跑门禁"。本地发版不跳过，CI 也不跳过 —— 两边同一条流程，日志里能看见门禁真的在跑。
+      # 【为什么删掉 `|| 同一条命令`】失败后自动重来一次，会把红灯洗成绿灯、把"发版失败"变成"发版成功"。
       - name: 门禁 + 打包 + 生成清单与 crx
         env:
           KH_KEY_PEM: ${{ secrets.KH_KEY_PEM }}
         run: |
-          node scripts/release.js --no-crx --skip-gates || node scripts/release.js --no-crx --skip-gates
+          node scripts/release.js --no-crx
           ls -la release/
 
       - name: 校验产物（哈希与清单一致、包里无私钥）
@@ -44,6 +50,14 @@ jobs:
             if(fs.readdirSync('release').some(f=>/\.(pem|key)$/i.test(f))) { console.error('产物里含私钥'); process.exit(1); }
             console.log('产物校验通过', zip, h.slice(0,16));
           "
+
+      # 【为什么必须有这一步】2026-10-04 实测发现线上 update-beta.xml 的 appid 是**旧密钥**推出的 ID，
+      # 而线上测试版 crx 自身推导出来是当前密钥的 ID ⇒ 浏览器拿自己的扩展 ID 去 update xml 找条目，
+      # 对不上就安静地不升级：测试通道的自动更新一直是坏的，而发布日志里全是 ✓（当时的自检只比
+      # latest.json 的 sha256 与 update.xml 的版本，从不比 appid）。这一步把 appid 也纳入硬校验：
+      # 期望值取自己入库的 scripts/kh-autoupdate.bat（用户真正运行的一键安装脚本）里的 BETA_ID/STABLE_ID。
+      - name: 校验两条更新通道的 appid / 版本 / 产物一致
+        run: node scripts/check-channels.js
 
       - name: 校验 kh-autoupdate.bat 与权威副本同哈希
         run: |
