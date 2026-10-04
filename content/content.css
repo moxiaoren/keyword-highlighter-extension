@@ -1,7 +1,86 @@
 /* ============================================================
-   关键词高亮 - 内容脚本样式 · v2（品牌蓝统一 + 精致化，保持轻量安全）
+   content/content.css · 页内样式（注入到被访问页面）
+   ------------------------------------------------------------
+   设计变量唯一来自 src/ui/tokens.css（构建期注入，见 tools/build.js）。
+   本文件只允许写 var(--token)，禁止裸色值 —— meta-check #7 会扫描拦截。
+
+   v2.0.0 变更说明（视觉不缩水，仅去死码）：
+     · 删除 `.kh-highlight { padding/border-radius/box-shadow }` 及 `.kh-highlight:hover`。
+       原因：v2 命中一律 `Range + CSS.highlights`，**DOM 中不存在高亮节点**，该类名永无宿主，
+       留着只会误导后续开发（旧版正是这类残留导致"看到 class 就以为能 closest 反查"）。
+       视觉表现改由 `::highlight(kh-hl-*)` 承担，由 Renderer 按色分组**动态注入**
+       （见 src/core/renderer.js `_ensureGroupStyle`），每色一条，不在此静态声明。
+     · 删除 `.kh-imp-active` 内联描边，改由 `::highlight(kh-imp-active)` 承担（无 DOM 节点可挂 class）。
+     · 保留备注卡片 / tooltip / 表格 / 图片全套样式，字号与色值与 v1.52.0 逐条对齐（视觉零缩水）。
+
+   备注卡片可配置项（--kh-note-*）由 note-card feature 按用户配置在运行时注入；
+   本文件只提供**兜底默认**，默认值指向 tokens（默认值真源仍是 src/core/config.js，
+   此处不得再写第二份字面量，否则又变成"两个默认值源"）。
    ============================================================ */
+
+/* ==== 以下内容由 tools/build.js 从 src/ui/tokens.css 注入，请勿手工修改 ==== */
 :root {
+  /* ---- 品牌 ---- */
+  --brand: #4a90d9;
+  --brand-2: #5fb0ee;
+  --brand-deep: #3579c2;
+  --brand-soft: #eaf1fb;
+  --brand-softer: #f4f8fd;
+
+  /* ---- 语义色 ---- */
+  --success: #1a7f54;
+  --success-strong: #15803d;
+  --success-soft: #e9f7ef;
+  --danger: #dc2626;
+  --danger-strong: #c22b25;
+  --danger-soft: #fdeceb;
+  --warning: #b45309;
+  --warning-soft: #fef5e7;
+  --info: #1565c0;
+  --info-soft: #e7f0fc;
+  --purple: #7b1fa2;
+  --purple-soft: #f4e8f8;
+
+  /* ---- 文本层级 ---- */
+  --text: #1f2937;
+  --text-2: #4b5563;
+  --text-3: #6b7280;
+  --text-4: #9aa3b2;
+  --text-5: #c3cad6;
+
+  /* ---- 背景 / 边框 ---- */
+  --bg: #f4f6fb;
+  --bg-2: #eef1f7;
+  --card: #ffffff;
+  --card-2: #f8fafc;
+  --border: #e7ebf2;
+  --border-2: #dce3ee;
+
+  /* ---- 圆角 ---- */
+  --r-sm: 6px;
+  --r-md: 9px;
+  --r-lg: 12px;
+  --r-xl: 16px;
+  --r-pill: 999px;
+
+  /* ---- 阴影 ---- */
+  --sh-sm: 0 1px 2px rgba(16, 24, 40, .05);
+  --sh-md: 0 2px 8px rgba(16, 24, 40, .06), 0 1px 2px rgba(16, 24, 40, .04);
+  --sh-lg: 0 14px 34px rgba(16, 24, 40, .14);
+  --sh-brand: 0 4px 14px rgba(74, 144, 217, .32);
+
+  /* ---- 过渡 ---- */
+  --tr: .18s cubic-bezier(.4, 0, .2, 1);
+
+  /* ---- 字号 ---- */
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-base: 13px;
+  --fs-md: 14px;
+  --fs-lg: 16px;
+  --fs-xl: 20px;
+
+  /* ---- 页内组件（注入到被访问页面时使用，前缀 --kh-） ---- */
   --kh-brand: #4a90d9;
   --kh-brand-deep: #3579c2;
   --kh-brand-soft: #eaf1fb;
@@ -9,56 +88,56 @@
   --kh-text: #1f2937;
   --kh-text-2: #4b5563;
   --kh-text-3: #6b7280;
+
+  /* ---- 运行时可被 JS 覆盖的尺寸令牌（保持旧名，勿改） ---- */
+  --kh-note-img-size: 70px;
+
+  /* ---- 层级（页内 UI 统一 z-index，禁止散落魔法数字） ---- */
+  --z-note-card: 2147483000;
+  --z-note-panel: 2147483100;
+  --z-toast: 2147483200;
+
+  /* ---- 中性 / 覆盖层 ----
+     说明：CSS 里"纯白"与"半透明黑/品牌色覆盖"若直接写死，会在暗色适配、
+     品牌换色时漏改。此处统一命名为语义 token，CSS 只允许引用，不允许再写裸值。
+     唯一豁免：本文件（tokens.css）自身。 */
+  --white: #ffffff;
+  --ink: #333333;
+  --overlay-brand-12: rgba(74, 144, 217, .12);
+  --overlay-brand-10: rgba(74, 144, 217, .10);
+  --overlay-ink-4: rgba(0, 0, 0, .04);
+  --overlay-ink-6: rgba(0, 0, 0, .06);
+  --overlay-ink-10: rgba(0, 0, 0, .10);
+  /* 弹窗遮罩：中性深色半透明。组件层只允许引用，不允许在 CSS 里现写 rgba() */
+  --overlay-mask: rgba(15, 23, 42, .38);
+  --border-hairline: rgba(0, 0, 0, .08);
+  --sh-note-pinned: 0 10px 32px rgba(16, 24, 40, .24);
+  --sh-tip: 0 4px 14px rgba(0, 0, 0, .14);
+  --sh-brand-inset: 0 0 0 2px rgba(74, 144, 217, .35);
 }
 
-/* ---------- 高亮词基础样式 ---------- */
-.kh-highlight {
-  display: inline;
-  padding: 1px 3px;
-  cursor: pointer;
-  transition: filter .15s ease, box-shadow .15s ease, border-radius .15s ease;
-  position: relative;
-  border-radius: 3px;
-}
-.kh-highlight:hover {
-  filter: brightness(.92) saturate(1.05);
-  box-shadow: 0 0 0 2px rgba(74, 144, 217, .35);
-}
+/* ---------- 高亮命中态约定 ----------
+   · 常态        ::highlight(kh-hl-<bg>-<fg>)   由 Renderer 动态注入
+   · 悬停/选中态 ::highlight(kh-active)         由 note-card feature 挂载，描边色 --kh-brand
+   · 仅抓取命中  **完全不渲染**（不产生任何 highlight，也不产生任何 DOM 节点）
+---------------------------------------------------------------------------- */
 
-.kh-highlight-active {
-  outline: 2px solid var(--kh-brand);
-  outline-offset: 1px;
-  z-index: 1;
-  border-radius: 3px;
-}
+/* ---------- 悬浮备注卡片：**绝不要在这里写 `#kh-note-card` 规则** ----------
+   v2.0.0 实测事故（用户报"点击高亮没有备注卡片"）：
+   卡片住在自己的 ShadowRoot 里，宿主是 light DOM 的 `<div id="kh-note-card">`。
+   **文档里的 `#id` 规则优先级高于 shadow 内的 `:host`**（规范如此），所以旧版遗留的
+   `#kh-note-card{position:fixed}` 实际打在了**宿主**上 —— 宿主变成 fixed 之后，
+   影子内 `position:absolute` 的卡片改以宿主为包含块，被推到视口外（实测 top≈975，
+   而视口只有 900）。卡片内容与尺寸全都正常，用户就是看不见；旧用例只断言
+   "尺寸非零"，所以 62 条回归全绿也测不出来。
+   卡片的全部样式（含 --kh-nc-* 变量）由 src/features/note-card.js 的 shadow <style> 单源提供。
+------------------------------------------------------------------------------ */
 
-/* ---------- 悬浮备注卡片 ---------- */
-#kh-note-card {
-  position: fixed;
-  z-index: 2147483647;
-  background: #ffffff;
-  border: 1px solid var(--kh-border);
-  border-radius: 12px;
-  box-shadow: 0 8px 26px rgba(16, 24, 40, .16);
-  max-width: 320px;
-  min-width: 200px;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  font-size: 14px;
-  line-height: 1.55;
-  color: var(--kh-text);
-  opacity: 0.97;
-  animation: kh-fadeIn .16s ease-out;
-  pointer-events: auto;
-  overflow: hidden;
-}
-
-.kh-note-pinned {
-  box-shadow: 0 10px 32px rgba(16, 24, 40, .24);
-}
+.kh-note-pinned { box-shadow: var(--sh-note-pinned); }
 
 @keyframes kh-fadeIn {
   from { opacity: 0; transform: translateY(-4px); }
-  to { opacity: 1; transform: translateY(0); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 .kh-note-header {
@@ -67,12 +146,12 @@
   align-items: center;
   padding: 9px 12px 7px;
   border-bottom: 1px solid var(--kh-border);
-  background: linear-gradient(180deg, #fff, var(--kh-brand-soft));
+  background: linear-gradient(180deg, var(--white), var(--kh-brand-soft));
 }
 
 .kh-note-keyword {
   font-weight: 600;
-  font-size: 13px;
+  font-size: var(--fs-base);
   color: var(--kh-brand-deep);
   white-space: nowrap;
   overflow: hidden;
@@ -86,13 +165,13 @@
   border: none;
   padding: 3px 5px;
   cursor: pointer;
-  font-size: 14px;
+  font-size: var(--fs-md);
   opacity: .55;
-  transition: opacity .15s, background .15s;
-  border-radius: 6px;
+  transition: opacity var(--tr), background var(--tr);
+  border-radius: var(--r-sm);
   line-height: 1;
 }
-.kh-note-actions button:hover { opacity: 1; background: rgba(74, 144, 217, .12); }
+.kh-note-actions button:hover { opacity: 1; background: var(--overlay-brand-12); }
 
 .kh-note-body {
   padding: 10px 12px 12px;
@@ -103,50 +182,54 @@
   overflow-y: auto;
   color: var(--kh-text-2);
 }
-.kh-note-body a { color: var(--kh-brand); text-decoration: none; transition: text-decoration .15s; }
+.kh-note-body a { color: var(--kh-brand); text-decoration: none; transition: text-decoration var(--tr); }
 .kh-note-body a:hover { text-decoration: underline; }
 .kh-note-body b, .kh-note-body strong { font-weight: 600; color: var(--kh-text); }
 .kh-note-body i, .kh-note-body em { font-style: italic; }
 
 .kh-note-arrow { display: none; }
 
-/* 滚动条美化 */
 .kh-note-body::-webkit-scrollbar { width: 5px; }
 .kh-note-body::-webkit-scrollbar-track { background: transparent; }
-.kh-note-body::-webkit-scrollbar-thumb { background: #d3d9e4; border-radius: 3px; }
+.kh-note-body::-webkit-scrollbar-thumb { background: var(--text-5); border-radius: 3px; }
 
-/* ---------- Excel 表格（备注/重要笔记内） ---------- */
+/* ---------- 表格（备注 / 重要笔记内） ---------- */
 .kh-table { border-collapse: collapse; margin-top: 4px; width: 100%; }
-.kh-table td { border: 1px solid #d8dee8; padding: 4px 9px; font-size: 12px; line-height: 1.55; background: #fff; }
-.kh-table tr:first-child td { background: var(--kh-brand-soft); font-weight: 600; color: var(--kh-text); }
+.kh-table td {
+  border: 1px solid var(--border-2);
+  padding: 4px 9px;
+  font-size: var(--fs-sm);
+  line-height: 1.55;
+  background: var(--white);
+  white-space: pre-line;        /* 多行表格：单元格内换行必须保留 */
+}
+/* 首行当表头 —— **只对 Markdown / 富文本表格成立**（它们的第一行确实是表头）。
+   抓取表格 `.kh-table-fetch` 没有表头行：第一行就是数据（[字段 label][二级标题][内容]），
+   若也按"首行表头"着色，会把「基本信息 / 驳回字段：X / 32位包:」一起刷上底色 ——
+   它们对整张表来说都是「字段 label」的内容，不是行标题。 */
+.kh-table:not(.kh-table-fetch) tr:first-child td {
+  background: var(--kh-brand-soft); font-weight: 600; color: var(--kh-text);
+}
+/* 抓取表格里**只有**字段 label 格该上色：它才是左列的列标题，右侧全是它的内容 */
+.kh-table .kh-table-label {
+  background: var(--kh-brand-soft); font-weight: 600; color: var(--kh-text); vertical-align: middle;
+}
 
-/* ---------- 图片自适应 ---------- */
+/* ---------- 图片自适应（重要笔记图片统一走 --kh-note-img-size，等比缩放） ---------- */
 .kh-note-body img, .kh-table img {
-  max-width: 100%; height: auto; border-radius: 6px; margin: 4px 0; display: block;
+  max-width: var(--kh-note-img-size);
+  max-height: var(--kh-note-img-size);
+  width: auto; height: auto;
+  object-fit: contain;
+  border-radius: var(--r-sm);
+  margin: 4px 0;
+  display: inline-block;
+  border: 1px solid var(--border);
+  background: var(--card-2);
 }
 
-/* ---------- 高亮命中态（与重要笔记角标相关的通用态） ---------- */
-.kh-imp-active { box-shadow: 0 0 0 2px rgba(74, 144, 217, .3); border-radius: 3px; }
-
-/* ---------- 悬浮备注 tooltip（v1.10.17，CSS Highlight 无 DOM 节点可挂原生 title，自制轻量悬浮） ---------- */
-#kh-note-tooltip {
-  position: fixed;
-  z-index: 2147483647;
-  pointer-events: none;            /* tooltip 不拦截鼠标，避免影响后续命中判断 */
-  background: #ffffff;
-  color: #333;
-  padding: 8px 12px;
-  border-radius: 8px;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  font-size: 13px;
-  line-height: 1.5;
-  max-width: 320px;
-  word-break: break-word;
-  box-shadow: 0 4px 14px rgba(0,0,0,.14);
-  border: 1px solid rgba(0,0,0,.08);
-  opacity: 0;
-  transition: opacity .12s ease;
-}
-#kh-note-tooltip.kh-tip-show { opacity: 1; }
-#kh-note-tooltip table.kh-table { margin-top: 2px; background: transparent; }
-#kh-note-tooltip table.kh-table td { background: rgba(0,0,0,.04); color: #333; border-color: rgba(0,0,0,.1); }
+/* ---------- 悬浮备注 tooltip：同样**不要在这里写 `#kh-note-tooltip` 规则** ----------
+   CSS Highlight 无 DOM 节点可挂原生 title，自制轻量悬浮。与卡片同理：文档 `#id` 规则
+   只会打在 shadow 宿主上，而 `pointer-events:none` 这类关键约束必须写在 shadow 的
+   `:host` 里才与样式单源一致（见 src/features/note-card.js）。
+------------------------------------------------------------------------------ */

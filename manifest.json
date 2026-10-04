@@ -2,9 +2,13 @@
   "manifest_version": 3,
   "update_url": "https://moxiaoren.github.io/keyword-highlighter-extension/update.xml",
   "name": "__MSG_extName__",
-  "version": "1.51.0",
+  "version": "2.0.0.9",
   "description": "__MSG_extDesc__",
   "default_locale": "zh_CN",
+  "minimum_chrome_version": "109",
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  },
   "icons": {
     "16": "icons/icon16.png",
     "32": "icons/icon32.png",
@@ -29,12 +33,37 @@
         "<all_urls>"
       ],
       "js": [
-        "lib/storage.js",
-        "lib/utils.js",
-        "lib/rare-char.js",
-        "lib/keyword-engine.js",
-        "content/note-card.js",
-        "content/important-note.js",
+        "src/build-info.js",
+        "src/core/protocol.js",
+        "src/core/config.js",
+        "src/core/registry.js",
+        "src/core/compiler.js",
+        "src/core/scanner.js",
+        "src/core/arbiter.js",
+        "src/core/renderer.js",
+        "src/core/rebuilder.js",
+        "src/core/relevance.js",
+        "src/core/scheduler.js",
+        "src/core/index.js",
+        "src/platform/markdown.js",
+        "src/platform/storage.js",
+        "src/features/site-rules.js",
+        "src/features/rare-char.js",
+        "src/features/combo/cells.js",
+        "src/features/combo/combo.js",
+        "src/features/fetch.js",
+        "src/features/img-ocr.js",
+        "src/features/important-note.js",
+        "src/features/note-card.js",
+        "src/features/page-editor.js",
+        "src/ui/fieldmap.js",
+        "src/ui/components/dom.js",
+        "src/ui/components/modal.js",
+        "src/ui/components/chip.js",
+        "src/ui/components/color-field.js",
+        "src/ui/components/rich-editor.js",
+        "src/ui/components/fields.js",
+        "src/ui/components/keyword-editor.js",
         "content/content.js"
       ],
       "css": [
@@ -46,7 +75,8 @@
   ],
   "permissions": [
     "storage",
-    "alarms"
+    "alarms",
+    "offscreen"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -77,7 +107,8 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "lib/*",
+        "src/ui/*",
+        "src/features/*",
         "content/*"
       ],
       "matches": [

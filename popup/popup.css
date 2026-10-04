@@ -1,164 +1,226 @@
 /* ============================================================
-   Popup 样式 · v2 设计系统重构（与 options/welcome 风格统一）
+   popup/popup.css · 工具栏弹窗样式（策划案 §5.1）
+   ------------------------------------------------------------
+   · 颜色/圆角/阴影/字号一律来自 src/ui/tokens.css（popup.html 直连，并按
+     components.css 里的注入副本兜底），本文件**不得出现任何硬编码色值**（§5 总体风格）。
+   · 宽度 348px：既满足 320–360px 的窄弹窗要求，又要放得下
+     `KH.ui.openEditor()` 的 sm 弹窗（内联在本弹窗里，不能溢出）。
    ============================================================ */
-:root {
-  --brand: #4a90d9;
-  --brand-2: #5fb0ee;
-  --brand-deep: #3579c2;
-  --brand-soft: #eaf1fb;
-  --brand-softer: #f4f8fd;
-  --text: #1f2937;
-  --text-2: #4b5563;
-  --text-sub: #6b7280;
-  --text-faint: #9aa3b2;
-  --border: #e7ebf2;
-  --border-2: #dce3ee;
-  --card-bg: #ffffff;
-  --danger: #dc2626;
-  --danger-soft: #fdeceb;
-  --success: #1a7f54;
-  --success-strong: #15803d;
-  --success-soft: #e9f7ef;
-  --warning: #b45309;
-  --warning-soft: #fef5e7;
-  --radius: 12px;
-  --r-md: 9px;
-  --r-sm: 6px;
-  --sh-sm: 0 1px 2px rgba(16,24,40,.05);
-  --sh-brand: 0 5px 16px rgba(74,144,217,.34);
-  --tr: .18s cubic-bezier(.4,0,.2,1);
-}
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 body {
-  width: 344px;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  font-size: 13px;
+  width: 348px;
+  min-height: 300px;
+  padding: 12px 13px 11px;
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
   color: var(--text);
-  background:
-    radial-gradient(320px 160px at 90% -10%, rgba(95,176,238,.18), transparent 60%),
-    linear-gradient(170deg, #f8fafc 0%, #eef2f9 100%);
+  background: var(--bg);
 }
 
-.popup-container { padding: 14px 14px 13px; }
-
-/* ---------- 卡片 ---------- */
-.card {
-  background: var(--card-bg);
+/* 通用卡片（站点卡 / 关键词数卡共用） */
+.kh-pop-card {
+  background: var(--card);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--r-lg);
   box-shadow: var(--sh-sm);
 }
 
-/* ---------- 顶栏 ---------- */
-.header {
+/* ---------------------------------------------------------------- ① 头部 */
+.kh-pop-head {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 13px 15px;
-  border-radius: 15px;
-  background: linear-gradient(135deg, var(--brand-deep), var(--brand), var(--brand-2));
-  color: #fff;
-  margin-bottom: 12px;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 11px 13px;
+  margin-bottom: 10px;
+  border-radius: var(--r-lg);
+  background: var(--brand);
   box-shadow: var(--sh-brand);
+  color: var(--white);
 }
-.logo-area { display: flex; align-items: center; gap: 11px; min-width: 0; }
-.logo-badge {
-  width: 37px; height: 37px;
-  flex: 0 0 37px;
+.kh-pop-brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.kh-pop-logo {
+  flex: 0 0 34px;
+  width: 34px; height: 34px;
   display: flex; align-items: center; justify-content: center;
-  font-size: 19px;
-  background: rgba(255,255,255,.2);
-  border-radius: 11px;
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,.25);
-  backdrop-filter: blur(2px);
+  font-size: 18px;
+  border-radius: var(--r-md);
+  background: var(--overlay-ink-10);
+  box-shadow: inset 0 0 0 1px var(--border-hairline);
 }
-.logo-text { min-width: 0; }
-.title { font-size: 15px; font-weight: 700; line-height: 1.2; letter-spacing: .3px; }
-.subtitle { display: block; font-size: 11px; opacity: .88; margin-top: 2px; font-weight: 400; }
+.kh-pop-headtext { min-width: 0; }
+.kh-pop-title { font-size: var(--fs-md); font-weight: 700; line-height: 1.2; letter-spacing: .3px; }
+.kh-pop-subtitle { display: block; margin-top: 2px; font-size: var(--fs-xs); color: var(--brand-softer); }
 
-/* 全局开关 */
-.toggle-switch { position: relative; display: inline-block; width: 46px; height: 25px; cursor: pointer; flex: 0 0 auto; }
-.toggle-switch input { opacity: 0; width: 0; height: 0; }
-.toggle-slider {
-  position: absolute; inset: 0;
-  background-color: rgba(255,255,255,.38);
-  border-radius: 25px;
-  transition: background-color .25s;
+/* 全局开关（纯 CSS，颜色只用 token） */
+.kh-switch { position: relative; display: inline-block; flex: 0 0 auto; width: 42px; height: 23px; cursor: pointer; }
+.kh-switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+.kh-slider {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--r-pill);
+  background: var(--overlay-brand-12);
+  border: 1px solid var(--border-hairline);
+  transition: background var(--tr);
 }
-.toggle-slider::before {
+.kh-slider::before {
   content: '';
-  position: absolute; height: 19px; width: 19px; left: 3px; bottom: 3px;
-  background-color: #fff; border-radius: 50%;
-  transition: transform .25s;
-  box-shadow: 0 1px 3px rgba(0,0,0,.28);
+  position: absolute;
+  left: 2px; top: 2px;
+  width: 17px; height: 17px;
+  border-radius: 50%;
+  background: var(--white);
+  box-shadow: var(--sh-sm);
+  transition: transform var(--tr);
 }
-.toggle-switch input:checked + .toggle-slider { background-color: rgba(255,255,255,.96); }
-.toggle-switch input:checked + .toggle-slider::before { transform: translateX(21px); background-color: var(--brand-deep); }
-.toggle-switch:active .toggle-slider::before { width: 22px; }
+.kh-switch input:checked + .kh-slider { background: var(--card); }
+.kh-switch input:checked + .kh-slider::before { transform: translateX(19px); background: var(--brand-deep); }
+.kh-switch input:focus-visible + .kh-slider { box-shadow: var(--sh-brand-inset); }
 
-/* ---------- 当前站点 ---------- */
-.site-card { display: flex; align-items: center; padding: 11px 13px; margin-bottom: 10px; }
-.site-left { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
-.site-icon { font-size: 16px; flex: 0 0 auto; }
-.site-icon-badge { width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border-radius: 9px; background: var(--brand-soft); }
-.site-meta { min-width: 0; }
-.site-label { display: block; font-size: 10px; color: var(--text-faint); letter-spacing: .4px; margin-bottom: 1px; }
-.site-name { display: block; font-size: 12.5px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px; }
-.site-badge { flex: 0 0 auto; font-size: 11px; padding: 3px 11px; border-radius: 999px; background: var(--success-soft); color: var(--success-strong); font-weight: 600; }
-.site-badge.disabled { background: var(--danger-soft); color: var(--danger); }
-
-/* ---------- 统计 ---------- */
-.stats-row { display: flex; gap: 10px; margin-bottom: 12px; }
-.stat-item { flex: 1; text-align: center; padding: 11px 8px 10px; position: relative; }
-.stat-icon { display: block; font-size: 15px; margin-bottom: 4px; }
-.stat-label { display: block; font-size: 11px; color: var(--text-faint); margin-bottom: 4px; }
-.stat-value { font-size: 20px; font-weight: 800; color: var(--brand-deep); line-height: 1; font-variant-numeric: tabular-nums; }
-
-/* ---------- 操作按钮 ---------- */
-.actions { display: flex; gap: 10px; margin-bottom: 12px; }
-.btn {
-  flex: 1;
-  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+/* ------------------------------------------------- ② 信息行（站点卡 + 关键词数卡） */
+/* 两张卡同一行、同一左边距/右边距：站点卡吃剩余宽度，关键词数卡固定 84px 紧凑竖排 */
+.kh-pop-info { display: flex; align-items: stretch; gap: 8px; margin-bottom: 10px; }
+.kh-site-card {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   padding: 10px 12px;
-  border-radius: 11px;
-  font-size: 12.5px; font-weight: 600;
-  cursor: pointer;
-  transition: transform .1s, box-shadow var(--tr), background var(--tr), filter var(--tr);
-  text-align: center; user-select: none;
+}
+.kh-site-icon {
+  flex: 0 0 30px;
+  width: 30px; height: 30px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px;
+  border-radius: var(--r-md);
+  background: var(--brand-soft);
+}
+.kh-site-meta { flex: 1 1 auto; min-width: 0; }
+.kh-site-label { display: block; font-size: 10px; letter-spacing: .4px; color: var(--text-4); }
+.kh-site-name {
+  display: block;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kh-site-badge {
+  flex: 0 0 auto;
+  padding: 3px 10px;
+  border-radius: var(--r-pill);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  background: var(--success-soft);
+  color: var(--success-strong);
+}
+.kh-site-badge.is-disabled { background: var(--danger-soft); color: var(--danger); }
+.kh-site-badge.is-unknown { background: var(--bg-2); color: var(--text-3); }
+
+/* ------------------------------------------ ②b 信息行右侧：关键词数卡 */
+/* 信息行右侧的紧凑卡（只有「关键词数」——命中统计功能已整体移除，卡片是配置项计数） */
+.kh-stat-card {
+  flex: 0 0 84px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  padding: 7px 6px;
+  text-align: center;
+}
+.kh-stat-icon { font-size: 11px; margin-right: 3px; }
+.kh-stat-label {
+  display: block;
+  font-size: 10px;
+  line-height: 1.3;
+  letter-spacing: .3px;
+  color: var(--text-4);
+  white-space: nowrap;
+}
+.kh-stat-value {
+  display: block;
+  font-size: var(--fs-lg);
+  font-weight: 800;
+  line-height: 1.15;
+  color: var(--brand-deep);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------------------------------------------------------- ③ 快捷操作 */
+.kh-pop-actions { display: flex; gap: 8px; margin-bottom: 10px; }
+.kh-pop-action { flex: 1 1 0; height: 34px; }
+/* 本站已禁用时次要按钮转成"启用"语义配色（文案/图标由 JS 切换） */
+.kh-pop-action.is-site-disabled {
+  background: var(--success-soft);
+  border-color: var(--success-strong);
+  color: var(--success-strong);
+}
+.kh-pop-action.is-site-disabled:hover {
+  background: var(--success-strong);
+  border-color: var(--success-strong);
+  color: var(--white);
+}
+
+/* ---------------------------------------------------------------- ④ 更新提示条 */
+.kh-pop-update {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  border-radius: var(--r-md);
+  background: var(--warning-soft);
+  border: 1px solid var(--border-hairline);
+}
+.kh-pop-update[hidden] { display: none; }
+.kh-pop-update-info { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.kh-pop-update-icon { flex: 0 0 auto; font-size: var(--fs-md); }
+.kh-pop-update-text { font-size: var(--fs-sm); line-height: 1.45; color: var(--warning); }
+.kh-pop-update-actions { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
+
+/* ⑤ 更新工具行：左「检查更新」/ 右「更新通道」徽标（同一行，不占额外空白行） */
+.kh-pop-tools { display: flex; align-items: center; gap: 4px; margin-bottom: 8px; }
+.kh-pop-check { margin-right: auto; }
+
+/* ---------------------------------------------------------------- ⑥ 链接与底部 */
+.kh-pop-link {
+  padding: 5px 9px;
   border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--text-2);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: background var(--tr), color var(--tr), border-color var(--tr);
 }
-.btn:active { transform: scale(.97); }
-.btn-icon { font-size: 13px; line-height: 1; }
-.btn-primary { background: linear-gradient(135deg, var(--brand), var(--brand-2)); color: #fff; box-shadow: var(--sh-brand); }
-.btn-primary:hover { filter: brightness(1.06); }
-.btn-secondary { background: #fff; border-color: var(--border-2); color: var(--text-2); box-shadow: var(--sh-sm); }
-.btn-secondary:hover { background: var(--brand-softer); border-color: #ccd5e3; }
-.btn-secondary.site-disabled { background: var(--success-soft); border-color: #bbe9cd; color: var(--success-strong); }
-.btn-secondary.site-disabled:hover { background: #d1f5e0; }
+.kh-pop-link:hover { background: var(--brand-soft); color: var(--brand-deep); }
+.kh-pop-link-sm { font-size: var(--fs-xs); }
 
-/* ---------- 底部链接 ---------- */
-.footer { display: flex; align-items: center; gap: 2px; padding-top: 10px; border-top: 1px solid var(--border); margin-top: 2px; }
-.ver-badge {
-  margin-left: auto; font-size: 11px; color: var(--text-faint); user-select: none;
-  background: var(--card-bg); border: 1px solid var(--border);
-  padding: 2px 10px; border-radius: 999px; font-variant-numeric: tabular-nums;
+.kh-pop-foot {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-top: 9px;
+  border-top: 1px solid var(--border);
 }
-.btn-link { background: none; border: none; color: var(--text-sub); font-size: 12px; cursor: pointer; padding: 5px 9px; border-radius: 8px; transition: background var(--tr), color var(--tr); }
-.btn-link:hover { color: var(--brand-deep); background: var(--brand-soft); }
-.btn-link:active { transform: scale(.97); }
+.kh-pop-ver {
+  margin-left: auto;
+  padding: 2px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--card);
+  color: var(--text-4);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
 
-/* ---------- 更新提示条 ---------- */
-.update-banner {
-  display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  margin-bottom: 8px; padding: 9px 12px;
-  background: var(--warning-soft); border: 1px solid #f0dfae; border-radius: 11px;
-}
-.update-info { display: flex; align-items: center; gap: 7px; min-width: 0; }
-.update-dot { font-size: 14px; flex-shrink: 0; }
-.update-text { font-size: 12px; color: var(--warning); line-height: 1.4; overflow: hidden; text-overflow: ellipsis; }
-.update-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
-.btn-sm { padding: 5px 11px; font-size: 12px; border-radius: 8px; }
-.btn-check { margin-top: 4px; width: 100%; text-align: center; }
-.btn-check:hover { color: var(--brand-deep); background: var(--brand-soft); }
+/* 编辑弹窗是 fixed 覆盖层：给它留出边距，避免贴边被弹窗窄边裁切 */
+.kh-modal-mask { padding: 10px; }

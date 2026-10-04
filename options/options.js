@@ -1,2396 +1,1455 @@
-/**
- * Options 页面脚本
- */
-(() => {
+/* ============================================================================
+ * options/options.js · 设置页逻辑
+ * ----------------------------------------------------------------------------
+ * 统一化约定（这就是"后续相关功能调用都统一"的落点）：
+ *   · 读写配置 → 一律 `KH.Store.*`（不自己拼 chrome.storage 键名，不自己写默认值）
+ *   · 字段映射 → 一律 `KH.FieldMap`（弹窗 / 批量栏 / CSV 同一份字段表）
+ *   · 弹窗     → 一律 `KH.ui.Modal` / `KH.ui.openEditor`（底栏固定、Esc 关闭）
+ *   · 版本号   → 一律 `chrome.runtime.getManifest()`（不从存储读）
+ *   · 更新日志 → 一律 `window.CHANGELOG`（单源 src/ui/changelog.js）
+ * 内容脚本侧无需接收"刷新"消息：写 storage 后由 `chrome.storage.onChanged`
+ * 自动热更新（见 content/content.js）。
+ * ========================================================================= */
+
+(function () {
   'use strict';
 
-  // 当前编辑状态
-  let editingKeywordId = null;
-  let editingKeyword = null;
-  let editingGroupId = null;
-  let editingSiteRuleId = null;
-  let editingMatchKw = null; // 匹配方式弹窗当前编辑的关键词(v1.11.1)
-  let editingColorKw = null; // 高亮颜色弹窗当前编辑的关键词(v1.11.1)
-  let allGroups = []; // 分组缓存（用于自动应用分组颜色）
+  const KH = window.KH;
+  const ui = KH.ui;
+  const D = ui.dom;
+  const { h, clear } = D;
+  /** 字段表：全页唯一的字段声明来源（src/ui/fieldmap.js）。**必须放在 KH 之后** ——
+   *  放到 KH 之前会踩 TDZ（`Cannot access 'KH' before initialization`），整个设置页白屏。 */
+  const fm = KH.FieldMap;
+  /** 注意：这里是 **getElementById** 语义（写 id 不带 #）；要写选择器请用 document.querySelector */
+  const $ = (id) => document.getElementById(id);
 
-  // DOM 引用
-  const $ = (sel) => document.querySelector(sel);
-  const $$ = (sel) => document.querySelectorAll(sel);
+  let cfg = null;            // 当前配置（KH.Store.load() 的结果）
+  let table = null;          // 关键词表格实例
+  let filtered = [];         // 当前筛选后的关键词
+  let selection = new Set(); // 选中的关键词 id
+  let updating = false;      // 自己写入 → storage 事件回环抑制
 
-  // ========== 导航 ==========
-  function initNavigation() {
-    $$('.nav-item').forEach(item => {
-      item.addEventListener('click', () => {
-        const section = item.dataset.section;
-        switchSection(section);
-      });
-    });
+  /* ==================================================================== 工具 */
+
+  const groupOf = (id) => (cfg.groups || []).find(g => g && g.id === id) || null;
+
+  /** 关键词"实际生效底色"＝分组色 > 词色 > 全局默认（与内核 resolveVisual 同序） */
+  function effectiveBg(kw) {
+    const g = groupOf(kw.groupId);
+    return (g && g.bgColor) || kw.bgColor || cfg.highlightStyle.defaultBgColor || '';
+  }
+  function effectiveImportant(kw) {
+    const g = groupOf(kw.groupId);
+    return !!(kw.important || (g && g.important));
+  }
+  function typeOf(kw) {
+    if (kw.kind === 'rare' || String(kw.text || '').trim() === KH.Store.RARE_KEYWORD) return 'rare';
+    if (kw.cellVerifyEnabled && kw.cellVerify) {
+      if (!String(kw.text || '').trim() && String(kw.fetchLabels || '').trim()) return 'fetch';
+      return (kw.comboAxis === 'tb') ? 'tb' : 'lr';
+    }
+    return 'plain';
   }
 
-  function switchSection(section) {
-    $$('.nav-item').forEach(i => i.classList.remove('active'));
-    $$('.section').forEach(s => s.classList.remove('active'));
-    
-    const navItem = document.querySelector(`.nav-item[data-section="${section}"]`);
-    const sectionEl = document.getElementById(`section-${section}`);
-    
-    if (navItem) navItem.classList.add('active');
-    if (sectionEl) sectionEl.classList.add('active');
-
-    // 加载对应数据
-    switch (section) {
-      case 'keywords': loadKeywords(); break;
-      case 'groups': loadGroups(); break;
-      case 'styles': loadStyles(); break;
-      case 'note-card': loadNoteCardStyles(); break;
-      case 'sites': loadSiteRules(); break;
+  /** 写 storage → 重新载入 → 重绘（唯一入口，避免各处各写一遍） */
+  async function mutate(fn) {
+    updating = true;
+    try {
+      await fn();
+      cfg = await KH.Store.load();
+      renderAll();
+    } finally {
+      updating = false;
     }
   }
 
-  // ========== 关键词管理 ==========
-  let kwState = {
-    page: 1,
-    pageSize: 50,
-    selected: new Set()
-  };
-  let kwGroups = [];
+  async function reload() { cfg = await KH.Store.load(); renderAll(); }
 
-  async function loadKeywords() {
-    const data = await Storage.getAll();
-    const keywords = data.keywords || [];
-    const groups = data.groups || [];
-    kwGroups = groups;
-    allGroups = groups;
+  /* ==================================================================== 顶部 / 页脚 */
 
-    // 更新分组筛选（保留用户当前选中的分组，避免重建后被重置）
-    const prevGroupFilter = $('#groupFilter').value;
-    const groupFilter = $('#groupFilter');
-    groupFilter.innerHTML = '<option value="">全部分组</option><option value="__none__">未分组</option>';
-    groups.forEach(g => {
-      groupFilter.innerHTML += `<option value="${g.id}">${escapeHtml(g.name)}</option>`;
-    });
-    if (prevGroupFilter && (prevGroupFilter === '__none__' || groups.some(g => g.id === prevGroupFilter))) {
-      groupFilter.value = prevGroupFilter;
-    }
+  function renderHeader() {
+    const m = chrome.runtime.getManifest();
+    $('version').textContent = 'v' + m.version;
+    // 侧边栏底部的版本徽标：同样动态读 manifest（单一真源，绝不写版本字面量）
+    $('sidebar-version').textContent = 'v' + m.version;
+    $('ver-help').textContent = m.version;
+    $('ver-build').textContent = (window.KH && window.KH.BUILD_TIME) || 'dev';
+    $('foot-version').textContent = 'v' + m.version + ' · build ' + ((window.KH && window.KH.BUILD_TIME) || 'dev');
 
-    // 渲染列表
-    renderKeywordList(keywords, groups, data.highlightStyle || Storage.defaults.highlightStyle);
+    const on = cfg.globalEnabled !== false;
+    $('head-state').textContent = on ? '高亮已开启' : '已暂停';
+    $('btn-toggle-global').textContent = on ? '暂停高亮' : '恢复高亮';
+    updateSiteButton();
   }
 
-  function getKeywordFilters() {
-    return {
-      search: ($('#keywordSearch')?.value || '').toLowerCase().trim(),
-      group: $('#groupFilter')?.value || '',
-      status: $('#statusFilter')?.value || 'all',
-      regex: $('#regexFilter')?.value || 'all',
-      sort: $('#sortFilter')?.value || 'updated_desc'
-    };
-  }
-
-  function applyKeywordFiltersAndSort(keywords) {
-    const f = getKeywordFilters();
-    let list = keywords.filter(k => {
-      if (f.search && !(k.text.toLowerCase().includes(f.search) || (k.note || '').toLowerCase().includes(f.search))) return false;
-      if (f.group === '__none__') {
-        if (k.groupId) return false;
-      } else if (f.group && k.groupId !== f.group) {
-        return false;
+  /**
+   * 「当前站点开关」必须反映**当前站点**的状态 —— 固定文案"当前站点开关"会让它看起来
+   * 像个不知道干嘛的按钮，和旁边的状态文字语义打架（用户审查 UI 时指出的那类问题）。
+   * 状态来自内容脚本协议（与 popup 同一通道）；当前页没有内容脚本（chrome:// 等）时如实说明。
+   */
+  async function updateSiteButton() {
+    const btn = $('btn-site-toggle');
+    let host = '';
+    let siteOn = null;   // true=高亮中 / false=已禁用 / null=未知（无内容脚本）
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tab && tab.url) { try { host = new URL(tab.url).hostname || ''; } catch (_) { host = ''; } }
+      if (tab && tab.id != null) {
+        try {
+          const st = await chrome.tabs.sendMessage(tab.id, { type: KH.MSG.STATE_QUERY });
+          if (st && st.siteEnabled != null) siteOn = !!st.siteEnabled;
+        } catch (_) { /* 该页没有内容脚本 */ }
       }
-      if (f.status === 'enabled' && !k.enabled) return false;
-      if (f.status === 'disabled' && k.enabled) return false;
-      if (f.regex === 'plain' && k.useRegex) return false;
-      if (f.regex === 'regex' && !k.useRegex) return false;
-      return true;
-    });
-
-    const sorters = {
-      'updated_desc': (a, b) => (b.updatedAt || 0) - (a.updatedAt || 0),
-      'created_desc': (a, b) => (b.createdAt || 0) - (a.createdAt || 0),
-      'name_asc': (a, b) => a.text.localeCompare(b.text, 'zh'),
-      'name_desc': (a, b) => b.text.localeCompare(a.text, 'zh')
-    };
-    list.sort(sorters[f.sort] || sorters['updated_desc']);
-    return list;
+    } catch (_) { /* tabs 查询不可用 */ }
+    const tag = host.length > 24 ? host.slice(0, 23) + '…' : host;
+    btn.textContent = siteOn === null
+      ? '本站开关（当前页不适用）'
+      : (siteOn ? '本站：高亮中' + (tag ? ' · ' + tag : '')
+                : '本站：已禁用' + (tag ? ' · ' + tag : ''));
   }
 
-  function renderKeywordList(keywords, groups, highlightStyle) {
-    const filtered = applyKeywordFiltersAndSort(keywords);
-    kwState.filtered = filtered;
-    kwState.highlightStyle = highlightStyle; // v1.11.1 颜色弹窗取当前样式用
+  $('btn-toggle-global').addEventListener('click', async () => {
+    // 一律走统一协议，由 background 落盘 + 广播（不自己写 globalEnabled）
+    const res = await chrome.runtime.sendMessage({ type: KH.MSG.GLOBAL_TOGGLE });
+    if (res && res.ok === false) D.toast('切换失败：' + res.error, 'error');
+    await reload();
+  });
 
-    // 清理已不存在的选中项
-    const idSet = new Set(keywords.map(k => k.id));
-    kwState.selected.forEach(id => { if (!idSet.has(id)) kwState.selected.delete(id); });
+  $('btn-site-toggle').addEventListener('click', async () => {
+    const res = await chrome.runtime.sendMessage({ type: KH.MSG.SITE_TOGGLE });
+    if (res && res.ok) D.toast(res.disabled ? ('已临时禁用 ' + res.host) : ('已恢复 ' + res.host), 'ok');
+    else D.toast('无法解析当前标签页地址', 'error');
+    await reload();
+  });
 
-    // 总数
-    $('#keywordTotalCount').textContent = `(${filtered.length}/${keywords.length})`;
+  /* ==================================================================== ① 关键词管理 */
 
-    // 分页边界
-    const totalPages = Math.max(1, Math.ceil(filtered.length / kwState.pageSize));
-    if (kwState.page > totalPages) kwState.page = totalPages;
-
-    const table = $('#keywordTable');
-    const body = $('#keywordTableBody');
-    const emptyEl = $('#keywordEmpty');
-
-    if (filtered.length === 0) {
-      table.style.display = 'none';
-      emptyEl.style.display = 'block';
-      $('#keywordEmptyText').textContent = keywords.length === 0 ? '还没有添加关键词' : '没有匹配的关键词';
-      $('#btnEmptyAdd').style.display = keywords.length === 0 ? 'inline-flex' : 'none';
-      $('#pagination').innerHTML = '';
-      $('#bulkSelectedCount').textContent = '已选 0 项';
-      document.querySelectorAll('[data-bulk]').forEach(b => { b.disabled = true; });
-      return;
-    }
-
-    table.style.display = 'table';
-    emptyEl.style.display = 'none';
-
-    const start = (kwState.page - 1) * kwState.pageSize;
-    const pageItems = filtered.slice(start, start + kwState.pageSize);
-    const groupMap = {};
-    groups.forEach(g => { groupMap[g.id] = g.name; });
-    const groupById = {};
-    groups.forEach(g => { groupById[g.id] = g; });
-
-    body.innerHTML = pageItems.map(kw => {
-      const isSel = kwState.selected.has(kw.id);
-      // 匹配方式：核心规则列跟随关键词、标题词规则列跟随标题词（v1.11.1）。只展示已勾选规则胶囊，点击弹出单一勾选弹窗。
-      const isComboKw = !!(kw.cellVerify || kw.fetchLabels);
-      const isRareKw = kw.kind === 'rare';
-      const coreChips = [];
-      if (isRareKw) {
-        // 罕见字核心（v1.12.0）：无大小写/正则/全词开关，固定为「检测罕见字符」
-        coreChips.push('<span class="mr-chip mr-chip-rare">罕见</span>');
-      } else {
-        if (kw.useRegex) coreChips.push('<span class="mr-chip">正则</span>');
-        if (kw.caseSensitive) coreChips.push('<span class="mr-chip">大小写</span>');
-        if (kw.wholeWord) coreChips.push('<span class="mr-chip">全词</span>');
+  const COLUMNS = [
+    { key: '__check', class: 'col-check' },
+    {
+      key: 'text', class: 'col-kw', label: '关键词', sortable: true, width: 150,
+      render(kw) {
+        const txt = String(kw.text || '').trim() || (typeOf(kw) === 'fetch' ? '（仅抓取）' : '—');
+        const box = h('div', { class: 'kh-kw-cell' });
+        box.appendChild(h('span', { class: 'kh-kw-text', text: txt }));
+        if (typeOf(kw) === 'rare') box.appendChild(h('span', { class: 'mr-chip mr-chip-rare', text: '罕见' }));
+        /* 【为什么这里不再打「上下格」标签】用户实测："上下格匹配是在核心关键词增加一个上下格，
+         * 左右格又没有区分 —— 这种区分方式有点怪"。方向是**这一对怎么写**的属性，
+         * 挂在核心词上既不对称、也不是它自己的属性；现在统一挪到「标题词」列做前缀箭头
+         * （见下面 cellVerify 列），核心词这一列只留"这个词本身是什么"的信息（如「罕见」）。 */
+        return box;
       }
-      const coreMatchHtml = coreChips.length ? coreChips.join('') : '<span class="mr-default">默认</span>';
-      const coreCell = `<span class="kw-match-pill" data-match-edit="${kw.id}" data-part="core" title="${isRareKw ? '罕见字核心（v1.12.0）：匹配所有罕见字（扩展区+常用字表外）' : '点击修改核心词匹配方式'}">${coreMatchHtml}</span>`;
-      let titleCellHtml = '<span style="color:#ddd">—</span>';
-      if (isComboKw) {
-        const tChips = [];
-        if (kw.cellVerifyUseRegex) tChips.push('<span class="mr-chip mr-chip-title">正则</span>');
-        if (kw.cellVerifyCaseSensitive) tChips.push('<span class="mr-chip mr-chip-title">大小写</span>');
-        if (kw.cellVerifyMatchMode === 'exact') tChips.push('<span class="mr-chip mr-chip-title">全词</span>');
-        const tHtml2 = tChips.length ? tChips.join('') : '<span class="mr-default">默认</span>';
-        titleCellHtml = `<span class="kw-match-pill" data-match-edit="${kw.id}" data-part="title" title="点击修改标题词匹配方式">${tHtml2}</span>`;
-      }
-      const groupName = kw.groupId && groupMap[kw.groupId]
-        ? escapeHtml(groupMap[kw.groupId])
-        : '<span style="color:#bbb">—</span>';
-      // 重要标识：自身重要 或 所属分组重要
-      const grp = kw.groupId ? groupById[kw.groupId] : null;
-      const isImportant = !!(kw.important || (grp && grp.important));
-      let impBadge = '';
-      if (isImportant) {
-        let impTitle = '重要';   
-        if (kw.importantNote) impTitle = '重要笔记：' + kw.importantNote.slice(0, 120);
-        else if (grp && grp.important) impTitle = '所属分组“' + (groupMap[kw.groupId] || '') + '”为重要';
-        impBadge = `<span class="imp-badge" title="${escapeHtml(impTitle)}">📌</span>`;
-      }
-      const noteHtml = kw.note
-        ? `<span class="kw-col-note" title="${escapeHtml(kw.note)}">${escapeHtml(kw.note)}</span>`
-        : '<span style="color:#ddd">—</span>';
-      // 标题关键词（左格）——单元格组合翻转 v1.8.3
-      const cellHtml = (kw.cellVerifyEnabled && kw.cellVerify)
-        ? `<span class="cell-val" title="标题关键词(左格)：${escapeHtml(kw.cellVerify)}">${escapeHtml(kw.cellVerify)}</span>`
-        : '<span style="color:#ddd">—</span>';
-      // 重要笔记（自身优先，其次分组统一笔记）
-      let impNoteHtml = '<span style="color:#ddd">—</span>';
-      if (kw.importantNote) {
-        impNoteHtml = `<span class="impnote-val" title="${escapeHtml(kw.importantNote)}">📌 ${escapeHtml(kw.importantNote)}</span>`;
-      } else if (grp && grp.important && grp.importantNote) {
-        impNoteHtml = `<span class="impnote-val grp" title="来自分组“${escapeHtml(groupMap[kw.groupId] || '')}”：${escapeHtml(grp.importantNote)}">📌 ${escapeHtml(grp.importantNote)}</span>`;
-      } else if (isImportant) {
-        impNoteHtml = '<span class="impnote-val">📌 重要（未填笔记）</span>';
-      }
-      // 高亮颜色（关键词自身 > 分组 > 全局默认）
-      const style = highlightStyle || {};
-      const bg = kw.bgColor || (grp && grp.bgColor) || style.defaultBgColor || '#ff9500';
-      const tc = kw.textColor || (grp && grp.textColor) || style.defaultTextColor || '#000000';
-      const colSrc = kw.bgColor ? '来自关键词' : (grp && grp.bgColor) ? '来自分组' : '全局默认';
-      const colorHtml = `<span class="color-swatch color-edit" data-color-edit="${kw.id}" style="background:${escapeHtml(bg)};color:${escapeHtml(tc)};" title="点击修改高亮颜色（当前：背景 ${bg} / 文字 ${tc}，来源：${colSrc}）">字</span>`;
-      return `
-        <tr class="${isSel ? 'selected' : ''}" data-id="${kw.id}">
-          <td class="col-check"><input type="checkbox" class="row-check" data-id="${kw.id}" ${isSel ? 'checked' : ''}></td>
-          <td class="col-kw"><span class="kw-cell"><span class="kw-col-name ${kw.enabled ? '' : 'disabled'}" title="${isRareKw ? '罕见字规则：匹配所有罕见字（扩展区 + 常用字表外），由关键词 hjz# 创建' : escapeHtml(kw.text)}">${isRareKw ? '罕见字 <span class="rare-hint">(hjz#)</span>' : escapeHtml(kw.text)}</span>${impBadge}</span></td>
-          <td class="col-kw-match">${coreCell}</td>
-          <td class="col-cell">${cellHtml}</td>
-          <td class="col-title-match">${titleCellHtml}</td>
-          <td class="col-impnote">${impNoteHtml}</td>
-          <td class="col-color">${colorHtml}</td>
-          <td class="col-group">📁 ${groupName}</td>
-          <td class="col-note">${noteHtml}</td>
-          <td class="col-status"><span class="status-pill status-toggle ${kw.enabled ? 'enabled' : 'disabled'}" data-action="toggle" data-id="${kw.id}" title="点击切换启用/禁用">${kw.enabled ? '启用' : '禁用'}</span></td>
-          <td class="col-actions">
-            <button class="btn-icon" data-action="edit" data-id="${kw.id}" title="编辑">✏️</button>
-            <button class="btn-icon" data-action="delete" data-id="${kw.id}" title="删除">🗑️</button>
-          </td>
-        </tr>
-      `;
-    }).join('');
-
-    // 行内操作
-    body.querySelectorAll('[data-action="toggle"]').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        await Storage.toggleKeyword(btn.dataset.id);
-        loadKeywords();
-        notifyContentRefresh();
-      });
-    });
-    body.querySelectorAll('[data-action="edit"]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const kw = keywords.find(k => k.id === btn.dataset.id);
-        if (kw) showKeywordModal(kw);
-      });
-    });
-    body.querySelectorAll('[data-action="delete"]').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        if (confirm('确定要删除此关键词吗？此操作不可撤销。')) {
-          await Storage.deleteKeyword(btn.dataset.id);
-          kwState.selected.delete(btn.dataset.id);
-          loadKeywords();
-          notifyContentRefresh();
-        }
-      });
-    });
-    body.querySelectorAll('[data-match-edit]').forEach(el => {
-      el.addEventListener('click', () => {
-        const kw = keywords.find(k => k.id === el.dataset.matchEdit);
-        if (kw) openMatchRuleModal(kw, el.dataset.part || 'core');
-      });
-    });
-    body.querySelectorAll('[data-color-edit]').forEach(el => {
-      el.addEventListener('click', () => {
-        const kw = keywords.find(k => k.id === el.dataset.colorEdit);
-        if (kw) openColorModal(kw);
-      });
-    });
-
-    // 行勾选
-    body.querySelectorAll('.row-check').forEach(cb => {
-      cb.addEventListener('change', () => {
-        if (cb.checked) kwState.selected.add(cb.dataset.id);
-        else kwState.selected.delete(cb.dataset.id);
-        refreshSelectionUI(body);
-      });
-    });
-
-    refreshSelectionUI(body);
-    renderPagination(totalPages);
-  }
-
-  // 更新勾选相关 UI（选中行高亮 + 批量操作按钮状态）
-  function refreshSelectionUI(body) {
-    if (body) {
-      body.querySelectorAll('tr').forEach(tr => {
-        tr.classList.toggle('selected', kwState.selected.has(tr.dataset.id));
-      });
-    }
-    const count = kwState.selected.size;
-    $('#bulkSelectedCount').textContent = `已选 ${count} 项`;
-    const hasSelection = count > 0;
-    document.querySelectorAll('[data-bulk]').forEach(btn => {
-      btn.disabled = !hasSelection;
-    });
-  }
-
-  // 分页控件
-  function renderPagination(totalPages) {
-    const box = $('#pagination');
-    if (totalPages <= 1) { box.innerHTML = ''; return; }
-
-    const page = kwState.page;
-    let html = `<button class="page-btn" data-page="1" ${page === 1 ? 'disabled' : ''}>«</button>`;
-    html += `<button class="page-btn" data-page="${page - 1}" ${page === 1 ? 'disabled' : ''}>‹</button>`;
-    let startP = Math.max(1, page - 3);
-    let endP = Math.min(totalPages, startP + 6);
-    startP = Math.max(1, endP - 6);
-    for (let p = startP; p <= endP; p++) {
-      html += `<button class="page-btn ${p === page ? 'active' : ''}" data-page="${p}">${p}</button>`;
-    }
-    html += `<button class="page-btn" data-page="${page + 1}" ${page === totalPages ? 'disabled' : ''}>›</button>`;
-    html += `<button class="page-btn" data-page="${totalPages}" ${page === totalPages ? 'disabled' : ''}>»</button>`;
-    html += `<span class="page-info">第 ${page}/${totalPages} 页 · 每页 ${kwState.pageSize} 条</span>`;
-
-    box.innerHTML = html;
-    box.querySelectorAll('.page-btn:not(:disabled)').forEach(btn => {
-      btn.addEventListener('click', () => {
-        kwState.page = parseInt(btn.dataset.page);
-        loadKeywords();
-      });
-    });
-  }
-
-  // ===== 批量操作 =====
-  async function bulkSetEnabled(enabled) {
-    if (kwState.selected.size === 0) return;
-    const keywords = await Storage.getKeywords();
-    keywords.forEach(k => {
-      if (kwState.selected.has(k.id)) { k.enabled = enabled; k.updatedAt = Date.now(); }
-    });
-    await Storage.set({ keywords });
-    loadKeywords();
-    notifyContentRefresh();
-  }
-
-  async function bulkMoveGroup() {
-    if (kwState.selected.size === 0) return;
-    const groups = await Storage.getGroups();
-    // 用输入框选择目标分组：输入分组名，或留空表示移除分组
-    const nameList = groups.map(g => g.name).join('、') || '（无现有分组）';
-    const input = prompt(
-      `将选中的 ${kwState.selected.size} 个关键词移动至哪个分组？\n现有分组：${nameList}\n\n（输入分组名，或输入 0 移除其分组）`
-    );
-    if (input === null) return;
-    const targetName = input.trim();
-
-    let targetId = '';
-    if (targetName && targetName !== '0') {
-      const g = groups.find(x => x.name === targetName);
-      if (!g) {
-        alert('找不到该分组，请使用精确的分组名称。');
-        return;
-      }
-      targetId = g.id;
-    }
-
-    const keywords = await Storage.getKeywords();
-    keywords.forEach(k => {
-      if (kwState.selected.has(k.id)) {
-        k.groupId = targetId;
-        // 加入分组后自动使用分组颜色
-        const g = kwGroups.find(x => x.id === targetId);
-        if (g && g.bgColor) {
-          k.bgColor = g.bgColor;
-          k.textColor = g.textColor || '';
-        }
-        k.updatedAt = Date.now();
-      }
-    });
-    await Storage.set({ keywords });
-    loadKeywords();
-    notifyContentRefresh();
-  }
-
-  async function bulkDelete() {
-    const count = kwState.selected.size;
-    if (count === 0) return;
-    if (!confirm(`确定要删除选中的 ${count} 个关键词吗？此操作不可撤销。`)) return;
-    if (!confirm(`再次确认：真的要删除这 ${count} 个关键词吗？`)) return;
-
-    const keywords = await Storage.getKeywords();
-    const newKeywords = keywords.filter(k => !kwState.selected.has(k.id));
-    await Storage.set({ keywords: newKeywords });
-    kwState.selected.clear();
-    loadKeywords();
-    notifyContentRefresh();
-  }
-
-  function bulkClear() {
-    kwState.selected.clear();
-    loadKeywords();
-  }
-
-  // 帮助与隐私：悬浮目录（列出当前激活 tab 面板内的 h4 小节，点击平滑跳转）
-  function buildHelpToc() {
-    const toc = $('#helpToc');
-    const linksBox = $('#helpTocLinks');
-    const content = $('#section-help .help-content');
-    if (!toc || !linksBox || !content) return;
-    const panels = content.querySelector('.help-tab-panels');
-    const tabs = content.querySelectorAll('.help-tab');
-    if (!panels || !tabs.length) { toc.style.display = 'none'; return; }
-
-    function render(idx) {
-      linksBox.innerHTML = '';
-      const panel = panels.children[idx];
-      if (!panel) return;
-      const h4s = panel.querySelectorAll('h4');
-      if (h4s.length <= 1) { toc.style.display = 'none'; return; }
-      toc.style.display = '';
-      h4s.forEach((h4, i) => {
-        if (!h4.id) h4.id = 'help-h4-' + idx + '-' + i;
-        const a = document.createElement('a');
-        a.href = '#' + h4.id;
-        a.textContent = h4.textContent.trim();
-        a.addEventListener('click', (e) => {
-          e.preventDefault();
-          h4.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          linksBox.querySelectorAll('a').forEach(x => x.classList.remove('active'));
-          a.classList.add('active');
+    },
+    {
+      key: 'match', class: 'col-kw-match', label: '核心词匹配', width: 104,
+      title: '点击修改核心词匹配方式（在弹窗中勾选，保存即生效）',
+      render(kw) {
+        // 匹配规则以「胶囊 + 点开小弹窗」呈现（旧版 .kw-match-pill / .mr-chip 交互，保留）
+        return ui.MatchChip.create({
+          part: 'core',
+          rare: typeOf(kw) === 'rare',
+          value: kw,
+          onChange: (patch) => mutate(() => KH.Store.patchKeywords([kw.id], () => patch))
         });
-        linksBox.appendChild(a);
-      });
-    }
-
-    const activeIdx = Array.from(tabs).findIndex(t => t.classList.contains('active'));
-    render(activeIdx >= 0 ? activeIdx : 0);
-    tabs.forEach((t, i) => t.addEventListener('click', () => render(i)));
-  }
-
-  // 关键词表格：列宽拖拽调整（colgroup + 表头拖拽手柄）
-  function initTableResize() {
-    const table = $('#keywordTable');
-    if (!table || table.dataset.resized) return;
-    table.dataset.resized = '1';
-    const defs = [
-      { w: 34 }, { w: 18, pct: 1 }, { w: 100 }, { w: 96 }, { w: 100 }, { w: 16, pct: 1 },
-      { w: 52 }, { w: 92 }, { w: 15, pct: 1 }, { w: 60 }, { w: 90 }
-    ];
-    const cg = document.createElement('colgroup');
-    defs.forEach(d => {
-      const c = document.createElement('col');
-      c.style.width = (d.pct ? d.w + '%' : d.w + 'px');
-      cg.appendChild(c);
-    });
-    table.insertBefore(cg, table.firstChild);
-
-    const ths = table.querySelectorAll('thead th');
-    ths.forEach((th, i) => {
-      const col = cg.children[i];
-      const rz = document.createElement('div');
-      rz.className = 'th-resizer';
-      rz.title = '拖动调整列宽';
-      th.appendChild(rz);
-      rz.addEventListener('mousedown', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (!col) return;
-        const startX = e.clientX;
-        const startW = col.offsetWidth;
-        rz.classList.add('resizing');
-        document.body.style.userSelect = 'none';
-        function onMove(ev) {
-          const nw = Math.max(40, startW + (ev.clientX - startX));
-          col.style.width = nw + 'px';
-        }
-        function onUp() {
-          document.removeEventListener('mousemove', onMove);
-          document.removeEventListener('mouseup', onUp);
-          rz.classList.remove('resizing');
-          document.body.style.userSelect = '';
-        }
-        document.addEventListener('mousemove', onMove);
-        document.addEventListener('mouseup', onUp);
-      });
-    });
-  }
-
-  // 批量设置 备注 / 重要笔记
-  function bulkEditNote() {
-    if (kwState.selected.size === 0) return;
-    $('#bulkNoteTitle').textContent = `批量设置备注 / 重要笔记（${kwState.selected.size} 项）`;
-    $('#bulkNoteValue').value = '';
-    $('#bulkImpNoteValue').value = '';
-    $('#bulkNoteClear').checked = false;
-    $('#bulkImpNoteClear').checked = false;
-    $('#bulkImpNoteMark').checked = true;
-    $('#bulkNoteResult').textContent = '';
-    $('#bulkNoteModal').style.display = 'flex';
-  }
-  function closeBulkNote() {
-    $('#bulkNoteModal').style.display = 'none';
-  }
-  async function saveBulkNote() {
-    if (kwState.selected.size === 0) { closeBulkNote(); return; }
-    const noteText = $('#bulkNoteValue').value.trim();
-    const impText = $('#bulkImpNoteValue').value.trim();
-    const clearNote = $('#bulkNoteClear').checked;
-    const clearImp = $('#bulkImpNoteClear').checked;
-    const markImp = $('#bulkImpNoteMark').checked;
-    if (!noteText && !impText && !clearNote && !clearImp) {
-      $('#bulkNoteResult').textContent = '没有要应用的内容';
-      return;
-    }
-
-    const keywords = await Storage.getKeywords();
-    let changed = 0;
-    keywords.forEach(k => {
-      if (!kwState.selected.has(k.id)) return;
-      let ch = false;
-      if (clearNote) { if (k.note) { k.note = ''; ch = true; } }
-      else if (noteText) { k.note = noteText; ch = true; }
-      if (clearImp) { if (k.importantNote) { k.importantNote = ''; ch = true; } }
-      else if (impText) { k.importantNote = impText; if (markImp) k.important = true; ch = true; }
-      if (ch) { k.updatedAt = Date.now(); changed++; }
-    });
-    if (changed > 0) {
-      await Storage.set({ keywords });
-      loadKeywords();
-      notifyContentRefresh();
-    }
-    closeBulkNote();
-  }
-
-  // ===== 匹配方式（表格点击胶囊修改单条，v1.11.1） =====
-  function openMatchRuleModal(kw, part) {
-    editingMatchKw = kw;
-    part = part === 'title' ? 'title' : 'core';
-    const isCombo = !!(kw.cellVerify || kw.fetchLabels);
-    const labelParts = [];
-    if (kw.text) labelParts.push(`关键词：${kw.text}`);
-    if (kw.cellVerify) labelParts.push(`标题词：${kw.cellVerify}`);
-    $('#matchRuleKwLabel').textContent = labelParts.length ? labelParts.join('  ·  ') : (kw.text || '');
-    $('#mrCoreCase').checked = !!kw.caseSensitive;
-    $('#mrCoreWhole').checked = !!kw.wholeWord;
-    $('#mrCoreRegex').checked = !!kw.useRegex;
-    $('#mrTitleCase').checked = !!kw.cellVerifyCaseSensitive;
-    $('#mrTitleWhole').checked = (kw.cellVerifyMatchMode === 'exact');
-    $('#mrTitleRegex').checked = !!kw.cellVerifyUseRegex;
-    const cp = $('#matchRuleCorePanel');
-    const tp = $('#matchRuleTitlePanel');
-    if (isCombo && part === 'title') { cp.style.display = 'none'; tp.style.display = ''; $('#matchRuleTitle').textContent = '标题词匹配方式'; }
-    else { cp.style.display = ''; tp.style.display = 'none'; $('#matchRuleTitle').textContent = '核心词匹配方式'; }
-    $('#matchRuleModal').style.display = 'flex';
-  }
-  function closeMatchRuleModal() {
-    $('#matchRuleModal').style.display = 'none';
-    editingMatchKw = null;
-  }
-  async function saveMatchRule() {
-    if (!editingMatchKw) { closeMatchRuleModal(); return; }
-    const kw = editingMatchKw;
-    const isCombo = !!(kw.cellVerify || kw.fetchLabels);
-    const updates = {
-      caseSensitive: $('#mrCoreCase').checked,
-      wholeWord: $('#mrCoreWhole').checked,
-      useRegex: $('#mrCoreRegex').checked,
-    };
-    if (isCombo) {
-      updates.cellVerifyCaseSensitive = $('#mrTitleCase').checked;
-      updates.cellVerifyMatchMode = $('#mrTitleWhole').checked ? 'exact' : 'include';
-      updates.cellVerifyUseRegex = $('#mrTitleRegex').checked;
-    }
-    await Storage.updateKeyword(kw.id, updates);
-    closeMatchRuleModal();
-    loadKeywords();
-    notifyContentRefresh();
-  }
-
-  // ===== 批量设置匹配方式（v1.11.1） =====
-  function bulkEditMatchRule() {
-    if (kwState.selected.size === 0) return;
-    $('#bulkMatchRuleCount').textContent = `已选 ${kwState.selected.size} 项；勾选 = 设为开启（取消勾选 = 保持原样）`;
-    ['bmrCoreCase','bmrCoreWhole','bmrCoreRegex','bmrTitleCase','bmrTitleWhole','bmrTitleRegex'].forEach(id => { $('#' + id).checked = false; });
-    $('#bmrCoreClear').checked = false;
-    $('#bmrTitleClear').checked = false;
-    $('#bulkMatchRuleResult').textContent = '';
-    $('#bulkMatchRuleModal').style.display = 'flex';
-  }
-  function closeBulkMatchRule() {
-    $('#bulkMatchRuleModal').style.display = 'none';
-  }
-  async function saveBulkMatchRule() {
-    if (kwState.selected.size === 0) { closeBulkMatchRule(); return; }
-    const coreSet = { caseSensitive: $('#bmrCoreCase').checked, wholeWord: $('#bmrCoreWhole').checked, useRegex: $('#bmrCoreRegex').checked };
-    const titleSet = { case: $('#bmrTitleCase').checked, whole: $('#bmrTitleWhole').checked, regex: $('#bmrTitleRegex').checked };
-    const coreClear = $('#bmrCoreClear').checked;
-    const titleClear = $('#bmrTitleClear').checked;
-    const anyCore = coreSet.caseSensitive || coreSet.wholeWord || coreSet.useRegex || coreClear;
-    const anyTitle = titleSet.case || titleSet.whole || titleSet.regex || titleClear;
-    if (!anyCore && !anyTitle) {
-      $('#bulkMatchRuleResult').textContent = '没有要应用的内容';
-      return;
-    }
-    const keywords = await Storage.getKeywords();
-    let changed = 0;
-    keywords.forEach(k => {
-      if (!kwState.selected.has(k.id)) return;
-      let ch = false;
-      // 核心词匹配
-      if (coreClear) {
-        if (k.caseSensitive || k.wholeWord || k.useRegex) { k.caseSensitive = k.wholeWord = k.useRegex = false; ch = true; }
-      } else {
-        if (coreSet.caseSensitive && !k.caseSensitive) { k.caseSensitive = true; ch = true; }
-        if (coreSet.wholeWord && !k.wholeWord) { k.wholeWord = true; ch = true; }
-        if (coreSet.useRegex && !k.useRegex) { k.useRegex = true; ch = true; }
       }
-      // 标题词匹配（仅组合词）
-      const isCombo = !!(k.cellVerify || k.fetchLabels);
-      if (isCombo) {
-        if (titleClear) {
-          if (k.cellVerifyCaseSensitive || k.cellVerifyUseRegex || k.cellVerifyMatchMode === 'exact') {
-            k.cellVerifyCaseSensitive = false; k.cellVerifyUseRegex = false; k.cellVerifyMatchMode = 'include'; ch = true;
-          }
-        } else {
-          if (titleSet.case && !k.cellVerifyCaseSensitive) { k.cellVerifyCaseSensitive = true; ch = true; }
-          if (titleSet.whole && k.cellVerifyMatchMode !== 'exact') { k.cellVerifyMatchMode = 'exact'; ch = true; }
-          if (titleSet.regex && !k.cellVerifyUseRegex) { k.cellVerifyUseRegex = true; ch = true; }
-        }
+    },
+    {
+      /* 【列名去掉"(左格)"】用户实测指出："标题词（左格）事实上，上下匹配也是这里展示" ——
+       * 这一列同时承载左右格的标题词与上下格的表头词，写死"(左格)"是错的表述。
+       * 方向改由**前缀箭头**表达（见 render），一眼就能区分两种组合方式。 */
+      key: 'cellVerify', class: 'col-cell', label: '标题关键词', sortable: true, width: 124,
+      title: '单元格组合的标题词：左右格模式下是左格标题，上下格模式下是表头列名（前缀箭头标方向：← 左格 / ↑ 表头）',
+      render(kw) {
+        const v = String(kw.cellVerify || '').trim();
+        if (!v) return h('span', { class: 'kh-dim', text: '—' });
+        const tb = kw.comboAxis === 'tb';
+        /* 箭头语义：标题词**在哪个方位** —— ← 左格（左右格模式）/ ↑ 表头（上下格模式）。
+         * 与核心词列解耦：方向属于"这一对"，不属于核心词自己。 */
+        const arrow = h('span', {
+          class: 'kh-axis-arrow' + (tb ? ' is-tb' : ''),
+          text: tb ? '↑' : '←',
+          title: tb ? '上下格：这个词是表头列名，核心词命中其下数据行的任意一行即算命中'
+            : '左右格：这个词是左格标题，右侧单元格须含核心词'
+        });
+        return h('span', { class: 'kh-cell-label' }, [arrow, h('span', { text: v })]);
       }
-      if (ch) { k.updatedAt = Date.now(); changed++; }
-    });
-    if (changed > 0) {
-      await Storage.set({ keywords });
-      loadKeywords();
-      notifyContentRefresh();
-      $('#bulkMatchRuleResult').textContent = `已更新 ${changed} 项`;
-      setTimeout(closeBulkMatchRule, 600);
-    } else {
-      $('#bulkMatchRuleResult').textContent = '所选词均已符合目标设置';
-      setTimeout(closeBulkMatchRule, 600);
-    }
-  }
-
-  // ===== 高亮颜色（表格点击颜色列修改，v1.11.1） =====
-  function openColorModal(kw) {
-    editingColorKw = kw;
-    const labels = [];
-    if (kw.text) labels.push(`关键词：${kw.text}`);
-    if (kw.cellVerify) labels.push(`标题词：${kw.cellVerify}`);
-    $('#kwColorKwLabel').textContent = labels.length ? labels.join('  ·  ') : (kw.text || '');
-    const style = kwState.highlightStyle || Storage.defaults.highlightStyle || { defaultBgColor: '#ff9500', defaultTextColor: '#000000' };
-    const grp = kwGroups.find(g => g.id === kw.groupId) || null;
-    const bg = kw.bgColor || (grp && grp.bgColor) || style.defaultBgColor || '#ff9500';
-    const tx = kw.textColor || (grp && grp.textColor) || style.defaultTextColor || '#000000';
-    const colSrc = kw.bgColor ? '来自关键词' : (grp && grp.bgColor) ? '来自分组' : '全局默认';
-    $('#kwColorBg').value = bg;
-    $('#kwColorBgText').value = bg;
-    $('#kwColorTxt').value = tx;
-    $('#kwColorTxtText').value = tx;
-    $('#kwColorSource').textContent = `当前生效颜色来源：${colSrc}`;
-    $('#kwColorReset').checked = false;
-    $('#kwColorModal').style.display = 'flex';
-  }
-  function normalizeHex(v) {
-    v = (v || '').trim();
-    if (/^#?[0-9a-fA-F]{3}$/.test(v)) v = '#' + v.replace(/^#/, '').split('').map(c => c + c).join('');
-    if (!/^#[0-9a-fA-F]{6}$/.test(v) && !/^#[0-9a-fA-F]{8}$/.test(v)) return null;
-    return v.toLowerCase();
-  }
-  function closeColorModal() { $('#kwColorModal').style.display = 'none'; editingColorKw = null; }
-  async function saveColorModal() {
-    if (!editingColorKw) { closeColorModal(); return; }
-    const kw = editingColorKw;
-    const reset = $('#kwColorReset').checked;
-    const updates = {};
-    if (reset) {
-      updates.bgColor = '';
-      updates.textColor = '';
-    } else {
-      const bg = normalizeHex($('#kwColorBgText').value || $('#kwColorBg').value);
-      const tx = normalizeHex($('#kwColorTxtText').value || $('#kwColorTxt').value);
-      if (!bg || !tx) { $('#kwColorSource').textContent = '颜色格式不正确，请输入如 #ff9500 的 hex 值'; return; }
-      updates.bgColor = bg;
-      updates.textColor = tx;
-    }
-    await Storage.updateKeyword(kw.id, updates);
-    closeColorModal();
-    loadKeywords();
-    notifyContentRefresh();
-  }
-
-  // 根据勾选状态显示/隐藏 重要笔记输入（减少弹窗杂乱；单元格期望值常显，无需切换）
-  function toggleKwSections() {
-    const nw = $('#importantNoteWrap');
-    if (nw) nw.style.display = $('#editKwImportant').checked ? 'block' : 'none';
-    // v1.8.16 勾选/取消「重要」联动展开/收起对应折叠区（方便所见即所得编辑）
-    const impSec = $('#kwImportantSection');
-    if (impSec) impSec.classList.toggle('closed', !$('#editKwImportant').checked);
-  }
-
-  // v1.50.0：组合方向切换 → 更新单元格组合区与匹配规则面板的文案（左/右 vs 上/下）
-  function updateComboAxisLabels() {
-    let tb = false;
-    const sel = $('#editKwComboAxis');
-    if (sel) tb = sel.value === 'tb';
-    const lbl = $('#lblKwColKey');
-    if (lbl) lbl.textContent = tb ? '列关键词 (表头标题)' : '标题关键词 (左格)';
-    // 单元格组合区「标题词匹配规则」面板标题
-    const cellSec = $('#kwCellSection');
-    if (cellSec) {
-      const t = cellSec.querySelector('.match-panel-title');
-      if (t) t.textContent = tb ? '列关键词匹配规则' : '标题词匹配规则';
-    }
-    // 基本区「匹配规则」面板标题（作用于：lr=核心词 / tb=行关键词）
-    const baseCase = $('#editKwCaseSensitive');
-    if (baseCase) {
-      const panel = baseCase.closest('.match-panel');
-      if (panel) {
-        const t = panel.querySelector('.match-panel-title');
-        if (t) t.textContent = tb ? '行关键词匹配规则' : '匹配规则';
+    },
+    {
+      key: 'titleMatch', class: 'col-title-match', label: '标题词匹配', width: 104,
+      title: '点击修改标题词匹配方式（需勾选「单元格组合」，在弹窗中勾选）',
+      render(kw) {
+        if (!(kw.cellVerifyEnabled && kw.cellVerify)) return h('span', { class: 'kh-dim', text: '—' });
+        return ui.MatchChip.create({
+          part: 'title', value: kw,
+          onChange: (patch) => mutate(() => KH.Store.patchKeywords([kw.id], () => patch))
+        });
       }
-    }
-  }
-
-  // ========== 重要笔记富文本编辑（v1.8.16，所见即所得） ==========
-  // 富文本笔记编辑器的“当前活动实例”：关键词编辑 / 分组编辑共用同一套所见即所得命令，
-  // 打开哪个弹窗就把 curNoteEd 指向哪个编辑器（两个弹窗不会同时打开）。默认回退到关键词编辑器。
-  let curNoteEd = null;
-  function kwe() { return curNoteEd || $('#editKwImportantNote'); }
-
-  // markdown → 编辑区 HTML（打开弹窗/加载已有内容）
-  function setNoteEditorHTML(md) {
-    const ed = kwe();
-    if (!ed) return;
-    ed.innerHTML = (md && String(md).trim()) ? Utils.sanitizeHTML(md) : '';
-  }
-
-  // 编辑区 HTML → markdown（保存时序列化，只认白名单结构，其余按纯文本）
-  function mdFromNoteEditor() {
-    const ed = kwe();
-    if (!ed) return '';
-    const parts = [];
-    ed.childNodes.forEach(c => noteNodeToMD(c, parts));
-    let md = parts.join('');
-    md = md.replace(/\n{3,}/g, '\n\n').replace(/[ \t]+\n/g, '\n').replace(/\n +/g, '\n').trim();
-    return md;
-  }
-
-  function noteNodeToMD(node, out) {
-    if (node.nodeType === Node.TEXT_NODE) { out.push(node.textContent); return; }
-    if (node.nodeType !== Node.ELEMENT_NODE) return;
-    const t = node.tagName.toLowerCase();
-    const kids = Array.from(node.childNodes);
-    switch (t) {
-      case 'br': out.push('\n'); return;
-      case 'img': {
-        const src = node.getAttribute('src') || '';
-        const alt = node.getAttribute('alt') || '';
-        out.push('![' + alt + '](' + src + ')');
-        return;
+    },
+    {
+      key: 'imp', class: 'col-impnote', label: '重要笔记', width: 78,
+      render(kw) {
+        if (!effectiveImportant(kw)) return h('span', { class: 'kh-dim', text: '—' });
+        const g = groupOf(kw.groupId);
+        const fromGroup = !kw.important && g && g.important;
+        return h('span', {
+          class: 'imp-badge', text: '📌 重要',
+          title: fromGroup ? ('由分组「' + (g.name || '') + '」标记为重要') : '该关键词标记为重要'
+        });
       }
-      case 'b': case 'strong': out.push('**'); kids.forEach(c => noteNodeToMD(c, out)); out.push('**'); return;
-      case 'i': case 'em': out.push('*'); kids.forEach(c => noteNodeToMD(c, out)); out.push('*'); return;
-      case 'a': {
-        const href = node.getAttribute('href') || '';
-        // v1.8.20: 链接文字就是网址本身（纯 URL 自动转成的链接）→ 保留纯网址，不再包成 [url](url) 弄脏笔记
-        if (href && kids.length === 1 && kids[0].nodeType === Node.TEXT_NODE && kids[0].textContent === href) {
-          out.push(href);
-          return;
-        }
-        out.push('['); kids.forEach(c => noteNodeToMD(c, out)); out.push('](' + href + ')');
-        return;
-      }
-      case 'table': out.push('\n' + noteTableToMD(node) + '\n'); return;
-      case 'p': case 'div': out.push('\n'); kids.forEach(c => noteNodeToMD(c, out)); out.push('\n'); return;
-      default: kids.forEach(c => noteNodeToMD(c, out));
-    }
-  }
-
-  function noteTableToMD(tbl) {
-    // v1.11.1：单元格内递归支持加粗/**、斜体/*、图片、链接（此前只取 textContent，表格内的加粗/斜体保存后会丢）
-    const tdToMD = (td) => {
-      let s = '';
-      td.childNodes.forEach(c => { s += tdNodeToMD(c); });
-      return s.trim();
-    };
-    // 单元格内单个节点 → markdown 片段（递归处理嵌套粗/斜/链接/图片）
-    const tdNodeToMD = (node) => {
-      if (node.nodeType === Node.TEXT_NODE) return node.textContent;
-      if (node.nodeType !== Node.ELEMENT_NODE) return '';
-      const ct = node.tagName.toLowerCase();
-      switch (ct) {
-        case 'br': return ' ';
-        case 'img': return '![' + (node.getAttribute('alt') || '') + '](' + (node.getAttribute('src') || '') + ')';
-        case 'b': case 'strong': return '**' + Array.from(node.childNodes).map(tdNodeToMD).join('') + '**';
-        case 'i': case 'em': return '*' + Array.from(node.childNodes).map(tdNodeToMD).join('') + '*';
-        case 'a': {
-          const h = node.getAttribute('href') || '';
-          const txt = node.textContent || '';
-          if (h && txt === h) return h; // 纯网址链接保留纯网址（与段落处理一致）
-          return '[' + txt + '](' + h + ')';
-        }
-        default: return Array.from(node.childNodes).map(tdNodeToMD).join('');
-      }
-    };
-    const rows = [];
-    tbl.querySelectorAll('tr').forEach(tr => {
-      const cells = Array.from(tr.children).map(tdToMD);
-      rows.push(cells.join(' | '));
-    });
-    if (rows.length) {
-      const isSep = rows.length > 1 && /^:?-+\s*\|/.test(rows[1]);
-      if (!isSep) rows.splice(1, 0, rows[0].split('|').map(() => '---').join(' | '));
-    }
-    return rows.map(r => '| ' + r + ' |').join('\n');
-  }
-
-  // 在光标处插入图片
-  function insertNoteImage() {
-    const ed = kwe();
-    if (!ed) return;
-    const url = (window.prompt('输入图片地址（https:// 或 data: 图片）：') || '').trim();
-    if (!url) return;
-    if (!/^(https?:\/\/|data:image\/)/i.test(url)) { alert('仅支持 http(s) 或 data: 图片地址'); return; }
-    const img = document.createElement('img');
-    img.src = url; img.alt = '';
-    const sel = window.getSelection();
-    let inserted = false;
-    if (sel && sel.rangeCount && ed.contains(sel.anchorNode)) {
-      const r = sel.getRangeAt(0);
-      r.deleteContents();
-      r.insertNode(img);
-      r.setStartAfter(img); r.collapse(true);
-      sel.removeAllRanges(); sel.addRange(r);
-      inserted = true;
-    }
-    if (!inserted) ed.appendChild(img);
-    ed.focus();
-  }
-
-  // v1.8.18 表格行列增删：记录光标/点击所在单元格
-  let curTableCell = null;
-  function handleCellClick(t) {
-    let n = t && t.nodeType === 1 ? t : null; curTableCell = null;
-    while (n) { if (n.tagName === 'TD' || n.tagName === 'TH') { curTableCell = n; return; } n = n.parentElement; }
-  }
-  function trackTableCell() {
-    // 只更新到新的表格单元格；若光标不在表格内不主动清空（避免点击工具栏按钮时的 blur/selection 时序丢失已选中的单元格）
-    const sel = window.getSelection();
-    if (!sel || !sel.rangeCount) return;
-    let n = sel.anchorNode;
-    if (n && n.nodeType === Node.TEXT_NODE) n = n.parentElement;
-    while (n && n.nodeType === Node.ELEMENT_NODE) {
-      if (n.tagName === 'TD' || n.tagName === 'TH') { curTableCell = n; return; }
-      n = n.parentElement;
-    }
-  }
-  function tableInsertRow(after) {
-    const td = curTableCell; if (!td) { alert('请先点击表格里的单元格'); return; }
-    const tr = td.closest('tr'); if (!tr) return;
-    const nr = tr.cloneNode(false);
-    Array.from(tr.cells).forEach(c => { const nc = document.createElement(c.tagName.toLowerCase()); nc.innerHTML = '<br>'; nr.appendChild(nc); });
-    if (after) tr.after(nr); else tr.before(nr);
-  }
-  function tableDeleteRow() {
-    const td = curTableCell; if (!td) return;
-    const tr = td.closest('tr'); const tbl = tr.closest('table'); if (!tr || !tbl) return;
-    if (tbl.rows.length <= 1) { tbl.remove(); curTableCell = null; return; }
-    tr.remove();
-  }
-  function tableInsertCol(after) {
-    const td = curTableCell; if (!td) { alert('请先点击表格里的单元格'); return; }
-    const tr = td.parentElement; const tbl = td.closest('table'); if (!tr || !tbl) return;
-    const idx = Array.prototype.indexOf.call(tr.cells, td);
-    tbl.querySelectorAll('tr').forEach(r => {
-      const ref = r.cells[idx];
-      const nc = document.createElement((ref ? ref.tagName : 'td').toLowerCase()); nc.innerHTML = '<br>';
-      if (ref) { if (after) ref.after(nc); else r.insertBefore(nc, ref); }
-      else r.appendChild(nc);
-    });
-  }
-  function tableDeleteCol() {
-    const td = curTableCell; if (!td) return;
-    const tr = td.parentElement; const tbl = td.closest('table'); if (!tr || !tbl) return;
-    const idx = Array.prototype.indexOf.call(tr.cells, td);
-    tbl.querySelectorAll('tr').forEach(r => { if (r.cells[idx]) r.deleteCell(idx); });
-    if (tbl.rows.length === 0) tbl.remove();
-    curTableCell = null;
-  }
-  function tableDeleteAll() {
-    const td = curTableCell; if (!td) return;
-    const tbl = td.closest('table'); if (!tbl) return;
-    tbl.remove(); curTableCell = null;
-  }
-
-  // v1.8.20：移除编辑区里的链接（保留其文字为纯文本），用于“删除链接”
-  function removeNoteLinkKeepText(a) {
-    const r = document.createRange();
-    r.selectNodeContents(a);
-    const frag = r.extractContents();
-    a.replaceWith(frag);
-    kwe().focus();
-  }
-
-  // v1.8.20：点击编辑区里的链接 → 修改 / 删除（防一点就跳走；历史笔记里的超链接重开后也能这样调整）
-  function editNoteLink(a) {
-    const curText = a.textContent || '';
-    const curHref = a.getAttribute('href') || '';
-    const nText = window.prompt('修改链接文字（清空 = 删除该超链接，文字会保留）', curText);
-    if (nText === null) return;
-    const text = nText.trim();
-    if (!text) { removeNoteLinkKeepText(a); kwe().focus(); return; }
-    const nHref = window.prompt('链接地址（https://…）', curHref);
-    if (nHref === null) return;
-    const href = nHref.trim();
-    if (!href || !/^(https?:|mailto:|tel:|ftp:)/i.test(href)) {
-      if (!href) { removeNoteLinkKeepText(a); kwe().focus(); return; }
-      alert('仅支持 http(s) / mailto / tel 等链接地址');
-      return;
-    }
-    a.textContent = text;
-    a.setAttribute('href', href);
-    a.setAttribute('target', '_blank');
-    a.setAttribute('rel', 'noopener noreferrer');
-    kwe().focus();
-  }
-
-  // v1.8.20：在编辑区光标处插入超链接（先选中文字则直接作为链接文字），所见即所得
-  function insertNoteLink() {
-    const ed = kwe();
-    if (!ed) return;
-    const sel = window.getSelection();
-    let text = '';
-    const hasSel = sel && sel.rangeCount && ed.contains(sel.anchorNode) && sel.toString().trim();
-    if (!hasSel) {
-      const r0 = window.prompt('链接文字（可先选中一段文字再点此按钮，会直接用它）：', '');
-      if (r0 === null) return;
-      text = r0.trim();
-    } else {
-      text = sel.toString().trim();
-    }
-    const urlR = window.prompt('链接地址（如 https://example.com）：', '');
-    if (urlR === null) return;
-    const url = urlR.trim();
-    if (!url) { alert('请输入链接地址'); return; }
-    if (!/^(https?:|mailto:|tel:|ftp:)/i.test(url) && url !== '#') {
-      alert('仅支持 http(s) / mailto / tel 等链接地址');
-      return;
-    }
-    const label = text || url;
-    const a = document.createElement('a');
-    a.href = url;
-    a.target = '_blank';
-    a.rel = 'noopener noreferrer';
-    a.textContent = label;
-    if (sel && sel.rangeCount && ed.contains(sel.anchorNode)) {
-      const r = sel.getRangeAt(0);
-      r.deleteContents();
-      r.insertNode(a);
-      r.setStartAfter(a); r.collapse(true);
-      sel.removeAllRanges(); sel.addRange(r);
-    } else {
-      ed.appendChild(a);
-    }
-    ed.focus();
-  }
-
-  // 点图 → 修改/删除；点链接 → 修改/删除（v1.8.20）
-  function handleNoteEditorClick(e) {
-    handleCellClick(e.target);
-    if (curTableCell && curTableCell.closest('table')) positionTableHandle();
-    else hideTableHandle();
-    const t = e.target;
-    // v1.8.20：优先处理链接（含表格单元格里的链接），点击可修改/删除，不触发跳转
-    const a = t && t.closest ? t.closest('a') : null;
-    if (a && kwe().contains(a)) {
-      e.preventDefault();
-      editNoteLink(a);
-      return;
-    }
-    if (!t || t.tagName !== 'IMG') return;
-    e.preventDefault();
-    const cur = t.getAttribute('src') || '';
-    const inp = window.prompt('修改 / 删除图片\n· 修改：输入新的图片地址\n· 删除：清空留空后点确定', cur);
-    if (inp === null) return;
-    const v = inp.trim();
-    if (!v) { t.remove(); kwe().focus(); return; }
-    if (!/^(https?:\/\/|data:image\/)/i.test(v)) { alert('仅支持 http(s) 或 data: 图片地址'); return; }
-    t.setAttribute('src', v);
-    kwe().focus();
-  }
-
-  // 粘贴：只插入纯文本（防带入脏 HTML）
-  function handleNoteEditorPaste(e) {
-    e.preventDefault();
-    const text = (e.clipboardData || window.clipboardData).getData('text/plain');
-    const ed = kwe();
-    const sel = window.getSelection();
-    if (sel && sel.rangeCount && ed.contains(sel.anchorNode)) {
-      const r = sel.getRangeAt(0);
-      r.deleteContents();
-      const n = document.createTextNode(text);
-      r.insertNode(n);
-      r.setStartAfter(n); r.collapse(true);
-      sel.removeAllRanges(); sel.addRange(r);
-    } else {
-      ed.append(document.createTextNode(text));
-    }
-    ed.focus();
-  }
-
-  // v1.8.19 表格右下角 [+ −] 手柄：跟随表格右下角，增删行/列/整表
-  let thHandle = null, thMenuEl = null;
-  function thEls() {
-    if (!thHandle) { thHandle = document.getElementById('kwTableHandle'); thMenuEl = document.getElementById('thMenu'); }
-    return thHandle;
-  }
-  function positionTableHandle() {
-    const h = thEls(); if (!h) return;
-    const tb = curTableCell ? curTableCell.closest('table') : null;
-    if (!tb || !kwe().contains(tb)) { hideTableHandle(); return; }
-    const lastRow = tb.rows[tb.rows.length - 1];
-    const lastCell = lastRow.cells[lastRow.cells.length - 1];
-    const c = lastCell.getBoundingClientRect();
-    h.style.left = c.right + 4 + 'px';
-    h.style.top = c.bottom - 6 + 'px';
-    h.style.display = 'flex';
-  }
-  function hideTableHandle() {
-    const h = thEls(); if (!h) return;
-    h.style.display = 'none';
-    if (thMenuEl) thMenuEl.style.display = 'none';
-  }
-  function showTableMenu(plus) {
-    const h = thEls(); if (!h) return;
-    if (!thMenuEl) return;
-    const items = plus ? [
-      { label: '＋ 在下方加一行', fn: () => { tableInsertRow(true); } },
-      { label: '＋ 在右侧加一列', fn: () => { tableInsertCol(true); } }
-    ] : [
-      { label: '－ 删除该行', fn: () => { tableDeleteRow(); } },
-      { label: '－ 删除该列', fn: () => { tableDeleteCol(); } },
-      { label: '－ 删除整表', fn: () => { tableDeleteAll(); } }
-    ];
-    thMenuEl.innerHTML = '';
-    items.forEach(it => {
-      const d = document.createElement('div');
-      d.className = 'th-menu-item';
-      d.textContent = it.label;
-      d.addEventListener('click', (e) => { e.stopPropagation(); it.fn(); hideTableHandle(); });
-      thMenuEl.appendChild(d);
-    });
-    thMenuEl.style.display = 'block';
-  }
-  function initTableHandle() {
-    const h = thEls(); if (!h) return;
-    document.getElementById('thBtnPlus')?.addEventListener('click', (e) => { e.stopPropagation(); showTableMenu(true); });
-    document.getElementById('thBtnMinus')?.addEventListener('click', (e) => { e.stopPropagation(); showTableMenu(false); });
-    // 点击编辑区/文档其它处 → 隐藏手柄（点在表格或手柄内不隐藏）
-    document.addEventListener('click', (e) => {
-      if (h.contains(e.target)) return;
-      let n = e.target; let inTbl = false;
-      while (n) { if (n.tagName === 'TABLE') { inTbl = true; break; } n = n.parentElement; }
-      if (!inTbl) hideTableHandle();
-    });
-  }
-
-  // v1.8.17 工具栏：加粗 / 斜体（选中文字即见效）
-  function runNoteCmd(cmd) {
-    const ed = kwe();
-    if (!ed) return;
-    ed.focus();
-    try { document.execCommand(cmd, false, null); } catch (e) {}
-  }
-
-  // v1.8.17 工具栏：插入表格（所见即所得）
-  function insertNoteTable() {
-    const ed = kwe();
-    if (!ed) return;
-    const rowsInput = window.prompt('表格行数（含表头）：', '2');
-    if (rowsInput === null) return; // 用户取消 → 不生成表格
-    const colsInput = window.prompt('表格列数：', '3');
-    if (colsInput === null) return; // 用户取消 → 不生成表格
-    const rows = Math.min(Math.max(parseInt(rowsInput, 10) || 2, 1), 20);
-    const cols = Math.min(Math.max(parseInt(colsInput, 10) || 3, 1), 10);
-    let h = '<table><tbody>';
-    h += '<tr>' + ('<th>表头</th>').repeat(cols) + '</tr>';
-    for (let r = 1; r < rows; r++) h += '<tr>' + ('<td>内容</td>').repeat(cols) + '</tr>';
-    h += '</tbody></table><p></p>';
-    ed.focus();
-    try { document.execCommand('insertHTML', false, h); } catch (e) { ed.insertAdjacentHTML('beforeend', h); }
-  }
-
-  // v1.12.0：罕见字规则提示（输入 hjz# 时显示提示 + 禁用无意义的文本匹配开关）
-  function updateRareHint() {
-    const input = $('#editKwText');
-    const hint = $('#editKwRareHint');
-    if (!input || !hint) return;
-    const isRare = (input.value || '').trim() === (Storage.RARE_KEYWORD || 'hjz#');
-    hint.style.display = isRare ? 'block' : 'none';
-    ['editKwCaseSensitive', 'editKwWholeWord', 'editKwUseRegex'].forEach(function (id) {
-      const el = $('#' + id);
-      if (el) el.disabled = isRare;
-    });
-  }
-  function updateRareHintBinding() {
-    const input = $('#editKwText');
-    if (!input || input._khRareBound) return;
-    input.addEventListener('input', updateRareHint);
-    input._khRareBound = true;
-  }
-
-  function showKeywordModal(keyword = null) {
-    hideTableHandle();
-    editingKeywordId = keyword ? keyword.id : null;
-    editingKeyword = keyword || null;
-    const modal = $('#keywordModal');
-    $('#keywordModalTitle').textContent = keyword ? '编辑关键词' : '添加关键词';
-    
-    curNoteEd = $('#editKwImportantNote');
-    $('#editKwText').value = keyword?.text || '';
-    $('#editKwNote').value = keyword?.note || '';
-    $('#editKwBgColor').value = keyword?.bgColor || '#ff9500';
-    $('#editKwTextColor').value = keyword?.textColor || '#000000';
-    $('#editKwCaseSensitive').checked = keyword?.caseSensitive || false;
-    $('#editKwWholeWord').checked = keyword?.wholeWord || false;
-    $('#editKwUseRegex').checked = keyword?.useRegex || false;
-    $('#editKwImportant').checked = keyword?.important || false;
-    $('#editKwImportantNote').innerHTML = '';
-    setNoteEditorHTML(keyword?.importantNote || '');
-    $('#editKwImgSize').value = keyword?.imgSize || '';
-    // v1.14.0【2】重要笔记底色：勾选=复用该关键词高亮底色，不再单独配色
-    if ($('#editKwImpBgEnable')) $('#editKwImpBgEnable').checked = !!(keyword && keyword.impNoteUseHlColor);
-    // v1.8.17 编辑器内重要笔记图片大小与「命中时展示」同步（默认 70px，可用该词「图片缩略尺寸」覆盖）
-    const kweImg = kwe();
-    if (kweImg) kweImg.style.setProperty('--kh-note-img-size', (parseInt(keyword?.imgSize, 10) || 70) + 'px');
-    $('#editKwCellVerifyValue').value = keyword?.cellVerify || '';
-    $('#editKwCellVerifyExact').checked = (keyword?.cellVerifyMatchMode === 'exact');
-    $('#editKwCellVerifyCase').checked = keyword?.cellVerifyCaseSensitive || false;
-    $('#editKwCellVerifyRegex').checked = keyword?.cellVerifyUseRegex || false;
-    $('#editKwFetchLabels').value = keyword?.fetchLabels || '';
-    // v1.50.0 组合方向回显
-    if ($('#editKwComboAxis')) $('#editKwComboAxis').value = (keyword && keyword.comboAxis === 'tb') ? 'tb' : 'lr';
-    updateComboAxisLabels();
-
-    // 根据勾选状态显示/隐藏 单元格标注细节 与 重要笔记输入
-    toggleKwSections();
-
-    // v1.8.13 编辑已有关键词时，按内容自动展开对应折叠区（无内容保持默认折叠）
-    const hasCell = !!(keyword && (keyword.cellVerify || keyword.fetchLabels));
-    const hasImp  = !!(keyword && (keyword.important || keyword.importantNote || keyword.impNoteUseHlColor));
-    const cellSec = $('#kwCellSection');
-    const impSec  = $('#kwImportantSection');
-    if (cellSec) cellSec.classList.toggle('closed', !hasCell);
-    if (impSec)  impSec.classList.toggle('closed', !hasImp);
-
-    // 加载分组选项
-    loadGroupOptions(keyword?.groupId || '');
-
-    // 若关键词已属于有颜色的分组，颜色输入框自动改为分组颜色
-    if (keyword?.groupId) {
-      const g = allGroups.find(x => x.id === keyword.groupId);
-      if (g && g.bgColor) {
-        $('#editKwBgColor').value = g.bgColor;
-        $('#editKwTextColor').value = g.textColor || '#000000';
-      }
-    }
-    
-    updateRareHintBinding();
-    updateRareHint();
-    modal.style.display = 'flex';
-    fitModalFooter();
-    $('#editKwText').focus();
-  }
-
-  // 让「取消/保存」固定在弹窗底部（v1.7.0：不再限制 body 高度、避免出现滚动条，
-  // 弹窗随内容增高；仅保留 dialog ≤94% 视口的上限作为极端兜底）
-  function fitModalFooter() {
-    const dlg = document.querySelector('#keywordModal .modal-dialog');
-    const body = document.querySelector('#keywordModal .modal-body');
-    if (!dlg || !body) return;
-    const maxH = Math.round(window.innerHeight * 0.94);
-    dlg.style.maxHeight = maxH + 'px';
-    body.style.maxHeight = '';
-    body.scrollTop = 0;
-  }
-
-  async function loadGroupOptions(selectedId = '') {
-    const groups = await Storage.getGroups();
-    allGroups = groups;
-    const select = $('#editKwGroup');
-    select.innerHTML = '<option value="">无分组</option>';
-    groups.forEach(g => {
-      select.innerHTML += `<option value="${g.id}" ${g.id === selectedId ? 'selected' : ''}>${escapeHtml(g.name)}</option>`;
-    });
-    // 选择分组时自动应用分组颜色
-    select.onchange = () => applyGroupColorToForm();
-  }
-
-  // 将当前选中分组的颜色应用到颜色输入框
-  function applyGroupColorToForm() {
-    const gid = $('#editKwGroup').value;
-    if (!gid) return;
-    const g = allGroups.find(x => x.id === gid);
-    if (g && g.bgColor) {
-      $('#editKwBgColor').value = g.bgColor;
-      $('#editKwTextColor').value = g.textColor || '#000000';
-    }
-  }
-
-  async function saveKeyword() {
-    const text = $('#editKwText').value.trim();
-    // 特殊「仅抓取」模式(v1.8.6)：关键词可留空，但须在「单元格组合」填写标题关键词(左格) + 抓取后续字段
-    const ceValue = $('#editKwCellVerifyValue').value.trim();
-    const fetchLabelsVal = $('#editKwFetchLabels').value.trim();
-    const fetchOnlyMode = !!(ceValue && fetchLabelsVal); // 关键词留空时合法模式
-    if (!text && !fetchOnlyMode) {
-      alert('请输入关键词文字（或勾选「单元格特别标注」并同时填写标题关键词与抓取后续字段，以「仅抓取」模式使用）');
-      return;
-    }
-
-    let bgColor = $('#editKwBgColor').value;
-    let textColor = $('#editKwTextColor').value;
-    const groupId = $('#editKwGroup').value;
-
-    // 同组颜色统一：保存时若属于有颜色的分组，强制使用分组颜色
-    const g = allGroups.find(x => x.id === groupId);
-    if (g && g.bgColor) {
-      bgColor = g.bgColor;
-      textColor = g.textColor || '#000000';
-    }
-
-    const data = {
-      text,
-      note: $('#editKwNote').value.trim(),
-      groupId,
-      bgColor,
-      textColor,
-      enabled: editingKeyword ? (editingKeyword.enabled !== false) : true,
-      caseSensitive: $('#editKwCaseSensitive').checked,
-      wholeWord: $('#editKwWholeWord').checked,
-      useRegex: $('#editKwUseRegex').checked,
-      important: $('#editKwImportant').checked,
-      importantNote: mdFromNoteEditor(),
-      imgSize: (function(){ const v=($('#editKwImgSize').value||'').trim(); if(!v) return ''; const n=parseInt(v,10); return (!isNaN(n)&&n>=40&&n<=600)? n : ''; })(),
-      // v1.14.0【2】重要笔记底色：勾选=复用该关键词高亮底色
-      impNoteUseHlColor: !!($('#editKwImpBgEnable') && $('#editKwImpBgEnable').checked),
-      cellVerifyEnabled: !!$('#editKwCellVerifyValue').value.trim(),
-      cellVerify: $('#editKwCellVerifyValue').value.trim(),
-      // v1.11.0【标题词独立匹配】组合词区三开关仅作用于标题词（左格 cellVerify）：
-      // 全词=标题词精确匹配、区分大小写、用正则（不再作用于核心词整格相等）
-      cellVerifyMatchMode: $('#editKwCellVerifyExact').checked ? 'exact' : 'include',
-      cellVerifyCaseSensitive: $('#editKwCellVerifyCase').checked,
-      cellVerifyUseRegex: $('#editKwCellVerifyRegex').checked,
-      // v1.50.0 组合方向：lr=左右格(默认) / tb=上下格（列关键词×行关键词）
-      comboAxis: ($('#editKwComboAxis') && $('#editKwComboAxis').value === 'tb') ? 'tb' : 'lr',
-      // 核心词匹配用基本区开关（caseSensitive/wholeWord/useRegex），见 _compileKeywords/cellVerifyPass
-      fetchLabels: $('#editKwFetchLabels').value.trim()
-    };
-
-    try {
-      if (editingKeywordId) {
-        await Storage.updateKeyword(editingKeywordId, data);
-      } else {
-        await Storage.addKeyword(data);
-      }
-      closeKeywordModal();
-      loadKeywords();
-      notifyContentRefresh();
-    } catch (err) {
-      alert('保存失败：' + err.message);
-    }
-  }
-
-  function closeKeywordModal() {
-    $('#keywordModal').style.display = 'none';
-    editingKeywordId = null;
-    curNoteEd = null; // 关闭后回到默认关键词编辑器
-    // v1.6.37 独立窗口「?add」模式：关弹窗即关窗口
-    if (window.KH_ADD_MODE) { try { window.close(); } catch (e) {} }
-  }
-
-  // ========== 分组管理 ==========
-  async function loadGroups() {
-    const groups = await Storage.getGroups();
-    const keywords = await Storage.getKeywords();
-    const list = $('#groupList');
-
-    if (groups.length === 0) {
-      list.innerHTML = `
-        <div class="empty-state">
-          <span class="empty-icon">📁</span>
-          <p>还没有创建分组</p>
-        </div>
-      `;
-      return;
-    }
-
-    list.innerHTML = groups.map(g => {
-      const count = keywords.filter(k => k.groupId === g.id).length;
-      const colorDot = g.bgColor
-        ? `<span class="group-color-dot" style="background:${escapeHtml(g.bgColor)};" title="高亮色 ${escapeHtml(g.bgColor)}"></span>`
-        : '';
-      const impMark = g.important ? ' <span class="imp-badge" title="此分组为重要，组内关键词命中时弹出置顶笔记">📌</span>' : '';
-      return `
-        <div class="group-row">
-          <span class="group-name">📁 ${colorDot} ${escapeHtml(g.name)}${impMark}</span>
-          <span class="group-count">${count} 个关键词</span>
-          <div class="kw-actions">
-            <button class="btn-icon" data-action="editGroup" data-id="${g.id}" title="编辑">✏️</button>
-            <button class="btn-icon" data-action="deleteGroup" data-id="${g.id}" title="删除">🗑️</button>
-          </div>
-        </div>
-      `;
-    }).join('');
-
-    list.querySelectorAll('[data-action="editGroup"]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const g = groups.find(gr => gr.id === btn.dataset.id);
-        if (g) showGroupModal(g);
-      });
-    });
-
-    list.querySelectorAll('[data-action="deleteGroup"]').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        if (confirm('确定要删除此分组吗？关联的关键词将变为无分组。')) {
-          await Storage.deleteGroup(btn.dataset.id);
-          loadGroups();
-          loadKeywords();
-        }
-      });
-    });
-  }
-
-  function showGroupModal(group = null) {
-    editingGroupId = group ? group.id : null;
-    const modal = $('#groupModal');
-    $('#groupModalTitle').textContent = group ? '编辑分组' : '新建分组';
-    $('#editGroupName').value = group?.name || '';
-    $('#editGroupImportant').checked = !!(group && group.important);
-    // 分组统一重要笔记：所见即所得富文本编辑器（与关键词共用同一套命令）
-    curNoteEd = $('#editGroupImpNoteRich');
-    setNoteEditorHTML((group && group.importantNote) || '');
-    const gImgV = (group && group.imgSize) || '';
-    const gImgN = parseInt(gImgV, 10);
-    if ($('#editGroupImgSize')) $('#editGroupImgSize').value = (gImgN >= 40 && gImgN <= 600) ? gImgN : '';
-    const gEdR = $('#editGroupImpNoteRich');
-    if (gEdR) gEdR.style.setProperty('--kh-note-img-size', ((gImgN >= 40 && gImgN <= 600) ? gImgN : 70) + 'px');
-    // v1.14.0【2】分组统一重要笔记底色：勾选=组内关键词复用高亮底色
-    if ($('#editGroupImpBgEnable')) $('#editGroupImpBgEnable').checked = !!(group && group.impNoteUseHlColor);
-    // 仅勾选「标记为重要」时显示统一文本/底色区
-    const updateImpNoteRow = () => {
-      $('#editGroupImportantNoteRow').style.display =
-        $('#editGroupImportant').checked ? '' : 'none';
-      $('#editGroupImpBgRow').style.display =
-        $('#editGroupImportant').checked ? '' : 'none';
-    };
-    $('#editGroupImportant').onchange = updateImpNoteRow;
-    updateImpNoteRow();
-
-    // 载入颜色状态
-    const useColor = !!(group && group.bgColor);
-    $('#editGroupUseColor').checked = useColor;
-    $('#editGroupColorRow').style.display = useColor ? 'flex' : 'none';
-    $('#editGroupBgColor').value = (group && group.bgColor) || '#ff9500';
-    $('#editGroupTextColor').value = (group && group.textColor) || '#000000';
-
-    modal.style.display = 'flex';
-    $('#editGroupName').focus();
-  }
-
-  async function saveGroup() {
-    const name = $('#editGroupName').value.trim();
-    if (!name) {
-      alert('请输入分组名称');
-      return;
-    }
-    curNoteEd = $('#editGroupImpNoteRich');
-
-    // 读取颜色设置
-    const useColor = $('#editGroupUseColor').checked;
-    const groupData = {
-      name,
-      bgColor: useColor ? $('#editGroupBgColor').value : '',
-      textColor: useColor ? $('#editGroupTextColor').value : '',
-      important: $('#editGroupImportant').checked,
-      importantNote: $('#editGroupImportant').checked ? mdFromNoteEditor() : '',
-      imgSize: (function(){
-        const v = ($('#editGroupImgSize') && $('#editGroupImgSize').value || '').trim();
-        if (!v) return '';
-        const n = parseInt(v, 10);
-        return (!isNaN(n) && n >= 40 && n <= 600) ? n : '';
-      })(),
-      // v1.14.0【2】分组统一重要笔记底色：勾选=组内复用高亮底色
-      impNoteUseHlColor: !!($('#editGroupImpBgEnable') && $('#editGroupImpBgEnable').checked)
-    };
-
-    try {
-      if (editingGroupId) {
-        await Storage.updateGroup(editingGroupId, groupData);
-      } else {
-        await Storage.addGroup(groupData);
-      }
-      closeGroupModal();
-      loadGroups();
-      notifyContentRefresh();
-    } catch (err) {
-      alert('保存失败：' + err.message);
-    }
-  }
-
-  function closeGroupModal() {
-    $('#groupModal').style.display = 'none';
-    editingGroupId = null;
-    curNoteEd = null; // 关闭后回到默认关键词编辑器，避免命令误用分组编辑器
-  }
-
-  // ========== 高亮样式 ==========
-  async function loadStyles() {
-    const data = await Storage.get(['highlightStyle', 'suspendInactiveTab', 'pageResidualClean', 'pageCleanClick', 'pageRebuildOnChange', 'pageRebuildSilentMs', 'pageRebuildGapMs']);
-    const style = data.highlightStyle || Storage.defaults.highlightStyle;
-
-    $('#hlBgColor').value = style.defaultBgColor;
-    $('#hlBgColorText').value = style.defaultBgColor;
-    $('#hlTextColor').value = style.defaultTextColor;
-    $('#hlTextColorText').value = style.defaultTextColor;
-    $('#hlBorderColor').value = style.defaultBorderColor;
-    $('#hlBorderColorText').value = style.defaultBorderColor;
-    $('#hlBorderWidth').value = style.defaultBorderWidth;
-    $('#hlBorderRadius').value = style.defaultBorderRadius;
-
-    const cb = $('#optSuspendInactiveTab');
-    if (cb) cb.checked = data.suspendInactiveTab !== false;
-
-    // v1.10.14：翻页残留自动清扫开关（v1.10.15 起移除指纹轮询，仅保留分页点击捕获）
-    const pc = $('#optPageResidualClean');
-    if (pc) pc.checked = data.pageResidualClean !== false;
-    const pcClick = $('#optPageCleanClick');
-    if (pcClick) pcClick.checked = data.pageCleanClick !== false;
-    // v1.13.5：页面变动自动整页重建开关 + 静默/节流参数
-    const pr = $('#optPageRebuild');
-    if (pr) pr.checked = data.pageRebuildOnChange !== false;
-    const prSilent = $('#optRebuildSilent');
-    if (prSilent) prSilent.value = (data.pageRebuildSilentMs != null ? data.pageRebuildSilentMs : 1000);
-    const prGap = $('#optRebuildGap');
-    if (prGap) prGap.value = (data.pageRebuildGapMs != null ? data.pageRebuildGapMs : 2000);
-    syncPageCleanSub();
-    syncPageRebuildSub();
-
-    updateHighlightPreview();
-  }
-
-  // v1.10.14：总开关关闭时置灰子项
-  function syncPageCleanSub() {
-    const pc = document.getElementById('optPageResidualClean');
-    const sub = document.getElementById('pageCleanSub');
-    if (pc && sub) {
-      const on = pc.checked;
-      sub.style.opacity = on ? '1' : '0.5';
-      sub.style.pointerEvents = on ? 'auto' : 'none';
-    }
-  }
-
-  // v1.13.5：总开关关闭时置灰子项（静默/节流参数）
-  function syncPageRebuildSub() {
-    const pr = document.getElementById('optPageRebuild');
-    const sub = document.getElementById('pageRebuildSub');
-    if (pr && sub) {
-      const on = pr.checked;
-      sub.style.opacity = on ? '1' : '0.5';
-      sub.style.pointerEvents = on ? 'auto' : 'none';
-    }
-  }
-
-  function updateHighlightPreview() {
-    const previewEl = $('.preview-highlight');
-    if (previewEl) {
-      previewEl.style.backgroundColor = $('#hlBgColor').value;
-      previewEl.style.color = $('#hlTextColor').value;
-      previewEl.style.borderBottom = `${$('#hlBorderWidth').value} solid ${$('#hlBorderColor').value}`;
-      previewEl.style.borderRadius = $('#hlBorderRadius').value;
-    }
-  }
-
-  async function saveHighlightStyle() {
-    const style = {
-      defaultBgColor: $('#hlBgColor').value,
-      defaultTextColor: $('#hlTextColor').value,
-      defaultBorderColor: $('#hlBorderColor').value,
-      defaultBorderWidth: $('#hlBorderWidth').value,
-      defaultBorderRadius: $('#hlBorderRadius').value
-    };
-    const opt = {};
-    const cb = $('#optSuspendInactiveTab');
-    if (cb) opt.suspendInactiveTab = cb.checked;
-    const pc = $('#optPageResidualClean');
-    if (pc) opt.pageResidualClean = pc.checked;
-    const pcClick = $('#optPageCleanClick');
-    if (pcClick) opt.pageCleanClick = pcClick.checked;
-    // v1.13.5：页面变动自动整页重建 + 静默/节流
-    const pr = $('#optPageRebuild');
-    if (pr) opt.pageRebuildOnChange = pr.checked;
-    const prSilent = parseInt($('#optRebuildSilent').value, 10);
-    const prGap = parseInt($('#optRebuildGap').value, 10);
-    if (!isNaN(prSilent) && prSilent >= 0) opt.pageRebuildSilentMs = prSilent; else opt.pageRebuildSilentMs = 1000;
-    if (!isNaN(prGap) && prGap >= 0) opt.pageRebuildGapMs = prGap; else opt.pageRebuildGapMs = 2000;
-    await Storage.set(Object.assign({ highlightStyle: style }, opt));
-    updateHighlightPreview();
-    notifyContentRefresh();
-  }
-
-  // ========== 备注卡片样式 ==========
-  async function loadNoteCardStyles() {
-    const data = await Storage.get(['noteCardStyle']);
-    const style = data.noteCardStyle || Storage.defaults.noteCardStyle;
-
-    $('#ncBgColor').value = style.bgColor;
-    $('#ncBgColorText').value = style.bgColor;
-    $('#ncTextColor').value = style.textColor;
-    $('#ncTextColorText').value = style.textColor;
-    $('#ncBorderColor').value = style.borderColor;
-    $('#ncBorderColorText').value = style.borderColor;
-    $('#ncBorderWidth').value = style.borderWidth;
-    $('#ncBorderRadius').value = style.borderRadius;
-    $('#ncMaxWidth').value = style.maxWidth;
-    $('#ncShadow').value = style.shadow;
-    $('#ncOpacity').value = style.opacity;
-
-    updateNoteCardPreview();
-  }
-
-  function updateNoteCardPreview() {
-    const card = $('.preview-card');
-    if (card) {
-      card.style.backgroundColor = $('#ncBgColor').value;
-      card.style.color = $('#ncTextColor').value;
-      card.style.borderColor = $('#ncBorderColor').value;
-      card.style.borderWidth = $('#ncBorderWidth').value;
-      card.style.borderRadius = $('#ncBorderRadius').value;
-      card.style.maxWidth = $('#ncMaxWidth').value;
-      card.style.boxShadow = $('#ncShadow').value;
-      card.style.opacity = $('#ncOpacity').value;
-    }
-  }
-
-  async function saveNoteCardStyle() {
-    const style = {
-      bgColor: $('#ncBgColor').value,
-      textColor: $('#ncTextColor').value,
-      borderColor: $('#ncBorderColor').value,
-      borderWidth: $('#ncBorderWidth').value,
-      borderRadius: $('#ncBorderRadius').value,
-      shadow: $('#ncShadow').value,
-      maxWidth: $('#ncMaxWidth').value,
-      opacity: $('#ncOpacity').value
-    };
-    await Storage.set({ noteCardStyle: style });
-    updateNoteCardPreview();
-    notifyContentRefresh();
-  }
-
-  // ========== 站点规则 ==========
-  async function loadSiteRules() {
-    const rules = await Storage.getSiteRules();
-    const list = $('#siteRuleList');
-
-    // 注意：UI 已移除「黑名单模式/白名单模式」单选（该概念冗余且误导），
-    // 实际生效的是每条规则自身的 type（黑/白）与匹配顺序。
-
-    if (rules.length === 0) {
-      list.innerHTML = `
-        <div class="empty-state">
-          <span class="empty-icon">🌐</span>
-          <p>暂无站点规则</p>
-        </div>
-      `;
-      return;
-    }
-
-    const matchTypeLabels = {
-      'exact': '精确匹配',
-      'subdomain': '子域名匹配',
-      'prefix': '前缀匹配',
-      'regex': '正则表达式'
-    };
-    const scopeLabels = { host: '域名', url: '网址' };
-
-    list.innerHTML = rules.map(r => `
-      <div class="site-rule-row">
-        <span class="site-rule-badge ${r.type}">${r.type === 'blacklist' ? '🚫 黑名单' : '✅ 白名单'}</span>
-        <span class="site-rule-pattern">${escapeHtml(r.pattern)}</span>
-        <span class="site-rule-match-type">${scopeLabels[r.scope] || '域名'} · ${matchTypeLabels[r.matchType] || r.matchType}</span>
-        <button class="btn-icon" data-action="deleteSiteRule" data-index="${rules.indexOf(r)}" title="删除">🗑️</button>
-      </div>
-    `).join('');
-
-    list.querySelectorAll('[data-action="deleteSiteRule"]').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const rules = await Storage.getSiteRules();
-        const idx = parseInt(btn.dataset.index);
-        rules.splice(idx, 1);
-        await Storage.set({ siteRules: rules });
-        loadSiteRules();
-        notifyContentRefresh();
-      });
-    });
-  }
-
-  function showSiteRuleModal() {
-    editingSiteRuleId = null;
-    const modal = $('#siteRuleModal');
-    $('#siteRuleModalTitle').textContent = '添加站点规则';
-    $('#editSiteRuleType').value = 'blacklist';
-    $('#editSiteRuleScope').value = 'host';
-    updateSiteRuleMatchOptions();
-    $('#editSiteRulePattern').value = '';
-    updateSiteRuleHint();
-    modal.style.display = 'flex';
-    $('#editSiteRulePattern').focus();
-  }
-
-  // 根据匹配对象（域名/网址）过滤可用的匹配方式
-  function updateSiteRuleMatchOptions() {
-    const scope = $('#editSiteRuleScope')?.value || 'host';
-    const mt = $('#editSiteRuleMatchType');
-    const cur = mt.value;
-    const hostOptions = [
-      ['exact', '域名精确匹配'],
-      ['subdomain', '子域名匹配'],
-      ['prefix', 'URL 前缀匹配'],
-      ['regex', '正则表达式']
-    ];
-    const urlOptions = [
-      ['prefix', 'URL 前缀匹配'],
-      ['regex', '正则表达式']
-    ];
-    const opts = scope === 'url' ? urlOptions : hostOptions;
-    mt.innerHTML = opts.map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
-    if (opts.some(o => o[0] === cur)) mt.value = cur;
-    else mt.value = opts[0][0];
-  }
-
-  function updateSiteRuleHint() {
-    const scope = $('#editSiteRuleScope')?.value || 'host';
-    const matchType = $('#editSiteRuleMatchType').value;
-    if (scope === 'url') {
-      $('#siteRuleHint').textContent = matchType === 'regex'
-        ? '输入正则表达式，匹配完整网址，如 ^https://example\\.com/blog'
-        : '输入网址前缀，如 https://example.com/blog（仅该分页及其子路径生效/失效）';
-      return;
-    }
-    const hints = {
-      'exact': '输入完整域名，如 example.com',
-      'subdomain': '输入主域名，如 example.com（匹配 *.example.com）',
-      'prefix': '输入 URL 前缀，如 https://example.com/blog',
-      'regex': '输入正则表达式，如 example\\.(com|org)'
-    };
-    $('#siteRuleHint').textContent = hints[matchType] || '';
-  }
-
-  async function saveSiteRule() {
-    const pattern = $('#editSiteRulePattern').value.trim();
-    if (!pattern) {
-      alert('请输入匹配模式');
-      return;
-    }
-
-    const rule = {
-      type: $('#editSiteRuleType').value,
-      scope: $('#editSiteRuleScope')?.value || 'host',
-      matchType: $('#editSiteRuleMatchType').value,
-      pattern
-    };
-
-    const rules = await Storage.getSiteRules();
-    rules.push(rule);
-    await Storage.set({ siteRules: rules });
-    closeSiteRuleModal();
-    loadSiteRules();
-    notifyContentRefresh();
-  }
-
-  function closeSiteRuleModal() {
-    $('#siteRuleModal').style.display = 'none';
-    editingSiteRuleId = null;
-  }
-
-  // ========== 批量添加关键词 ==========
-  // 单元格组合内容匹配：切换开关时显示/隐藏相关配置，并更新示例
-  function toggleBulkCellMode() {
-    const on = $('#bulkCellMode').checked;
-    $('#bulkCellOpts').style.display = on ? 'block' : 'none';
-    updateBulkExample();
-  }
-
-  async function showBulkModal() {
-    $('#bulkModal').style.display = 'flex';
-    $('#bulkText').value = '';
-    $('#bulkResult').textContent = '';
-    $('#bulkCellMode').checked = false;
-    $('#bulkCellOpts').style.display = 'none';
-    $('#bulkCellImportantNote').value = '';
-
-    // 加载分组选项
-    const groups = await Storage.getGroups();
-    allGroups = groups;
-    const groupSelect = $('#bulkGroup');
-    groupSelect.innerHTML = '<option value="">无分组</option>';
-    groups.forEach(g => {
-      groupSelect.innerHTML += `<option value="${g.id}">${escapeHtml(g.name)}</option>`;
-    });
-    // 选择分组时自动应用分组颜色
-    groupSelect.onchange = () => {
-      const g = allGroups.find(x => x.id === groupSelect.value);
-      if (g && g.bgColor) {
-        $('#bulkBgColor').value = g.bgColor;
-        $('#bulkTextColor').value = g.textColor || '#000000';
-      }
-    };
-
-    updateBulkExample();
-    $('#bulkText').focus();
-  }
-
-  function closeBulkModal() {
-    $('#bulkModal').style.display = 'none';
-  }
-
-  // 更新分隔符示例
-  function updateBulkExample() {
-    const sep = $('#bulkSeparator').value === '\\t' ? '\t' : $('#bulkSeparator').value;
-    const cell = $('#bulkCellMode').checked;
-    if (cell) {
-      $('#bulkExample').textContent = `左格标题1${sep}右格核心1${cell ? sep + '备注1' : ''}\n左格标题2${sep}右格核心2`;
-    } else {
-      $('#bulkExample').textContent = `关键词1${sep}备注内容1\n关键词2${sep}备注内容2`;
-    }
-  }
-
-  // 批量解析并添加
-  async function saveBulk() {
-    const rawText = $('#bulkText').value.trim();
-    if (!rawText) {
-      alert('请输入内容');
-      return;
-    }
-
-    const sepRaw = $('#bulkSeparator').value;
-    const sep = sepRaw === '\\t' ? '\t' : sepRaw;
-    const groupId = $('#bulkGroup').value;
-    let bgColor = $('#bulkBgColor').value;
-    let textColor = $('#bulkTextColor').value;
-
-    // 同组颜色统一：若属于有颜色的分组，强制使用分组颜色
-    const bg = allGroups.find(x => x.id === groupId);
-    if (bg && bg.bgColor) {
-      bgColor = bg.bgColor;
-      textColor = bg.textColor || '#000000';
-    }
-
-    const caseSensitive = $('#bulkCaseSensitive').checked;
-    const wholeWord = $('#bulkWholeWord').checked;
-    const useRegex = $('#bulkUseRegex').checked;
-    const dupPolicy = $('#bulkDupPolicy').value;
-
-    // 单元格组合内容匹配相关配置
-    const cellMode = $('#bulkCellMode').checked;
-    const cellMatchMode = $('#bulkCellExact').checked ? 'exact' : 'include';
-    const cellCase = $('#bulkCellCase').checked;
-    const cellRegex = $('#bulkCellRegex').checked;
-    const cellNote = $('#bulkCellImportantNote').value.trim();
-    const cellFetch = $('#bulkFetchLabels').value.trim();
-    // v1.50.0 批量组合方向
-    const comboAxis = ($('#bulkComboAxis') && $('#bulkComboAxis').value === 'tb') ? 'tb' : 'lr';
-
-    const lines = rawText.split('\n').map(l => l.trim()).filter(Boolean);
-    const keywords = await Storage.getKeywords();
-    let added = 0, skipped = 0, replaced = 0, failed = 0;
-    const seen = new Set();
-
-    for (const line of lines) {
-      let text, cellVerify = '', note = '';
-
-      // 尝试按分隔符拆分
-      const parts = line.split(sep);
-      if (parts.length >= 2) {
-        if (cellMode) {
-          // 单元格组合模式（v1.8.3 翻转）：左格标题[sep]右格核心[sep]备注(可选)
-          cellVerify = (parts[0] || '').trim(); // 左格标题词
-          text = (parts[1] || '').trim();        // 右格核心（即「关键词」位置内容）
-          note = parts.slice(2).join(sep).trim();
-        } else {
-          text = (parts[0] || '').trim();
-          note = parts.slice(1).join(sep).trim();
-        }
-      } else {
-        // 无分隔符
-        text = line.trim();
-      }
-
-      if (!text) { failed++; continue; }
-
-      // 单元格模式下支持「同前格、不同后格」并存，用「前格+后格」组合去重
-      const key = cellMode ? (text + '\u0000' + cellVerify) : text;
-      if (seen.has(key)) { skipped++; continue; }
-      seen.add(key);
-
-      // 重复判断：单元格模式按「前格+后格+方向」组合；普通模式仅与「同文本且无验证」的词冲突
-      const existing = cellMode
-        ? keywords.find(k => k.text === text && (k.cellVerify || '') === cellVerify && (k.comboAxis || 'lr') === comboAxis)
-        : keywords.find(k => k.text === text && !(k.cellVerify || ''));
-      if (existing) {
-        if (dupPolicy === 'skip') {
-          skipped++;
-          continue;
-        } else {
-          // 覆盖：更新备注、重要笔记与设置；单元格模式下补上后格验证字段
-          Object.assign(existing, {
-            note: note || existing.note,
-            important: !!cellNote || existing.important,
-            importantNote: cellNote || existing.importantNote,
-            groupId: groupId || existing.groupId,
-            bgColor: bgColor || existing.bgColor,
-            textColor: textColor || existing.textColor,
-            caseSensitive, wholeWord, useRegex,
-            enabled: true,
-            updatedAt: Date.now()
+    },
+    {
+      /* 高亮颜色：**与编辑弹窗同形** —— 两个颜色胶囊（`●底` / `●文`），
+       * 各点各开选色浮层、选完即落库（不用进编辑弹窗）。
+       * 色点显示的是**有效色**（分组色 > 自身色 > 全局默认），
+       * `is-on` 则表示"这个词自己设了色"（否则是继承来的）—— 两者信息都不丢，各在 tooltip 里写明。 */
+      key: 'color', class: 'col-color', label: '高亮颜色', width: 104,
+      render(kw) {
+        const g = groupOf(kw.groupId);
+        const bgEff = effectiveBg(kw);
+        const fgEff = (g && g.textColor) || kw.textColor || cfg.highlightStyle.defaultTextColor;
+        const fromGroupBg = !!(g && g.bgColor && !kw.bgColor);
+        const fromGroupFg = !!(g && g.textColor && !kw.textColor);
+        const box = h('span', { class: 'kh-row-ops' });
+
+        const mk = (field, label, eff, own, fromGroup) => {
+          const c = ui.ColorField.chip({
+            label: label, dot: eff, on: !!own,
+            title: label + '：' + (eff || '未设色')
+              + (fromGroup ? '（继承分组「' + (g.name || '未命名') + '」）' : (own ? '（本词已设）' : '（跟随全局默认）'))
           });
-          if (cellMode) {
-            existing.cellVerifyEnabled = !!cellVerify;
-            existing.cellVerify = cellVerify;
-            existing.comboAxis = comboAxis; // v1.50.0
-            // v1.11.0【改指向】：批量面板「右格核心」三按钮 → 控制核心词(kw.text)匹配，写入 kw.* (基本区同套字段)
-            existing.wholeWord = (cellMatchMode === 'exact');
-            existing.caseSensitive = cellCase;
-            existing.useRegex = cellRegex;
-          }
-          // v1.13.4【普通词批量抓取】统一抓取后续字段对普通词（不勾单元格组合）也生效，
-          // 不再只在 cellMode 时写入（此前普通词批量添加会丢弃抓取字段配置）。
-          if (cellFetch) existing.fetchLabels = cellFetch;
-          replaced++;
-          continue;
+          let pop = null;
+          let committed = false;                 // 是否点过「确定」（决定关浮层时要不要还原色点）
+          const original = kw[field] || '';
+          const revertDot = () => {              // 还原色点：自己设过色 → 显示该色；否则显示继承来的有效色
+            c.setValue(original);
+            if (!original) c.setDot(eff);
+          };
+          c.el.addEventListener('click', (e) => {
+            e.stopPropagation();
+            pop = ui.Popover.open(c.el, ui.ColorField.panel({
+              value: original,
+              fallback: eff,          // 未设色时取色器从"继承来的有效色"起步
+              /* 草稿预览：只更新色点，**不落库**；真正的落库在「确定」（onChange）。
+               * 这样"拖动一半"或"点开看看"都不会改到配置（用户实测要求：加确认步骤）。 */
+              onInput: (v) => {
+                if (v) c.setValue(v);
+                else { c.setValue(''); c.setDot(eff); }
+              },
+              onChange: (v) => {
+                committed = true;
+                c.setValue(v);
+                if (!v) c.setDot(eff);
+                mutate(() => KH.Store.patchKeywords([kw.id], () => ({ [field]: v })));
+              },
+              onDone: () => { if (pop) pop.close(); }        // 确定 / 取消都收浮层
+            }), () => { if (!committed) revertDot(); });      // Esc / 点外面关掉 → 草稿丢弃，色点还原
+          });
+          return c.el;
+        };
+
+        box.appendChild(mk('bgColor', '底', bgEff, kw.bgColor, fromGroupBg));
+        box.appendChild(mk('textColor', '文', fgEff, kw.textColor, fromGroupFg));
+        return box;
+      }
+    },
+    {
+      key: 'group', class: 'col-group', label: '分组', sortable: true, width: 96,
+      render(kw) {
+        const g = groupOf(kw.groupId);
+        return g ? h('span', { class: 'kh-group-tag', text: g.name || '(未命名)' })
+          : h('span', { class: 'kh-dim', text: '—' });
+      }
+    },
+    {
+      key: 'note', class: 'col-note', label: '备注', sortable: true, width: 150,
+      render(kw) {
+        const t = String(kw.note || '').trim();
+        return t ? ui.RichText.render(t, 'kh-note-cell') : h('span', { class: 'kh-dim', text: '—' });
+      }
+    },
+    {
+      key: 'status', class: 'col-status', label: '状态', width: 72,
+      render(kw) {
+        const on = kw.enabled !== false;
+        const btn = h('button', {
+          class: 'kh-switch-btn ' + (on ? 'is-on' : ''), type: 'button',
+          /* 文案用「启用 / 停用」——与 v1.52.0 的胶囊口径一致，
+           * 也跟同页其它地方（「点击停用」「批量 停用」）一致；原先的「已启用/已停用」是 v2 自己加长的。 */
+          text: on ? '启用' : '停用', title: on ? '点击停用' : '点击启用'
+        });
+        btn.addEventListener('click', () => mutate(() => KH.Store.patchKeywords([kw.id], () => ({ enabled: !on }))));
+        return btn;
+      }
+    },
+    {
+      /* 操作列：只剩 编辑 / 删除。
+       * 「复制」已按用户要求去掉 —— v1.52.0 的操作列本来就只有 ✏️编辑 / 🗑️删除，
+       * 复制是 v2 多加的；按钮样式也改成胶囊（见 options.css 的 .kh-link-btn）。
+       * 列宽给到 112：两个胶囊各 ~46px + 间距 6 = 98，单元格内边距 16 → 需要 114 里的 ~98。
+       * 原先的 96 正好卡在边界上（实测 78 = 78），换个字体/DPI 就会出问题
+       * —— 布局不能靠"恰好装得下"，得留余量（见 设计偏好.md 第 4 条）。 */
+      key: 'actions', class: 'col-actions', label: '操作', width: 112,
+      render(kw) {
+        const box = h('span', { class: 'kh-row-ops' });
+        const edit = h('button', { class: 'kh-link-btn', type: 'button', text: '编辑' });
+        const del = h('button', { class: 'kh-link-btn kh-link-danger', type: 'button', text: '删除' });
+        edit.addEventListener('click', () => openKeyword(kw));
+        del.addEventListener('click', () => removeKeywords([kw.id], '关键词「' + (String(kw.text || '').trim() || kw.cellVerify || '') + '」'));
+        box.appendChild(edit); box.appendChild(del);
+        return box;
+      }
+    }
+  ];
+
+  function passFilter(kw) {
+    const q = ($('kw-search').value || '').trim().toLowerCase();
+    if (q) {
+      const hay = [kw.text, kw.cellVerify, kw.note, kw.importantNote, kw.fetchLabels]
+        .map(v => String(v || '').toLowerCase()).join('\n');
+      if (hay.indexOf(q) < 0) return false;
+    }
+    const g = $('kw-filter-group').value;
+    if (g === '__none__') { if (kw.groupId) return false; }
+    else if (g && kw.groupId !== g) return false;
+
+    const st = $('kw-filter-status').value;
+    if (st === 'on' && kw.enabled === false) return false;
+    if (st === 'off' && kw.enabled !== false) return false;
+
+    const ax = $('kw-filter-axis').value;
+    if (ax && typeOf(kw) !== ax) return false;
+    return true;
+  }
+
+  /**
+   * 筛选栏「排序」的**唯一**实现（最近更新 / 最近添加 / 名称 A→Z / 名称 Z→A）。
+   * `sortPref` 记在本页内存里：存储变化、批量操作都会触发整页重绘，
+   * 只读 <select> 的话，用户刚选的排序会在下一次重绘时"悄悄回退成默认"。
+   * 名称排序用 localeCompare('zh')：中文按拼音、英文按字母，混排不会退化成"按码点"。
+   */
+  const SORT_VALUES = ['updated-desc', 'created-desc', 'text-asc', 'text-desc'];
+  let sortPref = SORT_VALUES[0];
+
+  function sortState() {
+    const v = ($('kw-filter-sort') || {}).value;
+    if (SORT_VALUES.indexOf(v) >= 0) { sortPref = v; return v; }
+    return SORT_VALUES.indexOf(sortPref) >= 0 ? sortPref : SORT_VALUES[0];
+  }
+
+  function createSortSpec() {
+    const s = sortState();
+    return {
+      apply(a, b) {
+        if (s === 'text-asc' || s === 'text-desc') {
+          const dir = (s === 'text-asc') ? 1 : -1;
+          const ta = String(a.text || '').trim() || String(a.cellVerify || '').trim();
+          const tb = String(b.text || '').trim() || String(b.cellVerify || '').trim();
+          const byName = ta.localeCompare(tb, 'zh');
+          if (byName !== 0) return byName * dir;
+          return (Number(b.updatedAt) || 0) - (Number(a.updatedAt) || 0);   // 同名词按更新时间兜底，顺序才稳定
         }
+        const key = (s === 'created-desc') ? 'createdAt' : 'updatedAt';
+        return (Number(b[key]) || 0) - (Number(a[key]) || 0);
       }
-
-      // 新增
-      const kw = {
-        id: 'kw_' + Date.now().toString(36) + '_' + Math.random().toString(36).substr(2, 9),
-        text,
-        note,
-        groupId,
-        bgColor,
-        textColor,
-        caseSensitive,
-        wholeWord,
-        useRegex,
-        enabled: true,
-        createdAt: Date.now(),
-        updatedAt: Date.now()
-      };
-      if (cellMode) {
-        kw.important = !!cellNote;
-        kw.importantNote = cellNote;
-        kw.cellVerifyEnabled = !!cellVerify;
-        kw.cellVerify = cellVerify;
-        kw.comboAxis = comboAxis; // v1.50.0
-        // v1.11.0【改指向】：批量面板「右格核心」三按钮 → 核心词(kw.text)匹配，写入 kw.*
-        kw.wholeWord = (cellMatchMode === 'exact');
-        kw.caseSensitive = cellCase;
-        kw.useRegex = cellRegex;
-      }
-      // v1.13.4【普通词批量抓取】统一抓取后续字段对普通词也生效（不再只在 cellMode 写入）
-      if (cellFetch) kw.fetchLabels = cellFetch;
-      keywords.push(kw);
-      added++;
-    }
-
-    await Storage.set({ keywords });
-
-    $('#bulkResult').textContent = `✅ 新增 ${added}，覆盖 ${replaced}，跳过 ${skipped}${failed ? `，失败 ${failed}` : ''}`;
-    loadKeywords();
-    notifyContentRefresh();
-
-    // 若全部成功，延迟关闭并提示
-    if (failed === 0) {
-      setTimeout(() => closeBulkModal(), 1500);
-    }
-  }
-
-  // ========== 导入导出 ==========
-  // —— 导出：选择范围 ——
-  function exportSetAll(checked) {
-    document.querySelectorAll('#exportModal input[data-scope]').forEach(cb => cb.checked = !!checked);
-  }
-  function openExportModal() { const m = $('#exportModal'); if (m) m.style.display = 'flex'; }
-  function closeExportModal() { const m = $('#exportModal'); if (m) m.style.display = 'none'; }
-  async function exportJSON() {
-    openExportModal();
-  }
-  async function doExport() {
-    const cb = id => { const e = $(id); return e ? e.checked : false; };
-    const scope = {
-      keywords: cb('#exportKw'),
-      siteRules: cb('#exportSite'),
-      siteDisabled: cb('#exportDisabled'),
-      styles: cb('#exportStyle')
     };
-    if (!(scope.keywords || scope.siteRules || scope.siteDisabled || scope.styles)) { alert('请至少勾选一项要导出的内容。'); return; }
-    try {
-      const jsonStr = await Storage.exportData(scope);
-      const full = scope.keywords && scope.siteRules && scope.siteDisabled && scope.styles;
-      downloadFile(full ? 'keyword-highlighter-backup.json' : 'keyword-highlighter-part.json', jsonStr, 'application/json');
-      closeExportModal();
-    } catch (err) {
-      alert('导出失败：' + err.message);
+  }
+
+  function renderKeywordTable() {
+    const sel = $('kw-filter-group');
+    const cur = sel.value;
+    clear(sel);
+    sel.appendChild(h('option', { value: '', text: '全部分组' }));
+    sel.appendChild(h('option', { value: '__none__', text: '未分组' }));
+    for (const g of cfg.groups || []) sel.appendChild(h('option', { value: g.id, text: g.name || '(未命名)' }));
+    sel.value = (cur && Array.from(sel.options).some(o => o.value === cur)) ? cur : '';
+
+    filtered = (cfg.keywords || []).filter(passFilter);
+    // 选中集合只保留仍存在的 id（避免"删掉不可见的选中项"或删完残留计数）
+    const alive = new Set((cfg.keywords || []).map(k => k.id));
+    for (const id of Array.from(selection)) if (!alive.has(id)) selection.delete(id);
+
+    const total = (cfg.keywords || []).length;
+    $('kw-count').textContent = '共 ' + total + ' 条' + (filtered.length !== total ? '（筛出 ' + filtered.length + ' 条）' : '');
+
+    if (!table) {
+      table = ui.DataTable.create({
+        columns: COLUMNS,
+        rows: filtered,
+        pageSize: 50,
+        filterSort: createSortSpec(),
+        getRowId: (kw) => kw.id,
+        emptyText: total ? '没有符合筛选条件的关键词' : '还没有关键词，点筛选栏「＋ 添加」开始',
+        onSelectionChange(sel2) { selection = sel2; syncBatchBar(); }
+      });
+      $('kw-table').appendChild(table.el);
+    } else {
+      table.setFilterSort(createSortSpec());
+      table.setRows(filtered);
+      table.setSelected(selection);
+    }
+    syncBatchBar();
+  }
+
+  function syncBatchBar() {
+    const n = selection.size;
+    // 文案与策划案 §5.2.1 对齐：常驻显示「已选 N 项」
+    $('batch-info').textContent = '已选 ' + n + ' 项';
+    for (const id of ['batch-enable', 'batch-disable', 'batch-group', 'batch-color', 'batch-match', 'batch-note', 'batch-delete', 'batch-clear']) {
+      $(id).disabled = n === 0;
+    }
+    syncPageSelectAll();
+  }
+
+  /**
+   * 「本页全选」与表头复选框必须**同源**：都取 DataTable 的 pageIds()。
+   * 若这里自己按 filtered 切片算"本页"，一旦表格改了分页口径就会两处不一致
+   * （一处选 50 条、另一处选 30 条这类诡异现象）。
+   */
+  function syncPageSelectAll() {
+    const cb = $('batch-select-page');
+    if (!cb) return;
+    const ids = table ? table.pageIds() : [];
+    const picked = ids.filter(id => selection.has(id)).length;
+    cb.disabled = ids.length === 0;
+    cb.checked = ids.length > 0 && picked === ids.length;
+    cb.indeterminate = picked > 0 && picked < ids.length;
+  }
+
+  function openKeyword(kw) {
+    ui.openEditor({ keyword: kw, cfg, mode: 'options', onSaved: reload });
+  }
+
+  async function removeKeywords(ids, label) {
+    const ok = await D.confirmBox('确定删除 ' + label + '？\n此操作不可撤销。', { title: '删除确认', danger: true, saveLabel: '删除' });
+    if (!ok) return;
+    await mutate(() => KH.Store.removeKeywords(ids));
+    for (const id of ids) selection.delete(id);
+    syncBatchBar();
+    D.toast('已删除', 'ok');
+  }
+
+  $('btn-kw-add').addEventListener('click', () => ui.openEditor({ cfg, mode: 'options', onSaved: reload }));
+  $('kw-search').addEventListener('input', () => renderKeywordTable());
+  $('kw-filter-group').addEventListener('change', () => renderKeywordTable());
+  $('kw-filter-status').addEventListener('change', () => renderKeywordTable());
+  $('kw-filter-axis').addEventListener('change', () => renderKeywordTable());
+  $('kw-filter-sort').addEventListener('change', () => { sortState(); renderKeywordTable(); });
+  $('btn-filter-reset').addEventListener('click', () => {
+    $('kw-search').value = ''; $('kw-filter-group').value = '';
+    $('kw-filter-status').value = ''; $('kw-filter-axis').value = '';
+    $('kw-filter-sort').value = SORT_VALUES[0]; sortPref = SORT_VALUES[0];
+    renderKeywordTable();
+  });
+
+  // 关键词管理页内的「📥 批量导入」：与「导入导出」共用同一条导入实现（见 importJSONText / importCSVText）
+  $('btn-batch-import').addEventListener('click', () => { $('file-batch-import').value = ''; $('file-batch-import').click(); });
+  $('file-batch-import').addEventListener('change', async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (file) await importAnyFile(file);
+  });
+
+  /* ---------------- 批量栏 ---------------- */
+
+  const batchIds = () => Array.from(selection);
+
+  $('batch-enable').addEventListener('click', async () => {
+    const n = selection.size;
+    await mutate(() => KH.Store.patchKeywords(batchIds(), () => ({ enabled: true })));
+    D.toast('已启用 ' + n + ' 条', 'ok');
+  });
+  $('batch-disable').addEventListener('click', async () => {
+    const n = selection.size;
+    await mutate(() => KH.Store.patchKeywords(batchIds(), () => ({ enabled: false })));
+    D.toast('已停用 ' + n + ' 条', 'ok');
+  });
+  $('batch-clear').addEventListener('click', () => { table.clearSelection(); });
+
+  /**
+   * 「本页全选」：勾上=把**本页**所有行加入选中集合，再点一下=只把本页移出选中集合。
+   * 语义刻意与表头复选框一致（旧版 `checkAllPage` 就是"本页"，跨页累选靠逐行勾选）：
+   * "全选"若跨页，用户点一次删除就会清掉看不见的页，这是不可接受的破坏性误操作。
+   */
+  $('batch-select-page').addEventListener('change', (e) => {
+    const ids = table ? table.pageIds() : [];
+    if (e.target.checked) ids.forEach(id => selection.add(id));
+    else ids.forEach(id => selection.delete(id));
+    table.setSelected(selection);
+  });
+
+  /* ---- 批量弹窗的字段体构建：**统一走共享字段工厂** ----
+   * 四个批量弹窗（分组 / 颜色 / 匹配 / 备注·笔记）原先各写一套控件形态：
+   * 裸 `<select>`、旧色块、「真勾选框 + 两行文字」的行 —— 与关键词/分组弹窗的
+   * 「开关胶囊 / 颜色胶囊 / id+for 契约」完全不是一套。这里统一收口。
+   *
+   * id 前缀用 `fld-b-`：批量字段与关键词字段有同名键（bgColor/note/importantNote…），
+   * 同前缀会在弹窗堆叠时让"按 id 定位"产生歧义。
+   */
+  function fieldBody(specs, values, opts) {
+    const o = opts || {};
+    const prefix = o.idPrefix || 'fld-b-';
+    const body = h('div', { class: o.cls || 'kh-editor-sec-body' });
+    const controls = [], items = [], touched = new Set();
+    for (const f of specs) {
+      const c = ui.Fields.create(f, values[f.key], {
+        idPrefix: prefix, groups: cfg.groups, imgSize: cfg.importantNote && cfg.importantNote.imgSize
+      });
+      controls.push(c);
+      items.push({ spec: f, ctrl: c });
+    }
+    ui.Fields.layout(items, body);
+    /* 记录"用户碰过哪些字段"：批量语义里"没碰过 = 不修改"，
+     * 而 read() 只能给出当前值（胶囊未碰过也是"未选中"），所以需要单独记一笔。
+     * 同时给胶囊打 `is-touched`：点两下＝显式关闭，用**虚线边框**跟"没碰过"区分开
+     * （否则"关掉了"和"没动过"长得一模一样，用户没法预判保存后会写什么）。 */
+    const mark = (e) => {
+      const t = e.target;
+      if (!t || !t.id || t.id.indexOf(prefix) !== 0) return;
+      touched.add(t.id.slice(prefix.length));
+      const chip = t.closest ? t.closest('.kh-fld-chip') : null;
+      if (chip) chip.classList.add('is-touched');
+    };
+    body.addEventListener('change', mark, true);
+    body.addEventListener('input', mark, true);
+    return {
+      body, controls, touched,
+      read: () => { const out = {}; for (const c of controls) out[c.key] = c.read(); return out; }
+    };
+  }
+
+  $('batch-group').addEventListener('click', () => {
+    const specs = [{
+      key: 'groupId', label: '移入分组', type: 'select', width: 2,
+      options: [{ v: '', t: '（移出分组）' }].concat((cfg.groups || []).map(g => ({ v: g.id, t: g.name || '(未命名)' })))
+    }];
+    const fb = fieldBody(specs, { groupId: '' });
+    ui.Modal.open({
+      title: '批量设置分组（选中 ' + selection.size + ' 条）', size: 'sm',
+      body: fb.body,
+      onSave: async () => {
+        const v = fb.read();
+        await mutate(() => KH.Store.patchKeywords(batchIds(), () => ({ groupId: v.groupId || null })));
+        D.toast('分组已更新', 'ok');
+      }
+    });
+  });
+
+  $('batch-color').addEventListener('click', () => {
+    /* 颜色：与编辑弹窗同形的**颜色胶囊**（`● 底` / `● 文`），点开选色浮层。
+     * "没点过 = 不修改"由 `spec.onChange` 保证 —— 只有真的选了色（或点了「清除」）才回调。 */
+    let bg = null, fg = null;
+    const specs = [
+      { key: 'bgColor', label: '底色', short: '底', type: 'color', chip: true,
+        hint: '批量设置背景色（点「清除」＝设为继承）', onChange: (v) => { bg = v; } },
+      { key: 'textColor', label: '文字颜色', short: '文', type: 'color', chip: true,
+        hint: '批量设置文字颜色（点「清除」＝设为继承）', onChange: (v) => { fg = v; } }
+    ];
+    const fb = fieldBody(specs, { bgColor: '', textColor: '' });
+    ui.Modal.open({
+      title: '批量设置颜色（选中 ' + selection.size + ' 条）', size: 'sm',
+      body: h('div', { class: 'kh-editor-sec-body' }, [
+        h('p', { class: 'kh-muted', text: '没点过的颜色不会被修改；点「清除」＝设为继承（回退到分组色 / 全局默认色）。' }),
+        fb.body
+      ]),
+      onSave: async () => {
+        const patch = {};
+        if (bg !== null) patch.bgColor = bg;
+        if (fg !== null) patch.textColor = fg;
+        if (!Object.keys(patch).length) { D.toast('请先选择要修改的颜色（或用「清除」）', 'info'); return false; }
+        await mutate(() => KH.Store.patchKeywords(batchIds(), () => patch));
+        D.toast('颜色已更新', 'ok');
+      }
+    });
+  });
+  /**
+   * 批量「⚙️ 匹配」—— 必须覆盖**两组共 6 个开关**：
+   *   核心词：caseSensitive / wholeWord / useRegex
+   *   标题词：cellVerifyMatchMode(exact) / cellVerifyCaseSensitive / cellVerifyUseRegex
+   * 旧版 v1.52.0 就是 6 项；只做 3 项会让"批量设标题词规则"这个刚需整块缺失。
+   *
+   * 为什么用浮层而不是模态：策划案 §5.2.1 要求匹配规则"点开是小勾选弹窗"，
+   * 这里复用胶囊弹窗的浮层实现（options.js 不再另写第二套浮层）。
+   *
+   * ★ 文案**直接取自 `chip.js` 的 PARTS**（匹配开关文案的唯一来源）——
+   *   原先这里手写了 `区分大小写` / `整词`，于是「大小写 → Aa」那次全局改名它没跟上：
+   *   同一个开关在表格里叫 `Aa`、在批量弹窗里叫"区分大小写"、还多一个"整词"。
+   *   改成从 PARTS 派生之后，这类漂移在结构上不可能再发生。
+   *
+   * 标题词 3 项会**跳过非组合词**（普通词没有标题格，硬写 cellVerify* 就是脏数据）。
+   */
+  $('batch-match').addEventListener('click', () => {
+    const ids = batchIds();
+    const comboIds = ids.filter(id => {
+      const kw = (cfg.keywords || []).find(k => k.id === id);
+      return !!(kw && kw.cellVerifyEnabled && kw.cellVerify);
+    });
+    const P = ui.MatchChip.PARTS;
+    /* PARTS 里 `type: "exact"` 的是"两态"字段（include ↔ exact）—— 工厂的 select+chip 支持两态胶囊 */
+    const specOf = (f) => (f.type === 'exact'
+      ? { key: f.key, label: f.label, hint: f.hint, type: 'select', chip: true, onValue: 'exact', offValue: 'include' }
+      : { key: f.key, label: f.label, hint: f.hint, type: 'bool', chip: true });
+    const coreFb = fieldBody(P.core.fields.map(specOf), {});
+    const titleFb = fieldBody(P.title.fields.map(specOf), {});
+    const panel = h('div', { class: 'kh-pop-inner' }, [
+      h('div', { class: 'kh-pop-title', text: '批量匹配方式（共 ' + ids.length + ' 条）' }),
+      h('div', { class: 'kh-pop-group-title', text: '核心词 · 全部选中项' }),
+      coreFb.body,
+      h('div', { class: 'kh-pop-group-title', text: '标题词（需勾选「单元格组合」）· ' + comboIds.length + ' 条' }),
+      titleFb.body,
+      h('div', { class: 'kh-pop-foot', text: comboIds.length
+        ? '点一下就开启，再点一下=关闭（虚线框）；没点过的项不会被修改。'
+        : '⚠️ 选中项里没有组合词：标题词 3 项会被跳过（普通词没有标题格）。' })
+    ]);
+    let pop = null;
+    const applyBtn = h('button', { class: 'kh-mini-btn kh-pop-apply', type: 'button', text: '应用到选中的 ' + ids.length + ' 条' });
+    applyBtn.addEventListener('click', async () => {
+      /* 只有"点过"的项才写进 patch：没点过＝保持原样；点两下＝显式关闭（false / include）。
+       * 胶囊的初始态是未选中，所以不能只看 read() 的布尔值（那分不出"没碰过"和"关掉了"）。 */
+      const coreVals = coreFb.read(), titleVals = titleFb.read();
+      const corePatch = {}, titlePatch = {};
+      for (const k of Object.keys(coreVals)) if (coreFb.touched.has(k)) corePatch[k] = coreVals[k];
+      for (const k of Object.keys(titleVals)) if (titleFb.touched.has(k)) titlePatch[k] = titleVals[k];
+      const hasCore = Object.keys(corePatch).length > 0;
+      const hasTitle = Object.keys(titlePatch).length > 0 && comboIds.length > 0;
+      if (!hasCore && !hasTitle) { D.toast('请先点选要应用的匹配项', 'info'); return; }
+      if (pop) pop.close();
+      await mutate(() => KH.Store.patchKeywords(ids, (kw) => {
+        // 每次 patch 都重新算：标题词只给"当前这条确实是组合词"的行
+        const p = Object.assign({}, corePatch);
+        if (kw && kw.cellVerifyEnabled && kw.cellVerify) Object.assign(p, titlePatch);
+        return p;
+      }));
+      D.toast('已更新 ' + ids.length + ' 条匹配方式', 'ok');
+    });
+    panel.appendChild(h('div', { class: 'kh-pop-actions' }, [applyBtn]));
+    pop = ui.Popover.open($('batch-match'), panel, null, { className: 'kh-popover-wide' });
+  });
+
+  $('batch-note').addEventListener('click', () => {
+    /* 两个"开关胶囊 + 对应编辑器"：开关没勾就不写该字段（内容留空＝清空）。
+     * 开关用胶囊、编辑器用 RichEditor —— 与关键词/分组弹窗同一套控件语言。 */
+    const specs = [
+      { key: 'setNote', label: '备注', type: 'bool', chip: true, hint: '勾选后才会覆盖选中项的备注（留空＝清空）' },
+      { key: 'note', label: '备注内容', type: 'textarea', rows: 3, width: 2, placeholder: '留空＝清空该字段' },
+      { key: 'setImp', label: '重要笔记', type: 'bool', chip: true, hint: '勾选后才会覆盖选中项的重要笔记（留空＝清空）' },
+      { key: 'importantNote', label: '重要笔记内容', type: 'richtext', width: 2,
+        placeholder: '与页面显示一致：图片、加粗、表格、链接直接在框内显示；留空＝清空' }
+    ];
+    const fb = fieldBody(specs, {});
+    ui.Modal.open({
+      title: '批量备注 / 重要笔记（选中 ' + selection.size + ' 条）', size: 'md',
+      body: h('div', { class: 'kh-editor-sec-body' }, [
+        h('p', { class: 'kh-muted', text: '先点选要修改的字段：没点的字段不会被修改，内容留空表示清空该字段。' }),
+        fb.body
+      ]),
+      onSave: async () => {
+        const v = fb.read();
+        const patch = {};
+        if (v.setNote) patch.note = v.note || '';
+        if (v.setImp) patch.importantNote = v.importantNote || '';
+        if (!Object.keys(patch).length) { D.toast('请先勾选要修改的字段', 'info'); return false; }
+        await mutate(() => KH.Store.patchKeywords(batchIds(), () => patch));
+        D.toast('已更新', 'ok');
+      }
+    });
+  });
+
+  $('batch-delete').addEventListener('click', () => removeKeywords(batchIds(), '选中的 ' + selection.size + ' 条关键词'));
+
+  /* ==================================================================== ② 分组 */
+
+  function renderGroups() {
+    const box = $('group-list');
+    clear(box);
+    const groups = cfg.groups || [];
+    if (!groups.length) {
+      box.appendChild(h('div', { class: 'kh-empty', text: '还没有分组。分组可统一配色，并整组标记「重要」。' }));
+      return;
+    }
+    for (const g of groups) {
+      const count = (cfg.keywords || []).filter(k => k.groupId === g.id).length;
+      const row = h('div', { class: 'kh-group-row' }, [
+        h('span', { class: 'kh-color-dot', style: 'background:' + (g.bgColor || cfg.highlightStyle.defaultBgColor), title: g.bgColor || '未设色（跟随全局默认）' }),
+        h('span', { class: 'kh-group-name', text: g.name || '(未命名)' }),
+        g.important ? h('span', { class: 'imp-badge', text: '📌 重要' }) : null,
+        g.impNoteUseHlColor ? h('span', { class: 'kh-tag-mini', text: '复用底色' }) : null,
+        h('span', { class: 'kh-group-count', text: count + ' 条关键词' })
+      ]);
+      const ops = h('span', { class: 'kh-row-ops' });
+      const edit = h('button', { class: 'kh-link-btn', type: 'button', text: '编辑' });
+      const del = h('button', { class: 'kh-link-btn kh-link-danger', type: 'button', text: '删除' });
+      edit.addEventListener('click', () => openGroup(g));
+      del.addEventListener('click', async () => {
+        const ok = await D.confirmBox('删除分组「' + (g.name || '') + '」？\n组内 ' + count + ' 条关键词不会被删除，会移出分组。', { title: '删除分组', danger: true, saveLabel: '删除' });
+        if (!ok) return;
+        await mutate(() => KH.Store.removeGroup(g.id));
+        D.toast('分组已删除', 'ok');
+      });
+      ops.appendChild(edit); ops.appendChild(del);
+      row.appendChild(ops);
+      box.appendChild(row);
     }
   }
 
-  async function exportCSV() {
-    try {
-      const csvStr = await Storage.exportCSV();
-      downloadFile('keyword-highlighter-keywords.csv', csvStr, 'text/csv');
-    } catch (err) {
-      alert('导出失败：' + err.message);
+  /**
+   * 分组编辑弹窗：字段**全部由共享工厂渲染**（`ui.Fields.create` + `FieldMap.GROUP_FIELDS`），
+   * 与关键词编辑弹窗同一套控件语言（开关胶囊 / 颜色胶囊 / 行内字段 / id+for 契约）。
+   *
+   * 与关键词弹窗**刻意不同**的两处（原版 1.52.0 就是如此，不是偷懒）：
+   *   · 宽度 `md` 而不是 `lg` —— 原版分组弹窗是 `modal-sm`，本来就更小；6 个字段撑 860px 会大片留白；
+   *   · **没有分区卡片** —— 原版分组弹窗是 `.form-group` 平铺；只有一张卡还带折叠标题没有意义。
+   * 这两条如果用户要求统一，改这里即可（字段本身不用动）。
+   */
+  function openGroup(group) {
+    const g = group || KH.Store.newGroup({});
+    const fields = fm.GROUP_FIELDS;
+    const body = h('div', { class: 'kh-editor-sec-body' });
+    const controls = [];
+    const items = [];
+
+    for (const f of fields) {
+      /* 取值口径复用 FieldMap.coerce（按 spec.type 收口），不再为分组另写一份 */
+      const c = ui.Fields.create(f, fm.coerce(f, g[f.key]), {
+        idPrefix: 'fld-g-', groups: cfg.groups, imgSize: g.imgSize
+      });
+      controls.push(c);
+      items.push({ spec: f, ctrl: c });
+    }
+    // 胶囊成行 / 竖线分隔 / 半行整行流式：与关键词弹窗**共用同一份排布实现**（ui.Fields.layout）
+    ui.Fields.layout(items, body);
+
+    const readAll = () => {
+      const out = {};
+      for (const c of controls) out[c.key] = c.read();
+      return out;
+    };
+
+    ui.Modal.open({
+      title: group ? '编辑分组' : '新建分组', size: 'md',
+      body: body,
+      onSave: async () => {
+        const v = readAll();
+        const nm = String(v.name || '').trim();
+        if (!nm) { D.toast('请填写分组名称', 'error'); return false; }
+        const dup = (cfg.groups || []).find(x => x.name === nm && (!group || x.id !== group.id));
+        if (dup) { D.toast('分组「' + nm + '」已存在', 'error'); return false; }
+        await mutate(() => KH.Store.upsertGroup({
+          id: group ? group.id : undefined, name: nm,
+          bgColor: v.bgColor || '', textColor: v.textColor || '',
+          important: !!v.important, impNoteUseHlColor: !!v.impNoteUseHlColor,
+          importantNote: v.importantNote || '',
+          imgSize: v.imgSize === '' || v.imgSize == null ? '' : v.imgSize
+        }));
+        D.toast(group ? '分组已保存' : '分组已创建', 'ok');
+      }
+    });
+  }
+
+  $('btn-group-add').addEventListener('click', () => openGroup(null));
+
+  /* ==================================================================== ③ 高亮样式 */
+
+  let hlBg = null, hlFg = null;
+
+  async function saveNested(patch) {
+    // 嵌套配置必须整体写（storage 侧只做一层合并，写半截会丢兄弟键）
+    const next = {};
+    for (const k of Object.keys(patch)) next[k] = Object.assign({}, cfg[k] || {}, patch[k]);
+    await mutate(() => KH.Store.patch(next));
+  }
+
+  function renderHighlightStyle() {
+    const hl = cfg.highlightStyle;
+    /* 颜色控件统一成**颜色胶囊**（`● 底` / `● 文`），与编辑弹窗、批量弹窗同形。
+     * `allowEmpty: false`：全局默认色必须有一个值（浮层里因此不会出现「清除」）。 */
+    if (!hlBg) {
+      hlBg = ui.ColorField.create({
+        value: hl.defaultBgColor, allowEmpty: false, chip: true, label: '底',
+        title: '全局默认背景色（关键词未单独设色时使用）',
+        onChange: (v) => { if (v) saveNested({ highlightStyle: { defaultBgColor: v } }); }
+      });
+      hlFg = ui.ColorField.create({
+        value: hl.defaultTextColor, allowEmpty: false, chip: true, label: '文',
+        title: '全局默认文字色（关键词未单独设色时使用）',
+        onChange: (v) => { if (v) saveNested({ highlightStyle: { defaultTextColor: v } }); }
+      });
+      $('hl-bg').appendChild(hlBg);
+      $('hl-fg').appendChild(hlFg);
+    } else {
+      hlBg.setValue(hl.defaultBgColor);
+      hlFg.setValue(hl.defaultTextColor);
+    }
+    $('hl-preview').style.background = hl.defaultBgColor;
+    $('hl-preview').style.color = hl.defaultTextColor;
+  }
+
+  $('btn-hl-reset').addEventListener('click', async () => {
+    await mutate(() => KH.Store.patch({ highlightStyle: KH.Config.defaults.highlightStyle }));
+    D.toast('已恢复默认高亮色', 'ok');
+  });
+
+  /* ==================================================================== ④ 备注卡片 */
+
+  /* 字段清单已收进 `fm.NOTE_CARD_FIELDS`（原先这里另有一份 NC_FIELDS，与其它表单各写一套） */
+
+  function renderNoteCardStyle() {
+    const box = $('nc-fields');
+    clear(box);
+    /* 统一走共享字段工厂：三个颜色是与编辑弹窗同形的**颜色胶囊**，
+     * 其余是带 `id=fld-nc-<key>` + label for 的文本字段（原来手写、没有 id）。 */
+    const values = {};
+    for (const f of fm.NOTE_CARD_FIELDS) values[f.key] = cfg.noteCardStyle[f.key];
+    const items = [];
+    for (const f of fm.NOTE_CARD_FIELDS) {
+      const spec = f.type === 'color'
+        ? Object.assign({}, f, { onChange: (v) => { if (v) saveNested({ noteCardStyle: { [f.key]: v } }); } })
+        : Object.assign({}, f, { onChange: undefined });
+      const c = ui.Fields.create(spec, values[f.key], { idPrefix: 'fld-nc-' });
+      items.push({ spec, ctrl: c });
+      if (f.type !== 'color') {
+        /* 文本类字段没有 spec.onChange 通道：直接监听内部 input 的 change（与旧实现同语义） */
+        const inp = c.el.querySelector('input');
+        if (inp) inp.addEventListener('change', () => saveNested({ noteCardStyle: { [f.key]: inp.value } }));
+      }
+    }
+    ui.Fields.layout(items, box);
+    const s = cfg.noteCardStyle;
+    const pv = $('nc-preview');
+    pv.style.background = s.bgColor;
+    pv.style.color = s.textColor;
+    pv.style.border = s.borderWidth + ' solid ' + s.borderColor;
+    pv.style.borderRadius = s.borderRadius;
+    pv.style.boxShadow = s.shadow;
+    pv.style.maxWidth = s.maxWidth;
+    pv.style.opacity = s.opacity;
+    pv.style.fontSize = s.fontSize;
+  }
+
+  $('btn-nc-reset').addEventListener('click', async () => {
+    await mutate(() => KH.Store.patch({ noteCardStyle: KH.Config.defaults.noteCardStyle }));
+    D.toast('已恢复默认卡片样式', 'ok');
+  });
+
+  /* ==================================================================== ⑤ 站点 */
+
+  /* 文案单一来源在 FieldMap（弹窗下拉与列表展示共用一套，避免"同一个下拉两套说法"） */
+  const SCOPE_TEXT = fm.SITE_SCOPE_TEXT;
+  const MATCH_TEXT = fm.SITE_MATCH_TEXT;
+
+  function renderSites() {
+    const box = $('site-rule-list');
+    clear(box);
+    const rules = cfg.siteRules || [];
+    if (!rules.length) {
+      box.appendChild(h('div', { class: 'kh-empty', text: '还没有站点规则：默认所有网站都会高亮。' }));
+    } else {
+      for (const r of rules) {
+        const isWhite = r.type === 'whitelist';
+        const row = h('div', { class: 'kh-site-row' }, [
+          h('span', { class: 'kh-tag ' + (isWhite ? 'kh-tag-ok' : 'kh-tag-no'), text: isWhite ? '✅ 白名单' : '🚫 黑名单' }),
+          h('span', { class: 'kh-site-pattern', text: r.pattern }),
+          h('span', { class: 'kh-site-meta', text: (SCOPE_TEXT[r.scope] || '域名') + ' · ' + (MATCH_TEXT[r.matchType] || '精确') })
+        ]);
+        const ops = h('span', { class: 'kh-row-ops' });
+        const edit = h('button', { class: 'kh-link-btn', type: 'button', text: '编辑' });
+        const del = h('button', { class: 'kh-link-btn kh-link-danger', type: 'button', text: '删除' });
+        edit.addEventListener('click', () => openSiteRule(r));
+        del.addEventListener('click', async () => {
+          const ok = await D.confirmBox('删除规则「' + r.pattern + '」？', { title: '删除站点规则', danger: true, saveLabel: '删除' });
+          if (!ok) return;
+          await mutate(() => KH.Store.patch({ siteRules: (cfg.siteRules || []).filter(x => x !== r) }));
+        });
+        ops.appendChild(edit); ops.appendChild(del);
+        row.appendChild(ops);
+        box.appendChild(row);
+      }
+    }
+
+    const dis = $('site-disabled-list');
+    clear(dis);
+    const hosts = Object.keys(cfg.siteDisabledMap || {});
+    if (!hosts.length) {
+      dis.appendChild(h('span', { class: 'kh-muted', text: '当前没有被临时禁用的站点。' }));
+    } else {
+      for (const host of hosts) {
+        const btn = h('button', { class: 'kh-mini-btn', type: 'button', text: host + ' ✕', title: '点击恢复该站点高亮' });
+        btn.addEventListener('click', async () => {
+          const map = Object.assign({}, cfg.siteDisabledMap);
+          delete map[host];
+          await mutate(() => KH.Store.patch({ siteDisabledMap: map }));
+        });
+        dis.appendChild(btn);
+      }
     }
   }
 
-  // —— 导入：选择范围 + 合并/覆盖 ——
-  let pendingImportText = null;
-  function importFile(accept, callback) {
-    const input = $('#importFileInput');
-    input.accept = accept;
-    input.onchange = async (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
+  function openSiteRule(rule) {
+    const r = rule || { type: 'blacklist', pattern: '', matchType: 'exact', scope: 'domain' };
+    /* 统一走共享字段工厂（原先是四处手写 `.kh-fld`，没有 id/for） */
+    const fb = fieldBody(fm.SITE_RULE_FIELDS, r, { idPrefix: 'fld-sr-' });
+
+    ui.Modal.open({
+      title: rule ? '编辑站点规则' : '添加站点规则', size: 'sm',
+      body: fb.body,
+      onSave: async () => {
+        const v = fb.read();
+        const p = String(v.pattern || '').trim();
+        if (!p) { D.toast('请填写站点或网址', 'error'); return false; }
+        const item = { type: v.type, pattern: p, matchType: v.matchType, scope: v.scope };
+        const list = (cfg.siteRules || []).slice();
+        const idx = rule ? list.indexOf(rule) : -1;
+        if (idx >= 0) list[idx] = item; else list.push(item);
+        await mutate(() => KH.Store.patch({ siteRules: list }));
+        D.toast('站点规则已保存', 'ok');
+      }
+    });
+  }
+
+  $('btn-site-add').addEventListener('click', () => openSiteRule(null));
+
+  /* ==================================================================== ⑥ 导入导出 */
+
+  const expScope = () => ({
+    keywords: $('exp-keywords').checked,
+    siteRules: $('exp-site').checked,
+    siteDisabled: $('exp-disabled').checked,
+    styles: $('exp-styles').checked
+  });
+  const impScope = () => ({
+    keywords: $('imp-keywords').checked,
+    siteRules: $('imp-site').checked,
+    siteDisabled: $('imp-disabled').checked,
+    styles: $('imp-styles').checked
+  });
+  const impMode = () => (document.querySelector('input[name=imp-mode]:checked') || {}).value || 'merge';
+
+  function stamp() {
+    const d = new Date();
+    const p = (n) => String(n).padStart(2, '0');
+    return d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + '-' + p(d.getHours()) + p(d.getMinutes());
+  }
+
+  $('btn-export-json').addEventListener('click', () => {
+    const sc = expScope();
+    if (!sc.keywords && !sc.siteRules && !sc.siteDisabled && !sc.styles) { D.toast('请至少勾选一块内容', 'error'); return; }
+    KH.Store.download('keyword-highlighter-' + stamp() + '.json', KH.Store.exportJSON(sc, cfg), 'application/json');
+    D.toast('已导出 JSON', 'ok');
+  });
+
+  $('btn-export-csv').addEventListener('click', () => {
+    KH.Store.download('keyword-highlighter-keywords-' + stamp() + '.csv', KH.Store.exportCSV(cfg), 'text/csv');
+    D.toast('已导出 CSV（关键词、组合方向等 18 列）', 'ok');
+  });
+
+  /* Excel 表格导出：.xls = HTML 单表，Excel 原生识别 */
+
+  $('btn-export-xls').addEventListener('click', () => {
+
+    KH.Store.download('keyword-highlighter-keywords-' + stamp() + '.xls', KH.Store.exportExcelTable(cfg), 'application/vnd.ms-excel');
+
+    D.toast('已导出 Excel 表格（可直接用 Excel 打开）', 'ok');
+
+  });
+
+  $('btn-import-json').addEventListener('click', () => { $('file-json').value = ''; $('file-json').click(); });
+  $('btn-import-csv').addEventListener('click', () => { $('file-csv').value = ''; $('file-csv').click(); });
+
+  /**
+   * JSON 导入 —— **唯一实现**。
+   * 「导入导出」页两个按钮和「关键词管理」页的批量导入都走这里：
+   * 导入是要覆盖/合并用户数据的破坏性操作，绝不能存在第二份"简化版"逻辑
+   * （两份逻辑迟早一份忘了确认框、一份忘了勾选范围）。
+   */
+  async function importJSONText(text) {
+    let preview = null;
+    try { preview = KH.Store.previewJSON(text); } catch (err) { D.toast('JSON 解析失败：' + err.message, 'error'); return; }
+    const has = preview.has;
+    const sc = impScope();
+    const nothing = !(sc.keywords && has.keywords) && !(sc.siteRules && has.siteRules)
+      && !(sc.siteDisabled && has.siteDisabled) && !(sc.styles && has.styles);
+    if (nothing) { D.toast('文件内容与勾选范围没有交集，请调整勾选', 'error'); return; }
+
+    const mode = impMode();
+    const lines = [
+      '文件包含：' + [has.keywords ? '关键词' : '', has.siteRules ? '站点规则' : '', has.siteDisabled ? '禁用状态' : '', has.styles ? '样式配置' : ''].filter(Boolean).join('、'),
+      '导入方式：' + (mode === 'merge' ? '合并（追加去重）' : '覆盖（替换被勾选的块）')
+    ];
+    if (mode === 'overwrite') lines.push('', '⚠️ 覆盖会清掉现有对应数据，建议先导出备份。');
+    const ok = await D.confirmBox(lines.join('\n'), { title: '确认导入', danger: mode === 'overwrite', saveLabel: '开始导入' });
+    if (!ok) return;
+    try {
+      let stats = null;
+      await mutate(async () => { stats = await KH.Store.importJSON(text, { include: sc, mode }, cfg); });
+      D.toast('导入完成：新增关键词 ' + stats.keywords + ' 条 / 分组 ' + stats.groups + ' 个 / 站点规则 ' + stats.siteRules + ' 条', 'ok');
+    } catch (err) {
+      D.toast('导入失败：' + err.message, 'error');
+    }
+  }
+
+  /** CSV 导入 —— 同上，唯一实现（列数 17/18 兼容由 Store.importCSV 负责） */
+  async function importCSVText(text) {
+    try {
+      let stats = null;
+      await mutate(async () => { stats = await KH.Store.importCSV(text, cfg); });
+      D.toast('CSV 导入完成：新增 ' + stats.added + ' 条，跳过重复 ' + stats.skipped + ' 条'
+        + (stats.groupsCreated ? '，新建分组 ' + stats.groupsCreated + ' 个' : ''), 'ok');
+    } catch (err) {
+      D.toast('CSV 导入失败：' + err.message, 'error');
+    }
+  }
+
+  /**
+   * 「📥 批量导入」：一个入口吃 CSV + JSON（按扩展名分发，扩展名缺失时按 MIME 兜底）。
+   * 比让用户先想清楚"我要导的是哪种格式"更省事，且两条分支各自复用的仍是同一份实现。
+   */
+  async function importAnyFile(file) {
+    if (!file) return;
+    const name = String(file.name || '');
+    const isCsv = /\.csv$/i.test(name) || (!/\.json$/i.test(name) && /csv/i.test(file.type || ''));
+    const text = await file.text();
+    if (isCsv) await importCSVText(text);
+    else await importJSONText(text);
+  }
+
+  $('file-json').addEventListener('change', async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (file) await importJSONText(await file.text());
+  });
+
+  $('file-csv').addEventListener('change', async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (file) await importCSVText(await file.text());
+  });
+
+  $('btn-reset').addEventListener('click', async () => {
+    const sc = {
+      keywords: $('rst-keywords').checked,
+      siteRules: $('rst-site').checked,
+      siteDisabled: $('rst-site').checked,
+      styles: $('rst-styles').checked
+    };
+    if (!sc.keywords && !sc.siteRules && !sc.styles) { D.toast('请至少勾选一块内容', 'error'); return; }
+    const ok = await D.confirmBox(
+      '将清空：' + [sc.keywords ? '关键词与分组' : '', sc.siteRules ? '站点规则/禁用状态' : '', sc.styles ? '样式与配置' : ''].filter(Boolean).join('、')
+      + '\n\n⚠️ 此操作不可撤销，建议先导出备份。',
+      { title: '重置数据', danger: true, saveLabel: '确认重置' }
+    );
+    if (!ok) return;
+    await mutate(() => KH.Store.reset(sc, cfg));
+    D.toast('已重置', 'ok');
+  });
+
+  /* ==================================================================== ⑦ 匹配默认值与性能 */
+
+  const PF_KEYS = ['shadowDOMEnabled', 'suspendInactiveTab', 'pageResidualClean', 'pageRebuildOnChange', 'scanCollapsedCustom'];
+
+  function renderPerf() {
+    const ms = cfg.matchSettings || {};
+    $('ms-defaultCaseSensitive').checked = !!ms.defaultCaseSensitive;
+    $('ms-defaultWholeWord').checked = !!ms.defaultWholeWord;
+    $('ms-defaultUseRegex').checked = !!ms.defaultUseRegex;
+
+    for (const k of PF_KEYS) $('pf-' + k).checked = !!cfg[k];
+    $('pf-changeHandling').value = (cfg.changeHandling === 'always') ? 'always' : 'smart';
+    $('pf-silent').value = cfg.pageRebuildSilentMs;
+    $('pf-gap').value = cfg.pageRebuildGapMs;
+    $('pf-imgSize').value = (cfg.importantNote || {}).imgSize || '';
+  }
+
+  for (const k of ['defaultCaseSensitive', 'defaultWholeWord', 'defaultUseRegex']) {
+    $('ms-' + k).addEventListener('change', async (e) => {
+      const on = e.target.checked;
+      await saveNested({ matchSettings: { [k]: on } });
+      D.toast(on ? '已设为新建默认（仅影响以后新建）' : '已取消该默认值', 'ok');
+    });
+  }
+
+  for (const k of PF_KEYS) {
+    $('pf-' + k).addEventListener('change', async (e) => {
+      await mutate(() => KH.Store.patch({ [k]: e.target.checked }));
+    });
+  }
+
+  /* 变更处理方式（K58）：smart = 相关性预筛（默认）；always = 任何变动都整页重建（旧行为、最保守） */
+  $('pf-changeHandling').addEventListener('change', async () => {
+    const v = ($('pf-changeHandling').value === 'always') ? 'always' : 'smart';
+    await mutate(() => KH.Store.patch({ changeHandling: v }));
+    D.toast(v === 'always'
+      ? '已切换为保守：任何页面变动都会整页重建（更费资源）'
+      : '已切换为智能：只在与命中相关时重建（省资源）', 'ok');
+  });
+
+  $('pf-silent').addEventListener('change', async () => {
+    const v = Math.max(0, parseInt($('pf-silent').value, 10) || 0);
+    await mutate(() => KH.Store.patch({ pageRebuildSilentMs: v }));
+  });
+  $('pf-gap').addEventListener('change', async () => {
+    const v = Math.max(0, parseInt($('pf-gap').value, 10) || 0);
+    await mutate(() => KH.Store.patch({ pageRebuildGapMs: v }));
+  });
+  $('pf-imgSize').addEventListener('change', async () => {
+    const v = parseInt($('pf-imgSize').value, 10);
+    await saveNested({ importantNote: { imgSize: (isNaN(v) || v <= 0) ? KH.Config.defaults.importantNote.imgSize : v } });
+  });
+
+  /* ==================================================================== ⑧ 更新日志（单源） */
+
+  function renderChangelog() {
+    const box = $('changelog-list');
+    clear(box);
+    const toc = $('ver-toc');
+    if (toc) clear(toc);
+    const list = (typeof window.CHANGELOG !== 'undefined' && Array.isArray(window.CHANGELOG)) ? window.CHANGELOG : [];
+    if (!list.length) { box.appendChild(h('div', { class: 'kh-muted', text: '暂无更新日志' })); return; }
+    // 全量渲染 + 为每条版本生成锚点，右侧悬浮目录可点击跳转
+    for (const entry of list) {
+      const items = Array.isArray(entry.items) ? entry.items : [String(entry.items || '')];
+      const ver = String(entry.version || '');
+      const lid = 'chg-' + ver.replace(/[^\w.]/g, '_');
+      box.appendChild(h('div', { class: 'kh-log-item', id: lid }, [
+        h('div', { class: 'kh-log-ver', text: ver }),
+        h('ul', { class: 'kh-log-list' }, items.map(t => h('li', { text: String(t) })))
+      ]));
+      if (toc) {
+        toc.appendChild(h('a', {
+          class: 'kh-ver-toc-item', href: '#' + lid, text: ver,
+          on: { click: (ev) => {
+            ev.preventDefault();
+            const t = document.getElementById(lid);
+            if (t && t.scrollIntoView) t.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          } }
+        }));
+      }
+    }
+    const foot = h('div', { class: 'kh-ver-foot' });
+    const more = h('button', { class: 'kh-mini-btn', type: 'button', text: '查看完整更新日志（欢迎页）' });
+    more.addEventListener('click', () => window.open('../welcome/welcome.html', '_blank'));
+    foot.appendChild(more);
+    box.appendChild(foot);
+  }
+
+  /* ==================================================================== 启动 */
+
+  /**
+   * 左侧固定侧边栏的分区（id 与 .kh-tab 的 data-tab 一一对应）。
+   * 变更记录：
+   *   · 原「匹配与性能」不再单独成区 —— 控件已并入「帮助与隐私」；
+   *   · 原「高亮样式」+「备注卡片样式」两个分区**合并为「样式」**（用户 2026-09 要求：
+   *     "两个菜单合并成样式，里面内容也合并起来"）—— 它们都是"全局默认外观"，分开只是多一次点击。
+   *     ⚠️ 策划案里的 7 分区已被用户覆盖为 6 分区，改导航前先看 e2e 的"侧边栏分区"断言。
+   */
+  const SECTIONS = ['keywords', 'groups', 'style', 'ocr', 'sites', 'data', 'help'];
+
+  function showSection(id) {
+    const target = SECTIONS.indexOf(id) >= 0 ? id : 'keywords';
+    for (const s of SECTIONS) {
+      const sec = $('sec-' + s);
+      if (sec) sec.hidden = (s !== target);
+    }
+    setActiveTab(target);
+  }
+
+  /** 高亮当前分区（点击与 hash 直达共用同一处，避免两套"谁在激活"的判断） */
+  function setActiveTab(id) {
+    for (const a of document.querySelectorAll('.kh-tab')) {
+      const on = a.dataset.tab === id;
+      a.classList.toggle('is-active', on);
+      if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+    }
+  }
+
+  function renderTabs() {
+    const tabs = Array.prototype.slice.call(document.querySelectorAll('.kh-tab'));
+    for (const a of tabs) {
+      a.addEventListener('click', (e) => {
+        // 自己切分区（不依赖浏览器对 #hash 的滚动）：切完回到内容顶部，否则会停在上一节的中段
+        e.preventDefault();
+        const id = a.dataset.tab;
+        if (SECTIONS.indexOf(id) < 0) return;
+        const sec = $('sec-' + id);
+        if (sec) {
+          try { history.replaceState(null, '', '#' + sec.id); } catch (err) { /* file:// 等场景忽略 */ }
+        }
+        showSection(id);
+        const main = document.querySelector('.kh-main');
+        if (main && main.scrollIntoView) main.scrollIntoView({ block: 'start' });
+        else window.scrollTo(0, 0);
+      });
+    }
+    // 帮助与隐私：内部二级 Tab 分页（一屏一类，逻辑独立、不干扰外层分区切换）
+    const helpTabs = document.getElementById('help-tabs');
+    if (helpTabs) {
+      const helpPans = Array.prototype.slice.call(document.querySelectorAll('#sec-help .kh-hpanel'));
+      helpTabs.addEventListener('click', (e) => {
+        const b = e.target.closest('.kh-htab');
+        if (!b) return;
+        const pan = b.dataset.hpan;
+        for (const tb of helpTabs.querySelectorAll('.kh-htab')) tb.classList.toggle('active', tb === b);
+        for (const p of helpPans) p.classList.toggle('active', p.dataset.hpan === pan);
+      });
+    }
+
+    // 支持从 popup / 欢迎页带 hash 跳进来（如 options.html#help）
+    const fromHash = String(location.hash || '').replace(/^#sec-/, '').replace(/^#/, '');
+    showSection(SECTIONS.indexOf(fromHash) >= 0 ? fromHash : 'keywords');
+  }
+
+  function renderAll() {
+    renderHeader();
+    renderKeywordTable();
+    renderGroups();
+    renderHighlightStyle();
+    renderNoteCardStyle();
+    renderOcr();
+    renderSites();
+    renderPerf();
+  }
+
+  /* ============================================================ 图片识别（OCR）
+   * 语言包管理（下载 / 手动导入 / 清除 / 自检）+ 跨域图片的**按站点**授权。
+   *
+   * 【为什么语言包要有"手动导入"】隐私承诺是"除了本项目自己的语言包地址，不访问任何网络"。
+   * 有些环境（内网/离线机）连那一次下载都不该发生 —— 那就把 `chi_sim.traineddata.gz` /
+   * `eng.traineddata.gz` 手动选进来，全程零联网（校验里会标出"与官方包一致/来自本地文件"）。
+   */
+  let ocrWired = false;
+
+  function ocrSend(msg) {
+    return new Promise((resolve) => {
       try {
-        const text = await file.text();
-        await callback(text, file); // 回调自行决定提示与后续动作
-      } catch (err) {
-        alert('导入失败：' + err.message);
-      }
-      input.value = '';
-    };
-    input.click();
+        chrome.runtime.sendMessage(msg, (res) => { void chrome.runtime.lastError; resolve(res || null); });
+      } catch (e) { resolve(null); }
+    });
   }
 
-  function openImportModal(preview, text) {
-    pendingImportText = text;
-    const setChk = (id, v) => { const e = $(id); if (e) e.checked = !!v; };
-    setChk('#impKw', preview.hasKeywords);
-    setChk('#impSite', preview.hasSiteRules);
-    setChk('#impDisabled', preview.hasSiteDisabled);
-    setChk('#impStyle', preview.hasStyles);
-    const m = document.querySelector('input[name="impMode"][value="merge"]');
-    if (m) m.checked = true;
-    const mm = $('#importModal');
-    if (mm) mm.style.display = 'flex';
+  function ocrRow(key, info) {
+    const row = document.createElement('div');
+    row.className = 'kh-form-row';
+    row.setAttribute('data-ocr-lang', key);
+
+    const fld = document.createElement('div');
+    fld.className = 'kh-form-fld';
+    const name = document.createElement('div');
+    name.className = 'kh-fld-label';
+    name.textContent = (info.label || key) + '（' + key + '，' + Math.round((info.fileBytes || 0) / 1024) + ' KB）';
+    const state = document.createElement('div');
+    state.className = 'kh-muted';
+    state.setAttribute('data-ocr-state', key);
+    state.textContent = info.cached ? ('已就绪（本地缓存 ' + Math.round((info.cachedBytes || 0) / 1024) + ' KB）')
+      : (info.local ? '已就绪（扩展目录里的离线包）' : '未下载');
+    fld.appendChild(name);
+    fld.appendChild(state);
+    row.appendChild(fld);
+
+    const mkBtn = (id, text, title) => {
+      const b = document.createElement('button');
+      b.className = 'kh-mini-btn';
+      b.type = 'button';
+      b.id = id;
+      b.textContent = text;
+      b.title = title;
+      return b;
+    };
+    row.appendChild(mkBtn('btn-ocr-dl-' + key, '下载', '从项目主页下载并校验（sha256）后存到本地'));
+    row.appendChild(mkBtn('btn-ocr-import-' + key, '手动导入', '选择本地的 ' + info.file + '（完全离线）'));
+    row.appendChild(mkBtn('btn-ocr-clear-' + key, '清除', '删除本地缓存（下次需要重新下载或导入）'));
+    return row;
   }
-  function closeImportModal() { const mm = $('#importModal'); if (mm) mm.style.display = 'none'; pendingImportText = null; }
-  async function importJSON() {
-    importFile('.json', async (text) => {
-      const preview = await Storage.getImportPreview(text);
-      if (!(preview.hasKeywords || preview.hasSiteRules || preview.hasSiteDisabled || preview.hasStyles)) {
-        alert('该文件不包含可导入的关键词 / 站点规则 / 样式数据。');
+
+  /** 当前识别档位（K67）：fast（默认）/ best（高精度）。所有语言包操作都跟着它走。 */
+  function ocrQuality() {
+    return (cfg && cfg.imgOcr && cfg.imgOcr.quality) === 'best' ? 'best' : 'fast';
+  }
+
+  function renderOcrLangs() {
+    const box = $('ocr-lang-list');
+    if (!box) return;
+    box.textContent = '语言包状态读取中…';
+    return ocrSend({ type: KH.MSG.OCR_LANG_STATE, quality: ocrQuality() }).then((res) => {
+      if (!res || !res.ok) { box.textContent = '读取失败：' + ((res && res.error) || '未知错误'); return; }
+      box.textContent = '';
+      const langs = (res.state && res.state.langs) || {};
+      if (res.state && res.state.available === false) {
+        const p = document.createElement('p');
+        p.className = 'kh-muted';
+        p.textContent = '本机还没有高精度语言包。请在下面的「语言包」里下载（只从本项目主页，下载后做 sha256 校验），'
+          + '或在这台机器上用「手动导入」喂一个标准模型包（tessdata 的 chi_sim.traineddata）。'
+          + '现在也可以先把档位留在「快速」。';
+        box.appendChild(p);
+      }
+      for (const key of Object.keys(langs)) box.appendChild(ocrRow(key, langs[key]));
+      const tip = document.createElement('p');
+      tip.className = 'kh-muted';
+      tip.textContent = '说明：下载只发生在本项目主页（moxiaoren.github.io），下载后会做 sha256 校验，校验不一致直接丢弃；'
+        + '手动导入的包若与官方包一致会标注「校验一致」。引擎空闲约 90 秒后自动释放。';
+      box.appendChild(tip);
+    });
+  }
+
+  function renderOcrSites() {
+    const box = $('ocr-site-list');
+    if (!box) return;
+    const map = (cfg && cfg.imgOcr && cfg.imgOcr.crossOriginSites) || {};
+    const hosts = Object.keys(map).filter((h) => map[h]);
+    box.textContent = '';
+    if (!hosts.length) {
+      const p = document.createElement('p');
+      p.className = 'kh-muted';
+      p.textContent = '（还没有授权任何站点：跨域图片会被标成「跨域（未授权）」）';
+      box.appendChild(p);
+      return;
+    }
+    for (const host of hosts) {
+      const row = document.createElement('div');
+      row.className = 'kh-form-row';
+      row.setAttribute('data-ocr-site', host);
+      const fld = document.createElement('div');
+      fld.className = 'kh-form-fld';
+      const t = document.createElement('div');
+      t.className = 'kh-fld-label';
+      t.textContent = host;
+      fld.appendChild(t);
+      row.appendChild(fld);
+      const del = document.createElement('button');
+      del.className = 'kh-mini-btn';
+      del.type = 'button';
+      del.textContent = '移除';
+      del.addEventListener('click', () => {
+        const next = Object.assign({}, (cfg.imgOcr && cfg.imgOcr.crossOriginSites) || {});
+        delete next[host];
+        mutate(() => KH.Store.patch({ imgOcr: Object.assign({}, cfg.imgOcr, { crossOriginSites: next }) }))
+          .then(() => renderOcrSites());
+      });
+      row.appendChild(del);
+      box.appendChild(row);
+    }
+  }
+
+  function renderOcr() {
+    if (!$('sec-ocr')) return;
+    if (!ocrWired) { ocrWired = true; wireOcr(); }
+    const sel = $('ocr-quality');
+    if (sel) sel.value = ocrQuality();
+    renderOcrLangs();
+    renderOcrSites();
+  }
+
+  function wireOcr() {
+    const importFile = $('ocr-import-file');
+    let importLang = '';
+
+    document.addEventListener('click', (e) => {
+      const id = e.target && e.target.id ? String(e.target.id) : '';
+      let m = /^btn-ocr-dl-(.+)$/.exec(id);
+      if (m) {
+        const lang = m[1];
+        e.target.disabled = true;
+        e.target.textContent = '下载中…';
+        ocrSend({ type: KH.MSG.OCR_LANG_DOWNLOAD, lang: lang, quality: ocrQuality() }).then((res) => {
+          e.target.disabled = false;
+          e.target.textContent = '下载';
+          if (!res || !res.ok) { D.toast('下载失败：' + ((res && res.error) || '未知错误'), 'error'); return; }
+          D.toast((res.verified ? '语言包已下载并校验通过' : '语言包已保存') + '（' + Math.round(res.bytes / 1024) + ' KB）', 'ok');
+          renderOcrLangs();
+        });
         return;
       }
-      openImportModal(preview, text);
-    });
-  }
-  async function doImport() {
-    const text = pendingImportText;
-    if (!text) { closeImportModal(); return; }
-    const include = {
-      keywords: $('#impKw')?.checked === true,
-      siteRules: $('#impSite')?.checked === true,
-      siteDisabled: $('#impDisabled')?.checked === true,
-      styles: $('#impStyle')?.checked === true
-    };
-    const modeEl = document.querySelector('input[name="impMode"]:checked');
-    const mode = modeEl ? modeEl.value : 'merge';
-    if (!(include.keywords || include.siteRules || include.siteDisabled || include.styles)) { alert('请至少勾选一项要导入的内容。'); return; }
-    try {
-      const stats = await Storage.importData(text, { include, mode });
-      closeImportModal();
-      if (mode === 'overwrite') {
-        alert('已覆盖导入所选内容。');
-      } else {
-        const nk = (stats.keywords || 0) + (stats.groups || 0);
-        const ns = stats.siteRules || 0;
-        alert((nk + ns) > 0
-          ? '合并导入完成：新增关键词/分组 ' + nk + '、站点规则 ' + ns + '。'
-          : '合并导入完成：所选内容与现有数据一致，没有新增。');
-      }
-      loadKeywords();
-      loadSiteRules();
-      notifyContentRefresh();
-    } catch (err) {
-      alert('导入失败：' + err.message);
-    }
-  }
-
-  async function importCSV() {
-    importFile('.csv', async (text) => {
-      await Storage.importCSV(text);
-      alert('已导入 CSV（关键词）。');
-      loadKeywords();
-      notifyContentRefresh();
-    });
-  }
-
-  async function resetAll() {
-    if (!confirm('⚠️ 确定要重置所有数据吗？\n\n这将删除所有关键词、分组、站点规则和自定义样式配置。\n\n此操作不可撤销！')) return;
-    if (!confirm('再次确认：真的要删除所有数据吗？')) return;
-    
-    await Storage.clear();
-    await Storage.set(Storage.defaults);
-    alert('已重置为默认设置');
-    window.location.reload();
-  }
-
-  function downloadFile(filename, content, mimeType) {
-    const blob = new Blob([content], { type: mimeType });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  // ========== 通知内容脚本刷新 ==========
-  async function notifyContentRefresh() {
-    const tabs = await chrome.tabs.query({});
-    for (const tab of tabs) {
-      chrome.tabs.sendMessage(tab.id, { action: 'refresh' }).catch(() => {});
-    }
-  }
-
-  // ========== 工具函数 ==========
-  function escapeHtml(str) {
-    if (!str) return '';
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
-  }
-
-  // ========== 初始化 ==========
-  // 帮助与隐私：按 h3 分组并渲染为横向标签分页，避免页面上无线往下拉长
-  function initHelpCollapse() {
-    const content = $('#section-help .help-content');
-    if (!content) return;
-
-    // 默认展示的功能说明组的标题关键字（用于定位默认激活的 tab）
-    const DEFAULT_ACTIVE_KEY = '功能说明';
-
-    // 按 h3 分组：h3 及之后直到下一个 h3 的所有内容为一组
-    const groups = [];
-    let cur = null;
-    Array.from(content.children).forEach((node) => {
-      if (node.tagName === 'H3') {
-        cur = { title: node, body: [], key: node.textContent || '' };
-        groups.push(cur);
-      } else if (cur) {
-        cur.body.push(node);
+      m = /^btn-ocr-import-(.+)$/.exec(id);
+      if (m && importFile) { importLang = m[1]; importFile.value = ''; importFile.click(); return; }
+      m = /^btn-ocr-clear-(.+)$/.exec(id);
+      if (m) {
+        ocrSend({ type: KH.MSG.OCR_LANG_CLEAR, langs: [m[1]], quality: ocrQuality() }).then((res) => {
+          if (!res || !res.ok) { D.toast('清除失败', 'error'); return; }
+          D.toast('已清除本地语言包', 'ok');
+          renderOcrLangs();
+        });
       }
     });
-    if (groups.length === 0) return;
 
-    content.innerHTML = '';
-
-    // tab 导航条
-    const tabBar = document.createElement('div');
-    tabBar.className = 'help-tabs';
-
-    // tab 面板区
-    const panels = document.createElement('div');
-    panels.className = 'help-tab-panels';
-
-    let defaultIdx = 0;
-    groups.forEach((g, idx) => {
-      // 计算默认激活：优先「功能说明」组
-      if (g.key.indexOf(DEFAULT_ACTIVE_KEY) !== -1) defaultIdx = idx;
-
-      const tab = document.createElement('button');
-      tab.type = 'button';
-      tab.className = 'help-tab';
-      tab.textContent = g.title.textContent;
-      tab.dataset.idx = idx;
-
-      const panel = document.createElement('div');
-      panel.className = 'help-tab-panel';
-      if (idx !== defaultIdx) panel.style.display = 'none';
-      g.body.forEach((b) => panel.appendChild(b));
-
-      tabBar.appendChild(tab);
-      panels.appendChild(panel);
-    });
-
-    // 默认激活
-    const tabs = Array.from(tabBar.children);
-    if (tabs[defaultIdx]) tabs[defaultIdx].classList.add('active');
-
-    // 切换逻辑
-    tabBar.addEventListener('click', (e) => {
-      const btn = e.target.closest('.help-tab');
-      if (!btn) return;
-      const idx = parseInt(btn.dataset.idx, 10);
-      tabs.forEach((t, i) => {
-        t.classList.toggle('active', i === idx);
-        panels.children[i].style.display = i === idx ? 'block' : 'none';
+    if (importFile) {
+      importFile.addEventListener('change', () => {
+        const f = importFile.files && importFile.files[0];
+        if (!f) return;
+        const fr = new FileReader();
+        fr.onload = () => {
+          const b64 = String(fr.result || '').split(',')[1] || '';
+          ocrSend({ type: KH.MSG.OCR_LANG_IMPORT, lang: importLang, base64: b64, name: f.name, quality: ocrQuality() }).then((res) => {
+            if (!res || !res.ok) { D.toast('导入失败：' + ((res && res.error) || '未知错误'), 'error'); return; }
+            D.toast(res.official ? '导入成功（sha256 与官方包一致）' : '导入成功（本地文件，未与官方包比对）', 'ok');
+            renderOcrLangs();
+          });
+        };
+        fr.readAsDataURL(f);
       });
-    });
-
-    content.appendChild(tabBar);
-    content.appendChild(panels);
-  }
-
-  async function init() {
-    initNavigation();
-
-    // v1.10.0 版本号单源化：侧栏版本从 manifest 动态读取，杜绝与发版版本不同步
-    (function syncSidebarVersion() {
-      const sv = document.getElementById('sidebarVersion');
-      if (sv) { try { sv.textContent = 'v' + (chrome.runtime.getManifest().version || ''); } catch (e) {} }
-    })();
-
-    // 支持从 popup/欢迎页跳转到指定分区（如 #help -> 帮助与隐私）
-    if (location.hash === '#help') switchSection('help');
-
-    // 关键词管理
-    $('#btnAddKeyword')?.addEventListener('click', () => showKeywordModal());
-    $('#btnEmptyAdd')?.addEventListener('click', () => showKeywordModal());
-
-    // v1.6.36 弹窗章节折叠/展开
-    document.querySelectorAll('.collapse-trigger').forEach(tr => {
-      tr.addEventListener('click', () => {
-        const sec = tr.closest('.collapsible');
-        if (sec) sec.classList.toggle('closed');
-      });
-    });
-
-    // v1.6.37 独立窗口「?add」模式：隐藏后台设置页，只显示「添加关键词」弹窗
-    window.KH_ADD_MODE = new URLSearchParams(location.search).has('add');
-    if (window.KH_ADD_MODE) {
-      const layout = document.querySelector('.app-layout');
-      if (layout) layout.style.display = 'none';
-      document.body.classList.add('add-mode');
-      showKeywordModal();
     }
-    $('#keywordSearch')?.addEventListener('input', () => { kwState.page = 1; loadKeywords(); });
-    $('#groupFilter')?.addEventListener('change', () => { kwState.page = 1; loadKeywords(); });
-    $('#statusFilter')?.addEventListener('change', () => { kwState.page = 1; loadKeywords(); });
-    $('#regexFilter')?.addEventListener('change', () => { kwState.page = 1; loadKeywords(); });
-    $('#sortFilter')?.addEventListener('change', () => { kwState.page = 1; loadKeywords(); });
 
-    // 表头全选本页 / 批量栏本页全选
-    $('#checkAllPage')?.addEventListener('change', (e) => {
-      const checked = e.target.checked;
-      document.querySelectorAll('.row-check').forEach(cb => {
-        cb.checked = checked;
-        if (checked) kwState.selected.add(cb.dataset.id);
-        else kwState.selected.delete(cb.dataset.id);
+    const qualitySel = $('ocr-quality');
+    if (qualitySel) {
+      qualitySel.addEventListener('change', async () => {
+        const q = qualitySel.value === 'best' ? 'best' : 'fast';
+        await mutate(() => KH.Store.patch({ imgOcr: Object.assign({}, cfg.imgOcr, { quality: q }) }));
+        D.toast(q === 'best'
+          ? '已切换到高精度识别（更准、单张更慢；语言包按这一档单独保存，切换档位后才需要下载）'
+          : '已切换到快速识别（省流量、更快）', 'ok');
+        renderOcrLangs();          // 语言包状态按档位重读（两档各自独立）
       });
-      refreshSelectionUI(document.querySelector('#keywordTableBody'));
-    });
-    $('#selectAllPage')?.addEventListener('change', (e) => {
-      $('#checkAllPage').checked = e.target.checked;
-      const checked = e.target.checked;
-      document.querySelectorAll('.row-check').forEach(cb => {
-        cb.checked = checked;
-        if (checked) kwState.selected.add(cb.dataset.id);
-        else kwState.selected.delete(cb.dataset.id);
-      });
-      refreshSelectionUI(document.querySelector('#keywordTableBody'));
-    });
-
-    // 批量操作按钮
-    initTableResize();
-    document.querySelectorAll('[data-bulk]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const action = btn.dataset.bulk;
-        switch (action) {
-          case 'enable': bulkSetEnabled(true); break;
-          case 'disable': bulkSetEnabled(false); break;
-          case 'move': bulkMoveGroup(); break;
-          case 'note': bulkEditNote(); break;
-          case 'matchrule': bulkEditMatchRule(); break;
-          case 'delete': bulkDelete(); break;
-          case 'clear': bulkClear(); break;
-        }
-      });
-    });
-    $('#bulkNoteClose')?.addEventListener('click', closeBulkNote);
-    $('#bulkNoteCancel')?.addEventListener('click', closeBulkNote);
-    $('#bulkNoteSave')?.addEventListener('click', saveBulkNote);
-    $('#bulkNoteModal')?.addEventListener('click', (e) => {
-      if (e.target === $('#bulkNoteModal')) closeBulkNote();
-    });
-    $('#matchRuleClose')?.addEventListener('click', closeMatchRuleModal);
-    $('#matchRuleCancel')?.addEventListener('click', closeMatchRuleModal);
-    $('#matchRuleSave')?.addEventListener('click', saveMatchRule);
-    $('#matchRuleModal')?.addEventListener('click', (e) => {
-      if (e.target === $('#matchRuleModal')) closeMatchRuleModal();
-    });
-    $('#bulkMatchRuleClose')?.addEventListener('click', closeBulkMatchRule);
-    $('#bulkMatchRuleCancel')?.addEventListener('click', closeBulkMatchRule);
-    $('#bulkMatchRuleSave')?.addEventListener('click', saveBulkMatchRule);
-    $('#bulkMatchRuleModal')?.addEventListener('click', (e) => {
-      if (e.target === $('#bulkMatchRuleModal')) closeBulkMatchRule();
-    });
-    $('#kwColorClose')?.addEventListener('click', closeColorModal);
-    $('#kwColorCancel')?.addEventListener('click', closeColorModal);
-    $('#kwColorSave')?.addEventListener('click', saveColorModal);
-    $('#kwColorModal')?.addEventListener('click', (e) => {
-      if (e.target === $('#kwColorModal')) closeColorModal();
-    });
-    // 取色器 ↔ hex 双向同步（背景/文字）
-    const syncColorInput = (pickerId, textId) => {
-      $('#' + pickerId)?.addEventListener('input', () => { $('#' + textId).value = $('#' + pickerId).value; });
-      $('#' + textId)?.addEventListener('input', () => {
-        const v = ($('#' + textId).value || '').trim();
-        const h = normalizeHex(v);
-        if (h) { try { $('#' + pickerId).value = h; } catch (e) {} }
-      });
-    };
-    syncColorInput('kwColorBg', 'kwColorBgText');
-    syncColorInput('kwColorTxt', 'kwColorTxtText');
-    $('#keywordModalClose')?.addEventListener('click', closeKeywordModal);
-    $('#keywordModalCancel')?.addEventListener('click', closeKeywordModal);
-    $('#keywordModalSave')?.addEventListener('click', saveKeyword);
-    $('#editKwComboAxis')?.addEventListener('change', updateComboAxisLabels);
-    $('#keywordModal')?.addEventListener('click', (e) => {
-      if (e.target === $('#keywordModal')) closeKeywordModal();
-    });
-
-    // 单元格标注 / 重要笔记 勾选时展开对应细节
-    $('#editKwImportant')?.addEventListener('change', toggleKwSections);
-    // 富文本笔记编辑器（所见即所得）：关键词编辑 / 分组编辑共用同一套命令与表格手柄。
-    // 打开哪个弹窗就把 curNoteEd 指向哪个编辑器（见 showKeywordModal / showGroupModal），
-    // 工具栏按钮点击时强制把 curNoteEd 指到对应编辑器后再执行。
-    function wireNoteEditor(edEl, ids) {
-      if (!edEl) return;
-      const use = (fn) => () => { curNoteEd = edEl; fn(); };
-      edEl.addEventListener('click', handleNoteEditorClick);
-      edEl.addEventListener('paste', handleNoteEditorPaste);
-      edEl.addEventListener('keyup', () => { trackTableCell(); positionTableHandle(); });
-      edEl.addEventListener('keydown', trackTableCell);
-      edEl.addEventListener('scroll', positionTableHandle);
-      document.addEventListener('selectionchange', () => { if (document.activeElement === edEl) trackTableCell(); });
-      // $ 为 querySelector，id 必须带前导 #；历史 bug 曾用 $(ids.x)（无 #）导致工具栏按钮全部失效
-      $('#' + ids.insertImg)?.addEventListener('click', use(insertNoteImage));
-      $('#' + ids.bold)?.addEventListener('click', use(() => runNoteCmd('bold')));
-      $('#' + ids.italic)?.addEventListener('click', use(() => runNoteCmd('italic')));
-      $('#' + ids.table)?.addEventListener('click', use(insertNoteTable));
-      $('#' + ids.link)?.addEventListener('click', use(insertNoteLink));
     }
-    initTableHandle();
-    wireNoteEditor($('#editKwImportantNote'), { insertImg: 'btnKwNoteInsertImg', bold: 'btnKwNoteBold', italic: 'btnKwNoteItalic', table: 'btnKwNoteTable', link: 'btnKwNoteLink' });
-    wireNoteEditor($('#editGroupImpNoteRich'), { insertImg: 'btnGNoteInsertImg', bold: 'btnGNoteBold', italic: 'btnGNoteItalic', table: 'btnGNoteTable', link: 'btnGNoteLink' });
-    // 说明文字均采用「ⓘ + 悬浮气泡」展示（CSS hover），无需 JS。
 
-
-    // 分组管理
-    $('#btnAddGroup')?.addEventListener('click', () => showGroupModal());
-    $('#editGroupUseColor')?.addEventListener('change', () => {
-      $('#editGroupColorRow').style.display = $('#editGroupUseColor').checked ? 'flex' : 'none';
-    });
-    $('#groupModalClose')?.addEventListener('click', closeGroupModal);
-    $('#groupModalCancel')?.addEventListener('click', closeGroupModal);
-    $('#groupModalSave')?.addEventListener('click', saveGroup);
-    $('#groupModal')?.addEventListener('click', (e) => {
-      if (e.target === $('#groupModal')) closeGroupModal();
-    });
-
-    // 高亮样式
-    ['hlBgColor', 'hlTextColor', 'hlBorderColor'].forEach(id => {
-      $(`#${id}`)?.addEventListener('input', () => {
-        $(`#${id}Text`).value = $(`#${id}`).value;
-        updateHighlightPreview();
-        saveHighlightStyle();
+    const addBtn = $('btn-ocr-site-add');
+    if (addBtn) {
+      addBtn.addEventListener('click', () => {
+        const inp = $('ocr-site-input');
+        const host = String((inp && inp.value) || '').trim().replace(/^https?:\/\//i, '').replace(/\/.*$/, '').toLowerCase();
+        if (!host) { D.toast('请输入站点域名，如 example.com', 'error'); return; }
+        const next = Object.assign({}, (cfg.imgOcr && cfg.imgOcr.crossOriginSites) || {});
+        next[host] = true;
+        mutate(() => KH.Store.patch({ imgOcr: Object.assign({}, cfg.imgOcr, { crossOriginSites: next }) })).then(() => {
+          if (inp) inp.value = '';
+          D.toast('已允许读取 ' + host + ' 的跨域图片', 'ok');
+          renderOcrSites();
+        });
       });
-      $(`#${id}Text`)?.addEventListener('input', () => {
-        $(`#${id}`).value = $(`#${id}Text`).value;
-        updateHighlightPreview();
-        saveHighlightStyle();
+    }
+
+    const testBtn = $('btn-ocr-selftest');
+    if (testBtn) {
+      testBtn.addEventListener('click', () => {
+        const out = $('ocr-selftest-result');
+        const cv = document.createElement('canvas');
+        cv.width = 520; cv.height = 80;
+        const g = cv.getContext('2d');
+        g.fillStyle = '#fff'; g.fillRect(0, 0, 520, 80);
+        g.fillStyle = '#000'; g.font = '30px "Microsoft YaHei", SimHei, sans-serif';
+        g.fillText('关键词自检 A12345', 12, 50);
+        if (out) out.textContent = '识别中…';
+        const done = (msg) => {
+          if (out) {
+            out.textContent = msg.ok
+              ? ('✓ 识别成功（' + Math.round(msg.confidence || 0) + '% / ' + msg.ocrMs + 'ms）：' + String(msg.text || '').replace(/\s+/g, ' ').trim())
+              : ('✗ ' + (msg.error || '识别失败') + (msg.code === 'lang-missing' ? ' —— 请先下载或导入语言包' : ''));
+          }
+        };
+        chrome.runtime.onMessage.addListener(function once(m) {
+          if (!m || m.type !== KH.MSG.OCR_RESULT || m.to !== 'ui') return false;
+          chrome.runtime.onMessage.removeListener(once);
+          done(m);
+          return false;
+        });
+        ocrSend({ type: KH.MSG.OCR_IMAGE, dataUrl: cv.toDataURL('image/png'), keyword: '关键词' });
       });
-    });
-    ['hlBorderWidth', 'hlBorderRadius'].forEach(id => {
-      $(`#${id}`)?.addEventListener('input', () => {
-        updateHighlightPreview();
-        saveHighlightStyle();
-      });
-    });
-    $('#btnResetHighlightStyle')?.addEventListener('click', async () => {
-      await Storage.set({ highlightStyle: Storage.defaults.highlightStyle });
-      loadStyles();
-      notifyContentRefresh();
-    });
-
-    // v1.10.14：翻页残留自动清扫总开关 → 联动子项置灰
-    document.getElementById('optPageResidualClean')?.addEventListener('change', syncPageCleanSub);
-    document.getElementById('optPageCleanClick')?.addEventListener('change', syncPageCleanSub);
-
-    // 备注卡片样式
-    ['ncBgColor', 'ncTextColor', 'ncBorderColor'].forEach(id => {
-      $(`#${id}`)?.addEventListener('input', () => {
-        $(`#${id}Text`).value = $(`#${id}`).value;
-        updateNoteCardPreview();
-        saveNoteCardStyle();
-      });
-      $(`#${id}Text`)?.addEventListener('input', () => {
-        $(`#${id}`).value = $(`#${id}Text`).value;
-        updateNoteCardPreview();
-        saveNoteCardStyle();
-      });
-    });
-    ['ncBorderWidth', 'ncBorderRadius', 'ncMaxWidth', 'ncShadow', 'ncOpacity'].forEach(id => {
-      $(`#${id}`)?.addEventListener('input', () => {
-        updateNoteCardPreview();
-        saveNoteCardStyle();
-      });
-    });
-    $('#btnResetNoteCardStyle')?.addEventListener('click', async () => {
-      await Storage.set({ noteCardStyle: Storage.defaults.noteCardStyle });
-      loadNoteCardStyles();
-      notifyContentRefresh();
-    });
-
-    // 站点规则
-    $('#btnAddSiteRule')?.addEventListener('click', () => showSiteRuleModal());
-    $('#siteRuleModalClose')?.addEventListener('click', closeSiteRuleModal);
-    $('#siteRuleModalCancel')?.addEventListener('click', closeSiteRuleModal);
-    $('#siteRuleModalSave')?.addEventListener('click', saveSiteRule);
-    $('#siteRuleModal')?.addEventListener('click', (e) => {
-      if (e.target === $('#siteRuleModal')) closeSiteRuleModal();
-    });
-    $('#editSiteRuleMatchType')?.addEventListener('change', updateSiteRuleHint);
-    $('#editSiteRuleScope')?.addEventListener('change', () => {
-      updateSiteRuleMatchOptions();
-      updateSiteRuleHint();
-    });
-
-    // 导入导出
-    $('#btnExportJSON')?.addEventListener('click', exportJSON);
-    $('#btnExportCSV')?.addEventListener('click', exportCSV);
-    $('#btnImportJSON')?.addEventListener('click', importJSON);
-    $('#btnImportCSV')?.addEventListener('click', importCSV);
-    // 导出内容弹窗
-    $('#exportModalOk')?.addEventListener('click', doExport);
-    $('#exportModalCancel')?.addEventListener('click', closeExportModal);
-    $('#exportModalClose')?.addEventListener('click', closeExportModal);
-    $('#exportAll')?.addEventListener('click', () => exportSetAll(true));
-    $('#exportNone')?.addEventListener('click', () => exportSetAll(false));
-    (() => { const el = document.getElementById('exportModal'); if (el) el.addEventListener('click', e => { if (e.target === el) closeExportModal(); }); })();
-    // 导入内容弹窗
-    $('#importModalOk')?.addEventListener('click', doImport);
-    $('#importModalCancel')?.addEventListener('click', closeImportModal);
-    $('#importModalClose')?.addEventListener('click', closeImportModal);
-    (() => { const el = document.getElementById('importModal'); if (el) el.addEventListener('click', e => { if (e.target === el) closeImportModal(); }); })();
-    $('#btnResetAll')?.addEventListener('click', resetAll);
-
-    // 批量添加关键词
-    $('#btnBatchImport')?.addEventListener('click', showBulkModal);
-    $('#bulkModalClose')?.addEventListener('click', closeBulkModal);
-    $('#bulkModalCancel')?.addEventListener('click', closeBulkModal);
-    $('#bulkModalSave')?.addEventListener('click', saveBulk);
-    $('#bulkModal')?.addEventListener('click', (e) => {
-      if (e.target === $('#bulkModal')) closeBulkModal();
-    });
-    $('#bulkSeparator')?.addEventListener('change', updateBulkExample);
-    $('#bulkCellMode')?.addEventListener('change', toggleBulkCellMode);
-
-    // 初始加载
-    loadKeywords();
-    initHelpCollapse();
-    buildHelpToc();
-
-    // v1.10.0 changelog 单源化：版本信息区从共享 CHANGELOG 渲染近期更新
-    renderChangelogPreview();
+    }
   }
 
-  // 版本信息区：动态读取当前版本 + 渲染共享 CHANGELOG（lib/changelog.js）近期条目
-  function renderChangelogPreview() {
-    const list = document.getElementById('changelogPreview');
-    if (!list) return;
-    const verEl = document.getElementById('verHelpCurrent');
-    let currentVer = '';
-    try { currentVer = 'v' + (chrome.runtime.getManifest().version || ''); } catch (e) {}
-    if (verEl) verEl.textContent = currentVer || '—';
-    const data = (typeof CHANGELOG !== 'undefined' && CHANGELOG) ? CHANGELOG : [];
-    const recent = data.slice(0, 6);
-    if (!recent.length) { list.textContent = '暂无更新记录'; return; }
-    list.innerHTML = '<ul>' + recent.map((e) => {
-      const items = (e.items || []).map((it) => it).join('<br>');
-      return '<li><strong>' + e.version + '</strong>：' + items + '</li>';
-    }).join('') + '</ul>';
+  // 存储变化即重绘（popup 或其它标签页改配置时本页跟随；自己写入时跳过，避免抖动）
+  if (chrome.storage && chrome.storage.onChanged) {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== 'local' || updating) return;
+      reload().catch(() => { /* 扩展上下文失效时忽略 */ });
+    });
   }
 
-  document.addEventListener('DOMContentLoaded', init);
+  reload().then(() => { renderChangelog(); renderTabs(); }).catch(err => {
+    console.error('[KH] 设置页初始化失败', err);
+    D.toast('初始化失败：' + (err && err.message), 'error');
+  });
 })();

@@ -1,0 +1,11 @@
+# 本仓以「字节原样」进仓：禁用一切行尾/编码转换
+# 仓库里同时有 GBK+CRLF 的 .bat 与 LF 的源码，且 CI 断言按字节比较两份 .bat
+* -text
+
+# 明确二进制
+*.png binary
+*.ico binary
+*.crx binary
+*.zip binary
+*.gz binary
+*.wasm binary

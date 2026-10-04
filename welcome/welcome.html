@@ -2,116 +2,115 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>欢迎 - 关键词备注高亮助手</title>
+  <title>关键词高亮 · 欢迎</title>
+  <!-- 设计 token 单一来源（旧版这里是 tools/build.js 注入的**手抄副本**，
+       那个脚本在 v2 已不存在，副本里连 --font-sans 都漏了 → 页面一直用默认字体） -->
+  <link rel="stylesheet" href="../src/ui/tokens.css">
   <link rel="stylesheet" href="welcome.css">
 </head>
 <body>
-  <div class="welcome-container">
-    <div class="welcome-card">
-      <div class="welcome-icon">🔍</div>
-      <h1>欢迎使用关键词备注高亮助手</h1>
-      <p class="welcome-subtitle">自动高亮网页关键词 · 表格精准匹配 · 重要笔记聚合展示</p>
-      
-      <div class="feature-list">
-        <div class="feature-item">
-          <span class="feature-icon">🔍</span>
-          <div>
-            <strong>智能高亮</strong>
-            <p>自动高亮网页关键词，支持全词、正则、大小写等匹配规则；动态加载的新内容也会自动高亮，不破坏网页结构</p>
-          </div>
-        </div>
-        <div class="feature-item">
-          <span class="feature-icon">🧩</span>
-          <div>
-            <strong>单元格精准匹配</strong>
-            <p>表格里按「左格标题 + 右格内容」组合判定，例如「是否刚需｜否」只在标题是"是否刚需"时才高亮"否"；还支持「仅抓取」模式，把备注内容抓进重要笔记而不打扰原页面</p>
-          </div>
-        </div>
-        <div class="feature-item">
-          <span class="feature-icon">📌</span>
-          <div>
-            <strong>重要笔记</strong>
-            <p>重要关键词命中时，在页面右上角弹出可拖动、可展开/收起的置顶悬浮笔记；多条自动聚合，还能自动抓取页面指定字段拼入笔记</p>
-          </div>
-        </div>
-        <div class="feature-item">
-          <span class="feature-icon">💬</span>
-          <div>
-            <strong>备注卡片</strong>
-            <p>点击高亮词弹出备注卡片，支持 Markdown、图片、一键复制；卡片样式可自由定制</p>
-          </div>
-        </div>
-        <div class="feature-item">
-          <span class="feature-icon">🎨</span>
-          <div>
-            <strong>分组与样式</strong>
-            <p>关键词分组管理、分组统一配色；高亮颜色、备注卡片样式随心定制，打造个人阅读体验</p>
-          </div>
-        </div>
-        <div class="feature-item">
-          <span class="feature-icon">🔒</span>
-          <div>
-            <strong>隐私安全</strong>
-            <p>所有关键词、备注、设置仅保存在本地浏览器，不上传任何服务器；支持导入导出与本地备份</p>
-          </div>
-        </div>
-      </div>
+  <!-- ============================================================================
+       欢迎 / 更新页
+       ----------------------------------------------------------------------------
+       设计口径（用户："风格统一，但细致精美一点。简约大气"）：
+         · 统一 —— 颜色/圆角/阴影/字体全部走 tokens.css，与设置页、弹窗同一套观感；
+         · 精美 —— 发丝线分隔、极浅投影、键帽质感、悬停微动效，细节不喧哗；
+         · 大气 —— 单栏 720px、留白充足、只分三级层级，不堆装饰性图形；
+         · 一屏之内说清"这是什么 / 下一步做什么"，**不把整篇更新日志摊开**
+           （旧版首装会铺开当前版本全部条目，实测整页 8889px）。
+       ========================================================================= -->
+  <main class="kh-welcome">
 
-      <div class="quick-start">
-        <h2>🚀 快速开始</h2>
-        <div class="steps">
-          <div class="step">
-            <span class="step-number">1</span>
-            <div>
-              <strong>添加关键词</strong>
-              <p>点工具栏图标「＋快速添加」，填关键词和备注即可（进阶可做单元格组合、重要笔记）</p>
-            </div>
-          </div>
-          <div class="step">
-            <span class="step-number">2</span>
-            <div>
-              <strong>打开网页</strong>
-              <p>浏览任意网页，命中的关键词自动高亮，重要词在右上角弹出笔记</p>
-            </div>
-          </div>
-          <div class="step">
-            <span class="step-number">3</span>
-            <div>
-              <strong>查看交互</strong>
-              <p>点击高亮词看备注卡片（支持图片、复制），悬停显示原生提示；不弹卡片</p>
-            </div>
-          </div>
-        </div>
+    <!-- ① 品牌头部 -->
+    <header class="kh-hero">
+      <div class="kh-hero-mark" aria-hidden="true">🔍</div>
+      <div class="kh-hero-text">
+        <div class="kh-hero-name">关键词高亮<span class="kh-ver" id="version">v—</span></div>
+        <div class="kh-hero-tag">在任意网页标出关键词，并把同行信息收进「重要笔记」 —— 只上色，不改动网页。</div>
       </div>
+    </header>
 
-      <div class="welcome-actions">
-        <button class="btn btn-primary" id="btnStart">开始使用</button>
-        <button class="btn btn-secondary" id="btnAddFirst">添加第一条关键词</button>
-      </div>
-
-      <div class="welcome-footer">
-        <p>🔒 所有数据仅保存在本地浏览器中，不上传任何服务器</p>
-      </div>
+    <!-- ② 状态条：如实显示当前有多少词（没词时转橙色提示） -->
+    <div class="kh-status" id="status">
+      <span class="kh-dot" aria-hidden="true"></span><span id="kw-count">正在读取…</span>
     </div>
-  </div>
 
-  <!-- 更新日志弹窗 -->
-  <div class="welcome-modal-overlay" id="changelogOverlay" style="display:none;">
-    <div class="welcome-modal">
-      <div class="welcome-modal-header">
-        <span class="welcome-modal-icon">✨</span>
-        <h2>更新日志</h2>
-        <button class="welcome-modal-close" id="changelogClose" title="关闭">✕</button>
+    <!-- ③ 它能做什么：新用户最先要知道的是"能力"，而不是"按钮在哪" -->
+    <h2 class="kh-sec-title">它能做什么</h2>
+    <section class="kh-feats" aria-label="主要功能">
+      <div class="kh-feat">
+        <div class="kh-feat-i" aria-hidden="true">🔍</div>
+        <div class="kh-feat-t">关键词高亮</div>
+        <div class="kh-feat-d">普通词 / 正则 / 全词 / 区分大小写。命中<b>只做视觉上色</b>，不插入任何节点、不改网页内容。</div>
       </div>
-      <div class="welcome-modal-body" id="changelogBody"></div>
-      <div class="welcome-modal-footer">
-        <button class="btn btn-primary" id="changelogGotIt">我知道了</button>
+      <div class="kh-feat">
+        <div class="kh-feat-i" aria-hidden="true">▦</div>
+        <div class="kh-feat-t">单元格组合</div>
+        <div class="kh-feat-d">「左格标题 ＋ 右格核心」或「表头列 ＋ 数据行」——<b>两格都命中才生效</b>，避免半截误标。</div>
       </div>
+      <div class="kh-feat">
+        <div class="kh-feat-i" aria-hidden="true">📌</div>
+        <div class="kh-feat-t">抓取 ＋ 重要笔记</div>
+        <div class="kh-feat-d">命中后把<b>同行的其它字段一并抓走</b>，聚合在可拖动的悬浮面板里；点高亮词还能单独看该词备注。</div>
+      </div>
+      <div class="kh-feat">
+        <div class="kh-feat-i" aria-hidden="true">🎨</div>
+        <div class="kh-feat-t">分组与配色</div>
+        <div class="kh-feat-d">每个词可单独设底色 / 文字色，分组设一次组内共用。优先级：<b>分组色 &gt; 词色 &gt; 全局默认</b>。</div>
+      </div>
+    </section>
+
+    <!-- ④ 三步上手：怎么开始 -->
+    <h2 class="kh-sec-title">三步上手</h2>
+    <section class="kh-steps" aria-label="三步上手">
+      <div class="kh-step">
+        <div class="kh-step-no">1</div>
+        <div class="kh-step-t">加第一个词</div>
+        <div class="kh-step-d">工具栏图标 →「＋ 快速添加」，编辑器直接弹在当前网页上。</div>
+      </div>
+      <div class="kh-step">
+        <div class="kh-step-no">2</div>
+        <div class="kh-step-t">调样式（可选）</div>
+        <div class="kh-step-d">在「样式」里改全局默认色与备注卡片外观，改动即时预览。</div>
+      </div>
+      <div class="kh-step">
+        <div class="kh-step-no">3</div>
+        <div class="kh-step-t">批量管理 / 迁移</div>
+        <div class="kh-step-d">设置页可筛选、批量改色 / 分组 / 启停，也能导入旧版导出的 JSON 或 CSV。</div>
+      </div>
+    </section>
+
+    <!-- ④ 快捷键 -->
+    <section class="kh-card">
+      <div class="kh-card-head">
+        <h2>快捷键</h2>
+        <span class="kh-hint">在任何网页上生效</span>
+      </div>
+      <div class="kh-keys">
+        <span class="kh-key"><kbd>Ctrl</kbd><span class="kh-plus">+</span><kbd>Shift</kbd><span class="kh-plus">+</span><kbd>H</kbd> 暂停 / 恢复<strong>全局</strong>高亮</span>
+        <span class="kh-key"><kbd>Ctrl</kbd><span class="kh-plus">+</span><kbd>Shift</kbd><span class="kh-plus">+</span><kbd>S</kbd> 临时禁用本站</span>
+        <span class="kh-key"><kbd>Ctrl</kbd><span class="kh-plus">+</span><kbd>Shift</kbd><span class="kh-plus">+</span><kbd>O</kbd> 打开设置</span>
+      </div>
+    </section>
+
+    <!-- ⑤ 本版更新：默认只露前 3 条，其余折叠 -->
+    <section class="kh-card">
+      <div class="kh-card-head">
+        <h2 id="rel-head">本次更新</h2>
+        <button type="button" class="kh-linkbtn" id="btn-toggle-log" hidden>展开全部</button>
+      </div>
+      <div id="changelog" class="kh-changelog"></div>
+    </section>
+
+    <!-- ⑥ 行动按钮 + 隐私说明 -->
+    <div class="kh-actions">
+      <button type="button" id="btn-open-options" class="kh-btn kh-btn-primary">打开关键词设置</button>
+      <button type="button" id="btn-open-help" class="kh-btn">帮助与隐私</button>
     </div>
-  </div>
+    <p class="kh-foot">所有数据只保存在本机浏览器（chrome.storage.local），不上传、不联网同步</p>
+  </main>
 
-  <script src="../lib/changelog.js"></script>
+  <script src="../src/ui/changelog.js"></script>
   <script src="welcome.js"></script>
 </body>
 </html>

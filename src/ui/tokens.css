@@ -1,0 +1,137 @@
+/* ============================================================================
+ * src/ui/tokens.css · 唯一设计变量源（Single Source of Design Tokens）
+ * ----------------------------------------------------------------------------
+ * 铁律（方案 §2 / R10）：
+ *   1. 全工程所有颜色 / 圆角 / 阴影 / 字号 / 过渡，只允许在本文件定义字面量。
+ *   2. options / popup / welcome / content 四端一律 `@import` 或构建期注入本文件，
+ *      并在自身样式里只写 var(--token)，禁止再出现裸色值（白名单见下）。
+ *   3. tokens.css 自身必须通过 meta-check #7（:root 变量扫描）：本文件是唯一豁免文件。
+ *
+ * 构建期注入：
+ *   tools/build.js 会把下方 `/* @inject:tokens *&#47;` 标记整块替换为
+ *   `:root { ... }` 的实际内容，从而免去 content_scripts CSS 的跨源 @import 问题。
+ *
+ * 兼容性说明（重要）：
+ *   本文件的 token 名与旧版 v1.52.0 `:root` **完全同名同值**，以便：
+ *     · 存量用户自定义样式/覆盖规则不失效；
+ *     · 与旧版截图对照时无视觉歧义；
+ *     · 迁移期可逐一 diff 验证"视觉零缩水"。
+ * ========================================================================= */
+
+/* @inject:tokens:start */
+:root {
+  /* ---- 品牌 ---- */
+  --brand: #4a90d9;
+  --brand-2: #5fb0ee;
+  --brand-deep: #3579c2;
+  --brand-soft: #eaf1fb;
+  --brand-softer: #f4f8fd;
+
+  /* ---- 语义色 ---- */
+  --success: #1a7f54;
+  --success-strong: #15803d;
+  --success-soft: #e9f7ef;
+  --danger: #dc2626;
+  --danger-strong: #c22b25;
+  --danger-soft: #fdeceb;
+  --warning: #b45309;
+  --warning-soft: #fef5e7;
+  --info: #1565c0;
+  --info-soft: #e7f0fc;
+  --purple: #7b1fa2;
+  --purple-soft: #f4e8f8;
+
+  /* ---- 文本层级 ---- */
+  --text: #1f2937;
+  --text-2: #4b5563;
+  --text-3: #6b7280;
+  --text-4: #9aa3b2;
+  --text-5: #c3cad6;
+
+  /* ---- 背景 / 边框 ---- */
+  --bg: #f4f6fb;
+  --bg-2: #eef1f7;
+  --card: #ffffff;
+  --card-2: #f8fafc;
+  --border: #e7ebf2;
+  --border-2: #dce3ee;
+
+  /* ---- 圆角 ---- */
+  --r-sm: 6px;
+  --r-md: 9px;
+  --r-lg: 12px;
+  --r-xl: 16px;
+  --r-pill: 999px;
+
+  /* ---- 阴影 ---- */
+  --sh-sm: 0 1px 2px rgba(16, 24, 40, .05);
+  --sh-md: 0 2px 8px rgba(16, 24, 40, .06), 0 1px 2px rgba(16, 24, 40, .04);
+  --sh-lg: 0 14px 34px rgba(16, 24, 40, .14);
+  --sh-brand: 0 4px 14px rgba(74, 144, 217, .32);
+
+  /* ---- 过渡 ---- */
+  --tr: .18s cubic-bezier(.4, 0, .2, 1);
+
+  /* ---- 字号 ---- */
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-base: 13px;
+  --fs-md: 14px;
+  --fs-lg: 16px;
+  --fs-xl: 20px;
+
+  /* ---- 页内组件（注入到被访问页面时使用，前缀 --kh-） ---- */
+  --kh-brand: #4a90d9;
+  --kh-brand-deep: #3579c2;
+  --kh-brand-soft: #eaf1fb;
+  --kh-border: #e3e8f0;
+  --kh-text: #1f2937;
+  --kh-text-2: #4b5563;
+  --kh-text-3: #6b7280;
+
+  /* ---- 运行时可被 JS 覆盖的尺寸令牌（保持旧名，勿改） ---- */
+  --kh-note-img-size: 70px;
+
+  /* ---- 层级（页内 UI 统一 z-index，禁止散落魔法数字） ---- */
+  --z-note-card: 2147483000;
+  --z-note-panel: 2147483100;
+  --z-toast: 2147483200;
+
+  /* ---- 中性 / 覆盖层 ----
+     说明：CSS 里"纯白"与"半透明黑/品牌色覆盖"若直接写死，会在暗色适配、
+     品牌换色时漏改。此处统一命名为语义 token，CSS 只允许引用，不允许再写裸值。
+     唯一豁免：本文件（tokens.css）自身。 */
+  --white: #ffffff;
+  --ink: #333333;
+  --overlay-brand-12: rgba(74, 144, 217, .12);
+  --overlay-brand-10: rgba(74, 144, 217, .10);
+  --overlay-ink-4: rgba(0, 0, 0, .04);
+  --overlay-ink-6: rgba(0, 0, 0, .06);
+  --overlay-ink-10: rgba(0, 0, 0, .10);
+  /* 弹窗遮罩：中性深色半透明。组件层只允许引用，不允许在 CSS 里现写 rgba() */
+  --overlay-mask: rgba(15, 23, 42, .38);
+  --border-hairline: rgba(0, 0, 0, .08);
+  --sh-note-pinned: 0 10px 32px rgba(16, 24, 40, .24);
+  --sh-tip: 0 4px 14px rgba(0, 0, 0, .14);
+  --sh-brand-inset: 0 0 0 2px rgba(74, 144, 217, .35);
+}
+/* @inject:tokens:end */
+
+/* ---- 排版单源：四端 body 统一使用，禁止各自写 font-family ---- */
+:root {
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue',
+               Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+}
+
+/* ---- 管理端共用基元（options / popup / welcome 复用，不再各写一份） ---- */
+.kh-visually-hidden {
+  position: absolute !important;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+/* @inject:tokens:end */

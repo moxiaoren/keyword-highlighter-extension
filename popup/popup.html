@@ -3,86 +3,103 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>关键词备注高亮助手</title>
+  <title>关键词高亮</title>
+  <!--
+    设计变量：
+      · components.css 里带 `@inject:tokens` 标记的 `:root` 是**构建期注入**的副本；
+      · 工作树里没有 tools/build.js（不存在该构建脚本），且该副本**已落后于**
+        tokens.css —— 缺 `--font-sans` / `--font-mono`，用 var(--font-sans) 会静默失效。
+        因此这里显式直连设计变量唯一真源 tokens.css（同 `:root` 选择器，幂等无害）。
+    popup.css 里所有颜色一律引用 var(--…)，禁止硬编码色值（策划案 §5 总体风格）。
+  -->
+  <link rel="stylesheet" href="../src/ui/tokens.css">
+  <link rel="stylesheet" href="../src/ui/components/components.css">
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <div class="popup-container">
-    <!-- 顶部：品牌 + 全局开关 -->
-    <div class="header">
-      <div class="logo-area">
-        <div class="logo-badge">🔍</div>
-        <div class="logo-text">
-          <h1 class="title">关键词高亮</h1>
-          <span class="subtitle" id="globalState">全局已开启</span>
-        </div>
-      </div>
-      <label class="toggle-switch" title="全局高亮开关">
-        <input type="checkbox" id="globalToggle" checked>
-        <span class="toggle-slider"></span>
-      </label>
-    </div>
-
-    <!-- 当前站点状态 -->
-    <div class="card site-card">
-      <div class="site-left">
-        <span class="site-icon">🌐</span>
-        <div class="site-meta">
-          <span class="site-label">当前站点</span>
-          <span class="site-name" id="siteName">加载中...</span>
-        </div>
-      </div>
-      <span class="site-badge" id="siteBadge">生效中</span>
-    </div>
-
-    <!-- 统计 -->
-    <div class="stats-row">
-      <div class="card stat-item">
-        <span class="stat-icon">⚡</span>
-        <span class="stat-label">今日命中</span>
-        <span class="stat-value" id="todayHits">0</span>
-      </div>
-      <div class="card stat-item">
-        <span class="stat-icon">📌</span>
-        <span class="stat-label">关键词数</span>
-        <span class="stat-value" id="keywordCount">0</span>
+  <!-- ① 头部：logo + 标题 + 副标题（随开关实时更新）+ 全局开关 -->
+  <header class="kh-pop-head">
+    <div class="kh-pop-brand">
+      <div class="kh-pop-logo" aria-hidden="true">🔍</div>
+      <div class="kh-pop-headtext">
+        <h1 class="kh-pop-title">关键词高亮</h1>
+        <span class="kh-pop-subtitle" id="global-state">全局已开启</span>
       </div>
     </div>
+    <label class="kh-switch" title="全局高亮开关">
+      <input type="checkbox" id="chk-global">
+      <span class="kh-slider"></span>
+    </label>
+  </header>
 
-    <!-- 快捷操作 -->
-    <div class="actions">
-      <button class="btn btn-primary" id="btnAddKeyword" title="快速添加关键词">
-        <span class="btn-icon">＋</span>快速添加
-      </button>
-      <button class="btn btn-secondary" id="btnToggleSite" title="临时禁用/启用本站">
-        <span class="btn-icon" id="btnToggleSiteIcon">🚫</span><span id="btnToggleSiteText">禁用本站</span>
-      </button>
-    </div>
-
-    <!-- 更新提示条 -->
-    <div class="update-banner" id="updateBanner" hidden>
-      <div class="update-info">
-        <span class="update-dot">🔄</span>
-        <span class="update-text" id="updateText">检查更新中…</span>
+  <!-- ② 信息行：当前站点卡片（站点名/域名 + 生效/失效徽标）+ 关键词数卡（配置项计数） -->
+  <div class="kh-pop-info">
+    <div class="kh-pop-card kh-site-card">
+      <span class="kh-site-icon" aria-hidden="true">🌐</span>
+      <div class="kh-site-meta">
+        <span class="kh-site-label">当前站点</span>
+        <span class="kh-site-name" id="site-name">加载中…</span>
       </div>
-      <div class="update-actions">
-        <button class="btn btn-primary btn-sm" id="btnUpdate" hidden>更新</button>
-        <button class="btn-link btn-sm" id="btnUpdateDismiss" hidden>稍后</button>
-      </div>
+      <span class="kh-site-badge" id="site-badge">生效中</span>
     </div>
-
-    <button class="btn-link btn-check" id="btnCheckUpdate">🔄 检查更新</button>
-
-    <!-- 底部链接 -->
-    <div class="footer">
-      <button class="btn-link" id="btnHelp">❓ 帮助</button>
-      <button class="btn-link" id="btnOpenSettings">⚙️ 完整设置</button>
-      <span class="ver-badge" id="verBadge" title="当前版本"></span>
+    <div class="kh-pop-card kh-stat-card" title="已配置的关键词条数（含已停用的条目）">
+      <span class="kh-stat-label"><span class="kh-stat-icon" aria-hidden="true">📌</span>关键词数</span>
+      <span class="kh-stat-value" id="keyword-count">0</span>
     </div>
   </div>
 
-  <script src="../lib/storage.js"></script>
-  <script src="../lib/update-checker.js"></script>
-  <script src="popup.js"></script>
-</body>
+  <!-- ③ 快捷操作：＋ 快速添加（主按钮）/ 🚫 禁用本站（文案与图标随状态切换） -->
+  <div class="kh-pop-actions">
+    <button class="kh-btn kh-btn-primary kh-pop-action" id="btn-add" type="button" title="在当前弹窗内快速添加关键词">
+      <span aria-hidden="true">＋</span>快速添加
+    </button>
+    <button class="kh-btn kh-pop-action" id="btn-site" type="button" title="临时禁用/启用本站">
+      <span id="btn-site-icon" aria-hidden="true">🚫</span><span id="btn-site-text">禁用本站</span>
+    </button>
+  </div>
+
+  <!-- ④ 更新提示条（默认隐藏）：加载态 + 更新 / 稍后 -->
+  <div class="kh-pop-update" id="update-banner" role="status" hidden>
+    <div class="kh-pop-update-info">
+      <span class="kh-pop-update-icon" aria-hidden="true">🔄</span>
+      <span class="kh-pop-update-text" id="update-text">检查更新中…</span>
+    </div>
+    <div class="kh-pop-update-actions">
+      <button class="kh-mini-btn" id="btn-update" type="button" hidden>更新</button>
+      <button class="kh-pop-link kh-pop-link-sm" id="btn-update-dismiss" type="button" hidden>稍后</button>
+    </div>
+  </div>
+
+  <!-- ⑤ 更新工具行：检查更新 + 更新通道（稳定版 / 测试版） -->
+  <div class="kh-pop-tools">
+    <button class="kh-pop-link kh-pop-check" id="btn-check-update" type="button">🔄 检查更新</button>
+    <button type="button" class="kh-pop-link" id="btn-diag" title="只读诊断：整页重建次数 / 最近触发来源 / 仅消费次数（排查「某页卡」用）">🩺 诊断</button>
+    <button type="button" class="kh-pop-link" id="btn-channel" title="更新通道：稳定版 / 测试版">稳定版</button>
+  </div>
+
+  <!-- ⑥ 底部链接：帮助 / 完整设置 / 版本徽标（manifest 动态读） -->
+  <footer class="kh-pop-foot">
+    <button class="kh-pop-link" id="btn-help" type="button">❓ 帮助</button>
+    <button class="kh-pop-link" id="btn-options" type="button">⚙️ 完整设置</button>
+    <span class="kh-pop-ver" id="version" title="当前版本">v—</span>
+  </footer>
+
+  <!-- 加载顺序：协议 → 配置 → 存储信封 → Markdown → 字段单源 → 组件 → 关键词编辑弹窗 → 页面逻辑 -->
+  <script src="../src/core/protocol.js"></script>
+  <script src="../src/core/config.js"></script>
+  <script src="../src/platform/storage.js"></script>
+  <script src="../src/platform/markdown.js"></script>
+  <script src="../src/ui/fieldmap.js"></script>
+  <script src="../src/ui/components/dom.js"></script>
+  <script src="../src/ui/components/modal.js"></script>
+  <!-- chip.js 必须在 color-field.js 之前：后者的浮层复用 ui.Popover（单例） -->
+  <script src="../src/ui/components/chip.js"></script>
+  <script src="../src/ui/components/color-field.js"></script>
+  <script src="../src/ui/components/rich-editor.js"></script>
+  <!-- fields.js = 字段控件工厂，keyword-editor.js 依赖它 -->
+  <script src="../src/ui/components/fields.js"></script>
+  <script src="../src/ui/components/keyword-editor.js"></script>
+  <!-- 更新校验（SHA256）要用：模块自身无副作用，加载即可 -->
+<script src="../background/update-checker.js"></script>
+<script src="popup.js"></script></body>
 </html>

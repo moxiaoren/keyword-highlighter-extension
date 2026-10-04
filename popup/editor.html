@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>添加关键词</title>
+<!-- ============================================================================
+     独立编辑窗口 · popup/editor.html
+     ----------------------------------------------------------------------------
+     用途：popup 的「＋ 快速添加」在**无法委托当前网页**时（chrome:// / 扩展页 /
+     内容脚本尚未注入，例如刚重载扩展还没刷新页面）打开的兜底窗口。
+     关键点：它加载与 options 页**同一套** UI 与样式，弹**同一个** `ui.openEditor`，
+     窗口按编辑器尺寸开（920×500），因此用户看到的是"独立弹出、与关键词管理界面一模一样"，
+     而不是被塞进 348px 的插件弹窗里（用户实测明确否掉了那种观感）。
+     保存或取消后自动关闭本窗口。
+     ========================================================================= -->
+<link rel="stylesheet" href="../src/ui/tokens.css">
+<link rel="stylesheet" href="../src/ui/components/components.css">
+<style>
+  html, body { height: 100%; }
+  /* 这个页面只服务编辑器：底色用 token，避免白屏闪一下 */
+  body { background: var(--bg-2, #f4f6fa); }
+</style>
+</head>
+<body>
+<script src="../src/build-info.js"></script>
+<script src="../src/core/config.js"></script>
+<script src="../src/platform/markdown.js"></script>
+<script src="../src/platform/storage.js"></script>
+<script src="../src/ui/fieldmap.js"></script>
+<script src="../src/ui/components/dom.js"></script>
+<script src="../src/ui/components/modal.js"></script>
+<script src="../src/ui/components/chip.js"></script>
+<script src="../src/ui/components/color-field.js"></script>
+<script src="../src/ui/components/rich-editor.js"></script>
+<script src="../src/ui/components/fields.js"></script>
+<script src="../src/ui/components/keyword-editor.js"></script>
+<!-- MV3 扩展页的 CSP 是 `script-src 'self'`：**内联脚本会被拦掉**（实测报
+     "Executing inline script violates …"），引导逻辑必须放独立文件 -->
+<script src="editor.js"></script>
+</body>
+</html>

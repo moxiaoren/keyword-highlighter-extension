@@ -1,0 +1,41 @@
+{
+  "_note": "图片文字识别（OCR）语言包清单 —— 体积与 sha256 的唯一真源。运行时下载、手动导入、发布前校验都读这一份。",
+  "_source": "https://tessdata.projectnaptha.com/4.0.0_fast/",
+  "_base": "https://moxiaoren.github.io/keyword-highlighter-extension/lang",
+  "_why_fast": "4.0.0_fast 是 LSTM 小模型（chi_sim 1.65MB / eng 1.89MB），配 tesseract-core-*-lstm 恰好够用；标准包 19MB/10MB，对一次只识别表格里几张图来说太重。",
+  "cacheKey": "kh-ocr-lang-v1",
+  "_variants_note": "识别档位（K67）：fast=4.0.0_fast 小模型（默认）；best=标准 LSTM 大模型（更准更慢）。两档缓存键各自独立（best 用带 _std 后缀的语言码），可共存、切换不用重下。",
+  "variants": {
+    "best": {
+      "label": "高精度（标准 LSTM，更准、单张更慢）",
+      "packs": {
+        "chi_sim": {
+          "file": "chi_sim_std.traineddata.gz",
+          "bytes": 20306975,
+          "sha256": "73B59BC6BD3EB199C755927F28D8C1C0DEA0E02E69F75B2073CF501B5120B42D",
+          "label": "简体中文（高精度）"
+        },
+        "eng": {
+          "file": "eng_std.traineddata.gz",
+          "bytes": 10800705,
+          "sha256": "9B5FFB4124B5874B0436D1971C20750F8113CFE57E64E23DCC542CBA78CADA0E",
+          "label": "英文（高精度）"
+        }
+      }
+    }
+  },
+  "packs": {
+    "chi_sim": {
+      "file": "chi_sim.traineddata.gz",
+      "bytes": 1730011,
+      "sha256": "3AA140069A09796B8CB8D3CCD0C052E8ED67F20CDDB24B70FFA3344B3B94346B",
+      "label": "简体中文"
+    },
+    "eng": {
+      "file": "eng.traineddata.gz",
+      "bytes": 1984273,
+      "sha256": "18C1AC52B75E35D44735FB6C2A60ACFAF23033524653200738E98F0243EDB75B",
+      "label": "英文"
+    }
+  }
+}

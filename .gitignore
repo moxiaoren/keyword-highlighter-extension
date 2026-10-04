@@ -1,0 +1,26 @@
+# ── 凭据：永不进仓 ─────────────────────────────
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+key*.pub.txt
+
+# ── 发布产物（生成物，唯一权威副本在 scripts/）──
+release/*.pem
+release/*.key
+release/*.crx
+release/*.zip
+release/lang/
+release/kh-autoupdate.bat
+# 说明：release/latest.json、latest-beta.json、update.xml、update-beta.xml
+#       是「当前通道状态」的小文本（测试/稳定双通道），故意跟踪。
+
+# ── 环境 / 构建产物 ───────────────────────────
+node_modules/
+dist/
+build/
+.pkgtest/
+.pkgtest-*/
+.DS_Store
+Thumbs.db

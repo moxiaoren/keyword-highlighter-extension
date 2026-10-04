@@ -1,0 +1,648 @@
+/* ============================================================================
+   src/ui/components/components.css · 组件层统一样式（options / popup 共用）
+   ------------------------------------------------------------
+   设计变量**全部**来自 src/ui/tokens.css（构建期注入，见 tools/build.js）。
+   本文件禁止出现裸色值 —— meta-check #7 会扫描并拦截。
+   约定：本文件只放"组件自身长什么样"，页面级布局放 options.css / popup.css。
+   ============================================================ */
+
+/* ==== 以下内容由 tools/build.js 从 src/ui/tokens.css 注入，请勿手工修改 ==== */
+:root {
+  /* ---- 品牌 ---- */
+  --brand: #4a90d9;
+  --brand-2: #5fb0ee;
+  --brand-deep: #3579c2;
+  --brand-soft: #eaf1fb;
+  --brand-softer: #f4f8fd;
+
+  /* ---- 语义色 ---- */
+  --success: #1a7f54;
+  --success-strong: #15803d;
+  --success-soft: #e9f7ef;
+  --danger: #dc2626;
+  --danger-strong: #c22b25;
+  --danger-soft: #fdeceb;
+  --warning: #b45309;
+  --warning-soft: #fef5e7;
+  --info: #1565c0;
+  --info-soft: #e7f0fc;
+  --purple: #7b1fa2;
+  --purple-soft: #f4e8f8;
+
+  /* ---- 文本层级 ---- */
+  --text: #1f2937;
+  --text-2: #4b5563;
+  --text-3: #6b7280;
+  --text-4: #9aa3b2;
+  --text-5: #c3cad6;
+
+  /* ---- 背景 / 边框 ---- */
+  --bg: #f4f6fb;
+  --bg-2: #eef1f7;
+  --card: #ffffff;
+  --card-2: #f8fafc;
+  --border: #e7ebf2;
+  --border-2: #dce3ee;
+
+  /* ---- 圆角 ---- */
+  --r-sm: 6px;
+  --r-md: 9px;
+  --r-lg: 12px;
+  --r-xl: 16px;
+  --r-pill: 999px;
+
+  /* ---- 阴影 ---- */
+  --sh-sm: 0 1px 2px rgba(16, 24, 40, .05);
+  --sh-md: 0 2px 8px rgba(16, 24, 40, .06), 0 1px 2px rgba(16, 24, 40, .04);
+  --sh-lg: 0 14px 34px rgba(16, 24, 40, .14);
+  --sh-brand: 0 4px 14px rgba(74, 144, 217, .32);
+
+  /* ---- 过渡 ---- */
+  --tr: .18s cubic-bezier(.4, 0, .2, 1);
+
+  /* ---- 字号 ---- */
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-base: 13px;
+  --fs-md: 14px;
+  --fs-lg: 16px;
+  --fs-xl: 20px;
+
+  /* ---- 页内组件（注入到被访问页面时使用，前缀 --kh-） ---- */
+  --kh-brand: #4a90d9;
+  --kh-brand-deep: #3579c2;
+  --kh-brand-soft: #eaf1fb;
+  --kh-border: #e3e8f0;
+  --kh-text: #1f2937;
+  --kh-text-2: #4b5563;
+  --kh-text-3: #6b7280;
+
+  /* ---- 运行时可被 JS 覆盖的尺寸令牌（保持旧名，勿改） ---- */
+  --kh-note-img-size: 70px;
+
+  /* ---- 层级（页内 UI 统一 z-index，禁止散落魔法数字） ---- */
+  --z-note-card: 2147483000;
+  --z-note-panel: 2147483100;
+  --z-toast: 2147483200;
+
+  /* ---- 中性 / 覆盖层 ----
+     说明：CSS 里"纯白"与"半透明黑/品牌色覆盖"若直接写死，会在暗色适配、
+     品牌换色时漏改。此处统一命名为语义 token，CSS 只允许引用，不允许再写裸值。
+     唯一豁免：本文件（tokens.css）自身。 */
+  --white: #ffffff;
+  --ink: #333333;
+  --overlay-brand-12: rgba(74, 144, 217, .12);
+  --overlay-brand-10: rgba(74, 144, 217, .10);
+  --overlay-ink-4: rgba(0, 0, 0, .04);
+  --overlay-ink-6: rgba(0, 0, 0, .06);
+  --overlay-ink-10: rgba(0, 0, 0, .10);
+  /* 弹窗遮罩：中性深色半透明。组件层只允许引用，不允许在 CSS 里现写 rgba() */
+  --overlay-mask: rgba(15, 23, 42, .38);
+  --border-hairline: rgba(0, 0, 0, .08);
+  --sh-note-pinned: 0 10px 32px rgba(16, 24, 40, .24);
+  --sh-tip: 0 4px 14px rgba(0, 0, 0, .14);
+  --sh-brand-inset: 0 0 0 2px rgba(74, 144, 217, .35);
+}
+
+/* ---------------------------------------------------------------- 按钮 */
+.kh-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 14px;
+  border: 1px solid var(--border-2);
+  border-radius: var(--r-sm);
+  background: var(--card);
+  color: var(--text-2);
+  font-family: inherit;
+  font-size: var(--fs-base);
+  cursor: pointer;
+  transition: background var(--tr), border-color var(--tr), color var(--tr);
+  white-space: nowrap;
+}
+.kh-btn:hover { border-color: var(--brand); color: var(--brand-deep); background: var(--brand-softer); }
+.kh-btn:disabled { opacity: .45; cursor: not-allowed; color: var(--text-4); }
+.kh-btn:disabled:hover { border-color: var(--border-2); background: var(--card); color: var(--text-4); }
+.kh-btn-primary { background: var(--brand); border-color: var(--brand); color: var(--white); }
+.kh-btn-primary:hover { background: var(--brand-deep); border-color: var(--brand-deep); color: var(--white); }
+.kh-btn-danger { background: var(--danger); border-color: var(--danger); color: var(--white); }
+.kh-btn-danger:hover { background: var(--danger-strong); border-color: var(--danger-strong); color: var(--white); }
+
+.kh-mini-btn {
+  height: 24px;
+  padding: 0 9px;
+  border: 1px solid var(--border-2);
+  border-radius: var(--r-sm);
+  background: var(--card);
+  color: var(--text-2);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: background var(--tr), border-color var(--tr), color var(--tr);
+  white-space: nowrap;
+}
+.kh-mini-btn:hover { border-color: var(--brand); color: var(--brand-deep); background: var(--brand-softer); }
+.kh-mini-btn:disabled { opacity: .45; cursor: not-allowed; }
+.kh-mini-btn.is-on { background: var(--brand-soft); border-color: var(--brand); color: var(--brand-deep); }
+
+/* ---------------------------------------------------------------- 输入 */
+.kh-input {
+  width: 100%;
+  height: 30px;
+  padding: 0 9px;
+  border: 1px solid var(--border-2);
+  border-radius: var(--r-sm);
+  background: var(--card);
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--fs-base);
+  transition: border-color var(--tr);
+}
+.kh-input:focus { outline: none; border-color: var(--brand); box-shadow: var(--sh-brand-inset); }
+.kh-input:disabled { background: var(--bg-2); color: var(--text-4); }
+.kh-textarea { height: auto; min-height: 52px; padding: 6px 9px; line-height: 1.55; resize: vertical; }
+
+/* ---------------------------------------------------------------- 弹窗 */
+.kh-modal-mask {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-toast);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: var(--overlay-mask);
+  overflow: hidden;                     /* 遮罩不滚：滚动只发生在 body 区，杜绝双层滚动条 */
+}
+/* `bare`：只留内容 —— 独立编辑窗口里用（那边已有系统标题栏，再叠遮罩+标题行就是三层框） */
+.kh-modal-mask.is-bare { background: transparent; padding: 0; }
+.kh-modal.is-bare {
+  height: 100%; max-width: none; max-height: none;
+  border-radius: 0; box-shadow: none; border: 0;
+}
+.kh-modal {
+  display: flex;
+  flex-direction: column;
+  width: 100%;  max-height: 100%;
+  background: var(--card);
+  border-radius: var(--r-lg);
+  box-shadow: var(--sh-lg);
+  overflow: hidden;
+}
+.kh-modal-sm { max-width: 380px; }
+.kh-modal-md { max-width: 560px; }
+.kh-modal-lg { max-width: 860px; }
+.kh-modal-head {
+  flex: 0 0 auto;                       /* 头不滚 */
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.kh-modal-title { font-size: var(--fs-md); font-weight: 600; color: var(--text); }
+.kh-modal-x {
+  width: 26px; height: 26px; line-height: 1;
+  border: 0; border-radius: var(--r-sm);
+  background: transparent; color: var(--text-3);
+  font-size: 18px; cursor: pointer;
+}
+.kh-modal-x:hover { background: var(--bg-2); color: var(--text); }
+.kh-modal-body { flex: 1 1 auto; overflow: auto; padding: 14px 16px; }
+.kh-modal-foot {
+  flex: 0 0 auto;                       /* ★ 底栏固定：表单多长都找得到「保存」 */
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--card-2);
+}
+.kh-modal.kh-busy { opacity: .72; pointer-events: none; }
+
+.kh-confirm-text { color: var(--text-2); line-height: 1.7; white-space: pre-line; }
+
+/* ---------------------------------------------------------------- 提示条 */
+.kh-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 26px;
+  transform: translateX(-50%);
+  z-index: var(--z-toast);
+  max-width: 76vw;
+  padding: 8px 16px;
+  border-radius: var(--r-pill);
+  background: var(--ink);
+  color: var(--white);
+  font-size: var(--fs-base);
+  box-shadow: var(--sh-lg);
+}
+.kh-toast-ok { background: var(--success-strong); }
+.kh-toast-error { background: var(--danger-strong); }
+.kh-toast-info { background: var(--ink); }
+
+/* ---------------------------------------------------------------- 小浮层（胶囊弹窗） */
+.kh-popover {
+  position: fixed;
+  z-index: var(--z-toast);
+  min-width: 208px;
+  padding: 10px;
+  border: 1px solid var(--border-2);
+  border-radius: var(--r-md);
+  background: var(--card);
+  box-shadow: var(--sh-lg);
+}
+.kh-popover-wide { min-width: 360px; }   /* 批量匹配那种"两列 6 行"的浮层 */
+.kh-pop-title { margin-bottom: 6px; font-size: var(--fs-sm); font-weight: 600; color: var(--text-2); }
+.kh-pop-rows { display: flex; flex-direction: column; gap: 2px; }
+.kh-pop-row {
+  display: grid;
+  grid-template-columns: 16px 54px 1fr;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 2px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+.kh-pop-row:hover { background: var(--brand-softer); }
+.kh-pop-label { font-size: var(--fs-base); color: var(--text); }
+.kh-pop-hint { font-size: var(--fs-xs); color: var(--text-4); }
+.kh-pop-foot { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--border); font-size: var(--fs-xs); color: var(--text-4); }
+/* 分组标题 / 双列 / 底部应用钮：给"批量匹配（6 个开关）"用 —— 6 行太高，分两组两列才不挡内容 */
+.kh-pop-group-title { margin: 8px 0 2px; font-size: var(--fs-xs); font-weight: 600; color: var(--brand-deep); }
+.kh-pop-rows-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 8px; }
+.kh-pop-rows-2 .kh-pop-row { grid-template-columns: 16px auto; }
+.kh-pop-rows-2 .kh-pop-hint { display: none; }   /* 两列时浮层放不下提示文案，靠 title 属性兜底 */
+.kh-pop-actions { display: flex; justify-content: flex-end; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+
+/* ---------------------------------------------------------------- 匹配规则胶囊 */
+.kw-match-pill {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 3px;
+  padding: 1px 3px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  user-select: none;
+}
+.kw-match-pill:hover { background: var(--bg-2); outline: 1px solid var(--border); }
+.kw-match-pill:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+.kw-match-pill.is-rare { cursor: default; }
+.mr-chip {
+  display: inline-block;
+  padding: 0 5px;
+  border: 1px solid var(--brand);
+  border-radius: var(--r-sm);
+  background: var(--brand-soft);
+  color: var(--brand-deep);
+  font-size: var(--fs-xs);
+  line-height: 16px;
+}
+.mr-chip-title { border-color: var(--purple); background: var(--purple-soft); color: var(--purple); }
+.mr-chip-rare { border-color: var(--warning); background: var(--warning-soft); color: var(--warning); }
+.mr-default { font-size: var(--fs-xs); color: var(--text-4); }
+
+/* ---------------------------------------------------------------- 颜色控件 */
+.kh-color-field { position: relative; display: inline-flex; align-items: center; gap: 6px; }
+/* 胶囊模式：颜色控件自己就是胶囊行里的一项（`● 底`），不再"标签一行 + 色块一行"。
+ * 注意用 `.kh-color-swatch.kh-fld-chip` 这个**双类选择器**：`.kh-color-swatch` 自带
+ * `min-width: 62px / padding: 0 8px`，权重相同、谁在后面谁赢 —— 只写 `.kh-color-chip`
+ * 会被它盖掉（实测颜色胶囊仍是 62px 宽，导致 5 个胶囊放不下一行）。 */
+.kh-color-field-chip { flex: 0 0 auto; }
+.kh-color-swatch.kh-fld-chip { min-width: 0; padding: 0 6px; }
+.kh-color-dot {
+  flex: 0 0 auto;
+  width: 10px; height: 10px; border-radius: 50%;
+  border: 1px solid var(--border-2); background: var(--card);
+}
+/* 未设色＝虚线空心圈＝继承（具体继承链写在 title 里） */
+.kh-color-dot.is-empty { border-style: dashed; background: transparent; }
+.kh-color-swatch {
+  min-width: 62px;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--border-2);
+  border-radius: var(--r-sm);
+  background: var(--card);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+.kh-color-swatch.is-empty { color: var(--text-4); background: var(--bg-2); }
+.kh-color-pop {
+  position: absolute;
+  top: 30px; left: 0;
+  z-index: 20;
+  display: none;
+  padding: 8px;
+  border: 1px solid var(--border-2);
+  border-radius: var(--r-md);
+  background: var(--card);
+  box-shadow: var(--sh-lg);
+}
+.kh-color-pop.is-open { display: block; }
+/* 色板：**5 列 × 4 行 = 20 色**（数据真源在 color-field.js 的 PALETTE，这里只管排布）。
+ * 格子宽度随浮层自适应（`1fr` + 正方形），不再写死 24px —— 写死时 20 色只占中间一小块。 */
+.kh-color-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
+.kh-color-cell {
+  width: auto;
+  aspect-ratio: 1 / 1;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+.kh-color-cell:hover { outline: 2px solid var(--brand); outline-offset: 1px; }
+.kh-color-cell.is-on { outline: 2px solid var(--brand); outline-offset: 1px; }
+
+/* 取色器（浓淡明暗区 + 色相条）：两个都能拖。
+ * 注意：渐变里的纯黑/纯白叠加是**允许的**（meta-check 只允许 rgba(0,0,0)/(255,255,255) 这类中性叠加），
+ * 彩色部分一律由 JS 按当前色相写 inline background（色板/渐变是"数据"，不写进样式表）。 */
+.kh-color-picker { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.kh-color-sv {
+  position: relative;
+  height: 86px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--r-sm);
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+}
+.kh-color-sv::before,
+.kh-color-sv::after { content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; }
+.kh-color-sv::before { background: linear-gradient(to right, rgb(255,255,255), rgba(255,255,255,0)); }
+.kh-color-sv::after { background: linear-gradient(to top, rgb(0,0,0), rgba(0,0,0,0)); }
+.kh-color-sv:focus-visible, .kh-color-hue:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.kh-color-sv-dot {
+  position: absolute;
+  width: 12px; height: 12px;
+  margin: -6px 0 0 -6px;
+  border: 2px solid rgb(255,255,255);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(0,0,0,.45);
+  pointer-events: none;
+}
+.kh-color-hue {
+  position: relative;
+  height: 12px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--r-pill);
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+}
+.kh-color-hue-dot {
+  position: absolute;
+  top: 50%; left: 0;
+  width: 12px; height: 12px;
+  margin: -6px 0 0 -6px;
+  border: 2px solid rgb(255,255,255);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(0,0,0,.45);
+  pointer-events: none;
+}
+.kh-color-ops { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: 8px; }
+/* 草稿提示 + 取消 / 确定（v1.99.99.11 用户要求"加一个确认修改的步骤"）：
+ * 四条入口（色板 / 取色器 / 色值输入 / 系统取色器）都只改草稿，点「确定」才落库。 */
+.kh-color-actions {
+  display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border-hairline);
+}
+.kh-color-pending { display: inline-flex; align-items: center; gap: 5px; min-width: 0; font-size: var(--fs-sm); color: var(--text-3); }
+.kh-color-pending.is-pending { color: var(--brand-deep); font-weight: 600; }
+.kh-color-pending-t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kh-color-btn {
+  height: 26px; padding: 0 12px;
+  border: 1px solid var(--border-2); border-radius: var(--r-sm);
+  background: var(--card); color: var(--text-2);
+  font-family: inherit; font-size: var(--fs-sm); cursor: pointer;
+}
+.kh-color-btn:hover { border-color: var(--brand); color: var(--brand-deep); }
+.kh-color-ok { border-color: var(--brand); background: var(--brand); color: var(--card); }
+.kh-color-ok:hover { background: var(--brand-deep); border-color: var(--brand-deep); color: var(--card); }
+.kh-color-ok[disabled] { border-color: var(--border-2); background: var(--bg-2); color: var(--text-4); cursor: default; }
+.kh-color-hex {
+  width: 74px; height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--border-2);
+  border-radius: var(--r-sm);
+  background: var(--card);
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  text-transform: lowercase;
+}
+.kh-color-input { width: 34px; height: 26px; padding: 0; border: 1px solid var(--border-2); border-radius: var(--r-sm); background: var(--card); cursor: pointer; }
+.kh-color-clear { height: 24px; padding: 0 8px; border: 1px solid var(--border-2); border-radius: var(--r-sm); background: var(--card); color: var(--text-2); font-family: inherit; font-size: var(--fs-sm); cursor: pointer; }
+.kh-color-clear:hover { border-color: var(--danger); color: var(--danger); }
+
+/* ---------------------------------------------------------------- 多行内容 */
+.kh-rt { white-space: pre-line; word-break: break-word; line-height: 1.6; }
+.kh-rt-editor { display: flex; flex-direction: column; gap: 4px; }
+.kh-rt-tools { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.kh-rt-count { font-size: var(--fs-xs); color: var(--text-4); }
+/* 字段标题行：标题 + 右侧工具（如备注的「预览」）。
+ * 工具行原本自己占一行（正文里多出一行只有一颗按钮），现在并进标题行右侧。 */
+.kh-fld-labelrow { display: flex; align-items: center; gap: 6px; min-height: 18px; }
+.kh-fld-labelrow .kh-fld-label { flex: 0 1 auto; }
+.kh-rt-preview-box { margin-top: 4px; padding: 8px; border: 1px dashed var(--border-2); border-radius: var(--r-sm); background: var(--card-2); }
+
+/* ---- 所见即所得编辑器（重要笔记）：语法单源 KH.Markdown，这里只管外观 ----
+ * 工具栏常驻在编辑框**上方**（大众习惯）。这里是**单行**布局：
+ * 列宽只有 245px，旧的带字按钮（`🖼 图片`59 + `🔗 链接`63 + B28 + I26 + `▦ 表格`59 + `✕ 清格式`69 = 324px）
+ * 必然折成两行、观感很碎；现在改图标按钮 + 3px 间距，整条约 184px 一行放下。
+ * `flex-wrap: wrap` 只作兜底（更窄的容器下才折行，不裁切）。 */
+.kh-rt-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 3px; }
+.kh-rt-toolbar .kh-mini-btn { min-width: 24px; height: 24px; padding: 0 5px; text-align: center; }
+.kh-rt-toolbar .kh-mini-btn.is-b { font-weight: 700; }
+.kh-rt-toolbar .kh-mini-btn.is-i { font-style: italic; }
+.kh-rt-toolbar .kh-rt-sep { flex: 0 0 auto; width: 1px; height: 14px; margin: 0 2px; background: var(--border-2); }
+/* 破坏性操作（清空）靠右独立放，与编辑动作隔开，避免误点 */
+.kh-rt-toolbar .kh-rt-clear { margin-left: auto; }
+.kh-rt-toolbar .kh-rt-clear:hover { border-color: var(--danger); color: var(--danger); background: var(--card); }
+
+/* 表格浮动操作条：光标点进表格才出现（旧版 v1.8.x 交互），不常驻工具栏 */
+.kh-rte-wrap { position: relative; }
+.kh-tbl-float {
+  position: absolute; z-index: 12;
+  display: flex; align-items: center; gap: 2px; padding: 2px;
+  background: var(--card); border: 1px solid var(--border-2); border-radius: var(--r-sm);
+  box-shadow: var(--sh-md);
+}
+.kh-tbl-float[hidden] { display: none; }
+.kh-tbl-float .kh-mini-btn { min-width: 24px; padding: 1px 6px; font-size: var(--fs-xs); }
+/* 所见即所得编辑框：**可拖动加高**（`resize: vertical`）。
+ * 宽度不可拖（用户明确"宽度不支持"），内容超高就在框内滚动。
+ * `max-height` 从 320px 放宽到 560px —— 否则拖到 320 就顶住了，"拖动加高"等于没有。
+ * 高度变化只推它自己那一列（列式布局），不影响另外两列。 */
+.kh-rte {
+  min-height: 96px; max-height: 560px; overflow: auto; resize: vertical;
+  padding: 6px 9px; line-height: 1.6; white-space: pre-wrap; word-break: break-word;
+  background: var(--card); cursor: text;
+}
+.kh-rte:focus { outline: none; border-color: var(--brand); box-shadow: var(--sh-brand-inset); }
+.kh-rte:empty::before { content: attr(data-placeholder); color: var(--text-4); pointer-events: none; }
+.kh-rte img {
+  max-width: var(--kh-note-img-size, 70px); max-height: var(--kh-note-img-size, 70px);
+  border-radius: var(--r-sm); vertical-align: middle; cursor: pointer;
+}
+.kh-rte img:hover { box-shadow: var(--sh-brand-inset); }
+.kh-rte a { color: var(--brand-deep); text-decoration: underline; cursor: pointer; }
+.kh-rte .kh-table { border-collapse: collapse; margin: 4px 0; }
+.kh-rte .kh-table td, .kh-rte .kh-table th {
+  border: 1px solid var(--border-2); padding: 2px 8px; min-width: 40px;
+  font-size: var(--fs-base); text-align: left; vertical-align: middle; white-space: pre-line;
+}
+.kh-rte .kh-table th { background: var(--brand-softer); font-weight: 600; }
+.kh-rule-hint { margin-bottom: 4px; font-size: var(--fs-xs); color: var(--text-4); }
+
+/* ---------------------------------------------------------------- 数据表格 */
+.kh-data-table { display: flex; flex-direction: column; gap: 8px; }
+.kh-table-scroll { overflow: auto; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--card); }
+.kh-table-grid { border-collapse: separate; border-spacing: 0; width: 100%; font-size: var(--fs-base); }
+.kh-table-grid th {
+  position: sticky; top: 0; z-index: 1;
+  padding: 8px 8px;
+  border-bottom: 1px solid var(--border-2);
+  background: var(--card-2);
+  color: var(--text-2);
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+}
+.kh-table-grid th.is-sortable { cursor: pointer; user-select: none; }
+.kh-table-grid th.is-sortable:hover { color: var(--brand-deep); }
+.kh-sort-mark { margin-left: 4px; color: var(--text-4); font-size: var(--fs-xs); }
+.kh-table-grid td { padding: 7px 8px; border-bottom: 1px solid var(--border); color: var(--text); vertical-align: middle; }
+.kh-table-grid tbody tr:hover { background: var(--brand-softer); }
+.kh-table-grid tbody tr.is-selected { background: var(--brand-soft); }
+.kh-table-empty { padding: 28px 8px; color: var(--text-4); text-align: center; }
+
+.kh-pager { display: flex; align-items: center; gap: 6px; font-size: var(--fs-sm); color: var(--text-3); }
+.kh-pager-info { white-space: nowrap; }
+.kh-pager-sp { flex: 1 1 auto; }
+.kh-jump { width: 62px; height: 24px; text-align: center; font-size: var(--fs-sm); }
+
+/* ---------------------------------------------------------------- 编辑弹窗内布局 */
+/* 分区容器 = 若干个**独立竖列**（列数由 FieldMap.FORM_SECTIONS[].col 决定）。
+ * 旧实现是逐行栅格 `repeat(auto-fit, minmax(260px,1fr))`：一行里最高的卡片决定行高，
+ * 矮卡片下面留下大空洞 —— 实测「匹配规则」112px 挨着「单元格组合」296px，
+ * 同一行下面空了 184px，容器总高 623px 里 566px 是空白。
+ * 改成分列后：卡片在列内首尾相接（无行内空洞），且某张卡片变高只推它自己那一列。
+ * `align-items: stretch`（flex 默认）+ 列内**最后一张卡片撑满** → 三列底边齐平。 */
+.kh-editor-cols {
+  display: flex;
+  flex-wrap: wrap;                      /* 窄容器（popup 里的同一弹窗）自动堆成一列 */
+  align-items: stretch;
+  gap: 10px 14px;
+}
+.kh-editor-col {
+  flex: 1 1 260px;                      /* 260px 放得下三个；放不下就换行整列下移 */
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+/* 列内最后一张卡片吃掉剩余高度 → 三列的底边对齐（用户实测："三列高度不齐，不太美观"） */
+.kh-editor-col > .kh-editor-sec:last-child { flex: 1 1 auto; }
+.kh-editor-sec { border: 1px solid var(--border); border-radius: var(--r-md); background: var(--card-2); padding: 8px 10px; }
+/* 标题行 = 折叠按钮（占满剩余宽度）+ 右侧插槽（`head: true` 的字段，如「启用」）。
+ * 插槽必须是按钮的**兄弟**：交互控件塞进 <button> 既不合法，点一下还会顺带折叠分区。 */
+.kh-editor-sec-headrow { display: flex; align-items: center; gap: 8px; width: 100%; margin: 0 0 6px; }
+.kh-editor-sec-extra { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; }
+/* 分区头是 <button>：可点击折叠。按钮默认样式必须整套抹掉，否则会出现"看着像按钮"的裂痕 */
+.kh-editor-sec-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;                      /* 标题独占第一行；说明放不下才换行，而不是把标题挤断 */
+  gap: 0 6px;
+  width: 100%;
+  margin: 0 0 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+/* 标题行里还有右侧插槽时：按钮不再带下边距、改为占满剩余宽度 */
+.kh-editor-sec-head.is-in-row { flex: 1 1 auto; min-width: 0; margin: 0; }
+.kh-editor-sec-head:hover .kh-editor-sec-title { color: var(--brand-deep); }
+.kh-editor-sec-chevron { flex: 0 0 auto; color: var(--text-4); font-size: var(--fs-xs); }
+/* 分区标题**不许被挤压换行**：旧样式没写 flex/nowrap，说明文字的 `flex-basis:100%` 会把标题一起压断
+ * （实测「重要笔记」被折成「重要笔 / 记」、「抓取后续字段」被折成两行） */
+.kh-editor-sec-title { flex: 0 0 auto; white-space: nowrap; font-size: var(--fs-base); font-weight: 600; color: var(--text); }
+.kh-editor-sec-hint { flex: 1 1 auto; min-width: 0; font-size: var(--fs-xs); color: var(--text-4); }
+/* 折叠：整块 body 收起（hint 常驻在标题行，收起后仍能看出这一节是什么） */
+.kh-editor-sec-body { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 6px 10px; }
+.kh-editor-sec.is-collapsed .kh-editor-sec-body { display: none; }
+.kh-editor-axis-note { flex: 1 1 100%; color: var(--warning); font-size: var(--fs-xs); line-height: 1.6; }
+.kh-editor-sec.is-disabled { opacity: .55; }
+/* 字段容器：默认**半行**（两个短字段自动并排），`width:2` 的占满整行。
+ * 旧实现是一行一个字段，于是「背景色 / 文字颜色」各占一行、「组合方向」独占一行 —— 太浪费。 */
+.kh-fld { flex: 1 1 calc(50% - 6px); min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.kh-fld-label { font-size: var(--fs-sm); color: var(--text-2); }
+.kh-fld-wide { flex: 1 1 100%; }
+/* 标签与控件**同一行**（`inline: true`）：如「尺寸：[ ]」，不再"标签一行 + 输入一行"。
+ * `flex-basis: 60px` 而不是半行宽 —— 这样它能和前面的胶囊行**挤在同一行**（用户要求
+ * 「复用底色 + 尺寸」跟在「重要」后面一行展示），多出来的空间再给输入框（`flex-grow: 1`）。 */
+.kh-fld-inline { flex: 1 1 60px; flex-direction: row; align-items: center; gap: 6px; }
+.kh-fld-inline .kh-fld-label { flex: 0 0 auto; white-space: nowrap; }
+.kh-fld-inline .kh-fld-label::after { content: '：'; }
+.kh-fld-inline .kh-input { flex: 1 1 auto; min-width: 0; }
+.kh-fld-bool { display: flex; align-items: center; gap: 6px; }
+/* 无抓取字段时「识别图片文字」是**真禁用**（点击无效），但此前没有置灰规则 → 看起来还是能点（K70 补） */
+.kh-fld-bool.is-disabled { opacity: .5; }
+.kh-fld-bool-label { font-size: var(--fs-base); color: var(--text-2); }
+/* 连续的开关胶囊组成一行。默认按**内容宽度**且**不抢占**剩余空间（`flex: 0 1 auto`）——
+ * 这样紧随其后的 inline 字段（如「尺寸：」）能与它挤在同一行，剩余宽度给输入框。 */
+.kh-fld-chips { flex: 0 1 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.kh-fld-chips-wide { flex: 1 1 100%; }
+/* 开关**胶囊**：与关键词表格「匹配方式」列 / 悬停 tooltip / 批量设置同一套说法与观感。
+ * 用 JS 切 `is-on`（不用 `:has(input:checked)`）—— 旧内核不支持 `:has()`，会"点了没反馈"。
+ * padding 取 6px 是**算出来的**：容器 245px 里要放「正则/大小写/全词/底/文」5 个胶囊，
+ * 双字颜色标签 + padding 9 需要 262px（放不下），单字标签 + padding 6 只要 234px，
+ * 余下的 11px 正好用来做颜色组的分隔间距。 */
+.kh-fld-chip {
+  position: relative;
+  flex: 0 0 auto;
+  display: inline-flex; align-items: center; gap: 3px;
+  height: 26px; padding: 0 6px;
+  border: 1px solid var(--border-2); border-radius: 999px;
+  background: var(--card); color: var(--text-2);
+  font-size: var(--fs-sm); line-height: 1; cursor: pointer; user-select: none;
+  transition: background var(--tr), border-color var(--tr), color var(--tr);
+}
+.kh-fld-chip:hover { border-color: var(--brand); }
+/* 胶囊组之间的**竖线分隔**（如「正则/大小写/全词」与「底/文」之间）：
+ * 比单纯留白更明确 —— 留白只说"离得远"，竖线说明"这是另一组"。 */
+.kh-chip-sep { flex: 0 0 auto; align-self: center; width: 1px; height: 14px; background: var(--border-2); }
+/* 勾选框**不显示**：开关状态只用胶囊颜色区分（用户实测要求："取消前面的勾选框，以胶囊颜色做区分"：
+ * 选中＝品牌色底 + 品牌色边框 + 品牌色加粗文字；未选中＝白底 + 常规边框）。
+ * input 仍留在 DOM 里 —— labelable、可聚焦、可被 `#fld-<key>` 定位，键盘与自动化都不受影响。 */
+.kh-fld-chip > input[type="checkbox"] {
+  position: absolute; width: 1px; height: 1px; margin: 0; padding: 0;
+  opacity: 0; pointer-events: none;
+}
+.kh-fld-chip:focus-within { outline: 2px solid var(--brand); outline-offset: 1px; }
+.kh-fld-chip.is-on { background: var(--brand-soft); border-color: var(--brand); color: var(--brand-deep); font-weight: 600; }
+/* 批量弹窗里的"三态"胶囊：点两下＝显式关闭。用**虚线**跟"没碰过"区分开 ——
+ * 否则"关掉了"和"没动过"外观完全一样（都是未选中），用户无法预判保存后会写什么。 */
+.kh-fld-chip.is-touched:not(.is-on) { border-style: dashed; }
+.kh-fld-chip.is-disabled { opacity: .5; cursor: not-allowed; }
+.kh-fld.is-disabled { opacity: .5; }
+.kh-editor-err {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--danger);
+  border-radius: var(--r-sm);
+  background: var(--danger-soft);
+  color: var(--danger-strong);
+  font-size: var(--fs-base);
+}

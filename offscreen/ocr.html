@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>KH OCR</title>
+</head>
+<!--
+  offscreen/ocr.html · 图片文字识别的宿主页（MV3 offscreen 文档，由 background 按需创建）
+  ------------------------------------------------------------------------------------
+  它存在的唯一理由：**只有扩展自己的页面**才能同时满足"建扩展本地 worker + 加载本地 wasm"，
+  内容脚本（页面 CSP）与 service worker（不能建 worker、30s 空闲被杀）都不行。
+  真浏览器实测见 _e2e/probe-ocr*.js 与 tests/E2E-REPORT.md 的「图片文字识别」小节。
+
+  这个页面没有界面、不被用户看到；页面里的 script 顺序 = 依赖顺序：
+    ① src/core/protocol.js  消息常量（唯一协议）
+    ② vendor/tesseract/tesseract.min.js  OCR 引擎（第三方，见 vendor/tesseract/）
+    ③ offscreen/ocr.js      我们的引擎封装（语言包投递 + 串行队列 + 结果回传）
+-->
+<body>
+  <script src="../src/core/protocol.js"></script>
+  <script src="../vendor/tesseract/tesseract.min.js"></script>
+  <script src="ocr.js"></script>
+</body>
+</html>

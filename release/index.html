@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>关键词高亮 · 浏览器扩展</title>
+<style>
+  body { font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    max-width: 780px; margin: 32px auto 64px; padding: 0 18px; color: #1f2937; line-height: 1.75; }
+  h1 { font-size: 24px; margin: 0 0 6px; }
+  h2 { font-size: 17px; margin: 30px 0 10px; padding-top: 6px; border-top: 1px solid #e7ebf2; }
+  h2:first-of-type { border-top: 0; }
+  .sub { color: #6b7280; margin: 0 0 18px; }
+  code { background: #f4f6fb; padding: 2px 6px; border-radius: 4px; font-size: 13px; }
+  a { color: #3579c2; }
+  ul { padding-left: 20px; } li { margin: 4px 0; }
+  .card { margin: 18px 0; padding: 18px 20px; border: 1px solid #e3e8f0; border-radius: 12px; background: #fff; }
+  .primary { border-color: #bcd4ef; background: #f7fbff; }
+  .dl { display: flex; gap: 14px; flex-wrap: wrap; }
+  .dl .card { flex: 1 1 320px; margin: 0; }
+  .btn { display: inline-block; margin: 8px 8px 0 0; padding: 9px 16px; border-radius: 8px;
+    background: #3579c2; color: #fff; text-decoration: none; font-weight: 600; font-size: 14px; }
+  .btn.ghost { background: #fff; color: #3579c2; border: 1px solid #bcd4ef; }
+  .ver { font-weight: 600; color: #16a34a; }
+  .muted { color: #6b7280; font-size: 13px; }
+  ol { padding-left: 20px; }
+  table { border-collapse: collapse; font-size: 14px; }
+  td, th { border: 1px solid #e3e8f0; padding: 5px 10px; text-align: left; }
+  /* 更新清单就地展示（点开原始 .xml 浏览器只会给一棵"没有样式信息"的树，看着像没内容） */
+  button.btn { cursor: pointer; font-family: inherit; }
+  .manifest { margin: 10px 0 0; padding: 10px 12px; background: #f4f6fb; border: 1px solid #e3e8f0;
+    border-radius: 8px; font-size: 12.5px; line-height: 1.6; white-space: pre-wrap; word-break: break-all; }
+  .manifest[hidden] { display: none; }
+</style>
+</head>
+<body>
+<h1>关键词高亮 · 浏览器扩展</h1>
+<p class="sub">在任意网页上高亮你关心的关键词；重要字段自动抓取成「重要笔记」面板。适用于 Edge / Chrome（免登录、数据只存本地）。</p>
+
+<div class="card primary">
+  <h2 style="margin-top:0;border:0;padding:0">一键安装 + 自动更新（推荐，稳定版 / 测试版都支持）</h2>
+  <p style="margin:6px 0 10px">
+    <a class="btn" href="kh-autoupdate.bat" download><b>下载 kh-autoupdate.bat（一键安装）</b></a>
+  </p>
+  <ol style="margin:0 0 8px 18px">
+    <li>下载上面的 <code>kh-autoupdate.bat</code></li>
+    <li><b>右键 → 以管理员身份运行</b>（要写机器级注册表，让浏览器认这个扩展）</li>
+    <li>运行后菜单里选：**Edge / Chrome** 以及 **稳定版 / 测试版**（两个通道都能装，也可以都装）</li>
+    <li><b>完全退出浏览器再启动</b>（有时要启动两次）—— 装好后线上发新版即<b>自动静默更新</b></li>
+  </ol>
+  <p class="muted" style="margin:0">卸载 / 查状态：重新运行同一个 bat，用它的菜单里对应项。</p>
+</div>
+
+<h2>下载安装包</h2>
+<div class="dl">
+  <div class="card">
+    <h2 style="margin-top:0;border:0;padding:0">稳定版 <span class="ver" id="verStable">读取中…</span></h2>
+    <p class="muted" style="margin:4px 0 0" id="noteStable">功能经过完整回归，适合日常长期使用。</p>
+    <p style="margin:0">
+      <a class="btn" id="dlStableCrx" href="release/keyword-highlighter-extension-2.0.0.crx" download>下载 .crx</a>
+      <button class="btn ghost" id="showStable" type="button">查看更新清单</button>
+    </p>
+    <pre class="manifest" id="manStable" hidden></pre>
+  </div>
+  <div class="card">
+    <h2 style="margin-top:0;border:0;padding:0">测试版 <span class="ver" id="verBeta">读取中…</span></h2>
+    <p class="muted" style="margin:4px 0 0" id="noteBeta">新功能先在这里验证（每版都过完整回归），可能仍有个别问题。</p>
+    <p style="margin:0">
+      <a class="btn" id="dlBetaCrx" href="keyword-highlighter-beta-v2.0.0.9.crx" download>下载 .crx</a>
+      <a class="btn ghost" id="dlBetaZip" href="keyword-highlighter-beta-v2.0.0.9.zip" download>下载 .zip</a>
+      <button class="btn ghost" id="showBeta" type="button">查看更新清单</button>
+    </p>
+    <pre class="manifest" id="manBeta" hidden></pre>
+  </div>
+</div>
+<p class="muted" style="margin-top:8px">
+  测试版与稳定版是**两个扩展**（ID 不同），可以同时安装；测试版晋级稳定版后需要换装一次。
+  稳定版只提供 crx（更新通道按 <code>release/</code> 目录下的 crx 分发）；测试版另有 zip 便于解压加载。
+</p>
+
+<h2>手动安装（不用 bat 时）</h2>
+<ol>
+  <li>下载上面的 <code>.crx</code>（测试版也可以下 <code>.zip</code> 并解压成一个目录）</li>
+  <li>打开 <code>edge://extensions</code> 或 <code>chrome://extensions</code>，打开右上角<b>开发者模式</b></li>
+  <li>把 <code>.crx</code> 拖进页面（或「加载解压缩的扩展程序」选解压出来的目录）</li>
+  <li>手动装不会自动更新：每次发新版需要重新下载安装</li>
+</ol>
+
+<h2>它做什么</h2>
+<ul>
+  <li><b>关键词高亮</b>：命中只做「视觉高亮」（不改动网页 DOM），页面自身的样式与脚本不受影响；隐藏容器里的内容不会误命中。</li>
+  <li><b>组合词</b>：给核心词加「定位限制」——左格标题命中后，右格（或该列）里的核心词才算命中；上下格（表头 × 数据行）同理。</li>
+  <li><b>跨文本节点命中</b>：页面把词拆成 <code>审&lt;span&gt;核&lt;/span&gt;不通过</code> 也照样命中，整词上色、两段各自颜色都保留。</li>
+  <li><b>后续字段抓取</b>：命中后顺带把同表字段抓成结构化表格（多行 / 合并单元格 / 图片；<code>字段#图</code> 仅图片、<code>字段#3</code> 只取前 3 张）。</li>
+  <li><b>重要笔记面板</b>：把抓到的内容汇总成可拖动面板；图片可点开看大图（缩放 / 旋转 / 同格翻页）。</li>
+  <li><b>备注卡片 / 悬停提示</b>：给词写 Markdown 备注，点一下或悬停即看。</li>
+  <li><b>分组与配色</b>：20 色板 + 可拖动取色器 + 色值输入；分组可统一配色与图片尺寸。</li>
+  <li><b>罕见字规则</b>：关键词填 <code>hjz#</code> 即对罕见汉字着色，也可作组合词核心。</li>
+  <li><b>站点规则</b>：黑白名单（含网址级）、临时禁用本站、全局开关。</li>
+</ul>
+
+<h2>常见问题</h2>
+<table>
+  <tr><th>现象</th><th>原因 / 处理</th></tr>
+  <tr><td>商店搜不到</td><td>没上架商店：用 bat 一键装，或按上面的步骤手动加载</td></tr>
+  <tr><td>装了没反应</td><td>要<b>完全退出浏览器再启动</b>；并确认该站点没被「站点规则 / 临时禁用」拦掉</td></tr>
+  <tr><td>稳定版 / 测试版怎么选</td><td>日常用稳定版；想先试新功能用测试版（两者可共存、各自自动更新）</td></tr>
+  <tr><td>数据会不会上传</td><td>不会。关键词、备注、抓取内容都只存在浏览器本地（<code>chrome.storage</code>）</td></tr>
+</table>
+
+<p class="muted" style="margin-top:26px">
+  本页只托管安装包与更新清单，不收集任何访问数据。
+  历史稳定版安装包在 <a href="https://github.com/moxiaoren/keyword-highlighter-extension/releases" target="_blank" rel="noopener">GitHub Releases</a>。
+</p>
+
+<script>
+  /* 稳定版：从 update.xml（gupdate 清单）读版本与 crx 路径；测试版：从 latest-beta.json 读版本与校验值。
+     两个都读不到就保持页面上的静态默认值，不影响下载。
+     【为什么"更新清单"做成页内展示，而不是直接链到 .xml】浏览器打开原始 XML 只会显示
+     「此 XML 文件似乎没有任何相关联的样式信息。文档树如下所示。」——用户反馈"点了提示没内容"。
+     现在改成点按钮就地展开要点（版本 / 更新包地址 / 校验值）+ 原始文件链接（标明"浏览器会显示成无样式的树，属正常"）。 */
+  (function () {
+    var stableXml = '', betaJson = null;
+
+    /* 原始文件地址：用 URL 解析而不是拼字符串 —— file:// 下 pathname 拼出来会变成
+       ".../index.htmlupdate.xml"（这个坑在本地预览时一眼就能看到） */
+    function rawUrl(file) {
+      try { return decodeURI(new URL(file, location.href).href); } catch (e) { return file; }
+    }
+
+    function renderStable() {
+      var box = document.getElementById('manStable');
+      var ver = (stableXml.match(/<updatecheck[^>]*version=["']([^"']+)["']/) || [])[1];
+      var cb = (stableXml.match(/codebase=["']([^"']+)["']/) || [])[1];
+      if (!stableXml) {
+        box.textContent = '读不到更新清单 update.xml。\n' +
+          '· 线上站点：' + rawUrl('update.xml') + '\n' +
+          '· 本地直接打开这个页面时读不到属正常（清单由发版脚本生成，只在站点上有）。';
+        return;
+      }
+      box.textContent = '稳定版更新清单（update.xml · gupdate 协议）\n' +
+        '· 版本：' + (ver || '(未解析到)') + '\n' +
+        '· 更新包：' + (cb || '(未解析到)') + '\n' +
+        '· 手动下载：' + (cb ? cb.split('/').pop() : '(见上)') + '\n\n' +
+        '—— 原始文件（浏览器打开会是"无样式的 XML 树"，属正常）——\n' + rawUrl('update.xml');
+    }
+
+    function renderBeta() {
+      var box = document.getElementById('manBeta');
+      if (!betaJson || !betaJson.version) {
+        box.textContent = '读不到测试版清单 latest-beta.json。\n' +
+          '· 线上站点：' + rawUrl('latest-beta.json') + '\n' +
+          '· 本地直接打开这个页面时读不到属正常（清单由发版脚本生成，只在站点上有）。';
+        return;
+      }
+      var j = betaJson;
+      var base = 'keyword-highlighter-beta-v' + j.version;
+      box.textContent = '测试版更新清单（latest-beta.json + update-beta.xml）\n' +
+        '· 版本：' + j.version + (j.publishedAt ? '（' + j.publishedAt + '）' : '') + '\n' +
+        '· 安装包：' + base + '.crx / ' + base + '.zip\n' +
+        (j.sha256 ? '· zip 校验（sha256）：' + j.sha256 + '\n' : '') +
+        (j.notes ? '· 说明：' + j.notes + '\n' : '') +
+        '\n—— 原始文件（浏览器打开会是"无样式的 XML / JSON"，属正常）——\n' +
+        rawUrl('latest-beta.json') + '\n' + rawUrl('update-beta.xml');
+    }
+
+    document.getElementById('showStable').addEventListener('click', function () {
+      var box = document.getElementById('manStable');
+      box.hidden = !box.hidden;
+      this.textContent = box.hidden ? '查看更新清单' : '收起更新清单';
+    });
+    document.getElementById('showBeta').addEventListener('click', function () {
+      var box = document.getElementById('manBeta');
+      box.hidden = !box.hidden;
+      this.textContent = box.hidden ? '查看更新清单' : '收起更新清单';
+    });
+
+    fetch('update.xml', { cache: 'no-store' }).then(function (r) { return r.ok ? r.text() : ''; }).then(function (xml) {
+      stableXml = xml || '';
+      if (!xml) return;
+      var ver = (xml.match(/<updatecheck[^>]*version=["']([^"']+)["']/) || [])[1];
+      var cb = (xml.match(/codebase=["']([^"']+)["']/) || [])[1];
+      if (ver) document.getElementById('verStable').textContent = 'v' + ver;
+      if (cb) {
+        var file = cb.split('/').pop();
+        document.getElementById('dlStableCrx').setAttribute('href', 'release/' + file);
+      }
+    }).catch(function () { /* 忽略 */ }).then(renderStable);
+
+    fetch('latest-beta.json', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
+      if (!j || !j.version) return;
+      betaJson = j;
+      document.getElementById('verBeta').textContent = 'v' + j.version;
+      var base = 'keyword-highlighter-beta-v' + j.version;
+      document.getElementById('dlBetaCrx').setAttribute('href', base + '.crx');
+      document.getElementById('dlBetaZip').setAttribute('href', base + '.zip');
+      if (j.sha256) document.getElementById('noteBeta').textContent += ' 安装包校验 ' + String(j.sha256).slice(0, 12) + '…';
+    }).catch(function () { /* 忽略 */ }).then(renderBeta);
+  })();
+</script>
+</body>
+</html>

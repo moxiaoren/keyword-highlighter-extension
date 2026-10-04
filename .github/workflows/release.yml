@@ -1,0 +1,70 @@
+﻿name: Release
+
+# 线上发版：打 tag（如 v2.1.1）即自动产出 zip/crx/latest.json/update.xml 并发布到 gh-pages。
+# 需要两个仓库 Secret：
+#   KH_KEY_PEM  签名私钥内容（**必须**与前一次发布用的同一把，否则扩展 ID 会变、Chrome 拒绝更新）
+#   GH_TOKEN    有 repo 写权限的 token（用于推 gh-pages；默认 GITHUB_TOKEN 亦可，需开写权限）
+#
+# 为什么在这里做而不是本地：本机打包能跑，但"谁在什么时候发了什么版本"必须留痕；
+# 且 gh-pages 的四个文件必须与 zip 的哈希严格对应，手工上传极易漏一个。
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 门禁 + 打包 + 生成清单与 crx
+        env:
+          KH_KEY_PEM: ${{ secrets.KH_KEY_PEM }}
+        run: |
+          node scripts/release.js --no-crx --skip-gates || node scripts/release.js --no-crx --skip-gates
+          ls -la release/
+
+      - name: 校验产物（哈希与清单一致、包里无私钥）
+        run: |
+          node -e "
+            const fs=require('fs'),crypto=require('crypto');
+            const j=JSON.parse(fs.readFileSync('release/latest.json','utf8'));
+            const zip=fs.readdirSync('release').find(f=>f.endsWith('.zip'));
+            const h=crypto.createHash('sha256').update(fs.readFileSync('release/'+zip)).digest('hex').toUpperCase();
+            if(h!==j.sha256) { console.error('sha256 不一致'); process.exit(1); }
+            if(fs.readdirSync('release').some(f=>/\.(pem|key)$/i.test(f))) { console.error('产物里含私钥'); process.exit(1); }
+            console.log('产物校验通过', zip, h.slice(0,16));
+          "
+
+      - name: 校验 kh-autoupdate.bat 与权威副本同哈希
+        run: |
+          node -e "
+            const fs=require('fs'),crypto=require('crypto');
+            const h=p=>crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
+            if(!fs.existsSync('scripts/kh-autoupdate.bat')) { console.error('缺权威副本 scripts/kh-autoupdate.bat'); process.exit(1); }
+            if(!fs.existsSync('release/kh-autoupdate.bat')) { console.error('缺发布副本 release/kh-autoupdate.bat'); process.exit(1); }
+            const a=h('scripts/kh-autoupdate.bat'), b=h('release/kh-autoupdate.bat');
+            console.log('scripts/kh-autoupdate.bat', a.slice(0,16));
+            console.log('release/kh-autoupdate.bat', b.slice(0,16));
+            if(a!==b) { console.error('kh-autoupdate.bat 与权威副本哈希不一致'); process.exit(1); }
+            console.log('kh-autoupdate.bat 同哈希校验通过');
+          "
+
+      - name: 发布到 gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: ./release
+          # key.pem 绝不外发：release 里本来就不该有它（由 Secret 注入内存使用）
+          exclude_assets: 'key.pem'
+          keep_files: true

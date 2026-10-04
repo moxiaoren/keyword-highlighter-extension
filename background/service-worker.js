@@ -1,187 +1,195 @@
 /**
- * 后台 Service Worker
- * 处理快捷键、图标状态更新、统计等
+ * background/service-worker.js · 后台（MV3 Service Worker）
+ * ----------------------------------------------------------------------------
+ * 职责（严格限定，不含任何高亮业务逻辑）：
+ *   1. 安装/更新：写默认值、打开欢迎页、启动更新轮询
+ *   2. 快捷键：转发成统一消息给当前标签页 / 打开设置页
+ *   3. 消息路由：统一走 `KH.MSG` 协议常量，禁止硬编码字符串
+ *   4. 图标状态：随 globalEnabled 切换亮/灰图标
+ *   5. 定时任务：更新检查（6h）
+ *
+ * 版本号唯一真源：manifest.json（本文件只读，不定义版本字面量）。
  */
 'use strict';
 
-// 加载本地存储模块（Service Worker 环境）
-importScripts('../lib/storage.js', '../lib/update-checker.js');
+importScripts('../src/core/protocol.js', 'update-checker.js', 'ocr.js');
 
-// 更新检测：启动/安装时 + 每 6 小时检查一次，结果存入 storage 供 popup 读取
-const UPDATE_CHECK_INTERVAL_MIN = 360; // 6 小时
+const MSG = self.KH.MSG;
+const UPDATE_CHECK_INTERVAL_MIN = 360;   // 6 小时
 
-// 当前本地版本（以 manifest 为准）
+/** 版本唯一来源：manifest */
 function currentVersion() {
-  try {
-    return chrome.runtime.getManifest().version || '0.0.0';
-  } catch (e) {
-    return Storage.defaults.version || '0.0.0';
-  }
+  try { return chrome.runtime.getManifest().version || '0.0.0'; } catch (e) { return '0.0.0'; }
 }
 
+/* ---------------- 更新通道 ---------------- */
+
 async function checkForUpdates() {
-  const info = await UpdateChecker.check(currentVersion());
+  const info = await self.UpdateChecker.check(currentVersion());
   await chrome.storage.local.set({ khUpdateInfo: info });
-  // 有更新时在图标上显示角标提示（方案 B：popup 内提供详细提示与更新入口）
-  if (info && info.hasUpdate) {
-    chrome.action.setBadgeBackgroundColor({ color: '#e53935' }).catch(() => {});
-    chrome.action.setBadgeText({ text: '↑' }).catch(() => {});
-  } else {
-    chrome.action.setBadgeText({ text: '' }).catch(() => {});
-  }
+  try {
+    if (info && info.hasUpdate) {
+      await chrome.action.setBadgeBackgroundColor({ color: '#e53935' });
+      await chrome.action.setBadgeText({ text: '↑' });
+    } else {
+      await chrome.action.setBadgeText({ text: '' });
+    }
+  } catch (e) { /* 图标 API 偶发失败不影响主流程 */ }
   return info;
 }
 
+/* ---------------- 图标 ---------------- */
 
-// 安装/更新时初始化
+async function updateIcon(globalEnabled) {
+  const suffix = globalEnabled ? '' : '-paused';
+  const path = {
+    16: chrome.runtime.getURL(`icons/icon16${suffix}.png`),
+    32: chrome.runtime.getURL(`icons/icon32${suffix}.png`),
+    48: chrome.runtime.getURL(`icons/icon48${suffix}.png`),
+    128: chrome.runtime.getURL(`icons/icon128${suffix}.png`)
+  };
+  try { await chrome.action.setIcon({ path }); } catch (e) { console.warn('[KH] 更新图标失败', e); }
+}
+
+/* ---------------- 标签页广播 ---------------- */
+async function broadcast(type, payload) {
+  const tabs = await chrome.tabs.query({});
+  await Promise.all(tabs.map(t => chrome.tabs.sendMessage(t.id, Object.assign({ type }, payload || {})).catch(() => {})));
+}
+
+/* ---------------- 安装 / 更新 ---------------- */
+
 chrome.runtime.onInstalled.addListener(async (details) => {
-  if (details.reason === 'install') {
-    // 首次安装，打开欢迎页
-    chrome.tabs.create({
-      url: chrome.runtime.getURL('welcome/welcome.html')
-    });
-
-    // 初始化默认配置
-    await Storage.set({
-      globalEnabled: true,
-      version: '1.0.0'
-    });
+  if (details.reason === 'install' || details.reason === 'update') {
+    /* 【升级后必须清掉上一次检查的结论】否则缓存里那份 "hasUpdate:true"（当时本地还是旧版本）
+     * 会让弹窗一直显示「发现新版本 v<刚装上的这个版本>」（实测 bug）。徽标也一起清，避免残留 ↑。 */
+    try {
+      await chrome.storage.local.remove('khUpdateInfo');
+      await chrome.action.setBadgeText({ text: '' });
+    } catch (e) { /* 存储/徽标失败不影响安装流程 */ }
+    await chrome.tabs.create({ url: chrome.runtime.getURL('welcome/welcome.html') });
   }
-
-  // 更新后自动打开欢迎页，展示近期更新（welcome 页会按版本差异弹出更新日志）
-  if (details.reason === 'update') {
-    chrome.tabs.create({ url: chrome.runtime.getURL('welcome/welcome.html') });
-  }
-
-  // 每次安装/更新后立即检查更新
-  checkForUpdates();
-
-  // 创建定时检查 alarm
+  await checkForUpdates();
   chrome.alarms.create('checkUpdate', { periodInMinutes: UPDATE_CHECK_INTERVAL_MIN });
 });
 
-// 浏览器启动时也检查一次
 chrome.runtime.onStartup.addListener(() => {
   checkForUpdates();
+  chrome.alarms.create('checkUpdate', { periodInMinutes: UPDATE_CHECK_INTERVAL_MIN });
 });
 
-// 快捷键处理
+/* ---------------- 快捷键 ---------------- */
+
 chrome.commands.onCommand.addListener(async (command) => {
   switch (command) {
-    case 'toggle-highlight':
-      await toggleGlobalHighlight();
+    case 'toggle-highlight': {
+      const { globalEnabled = true } = await chrome.storage.local.get('globalEnabled');
+      await chrome.storage.local.set({ globalEnabled: !globalEnabled });
+      await updateIcon(!globalEnabled);
+      await broadcast(MSG.GLOBAL_CHANGED, { value: !globalEnabled });
       break;
-    case 'toggle-site':
-      await toggleCurrentSite();
+    }
+    case 'toggle-site': {
+      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!tabs.length) break;
+      await chrome.tabs.sendMessage(tabs[0].id, { type: MSG.SITE_TOGGLE }).catch(() => {});
       break;
+    }
     case 'open-settings':
       chrome.runtime.openOptionsPage();
       break;
   }
 });
 
-/**
- * 切换全局高亮
- */
-async function toggleGlobalHighlight() {
-  const data = await Storage.get(['globalEnabled']);
-  const newState = !data.globalEnabled;
-  await Storage.set({ globalEnabled: newState });
-  
-  // 更新图标
-  updateIcon(newState);
-  
-  // 通知所有标签页刷新
-  notifyAllTabs('toggleGlobal');
-}
+/* ---------------- 消息路由（统一协议） ---------------- */
 
-/**
- * 临时禁用/启用当前站点
- */
-async function toggleCurrentSite() {
-  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (tabs.length === 0) return;
+const HANDLERS = {
+  [MSG.STATE_QUERY]: async () => {
+    const { globalEnabled = true } = await chrome.storage.local.get('globalEnabled');
+    return { ok: true, globalEnabled, version: currentVersion() };
+  },
 
-  const url = new URL(tabs[0].url);
-  const hostname = url.hostname;
+  [MSG.GLOBAL_TOGGLE]: async (msg) => {
+    const { globalEnabled = true } = await chrome.storage.local.get('globalEnabled');
+    const next = (msg.value === undefined) ? !globalEnabled : !!msg.value;
+    await chrome.storage.local.set({ globalEnabled: next });
+    await updateIcon(next);
+    await broadcast(MSG.GLOBAL_CHANGED, { value: next });
+    return { ok: true, globalEnabled: next };
+  },
 
-  const map = await Storage.getSiteDisabledMap();
-  if (map[hostname]) {
-    await Storage.setSiteDisabled(hostname, false);
-  } else {
-    await Storage.setSiteDisabled(hostname, true);
-  }
+  [MSG.SITE_TOGGLE]: async (msg, sender) => {
+    const url = (msg.url || (sender && sender.tab && sender.tab.url) || '');
+    let host = '';
+    try { host = new URL(url).hostname; } catch (e) { return { ok: false, error: '无法解析主机名' }; }
+    if (!host) return { ok: false, error: '无法解析主机名' };
 
-  notifyAllTabs('refresh');
-  
-  // 更新弹出窗口
-  chrome.runtime.sendMessage({ action: 'updatePopup' }).catch(() => {});
-}
+    const { siteDisabledMap = {} } = await chrome.storage.local.get('siteDisabledMap');
+    const next = !siteDisabledMap[host];
+    if (next) siteDisabledMap[host] = true; else delete siteDisabledMap[host];
+    await chrome.storage.local.set({ siteDisabledMap });
+    await broadcast(MSG.SITE_CHANGED, { host, disabled: next });
+    return { ok: true, host, disabled: next };
+  },
 
-/**
- * 通知所有标签页
- */
-async function notifyAllTabs(action) {
-  const tabs = await chrome.tabs.query({});
-  for (const tab of tabs) {
-    chrome.tabs.sendMessage(tab.id, { action }).catch(() => {});
-  }
-}
+  [MSG.UPDATE_CHECK]: async () => ({ ok: true, info: await checkForUpdates() }),
 
-/**
- * 更新工具栏图标状态
- */
-async function updateIcon(globalEnabled) {
-  const iconSuffix = globalEnabled ? '' : '-paused';
+  [MSG.UPDATE_INFO]: async () => {
+    const { khUpdateInfo = null } = await chrome.storage.local.get('khUpdateInfo');
+    return { ok: true, info: khUpdateInfo };
+  },
 
-  // 必须用完整 URL，相对路径会触发 "Failed to fetch"
-  chrome.action.setIcon({
-    path: {
-      '16': chrome.runtime.getURL(`icons/icon16${iconSuffix}.png`),
-      '32': chrome.runtime.getURL(`icons/icon32${iconSuffix}.png`),
-      '48': chrome.runtime.getURL(`icons/icon48${iconSuffix}.png`),
-      '128': chrome.runtime.getURL(`icons/icon128${iconSuffix}.png`)
-    }
-  }).catch(err => console.warn('更新图标失败:', err));
-}
+  /* ---- ocr：内容脚本/设置页 → background → offscreen 文档（引擎在那里跑） ---- */
+  [MSG.OCR_IMAGE]: (msg, sender) => self.OcrHost.submitImage(msg, sender),
 
-// 监听来自 popup 的消息（手动检查更新 / 读取已缓存更新信息）
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message && message.action === 'checkUpdate') {
-    checkForUpdates().then((info) => sendResponse({ ok: true, info }));
-    return true; // 异步响应
-  }
-  if (message && message.action === 'getUpdateInfo') {
-    chrome.storage.local.get('khUpdateInfo').then((res) => {
-      sendResponse({ ok: true, info: res.khUpdateInfo || null });
-    });
-    return true;
-  }
-  return false;
+  [MSG.OCR_CANCEL]: (msg, sender) => self.OcrHost.cancelTab(
+    (sender && sender.tab && sender.tab.id != null) ? sender.tab.id : msg.tabId
+  ),
+
+  [MSG.OCR_LANG_STATE]: (msg) => self.OcrHost.ask(msg),
+  [MSG.OCR_LANG_DOWNLOAD]: (msg) => self.OcrHost.ask(msg),
+  [MSG.OCR_LANG_IMPORT]: (msg) => self.OcrHost.ask(msg),
+  [MSG.OCR_LANG_CLEAR]: (msg) => self.OcrHost.ask(msg),
+  'kh:ocr:selftest': (msg) => self.OcrHost.submitImage(msg, { tab: null, url: 'chrome-extension://ui/' })
+};
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  /* offscreen 文档的回执/结果先给中转站（它按 requestId 决定"回 promise"还是"送回标签页"） */
+  if (msg && msg.to === 'background' && self.OcrHost && self.OcrHost.onOffscreenMessage(msg)) return false;
+  /* ⚠️ 带 `to` 标记的消息是**我们自己发出去的**（发给 offscreen / 广播给 UI）：
+   * onMessage 是"所有扩展上下文都能收到"的，不在这里挡掉，背景自己就会把
+   * `{to:'offscreen', type: ocr:image}` 当成"内容脚本的识别请求"再转发一次 → 无限自圈。 */
+  if (msg && msg.to) return false;
+  const handler = msg && HANDLERS[msg.type];
+  if (!handler) return false;
+  Promise.resolve()
+    .then(() => handler(msg, sender))
+    .then(sendResponse)
+    .catch(err => sendResponse({ ok: false, error: String(err && err.message || err) }));
+  return true; // 异步响应
 });
 
-// 监听存储变更，更新图标
-chrome.storage.onChanged.addListener((changes, namespace) => {
-  if (namespace === 'local' && changes.globalEnabled) {
-    updateIcon(changes.globalEnabled.newValue);
-  }
+/* 标签页关闭 → 丢掉它在排队的识别任务（免得为一个已经不存在的页面白烧 CPU） */
+chrome.tabs.onRemoved.addListener((tabId) => {
+  try { self.OcrHost.cancelTab(tabId); } catch (e) { /* ignore */ }
 });
 
-// 初始化图标
+/* ---------------- 存储变更 → 图标 ---------------- */
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes.globalEnabled) updateIcon(changes.globalEnabled.newValue);
+});
+
+/* ---------------- 定时任务 ---------------- */
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === 'checkUpdate') checkForUpdates();
+});
+
+/* ---------------- 冷启动自检 ---------------- */
+
 (async () => {
-  const data = await Storage.get(['globalEnabled']);
-  updateIcon(data.globalEnabled);
+  const { globalEnabled = true } = await chrome.storage.local.get('globalEnabled');
+  await updateIcon(globalEnabled);
+  chrome.alarms.create('checkUpdate', { periodInMinutes: UPDATE_CHECK_INTERVAL_MIN });
 })();
-
-// 定期清理旧统计数据（超过30天）
-chrome.alarms.create('cleanupStats', { periodInMinutes: 1440 }); // 每天一次
-
-chrome.alarms.onAlarm.addListener(async (alarm) => {
-  if (alarm.name === 'cleanupStats') {
-    // 统计保留30天，目前简化实现不清除
-    console.debug('[KeywordHighlighter] 统计清理检查');
-  }
-  if (alarm.name === 'checkUpdate') {
-    checkForUpdates();
-  }
-});

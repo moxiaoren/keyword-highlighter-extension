@@ -2,1109 +2,587 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>设置 - 关键词备注高亮助手</title>
+  <title>关键词高亮 · 设置</title>
+  <!-- 设计变量：src/ui/tokens.css 会在构建期注入到下面两个样式表的 @inject:tokens 标记处 -->
+  <link rel="stylesheet" href="../src/ui/components/components.css">
   <link rel="stylesheet" href="options.css">
 </head>
 <body>
-  <div class="app-layout">
-    <!-- 侧边导航 -->
-    <nav class="sidebar">
-      <div class="sidebar-header">
-        <span class="logo-icon">🔍</span>
-        <h1>高亮助手</h1>
-      </div>
-      <ul class="nav-menu">
-        <li class="nav-item active" data-section="keywords">
-          <span class="nav-icon">📝</span> 关键词管理
-        </li>
-        <li class="nav-item" data-section="groups">
-          <span class="nav-icon">📁</span> 分组管理
-        </li>
-        <li class="nav-item" data-section="styles">
-          <span class="nav-icon">🎨</span> 高亮样式
-        </li>
-        <li class="nav-item" data-section="note-card">
-          <span class="nav-icon">💬</span> 备注卡片样式
-        </li>
-        <li class="nav-item" data-section="sites">
-          <span class="nav-icon">🌐</span> 站点规则
-        </li>
-        <li class="nav-item" data-section="import-export">
-          <span class="nav-icon">📦</span> 导入/导出
-        </li>
-        <li class="nav-item" data-section="help">
-          <span class="nav-icon">❓</span> 帮助与隐私
-        </li>
-      </ul>
-      <div class="sidebar-footer">
-        <span class="version" id="sidebarVersion">—</span>
-      </div>
+  <!-- 左固定侧边栏：sticky + 100vh（页面滚动时导航不跟着走）。
+       分区是 7 个「切走」的页签（同一时刻只显示一个），与 navigation 一一对应：
+       `.kh-tab` 的 href 与 data-tab 成对保留，脚本只负责 hidden 切换，不再自己拼 id。 -->
+  <aside class="kh-sidebar">
+    <div class="kh-sidebar-brand">
+      <span class="kh-sidebar-logo" aria-hidden="true">🔍</span>
+      <span class="kh-sidebar-name">高亮助手</span>
+    </div>
+    <nav class="kh-tabs" id="tabs" aria-label="设置分区">
+      <a class="kh-tab" href="#sec-keywords" data-tab="keywords"><span class="kh-nav-icon">📝</span>关键词管理</a>
+      <a class="kh-tab" href="#sec-groups" data-tab="groups"><span class="kh-nav-icon">📁</span>分组管理</a>
+      <a class="kh-tab" href="#sec-style" data-tab="style"><span class="kh-nav-icon">🎨</span>样式</a>
+      <a class="kh-tab" href="#sec-ocr" data-tab="ocr"><span class="kh-nav-icon">🖼</span>图片识别</a>
+      <a class="kh-tab" href="#sec-sites" data-tab="sites"><span class="kh-nav-icon">🌐</span>站点规则</a>
+      <a class="kh-tab" href="#sec-data" data-tab="data"><span class="kh-nav-icon">📦</span>导入导出</a>
+      <a class="kh-tab" href="#sec-help" data-tab="help"><span class="kh-nav-icon">❓</span>帮助与隐私</a>
     </nav>
+    <div class="kh-sidebar-foot">
+      <!-- 版本徽标必须动态读 manifest（单一真源铁律），不写死字面量 -->
+      <span class="kh-sidebar-version" id="sidebar-version">v—</span>
+      <a class="kh-sidebar-version" id="project-link" href="https://github.com/moxiaoren/keyword-highlighter-extension" target="_blank" rel="noopener" style="display:block;margin-top:6px;opacity:.75;text-decoration:none" title="项目主页：说明文档、自动更新脚本、更新日志">项目主页 ↗</a>
+    </div>
+  </aside>
 
-    <!-- 主内容区域 -->
-    <main class="main-content">
-      <!-- 关键词管理 -->
-      <section id="section-keywords" class="section active">
-        <div class="section-header">
-          <h2>关键词管理 <span class="total-count" id="keywordTotalCount"></span></h2>
-        </div>
+  <div class="kh-main">
+  <header class="kh-page-head">
+    <div class="kh-head-left">
+      <h1>高亮助手</h1>
+      <span class="kh-version" id="version">v—</span>
+    </div>
+    <div class="kh-head-right">
+      <span class="kh-head-state" id="head-state">—</span>
+      <button class="kh-btn" id="btn-site-toggle" type="button">当前站点开关</button>
+      <button class="kh-btn" id="btn-toggle-global" type="button">暂停高亮</button>
+    </div>
+  </header>
 
-        <!-- 筛选 / 排序 / 操作 -->
-        <div class="filter-bar">
-          <input type="text" id="keywordSearch" placeholder="搜索关键词或备注..." class="search-input kw-search">
-          <select id="groupFilter" class="filter-select">
-            <option value="">全部分组</option>
+  <main class="kh-page-body">
+
+    <!-- ============================================================ 关键词管理 -->
+    <section class="kh-card" id="sec-keywords">
+      <div class="kh-card-head">
+        <h2>关键词管理 <span class="kh-count" id="kw-count"></span></h2>
+      </div>
+
+      <!-- 筛选栏：上行是筛选条件，下行是「＋ 添加 / 📥 批量导入」——
+           拆两行是刻意的：并成一行时中窄屏会把按钮挤成第二行、留下半行空白，看着像没对齐 -->
+      <div class="kh-filter-bar">
+        <div class="kh-filter-row">
+          <input class="kh-input kh-filter-search" id="kw-search" type="search" placeholder="搜索关键词 / 标题词 / 备注…">
+          <select class="kh-input kh-filter-sel" id="kw-filter-group"></select>
+          <select class="kh-input kh-filter-sel" id="kw-filter-status">
+            <option value="">全部状态</option>
+            <option value="on">启用</option>
+            <option value="off">停用</option>
           </select>
-          <select id="statusFilter" class="filter-select">
-            <option value="all">全部状态</option>
-            <option value="enabled">仅启用</option>
-            <option value="disabled">仅禁用</option>
+          <select class="kh-input kh-filter-sel" id="kw-filter-axis">
+            <option value="">全部类型</option>
+            <option value="plain">普通词</option>
+            <option value="lr">组合词（左右格）</option>
+            <option value="tb">组合词（上下格）</option>
+            <option value="fetch">仅抓取</option>
+            <option value="rare">罕见字</option>
           </select>
-          <select id="regexFilter" class="filter-select">
-            <option value="all">全部匹配方式</option>
-            <option value="plain">普通文本</option>
-            <option value="regex">正则表达式</option>
+          <select class="kh-input kh-filter-sel" id="kw-filter-sort" title="与表头点击排序并存；筛选栏排序先生效，点表头即由表头排序接管">
+            <option value="updated-desc">最近更新</option>
+            <option value="created-desc">最近添加</option>
+            <option value="text-asc">名称 A→Z</option>
+            <option value="text-desc">名称 Z→A</option>
           </select>
-          <select id="sortFilter" class="filter-select">
-            <option value="updated_desc">最近更新</option>
-            <option value="created_desc">最近添加</option>
-            <option value="name_asc">名称 A→Z</option>
-            <option value="name_desc">名称 Z→A</option>
+          <button class="kh-mini-btn" id="btn-filter-reset" type="button">重置筛选</button>
+        </div>
+        <div class="kh-filter-row kh-filter-acts">
+          <button class="kh-btn kh-btn-primary" id="btn-kw-add" type="button">＋ 添加</button>
+          <button class="kh-btn" id="btn-batch-import" type="button" title="从 CSV / JSON 文件批量导入关键词（JSON 的导入范围与「导入导出」页的勾选一致）">📥 批量导入</button>
+        </div>
+        <!-- 批量导入用的文件选择器：与「导入导出」共用同一条导入路径（不新写一份解析逻辑） -->
+        <input type="file" id="file-batch-import" accept=".csv,.json,text/csv,application/json" hidden>
+      </div>
+
+      <!-- 批量栏：常驻一行，未勾选时整行禁用 -->
+      <div class="kh-batch-bar" id="batch-bar">
+        <label class="kh-check kh-batch-all"><input type="checkbox" id="batch-select-page"> 本页全选</label>
+        <span class="kh-batch-info" id="batch-info">已选 0 项</span>
+        <button class="kh-mini-btn" id="batch-enable" type="button" title="启用选中的关键词">✅ 启用</button>
+        <button class="kh-mini-btn" id="batch-disable" type="button" title="停用选中的关键词">⭕ 停用</button>
+        <button class="kh-mini-btn" id="batch-group" type="button" title="移动选中的关键词到分组">📁 移动</button>
+        <button class="kh-mini-btn" id="batch-color" type="button" title="批量设置高亮颜色">🎨 颜色</button>
+        <button class="kh-mini-btn" id="batch-match" type="button" title="批量设置匹配方式（核心词 3 项 + 标题词 3 项）">⚙️ 匹配</button>
+        <button class="kh-mini-btn" id="batch-note" type="button" title="批量设置备注 / 重要笔记">📝 备注·笔记</button>
+        <button class="kh-mini-btn" id="batch-delete" type="button" title="删除选中的关键词">🗑️ 删除</button>
+        <button class="kh-mini-btn" id="batch-clear" type="button" title="取消选择">取消</button>
+      </div>
+
+      <div id="kw-table"></div>
+    </section>
+
+    <!-- ============================================================ 分组管理 -->
+    <section class="kh-card" id="sec-groups" hidden>
+      <div class="kh-card-head">
+        <h2>分组管理</h2>
+        <div class="kh-card-head-ops">
+          <button class="kh-btn kh-btn-primary" id="btn-group-add" type="button">＋ 新建分组</button>
+        </div>
+      </div>
+      <p class="kh-muted">分组可统一高亮颜色、整组标记「重要」并共用一条重要笔记；组内关键词自动跟随，改分组色后组内同步生效。</p>
+      <div id="group-list" class="kh-group-list"></div>
+    </section>
+
+    <!-- ============================================================ 样式（高亮 + 备注卡片合并） -->
+    <section class="kh-card" id="sec-style" hidden>
+      <h2>样式配置</h2>
+      <p class="kh-muted">这里配的都是<strong>全局默认值</strong>：单个关键词或分组没设时才会用到。
+        优先级固定为「分组色 &gt; 关键词色 &gt; 全局默认色」，在关键词编辑弹窗里留空即表示「继承」。</p>
+
+      <h3 class="kh-sub">高亮颜色</h3>
+      <div class="kh-form-row">
+        <div class="kh-form-fld">
+          <label class="kh-fld-label">默认背景色</label>
+          <div id="hl-bg"></div>
+        </div>
+        <div class="kh-form-fld">
+          <label class="kh-fld-label">默认文字颜色</label>
+          <div id="hl-fg"></div>
+        </div>
+        <button class="kh-mini-btn" id="btn-hl-reset" type="button">恢复默认</button>
+      </div>
+      <div class="kh-preview-wrap">
+        <div class="kh-preview-label">实时预览</div>
+        <p class="kh-preview-line">命中效果：<mark id="hl-preview" class="kh-preview-mark">关键词高亮示例</mark> 后面的文字保持原样。</p>
+      </div>
+
+      <h3 class="kh-sub">备注卡片</h3>
+      <p class="kh-muted">点击页面上的高亮词会弹出该词的备注卡片。以下各项可调，「恢复默认」可整体还原。</p>
+      <div class="kh-nc-grid" id="nc-fields"></div>
+      <div class="kh-preview-wrap">
+        <div class="kh-preview-head">
+          <div class="kh-preview-label">卡片预览</div>
+          <button class="kh-mini-btn" id="btn-nc-reset" type="button">恢复默认</button>
+        </div>
+        <div class="kh-nc-preview" id="nc-preview">
+          <div class="kh-nc-preview-title">关键词名称</div>
+          <div class="kh-nc-preview-body">这是备注内容，多行换行
+会原样保留。</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ 图片识别（OCR） -->
+    <section class="kh-card" id="sec-ocr" hidden>
+      <h2>图片文字识别</h2>
+      <p class="kh-muted">
+        关键词勾上<strong>「抓取后续字段」的「启用」</strong>、把要抓的「字段」填好后，再开启「识别图片文字」——
+        <strong>这些字段的值格里的图片</strong>会被识别一次（普通词也能用，不再限组合词）；
+        识别出的文字里出现「图片命中关键词」，就算一次<strong>图片命中</strong>（显示在页面的「重要笔记」面板里，独立分区，不产生文字高亮）。<br>
+        文字识别<strong>完全在本机</strong>运行：图片不上传，唯一的联网动作是下面这一次语言包下载（也可手动导入，做到完全离线）。
+      </p>
+
+      <h3 class="kh-sub">识别精度</h3>
+      <div class="kh-form-row">
+        <div class="kh-form-fld">
+          <label class="kh-fld-label" for="ocr-quality">识别档位</label>
+          <select class="kh-input" id="ocr-quality">
+            <option value="fast">快速（小语言包，省流量、更快）——默认</option>
+            <option value="best">高精度（大语言包，中文更准、单张更慢）</option>
           </select>
-          <span class="filter-spacer"></span>
-          <button class="btn btn-primary" id="btnAddKeyword">➕ 添加</button>
-          <button class="btn btn-secondary" id="btnBatchImport">📥 批量导入</button>
         </div>
+      </div>
+      <p class="kh-muted">
+        两档<strong>各自独立</strong>保存语言包，切换不用重新下载；下面「语言包」一栏的下载 / 手动导入 / 清除都按<strong>当前档位</strong>生效。
+        高精度档用的是标准 LSTM 大模型（简体中文约 19MB），对<strong>艺术字 / 彩色底 / 照片上压字</strong>这类难图识别更准，但单张识别大约慢 2~4 倍。
+      </p>
 
-        <!-- 批量操作栏（单独一行，常驻展示） -->
-        <div class="bulk-bar">
-          <label class="checkbox-label bulk-check"><input type="checkbox" id="selectAllPage"> 本页全选</label>
-          <span class="bulk-selected" id="bulkSelectedCount">已选 0 项</span>
-          <button class="btn btn-sm" data-bulk="enable" disabled title="启用选中的关键词">✅ 启用</button>
-          <button class="btn btn-sm" data-bulk="disable" disabled title="禁用选中的关键词">⭕ 禁用</button>
-          <button class="btn btn-sm" data-bulk="move" disabled title="移动选中的关键词到分组">📁 移动</button>
-          <button class="btn btn-sm" data-bulk="note" disabled title="批量设置选中的关键词 备注 / 重要笔记">📝 备注/笔记</button>
-          <button class="btn btn-sm" data-bulk="matchrule" disabled title="批量设置选中的关键词匹配方式（核心词 / 标题词规则）">⚙️ 匹配</button>
-          <button class="btn btn-sm btn-danger-soft" data-bulk="delete" disabled title="删除选中的关键词">🗑️ 删除</button>
-          <button class="btn btn-sm btn-link" data-bulk="clear" disabled title="取消选择">取消</button>
+      <h3 class="kh-sub">语言包</h3>
+      <div id="ocr-lang-list"></div>
+      <div class="kh-form-row" style="margin-top:8px">
+        <button class="kh-btn" id="btn-ocr-selftest" type="button">识别自检</button>
+        <span class="kh-muted" id="ocr-selftest-result"></span>
+      </div>
+      <input type="file" id="ocr-import-file" accept=".gz,.traineddata" hidden>
+
+      <h3 class="kh-sub">跨域图片</h3>
+      <p class="kh-muted">
+        默认只识别<strong>同源 / data: / 页面自己声明过 CORS</strong> 的图片。其它网站的图片需要在这里<strong>按站点</strong>授权后，才会由扩展代为读取
+        （不新增任何浏览器权限，只是允许扩展去读你已经看到的那张图）。
+      </p>
+      <div class="kh-form-row">
+        <div class="kh-form-fld">
+          <label class="kh-fld-label" for="ocr-site-input">站点域名</label>
+          <input class="kh-input" id="ocr-site-input" type="text" placeholder="如 example.com" autocomplete="off">
         </div>
+        <button class="kh-btn" id="btn-ocr-site-add" type="button">＋ 允许这个站点</button>
+      </div>
+      <div id="ocr-site-list" class="kh-disabled-list"></div>
+    </section>
 
-        <!-- 关键词表格 -->
-        <div class="keyword-table-wrap">
-          <table class="keyword-table" id="keywordTable">
-            <thead>
-              <tr>
-                <th class="col-check"><input type="checkbox" id="checkAllPage" title="全选本页"></th>
-                <th class="col-kw">关键词</th>
-                <th class="col-kw-match" title="点击修改核心词匹配方式（在弹窗中勾选，保存即生效）">核心词匹配</th>
-                <th class="col-cell" title="单元格组合关键词的左格标题词（右格为核心，命中时右格须含关键词）">标题关键词(左格)</th>
-                <th class="col-title-match" title="点击修改标题词匹配方式（仅组合词，在弹窗中勾选）">标题词匹配</th>
-                <th class="col-impnote">重要笔记</th>
-                <th class="col-color">高亮颜色</th>
-                <th class="col-group">分组</th>
-                <th class="col-note">备注</th>
-                <th class="col-status">状态</th>
-                <th class="col-actions">操作</th>
-              </tr>
-            </thead>
-            <tbody id="keywordTableBody"></tbody>
-          </table>
-          <div class="empty-state" id="keywordEmpty" style="display:none;">
-            <span class="empty-icon">📝</span>
-            <p id="keywordEmptyText">还没有添加关键词</p>
-            <button class="btn btn-primary" id="btnEmptyAdd" style="display:none;">添加第一条关键词</button>
-          </div>
-        </div>
+    <!-- ============================================================ 站点规则 -->
+    <section class="kh-card" id="sec-sites" hidden>
+      <h2>站点规则</h2>
+      <p class="kh-muted">
+        ✅ <strong>白名单</strong>＝只有这些站点高亮；🚫 <strong>黑名单</strong>＝这些站点不高亮，其余照常。<br>
+        只要存在白名单，白名单以外的站点一律不高亮；没有白名单则默认全部高亮。生效与否由<strong>每条规则自身类型</strong>决定。
+      </p>
+      <div class="kh-card-head-ops kh-right">
+        <button class="kh-btn kh-btn-primary" id="btn-site-add" type="button">＋ 添加站点规则</button>
+      </div>
+      <h3 class="kh-sub">规则列表</h3>
+      <div id="site-rule-list"></div>
+      <h3 class="kh-sub">临时禁用（本机即时状态，不随导出分享）</h3>
+      <div id="site-disabled-list" class="kh-disabled-list"></div>
+    </section>
 
-        <!-- 分页 -->
-        <div class="pagination" id="pagination"></div>
-      </section>
+    <!-- ============================================================ 导入导出 -->
+    <section class="kh-card" id="sec-data" hidden>
+      <h2>导入导出</h2>
+      <p class="kh-muted">所有数据仅保存在浏览器本地（<code>chrome.storage</code>），不上传任何服务器。建议导入前先导出备份。</p>
 
-      <!-- 分组管理 -->
-      <section id="section-groups" class="section">
-        <div class="section-header">
-          <h2>分组管理</h2>
-          <button class="btn btn-primary" id="btnAddGroup">➕ 新建分组</button>
-        </div>
-        <div class="group-list" id="groupList">
-          <div class="empty-state">
-            <span class="empty-icon">📁</span>
-            <p>还没有创建分组</p>
-          </div>
-        </div>
-      </section>
+      <h3 class="kh-sub">导出数据</h3>
+      <div class="kh-checks">
+        <label class="kh-check"><input type="checkbox" id="exp-keywords" checked> 关键词与分组</label>
+        <label class="kh-check"><input type="checkbox" id="exp-site" checked> 站点规则</label>
+        <label class="kh-check"><input type="checkbox" id="exp-disabled" checked> 站点禁用状态</label>
+        <label class="kh-check"><input type="checkbox" id="exp-styles" checked> 样式与配置</label>
+      </div>
+      <div class="kh-btn-row">
+        <button class="kh-btn kh-btn-primary" id="btn-export-json" type="button">导出 JSON（4 块）</button>
+        <button class="kh-btn" id="btn-export-csv" type="button">导出 CSV（关键词 18 列）</button>
+        <button class="kh-btn" id="btn-export-xls" type="button" title="一份 HTML 单表，Excel 可直接打开：带边框、冻结首行、底色/文字色按真实颜色上色">导出 Excel 表格（.xls）</button>
+      </div>
 
-      <!-- 高亮样式 -->
-      <section id="section-styles" class="section">
-        <div class="section-header">
-          <h2>高亮样式配置</h2>
-          <button class="btn btn-secondary" id="btnResetHighlightStyle">恢复默认</button>
-        </div>
-        <div class="style-form">
-          <div class="form-group">
-            <label>默认背景色</label>
-            <div class="color-input-row">
-              <input type="color" id="hlBgColor" value="#ff9500">
-              <input type="text" id="hlBgColorText" value="#ff9500" class="color-text-input">
-            </div>
-          </div>
-          <div class="form-group">
-            <label>默认文字颜色</label>
-            <div class="color-input-row">
-              <input type="color" id="hlTextColor" value="#000000">
-              <input type="text" id="hlTextColorText" value="#000000" class="color-text-input">
-            </div>
-          </div>
-          <div class="form-group">
-            <label>边框颜色</label>
-            <div class="color-input-row">
-              <input type="color" id="hlBorderColor" value="#e6c300">
-              <input type="text" id="hlBorderColorText" value="#e6c300" class="color-text-input">
-            </div>
-          </div>
-          <div class="form-group">
-            <label>边框宽度</label>
-            <input type="text" id="hlBorderWidth" value="1px" class="text-input">
-          </div>
-          <div class="form-group">
-            <label>圆角大小</label>
-            <input type="text" id="hlBorderRadius" value="3px" class="text-input">
-          </div>
-        </div>
+      <h3 class="kh-sub">导入数据</h3>
+      <div class="kh-checks">
+        <label class="kh-check"><input type="checkbox" id="imp-keywords" checked> 关键词与分组</label>
+        <label class="kh-check"><input type="checkbox" id="imp-site" checked> 站点规则</label>
+        <label class="kh-check"><input type="checkbox" id="imp-disabled"> 站点禁用状态</label>
+        <label class="kh-check"><input type="checkbox" id="imp-styles" checked> 样式与配置</label>
+      </div>
+      <div class="kh-checks">
+        <label class="kh-check"><input type="radio" name="imp-mode" value="merge" checked> 合并（追加去重，不删除现有数据）</label>
+        <label class="kh-check"><input type="radio" name="imp-mode" value="overwrite"> 覆盖（用文件内容替换被勾选的块）</label>
+      </div>
+      <div class="kh-btn-row">
+        <button class="kh-btn kh-btn-primary" id="btn-import-json" type="button">导入 JSON…</button>
+        <button class="kh-btn" id="btn-import-csv" type="button">导入 CSV…</button>
+        <input type="file" id="file-json" accept=".json,application/json" hidden>
+        <input type="file" id="file-csv" accept=".csv,text/csv" hidden>
+      </div>
 
-        <!-- 运行性能优化 -->
-        <div class="form-section" style="margin:18px 0 4px;">
-          <div class="form-section-title">性能优化</div>
-          <label class="checkbox-label" style="padding:6px 2px;font-weight:500;">
-            <input type="checkbox" id="optSuspendInactiveTab"> 标签页隐藏时自动暂停高亮（切回时重建），节省后台资源
-          </label>
-          <span class="form-hint">适合同时开很多网页的场景。切回页面时会重新加载高亮，可能有轻微重建延迟。</span>
+      <h3 class="kh-sub">重置数据</h3>
+      <div class="kh-checks">
+        <label class="kh-check"><input type="checkbox" id="rst-keywords"> 关键词与分组</label>
+        <label class="kh-check"><input type="checkbox" id="rst-site"> 站点规则 / 禁用状态</label>
+        <label class="kh-check"><input type="checkbox" id="rst-styles"> 样式与配置（恢复默认）</label>
+      </div>
+      <div class="kh-btn-row">
+        <button class="kh-btn kh-btn-danger" id="btn-reset" type="button">重置所选数据</button>
+      </div>
+    </section>
 
-          <label class="checkbox-label" style="padding:6px 2px;font-weight:500;margin-top:8px;">
-            <input type="checkbox" id="optPageResidualClean"> 翻页残留自动清扫（URL不变/无事件时也清除旧高亮）
-          </label>
-          <span class="form-hint">针对部分网站翻页时 URL 不变、且框架不触发可见 DOM 事件、直接替换表格内容导致的旧高亮残留。</span>
-          <div id="pageCleanSub" style="padding:4px 0 2px 22px;">
-            <label class="checkbox-label" style="padding:4px 2px;">
-              <input type="checkbox" id="optPageCleanClick"> 分页控件点击捕获（点「下一页/页码」时自动重建）
-            </label>
-          </div>
+    <!-- ============================================================ 帮助 -->
+    <section class="kh-card" id="sec-help" hidden>
+      <h2>帮助与隐私</h2>
 
-          <label class="checkbox-label" style="padding:6px 2px;font-weight:500;margin-top:8px;">
-            <input type="checkbox" id="optPageRebuild"> 页面有变动时自动整页重建（修复多次提交后组合词/重要笔记偶发丢失）
-          </label>
-          <span class="form-hint">识别到页面内容变化后，自动对整页做一次「先清后建」重建，确保高亮与重要笔记始终一致、不再偶发丢失。内置静默窗口与节流防高频页面卡顿，可调整下方参数。</span>
-          <div id="pageRebuildSub" style="padding:4px 0 2px 22px;">
-            <label style="display:inline-block;margin-right:14px;font-size:12px;">静默窗口(ms)
-              <input type="number" id="optRebuildSilent" min="0" step="100" style="width:84px;margin-left:4px;">
-            </label>
-            <label style="display:inline-block;font-size:12px;">重建节流(ms)
-              <input type="number" id="optRebuildGap" min="0" step="100" style="width:84px;margin-left:4px;">
-            </label>
-          </div>
-        </div>
-        
-        <!-- 实时预览 -->
-        <div class="preview-box">
-          <h3>实时预览</h3>
-          <div class="preview-content" id="highlightPreview">
-            <p>这是一段包含<span class="preview-highlight">关键词</span>的示例文本，用于预览高亮效果。</p>
-          </div>
-        </div>
-      </section>
+      <div class="kh-htabs" id="help-tabs">
+        <button type="button" class="kh-htab active" data-hpan="pri">🔒 隐私</button>
+        <button type="button" class="kh-htab" data-hpan="fn">📖 功能</button>
+        <button type="button" class="kh-htab" data-hpan="data">💾 数据</button>
+        <button type="button" class="kh-htab" data-hpan="faq">❓ 常见</button>
+        <button type="button" class="kh-htab" data-hpan="safe">🛡️ 安全</button>
+        <button type="button" class="kh-htab" data-hpan="perf">⚙️ 性能</button>
+        <button type="button" class="kh-htab" data-hpan="about">ℹ️ 关于</button>
+      </div>
 
-      <!-- 备注卡片样式 -->
-      <section id="section-note-card" class="section">
-        <div class="section-header">
-          <h2>备注卡片样式</h2>
-          <button class="btn btn-secondary" id="btnResetNoteCardStyle">恢复默认</button>
-        </div>
-        <div class="style-form">
-          <div class="form-row">
-            <div class="form-group">
-              <label>背景色</label>
-              <div class="color-input-row">
-                <input type="color" id="ncBgColor" value="#ffffff">
-                <input type="text" id="ncBgColorText" value="#ffffff" class="color-text-input">
-              </div>
-            </div>
-            <div class="form-group">
-              <label>文字颜色</label>
-              <div class="color-input-row">
-                <input type="color" id="ncTextColor" value="#333333">
-                <input type="text" id="ncTextColorText" value="#333333" class="color-text-input">
-              </div>
-            </div>
-          </div>
-          <div class="form-row">
-            <div class="form-group">
-              <label>边框颜色</label>
-              <div class="color-input-row">
-                <input type="color" id="ncBorderColor" value="#cccccc">
-                <input type="text" id="ncBorderColorText" value="#cccccc" class="color-text-input">
-              </div>
-            </div>
-            <div class="form-group">
-              <label>边框宽度</label>
-              <input type="text" id="ncBorderWidth" value="1px" class="text-input">
-            </div>
-          </div>
-          <div class="form-row">
-            <div class="form-group">
-              <label>圆角</label>
-              <input type="text" id="ncBorderRadius" value="8px" class="text-input">
-            </div>
-            <div class="form-group">
-              <label>最大宽度</label>
-              <input type="text" id="ncMaxWidth" value="320px" class="text-input">
-            </div>
-          </div>
-          <div class="form-row">
-            <div class="form-group">
-              <label>阴影</label>
-              <input type="text" id="ncShadow" value="0 4px 12px rgba(0,0,0,0.15)" class="text-input" style="width:100%">
-            </div>
-            <div class="form-group">
-              <label>透明度</label>
-              <input type="text" id="ncOpacity" value="0.96" class="text-input" style="width:80px">
-            </div>
-          </div>
-        </div>
-        
-        <!-- 实时预览 -->
-        <div class="preview-box">
-          <h3>卡片预览</h3>
-          <div class="note-card-preview" id="noteCardPreview">
-            <div class="preview-card">
-              <div class="preview-card-header">
-                <span class="preview-card-kw">关键词</span>
-                <span class="preview-card-close">✕</span>
-              </div>
-              <div class="preview-card-body">
-                这是备注内容预览，支持 <b>加粗</b>、<i>斜体</i> 和 <a href="#">链接</a>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
+      <div class="kh-hpanel active" data-hpan="pri">
+      <h3>🔒 隐私承诺</h3>
+      <div class="kh-privacy">
+        <p>✅ <strong>所有数据仅保存在您的本地浏览器中</strong>，不会上传到任何服务器。</p>
+        <p>✅ 插件<strong>不采集</strong>网页内容、关键词和备注。</p>
+        <p>✅ 关键词匹配、高亮、备注展示<strong>完全在本地完成</strong>。</p>
+        <p>✅ 仅浏览网页时在你的本机查找并高亮，不做任何云端存储或分析。</p>
+        <p>✅ 不记录、不上传任何浏览数据（<strong>无统计、无埋点</strong>）。</p>
+        <p>✅ 申请的权限（所有网站）仅用于在网页上查找和高亮关键词。</p>
+      </div>
 
-      <!-- 站点规则 -->
-      <section id="section-sites" class="section">
-        <div class="section-header">
-          <h2>站点范围控制</h2>
-          <div class="section-desc">
-            <p>默认<strong>所有网站</strong>生效。添加规则可指定：</p>
-            <ul style="margin:6px 0 0 18px; line-height:1.8; color:#555;">
-              <li>🚫 <strong>黑名单</strong>：该网站<strong>不</strong>高亮，其他网站照常生效。</li>
-              <li>✅ <strong>白名单</strong>：只有加入的网站才高亮，其他网站一律不高亮。</li>
-            </ul>
-          </div>
-        </div>
-        
-        <div class="section-header" style="margin-top:16px;">
-          <h3>规则列表</h3>
-          <button class="btn btn-primary" id="btnAddSiteRule">➕ 添加规则</button>
-        </div>
-
-        <div class="site-rule-list" id="siteRuleList">
-          <div class="empty-state">
-            <span class="empty-icon">🌐</span>
-            <p>暂无站点规则</p>
-          </div>
-        </div>
-      </section>
-
-      <!-- 导入/导出 -->
-      <section id="section-import-export" class="section">
-        <div class="section-header">
-          <h2>数据导入/导出</h2>
-        </div>
-        
-        <div class="ie-section">
-          <h3>导出数据</h3>
-          <p>可选择导出「关键词 / 站点规则 / 样式」等范围——比如只把<strong>站点黑白名单</strong>导出分享给朋友，而不带本地临时状态。</p>
-          <div class="ie-buttons">
-            <button class="btn btn-primary" id="btnExportJSON">📥 导出 JSON（可选内容）</button>
-            <button class="btn btn-secondary" id="btnExportCSV">📊 导出 CSV（仅关键词）</button>
-          </div>
-        </div>
-
-        <div class="ie-section">
-          <h3>导入数据</h3>
-          <p>导入 JSON 时可<strong>只选要导入的部分</strong>并选择 <strong>合并 / 覆盖</strong>：<strong>合并</strong> 把文件内容追加进现有配置（去重、不删你原有的词），<strong>覆盖</strong> 用文件内容替换对应部分。</p>
-          <div class="ie-buttons">
-            <button class="btn btn-primary" id="btnImportJSON">📤 导入 JSON</button>
-            <button class="btn btn-secondary" id="btnImportCSV">📊 导入 CSV</button>
-          </div>
-          <input type="file" id="importFileInput" accept=".json,.csv" style="display:none">
-        </div>
-
-        <div class="ie-section">
-          <h3>重置数据</h3>
-          <p style="color:#c62828;">⚠️ 这将删除所有关键词、分组和配置，恢复为默认设置。此操作不可撤销。</p>
-          <button class="btn btn-danger" id="btnResetAll">🔄 重置所有数据</button>
-        </div>
-      </section>
-
-      <!-- 帮助与隐私 -->
-      <section id="section-help" class="section">
-        <div class="section-header">
-          <h2>帮助与隐私说明</h2>
-        </div>
-        
-        <div class="help-wrap">
-        <div class="help-toc" id="helpToc">
-          <span class="help-toc-label">📚 本章目录</span>
-          <div class="help-toc-links" id="helpTocLinks"></div>
-        </div>
-        <div class="help-content">
-          <h3>🔒 隐私承诺</h3>
-          <div class="privacy-box">
-            <p>✅ <strong>所有数据仅保存在您的本地浏览器中</strong>，不会上传到任何服务器。</p>
-            <p>✅ 插件<strong>不采集</strong>网页内容、关键词和备注。</p>
-            <p>✅ 关键词匹配、高亮、备注展示<strong>完全在本地完成</strong>。</p>
-            <p>✅ 仅浏览网页时在你的本机查找并高亮，不做任何云端存储或分析。</p>
-            <p>✅ 统计数据仅记录命中数量和网站域名，<strong>不记录具体网页内容</strong>。</p>
-            <p>✅ 申请的权限（所有网站）仅用于在网页上查找和高亮关键词。</p>
-          </div>
-
-          <h3>📖 功能说明</h3>
-          <div class="help-section">
-            <h4>🚀 快速上手</h4>
-            <ol>
-              <li><strong>添加关键词</strong>：在「关键词管理」点「➕ 添加」，填关键词和备注即可用；进阶可设分组、颜色、匹配规则、单元格组合、重要笔记。</li>
-              <li><strong>打开网页</strong>：命中的关键词自动高亮；标记为「重要」的词会在右上角弹出笔记。</li>
-              <li><strong>看备注</strong>：<strong>点击</strong>高亮词（或按 Enter 聚焦后回车）弹出备注卡片；<strong>悬停</strong>只显示浏览器原生小提示，不弹卡片。</li>
-              <li><strong>快捷加词</strong>：工具栏弹窗点「＋ 快速添加」即可，不必进设置页。</li>
-            </ol>
-
-            <h4>🔑 关键词：基础用法</h4>
-            <ul>
-              <li><strong>添加 / 编辑 / 删除 / 启用禁用</strong>：每个关键词可设备注、所属分组、高亮颜色、匹配规则。</li>
-              <li><strong>备注内容</strong>：支持 Markdown 与图片；多行换行原样保留；悬停高亮词可快速查看。</li>
-              <li><strong>匹配规则</strong>：<strong>区分大小写</strong>（默认忽略，勾选后区分）、<strong>全词</strong>（只匹配完整词，中文也按整词）、<strong>正则</strong>（高级，如 <code>\d+</code>、<code>\p{L}</code> 匹配任意中文/字母）——可叠加使用。</li>
-              <li><strong>管理</strong>：支持搜索、按分组/状态/匹配方式筛选、排序、分页；勾选后可<strong>批量</strong>启用、禁用、移动分组、设置备注/重要笔记、删除。</li>
-            </ul>
-
-            <h4>🗂️ 分组</h4>
-            <ul>
-              <li>可创建/编辑/删除分组，并设<strong>统一高亮颜色</strong>——组内关键词自动跟随，改分组色组内同步。</li>
-              <li>分组可整组标记<strong>重要</strong>并填统一<strong>重要笔记</strong>，省去逐个设置。</li>
-              <li>批量操作可一键把多个关键词移入指定分组。</li>
-            </ul>
-
-            <h4>🧩 单元格组合：左格标题 + 右格内容</h4>
-            <p><strong>场景</strong>：数据表里想「先对标题、再标内容」。例如 <code>是否刚需 | 否</code>，只想让右格 <code>否</code> 在左格是「是否刚需」时才高亮/弹笔记。</p>
-            <ul>
-              <li><strong>怎么配</strong>：编辑关键词时展开「单元格组合」，在<strong>关键词</strong>填右格内容（如 <code>否</code>），在<strong>标题关键词(左格)</strong>填左格标题（如 <code>是否刚需</code>）。命中条件 = 左格标题命中 且 右格含核心；高亮/备注/重要笔记统一挂在右格。</li>
-              <li><strong>支持两种结构</strong>：真实 HTML 表格（取左侧相邻格当标题）；或文字中用竖线 <code>|</code> / Tab 分隔的「假表格」（左段标题、右段核心）。</li>
-              <li><strong>匹配方式</strong>：核心词（右格）默认「包含」——右格只要包含核心即命中（<code>否（暂缓）</code> 也算 <code>否</code>）；勾选基本区<strong>全词</strong>则要求右格整格等于核心。标题词（左格）另有一组<strong>标题词匹配规则</strong>：区分大小写 / 全词（标题格精确匹配标题词）/ 用正则——两组互不影响。</li>
-              <li><strong>仅抓取模式</strong>：把「关键词」<strong>留空</strong>，只填「标题关键词」和「抓取后续字段」——当该标题格右侧有真实内容（非空、非 <code>-</code>、非纯标点）时，自动把右格内容抓进重要笔记，<strong>页面不产生任何高亮</strong>。适合「备注为空显示 -、仅当有真实内容时才展示备注」；右侧的「编辑」等按钮文字会自动剔除，右格按视觉行合并/分行并展示成表格。</li>
-              <li>同一标题可配多条不同核心的规则并存。</li>
-            </ul>
-
-            <h4>📎 抓取后续字段</h4>
-            <ul>
-              <li>命中关键词时，自动读取指定<strong>标签右侧单元格</strong>内容拼入重要笔记；多个标签用 <code>|</code> 分隔，如 <code>地址|籍贯</code>。</li>
-              <li>抓取内容在重要笔记里以<strong>表格形式</strong>规整展示（支持多行、多级合并单元格、多字段合并）。</li>
-              <li>字段末尾加 <code>#1</code>（如 <code>备注信息#1</code>）为<strong>简单模式</strong>：只取右侧相邻一个单元格，展示为 <code>字段 | 值</code>。</li>
-              <li>抓取时会自动剔除「编辑 / 查看更多」等按钮文字。</li>
-            </ul>
-
-            <h4>📌 重要笔记</h4>
-            <ul>
-              <li>关键词或整组都可<strong>标记为重要</strong>；重要词可单独填写一段<strong>重要笔记</strong>长文本。</li>
-              <li>命中且有笔记时，在<strong>右上角</strong>弹出置顶悬浮笔记；多条自动<strong>聚合</strong>在一个面板，可<strong>拖动</strong>、<strong>展开/收起</strong>成圆形小按钮（双击展开）、可单条关闭。</li>
-              <li>可配合「抓取后续字段 / 仅抓取模式」自动把页面内容拼入笔记；也支持图片显示与 Markdown。</li>
-              <li>页面隐藏元素（如菜单/模板）里的匹配不会误弹笔记。</li>
-            </ul>
-
-            <h4>💬 备注卡片</h4>
-            <ul>
-              <li><strong>点击</strong>高亮词显示备注卡片；再点同词、点页面其它位置或 ✕ 关闭。</li>
-              <li>卡片自动避让屏幕边缘；支持一键复制、展示图片。</li>
-              <li>卡片样式（背景、文字、边框、圆角、阴影、宽度、透明度）可在「备注卡片样式」页自定义。</li>
-            </ul>
-
-            <h4>🌐 网页高亮表现</h4>
-            <ul>
-              <li>自动高亮，动态加载的新内容也自动高亮；不破坏网页结构。</li>
-              <li>自动跳过 script、code、pre、输入框等不适合高亮的区域；支持 Shadow DOM 内文本（可开关）。</li>
-              <li>多个关键词同时命中时<strong>长匹配优先</strong>，避免重叠与嵌套高亮。</li>
-            </ul>
-
-            <h4>🎯 站点控制</h4>
-            <ul>
-              <li>默认所有网站生效；可在「站点规则」加<strong>白名单</strong>（只这些站高亮）或<strong>黑名单</strong>（这些站不高亮）。</li>
-              <li>支持按<strong>域名</strong>（整个网站）或<strong>网址</strong>（具体分页）匹配；匹配方式有域名精确、子域名、URL 前缀、正则。</li>
-              <li>工具栏弹窗可一键<strong>临时禁用本站</strong>、<strong>全局暂停/恢复</strong>；快捷键 <kbd>Ctrl+Shift+S</kbd> 最顺手。</li>
-            </ul>
-
-            <h4>⌨️ 快捷键</h4>
-            <ul>
-              <li><kbd>Ctrl+Shift+H</kbd>：开启/关闭全局高亮</li>
-              <li><kbd>Ctrl+Shift+S</kbd>：临时禁用/启用当前站点</li>
-              <li><kbd>Ctrl+Shift+O</kbd>：打开设置页</li>
-            </ul>
-
-            <h4>✍️ 备注 / 笔记格式</h4>
-            <p>支持 Markdown 常用语法与图片：</p>
-            <ul>
-              <li><code>**加粗**</code> → <b>加粗</b>；<code>*斜体*</code> → <i>斜体</i></li>
-              <li><code>[文字](网址)</code> → 可点击链接；纯网址自动转链接</li>
-              <li><code>![说明](图片网址)</code> → 显示图片（备注卡片 / 重要笔记均可，点击可看原图）</li>
-              <li>多行换行原样保留；<code>| 列1 | 列2 |</code> 可渲染成表格</li>
-            </ul>
-          </div>
-
-          <h3>💾 数据管理</h3>
-          <div class="help-section">
-            <ul>
-              <li><strong>导出</strong>：把全部关键词、分组、样式、站点规则导出为 JSON（完整备份）或 CSV（仅关键词）。</li>
-              <li><strong>导入</strong>：从 JSON / CSV 恢复；建议导入前先导出备份。</li>
-              <li><strong>重置</strong>：一键清空所有本地数据并恢复默认设置。</li>
-              <li>所有数据仅保存在浏览器本地 <code>chrome.storage</code>，不依赖、不上传任何服务器。</li>
-            </ul>
-          </div>
-
-<h3>📦 版本信息</h3>
-          <div class=help-section>
-            <p>当前版本：<strong id=verHelpCurrent class=ver-current>—</strong></p>
-            <p class=ver-help-tip>版本号以浏览器扩展管理页（chrome://extensions）显示为准。以下为近期更新要点，完整历史更新日志见欢迎页「更新日志」弹窗。</p>
-            <div class=changelog-preview id=changelogPreview></div>
-          </div>
-
-          <h3>❓ 常见问题 Q&amp;A</h3>
-          <div class="help-section">
-            <p>汇总常见问题，覆盖高亮排查、单元格组合、仅抓取、重要笔记、站点规则、更新与隐私等。</p>
-
-            <h4>Q1：高亮 / 备注没生效，先查什么？</h4>
-            <p>按顺序排查：① 工具栏弹窗里的<strong>总开关</strong>是否已开；② 本站是否被白名单/黑名单或「临时禁用」排除；③ 关键词是否<strong>已启用</strong>、匹配规则是否太严（全词 / 正则 / 区分大小写）；④ 单元格组合的<strong>左格标题是否对上</strong>、或「仅抓取」把右格判成了无内容；⑤ 动态加载的新内容通常会自动高亮，无需刷新。</p>
-
-            <h4>Q2：备注 / 重要笔记支持哪些格式？</h4>
-            <p>支持基础 Markdown：<code>**加粗**</code>、<code>*斜体*</code>、<code>[文字](网址)</code>（纯网址自动转链接）、<code>![说明](图片网址)</code> 显示图片（可点击看原图）、<code>| 列1 | 列2 |</code> 渲染成表格。多行换行<strong>原样保留</strong>。</p>
-
-            <h4>Q3：单元格组合（左格标题 + 右格内容）怎么用？</h4>
-            <p>适合「先对标题、再标内容」。以 <code>是否刚需 | 否</code> 为例：在<strong>关键词</strong>填 <code>否</code>、在<strong>标题关键词(左格)</strong>填 <code>是否刚需</code>。命中条件 = <strong>左格标题命中 且 右格含核心</strong>，二者同时满足才高亮/弹笔记，否则整条不出。真实表格取左邻格当标题；文字用 <code>|</code> / Tab 分隔亦可。核心词（右格）规则用基本区开关：全词（右格整格相等）、区分大小写、正则；标题词（左格）另用「标题词匹配规则」区：全词（标题格精确匹配标题词）、区分大小写、用正则。</p>
-
-            <h4>Q4：「仅抓取」模式怎么配？为什么不显示高亮？</h4>
-            <p><strong>仅抓取</strong>＝把「关键词」<strong>留空</strong>，仅填「标题关键词」和「抓取后续字段」并勾选「重要」。当该标题格右侧<strong>有真实内容</strong>（非空、非 <code>-</code>、非纯标点）时，自动抓右格内容进重要笔记，<strong>页面不产生任何高亮</strong>——这正是它的设计（只收集、不打扰原页面）。右侧只有「编辑」等按钮、或内容为 <code>-</code>/空格时，视为无内容不命中；抓取时会自动剔除按钮文字、按视觉行合并/分行并展示成表格。</p>
-
-            <h4>Q5：重要笔记什么时候弹？怎么不弹了？</h4>
-            <p>需<strong>同时满足</strong>：① 关键词或所属分组标记为<strong>重要</strong>；② 填有重要笔记 / 或走「抓取 / 仅抓取」模式产生了内容；③ 页面确实命中且内容在可见区。隐藏元素（菜单/模板）里的匹配不会弹。面板支持拖动、展开/收起成小圆钮、单条关闭。</p>
-
-            <h4>Q6：白名单和黑名单有什么区别？</h4>
-            <p>🚫 <strong>黑名单</strong>＝这些站点<strong>不高亮</strong>，其余照常（适合「只排除个别网站」）；✅ <strong>白名单</strong>＝<strong>只有</strong>这些站点高亮（适合「只在某几个站用」）。生效与否由<strong>每条规则自身的类型</strong>决定，没有全局"模式"开关。</p>
-
-            <h4>Q7：匹配对象选「域名」还是「网址」？</h4>
-            <p><strong>域名</strong>＝整个网站（如 <code>example.com</code>）；<strong>网址</strong>＝具体分页（如 <code>example.com/admin</code>），可让同一站的不同列表页 / 后台页单独生效或失效，互不影响。</p>
-
-            <h4>Q8：设了站点规则但没生效？</h4>
-            <p>排查顺序：① 是否「临时禁用」了本站（该开关优先级最高）；② 网址级 / 域名级规则是否写对；③ 未命中任何规则时——<strong>只要存在白名单</strong>，白名单以外的站点一律不高亮；<strong>没有白名单</strong>则默认高亮。黑名单只影响它命中的站点。</p>
-
-            <h4>Q9：如何更新到新版本？</h4>
-            <p>工具栏弹窗点「🔍 检查更新」，有新版本点「更新」自动下载覆盖（配合本机辅助服务可一键完成）。若提示网络异常，稍后重试或手动覆盖安装包。建议更新前在「数据管理」先导出备份。</p>
-
-            <h4>Q10：数据会泄露吗？</h4>
-            <p>不会。所有关键词、备注、设置、统计仅保存在<strong>本地浏览器</strong>，<strong>不上传任何服务器</strong>；匹配、高亮、笔记展示完全在本地完成，仅申请浏览网页所需的最小权限。</p>
-
-            <h4>Q11：常见场景速配</h4>
-            <ul>
-              <li><strong>只在某站用</strong>：白名单加该域名（域名·精确）。</li>
-              <li><strong>排除某个站</strong>：黑名单加该域名。</li>
-              <li><strong>后台页不高亮</strong>：黑名单，匹配对象选「网址」，填后台网址前缀。</li>
-              <li><strong>表格先对标题再标内容</strong>：用「单元格组合」（关键词=右格、标题关键词=左格）。</li>
-              <li><strong>备注为空显示 -、仅展示有内容的备注</strong>：用「仅抓取」模式（关键词留空 + 标题关键词 + 抓取后续字段 + 重要）。</li>
-            </ul>
-          </div>
-
-<h3>🛡️ 安全说明</h3>
+      </div>
+      <div class="kh-hpanel" data-hpan="fn">
+      <h3>📖 功能说明</h3>
+            <div class="kh-fn-grid">
+        <div class="kh-hcard">
+          <h4>🚀 快速上手</h4>
           <ul>
-            <li><strong>本地处理</strong>：关键词匹配、高亮、备注展示全部在本地完成，不上传任何网页或关键词数据。</li>
-            <li><strong>内容安全</strong>：备注 / 笔记与抓取的网页内容经 XSS 防护清洗后再渲染，不会执行页面上注入的脚本；外部图片链接受控。</li>
-            <li><strong>最小权限</strong>：仅申请在网页上运行所需的权限，用于查找与高亮关键词，不读取无关数据。</li>
-            <li><strong>可备份</strong>：全部数据支持本地导出（JSON）随时备份、恢复或迁移。</li>
+            <li>在「关键词管理」添加关键词，打开网页即自动高亮。</li>
+            <li>标记「重要」的词，命中后在页面<strong>左上角</strong>弹出笔记。</li>
+            <li><strong>点击</strong>高亮词看备注；<strong>悬停</strong>只显示浏览器原生小提示。</li>
+            <li>工具栏图标弹窗可<strong>快捷加词</strong>，不必进设置页。</li>
           </ul>
-
-<h3>📧 反馈与支持</h3>
-          <p>如有问题或建议，欢迎通过插件评论区反馈。</p>
         </div>
+
+        <div class="kh-hcard">
+          <h4>🔑 关键词 · 基础用法</h4>
+          <ul>
+            <li>增 / 删 / 改 / 启用停用，可设备注、分组、颜色、匹配规则。</li>
+            <li><strong>匹配规则</strong>：区分大小写 / 全词 / 正则，可叠加；表格里点「胶囊」勾选生效。</li>
+            <li><strong>管理</strong>：搜索、按分组/状态/类型筛选、排序、分页（每页 50）、勾选后批量操作。</li>
+            <li>生僻字可用<strong>罕见字</strong>规则 <code>hjz#</code> 匹配（也可作组合核心）。</li>
+          </ul>
         </div>
-      </section>
-    </main>
-  </div>
 
-  <!-- 导出内容选择弹窗 -->
-  <div class="modal-overlay" id="exportModal" style="display:none;">
-    <div class="modal-dialog modal-sm">
-      <div class="modal-header">
-        <h3>📤 导出内容</h3>
-        <button class="modal-close" id="exportModalClose" aria-label="关闭">✕</button>
-      </div>
-      <div class="modal-body">
-        <p class="form-hint" style="margin-bottom:10px;">勾选要导出的内容。只勾「站点规则」即可单独导出黑白名单分享给朋友。</p>
-        <label class="checkbox-label" style="padding:8px 4px;font-size:14px;">
-          <input type="checkbox" id="exportKw" data-scope checked> 关键词与分组
-        </label>
-        <label class="checkbox-label" style="padding:8px 4px;font-size:14px;">
-          <input type="checkbox" id="exportSite" data-scope checked> 站点规则（黑白名单）
-        </label>
-        <label class="checkbox-label" style="padding:8px 4px;font-size:14px;">
-          <input type="checkbox" id="exportDisabled" data-scope> 站点禁用状态
-          <span class="form-hint" style="display:inline;margin:0 0 0 6px;">（本地临时状态，一般无需分享）</span>
-        </label>
-        <label class="checkbox-label" style="padding:8px 4px;font-size:14px;">
-          <input type="checkbox" id="exportStyle" data-scope checked> 高亮样式 / 备注卡片样式
-        </label>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-secondary btn-sm" id="exportAll">全选</button>
-        <button class="btn btn-secondary btn-sm" id="exportNone">全不选</button>
-        <span style="flex:1"></span>
-        <button class="btn btn-secondary" id="exportModalCancel">取消</button>
-        <button class="btn btn-primary" id="exportModalOk">导出</button>
-      </div>
-    </div>
-  </div>
+        <div class="kh-hcard">
+          <h4>🗂️ 分组</h4>
+          <ul>
+            <li>可建 / 改 / 删分组，设<strong>统一高亮颜色</strong>，组内自动跟随。</li>
+            <li>分组可整组标记<strong>重要</strong> + 填统一<strong>重要笔记</strong>，也可勾选「底色」。</li>
+            <li>删除分组时，组内关键词自动移出分组，<strong>不会丢词</strong>。</li>
+          </ul>
+        </div>
 
-  <!-- 导入内容选择弹窗 -->
-  <div class="modal-overlay" id="importModal" style="display:none;">
-    <div class="modal-dialog modal-sm">
-      <div class="modal-header">
-        <h3>📥 导入内容</h3>
-        <button class="modal-close" id="importModalClose" aria-label="关闭">✕</button>
-      </div>
-      <div class="modal-body">
-        <p class="form-hint" style="margin-bottom:10px;">该文件包含以下内容，勾选要导入的部分：</p>
-        <label class="checkbox-label" style="padding:8px 4px;font-size:14px;">
-          <input type="checkbox" id="impKw"> 关键词与分组
-        </label>
-        <label class="checkbox-label" style="padding:8px 4px;font-size:14px;">
-          <input type="checkbox" id="impSite"> 站点规则（黑白名单）
-        </label>
-        <label class="checkbox-label" style="padding:8px 4px;font-size:14px;">
-          <input type="checkbox" id="impDisabled"> 站点禁用状态
-        </label>
-        <label class="checkbox-label" style="padding:8px 4px;font-size:14px;">
-          <input type="checkbox" id="impStyle"> 高亮样式 / 备注卡片样式
-        </label>
-        <div class="form-section" style="margin-top:14px;padding:12px 14px;background:var(--bg-3,.ef);border-radius:var(--r-sm,.4);border:1px solid var(--border,inherit);">
-          <p style="font-size:13px;margin:0 0 8px;color:var(--text-3);">导入方式</p>
-          <label class="checkbox-label" style="padding:4px 2px;font-size:14px;">
-            <input type="radio" name="impMode" value="merge" checked> <b>合并</b>（追加去重，不删除原有内容）
-          </label>
-          <label class="checkbox-label" style="padding:4px 2px;font-size:14px;">
-            <input type="radio" name="impMode" value="overwrite"> <b>覆盖</b>（用文件内容替换勾选部分）
-          </label>
+        <div class="kh-hcard">
+          <h4>🧩 单元格组合</h4>
+          <ul>
+            <li><strong>左右格</strong>：左格标题命中且右格含核心词才高亮；<strong>上下格</strong>＝表头列词 × 数据行词。</li>
+            <li>支持真表格、<code>ul/li</code>、<code>grid/flex</code>「假表格」、<code>|</code>或 Tab 分隔的文字表。</li>
+            <li>真表格可<strong>仅表头生效</strong>，避免数据区同文本误触发整列。</li>
+            <li><strong>仅抓取</strong>：关键词留空时只收集内容、不产生高亮。</li>
+          </ul>
+        </div>
+
+        <div class="kh-hcard">
+          <h4>📎 抓取后续字段</h4>
+          <ul>
+            <li><code>地址|籍贯</code> 可抓多标签；支持多行 / 合并单元格，表格化展示。</li>
+            <li><code>#1</code>＝只取右邻一格；三方向<strong>层级</strong>（当前层/内层/外层，下拉 8 档可多选）。</li>
+            <li>字段语法：<code>#图</code> 仅图片 / <code>#3</code> 最多 3 张 / <code>@表达式</code> 指定值格。</li>
+            <li><strong>新后缀</strong>：末尾 <code>!</code> 去内部空格、<code>%N</code> 截前 N 字 / <code>%a-b</code> 截区间（不拆中文/emoji），如 <code>包名!</code>、<code>简介#1%4</code>。</li>
+            <li>自动剔除按钮文字；图片仅接受 http/https。</li>
+          </ul>
+        </div>
+
+        <div class="kh-hcard">
+          <h4>📌 重要笔记</h4>
+          <ul>
+            <li>词 / 组可标重要；命中且有内容 → 左上角<strong>置顶悬浮面板</strong>，多条聚合。</li>
+            <li>可拖动、收起成圆钮、单条关闭（本次会话）；可<strong>看大图、相册翻页</strong>。</li>
+            <li>配合「抓取 / 仅抓取」自动拼内容。</li>
+            <li>图片尺寸按「关键词 &gt; 分组 &gt; 全局默认」取值（关键词那一档需<strong>本词</strong>勾「重要」才生效）。</li>
+          </ul>
+        </div>
+
+        <div class="kh-hcard">
+          <h4>💬 备注卡片</h4>
+          <ul>
+            <li>点击高亮词弹出备注卡片，<code>Esc</code> / 滚动 / 再点关闭。</li>
+            <li>卡片样式（背景 / 文字 / 边框 / 圆角 / 阴影 / 宽度 / 字号）可自定义。</li>
+          </ul>
+        </div>
+
+        <div class="kh-hcard">
+          <h4>🌐 网页高亮表现</h4>
+          <ul>
+            <li>自动高亮 + 动态新内容自动亮；<strong>不破坏网页结构</strong>（纯视觉 Range 高亮）。</li>
+            <li>跨文本节点也整词命中（如 <code>审&lt;span&gt;核&lt;/span&gt;不通过</code>）。</li>
+            <li>折叠内容算页面内容（含网站自做的展开/收起，可开关）；隐藏菜单 / 弹窗关闭态不误高亮。</li>
+            <li>同中命中<strong>长匹配优先</strong>防重叠；跳过 script / code / pre / 输入框；Shadow DOM 可开关。</li>
+          </ul>
+        </div>
+
+        <div class="kh-hcard">
+          <h4>🎯 站点控制</h4>
+          <ul>
+            <li>默认全站生效；可加<strong>白名单</strong> / <strong>黑名单</strong>。</li>
+            <li>匹配对象：<strong>域名</strong>（整站）或<strong>网址</strong>（具体分页）；匹配方式有精确 / 子域 / URL 前缀 / 正则。</li>
+            <li>工具栏一键<strong>临时禁用本站</strong> / <strong>全局暂停恢复</strong>。</li>
+          </ul>
+        </div>
+
+        <div class="kh-hcard">
+          <h4>🖼 图片识别（OCR）</h4>
+          <ul>
+            <li>本地识别图片文字，匹配「图片命中关键词」。</li>
+            <li>结果进面板「🖼 图片命中」分区，<strong>不产生文字高亮</strong>。</li>
+            <li>识别全在本机；语言包按需下载 / 手动导入 / 自检；跨域图片按站点授权。</li>
+          </ul>
+        </div>
+
+        <div class="kh-hcard">
+          <h4>🩺 诊断与排查</h4>
+          <ul>
+            <li>工具栏弹窗里可查看：整页重建 / 只刷面板次数、最近变更判定、命中规模、图片识别排队、组合词定位等。</li>
+            <li>遇到「卡 / 不亮」先点它，再把数据提供给支持，能快速定位。</li>
+          </ul>
+        </div>
+
+        <div class="kh-hcard">
+          <h4>⌨️ 快捷键 &amp; 更新</h4>
+          <ul>
+            <li><kbd>Ctrl+Shift+H</kbd>：开启 / 关闭全局高亮</li>
+            <li><kbd>Ctrl+Shift+S</kbd>：临时禁用 / 恢复当前站（与设置页顶部「本站开关」同通道）</li>
+            <li><kbd>Ctrl+Shift+O</kbd>：打开设置页</li>
+            <li>「ℹ️ 关于 → 版本信息」里可<strong>检查更新</strong>。</li>
+          </ul>
         </div>
       </div>
-      <div class="modal-footer">
-        <button class="btn btn-secondary" id="importModalCancel">取消</button>
-        <button class="btn btn-primary" id="importModalOk">导入</button>
-      </div>
-    </div>
-  </div>
 
-  <!-- 关键词编辑弹窗 -->
-  <div class="modal-overlay" id="keywordModal" style="display:none;">
-    <div class="modal-dialog">
-      <div class="modal-header">
-        <h3 id="keywordModalTitle">编辑关键词</h3>
-        <button class="modal-close" id="keywordModalClose">✕</button>
+
       </div>
-                  <div class="modal-body">
-        <!-- ① 基本信息（默认展开） -->
-        <div class="form-section collapsible open">
-          <div class="form-section-title collapse-trigger"><span class="collapse-arrow">▾</span>基本信息</div>
-          <div class="form-section-body">
-            <div class="form-row">
-              <div class="form-group" style="flex:3;">
-                <label>关键词文字 <span class="required">*</span></label>
-                <input type="text" id="editKwText" placeholder="输入关键词" maxlength="100" class="text-input">
-                <div class="rare-hint-bar" id="editKwRareHint" style="display:none;">💡 罕见字规则：匹配所有罕见字（扩展区 + 常用字表外）。可继续配置备注、重要笔记、抓取后续字段、单元格组合（作右格核心）。</div>
+      <div class="kh-hpanel" data-hpan="data">
+      <h3>💾 数据管理</h3>
+      <div class="kh-help">
+        <ul>
+          <li><strong>导出</strong>：全部关键词、分组、站点规则、样式配置导出为 JSON（完整备份）或 CSV（仅关键词，关键词、组合方向等 18 列）。</li>
+          <li><strong>CSV 列</strong>：关键词、备注、分组、启用、核心词区分大小写 / 全词 / 正则、背景色、文字颜色、重要、重要笔记、单元格组合、标题关键词(左格)、标题词匹配方式 / 区分大小写 / 使用正则、抓取后续字段，最后第 18 列是<strong>组合方向</strong>（<code>lr</code> 左右格 / <code>tb</code> 上下格，v2 新增）。<strong>注意</strong>：CSV <strong>不含</strong>「抓取后续字段」的模块开关、图片识别三项（识别图片文字 / 图片命中关键词 / 每处最多）、尺寸、底色、取值格；要连这些一起搬走请用 <strong>JSON 导出</strong>。</li>
+          <li><strong>导入</strong>：从 JSON / CSV 恢复；可选择「合并」或「覆盖」，并逐块勾选导入范围。CSV 按<strong>列序</strong>取值，兼容旧版 17 列文件（缺的「组合方向」按左右格处理）；按<strong>分组名</strong>回建分组，缺失的分组自动创建。也可在「关键词管理」筛选栏点「📥 批量导入」直接导入 CSV / JSON。</li>
+          <li><strong>重置</strong>：清空所选数据并恢复默认设置。</li>
+          <li>所有数据仅保存在浏览器本地 <code>chrome.storage</code>，不依赖、不上传任何服务器。</li>
+        </ul>
+      </div>
+
+      </div>
+      <div class="kh-hpanel" data-hpan="faq">
+      <h3>❓ 常见问题 Q&amp;A</h3>
+      <div class="kh-help">
+        <h4>Q1：高亮 / 备注没生效，先查什么？</h4>
+        <p>按顺序排查：① 顶部的<strong>总开关</strong>是否已开；② 本站是否被白名单/黑名单或「临时禁用」排除；③ 关键词是否<strong>已启用</strong>、匹配规则是否太严（全词 / 正则 / 区分大小写）；④ 单元格组合的<strong>左格标题是否对上</strong>、或「仅抓取」把右格判成了无内容；⑤ 动态加载的内容会自动高亮，无需刷新。</p>
+        <h4>Q2：单元格组合怎么用？</h4>
+        <p>以 <code>是否刚需 | 否</code> 为例：在<strong>关键词</strong>填 <code>否</code>、在<strong>标题关键词(左格)</strong>填 <code>是否刚需</code>。命中条件 = 左格标题命中 <strong>且</strong> 右格含核心。核心词规则用「匹配规则」区，标题词规则用「单元格组合」区里的标题词开关，两组互不影响。</p>
+        <h4>Q3：「仅抓取」为什么不显示高亮？</h4>
+        <p>这正是它的设计：只收集、不打扰原页面。右侧只有「编辑」等按钮、或内容为 <code>-</code>/空白时视为无内容，不命中。</p>
+        <h4>Q4：重要笔记什么时候弹？</h4>
+        <p>需同时满足：① 关键词或所属分组标记为<strong>重要</strong>；② 填有重要笔记，或走「抓取 / 仅抓取」产生了内容；③ 页面确实命中且元素可见。隐藏元素（菜单/模板）里的匹配不会弹。</p>
+        <h4>Q5：白名单和黑名单有什么区别？</h4>
+        <p>🚫 <strong>黑名单</strong>＝这些站点不高亮，其余照常；✅ <strong>白名单</strong>＝只有这些站点高亮。生效与否由<strong>每条规则自身类型</strong>决定，没有全局「模式」开关。</p>
+        <h4>Q6：匹配对象选「域名」还是「网址」？</h4>
+        <p><strong>域名</strong>＝整个网站（如 <code>example.com</code>）；<strong>网址</strong>＝具体分页（如 <code>example.com/admin</code>），可让同一站的不同页面单独生效或失效。</p>
+        <h4>Q7：常见场景速配</h4>
+        <ul>
+          <li><strong>只在某站用</strong>：白名单加该域名（域名·精确）。</li>
+          <li><strong>排除某个站</strong>：黑名单加该域名。</li>
+          <li><strong>后台页不高亮</strong>：黑名单 + 匹配对象选「网址」+ 填后台网址前缀。</li>
+          <li><strong>表格先对标题再标内容</strong>：用「单元格组合」（关键词=右格、标题关键词=左格）。</li>
+          <li><strong>备注为空显示 -、仅展示有内容的备注</strong>：用「仅抓取」模式（关键词留空 + 标题关键词 + 抓取后续字段 + 重要）。</li>
+        </ul>
+
+        <h4>Q8：图片识别（OCR）怎么用？</h4>
+        <p>在「🖼 图片识别」分区确保语言包可用（可下载 / 手动导入 / 自检）；开启后，图片里含「图片命中关键词」的文字会被识别并进面板「🖼 图片命中」分区，<strong>不产生文字高亮</strong>。跨域图片需先在「图片识别」里按站点授权。</p>
+        <h4>Q9：抓取字段的 <code>!</code> 和 <code>%N</code> 后缀是什么？</h4>
+        <p>加在抓取字段末尾，用于<strong>清洗取值</strong>：<code>!</code> 去掉内容里的内部空格；<code>%N</code> 只取前 N 字、<code>%a-b</code> 取第 a~b 字（按字符截取，不拆开中文/emoji）。例 <code>包名!</code>、<code>简介#1%4</code>。</p>
+        <h4>Q10：抓取的「层级」当前层 / 内层 / 外层是什么？</h4>
+        <p>页面可能表格套表格。<strong>当前层</strong>＝命中格所在的那张表；<strong>内层</strong>＝当前层里嵌着的更小表格；<strong>外层</strong>＝当前层的祖先表。可多选，新建默认「当前层」。</p>
+        <h4>Q11：更新日志去哪看？</h4>
+        <p>设置页「ℹ️ 关于 → 版本信息」，可用<strong>右侧目录</strong>按版本号跳转；完整历史在<strong>欢迎页</strong>。</p>
+      </div>
+
+      </div>
+      <div class="kh-hpanel" data-hpan="safe">
+      <h3>🛡️ 安全说明</h3>
+      <div class="kh-help">
+        <ul>
+          <li><strong>本地处理</strong>：关键词匹配、高亮、备注展示全部在本地完成，不上传任何网页或关键词数据。</li>
+          <li><strong>内容安全</strong>：备注 / 笔记与抓取的网页内容经清洗后再渲染，不会执行页面上注入的脚本；外部图片走协议白名单。</li>
+          <li><strong>最小权限</strong>：仅申请在网页上运行所需的权限。</li>
+          <li><strong>可备份</strong>：全部数据支持本地导出（JSON）随时备份、恢复或迁移。</li>
+        </ul>
+      </div>
+
+      <!-- 原独立分区「匹配与性能」并入此处：侧边栏只保留 7 个分区（策划案 §5.2），
+           但这几个控件一个都不能少、id 也不能改（options.js 直接按 id 绑定）。 -->
+      </div>
+      <div class="kh-hpanel" data-hpan="perf">
+      <div class="kh-card kh-sub-card" id="sec-misc">
+                  <h3 class="kh-sub">匹配与性能</h3>
+
+          <div class="kh-checks kh-checks-col">
+            <label class="kh-check"><input type="checkbox" id="pf-pageResidualClean"> 翻页后清理残留高亮</label>
+            <label class="kh-check"><input type="checkbox" id="pf-pageRebuildOnChange"> 页面内容变化时自动重建</label>
+          </div>
+
+          <details class="kh-adv">
+            <summary>⚙️ 高级设置</summary>
+            <div class="kh-adv-body">
+              <h4 class="kh-mini-head">新增关键词的匹配默认值</h4>
+              <p class="kh-muted">只影响<strong>以后新建</strong>的关键词初值，不修改已有关键词。</p>
+              <div class="kh-checks kh-checks-col">
+                <label class="kh-check"><input type="checkbox" id="ms-defaultCaseSensitive"> 默认区分大小写</label>
+                <label class="kh-check"><input type="checkbox" id="ms-defaultWholeWord"> 默认全词匹配</label>
+                <label class="kh-check"><input type="checkbox" id="ms-defaultUseRegex"> 默认使用正则</label>
               </div>
-              <div class="form-group" style="flex:2;">
-                <label>所属分组</label>
-                <select id="editKwGroup" class="text-input"><option value="">无分组</option></select>
+
+              <h4 class="kh-mini-head">其他性能开关</h4>
+              <div class="kh-checks kh-checks-col">
+                <label class="kh-check"><input type="checkbox" id="pf-shadowDOMEnabled"> 扫描 Shadow DOM（Web Component 内文本）</label>
+                <label class="kh-check"><input type="checkbox" id="pf-suspendInactiveTab"> 标签页隐藏时暂停（省资源）</label>
+                <label class="kh-check"><input type="checkbox" id="pf-scanCollapsedCustom"> 扫描被折叠起来的长内容（网站自己做的「展开/收起」）</label>
               </div>
-            </div>
-            <div class="form-row">
-              <div class="form-group" style="flex:3;">
-                <div class="label-row">
-                  <label for="editKwNote">备注内容</label>
-                  <button type="button" class="hint-btn" id="btnKwNoteHint" data-tip="支持 Markdown 与图片：**加粗**、*斜体*、[文字](网址)、![说明](图片网址)；纯网址自动转链接；多行换行原样保留。">ⓘ</button>
-                </div>
-                <textarea id="editKwNote" placeholder="备注内容（支持 Markdown）" rows="2" class="text-input"></textarea>
-              </div>
-              <div class="match-panel" style="flex:2; align-self:stretch;">
-                <div class="match-panel-title">匹配规则</div>
-                <div class="match-row match-vert">
-                  <label class="checkbox-label"><input type="checkbox" id="editKwCaseSensitive"><span>区分大小写</span></label>
-                  <label class="checkbox-label"><input type="checkbox" id="editKwWholeWord"><span>全词</span></label>
-                  <label class="checkbox-label"><input type="checkbox" id="editKwUseRegex"><span>正则</span></label>
-                </div>
-                <div class="match-colors">
-                  <label class="color-dot" title="高亮背景色">背景<input type="color" id="editKwBgColor" value="#ff9500"></label>
-                  <label class="color-dot" title="文字颜色">文字<input type="color" id="editKwTextColor" value="#000000"></label>
+
+              <h4 class="kh-mini-head">调参</h4>
+              <div class="kh-form-row">
+                <div class="kh-form-fld">
+                  <label class="kh-fld-label">变更处理方式</label>
+                  <select class="kh-input" id="pf-changeHandling">
+                    <option value="smart">智能（只在与命中相关时重建，省资源）</option>
+                    <option value="always">保守（任何变动都整页重建，最不容易漏）</option>
+                  </select>
                 </div>
               </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- ③ 单元格组合（默认折叠，进阶） -->
-        <div class="form-section collapsible closed" id="kwCellSection">
-          <div class="form-section-title collapse-trigger"><span class="collapse-arrow">▸</span>单元格组合</div>
-          <div class="form-section-body">
-            <div class="form-row" style="align-items:center;">
-              <div class="form-group" style="flex:1;">
-                <div class="label-row">
-                  <label for="editKwComboAxis">组合方向</label>
-                  <button type="button" class="hint-btn hint-up" data-tip="选择组合方式：<strong>左右格</strong>=标题(左格)命中 → 右侧相邻单元格(右格)命中核心词才生效；<strong>上下格</strong>=表头某列命中列关键词 → 该列下方数据区某一行命中行关键词才生效（交叉的单元格文本高亮，仅支持真实 &lt;table&gt; 表格）。">ⓘ</button>
+              <div class="kh-form-row">
+                <div class="kh-form-fld">
+                  <label class="kh-fld-label">静默窗口 (ms)</label>
+                  <input class="kh-input" id="pf-silent" type="number" min="0" step="100">
                 </div>
-                <select id="editKwComboAxis" class="text-input">
-                  <option value="lr">左右格（标题[左格] → 核心[右格]）</option>
-                  <option value="tb">上下格（列关键词[表头] → 行关键词[该列]）</option>
-                </select>
-              </div>
-            </div>
-            <div class="form-row">
-              <div class="form-group" style="flex:3;">
-                <div class="label-row">
-                  <label for="editKwCellVerifyValue" id="lblKwColKey">标题关键词 (左格)</label>
-                  <button type="button" class="hint-btn hint-up" data-tip="填左格标题后开启「单元格组合」：<strong>关键词</strong>作为右格核心，仅当<strong>左侧相邻单元格</strong>（或前段 | / Tab 分隔）命中此标题时才生效（高亮/重要笔记/交互统一挂右格），否则整条不显示；留空则不校验。把「关键词」留空、再填下面的「抓取后续字段」即进入<strong>仅抓取模式</strong>（抓右格内容进重要笔记、页面不高亮）。支持 HTML 表格，或 | / Tab 分隔（如：是否刚需|否）。">ⓘ</button>
+                <div class="kh-form-fld">
+                  <label class="kh-fld-label">重建最小间隔 (ms)</label>
+                  <input class="kh-input" id="pf-gap" type="number" min="0" step="100">
                 </div>
-                <input type="text" id="editKwCellVerifyValue" placeholder="如：是否刚需（左格标题，留空则不校验）" class="text-input">
-                <div class="label-row" style="margin-top:6px;">
-                  <label for="editKwFetchLabels">抓取后续字段</label>
-                  <button type="button" class="hint-btn hint-up" id="btnFetchHint" data-tip="命中时自动读取这些「标签」右侧相邻单元格内容，逐项拼入重要笔记（表格展示）。多个标签用 | 分隔，如：地址|籍贯；字段后加 #1（如 备注信息#1）= 简单模式，只取相邻一格显示为「字段 | 值」。抓取时自动剔除「编辑」等按钮文字。">ⓘ</button>
-                </div>
-                <input type="text" id="editKwFetchLabels" placeholder="多个用 | 分隔，如：地址|籍贯" class="text-input">
-              </div>
-              <div class="match-panel" style="flex:2; align-self:stretch;">
-                <div class="match-panel-title">标题词匹配规则</div>
-                <div class="match-row match-vert">
-                  <label class="checkbox-label"><input type="checkbox" id="editKwCellVerifyCase"><span>区分大小写</span></label>
-                  <label class="checkbox-label"><input type="checkbox" id="editKwCellVerifyExact"><span>全词</span></label>
-                  <label class="checkbox-label"><input type="checkbox" id="editKwCellVerifyRegex"><span>用正则</span></label>
+                <div class="kh-form-fld">
+                  <label class="kh-fld-label">重要笔记图片「尺寸」默认值</label>
+                  <input class="kh-input" id="pf-imgSize" type="number" min="40" max="600" step="10">
                 </div>
               </div>
+              <p class="kh-muted">「重建最小间隔」是翻页四条通道共用的<strong>唯一</strong>限频口径，调小更灵敏、调大更省资源。
+                「变更处理方式」选<strong>保守</strong>时，页面上任何改动都会触发整页重建（不做相关性预筛、也不走"仅抓取字段变化"的快通道）——
+                更费资源，但遇到"页面变了却不亮"时可以先切到它，用来排除预筛的嫌疑。</p>
             </div>
-          </div>
-        </div>
+          </details>
 
-        <!-- ④ 重要（默认折叠，进阶） -->
-        <div class="form-section collapsible closed" id="kwImportantSection">
-          <div class="form-section-title collapse-trigger"><span class="collapse-arrow">▸</span>重要</div>
-          <div class="form-section-body">
-            <div class="form-group">
-              <div class="label-row">
-                <label class="checkbox-label"><input type="checkbox" id="editKwImportant"><span>📌 标记为重要（命中时右上角悬浮展示）</span></label>
-                <button type="button" class="hint-btn hint-up" data-tip="标记为重要后，命中时在右上角弹出置顶悬浮笔记（可拖动、展开/收起、多条聚合）。可自己填写「重要笔记」，也可用「抓取后续字段 / 仅抓取」自动拼入页面内容。">ⓘ</button>
-              </div>
-              <div id="importantNoteWrap" style="display:none; margin-top:8px;">
-                <div class="label-row">
-                  <label for="editKwImportantNote">重要笔记（长文本，命中时置顶显示）</label>
-                  <button type="button" class="hint-btn hint-up" id="btnKwImportantNoteHint" data-tip="与备注不同：命中时显示在右上角置顶面板（可拖动、可展开/收起）。图片 / 超链接：点上方「🖼 插入图片」「🔗 链接」添加，直接在框内显示，点图片或链接可修改、删除；也可用 Markdown 语法（**加粗**、[文字](网址)、多列竖线表格等），网页端按效果呈现。">ⓘ</button>
-                </div>
-                <div class="kw-note-toolbar">
-                  <button type="button" class="btn btn-mini" id="btnKwNoteInsertImg" title="在光标处插入一张图片">🖼 插入图片</button>
-              <button type="button" class="btn btn-mini" id="btnKwNoteBold" title="加粗（先选中文字再点）"><b>B</b></button>
-              <button type="button" class="btn btn-mini" id="btnKwNoteItalic" title="斜体（先选中文字再点）"><i>I</i></button>
-              <button type="button" class="btn btn-mini" id="btnKwNoteTable" title="插入表格">▦ 表格</button>
-              <button type="button" class="btn btn-mini" id="btnKwNoteLink" title="插入超链接（可先选中文字再点）">🔗 链接</button>
-                  <span style="font-size:11px;color:#999">所见即所得：图片、加粗、表格、链接直接在框内显示；点图片或链接可修改或删除。</span>
-                </div>
-                <div id="editKwImportantNote" class="kw-note-editor" contenteditable="true" data-placeholder="输入重要注意事项…（所见即所得，可直接看到图片效果）"></div>
-                <div class="label-row" style="margin-top:8px;">
-                  <label for="editKwImgSize">图片缩略尺寸 (px)</label>
-                  <span style="font-size:11px;color:#999">（本词独立设置，40–600，留空用默认 70）</span>
-                </div>
-                <input type="number" id="editKwImgSize" min="40" max="600" step="10" placeholder="默认 70" class="text-input" style="width:180px;">
-                <div class="label-row" style="margin-top:8px;flex-wrap:wrap;gap:6px;">
-                  <label for="editKwImpBgEnable">重要笔记底色</label>
-                  <span style="font-size:11px;color:#999">（勾选后，该词被标记为重要的置顶笔记卡片整体铺「该关键词的高亮底色」；不勾选则沿用默认、不铺色）</span>
-                </div>
-                <div style="display:flex;align-items:center;gap:8px;margin-top:4px;">
-                  <label class="checkbox-label" style="white-space:nowrap;"><input type="checkbox" id="editKwImpBgEnable"><span>复用关键词高亮底色</span></label>
-                </div>
-              </div>
-            </div>
+
+      </div>
+      <div class="kh-hpanel" data-hpan="about">
+      <h3>📦 版本信息</h3>
+      <div class="kh-help">
+        <p>当前版本：<strong id="ver-help">—</strong></p>
+        <p class="kh-muted">构建时间：<strong id="ver-build">—</strong>（同名 zip 反复出包时，以此确认装的是不是本次包）</p>
+        <p class="kh-muted">版本号以扩展管理页（chrome://extensions）显示为准。以下为近期更新要点。</p>
+        <div class="kh-ver-wrap">
+          <nav class="kh-ver-toc" id="ver-toc" aria-label="版本目录"></nav>
+          <div class="kh-ver-list">
+            <div class="kh-changelog" id="changelog-list"></div>
           </div>
         </div>
       </div>
 
-      <div class="modal-footer">
-        <button class="btn btn-secondary" id="keywordModalCancel">取消</button>
-        <button class="btn btn-primary" id="keywordModalSave">保存</button>
+      <h3>📧 反馈与支持</h3>
+      <div class="kh-help">
+        <p>如有问题或建议，欢迎通过插件评论区反馈。</p>
       </div>
-    </div>
-  </div>
+      </div>
+    </section>
 
-  <!-- 批量添加弹窗 -->
-  <div class="modal-overlay" id="bulkModal" style="display:none;">
-    <div class="modal-dialog modal-lg">
-      <div class="modal-header">
-        <h3>批量添加关键词</h3>
-        <button class="modal-close" id="bulkModalClose">✕</button>
-      </div>
-      <div class="modal-body">
-        <div class="bulk-format-info">
-          <p><strong>格式说明：</strong>每行一个关键词，用分隔符分隔“关键词”和“备注”。</p>
-          <pre class="bulk-example" id="bulkExample">关键词1 | 备注内容1
-关键词2 | 备注内容2</pre>
-        </div>
-        <div class="form-group">
-          <label class="checkbox-label" style="display:flex;align-items:center;gap:6px;cursor:pointer;">
-            <input type="checkbox" id="bulkCellMode"> 🔗 批量添加「单元格组合匹配」（左格标题 + 右格核心）
-          </label>
-        </div>
-        <div class="bulk-cell-opts" id="bulkCellOpts" style="display:none;">
-          <div class="form-row">
-            <div class="form-group">
-              <label>组合方向</label>
-              <select id="bulkComboAxis" class="text-input" style="min-width:150px;">
-                <option value="lr">左右格（标题->核心）</option>
-                <option value="tb">上下格（列关键词->该列行关键词）</option>
-              </select>
-            </div>
-          </div>
-          <div class="form-row">
-            <div class="form-group">
-              <label class="checkbox-label" id="bulkCellExactLbl"><input type="checkbox" id="bulkCellExact"> 核心全词匹配（整格相等）</label>
-            </div>
-            <div class="form-group">
-              <label class="checkbox-label" id="bulkCellCaseLbl"><input type="checkbox" id="bulkCellCase"> 核心区分大小写</label>
-            </div>
-            <div class="form-group">
-              <label class="checkbox-label" id="bulkCellRegexLbl"><input type="checkbox" id="bulkCellRegex"> 核心使用正则</label>
-            </div>
-          </div>
-          <div class="form-group">
-            <label>统一重要笔记</label>
-            <input type="text" id="bulkCellImportantNote" class="text-input" placeholder="本批所有关键词统一的重要笔记（可留空）">
-          </div>
-          <div class="form-group">
-            <label>统一抓取后续字段</label>
-            <input type="text" id="bulkFetchLabels" class="text-input" placeholder="多个用 | 分隔，如：地址|籍贯（本批词命中时自动拼入重要笔记）">
-            <span class="form-hint">命中时自动读取这些标签右侧单元格的内容，逐项拼入重要笔记。</span>
-          </div>
-        </div>
-        <div class="form-group">
-          <label>分隔符</label>
-          <select id="bulkSeparator" class="text-input">
-            <option value="|">竖线 |</option>
-            <option value=",">英文逗号 ,</option>
-            <option value="\t">Tab 制表符</option>
-            <option value=";">分号 ;</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>内容（每行一条）<span class="required">*</span></label>
-          <textarea id="bulkText" class="text-input" rows="10" placeholder="关键词1 | 备注1&#10;关键词2 | 备注2" style="width:100%;"></textarea>
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label>默认分组</label>
-            <select id="bulkGroup" class="text-input">
-              <option value="">无分组</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>默认高亮背景色</label>
-            <input type="color" id="bulkBgColor" value="#ff9500">
-          </div>
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label>默认文字颜色</label>
-            <input type="color" id="bulkTextColor" value="#000000">
-          </div>
-          <div class="form-group">
-            <label>匹配规则</label>
-            <div class="match-rules" style="flex-direction:column;gap:4px;">
-              <label class="checkbox-label"><input type="checkbox" id="bulkCaseSensitive"> 区分大小写</label>
-              <label class="checkbox-label"><input type="checkbox" id="bulkWholeWord"> 全词匹配</label>
-              <label class="checkbox-label"><input type="checkbox" id="bulkUseRegex"> 使用正则</label>
-            </div>
-          </div>
-        </div>
-        <div class="form-group">
-          <label>重复处理</label>
-          <select id="bulkDupPolicy" class="text-input">
-            <option value="skip">跳过重复</option>
-            <option value="replace">覆盖重复（更新备注）</option>
-          </select>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <span class="bulk-result" id="bulkResult" style="flex:1;color:#4caf50;font-size:13px;"></span>
-        <button class="btn btn-secondary" id="bulkModalCancel">取消</button>
-        <button class="btn btn-primary" id="bulkModalSave">批量添加</button>
-      </div>
-    </div>
-  </div>
+    <footer class="kh-foot">
+      <span id="foot-version">—</span>
+      <span class="kh-foot-sep">·</span>
+      <a href="../welcome/welcome.html" target="_blank" rel="noreferrer" id="link-welcome">欢迎页 / 更新日志</a>
+      <span class="kh-foot-sep">·</span>
+      <span>所有数据仅存本地浏览器</span>
+    </footer>
+  </main>
+  </div><!-- /.kh-main -->
 
-  <!-- 批量设置 备注/重要笔记 弹窗 -->
-  <div class="modal-overlay" id="bulkNoteModal" style="display:none;">
-    <div class="modal-dialog modal-sm">
-      <div class="modal-header">
-        <h3 id="bulkNoteTitle">批量设置备注 / 重要笔记</h3>
-        <button class="modal-close" id="bulkNoteClose">✕</button>
-      </div>
-      <div class="modal-body">
-        <div class="form-group">
-          <label>备注</label>
-          <input type="text" id="bulkNoteValue" class="text-input" placeholder="填写则应用到选中项；留空则不修改">
-          <label class="checkbox-label" style="margin-top:6px;"><input type="checkbox" id="bulkNoteClear"> 清空现有备注</label>
-        </div>
-        <div class="form-group" style="margin-top:12px;">
-          <label>重要笔记</label>
-          <textarea id="bulkImpNoteValue" class="text-input" rows="3" placeholder="填写则应用到选中项；留空则不修改"></textarea>
-          <label class="checkbox-label" style="margin-top:6px;"><input type="checkbox" id="bulkImpNoteClear"> 清空现有重要笔记</label>
-          <label class="checkbox-label" style="margin-top:4px;"><input type="checkbox" id="bulkImpNoteMark" checked> 应用重要笔记时同时标记为重要</label>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <span id="bulkNoteResult" style="flex:1;color:#4caf50;font-size:13px;"></span>
-        <button class="btn btn-secondary" id="bulkNoteCancel">取消</button>
-        <button class="btn btn-primary" id="bulkNoteSave">应用</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- 匹配方式弹窗（表格点击胶囊快速修改单条） -->
-  <div class="modal-overlay" id="matchRuleModal" style="display:none;">
-    <div class="modal-dialog modal-sm">
-      <div class="modal-header">
-        <h3 id="matchRuleTitle">核心词匹配方式</h3>
-        <button class="modal-close" id="matchRuleClose">✕</button>
-      </div>
-      <div class="modal-body">
-        <div id="matchRuleKwLabel" class="matchrule-kw-label"></div>
-        <div class="match-panel" id="matchRuleCorePanel" style="margin-top:10px;">
-          <div class="match-panel-title">核心词匹配</div>
-          <div class="match-row match-vert">
-            <label class="checkbox-label"><input type="checkbox" id="mrCoreCase"><span>区分大小写</span></label>
-            <label class="checkbox-label"><input type="checkbox" id="mrCoreWhole"><span>全词（整词匹配）</span></label>
-            <label class="checkbox-label"><input type="checkbox" id="mrCoreRegex"><span>正则</span></label>
-          </div>
-        </div>
-        <div class="match-panel" id="matchRuleTitlePanel" style="margin-top:10px;display:none;">
-          <div class="match-panel-title">标题词匹配 <span class="matchrule-title-hint">（单元格组合左格）</span></div>
-          <div class="match-row match-vert">
-            <label class="checkbox-label"><input type="checkbox" id="mrTitleCase"><span>区分大小写</span></label>
-            <label class="checkbox-label"><input type="checkbox" id="mrTitleWhole"><span>全词（精确 = 标题格整词相等）</span></label>
-            <label class="checkbox-label"><input type="checkbox" id="mrTitleRegex"><span>正则</span></label>
-          </div>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-secondary" id="matchRuleCancel">取消</button>
-        <button class="btn btn-primary" id="matchRuleSave">保存</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- 批量匹配方式弹窗 -->
-  <div class="modal-overlay" id="bulkMatchRuleModal" style="display:none;">
-    <div class="modal-dialog modal-sm">
-      <div class="modal-header">
-        <h3>批量设置匹配方式</h3>
-        <button class="modal-close" id="bulkMatchRuleClose">✕</button>
-      </div>
-      <div class="modal-body">
-        <div id="bulkMatchRuleCount" class="form-hint" style="margin-bottom:8px;"></div>
-        <div class="match-panel">
-          <div class="match-panel-title">核心词匹配 <span class="matchrule-title-hint">（勾选 = 对选中词开启；取消勾选则保持原样）</span></div>
-          <div class="match-row match-vert">
-            <label class="checkbox-label"><input type="checkbox" id="bmrCoreCase"><span>区分大小写</span></label>
-            <label class="checkbox-label"><input type="checkbox" id="bmrCoreWhole"><span>全词</span></label>
-            <label class="checkbox-label"><input type="checkbox" id="bmrCoreRegex"><span>正则</span></label>
-          </div>
-          <label class="checkbox-label bulk-mr-reset"><input type="checkbox" id="bmrCoreClear"><span>清空选中词的核心词规则（全部关闭）</span></label>
-        </div>
-        <div class="match-panel" style="margin-top:10px;">
-          <div class="match-panel-title">标题词匹配 <span class="matchrule-title-hint">（单元格组合左格，仅对组合词生效）</span></div>
-          <div class="match-row match-vert">
-            <label class="checkbox-label"><input type="checkbox" id="bmrTitleCase"><span>区分大小写</span></label>
-            <label class="checkbox-label"><input type="checkbox" id="bmrTitleWhole"><span>全词</span></label>
-            <label class="checkbox-label"><input type="checkbox" id="bmrTitleRegex"><span>正则</span></label>
-          </div>
-          <label class="checkbox-label bulk-mr-reset"><input type="checkbox" id="bmrTitleClear"><span>清空选中组合词的标题词规则（对普通词无影响）</span></label>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <span id="bulkMatchRuleResult" style="flex:1;color:#4caf50;font-size:13px;"></span>
-        <button class="btn btn-secondary" id="bulkMatchRuleCancel">取消</button>
-        <button class="btn btn-primary" id="bulkMatchRuleSave">应用</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- 高亮颜色弹窗（表格点击颜色列修改单个关键词颜色，v1.11.1） -->
-  <div class="modal-overlay" id="kwColorModal" style="display:none;">
-    <div class="modal-dialog modal-sm">
-      <div class="modal-header">
-        <h3>高亮颜色</h3>
-        <button class="modal-close" id="kwColorClose">✕</button>
-      </div>
-      <div class="modal-body">
-        <div id="kwColorKwLabel" class="matchrule-kw-label"></div>
-        <div class="form-group" style="margin-top:10px;">
-          <label>背景色</label>
-          <div class="color-edit-row">
-            <input type="color" id="kwColorBg" value="#ff9500">
-            <input type="text" id="kwColorBgText" maxlength="9" class="text-input" style="width:110px;">
-          </div>
-        </div>
-        <div class="form-group" style="margin-top:8px;">
-          <label>文字色</label>
-          <div class="color-edit-row">
-            <input type="color" id="kwColorTxt" value="#000000">
-            <input type="text" id="kwColorTxtText" maxlength="9" class="text-input" style="width:110px;">
-          </div>
-          <div id="kwColorSource" class="form-hint" style="margin-top:5px;"></div>
-        </div>
-        <label class="checkbox-label" style="margin-top:10px;"><input type="checkbox" id="kwColorReset"> 恢复默认（跟随分组 / 全局默认色）</label>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-secondary" id="kwColorCancel">取消</button>
-        <button class="btn btn-primary" id="kwColorSave">保存</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- 分组编辑弹窗 -->
-  <div class="modal-overlay" id="groupModal" style="display:none;">
-    <div class="modal-dialog modal-sm">
-      <div class="modal-header">
-        <h3 id="groupModalTitle">新建分组</h3>
-        <button class="modal-close" id="groupModalClose">✕</button>
-      </div>
-      <div class="modal-body">
-        <div class="form-group">
-          <label>分组名称 <span class="required">*</span></label>
-          <input type="text" id="editGroupName" placeholder="分组名称" maxlength="50" class="text-input">
-        </div>
-        <div class="form-group">
-          <label class="checkbox-label">
-            <input type="checkbox" id="editGroupImportant">
-            <span>📌 标记为重要（组内关键词自动生效，取消则自动取消）</span>
-          </label>
-          <span class="form-hint">勾选后，本组所有关键词视为重要；若关键词自身未填写重要笔记，将统一使用下方分组文本。</span>
-        </div>
-        <div class="form-group" id="editGroupImportantNoteRow" style="display:none;">
-          <div class="label-row">
-            <label for="editGroupImpNoteRich">统一重要笔记（可选）</label>
-            <button type="button" class="hint-btn hint-up" data-tip="勾选后本组所有关键词视为重要；未单独填写重要笔记的关键词将统一使用此分组笔记。所见即所得：图片、加粗、表格、超链接直接在框内显示，点图片或链接可修改、删除，与关键词的重要笔记编辑完全一致。">ⓘ</button>
-          </div>
-          <div class="kw-note-toolbar">
-            <button type="button" class="btn btn-mini" id="btnGNoteInsertImg" title="在光标处插入一张图片">🖼 插入图片</button>
-            <button type="button" class="btn btn-mini" id="btnGNoteBold" title="加粗（先选中文字再点）"><b>B</b></button>
-            <button type="button" class="btn btn-mini" id="btnGNoteItalic" title="斜体（先选中文字再点）"><i>I</i></button>
-            <button type="button" class="btn btn-mini" id="btnGNoteTable" title="插入表格">▦ 表格</button>
-            <button type="button" class="btn btn-mini" id="btnGNoteLink" title="插入超链接（可先选中文字再点）">🔗 链接</button>
-            <span style="font-size:11px;color:#999">所见即所得：图片、加粗、表格、链接直接在框内显示；点图片或链接可修改或删除。</span>
-          </div>
-          <div id="editGroupImpNoteRich" class="kw-note-editor" contenteditable="true" data-placeholder="输入组内统一重要笔记…（所见即所得）"></div>
-          <div class="label-row" style="margin-top:8px;">
-            <label for="editGroupImgSize">图片缩略尺寸 (px)</label>
-            <span style="font-size:11px;color:#999">（分组统一设置，40–600，留空用默认 70；关键词自带尺寸仍优先）</span>
-          </div>
-          <input type="number" id="editGroupImgSize" min="40" max="600" step="10" placeholder="默认 70" class="text-input" style="width:180px;">
-          <span class="form-hint">仅当勾选「标记为重要」时生效；关键词自身已填写的重要笔记优先于本分组统一文本。</span>
-        </div>
-        <div class="form-group" id="editGroupImpBgRow" style="display:none;">
-          <div class="label-row" style="flex-wrap:wrap;gap:6px;">
-            <label for="editGroupImpBgEnable">重要笔记底色</label>
-            <span style="font-size:11px;color:#999">（仅当「标记为重要」时生效；勾选后，组内未单独勾选的关键词，其重要笔记卡片统一铺该词高亮底色）</span>
-          </div>
-          <div style="display:flex;align-items:center;gap:8px;margin-top:4px;">
-            <label class="checkbox-label" style="white-space:nowrap;"><input type="checkbox" id="editGroupImpBgEnable"><span>组内关键词统一复用高亮底色</span></label>
-          </div>
-        </div>
-        <div class="form-group">
-          <label>高亮颜色</label>
-          <div class="form-hint" style="margin-bottom:6px;">同组关键词将统一使用此颜色。</div>
-          <label class="checkbox-label" style="margin-bottom:8px;">
-            <input type="checkbox" id="editGroupUseColor">
-            <span>使用自定义高亮颜色</span>
-          </label>
-          <div class="form-row" id="editGroupColorRow" style="display:none;">
-            <div class="form-group">
-              <label>背景色</label>
-              <input type="color" id="editGroupBgColor" value="#ff9500">
-            </div>
-            <div class="form-group">
-              <label>文字颜色</label>
-              <input type="color" id="editGroupTextColor" value="#000000">
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-secondary" id="groupModalCancel">取消</button>
-        <button class="btn btn-primary" id="groupModalSave">保存</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- 站点规则编辑弹窗 -->
-  <div class="modal-overlay" id="siteRuleModal" style="display:none;">
-    <div class="modal-dialog modal-sm">
-      <div class="modal-header">
-        <h3 id="siteRuleModalTitle">添加站点规则</h3>
-        <button class="modal-close" id="siteRuleModalClose">✕</button>
-      </div>
-      <div class="modal-body">
-        <div class="form-group">
-          <label>规则类型</label>
-          <select id="editSiteRuleType" class="text-input">
-            <option value="blacklist">黑名单（排除）</option>
-            <option value="whitelist">白名单（允许）</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>匹配对象</label>
-          <select id="editSiteRuleScope" class="text-input">
-            <option value="host">域名（整个网站）</option>
-            <option value="url">网址（具体分页）</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>匹配方式</label>
-          <select id="editSiteRuleMatchType" class="text-input">
-            <option value="exact">域名精确匹配</option>
-            <option value="subdomain">子域名匹配</option>
-            <option value="prefix">URL 前缀匹配</option>
-            <option value="regex">正则表达式</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>匹配模式 <span class="required">*</span></label>
-          <input type="text" id="editSiteRulePattern" placeholder="例如：example.com" class="text-input">
-          <span class="form-hint" id="siteRuleHint">输入域名，如 example.com</span>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-secondary" id="siteRuleModalCancel">取消</button>
-        <button class="btn btn-primary" id="siteRuleModalSave">保存</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- v1.8.19 表格右下角 [+ −] 手柄 -->
-  <div id="kwTableHandle" class="kw-table-handle" style="display:none;">
-    <button type="button" class="th-btn th-plus" id="thBtnPlus" title="增加行/列">＋</button>
-    <button type="button" class="th-btn th-minus" id="thBtnMinus" title="删除行/列/整表">－</button>
-    <div class="th-menu" id="thMenu" style="display:none;"></div>
-  </div>
-
-  <script src="../lib/changelog.js"></script>
-  <script src="../lib/storage.js"></script>
-  <script src="../lib/utils.js"></script>
+  <!-- 加载顺序：协议 → 配置（默认值唯一真源）→ 存储信封 → 字段单源 → 组件 → 页面逻辑 -->
+  <script src="../src/build-info.js"></script>
+  <script src="../src/core/protocol.js"></script>
+  <script src="../src/core/config.js"></script>
+  <script src="../src/platform/storage.js"></script>
+  <script src="../src/platform/markdown.js"></script>
+  <script src="../src/ui/fieldmap.js"></script>
+  <script src="../src/ui/components/dom.js"></script>
+  <script src="../src/ui/components/modal.js"></script>
+  <!-- chip.js 必须在 color-field.js 之前：后者的浮层复用 ui.Popover（单例，见其文件头注释） -->
+  <script src="../src/ui/components/chip.js"></script>
+  <script src="../src/ui/components/color-field.js"></script>
+  <script src="../src/ui/components/rich-editor.js"></script>
+  <!-- fields.js = 所有表单界面的字段控件工厂（关键词 / 分组共用；改一处两边一起变） -->
+  <script src="../src/ui/components/fields.js"></script>
+  <script src="../src/ui/components/data-table.js"></script>
+  <script src="../src/ui/components/keyword-editor.js"></script>
+  <script src="../src/ui/changelog.js"></script>
   <script src="options.js"></script>
 </body>
 </html>
