@@ -22,6 +22,9 @@
  *   node scripts/check-channels.js --live --deep  # 再**真的下载**线上产物：zip 核 sha256、crx 用自身字节核 ID
  * --live/--deep 一律以**线上清单**为基准判"线上链是否自洽"；仓库 release/ 里的镜像落后只提示不判失败
  * （CI 发布不回写 main，镜像落后是常态 —— 2026-10-04 实测：拿镜像当基准把自洽的线上链误判成失败）。
+ * 但 **--live 必须真的核对到线上**：线上 xml / 清单拉不到（网络、代理、CDN 故障）即判失败 exit 1，
+ * 不再静默降级成本地自检 —— 2026-10-04 实测踩到：本机代理挂掉时 --live 打印"拉取失败"却仍报
+ * `CHANNELS ok`，那是一个**没有核对过任何线上东西的绿灯**。要离线只看本地就**别加 --live**。
  *   node scripts/check-channels.js --quiet        # 只打印机器可读摘要行
  *
  * 机器可读摘要：`CHANNELS ok stable=<id> beta=<id>` 或 `CHANNELS fail <原因…>`
@@ -217,12 +220,12 @@ async function checkArtifact(label, url, expectId, manifestName, t, online) {
 
 /* ── 线上核对（发布后）──────────────────────────────────────────────── */
 async function checkLive(label, expectId, xmlName, manifestName, softVersion) {
-  if (typeof fetch !== 'function') { info('本机 Node 无 fetch，跳过 --live 核对'); return; }
+  if (typeof fetch !== 'function') { bad('--live：本机 Node 无 fetch，无法核对线上（--live 要求必须核对，跳过即判不一致；只用本地检查请去掉 --live）'); return; }
   const t = Date.now();
   /* **先拿线上清单**：--deep 的 sha256 比对必须以线上清单为基准（仓库镜像可能落后，见 checkArtifact 注释）。 */
   let online = null;
   try { online = await (await fetch(SITE + '/' + manifestName + '?t=' + t, { cache: 'no-store' })).json(); }
-  catch (e) { info('线上 ' + manifestName + ' 拉取失败：' + e.message); }
+  catch (e) { bad('线上 ' + manifestName + ' 拉取失败：' + e.message + '（--live 要求必须核对到线上，拉不到即判不一致；网络/CDN 恢复后重跑，或去掉 --live 只看本地）'); }
   try {
     const x = await (await fetch(SITE + '/' + xmlName + '?t=' + t, { cache: 'no-store' })).text();
     const appid = (x.match(/<app\s[^>]*appid="([^"]+)"/i) || [])[1];
@@ -233,7 +236,7 @@ async function checkLive(label, expectId, xmlName, manifestName, softVersion) {
     await checkArtifact(label, cb, expectId, manifestName, t, online);
     const src = online || readManifest(manifestName) || {};
     for (const u of [src.zip, src.crx]) if (u && u !== cb) await checkArtifact(label + '·清单', u, expectId, manifestName, t, online);
-  } catch (e) { info('线上 ' + xmlName + ' 拉取失败：' + e.message); }
+  } catch (e) { bad('线上 ' + xmlName + ' 拉取失败：' + e.message + '（--live 要求必须核对到线上，拉不到即判不一致；网络/CDN 恢复后重跑，或去掉 --live 只看本地）'); }
   if (online) {
     const mf = readManifest(manifestName);
     if (mf && !mf.__parseError && String(online.version) !== String(mf.version)) {
