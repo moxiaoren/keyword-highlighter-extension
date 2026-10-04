@@ -142,10 +142,16 @@ function assetsFor(version) {
   if (!TOKEN) die('缺少凭据：设置 GH_TOKEN，或把 token 放到工作区根目录 _gh_token.txt');
   if (!fs.existsSync(REL)) die('没有 release/ 目录 —— 先跑 node scripts/release.js');
 
+  /* 凭据自检必须走**仓库级端点**：PAT 能读 /user，但 Actions 的安装令牌（secrets.GITHUB_TOKEN）
+   * 读 /user 会被拒（403 Resource not accessible by integration）——那是安装令牌的正常行为，
+   * 不代表凭据无效（2026-10-04 稳定通道 CI 首发实测：gh-release.js 因此把好好的发布判成失败）。 */
   const me = await api('GET', '/user');
-  if (!me.ok) die('token 无效或已过期（HTTP ' + me.status + '）');
   const repo = await api('GET', '/repos/' + OWNER + '/' + REPO);
-  if (!repo.ok) die('读不到仓库（HTTP ' + repo.status + '）');
+  const who = (me.ok && me.json && me.json.login) ? me.json.login : 'Actions 安装令牌（无 /user 读权限，属正常）';
+  if (!repo.ok) {
+    if (!me.ok) die('token 无效或已过期（/user HTTP ' + me.status + '、/repos HTTP ' + repo.status + '）');
+    die('读不到仓库（HTTP ' + repo.status + '）');
+  }
   const def = (repo.json && repo.json.default_branch) || 'main';
   const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'utf8'));
   const cl = changelog();
