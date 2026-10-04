@@ -64,6 +64,19 @@ jobs:
             fi
             echo "tag $REF 的版本与 manifest.json 一致 ✓"
           fi
+          # 【版本段数必须与通道匹配】稳定 = x.y.z（三段），测试 = x.y.z.w（四段，仓库既有口径）。
+          # 不加这道闸，workflow_dispatch 选 stable 而 manifest 还是测试版号时，会把测试版当稳定版推给全体用户。
+          MFVER="$(node -p "require('./manifest.json').version")"
+          SEGS="$(printf '%s' "$MFVER" | awk -F. '{print NF}')"
+          if [ "$CH" = "beta" ] && [ "$SEGS" -lt 4 ]; then
+            echo "::error::通道=测试版，但 manifest.json 的版本 $MFVER 不是四段测试版号（测试版走 x.y.z.w 这条线；先 node scripts/bump-version.js beta）"
+            exit 1
+          fi
+          if [ "$CH" = "stable" ] && [ "$SEGS" -gt 3 ]; then
+            echo "::error::通道=稳定版，但 manifest.json 的版本 $MFVER 是四段测试版号 —— 拒绝把测试版当稳定版发（先 node scripts/bump-version.js release）"
+            exit 1
+          fi
+          echo "版本段数检查 ✓（$MFVER 共 $SEGS 段，通道 $CH）"
           echo "channel=$CH" >> "$GITHUB_OUTPUT"
           echo "本次发布通道 = $CH"
 

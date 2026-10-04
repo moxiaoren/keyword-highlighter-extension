@@ -20,6 +20,8 @@
  *   node scripts/check-channels.js                # 本地 release/ 自检（发布前，不一致即 exit 1）
  *   node scripts/check-channels.js --live         # 额外拉线上 xml / 清单核对 appid 与版本，并探一次 codebase 是否可达
  *   node scripts/check-channels.js --live --deep  # 再**真的下载**线上产物：zip 核 sha256、crx 用自身字节核 ID
+ * --live/--deep 一律以**线上清单**为基准判"线上链是否自洽"；仓库 release/ 里的镜像落后只提示不判失败
+ * （CI 发布不回写 main，镜像落后是常态 —— 2026-10-04 实测：拿镜像当基准把自洽的线上链误判成失败）。
  *   node scripts/check-channels.js --quiet        # 只打印机器可读摘要行
  *
  * 机器可读摘要：`CHANNELS ok stable=<id> beta=<id>` 或 `CHANNELS fail <原因…>`
@@ -169,7 +171,7 @@ function checkChannel(label, expectId, xmlName, manifestName, xmlMayLag) {
 /* ── 线上产物：可达性（--live）与内容（--deep）───────────────────────
  * 为什么单独一段：本仓历史上出过「crx 压根没进上传列表，而 update.xml 已经指向它 ⇒ 用户端自动更新 404」。
  * 只比 xml 里的 appid/版本抓不到这一类，必须真的去取那个地址。 */
-async function checkArtifact(label, url, expectId, manifestName, t) {
+async function checkArtifact(label, url, expectId, manifestName, t, online) {
   if (!url) { info(label + '：xml / 清单里没有产物地址，跳过'); return; }
   const name = url.split('/').pop();
   try {
@@ -195,11 +197,21 @@ async function checkArtifact(label, url, expectId, manifestName, t) {
     } finally { try { fs.unlinkSync(tmp); } catch { /* 忽略 */ } }
   } else {
     const h = crypto.createHash('sha256').update(buf).digest('hex').toUpperCase();
-    const mf = readManifest(manifestName) || {};
-    const want = String(mf.sha256 || '').toUpperCase();
+    /* 比对基准必须是**线上清单**：仓库里的 release/<manifest> 只是镜像，随时可能落后于线上
+     * （CI 发布不回写 main）。2026-10-04 实测踩到：拿本地镜像当基准 ⇒ 线上明明自洽，
+     * --deep 却报"线上 zip sha256 ≠ 清单声明"的假失败。 */
+    const om = online || {};
+    const lm = readManifest(manifestName) || {};
+    const wantOnline = String(om.sha256 || '').toUpperCase();
+    const wantLocal = String(lm.sha256 || '').toUpperCase();
+    const want = wantOnline || wantLocal;
     if (!want) info(label + ' 线上 ' + name + ' sha256=' + h.slice(0, 16) + '…（清单未声明，无从比对）');
-    else if (h !== want) bad(label + ' 线上 ' + name + ' sha256=' + h.slice(0, 16) + '… ≠ 清单声明的 ' + want.slice(0, 16) + '…');
-    else ok('线上 ' + name + ' sha256=' + h.slice(0, 16) + '…（与清单一致）');
+    else if (h !== want) bad(label + ' 线上 ' + name + ' sha256=' + h.slice(0, 16) + '… ≠ 线上清单声明的 ' + want.slice(0, 16) + '…');
+    else ok('线上 ' + name + ' sha256=' + h.slice(0, 16) + '…（与线上清单一致）');
+    if (wantOnline && wantLocal && wantOnline !== wantLocal) {
+      info('⚠️ 仓库镜像 release/' + manifestName + ' 声明的 sha256=' + wantLocal.slice(0, 16)
+        + '… 与线上清单 ' + wantOnline.slice(0, 16) + '… 不同（镜像待同步；本检查只判线上自洽，镜像落后不算失败）');
+    }
   }
 }
 
@@ -207,6 +219,10 @@ async function checkArtifact(label, url, expectId, manifestName, t) {
 async function checkLive(label, expectId, xmlName, manifestName, softVersion) {
   if (typeof fetch !== 'function') { info('本机 Node 无 fetch，跳过 --live 核对'); return; }
   const t = Date.now();
+  /* **先拿线上清单**：--deep 的 sha256 比对必须以线上清单为基准（仓库镜像可能落后，见 checkArtifact 注释）。 */
+  let online = null;
+  try { online = await (await fetch(SITE + '/' + manifestName + '?t=' + t, { cache: 'no-store' })).json(); }
+  catch (e) { info('线上 ' + manifestName + ' 拉取失败：' + e.message); }
   try {
     const x = await (await fetch(SITE + '/' + xmlName + '?t=' + t, { cache: 'no-store' })).text();
     const appid = (x.match(/<app\s[^>]*appid="([^"]+)"/i) || [])[1];
@@ -214,22 +230,19 @@ async function checkLive(label, expectId, xmlName, manifestName, softVersion) {
     if (appid !== expectId) bad('线上 ' + label + ' ' + xmlName + ' 的 appid=' + appid + ' ≠ ' + expectId + '（线上更新源指向的是另一个扩展，该通道实际不会升级；注意 CDN 缓存，稍后可重跑）');
     else ok('线上 ' + xmlName + ' appid=' + appid + ' version=' + version);
     const cb = (x.match(/<updatecheck\s[^>]*codebase="([^"]+)"/i) || [])[1];
-    await checkArtifact(label, cb, expectId, manifestName, t);
-    const mf0 = readManifest(manifestName) || {};
-    for (const u of [mf0.zip, mf0.crx]) if (u && u !== cb) await checkArtifact(label + '·清单', u, expectId, manifestName, t);
+    await checkArtifact(label, cb, expectId, manifestName, t, online);
+    const src = online || readManifest(manifestName) || {};
+    for (const u of [src.zip, src.crx]) if (u && u !== cb) await checkArtifact(label + '·清单', u, expectId, manifestName, t, online);
   } catch (e) { info('线上 ' + xmlName + ' 拉取失败：' + e.message); }
-  try {
-    const j = await (await fetch(SITE + '/' + manifestName + '?t=' + t, { cache: 'no-store' })).json();
+  if (online) {
     const mf = readManifest(manifestName);
-    if (mf && !mf.__parseError && j.version !== mf.version) {
-      /* 测试通道的"本地清单"只是仓库里的镜像，不是发布源：CI 发布（tag / workflow_dispatch）会把新清单
-       * 直接发到 gh-pages 而不回写 main，本地又可能先 bump 版本再发 —— 两个方向都属常态。
-       * 该通道真正要硬的是 appid（上面）与产物可达性/哈希（checkArtifact），版本只提示。 */
-      if (softVersion) info('⚠️ 线上 ' + manifestName + ' version=' + j.version + ' ≠ 本地仓库 ' + mf.version
-        + '（测试通道：CI 发布不回写 main、或本地已 bump 还没发，两种都属常态；以线上为准）');
-      else bad('线上 ' + manifestName + ' version=' + j.version + ' ≠ 本地 ' + mf.version + '（CDN 缓存或发布没生效）');
-    } else ok('线上 ' + manifestName + ' version=' + j.version);
-  } catch (e) { info('线上 ' + manifestName + ' 拉取失败：' + e.message); }
+    if (mf && !mf.__parseError && String(online.version) !== String(mf.version)) {
+      /* 仓库里的镜像不是发布源：CI 发布不回写 main，本地也可能先 bump 再发 —— 两种都属常态。
+       * 线上链是否自洽由 appid / 产物可达性 / 线上清单哈希三条硬判，镜像落后只提示。 */
+      info('⚠️ 线上 ' + manifestName + ' version=' + online.version + ' ≠ 仓库镜像 release/' + manifestName + ' 的 ' + mf.version
+        + '（镜像待同步，以线上为准' + (softVersion ? '；测试通道尤其常见' : '') + '）');
+    } else ok('线上 ' + manifestName + ' version=' + online.version);
+  }
 }
 
 (async () => {

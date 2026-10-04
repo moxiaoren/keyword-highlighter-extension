@@ -130,11 +130,23 @@ function stableNotes(version, all) {
 /** release/ 里该版本的产物：beta 优先，其次正式包 */
 function assetsFor(version) {
   const out = [];
-  const add = (f) => { const p = path.join(REL, f); if (fs.existsSync(p)) out.push({ name: f, p: p }); };
-  add('keyword-highlighter-beta-v' + version + '.zip');
-  add('keyword-highlighter-beta-v' + version + '.crx');
-  add('keyword-highlighter-v' + version + '.zip');
-  add('keyword-highlighter.crx');
+  const seen = {};
+  const add = (p, name) => {
+    if (!fs.existsSync(p)) return;
+    const n = name || path.basename(p);
+    if (seen[n]) return;
+    seen[n] = 1;
+    out.push({ name: n, p: p });
+  };
+  /* 测试版产物（历史人工发布会挂这两个） */
+  add(path.join(REL, 'keyword-highlighter-beta-v' + version + '.zip'));
+  add(path.join(REL, 'keyword-highlighter-beta-v' + version + '.crx'));
+  /* 稳定版：zip 在 release/ 根；crx 由 release.js 按**线上 codebase** 放进 release/release/
+   *（2026-10-04 实测：v2.0.1 的 Release 只挂上了 zip，因为老代码只认扁平的 keyword-highlighter.crx） */
+  add(path.join(REL, 'keyword-highlighter-v' + version + '.zip'));
+  add(path.join(REL, 'release', 'keyword-highlighter-extension-' + version + '.crx'));
+  add(path.join(REL, 'keyword-highlighter-extension-' + version + '.crx'));
+  add(path.join(REL, 'keyword-highlighter.crx'));
   return out;
 }
 
