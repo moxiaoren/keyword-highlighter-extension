@@ -350,7 +350,10 @@ const UpdateChannel = {
   },
   async set(ch) {
     const v = ch === 'beta' ? 'beta' : 'stable';
-    try { await chrome.storage.local.set({ [KH_UPDATE_CHANNEL_KEY]: v }); } catch (e) { /* 忽略 */ }
+    /* 写失败**不许吞**：旧写法把 set 包在 try 里空 catch 掉，调用方（popup）
+     * 照样报「已切到测试版」，而磁盘还是老通道（C7 F-1 同族）。
+     * Promise 形态的 `storage.local.set` 在配额顶满/存储被禁用时会 reject，交给调用方。 */
+    await chrome.storage.local.set({ [KH_UPDATE_CHANNEL_KEY]: v });
     return v;
   }
 };

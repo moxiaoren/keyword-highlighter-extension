@@ -24,8 +24,11 @@ function currentVersion() {
 
 /* ---------------- 更新通道 ---------------- */
 
-async function checkForUpdates() {
-  const info = await self.UpdateChecker.check(currentVersion());
+/**
+ * @param {boolean} force true = 跳过 update-checker 的 6h 缓存（只有"用户手动点检查更新"才该传）
+ */
+async function checkForUpdates(force) {
+  const info = await self.UpdateChecker.check(currentVersion(), { force: !!force });
   await chrome.storage.local.set({ khUpdateInfo: info });
   try {
     if (info && info.hasUpdate) {
@@ -132,7 +135,9 @@ const HANDLERS = {
     return { ok: true, host, disabled: next };
   },
 
-  [MSG.UPDATE_CHECK]: async () => ({ ok: true, info: await checkForUpdates() }),
+  /* 手动「检查更新」会把 force:true 带进来 —— 旧写法 `async () => …` 直接把 payload 丢掉，
+   * 于是用户点多少次都只拿到 6h 缓存里的旧判决（C7 F-3）。 */
+  [MSG.UPDATE_CHECK]: async (msg) => ({ ok: true, info: await checkForUpdates(!!(msg && msg.force)) }),
 
   [MSG.UPDATE_INFO]: async () => {
     const { khUpdateInfo = null } = await chrome.storage.local.get('khUpdateInfo');

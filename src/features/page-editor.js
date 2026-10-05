@@ -51,36 +51,89 @@
     return host;
   }
 
-  /** 读样式（扩展自有资源，content script fetch 自己的 origin 不需要 web_accessible_resources） */
+  /** 读样式。返回 **true = 两份样式都到手**（含命中缓存）；false = 有缺失，且**不缓存半份**。
+   *
+   * C7 O-5：旧写法把每一份的失败都吞成 `console.warn`，照样拼出 `cssText` 并把结果当成功
+   * —— 用户看到的是**没有样式的白板弹窗**，而 popup 收到 `{ok:true}` 后关掉了自己，
+   * 谁都来不及说一句"坏了"。扩展自有资源 fetch 失败只可能是真读不到（缺文件 / 资源被禁），
+   * 这时必须**承认失败**：返回 false，让 popup 退回独立窗口（那条路用 `<link>` 加载样式，
+   * 不依赖隔离世界的 fetch）。也不要缓存残缺结果，否则后续每次都会"成功"地画出白板。 */
   async function ensureCss(shadow) {
-    if (!cssText) {
-      const parts = [];
-      for (const rel of CSS_FILES) {
-        try {
-          const res = await fetch(chrome.runtime.getURL(rel));
-          parts.push(await res.text());
-        } catch (err) {
-          console.warn('[KH] 编辑器样式读取失败：', rel, err);
-        }
-      }
-      /* ShadowRoot 内 `:root` 不匹配 → 改写成 `:host`，否则所有 token 变量都是空的 */
-      cssText = parts.join('\n').replace(/:root\b/g, ':host');
+    if (cssText) {
+      const el = shadow.querySelector('style');
+      if (el && el.textContent !== cssText) el.textContent = cssText;
+      return true;
     }
+    const parts = [];
+    const missing = [];
+    for (const rel of CSS_FILES) {
+      try {
+        const res = await fetch(chrome.runtime.getURL(rel));
+        if (res && res.ok === false) throw new Error('HTTP ' + res.status);
+        parts.push(await res.text());
+      } catch (err) {
+        missing.push(rel);
+        console.warn('[KH] 编辑器样式读取失败：', rel, err);
+      }
+    }
+    if (missing.length || !parts.length) {
+      console.warn('[KH] 页面内编辑器样式不全（缺 ' + missing.length + '/' + CSS_FILES.length +
+        '：' + missing.join('、') + '）—— 不在页面里开，改由 popup 退回独立编辑窗口');
+      return false;
+    }
+    /* ShadowRoot 内 `:root` 不匹配 → 改写成 `:host`，否则所有 token 变量都是空的 */
+    cssText = parts.join('\n').replace(/:root\b/g, ':host');
     const styleEl = shadow.querySelector('style');
     if (styleEl && styleEl.textContent !== cssText) styleEl.textContent = cssText;
+    return true;
+  }
+
+  /** 取一份**可信**配置给编辑器用。
+   *
+   * `latestCfg` 只在内核 rebuild 时由 `consume` 写入，而全局暂停 / 本站禁用 / 无规则时
+   * 内核在 `src/core/index.js` 就提前 return 了，**那个文档永远不会 rebuild**
+   * ⇒ `latestCfg` 一直是 null。此时必须主动读盘，读不到就返回 null。
+   * 绝不能拿 `{}` 顶替：编辑器会把它当默认值与分组下拉的来源，
+   * 保存时按「空配置」整表写回，把用户词库覆盖成一个词（历史 P0，见 storage.js `configForWrite`）。 */
+  async function currentCfg() {
+    if (latestCfg && Array.isArray(latestCfg.keywords)) return latestCfg;
+    try {
+      if (KH.Store && typeof KH.Store.load === 'function') {
+        const cfg = await KH.Store.load();
+        if (cfg && Array.isArray(cfg.keywords)) { latestCfg = cfg; return cfg; }
+      }
+    } catch (err) {
+      console.warn('[KH] 页面内编辑器读取配置失败：', err);
+    }
+    return null;
   }
 
   /** 打开编辑器（新建；带 keyword 即为编辑）。返回是否打开成功 */
   async function open(keyword) {
     if (!KH.ui || typeof KH.ui.openEditor !== 'function') return false;
+    /* 拿不到权威配置就**不在页面里开**：返回 false，popup 会退回独立编辑窗口
+     * （那条路自己读盘；读盘失败时写入端也已拒写，见 storage.js）。 */
+    const cfg = await currentCfg();
+    if (!cfg) return false;
     const host = hostEl();
-    await ensureCss(host._shadow);
+    /* 样式不全就**别开**（C7 O-5）：撤掉刚建的宿主并返回 false，
+     * popup 收到 `{ok:false}` 自然退回独立窗口 —— 用户看到的仍是那个编辑器，
+     * 而不是一个没有样式的白板。 */
+    if (!(await ensureCss(host._shadow))) {
+      /* 撤掉刚建的宿主。写法刻意"父子两可"：真浏览器有 `Element.remove()`，
+       * 但单测的 DOM 垫片只有 `removeChild` —— 只写 `host.remove()` 会被下面的
+       * catch 吞掉，宿主留在 body 里（z-index 最大的一层空壳），单测也就抓不到。*/
+      try {
+        if (host.parentNode && typeof host.parentNode.removeChild === 'function') host.parentNode.removeChild(host);
+        else if (typeof host.remove === 'function') host.remove();
+      } catch (err) { /* 忽略 */ }
+      return false;
+    }
     if (modalInst) { try { modalInst.close(); } catch (err) { /* 忽略 */ } }
     modalInst = KH.ui.openEditor({
       keyword: keyword || null,
-      cfg: latestCfg || {},
-      mode: 'page',                       // 页面模式：Modal 会挂到下面的 shadow 里
-      mount: host._shadow,
+      cfg: cfg,
+      mount: host._shadow,               // 挂在页面里的 ShadowRoot 上（不在 popup 内联）
       onSaved: () => { modalInst = null; } // 保存后由 storage.onChanged 触发全页重建
     });
     return true;

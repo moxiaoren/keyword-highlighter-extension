@@ -519,6 +519,12 @@ body {
 .kh-log-item { padding: 8px 10px; border-left: 3px solid var(--brand); background: var(--card-2); border-radius: var(--r-sm); }
 .kh-log-ver { font-weight: 600; color: var(--brand-deep); }
 .kh-log-list { margin: 4px 0 0 18px; color: var(--text-2); }
+/* 更新日志里的行内代码（C7 F-6：`反引号` 标记现在渲染成 <code>，不再原样上屏） */
+.kh-log-list code {
+  font-family: var(--font-mono); font-size: 0.92em;
+  padding: 1px 5px; border-radius: var(--r-sm);
+  background: var(--bg); border: 1px solid var(--border-2); color: var(--text);
+}
 
 /* ---------------------------------------------------------------- 页脚 */
 .kh-foot {

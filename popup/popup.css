@@ -3,8 +3,9 @@
    ------------------------------------------------------------
    · 颜色/圆角/阴影/字号一律来自 src/ui/tokens.css（popup.html 直连，并按
      components.css 里的注入副本兜底），本文件**不得出现任何硬编码色值**（§5 总体风格）。
-   · 宽度 348px：既满足 320–360px 的窄弹窗要求，又要放得下
-     `KH.ui.openEditor()` 的 sm 弹窗（内联在本弹窗里，不能溢出）。
+   · 宽度 348px：只满足 320–360px 的窄弹窗要求。
+     注意：弹窗内**不再内联**关键词编辑器 —— 「＋ 快速添加」要么委托当前网页（860px 三列，
+     挂在页面 ShadowRoot 里），要么另开独立窗口 popup/editor.html（C7 O-6 删掉了失效的 sm 覆盖层）。
    ============================================================ */
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -78,6 +79,11 @@ body {
 .kh-switch input:checked + .kh-slider { background: var(--card); }
 .kh-switch input:checked + .kh-slider::before { transform: translateX(19px); background: var(--brand-deep); }
 .kh-switch input:focus-visible + .kh-slider { box-shadow: var(--sh-brand-inset); }
+/* 首屏状态未知：开关不可点、看起来"还没就绪"（C7 O-4 —— 旧首屏副标题硬编码「全局已开启」
+   而开关画成未勾选，前 39–43ms 自相矛盾）。render() 首帧摘掉 aria-busy 并解除 disabled。 */
+.kh-switch[aria-busy="true"] { cursor: default; }
+.kh-switch[aria-busy="true"] .kh-slider { opacity: .55; }
+.kh-switch input:disabled + .kh-slider { cursor: default; }
 
 /* ------------------------------------------------- ② 信息行（站点卡 + 关键词数卡） */
 /* 两张卡同一行、同一左边距/右边距：站点卡吃剩余宽度，关键词数卡固定 84px 紧凑竖排 */
@@ -182,6 +188,19 @@ body {
 .kh-pop-update-info { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .kh-pop-update-icon { flex: 0 0 auto; font-size: var(--fs-md); }
 .kh-pop-update-text { font-size: var(--fs-sm); line-height: 1.45; color: var(--warning); }
+/* 说明行：版本号下面最多两行（全文在 title），窄条里也能看清"这版改了什么"（C7 O-3） */
+.kh-pop-update-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.kh-pop-update-notes {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: var(--fs-xs);
+  line-height: 1.4;
+  color: var(--text-2);
+  white-space: pre-line;
+}
+.kh-pop-update-notes[hidden] { display: none; }
 .kh-pop-update-actions { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
 
 /* ⑤ 更新工具行：左「检查更新」/ 右「更新通道」徽标（同一行，不占额外空白行） */
@@ -221,6 +240,3 @@ body {
   font-variant-numeric: tabular-nums;
   user-select: none;
 }
-
-/* 编辑弹窗是 fixed 覆盖层：给它留出边距，避免贴边被弹窗窄边裁切 */
-.kh-modal-mask { padding: 10px; }

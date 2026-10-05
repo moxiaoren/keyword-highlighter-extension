@@ -285,10 +285,13 @@
   function touchEngine() {
     if (!engine) return;
     clearTimeout(engine.timer);
-    engine.timer = setTimeout(() => { destroyEngine('idle'); }, IDLE_MS);
+    engine.timer = setTimeout(() => { destroyEngine(); }, IDLE_MS);
   }
 
-  async function destroyEngine(why) {
+  /* 批次九死代码扫描：原签名 `destroyEngine(why)` 的 `why` 在函数体里从未出现（3 个调用点
+   * 传的 'idle'/'switch'/'lang-cleared' 也没人读）—— 按死参数清理，签名与调用点一并去掉形参。
+   * 若将来要查"引擎为什么被销毁"，再把理由接进日志即可。 */
+  async function destroyEngine() {
     if (!engine) return;
     const e = engine;
     engine = null;
@@ -299,7 +302,7 @@
   async function getEngine(langs) {
     const key = langs.slice().sort().join('+');
     if (engine && engine.key === key) { touchEngine(); return engine.worker; }
-    if (engine) await destroyEngine('switch');
+    if (engine) await destroyEngine();
     if (creating) await creating.catch(() => {});
     if (engine && engine.key === key) { touchEngine(); return engine.worker; }
 
@@ -676,7 +679,7 @@
     if (msg.type === MSG.OCR_LANG_STATE) return settle(langState(msg.quality).then((s) => ({ state: s, engine: engine ? engine.key : null })));
     if (msg.type === MSG.OCR_LANG_DOWNLOAD) return settle(downloadLang(msg.lang, { base: msg.base, force: msg.force, quality: msg.quality }));
     if (msg.type === MSG.OCR_LANG_IMPORT) return settle(importLang(msg.lang, msg.base64, { name: msg.name, quality: msg.quality }));
-    if (msg.type === MSG.OCR_LANG_CLEAR) return settle(clearLangs(msg.langs, msg.quality).then((r) => { if (engine) destroyEngine('lang-cleared'); return r; }));
+    if (msg.type === MSG.OCR_LANG_CLEAR) return settle(clearLangs(msg.langs, msg.quality).then((r) => { if (engine) destroyEngine(); return r; }));
     /* 设置页「自检」：跑一张内置小图，确认引擎真的能用（不依赖任何网页） */
     if (msg.type === 'kh:ocr:selftest') {
       enqueue({ requestId: msg.requestId, tabId: msg.tabId, keyword: msg.keyword || '供应商', dataUrl: msg.dataUrl });

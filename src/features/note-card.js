@@ -96,13 +96,8 @@
       a.start === b.start && a.end === b.end;
   }
 
-  function findHit(key) {
-    if (!key || !KH.registry || typeof KH.registry.byRule !== 'function') return null;
-    for (const h of KH.registry.byRule(key.ruleId)) {
-      if (h.textNode === key.textNode && h.start === key.start && h.end === key.end) return h;
-    }
-    return null;
-  }
+  /* 批次九死代码扫描删除了 `findHit(key)`（按 ruleId+区间在注册表里回找命中的包装）——
+   * 全库零调用；卡片只走 `hitKeyOf` / `sameHitKey` 做比对，不再回查注册表。 */
 
   /** 命中当前的**视口**矩形；节点已脱离文档或区间失效时返回 null */
   function currentRect(key) {

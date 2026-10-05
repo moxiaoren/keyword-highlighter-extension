@@ -266,6 +266,24 @@
 
   /* ------------------------------------------------------------------ 读写 */
 
+  /** 写路径的配置来源：**磁盘为准**，调用方传进来的 `cfg` 只配当读盘失败时的兜底。
+   *
+   * 为什么不能信 `cfg`：两条真实来路都不可信 ——
+   *   ① 页面内编辑器（`src/features/page-editor.js`）在「全局暂停 / 本站禁用 / 无规则」
+   *      的文档里拿不到内核配置时曾送 `{}`，而 `{}` 是真值 ⇒ 旧写法
+   *      `cfg || await this.load()` 的短路**不触发** ⇒ `(config.keywords||[])` 是空表
+   *      ⇒ 整表被覆盖成用户刚加的那一个词（P0：词库看起来"全没了"）；
+   *   ② 独立编辑窗口开窗时读的那份快照，之后别处又加了词 ⇒ last-write-wins 把别人的改动吃掉。
+   * 读盘失败且兜底快照也没有 keywords 时**宁可抛错**：编辑器会把它显示成「保存失败」、
+   * 弹窗保持打开，用户重试即可 —— 绝不用空表去覆盖词库。 */
+  async function configForWrite(cfg) {
+    let disk = null;
+    try { disk = await Store.load(); } catch (err) { disk = null; }
+    if (disk && Array.isArray(disk.keywords)) return disk;
+    if (cfg && Array.isArray(cfg.keywords)) return cfg;
+    throw new Error('读取本地配置失败，无法安全保存（请重试，或刷新页面后再存）');
+  }
+
   const Store = {
     CSV_HEADERS,
     RARE_KEYWORD,
@@ -279,19 +297,30 @@
       return r.config;
     },
 
-    /** 写：统一剔除废弃键后落盘（订阅方由内容脚本的 storage.onChanged 自动热更新） */
+    /** 写：统一剔除废弃键后落盘（订阅方由内容脚本的 storage.onChanged 自动热更新）
+     *
+     * 失败必须**抛出去**：配额顶满 / 存储被用户禁用时，chrome 不会让 `set()` 抛错，
+     * 只把错误放进 `chrome.runtime.lastError`（回调照常被调用）。旧写法无条件 `resolve`
+     * ⇒ 调用方拿到"成功"，于是设置页重渲染出一个根本没落盘的状态、popup 弹「已禁用本站高亮」，
+     * 而磁盘零写入 —— 动作永久丢失且零提示（C7 F-1）。 */
     async patch(obj) {
       const s = storage();
       const safe = KH.Config.stripDeprecated(obj);
       if (!s) return safe;
-      await new Promise((resolve) => s.set(safe, resolve));
+      await new Promise((resolve, reject) => {
+        s.set(safe, () => {
+          const err = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.lastError) || null;
+          if (err) reject(new Error('本地存储写入失败：' + (err.message || err)));
+          else resolve();
+        });
+      });
       return safe;
     },
 
     /* ---------------- 关键词增删改（唯一入口，options / popup 共用） ---------------- */
 
     async upsertKeyword(kw, cfg) {
-      const config = cfg || await this.load();
+      const config = await configForWrite(cfg);
       const list = (config.keywords || []).slice();
       const item = sanitizeKeyword(kw, config);
       item.updatedAt = Date.now();

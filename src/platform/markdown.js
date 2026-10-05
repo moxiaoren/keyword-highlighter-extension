@@ -61,7 +61,8 @@
    * 行内解析：把一段纯文本按行内语法转成 DOM 节点，追加进 out。
    * 递归下降扫描器——不经过 innerHTML，用户内容只会成为文本节点。
    */
-  function inline(text, doc, out) {
+  function inline(text, doc, out, opts) {
+    const o = opts || {};
     let buf = '';
     const flush = () => { if (buf) { out.push(doc.createTextNode(buf)); buf = ''; } };
     let i = 0;
@@ -69,8 +70,24 @@
       const rest = text.slice(i);
       let m;
 
+      /* 行内代码 `x` —— **只有文档类调用方开**（`opts.code`）。本单源最初只为「重要笔记」服务，
+       * 那里反引号就是普通字符；而更新日志（`src/ui/changelog.js`）里反引号是**标记**
+       * （`node tests/run.js` 这种），不认它就会把标记原样印到用户眼前（C7 F-6）。
+       * 代码内容不做任何行内解析（与 Markdown 一致）⇒ 代码里也长不出链接。 */
+      if (o.code && text[i] === '`') {
+        const j = text.indexOf('`', i + 1);
+        if (j > i) {
+          flush();
+          const c = doc.createElement('code');
+          c.textContent = text.slice(i + 1, j);
+          out.push(c);
+          i = j + 1;
+          continue;
+        }
+      }
+
       /* 图片 ![alt](url) —— 必须先于链接，否则会被 [](url) 吃掉（旧版注释原话） */
-      if ((m = /^!\[([^\]]*)\]\(/.exec(rest))) {
+      if (!o.plain && (m = /^!\[([^\]]*)\]\(/.exec(rest))) {
         const p = readParen(rest, m[0].length - 1);
         const url = p && p.url;
         if (p && IMG_OK.test(url)) {
@@ -86,7 +103,7 @@
       }
 
       /* 链接 [text](url)；纯网址做文字的链接还原为纯网址，不弄脏笔记（旧版 v1.8.20） */
-      if ((m = /^\[([^\]]*)\]\(/.exec(rest))) {
+      if (!o.plain && (m = /^\[([^\]]*)\]\(/.exec(rest))) {
         const p = readParen(rest, m[0].length - 1);
         const url = p && linkUrlOk(p.url);
         if (p && url) {
@@ -100,7 +117,7 @@
             a.target = '_blank';
             a.rel = 'noopener noreferrer';
             const kids = [];                          // inline() 的出口是数组，装完再挂到元素上
-            inline(label, doc, kids);                 // 链接文字里允许再加粗/斜体
+            inline(label, doc, kids, o);              // 链接文字里允许再加粗/斜体
             for (const k of kids) a.appendChild(k);
             out.push(a);
           }
@@ -116,7 +133,7 @@
           flush();
           const b = doc.createElement('b');
           const kids = [];
-          inline(text.slice(i + 2, j), doc, kids);
+          inline(text.slice(i + 2, j), doc, kids, o);
           for (const k of kids) b.appendChild(k);
           out.push(b);
           i = j + 2;
@@ -133,7 +150,7 @@
           flush();
           const em = doc.createElement('i');
           const kids = [];
-          inline(text.slice(i + 1, j), doc, kids);
+          inline(text.slice(i + 1, j), doc, kids, o);
           for (const k of kids) em.appendChild(k);
           out.push(em);
           i = j + 1;
@@ -142,7 +159,7 @@
       }
 
       /* 裸 URL 自动转链接（口径与旧版一致：遇到空白/<>"/ 止） */
-      if ((m = BARE_URL.exec(rest)) && (i === 0 || /[\s(]/.test(text[i - 1]))) {
+      if (!o.plain && (m = BARE_URL.exec(rest)) && (i === 0 || /[\s(]/.test(text[i - 1]))) {
         flush();
         const a = doc.createElement('a');
         a.href = m[0];
@@ -172,7 +189,7 @@
   }
 
   /** 表格块 → <table class="kh-table">（单元格内支持图片/链接/加粗/斜体，v1.11.1 口径） */
-  function buildTable(lines, doc) {
+  function buildTable(lines, doc, opts) {
     const rows = lines.filter(l => !isSepLine(l)).map(line => {
       const inner = line.trim().replace(/^\|/, '').replace(/\|$/, '').trim();
       const cells = inner.split('|');
@@ -180,7 +197,7 @@
       for (const c of cells) {
         const td = doc.createElement('td');
         const kids = [];
-        inline(c.trim(), doc, kids);
+        inline(c.trim(), doc, kids, opts);
         for (const k of kids) td.appendChild(k);
         tr.appendChild(td);
       }
@@ -196,8 +213,13 @@
    * Markdown → DocumentFragment（唯一渲染入口）。
    * @param {string} md 用户存储的 markdown 文本
    * @param {Document} doc 在哪个 document 里建节点（内容脚本 = 页面 document）
+   * @param {object} [opts] 默认全关 = **历史行为**，所有既有调用方一字不改：
+   *   · `code`  = 认 `` `行内代码` `` —— 只有**文档类**调用方开（更新日志里反引号是标记，
+   *              而重要笔记里反引号是普通字符，开了会吞掉用户自己打的字符）
+   *   · `plain` = **不产出任何链接/图片元素**（裸网址与 `![](…)` 保持字面文本）
    */
-  function toFragment(md, doc) {
+  function toFragment(md, doc, opts) {
+    const o = opts || {};
     const frag = (doc || document).createDocumentFragment();
     const src = md == null ? '' : String(md);
     if (!src.trim()) return frag;
@@ -212,14 +234,14 @@
         let j = i;
         while (j < lines.length && isTableRowLine(lines[j])) j++;
         gap();
-        frag.appendChild(buildTable(lines.slice(i, j), doc || document));
+        frag.appendChild(buildTable(lines.slice(i, j), doc || document, o));
         first = false;
         i = j;
         continue;
       }
       gap();
       const kids = [];                       // inline() 的出口是数组，统一在此挂载
-      inline(lines[i], doc || document, kids);
+      inline(lines[i], doc || document, kids, o);
       for (const k of kids) frag.appendChild(k);
       first = false;
       i++;
@@ -308,5 +330,15 @@
       .trim();
   }
 
-  KH.Markdown = { toFragment, fromEditor, inline, linkUrlOk, IMG_OK };
+  /**
+   * 文档类文本（更新日志）→ DocumentFragment：与 `toFragment` **同一套语法单源**，
+   * 只额外打开两个开关（行内代码 + 不产出链接/图片）。为什么不各写一份渲染：
+   * 两处渲染（`welcome/welcome.js` 与 `options/options.js`）本来就在同类文本上各印各的 ——
+   * C7 F-6 要求收敛到单源，而不是再造第三份。
+   *   · 反引号 → `<code>`：更新日志里 1,250 处反引号是**标记**（`node tests/run.js`）
+   *   · 不产出 a/img：日志里的裸网址与 `![](…)` 只是**示例文字**，不该真跳转/真加载
+   */
+  function toDocFragment(md, doc) { return toFragment(md, doc, { code: true, plain: true }); }
+
+  KH.Markdown = { toFragment, toDocFragment, fromEditor, inline, linkUrlOk, IMG_OK };
 })();

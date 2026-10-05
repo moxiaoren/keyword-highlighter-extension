@@ -406,4 +406,82 @@ test('CSV 导入：容忍 Excel 另存时插入的 sep=, 首行', async () => {
   const r = await KH.Store.importCSV(withSep, { keywords: [], groups: [] });
   eq(r.added, 1, '带 sep= 行的文件也应能正常导入');
 });
+
+/* ============================================================================
+ * 写路径权威 = 磁盘（C7 P0 回归）
+ * ----------------------------------------------------------------------------
+ * 缺陷原状：`upsertKeyword(kw, cfg)` 写的是 `cfg || await this.load()`。
+ *   ① 页面内编辑器在「全局暂停 / 本站禁用 / 无规则」的文档里拿不到配置时传 `{}`，
+ *      而 `{}` 是真值 ⇒ 短路不触发 ⇒ 空表整表写回 ⇒ 词库只剩刚加的那一个词；
+ *   ② 独立窗口开窗时读的快照之后过期 ⇒ 别处刚加的词被吃掉（last-write-wins）。
+ * 现在：磁盘是唯一权威，`cfg` 退为「读盘失败时的兜底」，两者都拿不到就拒写。
+ * ========================================================================= */
+
+suite('storage · 写路径以磁盘为准（P0 回归：空/陈旧快照不得覆盖词库）');
+
+/** 用一份干净的内存存储跑一段，跑完原样还原（免得污染同进程的其他 spec） */
+async function withMem(seed, fn) {
+  const saved = JSON.parse(JSON.stringify(mem));
+  try {
+    for (const k of Object.keys(mem)) delete mem[k];
+    Object.assign(mem, JSON.parse(JSON.stringify(seed)));
+    await fn();
+  } finally {
+    for (const k of Object.keys(mem)) delete mem[k];
+    Object.assign(mem, saved);
+  }
+}
+
+await test('★ 空快照 `{}` 保存：既有词与分组一个都不许丢', async () => {
+  await withMem({
+    globalEnabled: true,
+    keywords: [{ id: 'a', text: '阿尔法词' }, { id: 'b', text: '贝塔词' }, { id: 'c', text: '伽马词' }],
+    groups: [{ id: 'g1', name: '分组一' }]
+  }, async () => {
+    await S.upsertKeyword({ text: '暂停期新增词' }, {});
+    const back = await S.load();
+    eq(back.keywords.length, 4, '3 个旧词 + 1 个新词');
+    deepEq(back.keywords.map(k => k.text).sort(), ['阿尔法词', '贝塔词', '伽马词', '暂停期新增词'].sort(),
+      '旧词必须原样还在');
+    eq(back.groups.length, 1, '分组不得被牵连（upsertKeyword 只写 keywords 键，分组在别的键上）');
+  });
+});
+
+await test('★ 陈旧快照保存：别处刚加的词不得被吃掉（last-write-wins）', async () => {
+  await withMem({
+    globalEnabled: true,
+    keywords: [{ id: 'a', text: '甲词' }, { id: 'b', text: '乙词' }]
+  }, async () => {
+    const stale = await S.load();                       // 开窗那一刻的快照
+    await S.patch({ keywords: stale.keywords.concat([{ id: 'x', text: '别处加的' }]) });
+    await S.upsertKeyword({ text: '窗口里加的' }, stale); // 拿陈旧快照写
+    const back = await S.load();
+    deepEq(back.keywords.map(k => k.text).sort(), ['别处加的', '窗口里加的', '甲词', '乙词'].sort());
+  });
+});
+
+await test('★ 读盘失败：有兜底快照就照它写；连快照都没有 ⇒ 抛错拒写（绝不清库）', async () => {
+  await withMem({
+    globalEnabled: true,
+    keywords: [{ id: 'a', text: '甲词' }, { id: 'b', text: '乙词' }]
+  }, async () => {
+    const realLoad = KH.Config.load;
+    const snapshot = { keywords: [{ id: 'a', text: '甲词' }, { id: 'b', text: '乙词' }] };
+    try {
+      KH.Config.load = () => Promise.reject(new Error('模拟读盘失败'));
+      await S.upsertKeyword({ text: '兜底写的' }, snapshot);
+      deepEq((mem.keywords || []).map(k => k.text).sort(), ['乙词', '兜底写的', '甲词'].sort(),
+        '读盘失败时按调用方快照写（快照里的词一个不丢）');
+      /* 连快照都没有：必须抛错，且磁盘原样不动 */
+      let threw = null;
+      try { await S.upsertKeyword({ text: '不该写进去的' }, {}); } catch (err) { threw = err; }
+      truthy(threw, '读盘失败 + 无兜底快照 ⇒ 必须抛错');
+    } finally {
+      KH.Config.load = realLoad;
+    }
+    const back = await S.load();
+    truthy(back.keywords.some(k => k.text === '甲词'), '磁盘上的旧词仍在');
+    falsy(back.keywords.some(k => k.text === '不该写进去的'), '拒写的那次不得落盘');
+  });
+});
 };

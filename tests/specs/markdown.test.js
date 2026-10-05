@@ -152,6 +152,43 @@ module.exports = async function run() {
     eq(M.fromEditor(root), 'a\n\nb');
   });
 
+  suite('markdown · toDocFragment（更新日志文档档：C7 F-6）');
+
+  await test('默认档不认识反引号（笔记里反引号就是普通字符，不能吞）', () => {
+    const f = M.toFragment('运行 `node tests/run.js` 试试', document);
+    eq(f.querySelectorAll('code').length, 0, 'notes 档不许生成 code');
+    eq(ser(f), '运行 `node tests/run.js` 试试', '反引号要原样留下');
+  });
+
+  await test('文档档：反引号 → <code>，标记不上屏', () => {
+    const f = M.toDocFragment('运行 `node tests/run.js` 试试', document);
+    truthy(f.querySelectorAll('code').length >= 1, tagsOf(f).join(','));
+    eq(ser(f), '运行 node tests/run.js 试试');
+  });
+
+  await test('文档档：加粗照旧（**粗** → <b>），且标记不上屏', () => {
+    const f = M.toDocFragment('**修复**了 `bug`', document);
+    truthy(f.querySelectorAll('b').length >= 1);
+    truthy(f.querySelectorAll('code').length >= 1);
+    eq(ser(f), '修复了 bug');
+  });
+
+  await test('★文档档不产出任何链接/图片（日志里的网址与 ![]() 只是示例文字）', () => {
+    const raw = '见 https://cdn.a.com/ 与 [说明](https://b.com/x) 与 ![图](https://c.com/i.png)';
+    const f = M.toDocFragment(raw, document);
+    eq(f.querySelectorAll('a').length, 0, '★不许有可点外链');
+    eq(f.querySelectorAll('img').length, 0, '★不许有图片');
+    const txt = ser(f);
+    truthy(txt.indexOf('https://cdn.a.com/') >= 0, '网址要以字面文本留下：' + txt);
+    truthy(txt.indexOf('![图](https://c.com/i.png)') >= 0, '图片语法要保持字面：' + txt);
+  });
+
+  await test('文档档不产 a ⇒ javascript: 链接无从复活（安全网再确认一次）', () => {
+    const f = M.toDocFragment('[x](javascript:alert(1))', document);
+    eq(f.querySelectorAll('a').length, 0);
+    truthy(ser(f).indexOf('javascript:') >= 0, '文本保留但不成为链接：' + ser(f));
+  });
+
   suite('markdown · linkUrlOk 白名单');
 
   await test('允许 http/https/mailto/tel/ftp 与相对地址', () => {

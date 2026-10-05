@@ -133,65 +133,13 @@
    卡片的全部样式（含 --kh-nc-* 变量）由 src/features/note-card.js 的 shadow <style> 单源提供。
 ------------------------------------------------------------------------------ */
 
-.kh-note-pinned { box-shadow: var(--sh-note-pinned); }
-
-@keyframes kh-fadeIn {
-  from { opacity: 0; transform: translateY(-4px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-
-.kh-note-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 9px 12px 7px;
-  border-bottom: 1px solid var(--kh-border);
-  background: linear-gradient(180deg, var(--white), var(--kh-brand-soft));
-}
-
-.kh-note-keyword {
-  font-weight: 600;
-  font-size: var(--fs-base);
-  color: var(--kh-brand-deep);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 200px;
-}
-
-.kh-note-actions { display: flex; gap: 4px; flex-shrink: 0; }
-.kh-note-actions button {
-  background: none;
-  border: none;
-  padding: 3px 5px;
-  cursor: pointer;
-  font-size: var(--fs-md);
-  opacity: .55;
-  transition: opacity var(--tr), background var(--tr);
-  border-radius: var(--r-sm);
-  line-height: 1;
-}
-.kh-note-actions button:hover { opacity: 1; background: var(--overlay-brand-12); }
-
-.kh-note-body {
-  padding: 10px 12px 12px;
-  word-break: break-word;
-  overflow-wrap: break-word;
-  white-space: pre-wrap;
-  max-height: 200px;
-  overflow-y: auto;
-  color: var(--kh-text-2);
-}
-.kh-note-body a { color: var(--kh-brand); text-decoration: none; transition: text-decoration var(--tr); }
-.kh-note-body a:hover { text-decoration: underline; }
-.kh-note-body b, .kh-note-body strong { font-weight: 600; color: var(--kh-text); }
-.kh-note-body i, .kh-note-body em { font-style: italic; }
-
-.kh-note-arrow { display: none; }
-
-.kh-note-body::-webkit-scrollbar { width: 5px; }
-.kh-note-body::-webkit-scrollbar-track { background: transparent; }
-.kh-note-body::-webkit-scrollbar-thumb { background: var(--text-5); border-radius: 3px; }
+/* ---- 旧版 light-DOM 便签卡样式已删除（批次九死代码扫描）----
+ * 上面这段警告里说的规则（`#kh-note-card` 及其一族 `.kh-note-*`）在 v2 全是死代码：
+ * 卡片整体住 ShadowRoot，文档样式穿不进去；全库已无任何 light-DOM 元素带这些类。
+ * 删除清单（证据见 _stage/wayfinder-kh-ui/dead-code-scan.md）：`.kh-note-pinned`、
+ * `@keyframes kh-fadeIn`、`.kh-note-header`、`.kh-note-keyword`、`.kh-note-actions`(+button:hover)、
+ * `.kh-note-body`(+a/b/i/滚动条)、`.kh-note-arrow`。
+ * 注意：警告本身仍然有效 —— **别在这里给 `#kh-note-card` 或 `.kh-note-*` 加规则**。 */
 
 /* ---------- 表格（备注 / 重要笔记内） ---------- */
 .kh-table { border-collapse: collapse; margin-top: 4px; width: 100%; }

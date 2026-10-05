@@ -84,13 +84,16 @@
     <section class="kh-card">
       <div class="kh-card-head">
         <h2>快捷键</h2>
-        <span class="kh-hint">在任何网页上生效</span>
+        <span class="kh-hint">在普通网页上生效（浏览器内置页 / 扩展商店 / PDF 上无效）</span>
       </div>
+      <!-- 卡面按键由 welcome.js 用 chrome.commands.getAll() 的真值重画；
+           这里的静态文字只是 API 读不到时的兜底（勿再当事实来源）。 -->
       <div class="kh-keys">
-        <span class="kh-key"><kbd>Ctrl</kbd><span class="kh-plus">+</span><kbd>Shift</kbd><span class="kh-plus">+</span><kbd>H</kbd> 暂停 / 恢复<strong>全局</strong>高亮</span>
-        <span class="kh-key"><kbd>Ctrl</kbd><span class="kh-plus">+</span><kbd>Shift</kbd><span class="kh-plus">+</span><kbd>S</kbd> 临时禁用本站</span>
-        <span class="kh-key"><kbd>Ctrl</kbd><span class="kh-plus">+</span><kbd>Shift</kbd><span class="kh-plus">+</span><kbd>O</kbd> 打开设置</span>
+        <span class="kh-key"><span class="kh-combo" data-kh-cmd="toggle-highlight"><kbd>Ctrl</kbd><span class="kh-plus">+</span><kbd>Shift</kbd><span class="kh-plus">+</span><kbd>H</kbd></span> 暂停 / 恢复<strong>全局</strong>高亮</span>
+        <span class="kh-key"><span class="kh-combo" data-kh-cmd="toggle-site"><kbd>Ctrl</kbd><span class="kh-plus">+</span><kbd>Shift</kbd><span class="kh-plus">+</span><kbd>S</kbd></span> 临时禁用本站</span>
+        <span class="kh-key"><span class="kh-combo" data-kh-cmd="open-settings"><kbd>Ctrl</kbd><span class="kh-plus">+</span><kbd>Shift</kbd><span class="kh-plus">+</span><kbd>Y</kbd></span> 打开设置</span>
       </div>
+      <p class="kh-hint">按键可在浏览器「扩展程序 → 管理扩展 → 快捷键」里自定义；显示「未分配」表示浏览器没给它分按键（例如被浏览器自带快捷键占用）。</p>
     </section>
 
     <!-- ⑤ 本版更新：默认只露前 3 条，其余折叠 -->
@@ -111,6 +114,8 @@
   </main>
 
   <script src="../src/ui/changelog.js"></script>
+  <!-- 更新日志是 Markdown：渲染必须走 src/platform/markdown.js 的**单源**（C7 F-6） -->
+  <script src="../src/platform/markdown.js"></script>
   <script src="welcome.js"></script>
 </body>
 </html>

@@ -272,11 +272,10 @@
 .kh-pop-label { font-size: var(--fs-base); color: var(--text); }
 .kh-pop-hint { font-size: var(--fs-xs); color: var(--text-4); }
 .kh-pop-foot { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--border); font-size: var(--fs-xs); color: var(--text-4); }
-/* 分组标题 / 双列 / 底部应用钮：给"批量匹配（6 个开关）"用 —— 6 行太高，分两组两列才不挡内容 */
+/* 分组标题 / 底部应用钮：给"批量匹配（6 个开关）"用 —— 6 行太高，分两组才不挡内容
+ * （`options.js:598-629` 现用 `.kh-pop-group-title` + `.kh-pop-actions` 自己排版；
+ *   曾经的 `.kh-pop-rows-2` 双列方案已无人使用，批次九死代码扫描后删除） */
 .kh-pop-group-title { margin: 8px 0 2px; font-size: var(--fs-xs); font-weight: 600; color: var(--brand-deep); }
-.kh-pop-rows-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 8px; }
-.kh-pop-rows-2 .kh-pop-row { grid-template-columns: 16px auto; }
-.kh-pop-rows-2 .kh-pop-hint { display: none; }   /* 两列时浮层放不下提示文案，靠 title 属性兜底 */
 .kh-pop-actions { display: flex; justify-content: flex-end; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
 
 /* ---------------------------------------------------------------- 匹配规则胶囊 */
@@ -335,18 +334,8 @@
   cursor: pointer;
 }
 .kh-color-swatch.is-empty { color: var(--text-4); background: var(--bg-2); }
-.kh-color-pop {
-  position: absolute;
-  top: 30px; left: 0;
-  z-index: 20;
-  display: none;
-  padding: 8px;
-  border: 1px solid var(--border-2);
-  border-radius: var(--r-md);
-  background: var(--card);
-  box-shadow: var(--sh-lg);
-}
-.kh-color-pop.is-open { display: block; }
+/* 旧版 `.kh-color-pop`（绝对定位浮层）+ `.kh-color-pop.is-open` 已删：色板浮层现在由
+ * `color-field.js:316` 的 `.kh-color-panel` 承担，全库没有任何元素再用旧类名。 */
 /* 色板：**5 列 × 4 行 = 20 色**（数据真源在 color-field.js 的 PALETTE，这里只管排布）。
  * 格子宽度随浮层自适应（`1fr` + 正方形），不再写死 24px —— 写死时 20 色只占中间一小块。 */
 .kh-color-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }

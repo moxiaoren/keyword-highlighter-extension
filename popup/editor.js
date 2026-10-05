@@ -23,7 +23,6 @@
     try { cfg = await KH.Store.load(); } catch (e) { /* 读不到就用空配置，编辑器会走 FieldMap 默认值 */ }
     KH.ui.openEditor({
       cfg: cfg,
-      mode: 'options',      // 与选项页同档：lg 三列 860px
       bare: true,           // 只留内容：窗口已经有系统标题栏，不再叠遮罩与标题行
       onClose: bye
     });

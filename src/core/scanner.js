@@ -553,9 +553,9 @@
     return !rendersSubtree(el);
   }
 
-  /** 本身是行内元素（可被冒泡穿透），且不是插件 UI —— 判据唯一实现在 `isVisualInline`。
-   *  保留这个名字只为下文语义可读；K77 起它看的是**计算后的 display**，不是标签名。 */
-  function isInlineElement(el) { return isVisualInline(el); }
+  /* 批次九死代码扫描删除了 `isInlineElement(el)`（`return isVisualInline(el)` 的别名）——
+   * 全库零调用；行内判据的唯一实现就是下面的 `isVisualInline`，它看的是**计算后的 display**，
+   * 不是标签名（K77 起）。 */
 
   /**
    * 在**同一层**内找该方向最近的可延续载体。

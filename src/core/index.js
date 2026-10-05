@@ -644,45 +644,60 @@
               + ' 格找到了核心词 —— 定位本身是成功的，若仍无命中，问题在更下游（裁决/渲染）。';
           }
         }
+        /* `verdictKind` = 与 `verdict` 同源的**无词判据**（枚举，不含任何用户词/页面文本）。
+         * 用途：popup 的「诊断·仅计数」模式要一份能安全外发的结论 —— 直接复用 `verdict` 会把用户关键词
+         * 与表格原文一起复制出去（C7 O-2）。两处同源：kind 在同一分支里赋值，不会与文案漂移。 */
         if (hits > 0) {
+          out.verdictKind = 'hit';
           out.verdict = '有命中（' + hits + ' 条），不是"一个都没命中"的问题。';
         } else if (visible.length && visible.every((x) => x.inEditable > 0 && x.inEditable >= x.inInner)) {
           /* 可见文本里确实有，但**全都在可编辑区**里 —— 扫描默认跳过可编辑内容（避免干扰用户正在输入的东西） */
+          out.verdictKind = 'editable-visible';
           out.verdict = '词在**可编辑区**（contenteditable）的可见文本里（例如「' + visible[0].word
             + '」出现 ' + visible[0].inInner + ' 次，其中可编辑区内 ' + visible[0].inEditable
             + ' 次）→ 扫描默认跳过可编辑内容，所以不命中。';
         } else if (visible.length) {
+          out.verdictKind = 'visible-miss';
           out.verdict = '⚠ 有 ' + visible.length + ' 条规则的词就在**可见文本**里（例如「' + visible[0].word + '」出现 '
             + visible[0].inInner + ' 次）却一条都没命中 → 是**匹配/定位**的问题，不是"词不在页面上"。请把这条诊断发我。'
             + (comboHint ? (' ' + comboHint) : '');
         } else if (hiddenOnly.length) {
+          out.verdictKind = 'hidden-only';
           out.verdict = '词只在**不可见**内容里（textContent 有、innerText 没有，例如「' + hiddenOnly[0].word
             + '」）→ 该区域当前是折叠/未激活状态，扫描按可见性剪枝，所以不命中；等内容显出来（class/style/hidden 变化）会自动补上高亮。';
         } else if (inShadow.length) {
+          out.verdictKind = 'shadow';
           out.verdict = '词在**开放影子根**里（例如「' + inShadow[0].word + '」）→ 当前"影子 DOM"开关='
             + (out.shadowDOMEnabled ? '开' : '**关**（关掉就扫不到，打开即可）') + '；若已开着却仍不命中，请把这条诊断发我。';
         } else if (inForm.length) {
+          out.verdictKind = 'form';
           out.verdict = '词在**表单控件的值**里（例如「' + inForm[0].word + '」）→ input / textarea / select 的 value **不是文本节点**，'
             + '文字高亮天生看不见它（这类内容目前只能靠图片识别那条路）。若要覆盖，需要换成"给控件本身加醒目标记"的渲染方式 —— 属于新能力，可另行评估。';
         } else if (inAttr.length) {
+          out.verdictKind = 'attr';
           out.verdict = '词只出现在**属性**里（title / placeholder / aria-label / alt，例如「' + inAttr[0].word
             + '」）→ 页面上并没有可见的那个词（属性通常只在悬停提示/无障碍里用），所以没有可高亮的目标。';
         } else if (inEditable.length) {
+          out.verdictKind = 'editable';
           out.verdict = '词在**可编辑区**（contenteditable）里（例如「' + inEditable[0].word
             + '」）→ 扫描默认跳过可编辑内容（避免干扰用户正在输入的东西），所以不命中。';
         } else if (sameOriginFrameWithText.length) {
+          out.verdictKind = 'same-origin-frame';
           out.verdict = '本层文档里一个规则词都没有，但**同源子框架里有文本/命中** → 正文在 iframe 里（见下面的子框架清单）。';
         } else if (out.doc.imgs > 0 || out.doc.canvases > 0) {
+          out.verdictKind = 'img-canvas';
           out.verdict = '本层文档里一个规则词都没有，而页面里有 ' + out.doc.imgs + ' 张图 / ' + out.doc.canvases
             + ' 个画布 → 内容可能是**图片或画布画出来的字**，文字命中无从下手'
             + '（图里的字要靠「抓取后续字段」的「识别图片文字」那条路 —— 普通词与组合词都能用，'
             + '前提是先把要抓的「字段」填上、并配「图片命中关键词」）。';
         } else {
+          out.verdictKind = 'none';
           out.verdict = '本层文档里一个规则词都没有，也没看到 iframe / 图片 / 画布 → 内容可能在**影子根**(开放影子根 '
             + out.doc.shadowRoots + ' 个)里，或还没渲染出来（懒加载 / 需要滚动），也可能规则词与页面用词不一致（对照下面的逐词计数）。';
         }
         out.ms = Math.round(now() - t0Self);
       } catch (err) {
+        out.verdictKind = 'error';
         out.verdict = '自查失败：' + String((err && err.message) || err);
       }
       return out;

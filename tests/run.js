@@ -72,7 +72,23 @@ const specs = [
   './specs/k79-fetch-layers.test.js',
   /* K79 复验（R4 独立·红队）：另造装置（三层/深层嵌套/th·colspan/同格两表/N 张嵌表/假表格）
    * 与另写判据，逐面拷打内层归属长尾、skipNestedTables 误伤面、旧值逐字等价、仅抓取锚点层判定 */
-  './specs/k79-r4-recheck.test.js'
+  './specs/k79-r4-recheck.test.js',
+  /* C7 F-1 回归（存储写失败不许被吞）：补上"三个入口 0 行为级测试"之外的最小诚实性网
+   * —— 平台写入口行为级 + popup/options/update-checker 源码契约；真机证据见
+   * `_stage/wayfinder-kh-ui/probe-f1-postfix.js`（注入配额失败） */
+  './specs/write-honesty.test.js',
+  /* C7 F-5 / F-6 / F-10 的回归网：
+   *   · changelog-render：更新日志（真实 172 个版本）渲染后标记不上屏、不产出链接/图片
+   *   · 其余源码契约（「稍后」必须落盘 / welcome 读失败不标记已读 / 单源渲染）在 write-honesty 里
+   * 真机证据见 `_stage/wayfinder-kh-ui/probe-f5-postfix.js` 与 `probe-f10f6-postfix.js` */
+  './specs/changelog-render.test.js',
+  /* C7「可选」清单第二批（O-4 / O-5 / O-6）：
+   *   · O-4 popup 首屏不许自相矛盾（源码契约）
+   *   · O-5 页内编辑器样式读不到必须认账（行为级：桩 fetch 失败 / 半份 / 恢复 / 缓存）
+   *   · O-6 死参数 mode 与失效的内联 sm 弹窗 CSS 清干净
+   * 真机证据见 `_stage/wayfinder-kh-ui/probe-o4o5o6-postfix.js`（独立探针，含旧代码阳性对照）；
+   * 尚未并入 `_e2e/ui.test.js` 回归组 —— 那是下轮该补的（见交付说明的未验证项）*/
+  './specs/optional-batch8.test.js'
 ];
 
 (async () => {

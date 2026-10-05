@@ -384,9 +384,11 @@
     const modal = ui.Modal.open({
       title: editing ? '编辑关键词' : '添加关键词',
       body: wrap,
-      /* 尺寸：popup 里（800×600 上限）只能用 sm；**页面模式**（popup 的「快速添加」委托给
-       * 当前网页，见 src/features/page-editor.js）与 options 一样用 lg 三列 —— 这才是"1:1"。 */
-      size: (o.mode === 'popup') ? 'sm' : 'lg',
+      /* 尺寸固定 lg（860px 三列）：三个调用点——options、独立编辑窗口 popup/editor.html、
+       * 页面委派（src/features/page-editor.js 挂 ShadowRoot）——都要"选项页那个观感"。
+       * C7 O-6：旧的 `mode === 'popup' ? 'sm' : 'lg'` 已删 —— popup 里内联编辑器那条路
+       * 早退役了（用户否掉了 348px 塞 860px 弹窗的观感），没有调用者再传 'popup'。 */
+      size: 'lg',
       /* 挂载点：页面模式传 ShadowRoot，样式与 DOM 都活在 shadow 里，不污染页面 */
       mount: o.mount || null,
       bare: !!o.bare,          // 独立窗口里只留内容（去掉遮罩与标题行）

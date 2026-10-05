@@ -402,10 +402,12 @@
 
         <div class="kh-hcard">
           <h4>⌨️ 快捷键 &amp; 更新</h4>
+          <!-- 按键由 options.js 用 chrome.commands.getAll() 的真值重画（静态文字仅兜底） -->
           <ul>
-            <li><kbd>Ctrl+Shift+H</kbd>：开启 / 关闭全局高亮</li>
-            <li><kbd>Ctrl+Shift+S</kbd>：临时禁用 / 恢复当前站（与设置页顶部「本站开关」同通道）</li>
-            <li><kbd>Ctrl+Shift+O</kbd>：打开设置页</li>
+            <li><kbd data-kh-cmd="toggle-highlight">Ctrl+Shift+H</kbd>：开启 / 关闭全局高亮</li>
+            <li><kbd data-kh-cmd="toggle-site">Ctrl+Shift+S</kbd>：临时禁用 / 恢复当前站（与设置页顶部「本站开关」同通道；在普通网页上生效，浏览器内置页 / 扩展商店 / PDF 上无效）</li>
+            <li><kbd data-kh-cmd="open-settings">Ctrl+Shift+Y</kbd>：打开设置页</li>
+            <li>「未分配」表示浏览器没给这条命令分按键（多半被浏览器自带快捷键占用）；可在浏览器「扩展程序 → 管理扩展 → 快捷键」里自定义，或只记住能用的那几条。</li>
             <li>「ℹ️ 关于 → 版本信息」里可<strong>检查更新</strong>。</li>
           </ul>
         </div>

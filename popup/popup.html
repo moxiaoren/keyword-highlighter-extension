@@ -23,11 +23,13 @@
       <div class="kh-pop-logo" aria-hidden="true">🔍</div>
       <div class="kh-pop-headtext">
         <h1 class="kh-pop-title">关键词高亮</h1>
-        <span class="kh-pop-subtitle" id="global-state">全局已开启</span>
+        <!-- C7 O-4：首屏**不声称任何状态**。旧版这里硬编码「全局已开启」而下面的开关画着未勾选，
+             前 39–43ms 自相矛盾；现在与 #site-name 的「加载中…」同档，读到真值由 renderGlobalState 落定。 -->
+        <span class="kh-pop-subtitle" id="global-state">读取中…</span>
       </div>
     </div>
-    <label class="kh-switch" title="全局高亮开关">
-      <input type="checkbox" id="chk-global">
+    <label class="kh-switch" id="lbl-global" title="全局高亮开关" aria-busy="true">
+      <input type="checkbox" id="chk-global" disabled>
       <span class="kh-slider"></span>
     </label>
   </header>
@@ -50,7 +52,7 @@
 
   <!-- ③ 快捷操作：＋ 快速添加（主按钮）/ 🚫 禁用本站（文案与图标随状态切换） -->
   <div class="kh-pop-actions">
-    <button class="kh-btn kh-btn-primary kh-pop-action" id="btn-add" type="button" title="在当前弹窗内快速添加关键词">
+    <button class="kh-btn kh-btn-primary kh-pop-action" id="btn-add" type="button" title="在网页上加词（弹窗会关闭）">
       <span aria-hidden="true">＋</span>快速添加
     </button>
     <button class="kh-btn kh-pop-action" id="btn-site" type="button" title="临时禁用/启用本站">
@@ -62,7 +64,11 @@
   <div class="kh-pop-update" id="update-banner" role="status" hidden>
     <div class="kh-pop-update-info">
       <span class="kh-pop-update-icon" aria-hidden="true">🔄</span>
-      <span class="kh-pop-update-text" id="update-text">检查更新中…</span>
+      <span class="kh-pop-update-body">
+        <span class="kh-pop-update-text" id="update-text">检查更新中…</span>
+        <!-- 更新说明的前两行（全文见 title）：清单里带着 notes 就别让它只活在 tooltip 里（C7 O-3） -->
+        <span class="kh-pop-update-notes" id="update-notes" hidden></span>
+      </span>
     </div>
     <div class="kh-pop-update-actions">
       <button class="kh-mini-btn" id="btn-update" type="button" hidden>更新</button>
@@ -70,11 +76,12 @@
     </div>
   </div>
 
-  <!-- ⑤ 更新工具行：检查更新 + 更新通道（稳定版 / 测试版） -->
+  <!-- ⑤ 更新工具行：检查更新 + 两档诊断 + 更新通道（稳定版 / 测试版） -->
   <div class="kh-pop-tools">
     <button class="kh-pop-link kh-pop-check" id="btn-check-update" type="button">🔄 检查更新</button>
-    <button type="button" class="kh-pop-link" id="btn-diag" title="只读诊断：整页重建次数 / 最近触发来源 / 仅消费次数（排查「某页卡」用）">🩺 诊断</button>
-    <button type="button" class="kh-pop-link" id="btn-channel" title="更新通道：稳定版 / 测试版">稳定版</button>
+    <button type="button" class="kh-pop-link" id="btn-diag" title="完整诊断（复制到剪贴板）：含当前页面的完整网址、iframe 地址、你的关键词与页面文本片段 —— 排查用，注意别外发">🩺 诊断</button>
+    <button type="button" class="kh-pop-link" id="btn-diag-counts" title="仅计数诊断：只复制作业计数与不含任何词/网址的结论，可直接外发">🧮 仅计数</button>
+    <button type="button" class="kh-pop-link" id="btn-channel" title="更新通道：稳定版 / 测试版（点一下准备切换，再点一下确认）">🔀 稳定版</button>
   </div>
 
   <!-- ⑥ 底部链接：帮助 / 完整设置 / 版本徽标（manifest 动态读） -->

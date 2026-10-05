@@ -124,14 +124,7 @@
   --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
 }
 
-/* ---- 管理端共用基元（options / popup / welcome 复用，不再各写一份） ---- */
-.kh-visually-hidden {
-  position: absolute !important;
-  width: 1px; height: 1px;
-  padding: 0; margin: -1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
-  border: 0;
-}
+/* ---- 批次九死代码扫描：`.kh-visually-hidden`（无障碍隐藏基元，9 行）已删除 ——
+ * 全库（含 tests / _e2e / options / popup / welcome / content）零引用，没有任何元素带这个类。
+ * 真要用时再按同样写法加回来即可。 */
 /* @inject:tokens:end */

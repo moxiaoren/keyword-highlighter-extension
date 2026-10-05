@@ -291,4 +291,119 @@ module.exports = async function run() {
       drop(box); delete document.body.innerText;
     }
   });
+
+  /* ------------------------------------------------------------------
+   * C7 O-2：无词判据 `verdictKind`
+   *
+   * `verdict` 文案里**内嵌用户关键词**（「例如「不通过」出现 3 次」），所以它绝对不能原样外发。
+   * 弹窗的「🩺 诊断」于是拆成两档：完整档照旧，**仅计数档**要一份"可以直接发给开发者"的结论 ——
+   * 内容侧因此另给一个**枚举**判据 `verdictKind`，它与 `verdict` 在**同一个 if/else 链**里赋值
+   * （同源，不会两处判据漂移）。本段逐分支锁两件事：
+   *   ① 每个分支都必须给出 kind —— 漏一个，弹窗就只能显示"内容侧没给判据"，等于该档失效；
+   *   ② kind 必须是纯 ascii 枚举，**不得含任何用户词/页面文本** —— 这是"可直接外发"的全部依据。
+   * ------------------------------------------------------------------ */
+
+  await test('★ 无词判据①：词在**可见文本**里零命中 → kind=visible-miss，且 kind 本身不含用户词', () => {
+    document.body.innerText = '审核状态 不通过';
+    const box = boxWith('审核状态 不通过');
+    document.body.appendChild(box);
+    try {
+      withRules([rulePlain('不通过')], 0, () => {
+        const sc = KH.selfCheck();
+        eq(sc.verdictKind, 'visible-miss', '关键词在可见文本里零命中 → visible-miss（verdict：' + sc.verdict + '）');
+        truthy(sc.verdict.indexOf('不通过') >= 0, 'verdict 文案里确实带着用户词 —— 所以它不能外发');
+        eq(sc.verdictKind.indexOf('不通过'), -1, 'kind 里绝不能出现用户词');
+        truthy(/^[a-z][a-z-]*$/.test(sc.verdictKind), 'kind 必须是纯 ascii 枚举，实际 ' + sc.verdictKind);
+      });
+    } finally { drop(box); delete document.body.innerText; }
+  });
+
+  await test('★ 无词判据②：其余分支逐一给出 kind（hit / hidden-only / form / attr / editable-visible / shadow / 本层无词）', () => {
+    const kind = (rules, hits) => withRules(rules, hits, () => KH.selfCheck().verdictKind);
+
+    /* 有命中：优先报"不是没命中" */
+    eq(kind([rulePlain('不通过')], 3), 'hit', '命中>0 → hit');
+
+    /* 词只在不可见内容里（textContent 有、innerText 无） */
+    document.body.innerText = '审核状态';
+    const hid = boxWith('驳回原因 材料不全', true);
+    document.body.appendChild(hid);
+    try { eq(kind([rulePlain('驳回原因')], 0), 'hidden-only', '词只在不可见内容里 → hidden-only'); }
+    finally { drop(hid); }
+
+    /* 词只在表单控件的 value 里（input/textarea/select 的 value 不是文本节点） */
+    const fbox = boxWith('');
+    const inp = H.el('input');
+    inp.value = '不通过';
+    fbox.appendChild(inp);
+    document.body.appendChild(fbox);
+    try { eq(kind([rulePlain('不通过')], 0), 'form', '词在 input.value 里 → form'); }
+    finally { drop(fbox); }
+
+    /* 词只在属性里（title / placeholder / aria-label / alt） */
+    const abox = boxWith('');
+    const titled = H.el('span');
+    titled.setAttribute('title', '不通过');
+    abox.appendChild(titled);
+    document.body.appendChild(abox);
+    try { eq(kind([rulePlain('不通过')], 0), 'attr', '词只在 title 属性里 → attr'); }
+    finally { drop(abox); }
+
+    /* 可见文本里确实有，但**全都在可编辑区**里（扫描默认跳过可编辑内容） */
+    document.body.innerText = '审核状态 不通过';
+    const ebox = boxWith('不通过');
+    ebox.isContentEditable = true;
+    document.body.appendChild(ebox);
+    try { eq(kind([rulePlain('不通过')], 0), 'editable-visible', '可见文本里的词全在可编辑区 → editable-visible'); }
+    finally { drop(ebox); }
+
+    /* 词只在开放影子根里 */
+    document.body.innerText = '审核状态';
+    const host = H.el('div');
+    host.shadowRoot = { textContent: '驳回原因' };
+    document.body.appendChild(host);
+    try { eq(kind([rulePlain('驳回原因')], 0), 'shadow', '词只在开放影子根里 → shadow'); }
+    finally { drop(host); delete document.body.innerText; }
+
+    /* 本层文档里一个规则词都没有：后续可能指向 iframe / 图片画布，也可能确实没有 —— 三种都属"本层无词" */
+    const k = kind([rulePlain('这个词页面上绝对没有')], 0);
+    truthy(['none', 'img-canvas', 'same-origin-frame'].indexOf(k) >= 0,
+      '本层没有该词时 kind 应落在 none / img-canvas / same-origin-frame 之一，实际 ' + k);
+  });
+
+  await test('★ 无词判据③：自查自身失败 → kind=error（弹窗要说"内容侧自查失败"，而不是"没给判据"）', () => {
+    const d = Object.getOwnPropertyDescriptor(KH, 'rules');
+    Object.defineProperty(KH, 'rules', { get() { throw new Error('boom'); }, configurable: true });
+    try {
+      const sc = KH.selfCheck();
+      eq(sc.verdictKind, 'error', '自查抛异常 → error');
+      truthy(sc.verdict.indexOf('自查失败') >= 0, 'verdict 要如实说失败，实际：' + sc.verdict);
+    } finally { if (d) Object.defineProperty(KH, 'rules', d); }
+  });
+
+  await test('★ 判据单一真源：内容侧产出的 kind 取值集合 = 弹窗 KIND_TEXT 的键（少一个，弹窗只会说"没给判据"）', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const root = path.resolve(__dirname, '..', '..');
+    const coreSrc = fs.readFileSync(path.join(root, 'src', 'core', 'index.js'), 'utf8');
+    const popupSrc = fs.readFileSync(path.join(root, 'popup', 'popup.js'), 'utf8');
+
+    const emitted = new Set();
+    let m;
+    const reEmit = /out\.verdictKind\s*=\s*'([a-z][a-z-]*)'/g;
+    while ((m = reEmit.exec(coreSrc))) emitted.add(m[1]);
+
+    const at = popupSrc.indexOf('const KIND_TEXT = {');
+    truthy(at >= 0, '弹窗里应有 KIND_TEXT（无词结论表）');
+    const block = popupSrc.slice(at, popupSrc.indexOf('};', at));
+    const mapped = new Set();
+    const reMap = /'([a-z][a-z-]*)'\s*:/g;
+    while ((m = reMap.exec(block))) mapped.add(m[1]);
+
+    const missing = Array.from(emitted).filter((x) => !mapped.has(x));
+    const extra = Array.from(mapped).filter((x) => !emitted.has(x));
+    eq(missing.join(','), '', '内容侧产出、弹窗却没有文案的判据：' + missing.join(','));
+    eq(extra.join(','), '', '弹窗有文案、内容侧永远不会产出的判据：' + extra.join(','));
+    eq(emitted.size, 12, '判据应有 12 个取值，实际：' + Array.from(emitted).join('/'));
+  });
 };

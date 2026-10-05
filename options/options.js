@@ -52,13 +52,18 @@
     return 'plain';
   }
 
-  /** 写 storage → 重新载入 → 重绘（唯一入口，避免各处各写一遍） */
+  /** 写 storage → 重新载入 → 重绘（唯一入口，避免各处各写一遍）
+   *  写失败**必须说出口**：配额顶满 / 存储被禁用时旧写法让异常逃逸成 unhandled rejection
+   *  （用户零提示），而界面已经按"写成功"的假设重渲染（C7 F-1）。 */
   async function mutate(fn) {
     updating = true;
     try {
       await fn();
       cfg = await KH.Store.load();
       renderAll();
+    } catch (err) {
+      D.toast('保存失败：' + ((err && err.message) || err), 'error');
+      try { cfg = await KH.Store.load(); renderAll(); } catch (e2) { /* 读也失败：保持现状 */ }
     } finally {
       updating = false;
     }
@@ -417,7 +422,7 @@
   }
 
   function openKeyword(kw) {
-    ui.openEditor({ keyword: kw, cfg, mode: 'options', onSaved: reload });
+    ui.openEditor({ keyword: kw, cfg, onSaved: reload });
   }
 
   async function removeKeywords(ids, label) {
@@ -429,7 +434,7 @@
     D.toast('已删除', 'ok');
   }
 
-  $('btn-kw-add').addEventListener('click', () => ui.openEditor({ cfg, mode: 'options', onSaved: reload }));
+  $('btn-kw-add').addEventListener('click', () => ui.openEditor({ cfg, onSaved: reload }));
   $('kw-search').addEventListener('input', () => renderKeywordTable());
   $('kw-filter-group').addEventListener('change', () => renderKeywordTable());
   $('kw-filter-status').addEventListener('change', () => renderKeywordTable());
@@ -1094,6 +1099,25 @@
 
   /* ==================================================================== ⑧ 更新日志（单源） */
 
+  /**
+   * 更新日志条目 → `<li>`：走 Markdown **单源**渲染（`toDocFragment` = 认 `` `行内代码` ``、
+   * **不产出任何链接/图片**）。旧写法 `h('li', { text: String(t) })` 把 `**加粗**` 与
+   * `` `命令` `` 的标记原样印给用户（全库 1,514 处 `**`、1,250 处反引号；C7 F-6），
+   * 而"welcome 与 options 各写各的口径"正是这条缺陷的根因 —— 现在两处共用同一个入口。
+   */
+  function changelogLi(text) {
+    const md = KH.Markdown;
+    const li = document.createElement('li');
+    let frag = null;
+    if (md && typeof md.toDocFragment === 'function') {
+      try { frag = md.toDocFragment(String(text), document); } catch (err) {
+        console.warn('[KH] options：更新日志条目渲染失败，退回纯文本 ——', err && err.message);
+      }
+    }
+    if (frag) li.appendChild(frag); else li.textContent = String(text);
+    return li;
+  }
+
   function renderChangelog() {
     const box = $('changelog-list');
     clear(box);
@@ -1108,7 +1132,7 @@
       const lid = 'chg-' + ver.replace(/[^\w.]/g, '_');
       box.appendChild(h('div', { class: 'kh-log-item', id: lid }, [
         h('div', { class: 'kh-log-ver', text: ver }),
-        h('ul', { class: 'kh-log-list' }, items.map(t => h('li', { text: String(t) })))
+        h('ul', { class: 'kh-log-list' }, items.map(changelogLi))
       ]));
       if (toc) {
         toc.appendChild(h('a', {
@@ -1448,7 +1472,30 @@
     });
   }
 
-  reload().then(() => { renderChangelog(); renderTabs(); }).catch(err => {
+  /* 帮助卡里的快捷键 = `chrome.commands.getAll()` 的**真值**，不抄 manifest 的愿望。
+   * 真机教训：open-settings 原本建议 `Ctrl+Shift+O`，被 Chrome 自带「书签管理器」占用后
+   * 建议键被**静默丢弃**（getAll 回 shortcut:""），写死的卡面教用户按一个不存在的键。 */
+  const KH_MAC = /Mac|iPhone|iPad/.test(navigator.platform || '') || /Mac OS X/.test(navigator.userAgent || '');
+  const KH_MAC_LABEL = { Command: '⌘', Ctrl: '⌘', MacCtrl: '⌃', Alt: '⌥' };
+  async function renderShortcuts() {
+    let cmds = null;
+    try { cmds = await chrome.commands.getAll(); } catch (e) { return; }   // 读不到 → 保留静态兜底
+    if (!Array.isArray(cmds)) return;
+    for (const el of document.querySelectorAll('kbd[data-kh-cmd]')) {
+      const hit = cmds.find((c) => c && c.name === el.dataset.khCmd);
+      const parts = String((hit && hit.shortcut) || '').split('+').map(s => s.trim()).filter(Boolean);
+      if (!parts.length) {
+        el.textContent = '未分配';
+        el.classList.add('is-unset');
+        el.title = '浏览器没给这条命令分按键（多半被浏览器自带快捷键占用），可在扩展快捷键页自行设置';
+        continue;
+      }
+      const shown = KH_MAC ? parts.map(p => KH_MAC_LABEL[p] || p) : parts;
+      el.textContent = shown.join('+');
+    }
+  }
+
+  reload().then(() => { renderChangelog(); renderTabs(); renderShortcuts(); }).catch(err => {
     console.error('[KH] 设置页初始化失败', err);
     D.toast('初始化失败：' + (err && err.message), 'error');
   });
