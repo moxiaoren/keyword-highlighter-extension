@@ -24,6 +24,9 @@
 
 **语言包不进交付包**（两个包合计约 3.7MB）：运行时按需下载到浏览器本地缓存，或由用户手动导入，
 下载地址与 sha256 见 `lang-manifest.json`；开发/回归用 `node scripts/fetch-lang.js` 取到 `release/lang/`。
+那份清单里的 `bytes`/`sha256` 是**可对账**的（2026-10-05 抓到过"sha256 对、bytes 错"的一栏）：
+`node scripts/check-lang.js`（本地）或 `--live`（站点）逐个核对；高精度档的两个包没有官方可下载源，
+要本地副本用 `node scripts/check-lang.js --fetch`。
 
 ## 许可
 

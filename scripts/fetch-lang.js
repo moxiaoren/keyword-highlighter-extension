@@ -7,6 +7,10 @@
  * 用法：node scripts/fetch-lang.js [--force]
  *   · 默认已存在且 sha256 对得上就跳过；
  *   · 校验用 vendor/tesseract/lang-manifest.json（体积/sha256 的唯一真源，与扩展运行时同一份）。
+ *
+ * 只管 **fast 档**（`packs`）：高精度档（`variants.best`）的两个包不在任何官方可下载源里
+ * （清单 `_source` 是 4.0.0_fast，上游 4.0.0_best 那份与站点上的并不是同一套文件），
+ * 要本地副本用 `node scripts/check-lang.js --fetch` 从站点按 sha256 校验着取回来。
  */
 'use strict';
 

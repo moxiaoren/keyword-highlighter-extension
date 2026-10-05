@@ -88,7 +88,10 @@ const specs = [
    *   · O-6 死参数 mode 与失效的内联 sm 弹窗 CSS 清干净
    * 真机证据见 `_stage/wayfinder-kh-ui/probe-o4o5o6-postfix.js`（独立探针，含旧代码阳性对照）；
    * 尚未并入 `_e2e/ui.test.js` 回归组 —— 那是下轮该补的（见交付说明的未验证项）*/
-  './specs/optional-batch8.test.js'
+  './specs/optional-batch8.test.js',
+  /* OCR 语言包清单：结构合法 + 本地 release/lang/ 里已有的包与清单逐字节一致
+   * —— 2026-10-05 抓到过一次「sha256 对、bytes 错」的清单谎（详见该 spec 头部） */
+  './specs/lang-manifest.test.js'
 ];
 
 (async () => {

@@ -256,16 +256,33 @@ async function api(method, url, body) {
     const lm = JSON.parse(fs.readFileSync(LANG_MANIFEST, 'utf8'));
     /* 两档都要发（K67）：fast 走 `packs`，高精度走 `variants.*.packs` —— 少发一档，
      * 用户在设置页点了「下载高精度语言包」就会 404。 */
-    const allPacks = Object.assign({}, lm.packs || {});
-    for (const v of Object.keys(lm.variants || {})) Object.assign(allPacks, (lm.variants[v] && lm.variants[v].packs) || {});
+    const allPacks = {};
+    for (const lang of Object.keys(lm.packs || {})) allPacks[lang] = { tier: 'fast', pack: lm.packs[lang] };
+    for (const v of Object.keys(lm.variants || {})) {
+      const ps = (lm.variants[v] && lm.variants[v].packs) || {};
+      for (const lang of Object.keys(ps)) allPacks[lang] = { tier: v, pack: ps[lang] };
+    }
     for (const lang of Object.keys(allPacks)) {
-      const pack = allPacks[lang];
+      const pack = allPacks[lang].pack;
       const abs = path.join(LANG_DIR, pack.file);
-      if (!fs.existsSync(abs)) die('语言包不全：缺少 release/lang/' + pack.file + '（先跑 node scripts/fetch-lang.js）');
+      if (!fs.existsSync(abs)) {
+        /* 取包的路子按档位不同：fast 有官方源，高精度档只能从站点取回（见清单 _variants_note）。 */
+        die('语言包不全：缺少 release/lang/' + pack.file + '（'
+          + (allPacks[lang].tier === 'fast'
+            ? '先跑 node scripts/fetch-lang.js'
+            : '高精度档没有官方可下载源，用 node scripts/check-lang.js --fetch 从站点校验着取回')
+          + '）');
+      }
       const buf = fs.readFileSync(abs);
       const sha = crypto.createHash('sha256').update(buf).digest('hex').toUpperCase();
       if (sha !== String(pack.sha256).toUpperCase()) {
         die('语言包 ' + pack.file + ' 与清单里的 sha256 不一致（清单 ' + pack.sha256 + '，实际 ' + sha + '）—— 先跑 node scripts/fetch-lang.js --force');
+      }
+      /* 体积也卡：清单自称"体积与 sha256 的唯一真源"，而 sha256 对得上、bytes 记错这种事
+       * 2026-10-05 真发生过（站点两份高精度包差了 1.8KB/3KB，谁都没发现）。 */
+      if (Number(pack.bytes) && buf.length !== Number(pack.bytes)) {
+        die('语言包 ' + pack.file + ' 的字节数与清单不一致（清单 ' + pack.bytes + '，实际 ' + buf.length
+          + '）—— 清单是体积/sha256 唯一真源，先跑 node scripts/check-lang.js --live 看站点实际值');
       }
       entries.push({ local: abs, remote: 'lang/' + pack.file });
     }

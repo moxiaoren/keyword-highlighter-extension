@@ -174,7 +174,10 @@ node scripts/publish-gh.js --beta-only --skip-lang
 2. 稳定版另看 `…/update.xml`、测试版看 `…/update-beta.xml`：`version` 应是新版本、
    `codebase` 指向线上那个带版本号的 crx（测试版的是 `keyword-highlighter-beta-v<ver>.crx`）；
 3. 稳定版 crx 真的能装：下载 `codebase` 那个文件，拖进浏览器，扩展详情页版本号应变成新版本；
-4. GitHub Pages 有 CDN 缓存，最长可能几十分钟才生效，属正常。
+4. GitHub Pages 有 CDN 缓存，最长可能几十分钟才生效，属正常；
+5. OCR 语言包在站点上与清单对得上：`node scripts/check-lang.js --live`
+   （逐包核对 `bytes` + `sha256`；清单是"体积/sha256 唯一真源"，2026-10-05 就是靠这道对账
+   发现两份高精度包的 `bytes` 记错了 —— 用户会在设置页看到错的下载体积）。
 
 ## 安全约定（已由代码兜底）
 

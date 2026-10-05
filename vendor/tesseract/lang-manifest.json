@@ -5,19 +5,20 @@
   "_why_fast": "4.0.0_fast 是 LSTM 小模型（chi_sim 1.65MB / eng 1.89MB），配 tesseract-core-*-lstm 恰好够用；标准包 19MB/10MB，对一次只识别表格里几张图来说太重。",
   "cacheKey": "kh-ocr-lang-v1",
   "_variants_note": "识别档位（K67）：fast=4.0.0_fast 小模型（默认）；best=标准 LSTM 大模型（更准更慢）。两档缓存键各自独立（best 用带 _std 后缀的语言码），可共存、切换不用重下。",
+  "_bytes_note": "bytes 是**设置页显示用**的声明体积，运行时校验的是 sha256（见 offscreen/ocr.js 的 downloadLang）。2026-10-05 对账发现：两份 best 包的 sha256 与站点实际文件逐字节一致，但 bytes 一栏记错了（chi_sim_std 少记 1801 B、eng_std 多记 3081 B，且上游 4.0.0_best 那份也不是这两个文件）⇒ 已按站点实测改正。对账脚本：node scripts/check-lang.js --live，发版时 publish-gh.js 也会同时卡 bytes 与 sha256。",
   "variants": {
     "best": {
       "label": "高精度（标准 LSTM，更准、单张更慢）",
       "packs": {
         "chi_sim": {
           "file": "chi_sim_std.traineddata.gz",
-          "bytes": 20306975,
+          "bytes": 20308776,
           "sha256": "73B59BC6BD3EB199C755927F28D8C1C0DEA0E02E69F75B2073CF501B5120B42D",
           "label": "简体中文（高精度）"
         },
         "eng": {
           "file": "eng_std.traineddata.gz",
-          "bytes": 10800705,
+          "bytes": 10797624,
           "sha256": "9B5FFB4124B5874B0436D1971C20750F8113CFE57E64E23DCC542CBA78CADA0E",
           "label": "英文（高精度）"
         }
