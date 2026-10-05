@@ -391,16 +391,38 @@ async function fetchPublished() {
     if (!WITH_ZIP) log('    latest.json 的 zip / sha256 已置空（本次不发 zip）');
   }
 
+  /* crx 的落盘位置与站点位置（2026-10-05 干跑修正）：
+   *   站点路径 = CRX_DIR + CRX_NAME（稳定版 CRX_DIR='release/'，沿用线上 codebase 约定）
+   *   本地路径 = 'release/' + 站点路径 ⇒ 实际在 release/release/…（见第⑤步的 fs.renameSync）
+   * 以前这里一律硬拼 'release/' + CRX_NAME ⇒ 文档里的源路径少一层（照着敲 file not found）、
+   * 目标目录也少一层（crx 应进 gh-pages/release/，不是根目录）。 */
+  const crxSite = CRX_DIR + CRX_NAME;                       // 例：release/keyword-highlighter-extension-2.0.1.3.crx
+  const crxLocal = 'release/' + crxSite;                    // 例：release/release/keyword-highlighter-extension-2.0.1.3.crx
+  const crxDestDir = CRX_DIR.replace(/\/+$/, '');           // 例：release；无子目录时为空串
   const shipped = ['latest.json', 'update.xml', CRX_NAME];
   if (WITH_ZIP) shipped.push(ZIP_NAME);
-  const cpList = shipped.map((f) => 'release/' + f).join(' ');
+  const flatSrc = ['release/latest.json', 'release/update.xml'];
+  if (WITH_ZIP) flatSrc.push('release/' + ZIP_NAME);
+  const gitCmds = [
+    'git clone -b gh-pages https://github.com/moxiaoren/keyword-highlighter-extension.git gh-pages'
+  ];
+  if (crxDestDir) gitCmds.push('mkdir -p gh-pages/' + crxDestDir + '        # crx 在子目录里，先建目录');
+  gitCmds.push('cp ' + flatSrc.join(' ') + ' gh-pages/');
+  if (crxSite !== CRX_NAME || crxDestDir) {
+    gitCmds.push('cp ' + crxLocal + ' gh-pages/' + (crxDestDir ? crxDestDir + '/' : ''));
+  } else {
+    gitCmds.push('cp ' + crxLocal + ' gh-pages/');
+  }
+  gitCmds.push('cd gh-pages && git add -A && git commit -m "release v' + VERSION + '" && git push');
   const publish = [
-    '# 上传步骤（把 release/ 里的文件放到 gh-pages 根目录）',
+    '# 上传步骤（把 release/ 里的文件放到 gh-pages 的**对应位置**）',
+    '',
+    '**首选**：`node scripts/publish-gh.js`（自动递归枚举 release/、保持目录层级、还带清单预检）。下面是手工兜底。',
     '',
     '需要上传的文件（' + shipped.length + ' 个' + (WITH_ZIP ? '，含 zip' : '，**不含 zip**（本次只发 crx）') + '）：',
     '  - latest.json                      → ' + BASE + '/latest.json',
     '  - update.xml                       → ' + UPDATE_XML_URL + '（manifest.update_url 指向它）',
-    '  - ' + CRX_NAME,
+    '  - ' + crxSite + (crxSite === CRX_NAME ? '' : '   （本地文件：' + crxLocal + '）'),
     WITH_ZIP ? '  - ' + ZIP_NAME + '   ← `--with-zip` 额外产出（"解压加载"用）'
       : '  （zip 默认不发；确实要 zip：node scripts/release.js --with-zip）',
     '',
@@ -410,15 +432,14 @@ async function fetchPublished() {
     '',
     '### A. 有 git（推荐）',
     '```',
-    'git clone -b gh-pages https://github.com/moxiaoren/keyword-highlighter-extension.git gh-pages',
-    'cp ' + cpList + ' gh-pages/',
-    'cd gh-pages && git add -A && git commit -m "release v' + VERSION + '" && git push',
+    ...gitCmds,
     '```',
     '',
-    '### B. 无 git：在 GitHub 网页上把 gh-pages 分支的这 ' + shipped.length + ' 个文件替换掉即可',
+    '### B. 无 git：在 GitHub 网页上把这 ' + shipped.length + ' 个文件替换掉即可'
+      + (crxDestDir ? '（crx 在 ' + crxDestDir + '/ 目录下，别放到根目录）' : ''),
     '',
     '## 上传后自检（30 秒）',
-    '1. 浏览器打开 ' + UPDATE_XML_URL + ' → 应看到 version="' + VERSION + '" 与 codebase 指向 ' + CRX_NAME,
+    '1. 浏览器打开 ' + UPDATE_XML_URL + ' → 应看到 version="' + VERSION + '" 与 codebase 指向 ' + crxSite,
     '2. 打开 ' + BASE + '/latest.json → 它的 crx 字段应与上一步的 codebase 一致'
       + (WITH_ZIP ? '，sha256 应与本地 release/latest.json 一致'
         : '（本次没发 zip，zip / sha256 字段为空是预期的）'),

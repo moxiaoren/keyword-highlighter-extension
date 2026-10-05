@@ -11,6 +11,9 @@ release/*.pem
 release/*.key
 release/*.crx
 release/*.zip
+# 稳定版 crx 落在子目录里（线上 codebase 是 …/release/…，见 release.js 第⑤步的 CRX_DIR）
+release/**/*.crx
+release/**/*.zip
 release/lang/
 release/kh-autoupdate.bat
 # 说明：release/latest.json、latest-beta.json、update.xml、update-beta.xml
