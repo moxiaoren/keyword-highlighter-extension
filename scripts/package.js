@@ -290,12 +290,16 @@ function main() {
       const list = sandbox.window.CHANGELOG || [];
       const hit = list.filter((e) => String(e.version).replace(/^v/i, '') === VERSION)[0];
       if (hit && (hit.items || []).length) {
-        /* 取**最新**的三条：changelog 的数组里新条目插在末尾那条【保持不回退】之前，
-         * 所以要先剔掉"保持不回退"、再取最后三条并反转（最新的排最前）。 */
+        /* 取**前三条**（changelog 的书写约定 = 最重要的写在最前，`【自检】` 那种收尾条放最后）。
+         * 2026-10-05 修：旧实现是 `slice(-3).reverse()`（假设"新条目追加在末尾"），结果 2.0.1.4
+         * 的头条「入口取消线上更新」进了 changelog 却没进站点 notes，顶上来的反而是末尾的【自检】数字。
+         * 两处过滤：
+         *   · `【保持不回退】` 是给维护者看的"没退化"备注，不是更新说明；
+         *   · `【自检】` 的回归数字由 `regressionLine()` 按**本次打包实测**注入，手写的那条重复且会挤掉真变更。 */
         const real = hit.items
           .map((s) => String(s).replace(/`/g, ''))
-          .filter((s) => s.indexOf('【保持不回退】') !== 0);
-        notes = real.slice(-3).reverse().join('\n\n');
+          .filter((s) => s.indexOf('【保持不回退】') !== 0 && s.indexOf('【自检】') !== 0);
+        notes = real.slice(0, 3).join('\n\n');
         if (notes.length > 900) notes = notes.slice(0, 900) + '…';
         /* 【回归】数字不写死：用本次打包**实测**到的门禁输出拼出来；一项都没有就整条不加。
          * 前置拼接（回归放最前）＝既有排版；截断在**前**、注入在**后**，实测数字不会被截掉。 */
