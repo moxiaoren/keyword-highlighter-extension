@@ -138,7 +138,7 @@ console.log('');
 if (arg === 'beta') {
   console.log('接下来（测试版一轮）：');
   console.log('  1) 在 src/ui/changelog.js 给 ' + next + ' 加更新说明（不加也能发，说明会退化成 "v' + next + ' 更新"）');
-  console.log('  2) node scripts/release-beta.js        # 出包（想给人手动装 crx 加 --with-crx）');
+  console.log('  2) node scripts/release-beta.js        # 出包（自动签测试版 crx；测试版=独立扩展，有自己的 ID）');
   console.log('  3) node scripts/publish-gh.js          # 推 gh-pages');
   console.log('');
   console.log('多轮测试就重复 1~3，版本依次是 ' + fmt([p2[0], p2[1], p2[2], p2[3] + 1]) + '、' + fmt([p2[0], p2[1], p2[2], p2[3] + 2]) + ' …（都 < ' + fmt([p2[0], p2[1], p2[2] + 1]) + ' ✓）');
@@ -150,5 +150,5 @@ if (arg === 'beta') {
   console.log('');
   console.log('发完后：稳定版与测试版都是 ' + next + ' ✓；下一轮测试版从 ' + next + '.1 起 ✓');
 } else {
-  console.log('接下来：node scripts/release.js --channel beta  或  node scripts/release.js --promote');
+  console.log('接下来：node scripts/release-beta.js  或  node scripts/release.js --promote');
 }

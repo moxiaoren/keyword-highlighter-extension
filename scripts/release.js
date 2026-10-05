@@ -15,7 +15,10 @@
  * 用法：
  *   node scripts/release.js              跑门禁 → 打包 → 生成清单 → 打 crx → 汇总
  *   node scripts/release.js --skip-gates 跳过门禁（只重打产物时用）
- *   node scripts/release.js --no-crx     跳过 crx（本机没有 Chrome/Edge 时）
+ *   node scripts/release.js --no-crx     跳过 crx（只发 zip 通道）
+ *   （测试版不走本脚本）                  node scripts/release-beta.js
+ *                                        测试版是**另一个扩展**：自己的密钥、自己的更新源、
+ *                                        包内 manifest 三处都不同 ⇒ 整套产物只能由它出
  *
  * 关键设计：
  *   · **appid 必须与线上一致**：先生成 update.xml 时优先复用**线上已发布的那份**里的 appid，
@@ -51,12 +54,22 @@ const argv = process.argv.slice(2);
 const SKIP_GATES = argv.indexOf('--skip-gates') >= 0;
 const NO_CRX = argv.indexOf('--no-crx') >= 0;
 const FORCE_NEW_KEY = argv.indexOf('--force-new-key') >= 0;
-const WITH_CRX = argv.indexOf('--with-crx') >= 0;   // 测试版也打 crx（仅供手动安装，不发布为更新通道）
-const CH_I = argv.indexOf('--channel');
-const CHANNEL = (CH_I >= 0 ? argv[CH_I + 1] : (argv.indexOf('--promote') >= 0 ? 'stable' : 'stable'));
 const PROMOTE = argv.indexOf('--promote') >= 0;
-const IS_BETA = CHANNEL === 'beta';
-if (CHANNEL !== 'beta' && CHANNEL !== 'stable') { console.error('✗ --channel 只能是 beta 或 stable'); process.exit(1); }
+/* 【本脚本只发稳定版】测试版是**另一个扩展**：自己的密钥 `release/key-beta.pem`（⇒ 扩展 ID
+ * `ohjcaheamdifcldcofpblbejlpmgnhjc`）、自己的 `update-beta.xml` 自动更新通道、包内 manifest 三处都不同。
+ * 它的整套产物只能由 `scripts/release-beta.js` 出 —— 本脚本里那套旧 beta 分支已于 2026-10-05 **删除**，
+ * 并且 `--channel beta` 在这里**显式报错**：绝不静默当成"发稳定版"（静默最危险 —— 会把测试版用户
+ * 留在没有更新源的旧 crx 上）。 */
+const CH_I = argv.indexOf('--channel');
+if (CH_I >= 0 && argv[CH_I + 1] !== 'stable') {
+  const got = argv[CH_I + 1];
+  console.error('\n✗ --channel 只接受 stable（收到：' + (got === undefined ? '(空)' : got) + '）');
+  if (got === 'beta') {
+    console.error('  测试版请跑：node scripts/release-beta.js [--skip-gates] [--skip-e2e]\n' +
+      '  它是测试版的唯一实现，产物含 latest-beta.json 与 update-beta.xml（测试版用户靠后者自动升级）');
+  }
+  process.exit(1);
+}
 const KEY_ARG = (() => { const i = argv.indexOf('--key'); return i >= 0 ? argv[i + 1] : null; })();
 
 let zipPathRef = '';
@@ -106,27 +119,21 @@ async function fetchPublished() {
   } catch (e) { return null; }
 }
 
-/** zip-only 发布：只产出 latest.json + zip；**不生成 update.xml**。
+/** zip-only 发布（`--no-crx`）：只产出 latest.json + zip；**不生成 update.xml**。
  *  原因：update.xml 会把 crx 通道指向某个 crx，而我们这次没有能力产出与线上 appid 匹配的 crx；
  *  发布一份"指向不存在/旧版本 crx"的 update.xml 会让 Chrome 反复拉取失败 ✗。
- *  让 crx 通道保持线上现状，是这里唯一安全的选择。 */
+ *  让 crx 通道保持线上现状，是这里唯一安全的选择。
+ *  注：测试版**不走这里** —— `--channel beta` 在参数段直接报错，测试版唯一实现是
+ *  `scripts/release-beta.js`（它自己会改包内 manifest 并写 latest-beta.json / update-beta.xml）。 */
 function finishZipOnly() {
   fs.mkdirSync(REL, { recursive: true });
-  const MAN = IS_BETA ? 'latest-beta.json' : 'latest.json';
   fs.copyFileSync(zipPathRef, path.join(REL, ZIP_NAME));
-  fs.copyFileSync(latestPathRef, path.join(REL, MAN));
-  if (IS_BETA) {
-    /* 测试通道：清单里把版本标成"下一个版本"，并说明晋级方式 */
-    const j = JSON.parse(fs.readFileSync(latestPathRef, 'utf8'));
-    j.channel = 'beta';
-    delete j.crx;          // 测试清单不带 crx：crx 通道只有稳定版一份，别把测试用户引过去
-    fs.writeFileSync(path.join(REL, MAN), JSON.stringify(j, null, 2) + '\n', 'utf8');
-  }
+  fs.copyFileSync(latestPathRef, path.join(REL, 'latest.json'));
   fs.writeFileSync(path.join(REL, 'PUBLISH.md'), [
-    IS_BETA ? '# 上传步骤（**测试通道**：只发 zip，不影响稳定用户）' : '# 上传步骤（**zip 通道** 发布，不含 crx）',
+    '# 上传步骤（**zip 通道** 发布，不含 crx）',
     '',
     '需要上传的文件（2 个）：',
-    '  - ' + MAN + '  → ' + BASE + '/' + MAN,
+    '  - latest.json  → ' + BASE + '/latest.json',
     '  - ' + ZIP_NAME,
     '',
     '**不要**动线上已有的 update.xml：本次没有产出与线上 appid 匹配的 crx，',
@@ -142,14 +149,11 @@ function finishZipOnly() {
     '2. 打开扩展 popup → 「检查更新」应提示有新版本（zip 通道生效）',
     '3. 点更新 → 会先校验 SHA256 再打开下载地址'
   ].join('\n'), 'utf8');
-  log('    release/' + MAN);
+  log('    release/latest.json');
   log('    release/' + ZIP_NAME);
   log('    release/PUBLISH.md');
-  log('\n发版产物就绪（' + (IS_BETA ? '测试通道' : 'zip 通道') + '）：' + ZIP_NAME + '、' + MAN + '、PUBLISH.md');
-  if (IS_BETA) {
-    log('测试通道只更新 latest-beta.json —— 稳定用户不受影响 ✓');
-    log('测好之后晋级到稳定通道：node scripts/release.js --promote   （同一份构建，改发到 latest.json）');
-  } else if (PROMOTE) {
+  log('\n发版产物就绪（zip 通道）：' + ZIP_NAME + '、latest.json、PUBLISH.md');
+  if (PROMOTE) {
     log('晋级发布：本次已把当前构建发到**稳定通道**（latest.json）—— 测试版用户与稳定用户都会收到。');
   } else {
     log('crx 通道未改动（要更新它需要当初发布用的 key.pem，届时用：node scripts/release.js --key <路径>）。');
@@ -157,7 +161,7 @@ function finishZipOnly() {
 }
 
 (async () => {
-  log('关键词高亮 · 发版流水线   版本 ' + VERSION + '   通道 ' + (IS_BETA ? '测试版（beta）' : '稳定版（stable）'));
+  log('关键词高亮 · 发版流水线   版本 ' + VERSION + '   通道 稳定版（stable）');
   log('仓库根：' + ROOT);
 
   /* ---------------------------------------------------------------- ① 门禁 */
@@ -238,47 +242,47 @@ function finishZipOnly() {
    * 浏览器**永远不会降级**扩展：update.xml/latest.json 里的版本号比本机已装的小，它就直接忽略 ✗。
    * 所以"测试版 2.2.4 → 稳定版 2.0.0"这种回退是危险的：所有装过测试版的人**永远收不到稳定版** ✗。
    * 这里在发稳定通道前对比线上测试通道的版本，比它低就**中止**（要强行发必须显式加 --force-version）。 */
-  if (!IS_BETA) {
-    try {
-      const mirrors = [
-        'https://moxiaoren.github.io/keyword-highlighter-extension/latest-beta.json',
-        'https://cdn.jsdelivr.net/gh/moxiaoren/keyword-highlighter-extension@gh-pages/latest-beta.json'
-      ];
-      let betaVer = null;
-      for (const u of mirrors) {
-        try {
-          const c = new AbortController(); const tm = setTimeout(() => c.abort(), 10000);
-          const r = await fetch(u + '?t=' + Date.now(), { cache: 'no-store', signal: c.signal });
-          clearTimeout(tm);
-          if (r.ok) { const j = await r.json(); if (j && j.version) { betaVer = String(j.version); break; } }
-        } catch (e) { /* 试下一个镜像 */ }
-      }
-      if (!betaVer) {
-        /* fail-closed（2026-10-04 起）：取不到线上测试版版本 ⇒ **中止发布**。
-         * 以前这里只打一行"跳过回退检查"就继续发 —— 那等于把上面那条铁律交给运气：
-         * 镜像抖动 / 网络不通时，一个**比线上测试版更低**的稳定版会照常发出去，
-         * 而它一旦发出去就收不回（浏览器不降级 ⇒ 装过测试版的人再也收不到稳定版）✗。 */
-        die('版本回退检查无法完成：取不到线上测试通道版本（latest-beta.json 两个镜像都没通）✗\n' +
-            '  浏览器不会降级扩展 ⇒ 无法确认本次稳定版 ' + VERSION + ' 是否高于线上测试版，宁可不发 ✗\n' +
-            '  正确做法：等 Pages / jsDelivr 恢复后重跑（CI 里通常只是镜像抖动，重跑一次即可）✓\n' +
-            '  确认线上测试通道为空、或本次只面向全新安装渠道时，加 --force-version 显式放行。');
-      }
-      const cmp = require(path.join(ROOT, 'background', 'update-checker.js')).compareVersions;
-      const d = cmp(VERSION, betaVer);
-      log('    线上测试通道版本 = ' + betaVer + '，本次稳定版 = ' + VERSION + ' → ' + (d < 0 ? '更低 ✗' : '不低 ✓'));
-      if (d < 0 && argv.indexOf('--force-version') < 0) {
-        die('版本号回退被拒绝：稳定版 ' + VERSION + ' 低于线上测试版 ' + betaVer + ' ✗\n' +
-            '  浏览器不会降级扩展 → 装过测试版 ' + betaVer + ' 的人**永远收不到**这个稳定版 ✗\n' +
-            '  正确做法：稳定版用**比它更高的三段号**（测试版 ' + betaVer + ' ⇒ 晋级后应为更高的 x.y.z，' +
-            '例如 node scripts/bump-version.js release）✓\n' +
-            '  确实要强行发（只面向全新安装）时加 --force-version。');
-      }
-    } catch (e) { log('    （回退检查异常，已跳过：' + (e && e.message) + '）'); }
-  }
+  /* 这里在发稳定通道前对比线上测试通道的版本，比它低就**中止**（要强行发必须显式加 --force-version）。
+   * 本脚本只发稳定版 ⇒ 这道闸**恒执行**（测试版那条路由 scripts/release-beta.js 负责）。 */
+  try {
+    const mirrors = [
+      'https://moxiaoren.github.io/keyword-highlighter-extension/latest-beta.json',
+      'https://cdn.jsdelivr.net/gh/moxiaoren/keyword-highlighter-extension@gh-pages/latest-beta.json'
+    ];
+    let betaVer = null;
+    for (const u of mirrors) {
+      try {
+        const c = new AbortController(); const tm = setTimeout(() => c.abort(), 10000);
+        const r = await fetch(u + '?t=' + Date.now(), { cache: 'no-store', signal: c.signal });
+        clearTimeout(tm);
+        if (r.ok) { const j = await r.json(); if (j && j.version) { betaVer = String(j.version); break; } }
+      } catch (e) { /* 试下一个镜像 */ }
+    }
+    if (!betaVer) {
+      /* fail-closed（2026-10-04 起）：取不到线上测试版版本 ⇒ **中止发布**。
+       * 以前这里只打一行"跳过回退检查"就继续发 —— 那等于把上面那条铁律交给运气：
+       * 镜像抖动 / 网络不通时，一个**比线上测试版更低**的稳定版会照常发出去，
+       * 而它一旦发出去就收不回（浏览器不降级 ⇒ 装过测试版的人再也收不到稳定版）✗。 */
+      die('版本回退检查无法完成：取不到线上测试通道版本（latest-beta.json 两个镜像都没通）✗\n' +
+          '  浏览器不会降级扩展 ⇒ 无法确认本次稳定版 ' + VERSION + ' 是否高于线上测试版，宁可不发 ✗\n' +
+          '  正确做法：等 Pages / jsDelivr 恢复后重跑（CI 里通常只是镜像抖动，重跑一次即可）✓\n' +
+          '  确认线上测试通道为空、或本次只面向全新安装渠道时，加 --force-version 显式放行。');
+    }
+    const cmp = require(path.join(ROOT, 'background', 'update-checker.js')).compareVersions;
+    const d = cmp(VERSION, betaVer);
+    log('    线上测试通道版本 = ' + betaVer + '，本次稳定版 = ' + VERSION + ' → ' + (d < 0 ? '更低 ✗' : '不低 ✓'));
+    if (d < 0 && argv.indexOf('--force-version') < 0) {
+      die('版本号回退被拒绝：稳定版 ' + VERSION + ' 低于线上测试版 ' + betaVer + ' ✗\n' +
+          '  浏览器不会降级扩展 → 装过测试版 ' + betaVer + ' 的人**永远收不到**这个稳定版 ✗\n' +
+          '  正确做法：稳定版用**比它更高的三段号**（测试版 ' + betaVer + ' ⇒ 晋级后应为更高的 x.y.z，' +
+          '例如 node scripts/bump-version.js release）✓\n' +
+          '  确实要强行发（只面向全新安装）时加 --force-version。');
+    }
+  } catch (e) { log('    （回退检查异常，已跳过：' + (e && e.message) + '）'); }
 
   /* ------------------------------------------------------------ ③ 密钥 */
-  if (NO_CRX || (IS_BETA && !WITH_CRX)) {
-    step(3, '签名密钥：已跳过（' + (IS_BETA ? '测试通道只发 zip' : '--no-crx') + '）');
+  if (NO_CRX) {
+    step(3, '签名密钥：已跳过（--no-crx）');
     return finishZipOnly();
   }
   step(3, '准备签名密钥（决定扩展 ID，一旦生成不可更换）');
@@ -367,37 +371,6 @@ function finishZipOnly() {
       log('    ⚠️ 打 crx 失败：' + (err && err.message) + '（zip 通道仍可用）');
     }
     fs.rmSync(stageDir, { recursive: true, force: true });
-  }
-
-  /* 测试通道**不生成 update.xml**（那是稳定版专用；改了会把测试版推给所有用户） */
-  if (IS_BETA) {
-    step(5, '汇总（测试通道：不生成 update.xml）');
-    const betaCrx = path.join(REL, CRX_NAME);
-    if (crxOk && fs.existsSync(betaCrx)) {
-      const named = path.join(REL, 'keyword-highlighter-v' + VERSION + '-beta.crx');
-      fs.renameSync(betaCrx, named);
-      log('    release/' + path.basename(named) + '  ← 仅供**手动安装**测试');
-    }
-    fs.copyFileSync(zipPath, path.join(REL, ZIP_NAME));
-    fs.copyFileSync(latestPath, path.join(REL, 'latest-beta.json'));
-    const j = JSON.parse(fs.readFileSync(latestPath, 'utf8'));
-    j.channel = 'beta';
-    delete j.crx;
-    fs.writeFileSync(path.join(REL, 'latest-beta.json'), JSON.stringify(j, null, 2) + '\n', 'utf8');
-    fs.writeFileSync(path.join(REL, 'PUBLISH.md'), [
-      '# 上传步骤（**测试通道**）',
-      '',
-      '上传（2 个）：latest-beta.json、' + ZIP_NAME,
-      '不要上传：' + (crxOk ? 'keyword-highlighter-v' + VERSION + '-beta.crx（那是给人手动装的）、' : '') + 'key.pem',
-      '**不要动 update.xml** —— 它是稳定版专用，改了会把测试版推给所有用户。',
-      '',
-      '发布后自检：打开 ' + BASE + '/latest-beta.json，sha256 应与本地一致；',
-      '然后把扩展的更新通道切到「测试版」，点检查更新应看到 v' + VERSION + '。'
-    ].join('\n'), 'utf8');
-    log('    release/latest-beta.json');
-    log('    release/' + ZIP_NAME);
-    log('\n测试通道产物就绪。稳定通道与 update.xml 均未改动 ✓');
-    return;
   }
 
   /* -------------------------------------------------- ⑤ update.xml + 汇总 */

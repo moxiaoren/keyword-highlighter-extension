@@ -44,9 +44,9 @@
 
 | 参数 | 含义 |
 |---|---|
-| `--channel beta` | ⚠️ **遗留分支，不要用它发测试版**：它只发 zip、资产用稳定名（`keyword-highlighter-v<ver>.zip`）、**不生成 `update-beta.xml`** ⇒ 测试版用户收不到自动升级。测试版请走 `scripts/release-beta.js`（CI 也没走这条路，见 `release.yml:117-120`） |
+| `--channel beta` | **已移除（2026-10-05）**：本脚本只发稳定版，传它**直接报错**并指路（绝不静默当成"发稳定版"）。测试版唯一实现是 `scripts/release-beta.js`（CI 也走它，见 `release.yml:126`） |
 | `--channel stable` / `--promote` | 发稳定通道（写 `latest.json` + `update.xml`） |
-| `--with-crx` | 只对遗留的 `--channel beta` 有意义；正式版流程不需要（稳定通道总是打 crx） |
+| `--with-crx` | 已无意义（旧参数，静默忽略）：稳定通道总是打 crx；测试版 crx 由 `release-beta.js` 出 |
 | `--key <pem>` | 指定签名密钥（默认 `release/key.pem`；**必须与线上同一把**） |
 | `--no-crx` | 完全跳过 crx（只发 zip 通道） |
 | `--skip-gates` | 跳过门禁（仅重打产物时用） |
