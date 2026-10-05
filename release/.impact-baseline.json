@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-05T11:01:15.832Z",
-  "version": "2.0.1.4",
+  "generatedAt": "2026-10-05T11:06:20.553Z",
+  "version": "2.0.1.5",
   "fileCount": 139,
   "files": {
     ".gitattributes": "76ad96d3c458f45ebb6bde60aabbab98ed9725225953670d978e1af6ed86f4a2",
@@ -21,7 +21,7 @@
     "icons/icon32.png": "f1f182da889bb0e9735abe53525e01896e2c658ba1a7154ff692d8c44efb99c8",
     "icons/icon48-paused.png": "c8ebc2362502a2edc139c3686fc82e94d07d7ccc55097f140411b7f6b85ee6c0",
     "icons/icon48.png": "f81d0aa4477cf056e4278b8881559014ace4d88d2d164187447b1316914b5c5d",
-    "manifest.json": "e483db35e0ae71199aaaeb2769398d63e48c43328feab6bc5d7008497c3bfa2d",
+    "manifest.json": "4ea32ffe76ac208c3fbf12c8c463e96564d8812b5341f18a8836b557301f0208",
     "offscreen/ocr.html": "237bcba64b3b69e3df984f6ebe18649635304c46d15d5bd26de22aff88bd1474",
     "offscreen/ocr.js": "c4681ce316fa219525c86421e6c880085f18d6a875a91d5367abd9ceed028e01",
     "options/options.css": "556d86c4064b33bed7ed4abd80871b2e1590372819f99677fd70fb00c8ca9535",
@@ -75,7 +75,7 @@
     "src/features/site-rules.js": "c60131154c89d53623f23adc499d11672034c47fe75dc031b1eea9c90bc70b85",
     "src/platform/markdown.js": "5775be8c8c2f5abc142a0a1056b78ddd6be9c0f5eacef25ea1d925ad013e2c25",
     "src/platform/storage.js": "be55b93c9b999d48504e911bd924b19f44d663768f5b666890eafc4ea8b8bc0f",
-    "src/ui/changelog.js": "997db8a5046b6928004757e9891227a5f98a0560d3fd9a4c6d8bda43bfa24acd",
+    "src/ui/changelog.js": "1c3cc506d0168d24031a481df69610724cb67f514618de68fd8348306383559f",
     "src/ui/components/chip.js": "75cd8cfd412fdeebec5ab0f90a3a579566a2f81e7b0aa7141d1bbf994d41626d",
     "src/ui/components/color-field.js": "1030937c5e2160200cf8fd7f2f6e172e213035b1202562dad0f90df3efaa3b22",
     "src/ui/components/components.css": "74ffcdcc8a87921c9b6777679a1e4bfb55409791e9034bf6d3d6bc14f2c3463b",
