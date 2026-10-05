@@ -75,7 +75,6 @@
   ],
   "permissions": [
     "storage",
-    "alarms",
     "offscreen"
   ],
   "host_permissions": [

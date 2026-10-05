@@ -162,11 +162,12 @@ function checkChannel(label, expectId, xmlName, manifestName, xmlMayLag) {
     if (mf.version === xml.version) ok(manifestName + ' version=' + mf.version + '（与 ' + xmlName + ' 一致）');
     else if (xmlMayLag) {
       /* 测试通道的 zip 清单（latest-beta.json）与 crx 更新源（update-beta.xml）是两套独立机制：
-       * 前者每次发测试版必写；后者只在**真的签出 crx** 时才写（`--no-crx` 的 zip-only 旧路径根本不写），
+       * 前者每次发测试版必写；后者只在**真的签出 crx** 时才写（历史遗留的「zip-only 发版」路径
+       * 已于 2026-10-05 随 `--no-crx` 删除，现在两条通道都必出 crx），
        * 所以「crx 源暂时落后于 zip 清单」是设计内的常态，只提示不判失败。
        * （round 25 起两条都由 CI 生成——`release-beta.js`——不再是手工维护的死文件；旧的
        *  "crx 更新源手工维护"说法已作废。）这一条通道真正要硬的是 appid（上一行）与产物可达性（--live）。 */
-      info('⚠️ ' + xmlName + ' version=' + xml.version + ' 落后于 ' + manifestName + ' 的 ' + mf.version + '（测试通道 crx 更新源手工维护，允许落后；zip 清单先走一步）');
+      info('⚠️ ' + xmlName + ' version=' + xml.version + ' 落后于 ' + manifestName + ' 的 ' + mf.version + '（测试通道 crx 更新源允许落后于 zip 清单，只提示不判失败）');
     } else bad(label + ' ' + xmlName + ' 的 version=' + xml.version + ' 与 ' + manifestName + ' 的 ' + mf.version + ' 不一致');
 
     const zb = base(xml.codebase);

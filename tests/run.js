@@ -9,7 +9,7 @@ const specs = [
   './specs/fetch.test.js',
   './specs/important-note.test.js',
   './specs/markdown.test.js',
-  './specs/update.test.js',
+  './specs/version.test.js',
   /* K40 三条用户实测缺陷的不变式（必须有，否则后续更新会把它们改回去） */
   './specs/combo-cells.test.js',
   './specs/hit-geometry.test.js',
@@ -74,7 +74,7 @@ const specs = [
    * 与另写判据，逐面拷打内层归属长尾、skipNestedTables 误伤面、旧值逐字等价、仅抓取锚点层判定 */
   './specs/k79-r4-recheck.test.js',
   /* C7 F-1 回归（存储写失败不许被吞）：补上"三个入口 0 行为级测试"之外的最小诚实性网
-   * —— 平台写入口行为级 + popup/options/update-checker 源码契约；真机证据见
+   * —— 平台写入口行为级 + popup/options 源码契约；真机证据见
    * `_stage/wayfinder-kh-ui/probe-f1-postfix.js`（注入配额失败） */
   './specs/write-honesty.test.js',
   /* C7 F-5 / F-6 / F-10 的回归网：

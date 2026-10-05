@@ -241,7 +241,7 @@
 | `src/features/stats.js` | **整个文件删除**（命中计数 / `contentKey` 去重表 / 分日桶 / 300ms 防抖落盘 / 登记 `KH.features.register('stats')` / `KH.Stats` 门面） |
 | `manifest.json` `content_scripts[0].js` | 移除 `"src/features/stats.js"` 一项（数组顺序与逗号保持合法，**版本号未动**） |
 | `content/content.js` | 内容侧对统计的响应路径：删掉「只有 `stats` 变化时不重建」那段特判（统计不再落盘 ⇒ 这段是死代码）；**其余 storage 键的热更新行为一字未改** |
-| `background/service-worker.js` | 统计桶的第二执行点：`pruneStats()`（30 天滚动清理）、`CLEANUP_STATS_INTERVAL_MIN`、`cleanupStats` alarm 的注册（onInstalled / onStartup / 冷启动）与 alarm 分支，全部删除（`checkUpdate` 与 `alarms` 权限照旧） |
+| `background/service-worker.js` | 统计桶的第二执行点：`pruneStats()`（30 天滚动清理）、`CLEANUP_STATS_INTERVAL_MIN`、`cleanupStats` alarm 的注册（onInstalled / onStartup / 冷启动）与 alarm 分支，全部删除（`checkUpdate` 与 `alarms` 权限照旧 —— **⚠️ `alarms` 权限已于 2026-10-05 随"插件入口取消线上更新"移除**，见 K38 节末的续记） |
 | `src/core/config.js` | `defaults.stats = { keywordHits, siteHits }` 默认配置块整块删除（该键只服务统计） |
 | `popup/popup.html` | 「今日命中」卡、`#today-hits`、`.kh-pop-stats-row`、`.kh-pop-stats-foot` 与「清零」按钮 `#btn-reset-stats` |
 | `popup/popup.js` | `renderStats()`、`todayKey()`、清零按钮监听、`changes.stats` 监听、文件头「统计口径」说明；关键词数改为**直接数配置**（`cfg.keywords.length`），storage 变更时按 `changes.keywords` 重算 |
@@ -255,6 +255,9 @@
 - 其它交互控件**id 与文案一律未动**：`#chk-global` / `#site-name` / `#site-badge` / `#btn-add`（`＋ 快速添加`）/
   `#btn-site`（`禁用本站` / `启用本站`）/ `#btn-check-update`（`🔄 检查更新`）/ `#btn-channel` /
   `#btn-help`（`❓ 帮助`）/ `#btn-options`（`⚙️ 完整设置`）/ `#version` / 更新条三件套。
+  （**2026-10-05 更新**：插件入口取消线上更新 ⇒ `#btn-check-update` 与更新条三件套
+  `#update-banner` / `#update-text` / `#update-notes` / `#btn-update` / `#btn-update-dismiss` 已删除，
+  工具行只剩 `#btn-diag` / `#btn-diag-counts` / `#btn-channel`；上面这行是当时的历史记录。）
 - 高亮与渲染路径**一行未动**（纯视觉、绝不改 DOM 这条铁律不受影响；本次改动不碰命中/渲染逻辑）。
 
 #### popup 新版布局
@@ -895,6 +898,12 @@
   版本比较（含预发布）、gupdate XML 解析（不误取 XML 声明的 `1.0`）、`latest.json` 解析（sha256 归一、非法 JSON 不抛）、
   双通道合并取高版本、单通道可用、双通道皆挂、镜像回退、缓存 TTL 与 force、SHA256 一致/不一致/无哈希。
   单测 163 → **173**；meta-check / e2e 77 全绿。
+- **⚠️ 2026-10-05 后续（本节的整套机制已退场，读的时候别当现状）**：用户裁决「后续都改成 crx，zip 只在明确要时才给；
+  插件入口的线上更新也取消，只保留更新通道切换」⇒ `background/update-checker.js` 整模块删除、
+  popup 的检查更新 / 提示条 / 下载 / 稍后全部移除、`chrome.alarms` 6h 轮询与 `↑` 徽标删除、`kh:update:*` 消息删除；
+  版本比较搬到 `scripts/lib/version.js`（单测由 `tests/specs/update.test.js` 变为 `tests/specs/version.test.js`）；
+  更新完全交给浏览器读 `update.xml` / `update-beta.xml` 的 crx 自动更新通道。
+  上表里「zip 通道并行探测 / 镜像回退 / `khUpdateInfo` 缓存 TTL / 手动检查更新传 `force`」都**不再存在**。
 ### K37 · 冷门场景二：布局改写 / 虚拟滚动 / 跨 frame / 高亮被页面清掉 —— **无需修复，但两条值得记住**
 - **流程教训（同一个错犯三次）**：往 changelog 追加条目时，我三次把数组元素的**引号/逗号**写坏
   （两次多一个 `'`、一次少一个 `,`），每次都被 meta-check 的语法红线当场拦住 ✗。

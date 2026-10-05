@@ -1,7 +1,7 @@
 'use strict';
 /* scripts/regression-areas.js — 回归范围的**单一真源**：区域（area）表 + 三级升级规则
  * ----------------------------------------------------------------------------
- * 用户口径（2026-09）：现在只有"方面"一级（hit / visual / interact / fetch / site / ui / data / update），
+ * 用户口径（2026-09）：现在只有"方面"一级（hit / visual / interact / fetch / site / ui / data），
  * 太粗 —— 只改了「关键词添加弹窗」也要把整个 UI 层跑一遍。要再细一层：
  *
  *   区域级（最省） → 方面级（退一级） → 全量（实在判断不了）
@@ -56,7 +56,7 @@ const AREAS = [
     implies: ['editor', 'groupsites', 'options', 'popup'] },
   { key: 'color', label: '色板 / 取色器 / 颜色胶囊', nameRe: /色板|取色/, fileRe: /^src\/ui\/components\/color-field\.js$/, implies: ['editor', 'groupsites', 'options'] },
   { key: 'groupsites', label: '分组与站点规则', nameRe: /分组|站点规则|11\. options/, fileRe: /^src\/features\/site-rules\.js$/ },
-  { key: 'popup', label: '弹窗（工具栏 / 站点卡 / 更新条 / 快速添加）', nameRe: /popup|12\. popup/, fileRe: /^popup\// },
+  { key: 'popup', label: '弹窗（工具栏 / 站点卡 / 通道开关 / 快速添加）', nameRe: /popup|12\. popup/, fileRe: /^popup\// },
   { key: 'panel', label: '重要笔记面板 / 备注卡片 / 灯箱', nameRe: /面板|笔记|卡片|灯箱|7c/, fileRe: /^src\/features\/(important-note|note-card)\.js$/ },
   { key: 'imgocr', label: '图片文字识别', nameRe: /图片文字识别|图片识别/, fileRe: /^src\/features\/img-ocr\.js$|^offscreen\// },
   { key: 'relevance', label: '变更相关性（不重建 / 仅消费）', nameRe: /变更相关性/, fileRe: /^src\/core\/relevance\.js$/ },

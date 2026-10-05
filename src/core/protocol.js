@@ -9,7 +9,10 @@
  *
  *   { type: 'kh:<域>:<动作>', ...payload }
  *
- * 域固定四类：state（读状态）、global（全局开关）、site（站点开关）、update（更新通道）。
+ * 域固定几类：state（读状态）、global（全局开关）、site（站点开关）、
+ * rebuild / debug / editor / ocr。
+ * 【2026-10-05 变更】原先的 update 域（kh:update:check / kh:update:info）随"插件入口取消线上更新"
+ * 一并删除 —— 插件不再检查更新、不再弹更新提示条；更新通道只是本机设置（src/core/channel.js）。
  * 新增消息 = 在 MSG 里登记一个常量，**禁止在业务代码里硬编码字符串**。
  * ========================================================================= */
 
@@ -35,10 +38,6 @@
     /* ---- site ---- */
     SITE_TOGGLE: 'kh:site:toggle',          // 临时禁用/启用当前站点
     SITE_CHANGED: 'kh:site:changed',        // 广播
-
-    /* ---- update ---- */
-    UPDATE_CHECK: 'kh:update:check',        // 手动检查更新
-    UPDATE_INFO: 'kh:update:info',          // 读取已缓存的更新信息
 
     /* ---- debug（只读诊断；联调 / 真浏览器回归用） ---- */
     DEBUG_HITS: 'kh:debug:hits',            // 返回当前命中注册表快照（不改任何行为）

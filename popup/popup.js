@@ -29,7 +29,6 @@
 
   let cfg = null;
   let hostname = '';
-  let currentUpdateInfo = null;
 
   /* ---------------- 通用小工具 ---------------- */
 
@@ -123,7 +122,7 @@
   }
 
   /** 向 background 发消息。**background 不可用时返回 null**；**超时未答复返回 `{timedOut:true}`**
-   *  ——两者必须区分：不可用要降级，超时要说"超时"（`checkUpdate` 的 toast 就靠这个区分）。
+   *  ——两者必须区分：不可用要降级，超时要说"超时"（诊断/状态这类交互的 toast 就靠这个区分）。
    *  超时不许再等：`render()` 里连着三次 IPC，只要一次永不返回，整个弹窗就永久半渲染（C7 F-4）。 */
   async function askBackground(message) {
     try {
@@ -419,150 +418,11 @@
     setSiteBlockedView(true, '已禁用', '该页面被网址规则禁用，请到设置页调整规则');
   }
 
-  /* ---------------- 更新通道（复用 background 既有机制） ---------------- */
-
-  /* ---- 「稍后」必须落盘（C7 F-5） ----
-   * 旧写法点「稍后」只 `renderUpdateInfo(null)`：弹窗一关一开、或 background 每 6h 广播
-   * 同一条 `khUpdateInfo`，提示条立刻又冒出来 —— 用户的"稍后"被当成没说过。
-   * 键里存**被点掉的那一版**（不是布尔）：换了新版本自然重新提示，不用额外清理。 */
-  const DISMISS_KEY = 'khUpdateDismissed';
-  let dismissedVersion = '';
-
-  async function loadDismissed() {
-    try {
-      const got = await read([DISMISS_KEY]);
-      dismissedVersion = (got && got[DISMISS_KEY]) || '';
-    } catch (err) {
-      dismissedVersion = '';
-      console.warn('[KH] popup：读取「稍后」记录失败 ——', err && err.message);
-    }
-  }
-
-  /** 这条更新信息是否正是用户点过「稍后」的那一版 */
-  function isDismissed(info) {
-    if (!info || !dismissedVersion) return false;
-    return String(info.latestVersion || '') === String(dismissedVersion);
-  }
-
-  /** 用户主动点「检查更新 / 切换通道」= 明确要看，先清掉「稍后」记录（否则回执说有新版却不显示） */
-  async function clearDismissed() {
-    if (!dismissedVersion) return;
-    const prev = dismissedVersion;
-    if (await write({ [DISMISS_KEY]: '' })) dismissedVersion = '';
-    else console.warn('[KH] popup：清除「稍后」记录失败（v' + prev + '），本次仍按已忽略处理');
-  }
-
-  /** 更新包下载地址：清单里可能只有 `zipUrl`、可能只有 `crxUrl`。
-   *  **渲染（按钮能不能点）与下载处理器必须走这一个判据** —— 分成两份表达式就一定会漂移：
-   *  旧代码渲染只看 `zipUrl`、处理器用 `zipUrl || crxUrl`，于是"只有 crx"的版本按钮变灰且零解释（C7 F-8）。 */
-  function updateDownloadUrl(info) {
-    if (!info) return '';
-    return info.zipUrl || info.crxUrl || '';
-  }
-
-  /**
-   * 状态机：null=隐藏；'checking'=检查中；有 hasUpdate 才展示提示条。
-   * 已是最新版本/检查失败都不占位（结果由「🔄 检查更新」链接的 toast 反馈）。
-   */
-  /** 更新说明上屏的前两行（全文仍留在 title）：清单里带了 notes 就别让它只活在 tooltip 里（C7 O-3） */
-  function updateNotesBrief(notes) {
-    const ls = String(notes || '').split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
-    return ls.slice(0, 2).join('\n');
-  }
-
-  /** 说明行：空则隐藏（不留空行），有则显示 */
-  function setUpdateNotes(text) {
-    const el = $('update-notes');
-    if (!el) return;
-    const t = String(text || '');
-    el.textContent = t;
-    el.hidden = !t;
-  }
-
-  function renderUpdateInfo(info) {
-    const banner = $('update-banner');
-    const btnUpdate = $('btn-update');
-    const btnDismiss = $('btn-update-dismiss');
-    currentUpdateInfo = info || null;
-
-    if (!info) {
-      banner.hidden = true;
-      $('update-text').textContent = '检查更新中…';   // 复位为初始加载态
-      setUpdateNotes('');
-      return;
-    }
-
-    if (info.hasUpdate) {
-      banner.hidden = false;
-      $('update-text').textContent = '发现新版本 v' + (info.latestVersion || '?') +
-        '（当前 v' + (info.currentVersion || '') + '）';
-      /* 通道来源与更新说明放进 tooltip：提示条很窄，但排查"为什么说没更新"时很有用 */
-      $('update-text').title = '更新源：' + (info.channel || '未知') +
-        (info.source ? '（' + info.source + '）' : '') +
-        (info.publishedAt ? '\n发布时间：' + info.publishedAt : '') +
-        (info.notes ? '\n\n' + info.notes : '');
-      setUpdateNotes(updateNotesBrief(info.notes));
-      btnUpdate.hidden = false;
-      btnDismiss.hidden = false;
-      /* 判据与下载处理器同源（都走 `updateDownloadUrl`）：旧写法只看 `zipUrl`，
-       * 于是「清单里只有 crx」的版本会让按钮变灰、且**零解释**（点不了也不知道为什么，C7 F-8）。 */
-      const dlUrl = updateDownloadUrl(info);
-      btnUpdate.disabled = !dlUrl;
-      btnUpdate.title = dlUrl
-        ? ('下载 v' + (info.latestVersion || '') + ' 更新包' + (info.sha256 ? '（先校验 SHA256）' : ''))
-        : '该版本没有可用的下载地址（清单里 zip / crx 都缺），请稍后再检查更新';
-      return;
-    }
-
-    // 无新版本 → 收起提示条，同时清掉按钮，避免"看不见却能被点到"
-    banner.hidden = true;
-    btnUpdate.hidden = true;
-    btnDismiss.hidden = true;
-    setUpdateNotes('');
-  }
-
-  function showChecking(text) {
-    const banner = $('update-banner');
-    banner.hidden = false;
-    $('update-text').textContent = text || '检查更新中…';
-    $('btn-update').hidden = true;
-    $('btn-update-dismiss').hidden = true;
-    setUpdateNotes('');
-  }
-
-  /**
-   * @param {boolean} interactive 用户主动点击：失败/无更新也要给 toast 反馈
-   */
-  async function checkUpdate(interactive) {
-    if (interactive) await clearDismissed();
-    showChecking('检查更新中…');
-
-    /* 【用户手动点击 = force】interactive 时把 force 带给后台：不这么做的话「检查更新」只读最多 6h 的
-     * 缓存，用户拿到的是旧判决（点十次都是「已是最新」，而远端其实已经发了新版）。 */
-    /* 超时兜底**只有一处来源**：`askBackground` 自己 15s 必落地（超时回 `{timedOut:true}`）。
-     * 旧写法在这里又并了一个同样 15s 的 `settled` 计时器 —— 两个计时器同时到点时，谁先赢决定的是
-     * 提示文案（"检查更新超时" vs "更新通道不可用"），等于把结论交给运气（C7 F-4）。 */
-    const res = await askBackground({ type: MSG.UPDATE_CHECK, force: !!interactive });
-
-    if (!res || res.timedOut) {
-      renderUpdateInfo(null);
-      if (interactive) toast(res && res.timedOut ? '检查更新超时，请稍后重试' : '更新通道不可用', 'error');
-      return;
-    }
-
-    const info = res.info || null;
-    // latestVersion 为 null 表示远端不可达（update-checker 的失败约定）
-    if (!info || (info.latestVersion === null && !info.hasUpdate)) {
-      renderUpdateInfo(null);
-      /* 把后台的**具体失败原因**带出来：原来只有一句笼统的“无法连接更新源”，
-       * 分不清是“后台报错”还是“三个镜像都拉不到”（用户实测就卡在这一点）。 */
-      if (interactive) toast('检查更新失败' + (res && res.error ? '：' + String(res.error).slice(0, 80) : '（无法连接更新源）'), 'error');
-      return;
-    }
-
-    renderUpdateInfo(info);
-    if (interactive && !info.hasUpdate) toast('已是最新版本 v' + (info.currentVersion || ''), 'ok');
-  }
+  /* ---------------- 更新通道切换 ----------------
+   * 2026-10-05 用户口径：插件入口取消"线上更新" —— 检查更新 / 更新提示条 / 下载更新包 / 「稍后」，
+   * 连同 `background/update-checker.js`、6h 轮询与 ↑ 徽标**全部删除**，只留「稳定版 ←→ 测试版」这一个开关。
+   * 通道读写落在 `src/core/channel.js`（只碰 chrome.storage.local 一个键，不发任何网络请求）；
+   * 所以这里不再有 currentUpdateInfo / DISMISS_KEY / checkUpdate，也不再加载任何 update-checker。 */
 
   /* ---------------- 总刷新 ---------------- */
 
@@ -595,14 +455,6 @@
     const eff = await contentSiteEnabled(tab);
     await renderSite(eff, globalOn);
     renderKeywordCount();
-
-    // 有缓存的更新信息（background 6h 轮询写的 khUpdateInfo）就直接展示；
-    // 先读回「用户点过稍后的那一版」（F-5）——同一版不再打扰，换新版才重新提示
-    await loadDismissed();
-    const cached = await askBackground({ type: MSG.UPDATE_INFO });
-    const cachedInfo = cached && cached.info;
-    if (cachedInfo && cachedInfo.hasUpdate && !isDismissed(cachedInfo)) renderUpdateInfo(cachedInfo);
-    else renderUpdateInfo(null);
   }
 
   /* ---------------- 事件绑定 ---------------- */
@@ -707,37 +559,10 @@
   /* 供真浏览器回归直接驱动（等价于点按钮，但可以指定目标标签页） */
   KH.popupOpenQuickAdd = openQuickAdd;
 
-  // 更新提示条 / 检查更新链接（统一走 background 的 kh:update:* 通道）
-  $('btn-check-update').addEventListener('click', () => checkUpdate(true));
-
-  /* 下载更新包：**先校验 SHA256 再打开下载地址**。
-   * 升级点：旧逻辑直接打开 URL —— 用户拿到的包对不对无从判断；
-   * 现在清单里带 sha256 时先下载校验，不一致直接拒绝（下载链路被劫持 / 文件损坏都能挡住）。
-   * 兼容：清单没给 sha256 时跳过校验但照常可用；只有 crx 地址时走 crx 通道。 */
-  $('btn-update').addEventListener('click', async () => {
-    const info = currentUpdateInfo;
-    if (!info) { toast('没有可用的更新信息', 'error'); return; }
-    const url = updateDownloadUrl(info);
-    if (!url) { toast('未找到更新包下载地址（清单里 zip / crx 都缺）', 'error'); return; }
-    if (info.sha256 && typeof UpdateChecker !== 'undefined') {
-      toast('正在校验更新包（SHA256）…');
-      const v = await UpdateChecker.downloadAndVerify(url, info.sha256);
-      if (!v.ok) { toast(v.reason || '更新包校验失败', 'error'); return; }
-      toast('校验通过，正在打开下载地址', 'ok');
-    }
-    try {
-      await chrome.tabs.create({ url: url });
-    } catch (e) {
-      toast('打开下载地址失败', 'error');
-      return;
-    }
-    if (!info.sha256) toast('已打开 v' + (info.latestVersion || '') + ' 下载地址', 'ok');
-  });
-
-  /* 更新通道切换：稳定版 ←→ 测试版。
-   * 测试版读 latest-beta.json（提前发出的下一个版本号），稳定版读 latest.json ——
-   * 两份清单分开，所以稳定用户永远不会被推测试版。
-   * 注：crx 通道（Chrome 自动更新）无法分通道，测试版只能走 zip 通道更新。 */
+  /* 更新通道切换：稳定版 ←→ 测试版（只写本机设置；读写实现都在 src/core/channel.js）。
+   * 旧注释写的是"测试版读 latest-beta.json、稳定版读 latest.json"—— 那是**检查更新**时代的模型；
+   * 现在插件入口不再检查线上更新，这个开关只决定本机档位（并在独立测试版包上锁成只读）。
+   * 另一句"crx 通道无法分通道、测试版只能走 zip 通道更新"也一并作废：两条通道各有自己的 crx 更新源。 */
   /* 通道确认窗口：单击只"准备"、再点一下才落盘（C7 O-1：原先是单击即持久化，无确认也无撤销） */
   const CHANNEL_CONFIRM_MS = 6000;
   let channelPending = '';    // '' | 'stable' | 'beta'：待确认的目标通道
@@ -746,14 +571,11 @@
   async function renderChannel() {
     const btn = $('btn-channel');
     if (!btn) return;
-    /* 显示口径必须等于**决策口径**：`UpdateChecker.getChannel()` 认 manifest.version_name 里的 beta
-     * （独立测试版包永远是测试通道），而 `KH.UpdateChannel.get()` 只读用户设置 —— 两者分叉会把
+    /* 显示口径必须等于**决策口径**：`UpdateChannel.effective()` 认 manifest 里的 beta
+     * （独立测试版包永远是测试通道），而 `get()` 只读用户设置 —— 两者分叉会把
      * "被强制成测试版"的包显示成「稳定版」（C7 O-1 附带项 / P-03）。 */
     const stored = await KH.UpdateChannel.get();
-    let effective = stored;
-    try {
-      if (typeof UpdateChecker !== 'undefined' && UpdateChecker.getChannel) effective = await UpdateChecker.getChannel();
-    } catch (e) { /* 取不到就以设置为准，不因此中断渲染 */ }
+    const effective = await KH.UpdateChannel.effective();
     const forcedBeta = effective === 'beta' && stored !== 'beta';
     channelPending = '';
     clearTimeout(channelTimer);
@@ -795,26 +617,10 @@
         return;
       }
       await renderChannel();
-      toast('已切到' + nextLabel + '（再点一下可切回），正在重新检查…', 'ok');
-      checkUpdate(true);
+      /* 不再"切完顺带检查更新"：插件入口已经没有线上更新这条路了（2026-10-05 用户口径）。 */
+      toast('已切到' + nextLabel + '（再点一下可切回）', 'ok');
     });
   }
-
-  /* 「稍后」= 记住"这一版我看过了，别再提醒"（C7 F-5）。
-   * 写失败**必须说出来**：只关 UI 不落盘的话，重开弹窗提示条立刻回来，用户会以为按钮坏了。 */
-  $('btn-update-dismiss').addEventListener('click', async () => {
-    const info = currentUpdateInfo;
-    renderUpdateInfo(null);
-    const ver = (info && info.latestVersion) ? String(info.latestVersion) : '';
-    if (!ver) return;
-    if (await write({ [DISMISS_KEY]: ver })) {
-      dismissedVersion = ver;
-      toast('已忽略 v' + ver + ' 的更新提示，下次有新版本再提醒', 'ok');
-    } else {
-      dismissedVersion = '';
-      toast('忽略失败：本地存储不可用，下次打开还会提示', 'error');
-    }
-  });
 
   // 帮助：跳到设置页「帮助与隐私」分区（v1 曾出现点击无效，这里保证绑定 + 可测）
   $('btn-help').addEventListener('click', () => {
@@ -840,17 +646,6 @@
       setSiteDisabledView(!!((changes.siteDisabledMap.newValue || {})[hostname]), true);
     }
     if (changes.keywords) renderKeywordCount(changes.keywords.newValue);
-    if (changes.khUpdateInfo) {
-      const info = changes.khUpdateInfo.newValue;
-      /* F-5：被「稍后」点掉的那一版**不再自动弹出**（background 6h 一次的广播同样受此约束），
-       * 否则用户的"稍后"活不过一个轮询周期。 */
-      if (info && info.hasUpdate && !isDismissed(info)) renderUpdateInfo(info);
-    }
-    /* 另一个弹窗页点了「稍后」→ 本页跟着收起（同一件事不该两个页面显示相反） */
-    if (changes[DISMISS_KEY]) {
-      dismissedVersion = changes[DISMISS_KEY].newValue || '';
-      if (isDismissed(currentUpdateInfo)) renderUpdateInfo(null);
-    }
   });
 
   renderChannel();          // 更新通道徽标（稳定版 / 测试版）

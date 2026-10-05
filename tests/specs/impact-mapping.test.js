@@ -54,7 +54,7 @@ module.exports = async function run() {
     ['src/features/page-editor.js', 'interact,ui'],
     ['src/ui/components/fields.js', 'interact,ui'],
     ['src/ui/tokens.css', 'ui,visual'],
-    ['background/service-worker.js', 'interact,site,ui,update'],
+    ['background/service-worker.js', 'interact,site,ui'],
 
     /* 管理端 */
     ['options/options.js', 'ui'],
@@ -63,9 +63,6 @@ module.exports = async function run() {
     ['src/ui/changelog.js', 'ui'],
     ['src/ui/fieldmap.js', 'ui'],
     ['src/build-info.js', 'ui'],
-
-    /* 更新通道 */
-    ['background/update-checker.js', 'update'],
 
     /* 三端共用 / 影响面大 / 未归类 → 一律全量（用户口径：不好判断就全量回归） */
     ['src/core/protocol.js', 'all'],

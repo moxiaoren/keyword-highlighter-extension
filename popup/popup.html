@@ -60,25 +60,10 @@
     </button>
   </div>
 
-  <!-- ④ 更新提示条（默认隐藏）：加载态 + 更新 / 稍后 -->
-  <div class="kh-pop-update" id="update-banner" role="status" hidden>
-    <div class="kh-pop-update-info">
-      <span class="kh-pop-update-icon" aria-hidden="true">🔄</span>
-      <span class="kh-pop-update-body">
-        <span class="kh-pop-update-text" id="update-text">检查更新中…</span>
-        <!-- 更新说明的前两行（全文见 title）：清单里带着 notes 就别让它只活在 tooltip 里（C7 O-3） -->
-        <span class="kh-pop-update-notes" id="update-notes" hidden></span>
-      </span>
-    </div>
-    <div class="kh-pop-update-actions">
-      <button class="kh-mini-btn" id="btn-update" type="button" hidden>更新</button>
-      <button class="kh-pop-link kh-pop-link-sm" id="btn-update-dismiss" type="button" hidden>稍后</button>
-    </div>
-  </div>
-
-  <!-- ⑤ 更新工具行：检查更新 + 两档诊断 + 更新通道（稳定版 / 测试版） -->
+  <!-- ④ 工具行：两档诊断 + 更新通道（稳定版 / 测试版）
+       注：2026-10-05 用户口径 —— 插件入口**不再有线上更新**（检查更新 / 更新提示条 / 下载更新包全删），
+       只留这一个本机通道开关。所以这里既没有更新条，也没有「检查更新」按钮。 -->
   <div class="kh-pop-tools">
-    <button class="kh-pop-link kh-pop-check" id="btn-check-update" type="button">🔄 检查更新</button>
     <button type="button" class="kh-pop-link" id="btn-diag" title="完整诊断（复制到剪贴板）：含当前页面的完整网址、iframe 地址、你的关键词与页面文本片段 —— 排查用，注意别外发">🩺 诊断</button>
     <button type="button" class="kh-pop-link" id="btn-diag-counts" title="仅计数诊断：只复制作业计数与不含任何词/网址的结论，可直接外发">🧮 仅计数</button>
     <button type="button" class="kh-pop-link" id="btn-channel" title="更新通道：稳定版 / 测试版（点一下准备切换，再点一下确认）">🔀 稳定版</button>
@@ -91,7 +76,7 @@
     <span class="kh-pop-ver" id="version" title="当前版本">v—</span>
   </footer>
 
-  <!-- 加载顺序：协议 → 配置 → 存储信封 → Markdown → 字段单源 → 组件 → 关键词编辑弹窗 → 页面逻辑 -->
+  <!-- 加载顺序：协议 → 通道 → 配置 → 存储信封 → Markdown → 字段单源 → 组件 → 关键词编辑弹窗 → 页面逻辑 -->
   <script src="../src/core/protocol.js"></script>
   <script src="../src/core/config.js"></script>
   <script src="../src/platform/storage.js"></script>
@@ -106,7 +91,8 @@
   <!-- fields.js = 字段控件工厂，keyword-editor.js 依赖它 -->
   <script src="../src/ui/components/fields.js"></script>
   <script src="../src/ui/components/keyword-editor.js"></script>
-  <!-- 更新校验（SHA256）要用：模块自身无副作用，加载即可 -->
-<script src="../background/update-checker.js"></script>
-<script src="popup.js"></script></body>
+  <!-- 更新通道（稳定版 / 测试版）：只读写本机 storage，不发任何网络请求 -->
+  <script src="../src/core/channel.js"></script>
+  <script src="popup.js"></script>
+</body>
 </html>

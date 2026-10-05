@@ -5,17 +5,17 @@
  * 收敛成一条命令，跑完在 `release/` 里得到**可直接上传**的全套文件：
  *
  *   release/
- *     keyword-highlighter-v<版本>.zip   解压包（zip 通道下载物）
- *     keyword-highlighter.crx           crx（crx 通道下载物）
- *     latest.json                       发布清单（版本 / 地址 / SHA256 / 说明）→ zip 通道读它
- *     update.xml                        gupdate 清单 → Chrome 自动更新 & crx 通道读它
+ *     keyword-highlighter.crx           crx（**唯一分发物**：浏览器自动更新与手动安装都读它）
+ *     latest.json                       发布清单（版本 / 地址 / SHA256 / 说明）
+ *     update.xml                        gupdate 清单 → Chrome 自动更新读它
+ *     keyword-highlighter-v<版本>.zip   解压包（**默认不产出**；加 `--with-zip` 才出）
  *     key.pem                           签名私钥（**只在本机**；换机器要带走，否则扩展 ID 会变）
  *     PUBLISH.md                        上传步骤
  *
  * 用法：
  *   node scripts/release.js              跑门禁 → 打包 → 生成清单 → 打 crx → 汇总
  *   node scripts/release.js --skip-gates 跳过门禁（只重打产物时用）
- *   node scripts/release.js --no-crx     跳过 crx（只发 zip 通道）
+ *   node scripts/release.js --with-zip   额外产出 zip（默认只出 crx；zip 只在明确要时才给）
  *   （测试版不走本脚本）                  node scripts/release-beta.js
  *                                        测试版是**另一个扩展**：自己的密钥、自己的更新源、
  *                                        包内 manifest 三处都不同 ⇒ 整套产物只能由它出
@@ -52,7 +52,17 @@ const UPDATE_XML_URL = BASE + '/update.xml';
 
 const argv = process.argv.slice(2);
 const SKIP_GATES = argv.indexOf('--skip-gates') >= 0;
-const NO_CRX = argv.indexOf('--no-crx') >= 0;
+/* `--with-zip`：**默认不发 zip**。用户 2026-10-05 口径 —— 分发物只有 crx，zip 只在明确要时才出。
+ * 注意它只是"本次多出一个 zip 产物"，并不是"只发 zip"：crx 永远是必产项。 */
+const WITH_ZIP = argv.indexOf('--with-zip') >= 0;
+/* 旧的 `--no-crx`（zip-only 发布）已删除：既没有程序性调用者，又与"crx 必产"直接冲突。
+ * 这里显式报错而不是静默忽略 —— 静默会让 `--no-crx` 看起来还在工作，实际却发了 crx。 */
+if (argv.indexOf('--no-crx') >= 0) {
+  console.error('\n✗ --no-crx 已删除：发版一律产出 crx（crx 才是浏览器的分发物）。');
+  console.error('  · 想连 zip 一起出：node scripts/release.js --with-zip');
+  console.error('  · 只想重生成清单、不重新打包：node scripts/update-config.js');
+  process.exit(1);
+}
 const FORCE_NEW_KEY = argv.indexOf('--force-new-key') >= 0;
 const PROMOTE = argv.indexOf('--promote') >= 0;
 /* 【本脚本只发稳定版】测试版是**另一个扩展**：自己的密钥 `release/key-beta.pem`（⇒ 扩展 ID
@@ -72,8 +82,6 @@ if (CH_I >= 0 && argv[CH_I + 1] !== 'stable') {
 }
 const KEY_ARG = (() => { const i = argv.indexOf('--key'); return i >= 0 ? argv[i + 1] : null; })();
 
-let zipPathRef = '';
-let latestPathRef = '';
 function log(msg) { console.log(msg); }
 function step(n, msg) { console.log('\n[' + n + '] ' + msg); }
 function die(msg) { console.error('\n✗ ' + msg); process.exit(1); }
@@ -117,47 +125,6 @@ async function fetchPublished() {
     const v = xml.match(/<updatecheck[^>]*version=['"]([^'"]+)['"]/i);
     return m ? { appid: m[1], codebase: c ? c[1] : null, version: v ? v[1] : null } : null;
   } catch (e) { return null; }
-}
-
-/** zip-only 发布（`--no-crx`）：只产出 latest.json + zip；**不生成 update.xml**。
- *  原因：update.xml 会把 crx 通道指向某个 crx，而我们这次没有能力产出与线上 appid 匹配的 crx；
- *  发布一份"指向不存在/旧版本 crx"的 update.xml 会让 Chrome 反复拉取失败 ✗。
- *  让 crx 通道保持线上现状，是这里唯一安全的选择。
- *  注：测试版**不走这里** —— `--channel beta` 在参数段直接报错，测试版唯一实现是
- *  `scripts/release-beta.js`（它自己会改包内 manifest 并写 latest-beta.json / update-beta.xml）。 */
-function finishZipOnly() {
-  fs.mkdirSync(REL, { recursive: true });
-  fs.copyFileSync(zipPathRef, path.join(REL, ZIP_NAME));
-  fs.copyFileSync(latestPathRef, path.join(REL, 'latest.json'));
-  fs.writeFileSync(path.join(REL, 'PUBLISH.md'), [
-    '# 上传步骤（**zip 通道** 发布，不含 crx）',
-    '',
-    '需要上传的文件（2 个）：',
-    '  - latest.json  → ' + BASE + '/latest.json',
-    '  - ' + ZIP_NAME,
-    '',
-    '**不要**动线上已有的 update.xml：本次没有产出与线上 appid 匹配的 crx，',
-    '改动它会把 crx 通道指向不存在的包，Chrome 会反复拉取失败。',
-    '',
-    '## 上传方式',
-    'A. 有 git：clone gh-pages 分支 → 覆盖这 2 个文件 → commit & push',
-    'B. 无 git：在 GitHub 网页上把这两个文件传到 gh-pages 分支根目录',
-    'C. 用本仓库的发布器（**不需要 git**）：node scripts/publish-gh.js --branch gh-pages',
-    '',
-    '## 上传后自检',
-    '1. 打开 ' + BASE + '/latest.json → sha256 应与本地 release/latest.json 一致',
-    '2. 打开扩展 popup → 「检查更新」应提示有新版本（zip 通道生效）',
-    '3. 点更新 → 会先校验 SHA256 再打开下载地址'
-  ].join('\n'), 'utf8');
-  log('    release/latest.json');
-  log('    release/' + ZIP_NAME);
-  log('    release/PUBLISH.md');
-  log('\n发版产物就绪（zip 通道）：' + ZIP_NAME + '、latest.json、PUBLISH.md');
-  if (PROMOTE) {
-    log('晋级发布：本次已把当前构建发到**稳定通道**（latest.json）—— 测试版用户与稳定用户都会收到。');
-  } else {
-    log('crx 通道未改动（要更新它需要当初发布用的 key.pem，届时用：node scripts/release.js --key <路径>）。');
-  }
 }
 
 (async () => {
@@ -204,7 +171,6 @@ function finishZipOnly() {
   execFileSync(process.execPath, [path.join(ROOT, 'scripts/package.js')], { cwd: ROOT, stdio: 'inherit' });
   const zipPath = path.join(ROOT, 'dist', ZIP_NAME);
   const latestPath = path.join(ROOT, 'dist', 'latest.json');
-  zipPathRef = zipPath; latestPathRef = latestPath;
   if (!fs.existsSync(zipPath)) die('没找到打包产物：' + zipPath);
   if (!fs.existsSync(latestPath)) die('没找到发布清单：' + latestPath);
   const latest = JSON.parse(fs.readFileSync(latestPath, 'utf8'));
@@ -216,8 +182,8 @@ function finishZipOnly() {
   /* 站点上的 kh-autoupdate.bat 只有**一份权威副本**：`scripts/kh-autoupdate.bat`。
    * 这里与 `scripts/publish-gh.js` 用**同一条规则**：缺源硬失败、字节相同不写、
    * 字节不同才拷进 release/ 并打印一行。
-   * 为什么 release.js 里也必须做一次：CI（.github/workflows/release.yml）跑的是
-   * `node scripts/release.js --no-crx --skip-gates`，**整条路径不经过 publish-gh.js**；
+   * 为什么 release.js 里也必须做一次：CI（.github/workflows/release.yml）稳定通道跑的是
+   * `node scripts/release.js --channel stable`，**整条路径不经过 publish-gh.js**；
    * 而 gh-pages 发布带 `keep_files: true` ⇒ 少了这一步，站点上那份会在 CI 路径下
    * 永久冻结在最后一版、发版全程却显示成功（AUDIT.md F-63 / U-4 的同一机制）。
    * 位置：打包/清单校验之后、任何写 release/ 或发布的动作之前（下面两条分支都会走到这里）。 */
@@ -268,7 +234,7 @@ function finishZipOnly() {
           '  正确做法：等 Pages / jsDelivr 恢复后重跑（CI 里通常只是镜像抖动，重跑一次即可）✓\n' +
           '  确认线上测试通道为空、或本次只面向全新安装渠道时，加 --force-version 显式放行。');
     }
-    const cmp = require(path.join(ROOT, 'background', 'update-checker.js')).compareVersions;
+    const cmp = require(path.join(ROOT, 'scripts', 'lib', 'version.js')).compareVersions;
     const d = cmp(VERSION, betaVer);
     log('    线上测试通道版本 = ' + betaVer + '，本次稳定版 = ' + VERSION + ' → ' + (d < 0 ? '更低 ✗' : '不低 ✓'));
     if (d < 0 && argv.indexOf('--force-version') < 0) {
@@ -281,10 +247,6 @@ function finishZipOnly() {
   } catch (e) { log('    （回退检查异常，已跳过：' + (e && e.message) + '）'); }
 
   /* ------------------------------------------------------------ ③ 密钥 */
-  if (NO_CRX) {
-    step(3, '签名密钥：已跳过（--no-crx）');
-    return finishZipOnly();
-  }
   step(3, '准备签名密钥（决定扩展 ID，一旦生成不可更换）');
   fs.mkdirSync(REL, { recursive: true });
   const keyPath = KEY_ARG ? path.resolve(KEY_ARG) : path.join(REL, 'key.pem');
@@ -304,7 +266,7 @@ function finishZipOnly() {
         '  · 打 crx 必须用**当初发布时那把** key.pem，否则扩展 ID 会变、Chrome 拒绝更新；\n' +
         '  · 请把原密钥放到 release/key.pem，或用 --key <路径> / 环境变量 KH_KEY_PEM 指定；\n' +
         '  · 若确实要换一个新扩展 ID（等于重新发布一个扩展），加 --force-new-key 明确确认。\n' +
-        '  （不加 --no-crx 也可以：只发 zip 通道，跳过 crx。）');
+        '  （本脚本不再支持"跳过 crx"：crx 是唯一交付物，跳过它就没有可上传的包了。）');
   } else {
     const { privateKey } = crypto.generateKeyPairSync('rsa', {
       modulusLength: 2048,
@@ -348,12 +310,10 @@ function finishZipOnly() {
     }
   } catch (e) { /* 下面会按"目录不存在"跳过 */ }
   const browser = findChromium();
-  if (NO_CRX) {
-    log('    已跳过（--no-crx）');
-  } else if (!browser) {
-    log('    ⚠️ 本机没找到 Chrome/Edge，跳过 crx（zip 通道仍然可用）');
+  if (!browser) {
+    log('    ✗ 本机没找到 Chrome/Edge —— 打不出 crx');
   } else if (!fs.existsSync(inner)) {
-    log('    ⚠️ 没找到可打包目录 dist/stage-build/keyword-highlighter-extension，跳过');
+    log('    ✗ 没解出可打包目录（dist/' + ZIP_NAME + ' 解包失败）');
   } else {
     try {
       /* Chrome 会把 crx 输出在**被包的目录旁边**：<...>/keyword-highlighter-extension.crx */
@@ -365,12 +325,23 @@ function finishZipOnly() {
         crxOk = true;
         log('    已生成 release/' + CRX_NAME);
       } else {
-        log('    ⚠️ 浏览器没有产出 crx（可能被安全策略拦下），zip 通道仍可用');
+        log('    ✗ 浏览器没有产出 crx（可能被安全策略拦下）');
       }
     } catch (err) {
-      log('    ⚠️ 打 crx 失败：' + (err && err.message) + '（zip 通道仍可用）');
+      log('    ✗ 打 crx 失败：' + (err && err.message));
     }
     fs.rmSync(stageDir, { recursive: true, force: true });
+  }
+
+  /* crx 必产的兜底（2026-10-05 用户口径："后续都改成 crx，zip 只有我说需要时才提供"）：
+   * 以前 crx 打不出来还能退回"只发 zip 通道"（`--no-crx`），现在那条路删了、zip 默认也不发 ——
+   * 所以这里**必须硬失败**。否则第 ⑤ 步照样写一份 update.xml 指向不存在的 crx，
+   * 就是 2026-09-22 那类"发布日志全 ✓、用户端自动更新 404"的事故。 */
+  if (!crxOk) {
+    die('crx 没打出来，而它是本次唯一的交付物（默认不再发 zip）。\n' +
+        '  · 装一个 Chrome/Edge，或用环境变量 KH_CHROME 指定浏览器路径；\n' +
+        '  · 确认 dist/' + ZIP_NAME + ' 能正常解包（解包失败也会走到这里）；\n' +
+        '  · 只想重新生成清单、不重新打包：node scripts/update-config.js');
   }
 
   /* -------------------------------------------------- ⑤ update.xml + 汇总 */
@@ -401,29 +372,37 @@ function finishZipOnly() {
     ''
   ].join('\n');
   fs.writeFileSync(path.join(REL, 'update.xml'), xml, 'utf8');
-  fs.copyFileSync(zipPath, path.join(REL, ZIP_NAME));
+  /* zip 默认不发（用户口径：分发物只有 crx）。要 zip 时加 `--with-zip`。 */
+  if (WITH_ZIP) fs.copyFileSync(zipPath, path.join(REL, ZIP_NAME));
   fs.copyFileSync(latestPath, path.join(REL, 'latest.json'));
-  /* ⚠️ `latest.json` 里的 `crx` 必须是**真实存在**的那个地址。
+  /* ⚠️ `latest.json` 里的 `crx` / `zip` 都必须是**真实存在**的那个地址。
    * `package.js` 写的是扁平名 `keyword-highlighter.crx`，但本脚本第 ④ 步把 crx 改名成
    * `release/keyword-highlighter-extension-<版本>.crx`（沿用线上约定）——**扁平名在站点上从来不存在**
    * （2026-09-22 实测 gh-pages 树里没有 `keyword-highlighter.crx`）⇒ 那是个假链接。
-   * 弹窗下载优先用 `zipUrl`（`popup.js:421`），所以它不在关键路径上；但一旦 zip 缺失就会回退到这个死链。
-   * 这里用 update.xml 里同一个 `codebase` 覆盖，保证两份清单指向同一个真实文件。 */
+   * 不发 zip 时同样不能留着 zip 地址：`scripts/publish-gh.js` 的预检会拿 `latest.json.zip` 去上传列表里
+   * 找文件，找不到就**中止发布**；即使绕过预检，站点上也会多一个 404 的下载地址。
+   * 所以不发货就把 zip / sha256 明确置空（空串＝本次没有，而不是"地址还在、文件没了"）。 */
   {
     const lj = JSON.parse(fs.readFileSync(path.join(REL, 'latest.json'), 'utf8'));
     lj.crx = codebase;
+    if (!WITH_ZIP) { lj.zip = ''; lj.sha256 = ''; }
     fs.writeFileSync(path.join(REL, 'latest.json'), JSON.stringify(lj, null, 2) + '\n', 'utf8');
     log('    latest.json 的 crx 指向已对齐成真实文件：' + codebase.replace(BASE + '/', ''));
+    if (!WITH_ZIP) log('    latest.json 的 zip / sha256 已置空（本次不发 zip）');
   }
 
+  const shipped = ['latest.json', 'update.xml', CRX_NAME];
+  if (WITH_ZIP) shipped.push(ZIP_NAME);
+  const cpList = shipped.map((f) => 'release/' + f).join(' ');
   const publish = [
     '# 上传步骤（把 release/ 里的文件放到 gh-pages 根目录）',
     '',
-    '需要上传的文件（4 个）：',
+    '需要上传的文件（' + shipped.length + ' 个' + (WITH_ZIP ? '，含 zip' : '，**不含 zip**（本次只发 crx）') + '）：',
     '  - latest.json                      → ' + BASE + '/latest.json',
     '  - update.xml                       → ' + UPDATE_XML_URL + '（manifest.update_url 指向它）',
-    '  - ' + ZIP_NAME,
-    '  - ' + CRX_NAME + (crxOk ? '' : '   ← 本次**未生成**（本机缺浏览器或打包被拦），上传前请补齐'),
+    '  - ' + CRX_NAME,
+    WITH_ZIP ? '  - ' + ZIP_NAME + '   ← `--with-zip` 额外产出（"解压加载"用）'
+      : '  （zip 默认不发；确实要 zip：node scripts/release.js --with-zip）',
     '',
     '不要上传：key.pem（签名私钥，只留在本机 / 放进 CI 的 Secret）',
     '',
@@ -432,32 +411,33 @@ function finishZipOnly() {
     '### A. 有 git（推荐）',
     '```',
     'git clone -b gh-pages https://github.com/moxiaoren/keyword-highlighter-extension.git gh-pages',
-    'cp release/latest.json release/update.xml release/' + ZIP_NAME + ' ' + (crxOk ? 'release/' + CRX_NAME + ' ' : '') + 'gh-pages/',
+    'cp ' + cpList + ' gh-pages/',
     'cd gh-pages && git add -A && git commit -m "release v' + VERSION + '" && git push',
     '```',
     '',
-    '### B. 无 git：在 GitHub 网页上把 gh-pages 分支的这 4 个文件替换掉即可',
+    '### B. 无 git：在 GitHub 网页上把 gh-pages 分支的这 ' + shipped.length + ' 个文件替换掉即可',
     '',
     '## 上传后自检（30 秒）',
     '1. 浏览器打开 ' + UPDATE_XML_URL + ' → 应看到 version="' + VERSION + '" 与 codebase 指向 ' + CRX_NAME,
-    '2. 打开 ' + BASE + '/latest.json → sha256 应与本地 release/latest.json 一致',
-    '3. 打开扩展 popup → 点「检查更新」：若线上版本号已更高，应出现更新条，',
-    '   tooltip 显示更新源/发布时间/说明；点更新会先校验 SHA256 再打开下载地址',
+    '2. 打开 ' + BASE + '/latest.json → 它的 crx 字段应与上一步的 codebase 一致'
+      + (WITH_ZIP ? '，sha256 应与本地 release/latest.json 一致'
+        : '（本次没发 zip，zip / sha256 字段为空是预期的）'),
+    '3. 装了扩展的机器：等浏览器自动更新（或完全退出浏览器再启动）后，扩展详情页的版本号应变成 ' + VERSION,
     ''
   ].join('\n');
   fs.writeFileSync(path.join(REL, 'PUBLISH.md'), publish, 'utf8');
 
   log('    release/update.xml  （appid=' + appid + '）');
   log('    release/latest.json');
-  log('    release/' + ZIP_NAME);
-  if (crxOk) log('    release/' + CRX_NAME);
+  if (WITH_ZIP) log('    release/' + ZIP_NAME);
+  log('    release/' + CRX_NAME);
   log('    release/PUBLISH.md');
 
   /* ------------------------------------------------------------- 小结 */
   const files = fs.readdirSync(REL).filter((f) => f !== 'key.pem');
   log('\n发版产物就绪（release/）：' + files.join('、'));
   log('上传步骤见 release/PUBLISH.md；密钥 release/key.pem 请勿上传、务必备份。');
-  if (!crxOk) log('提示：crx 通道未打通（本次没有 crx）—— Chrome 自动更新与 crx 下载都依赖它。');
+  if (!WITH_ZIP) log('提示：本次只发 crx（没产出 zip）。需要 zip 时加 --with-zip。');
 })().catch((err) => {
   console.error('\n✗ 发版流水线异常：' + (err && err.message));
   console.error(err && err.stack);

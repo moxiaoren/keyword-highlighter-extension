@@ -23,7 +23,6 @@
  *            配置热更新必须复核门禁
  *   ui       管理端界面：options / popup / welcome 的布局·控件·保存往返
  *   data     数据层：storage 归一化 / CSV·JSON 导入导出往返 / 存量格式兼容读取
- *   update   更新通道：crx+zip 双通道探测 / 版本比较 / 镜像回退 / 缓存 / SHA256 校验
  *
  * ── 测试覆盖分布（改到某方面时，谁在守它）──
  *   hit      → Node: compiler / arbiter / combo-cells ｜ e2e 内容层 2·3·8·7b·7e·7f·7g·全词正则
@@ -33,7 +32,11 @@
  *   site     → Node: hot-update ｜ e2e 内容层 13
  *   ui       → e2e UI 层 8·9·10·11·12（+ 内容层 7d）
  *   data     → Node: storage ｜ e2e：无独立覆盖（`storage.js` 同时映射 ui，改它仍会跑 UI 层）
- *   update   → Node: update（无 e2e 覆盖）
+ *
+ * 【2026-10-05】原先的 `update` 方面（双通道探测 / 镜像回退 / 缓存 / SHA256）随
+ * `background/update-checker.js` 一起删除：插件入口不再检查线上更新。版本比较的实现搬到了
+ * `scripts/lib/version.js`（发版脚本自用）—— 它的用例在 tests/specs/version.test.js，
+ * 而 `^scripts/` 规则本就是"不影响交付行为"，所以这里不再需要 update 这个方面。
  *
  * 用法：
  *   node scripts/impact.js                   # 人读报告：改了哪些文件 → 各自方面 → 结论
@@ -64,8 +67,7 @@ const ASPECTS = {
   fetch: '抓取与序列化（抓取字段/多行表格/触发判据/Markdown）',
   site: '站点门禁与开关（站点规则/禁用本站/全局开关/热更新门禁）',
   ui: '管理端界面（options/popup/welcome 布局·控件·保存往返）',
-  data: '数据层（storage 归一化/CSV·JSON 往返/兼容读取）',
-  update: '更新通道（双通道/版本比较/镜像回退/缓存/SHA256）'
+  data: '数据层（storage 归一化/CSV·JSON 往返/兼容读取）'
 };
 
 /* ---------------- 参与判定的文件集 ---------------- */
@@ -151,8 +153,7 @@ const RULES = [
   /* ---- 内容脚本 / 后台 ---- */
   { re: /^content\/content\.css$/, aspects: ['visual'] },
   { re: /^content\//, aspects: ['hit', 'interact', 'site'] },      // 入口：启动门禁 + 消息路由
-  { re: /^background\/update-checker\.js$/, aspects: ['update'] },
-  { re: /^background\//, aspects: ['ui', 'site', 'update', 'interact'] },
+  { re: /^background\//, aspects: ['ui', 'site', 'interact'] },
 
   /* ---- 管理端页面 ---- */
   { re: /^(options|popup|welcome)\//, aspects: ['ui'] },

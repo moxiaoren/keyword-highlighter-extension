@@ -115,8 +115,8 @@ if (/^\d+(\.\d+){1,3}$/.test(arg)) {
   }
 }
 
-/* 不许回退（compareVersions 与浏览器同一口径：逐段数值比较） */
-const cmp = require(path.join(ROOT, 'background', 'update-checker.js')).compareVersions;
+/* 不许回退（compareVersions 与浏览器同一口径：逐段数值比较；实现见 scripts/lib/version.js） */
+const cmp = require(path.join(ROOT, 'scripts', 'lib', 'version.js')).compareVersions;
 if (cmp(next, cur) <= 0) {
   if (!FORCE_RESET) {
     console.error('✗ 新版本 ' + next + ' 不大于当前 ' + cur + ' —— 浏览器永不降级，版本必须严格变大');

@@ -19,7 +19,8 @@
 
   $('version').textContent = 'v' + version;
 
-  /** 语义化版本比较（与 background/update-checker.js 同一实现口径） */
+  /** 语义化版本比较（与 scripts/lib/version.js 的 compareVersions 同一口径；
+   *  欢迎页不依赖任何脚本目录，所以这里保留一份内联实现） */
   function cmp(a, b) {
     const pa = String(a).replace(/^v/i, '').split('.');
     const pb = String(b).replace(/^v/i, '').split('.');

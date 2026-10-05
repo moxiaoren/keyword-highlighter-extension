@@ -7,8 +7,9 @@
  *   ② `popup/popup.js` 的 `write()`：同样无条件 `resolve(true)`；全局开关只判 `if (!res)`
  *      ⇒ background 折出来的 `{ok:false}` 被当成成功，照报「已暂停全局高亮」；
  *      站点卡先翻卡片再写、不看返回值 ⇒ 写失败时卡片显示「已禁用」而页面照常高亮；
- *   ③ `background/update-checker.js` 的 `UpdateChannel.set()` 空 catch 吞错 + `options.js` 的
- *      `mutate()` 让异常逃逸成 unhandled rejection（用户零提示，界面按"成功"重渲染）。
+ *   ③ `UpdateChannel.set()`（原在 `background/update-checker.js`，2026-10-05 起独立为
+ *      `src/core/channel.js`）空 catch 吞错 + `options.js` 的 `mutate()` 让异常逃逸成
+ *      unhandled rejection（用户零提示，界面按成功重渲染）。"成功"重渲染）。
  *
  * 为什么是**源码级契约**：这三处都是 IIFE + 完整 popup/options DOM（`chrome.tabs.query`、
  *   `KH.ui.dom` 全套），垫片跑不起来；行为级证据由真机探针
@@ -79,7 +80,7 @@ module.exports = async function run() {
     }
   });
 
-  suite('write-honesty · popup / options / update-checker（源码契约）');
+  suite('write-honesty · popup / options / channel（源码契约）');
 
   await test('★ popup.write() 读 lastError 并如实回报（不再无条件 resolve(true)）', () => {
     const src = readSrc('popup/popup.js');
@@ -112,17 +113,22 @@ module.exports = async function run() {
   });
 
   await test('★ 通道切换：写失败不许报「已切到…」', () => {
-    const checker = readSrc('background/update-checker.js');
-    const setBody = code(between(checker, 'async set(ch) {', '\n  }\n};'));
+    const checker = readSrc('src/core/channel.js');
+    const setBody = code(between(checker, 'set: function (ch) {', '/** 实际生效通道'));
     truthy(setBody, '应能找到 UpdateChannel.set 函数体');
-    falsy(/catch/.test(setBody), '★ set() 不许再空 catch 吞错（要让调用方拿到 rejection）');
-    truthy(/await chrome\.storage\.local\.set/.test(setBody), '仍要真的写盘');
+    truthy(/chrome\.runtime\.lastError/.test(setBody),
+      '★ chrome.storage 写失败**不抛错**，只把错误放进 lastError ⇒ set() 必须读它');
+    truthy(/if \(err\) reject\(new Error\('本地存储写入失败/.test(setBody),
+      '★ 写失败必须 reject 且说清"通道未切换"（旧版空 catch 吞掉 ⇒ 界面报已切换、磁盘零写入）');
+    truthy(/else resolve\(v\);/.test(setBody), '★ 只有 else 分支才 resolve（不许无条件当成功）');
+    truthy(/chrome\.storage\.local\.set\(\{ \[KEY\]: v \}/.test(setBody), '仍要真的写盘');
 
     const popup = readSrc('popup/popup.js');
-    const chBody = code(between(popup, "$('btn-channel').addEventListener", '$(\'btn-update-dismiss\')'));
+    const chBody = code(between(popup, "$('btn-channel').addEventListener", "$('btn-help')"));
+    truthy(chBody, '应能找到通道切换处理器');
     truthy(/catch \(err\)/.test(chBody), '★ popup 必须接住 set 抛出的失败');
     truthy(/切换失败/.test(chBody), '失败要有用户可见提示');
-    truthy(/return;/.test(chBody), '失败要提前返回，不许继续报成功、不许触发检查更新');
+    truthy(/return;/.test(chBody), '失败要提前返回，不许继续报成功');
   });
 
   await test('★ options.mutate() 写失败要 toast（旧写法让异常逃逸成 unhandled rejection）', () => {
@@ -159,24 +165,9 @@ module.exports = async function run() {
     truthy(/await renderSite\(eff, globalOn\)/.test(renderBody), '★ 真值必须传进 renderSite（旧写法是无参 renderSite()）');
   });
 
-  /* ---------------- C7 F-3：手动检查更新必须 force ---------------- */
-
-  await test('★ 手动「检查更新」带 force（旧写法只读 6h 缓存）', () => {
-    const src = code(readSrc('popup/popup.js'));
-    truthy(/askBackground\(\{ type: MSG\.UPDATE_CHECK, force: !!interactive \}\)/.test(src),
-      '★ popup 必须把 interactive 翻成 force 发给后台');
-  });
-
-  await test('★ background 转发 force：UPDATE_CHECK handler 不得再丢 payload', () => {
-    const sw = code(readSrc('background/service-worker.js'));
-    truthy(/async function checkForUpdates\(force\)/.test(sw), 'checkForUpdates 要接受 force');
-    truthy(/self\.UpdateChecker\.check\(currentVersion\(\), \{ force: !!force \}\)/.test(sw), '★ force 必须透传进 UpdateChecker.check');
-    truthy(/\[MSG\.UPDATE_CHECK\]: async \(msg\) => \(\{ ok: true, info: await checkForUpdates\(!!\(msg && msg\.force\)\) \}\)/.test(sw),
-      '★ handler 必须转发 msg.force（旧写法 `async () =>` 直接丢掉）');
-    truthy(/await checkForUpdates\(\);/.test(sw), 'onInstalled 那条保持不带 force');
-    truthy(/checkForUpdates\(\);\s*\n\s*\}\);\s*\n\s*\}\);/.test(sw) || /alarm\.name === 'checkUpdate'\) checkForUpdates\(\);/.test(sw),
-      '周期性 alarm 那条保持不带 force（仍吃缓存，不给更新源添压力）');
-  });
+  /* C7 F-3（手动「检查更新」必须把 interactive 翻成 force 透传到后台）已随
+   * 【2026-10-05 用户口径】"插件入口取消线上更新"整体退场：popup 不再有「检查更新」按钮，
+   * background 不再有 `checkForUpdates()` 与 `UPDATE_CHECK` handler，本文件不再钉它。 */
 
   /* ---------------- C7 F-12：卡面快捷键必须来自真值 ---------------- */
 
@@ -284,14 +275,13 @@ module.exports = async function run() {
     truthy(/\{ timedOut: true \}/.test(ask), '★ 超时要回 `{timedOut:true}`：与"不可用"的 null 混为一谈就分不清该说什么');
   });
 
-  await test('★ 更新检查的超时只有一处来源（不再两个同长计时器抢先后）', () => {
+  await test('★ 更新检查的重复超时计时器不得回归（updateTimer 已随线上更新一起退场）', () => {
     const wjs = code(readSrc('popup/popup.js'));
-    const body = between(wjs, 'async function checkUpdate(', 'async function render(');
-    truthy(body, '应能找到 checkUpdate 主体');
-    truthy(/const res = await askBackground\(\{ type: MSG\.UPDATE_CHECK/.test(body), '超时交给 askBackground 自己兜');
-    falsy(/Promise\.race\(\[askBackground\(\{ type: MSG\.UPDATE_CHECK/.test(body),
-      '★ 旧写法又并了一个同样 15s 的 settled 计时器：谁先到点决定的只是提示文案，等于把结论交给运气');
-    falsy(/updateTimer/.test(wjs), '★ updateTimer 这个重复兜底要整体退场（留着就是两条超时来源）');
+    /* 旧写法在 checkUpdate 里又并了一个同样 15s 的 settled 计时器：谁先到点决定的只是提示文案，
+     * 等于把结论交给运气。【2026-10-05】线上更新整体取消后这段已删，这条断言防它被抄回来。 */
+    falsy(/updateTimer/.test(wjs), '★ updateTimer 这个重复兜底不许回归（留着就是两条超时来源）');
+    falsy(/MSG\.UPDATE_CHECK/.test(wjs), '★ popup 不许再出现线上更新检查消息（插件入口已取消线上更新）');
+    falsy(/khUpdateInfo/.test(wjs), '★ 弹窗不许再消费后台缓存的那份更新信息');
   });
 
   await test('★ 全局开关：后台超时不许当成功，必须走直接落盘兜底并如实回报', () => {
@@ -333,55 +323,9 @@ module.exports = async function run() {
       '注释要写清真实的两条路：页面委派（EDITOR_OPEN）+ 独立编辑窗口（popup/editor.html）');
   });
 
-  /* ---------------- C7 F-8：更新按钮判据必须与下载处理器同源 ---------------- */
-
-  await test('★ 「更新」按钮能不能点与下载处理器同源（crx-only 不再灰得没解释）', () => {
-    const wjs = code(readSrc('popup/popup.js'));
-    truthy(/function updateDownloadUrl\(info\)/.test(wjs), '★ 要有一个共同判据函数（两份表达式必然漂移）');
-    truthy(/return info\.zipUrl \|\| info\.crxUrl \|\| '';/.test(wjs), '判据本体：zip 或 crx 有一即可');
-    const render = between(wjs, 'function renderUpdateInfo(', 'function showChecking(');
-    truthy(/const dlUrl = updateDownloadUrl\(info\);/.test(render), '★ 渲染侧必须走共同判据');
-    truthy(/btnUpdate\.disabled = !dlUrl;/.test(render), '★ 用同一个变量决定禁用');
-    truthy(render.indexOf('!info.zipUrl') < 0, '★ 旧判据「只看 zipUrl」必须退场');
-    truthy(/btnUpdate\.title = dlUrl/.test(render), '★ 可点/灰掉都要有解释性 title（灰着且零解释正是 F-8 的另一半）');
-    const handler = between(wjs, "$('btn-update').addEventListener", "$('btn-channel')");
-    truthy(/const url = updateDownloadUrl\(info\);/.test(handler), '★ 处理器侧走同一个函数才叫同源');
-    truthy(handler.indexOf('info.zipUrl || info.crxUrl') < 0, '★ 处理器侧也不许再写第二份表达式');
-  });
-
-  /* ---------------- C7 F-5：「稍后」必须落盘（否则重开弹窗/下一次轮询就回来） ---------------- */
-
-  await test('★「稍后」要把"这一版看过了"写进 storage（不是只关 UI）', () => {
-    const wjs = code(readSrc('popup/popup.js'));
-    truthy(/const DISMISS_KEY = 'khUpdateDismissed';/.test(wjs), '★ 要有专门的落盘键');
-    const body = between(wjs, "$('btn-update-dismiss').addEventListener", "$('btn-help').addEventListener");
-    truthy(body, '应能找到「稍后」处理器');
-    truthy(/await write\(\{ \[DISMISS_KEY\]: ver \}\)/.test(body),
-      '★ 旧写法只有 renderUpdateInfo(null)：UI 关掉是真的，"稍后"这件事是假的');
-    truthy(/忽略失败/.test(body) && /toast\(/.test(body),
-      '★ 写失败必须说出来（只关 UI 不落盘 = 用户以为按钮坏了）');
-    truthy(/dismissedVersion = ver/.test(body), '写入成功才记进内存');
-  });
-
-  await test('★同一条更新信息被再次广播 / 重开弹窗时不许再弹（换新版才重新提示）', () => {
-    const wjs = code(readSrc('popup/popup.js'));
-    truthy(/function isDismissed\(info\)/.test(wjs), '★ 要有"这条正是被忽略的那一版"的判据');
-    truthy(/String\(info\.latestVersion \|\| ''\) === String\(dismissedVersion\)/.test(wjs),
-      '★ 比的是**版本**不是布尔：比布尔的话下一版也永远不提示');
-    const render = between(wjs, 'async function render(', '/* ---------------- 事件绑定');
-    truthy(/await loadDismissed\(\);/.test(render), '★ render() 必须先读回忽略记录，再决定展不展示');
-    truthy(/!isDismissed\(cachedInfo\)/.test(render), '★ 展示前过判据');
-    truthy(/if \(info && info\.hasUpdate && !isDismissed\(info\)\) renderUpdateInfo\(info\);/.test(wjs),
-      '★ background 每 6h 的广播路径同样要过判据');
-  });
-
-  await test('★用户主动点「检查更新 / 切通道」时忽略记录要清掉（否则点了没反应）', () => {
-    const wjs = code(readSrc('popup/popup.js'));
-    const body = between(wjs, 'async function checkUpdate(', 'async function render(');
-    truthy(/if \(interactive\) await clearDismissed\(\);/.test(body),
-      '★ interactive = 用户明确要看，必须先清忽略记录');
-    truthy(/async function clearDismissed\(\)/.test(wjs), '清记录也要如实回报成败（不许默默失败）');
-  });
+  /* C7 F-8（「更新」按钮判据与下载处理器同源：`updateDownloadUrl(info)` + 解释性 title）
+   * 已随线上更新提示条一起退场：popup 不再有 `#btn-update` 下载按钮，也就没有两套判据可漂移。
+   * 【2026-10-05】入口只留「稳定版 ⇄ 测试版」通道切换（本文件的通道切换用例仍钉着它）。 */
 
   /* ---------------- C7 F-10：welcome 的失败路径（读失败 ≠ 没有新版本） ---------------- */
 

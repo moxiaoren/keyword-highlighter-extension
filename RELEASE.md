@@ -3,9 +3,13 @@
 ## 通道模型
 
 ```
-稳定通道（所有用户）  latest.json + update.xml         所有人都读它；当前版本以 latest.json 为准
-测试通道（测试者）    latest-beta.json + update-beta.xml  只有装了「测试版」那个扩展的人读它
+稳定通道（所有用户）  update.xml（浏览器读它升级）+ latest.json（人看 / 首页与脚本用）
+测试通道（测试者）    update-beta.xml（测试版那个包的浏览器读它）+ latest-beta.json（人看 / edge-load-beta.js 用）
 ```
+
+> 2026-10-05 起**扩展内部不再自己检查更新**：插件弹窗只剩「稳定版 ⇄ 测试版」通道开关
+> （只写本机 `chrome.storage.local.khUpdateChannel`，不下载任何东西）。升级一律交给浏览器自己的
+> crx 自动更新通道 —— 稳定版读 `update.xml`，测试版那个包读 `update-beta.xml`。
 
 - **测试版 = 提前发出的"下一个版本号"**。Chrome 的 `manifest.version` 只允许 `x.y.z` / `x.y.z.w`，
   **不允许 `-beta` 后缀**，所以不要用后缀表达"预发布"：稳定发 2.1.0，测试就发 2.1.1，
@@ -29,7 +33,7 @@
 | `scripts/release-beta.js` | **测试版流水线**（与正式版完全分离）：复用 `package.js` 的门禁与打包 → 改 manifest 三处 → 重打成测试版 zip → 用测试版密钥签 crx → 写 `latest-beta.json` / `update-beta.xml` | `node scripts/release-beta.js` |
 | `scripts/update-config.js` | **只重生成更新配置**（latest.json / latest-beta.json / update.xml / update-beta.xml），不重新打包 | `node scripts/update-config.js --channel stable --zip <zip> --crx <crx>` |
 | `scripts/publish-gh.js` | 推到 gh-pages（**不需要 git**，走 GitHub API）。**测试版必须加 `--beta-only`**：否则它还要去收集稳定版清单、而稳定版产物不在本机 ⇒ 直接中止；语言包没变时加 `--skip-lang`（gh-pages 建 tree 用 `base_tree`，不发＝原地保留） | 测试版：`GH_TOKEN=… node scripts/publish-gh.js --beta-only`<br>稳定版：`GH_TOKEN=… node scripts/publish-gh.js` |
-| `scripts/gh-release.js` | **线上 Release（只放稳定版）**：测试版**不建** Release；稳定版的说明 = **这一段测试版要点的汇总** + 本版正式说明；附件挂 zip+crx、幂等。`--prune-test` 删掉所有测试版 Release（含 tag），`--prune-above=<ver>` 删版本号大于该值的 | `node scripts/gh-release.js`（稳定版发完跑） |
+| `scripts/gh-release.js` | **线上 Release（只放稳定版）**：测试版**不建** Release；稳定版的说明 = **这一段测试版要点的汇总** + 本版正式说明；附件挂 crx（`--with-zip` 发版时多挂 zip）、幂等。`--prune-test` 删掉所有测试版 Release（含 tag），`--prune-above=<ver>` 删版本号大于该值的 | `node scripts/gh-release.js`（稳定版发完跑） |
 | `scripts/check-changelog-quotes.js` | 改完 changelog **先跑它**：文案行必须恰好 2 个半角双引号（正文用「」），否则整个文件语法错 | `node scripts/check-changelog-quotes.js` |
 | `scripts/package.js` | 只打包 zip + `latest.json`（门禁 + 真机回归也在这一步） | `node scripts/package.js` |
 | `.github/workflows/release.yml` | CI：打 tag 自动发布 —— **tag 名带 `-beta` ⇒ 测试通道**（走 `release-beta.js`），否则稳定通道；tag 里的版本必须与 `manifest.json` 一致 | 测试版 `git tag v2.0.1.3-beta && git push --tags`<br>稳定版 `git tag v2.0.2 && git push --tags` |
@@ -48,7 +52,8 @@
 | `--channel stable` / `--promote` | 发稳定通道（写 `latest.json` + `update.xml`） |
 | `--with-crx` | 已无意义（旧参数，静默忽略）：稳定通道总是打 crx；测试版 crx 由 `release-beta.js` 出 |
 | `--key <pem>` | 指定签名密钥（默认 `release/key.pem`；**必须与线上同一把**） |
-| `--no-crx` | 完全跳过 crx（只发 zip 通道） |
+| `--no-crx` | **已移除（2026-10-05）**：发版一律出 crx（它是唯一交付物），传它**直接报错**并指路 |
+| `--with-zip` | 额外把 zip 放进 `release/`。**默认不产出**：zip 只在明确要的时候才给；不带它时 `latest.json` 的 `zip`/`sha256` 留空（站点不会多一个 404 地址，`publish-gh.js` 的预检也不会因缺文件中止） |
 | `--skip-gates` | 跳过门禁（仅重打产物时用） |
 
 ### 一条命令从零到上线
@@ -83,8 +88,9 @@ node scripts/release-beta.js          # 产出 release/keyword-highlighter-beta-
 node scripts/publish-gh.js --beta-only --skip-lang   # 推 gh-pages（需要 GH_TOKEN）
 ```
 
-测试者这边：打开扩展弹窗 → 点「稳定版」这个链接 → 切到「测试版」→ 自动重新检查更新。
-（该开关只影响本机，存在 `chrome.storage.local.khUpdateChannel`。）
+测试者这边：打开扩展弹窗 → 点「🔀 稳定版」→ **再点一下确认** → 切到「测试版」。
+（2026-10-05 起插件入口**不再有线上更新**：没有「检查更新」按钮、没有提示条、没有下载；
+这个开关只把选择写进本机 `chrome.storage.local.khUpdateChannel`，升级始终由浏览器自己的 crx 自动更新通道完成。）
 
 ## 测好之后晋级稳定版
 
@@ -93,7 +99,7 @@ node scripts/release.js --promote             # 同一份构建，改发到 late
 node scripts/publish-gh.js
 ```
 
-`--promote` 等价于 `--channel stable`：会同时更新 `latest.json`（zip 通道）与 `update.xml`（crx 通道），
+`--promote` 等价于 `--channel stable`：会更新 `latest.json`（**默认只有 crx 字段**）与 `update.xml`（crx 自动更新源），
 并顺带跑一次 `scripts/release-beta.js --skip-gates`，把**同版本号的测试包**也留在 `release/` 里（历史沿用）。
 **注意**：更新 `update.xml` 需要**当初发布时那把 `key.pem`**（扩展 ID 由它决定，换密钥 Chrome 会拒绝更新）：
 
@@ -154,17 +160,20 @@ node scripts/publish-gh.js --beta-only --skip-lang
 
 - **装了「测试版」那个扩展的人不用切**：那个包被 `version_name = "x.y.z beta"` 钉死在测试通道，
   弹窗里的通道徽标是**只读**的（显示「🔒 测试版」），它的自动更新走 `update-beta.xml`。
-- **只有正式版扩展**才需要切：扩展弹窗 → 「检查更新」旁边那个通道徽标 → 点一下在 **稳定版 ⇄ 测试版**
-  之间切换（只影响本机，存在 `chrome.storage.local.khUpdateChannel`）。切到「测试版」后它读的是
-  `latest-beta.json` —— 那是**测试版那个扩展**的 zip 包，装上去等于并装一个测试版扩展，不是把正式版升级。
+- **只有正式版扩展**才需要切：扩展弹窗 → 点「🔀 稳定版」这个按钮（**两次点击制**：第一次只问
+  「❓ 切到测试版？」，第二次才真的写盘；6 秒不点自动取消）。它只影响本机，存在
+  `chrome.storage.local.khUpdateChannel`。**切换本身不下载任何东西** —— 它只改变本机记录；
+  装/升级始终由浏览器按各自的 crx 更新源完成（稳定版读 `update.xml`，测试版那个包读 `update-beta.xml`）。
+- 想换成测试版**那个扩展**（另一个 ID、另一条自动更新源），得去首页手动装它，不是切一下开关就行。
 - 切回稳定版后，若本机版本号比线上稳定版高（装过四段测试号），会显示「已是最新」——这属于正常，
   等正式版版本号追上来即可。
 ## 每次发版后自检（30 秒）
 
-1. 打开对应清单：`…/latest.json` 或 `…/latest-beta.json`，`sha256` 应与本地 `release/` 里的一致；
+1. 打开对应清单：`…/latest.json` 或 `…/latest-beta.json`，`sha256` 应与本地 `release/` 里的一致
+   （稳定版默认只发 crx ⇒ `zip`/`sha256` 是空的，属正常；加了 `--with-zip` 才两者都有）；
 2. 稳定版另看 `…/update.xml`、测试版看 `…/update-beta.xml`：`version` 应是新版本、
    `codebase` 指向线上那个带版本号的 crx（测试版的是 `keyword-highlighter-beta-v<ver>.crx`）；
-3. 扩展 popup 点「检查更新」：对应通道应提示有新版本，tooltip 显示更新源 / 发布时间 / 说明；
+3. 稳定版 crx 真的能装：下载 `codebase` 那个文件，拖进浏览器，扩展详情页版本号应变成新版本；
 4. GitHub Pages 有 CDN 缓存，最长可能几十分钟才生效，属正常。
 
 ## 安全约定（已由代码兜底）

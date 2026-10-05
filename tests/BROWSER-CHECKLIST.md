@@ -31,15 +31,19 @@
 
 **① 浏览器必须是 ≤136 的 Chromium 系（硬要求）**
 
-- 装置靠 `--load-extension=<扩展目录>` 加载未打包扩展（`_e2e/harness.js:60`），
+- 装置靠 `--load-extension=<扩展目录>` 加载未打包扩展（`_e2e/harness.js` 的 `launch`），
   而 **Chrome / Edge 137 起已移除 `--load-extension`**（**引用 round 18 实测**，登记 F-70）。
-  用 ≥137 的正式版跑，现象是 `net::ERR_FILE_NOT_FOUND at chrome-extension://…/options/options.html`
-  （`_e2e/harness.js:78` → `_e2e/run.js:56`）——**不是**扩展坏了。
+  用 ≥137 的正式版跑，**现在的现象**是启动阶段直接抛
+  `扩展的 service worker 没起来：找不到 background/service-worker.js`，并列出实际浏览器路径与
+  当前 SW 列表（`_e2e/harness.js:68-88`）。**2026-10-05 之前**的现象更迷惑：装置抓到 Chrome 自带
+  组件扩展的 SW、extId 变成别人的，然后 `net::ERR_FILE_NOT_FOUND at chrome-extension://…/options/options.html`
+  ——两种都**不是**扩展坏了。**实测 154.0.8037.98 加 `--enable-unsafe-extension-debugging` 也救不回来**
+  （`node _e2e/probe-sw-urls.js --enable-unsafe-extension-debugging` 复现）。
 - **本轮（round 22）实测到的本机浏览器**（读文件版本 `ProductVersion`，未启动浏览器）：
 
 | 用途 | 路径（实测存在） | 实测版本 | ProductName |
 |---|---|---|---|
-| **推荐**（round 18 用的就是它） | `C:\Users\Administrator\AppData\Local\Temp\kh-browser\chrome-win64\chrome.exe` | **131.0.6778.264** ✅ ≤136 | Google Chrome for Testing |
+| **推荐**（round 18 与 2026-10-05 实测跑通用的都是它） | `C:\Users\Administrator\AppData\Local\Temp\kh-browser\chrome-win64\chrome.exe` | **131.0.6778.264** ✅ ≤136 | Google Chrome for Testing |
 | 备选 | `C:\kh-chromium\chrome-win\chrome.exe` | **131.0.6778.33** ✅ ≤136 | Chromium |
 | ❌ 不可用 | `C:\Program Files\Google\Chrome\Application\chrome.exe` | **154.0.8037.98** ❌ ≥137 | Google Chrome |
 | ❌ 本机不存在 | `C:\Program Files\Microsoft\Edge\Application\msedge.exe`（含 `Program Files (x86)` 那条） | — | — |
@@ -61,7 +65,8 @@
 | 值是**浏览器可执行文件的绝对路径** —— **不是** profile 目录、**不是**扩展目录 | `_e2e/harness.js:25`（值直接喂给 `executablePath`，`:47-48`） |
 | **默认值 = 未设置**（没有"默认浏览器"这回事）。未设置时按 `LINUX_CANDIDATES`(`:26-31`) → `EDGE_CANDIDATES`(`:17-22`) 取**第一个存在的** | `_e2e/harness.js:24-39` |
 | 设了它 ⇒ 候选**只剩这一个**（`process.env.KHE_BROWSER ? [X] : [...]` 是**二选一**，不是"优先追加"） | `_e2e/harness.js:25` |
-| ⚠️ **路径写错不会报错**：`findBrowser()` 会继续遍历 `EDGE_CANDIDATES`、**静默回落**到系统浏览器（本机 = Chrome 154 ⇒ 必然加载不到扩展，现象同 ①）。**必须核对 `run.js` 打印的 `浏览器:` 那一行** | `_e2e/harness.js:34-39`、`_e2e/run.js:50` |
+| ⚠️ **路径写错不会在 `findBrowser()` 里报错**：它会继续遍历 `EDGE_CANDIDATES`、**静默回落**到系统浏览器（本机 = Chrome 154 ⇒ 加载不到扩展）。**但现在不会再"静默假绿"**：装置只认本扩展自己那条 SW（`background/service-worker.js`），找不到就当场抛 `扩展的 service worker 没起来：找不到 background/service-worker.js`，并把**实际用的浏览器路径 + 当前 SW 列表**打出来；看到这条就直接核对 `run.js` 打印的 `浏览器:` 那一行 | `_e2e/harness.js:34-39`（回落）、`:68-88`（只认自己的 SW + 硬失败）、`_e2e/run.js:50` |
+| 诊断用：`node _e2e/probe-sw-urls.js [额外参数…]` 打印当前浏览器认到的 SW 列表与 extId，用来判断"是我没设对浏览器，还是扩展真没起来" | `_e2e/probe-sw-urls.js` |
 | 两个候选列表都找不到才抛 `找不到浏览器，可用 KHE_BROWSER 环境变量指定 Chrome/Chromium 可执行文件路径` | `_e2e/harness.js:38` |
 | 该变量在 **`require('./harness')` 时**（模块顶层）读取 ⇒ 必须在**启动 node 之前**设好；测试脚本里再改 `process.env.KHE_BROWSER` **无效** | `_e2e/harness.js:25`、`_e2e/run.js:15` |
 | 每次运行都用**全新临时 profile**（`os.tmpdir()/kh-edge-*`），跑完删除；配置由 `setConfig` 先清空再注入 ⇒ **不依赖**你日常浏览器的配置与登录态，扩展 ID 变化也不影响回归 | `_e2e/harness.js:44`、`:88-95`、`:97-100` |
@@ -129,8 +134,8 @@ node scripts/fetch-lang.js          # 加 --force 强制重下
 |---|---|---|---|
 | 0 | 版本闸门（任意 cwd）：`(Get-Item -LiteralPath '<§0.1① 表里那条 chrome.exe>').VersionInfo.ProductVersion` | `131.0.6778.264` 或 `131.0.6778.33`（主版本 **≤136**） | 主版本 ≥137（`--load-extension` 已被移除）；或 `Test-Path` 为 `False`（该路径被 `%TEMP%` 清理了） |
 | 1 | 语言包（`work/keyword-highlighter`）：`node scripts/fetch-lang.js` | `✓ chi_sim.traineddata.gz 已存在且校验一致（1689 KB）`、`✓ eng.traineddata.gz 已存在且校验一致（1938 KB）`、`语言包就绪：<…>\release\lang`，**EXIT=0**（KB 数由 `Math.round(bytes/1024)` 算，`fetch-lang.js:37`） | 出现 `… 已存在但校验不一致，重新下载`、或 `失败：<原因>`、或 `✗ 有 N 个语言包没取到（真浏览器回归的「图片文字识别」组会红）`、或 EXIT≠0 |
-| 2 | 全量回归（`_e2e`）：先 `$env:KHE_BROWSER='<§0.1① 那条路径>'`，再 `node run.js` | 头部 5 行：`浏览器: <你设的那条 ≤136 路径>` / `扩展目录: F:\harness\高亮词插件\work\keyword-highlighter` / `回归方面: all（不裁剪）  →  内容层 + UI 层` / `扩展 ID: ` / `配置已注入（keywords=<N>，silent/gap=0）`（`_e2e/run.js:50-57`）；末尾 `内容层真浏览器测试` 块 = `通过 73 · 失败 0`，**第二块（累计）** = `通过 128 · 失败 0`（**引用 round 18 实测**）；**EXIT=0** | ① `浏览器:` 不是你设的路径（= 静默回落，见 §0.1②）；② `net::ERR_FILE_NOT_FOUND at chrome-extension://…`（浏览器 ≥137，或扩展目录没被加载）；③ 第一块不是 `73 · 失败 0`、或第二块不是 `128 · 失败 0`；④ 出现 `运行期异常：`；⑤ EXIT≠0（`_e2e/run.js:82`） |
-| 3 | UI 单层复核（`_e2e`，`KHE_BROWSER` 同第 2 步）：`node run.js --aspects=ui` | `通过 55 · 失败 0`——**口径推算**：round 18 实测第二块累计 128 − 内容层 73 = 55。⚠️ 本行**本轮未实跑**（本机 node 被沙箱拒绝），以你真机读数为准 | 与 55 不符 ⇒ 先回头核对 §0.1①/②/③ 三条前置，再逐条看失败明细 |
+| 2 | 全量回归（`_e2e`）：先 `$env:KHE_BROWSER='<§0.1① 那条路径>'`，再 `node run.js` | 头部 5 行：`浏览器: <你设的那条 ≤136 路径>` / `扩展目录: F:\harness\高亮词插件\work\keyword-highlighter` / `回归方面: all（不裁剪）  →  内容层 + UI 层` / `扩展 ID: ` / `配置已注入（keywords=<N>，silent/gap=0）`（`_e2e/run.js:50-57`）；末尾 `内容层真浏览器测试` 块 = `通过 73 · 失败 0`，**第二块（累计）** = `通过 134 · 失败 0`（**round 22 续 · 2026-10-05 实测**，131.0.6778.264，`扩展 ID: lacmkclahdmfbdkjamhmadpmcaofggff`；round 18 时是 128 ⇒ 本轮 popup UI 用例改为 61 条，见第 3 行）；**EXIT=0** | ① `浏览器:` 不是你设的路径（= 静默回落，见 §0.1②）；② `扩展的 service worker 没起来：找不到 background/service-worker.js`（浏览器太新，≥137 起 `--load-extension` 被禁；或扩展目录没被加载）；③ 第一块不是 `73 · 失败 0`、或第二块不是 `134 · 失败 0`；④ 出现 `运行期异常：`；⑤ EXIT≠0（`_e2e/run.js:82`） |
+| 3 | UI 单层复核（`_e2e`，`KHE_BROWSER` 同第 2 步）：`node run.js --aspects=ui` | `通过 61 · 失败 0`（2026-10-05 实测；= 累计 134 − 内容层 73。round 18 时是 55，本轮删掉「更新条 / O-3 更新说明上屏」两条、把通道用例并进 O-1 后为 61） | 与 61 不符 ⇒ 先回头核对 §0.1①/②/③ 三条前置，再逐条看失败明细 |
 | 4 | 定点复核（`_e2e`）：`node run.js --only=<组名子串>` | 只跑组名含该子串的组，并额外打印 `⚠ 本次只跑了组名包含 "<子串>" 的组（--only 定点验证）——**不是**完整回归，` / `  上面的"通过 N"不能当回归结论；正式回归不带 --only。`（`_e2e/t.js:125-128`） | 把带 `--only` 的绿当回归/出包结论（`_e2e/t.js:30` 明写「**出包门禁永远不带这个参数**」） |
 | 5 | 截图核对（任意 cwd）：看 `F:\harness\高亮词插件\_e2e\_out\*.png`，并核对日志末行 `截图目录：…`（`_e2e/t.js:138`） | 断言失败 / 关键步的截图在场 | 有失败但目录为空 ⇒ 截图通道也坏了（`shot()` 吞异常，`_e2e/t.js:115-119`）。注意 `_e2e/_out/` 被根 `.gitignore:16` 忽略，**不进 git** |
 

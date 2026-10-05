@@ -189,7 +189,7 @@ function main() {
    *   ① 与 meta-check / 单测 / integrity 同级 —— 红灯禁止打包（应急用 --skip-e2e）；
    *   ② **回归范围由 scripts/impact.js 按本次真实改动算**（基线哈希比对，无需 git）：
    *      它把改动文件映射到**方面**（hit 命中 / visual 渲染 / interact 交互 / fetch 抓取 /
-   *      site 站点门禁 / ui 管理端 / data 数据层 / update 更新通道），再交给 e2e 按方面裁组；
+   *      site 站点门禁 / ui 管理端 / data 数据层），再交给 e2e 按方面裁组；
    *      只动测试/脚本/文档 → none（不跑浏览器层）；
    *      **拿不准一律 all**（未知文件 / 影响面大的文件 / 没有基线）。--full 可强制全跑。 */
   let e2eSelector = '--aspects=all';        // 传给 _e2e/run.js 的**选择器片段**（区域 / 方面 / 全量）
@@ -316,7 +316,7 @@ function main() {
     const latestPath = path.join(distDir, 'latest.json');
     fs.writeFileSync(latestPath, JSON.stringify(latest, null, 2) + '\n', 'utf8');
     console.log('✓ 发布清单：dist/latest.json  （sha256=' + hash.slice(0, 16) + '…）');
-    console.log('  发版动作：把 latest.json + update.xml + ' + path.basename(zipPath) + ' 一起放到 gh-pages 根目录');
+    console.log('  发版动作：把 latest.json + update.xml + crx 一起放到 gh-pages 根目录（zip 只在 release.js 加了 --with-zip 时才跟着发）');
   } catch (e) {
     console.error('（latest.json 生成失败，不影响 zip：' + (e && e.message) + '）');
   }

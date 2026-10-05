@@ -277,16 +277,18 @@ if (exists('src/core/scanner.js')) {
 /* ============ 3e. 后台模块必须挂到 self（service worker 里没有 window） ============ */
 /* 实测事故：重写 update-checker 时只写了 window.UpdateChecker —— service worker 里没有 window，
  * 于是 self.UpdateChecker 为 undefined，popup 点「检查更新」永远显示"失败"（用户报的 bug）。
- * 这类"模块没挂上"的错在单测里发现不了（单测直接 require 模块），必须静态兜住。 */
-if (exists('background/update-checker.js')) {
-  const UC = read('background/update-checker.js');
-  /* 必须是 **非 window** 的挂载（G. / self.）—— 只查子串的话 window.UpdateChecker 也能蒙混过关 ✗ */
-  const hasSelfGuard = /typeof self/.test(UC);
-  const assignsNonWindow = /(^|[^.\w])(G|self)\.UpdateChecker\s*=\s*UpdateChecker/.test(UC);
-  if (!hasSelfGuard || !assignsNonWindow) {
-    bad('update-checker.js 必须同时挂到 self（service worker 里没有 window，否则后台取不到 UpdateChecker）');
+ * 这类"模块没挂上"的错在单测里发现不了（单测直接 require 模块），必须静态兜住。
+ * 【2026-10-05】update-checker.js 已随"插件入口取消线上更新"删除；此处改盯仍然存在的后台模块
+ * `background/ocr.js`（同一类风险：它必须挂 self.OcrHost，否则 service-worker 里的 OCR 路由取不到它）。 */
+if (exists('background/ocr.js')) {
+  const OCR = read('background/ocr.js');
+  /* 必须是 **非 window** 的挂载（G. / self.）—— 只查子串的话 window.OcrHost 也能蒙混过关 ✗ */
+  const assignsNonWindow = /(^|[^.\w])(G|self)\.OcrHost\s*=\s*(\{|OcrHost)/.test(OCR);
+  if (!assignsNonWindow) {
+    bad('background/ocr.js 必须把 OcrHost 挂到 self（service worker 里没有 window，否则后台取不到它）');
   } else ok('后台模块挂到 self（service worker 可用）');
 }
+
 
 /* ==================== 3d. 交付包不得含私钥/发布目录（安全红线） ==================== */
 /* 实测事故：发布脚本在仓库根建 release/ 并放了 key.pem，打包时整包体积翻倍、**私钥被打进分发包**。

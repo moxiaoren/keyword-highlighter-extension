@@ -116,8 +116,9 @@ jobs:
       # 误判成"CI 不跑门禁"。本地发版不跳过，CI 也不跳过 —— 两边同一条流程，日志里能看见门禁真的在跑。
       # 【通道分流】测试通道走 **release-beta.js**（仓库自己的测试版流水线：改 manifest 的
       # key/update_url/version_name → 测试版 zip → 用测试版私钥签 crx → 写 latest-beta.json 与 update-beta.xml）。
-      # 注意：`release.js --channel beta --no-crx` 那条路只发 zip、**不生成 update-beta.xml**，
-      # 也就意味着测试版用户收不到自动升级 —— 那不是我们要的测试通道。
+      # 注意：`release.js --channel beta`（以及配套的 `--no-crx` zip-only 分支）**都已经删掉**了：
+      # 那是条只发 zip、不生成 update-beta.xml 的死路 —— 测试版用户收不到自动升级，不是我们要的测试通道。
+      # 现在 `release.js` 遇到 `--channel beta` 或 `--no-crx` 都直接报错退出（见 release.js 参数段）。
       - name: 门禁 + 打包 + 生成清单与 crx（按通道）
         env:
           KH_KEY_PEM: ${{ secrets.KH_KEY_PEM }}
@@ -135,7 +136,13 @@ jobs:
       # 【为什么按通道读清单】原先写死 release/latest.json：测试通道发布时它还是上一版**稳定版**的清单，
       # 于是"校验通过"校验的是另一条通道的旧产物；再叠上 find(f=>f.endsWith('.zip')) 抓到哪个包全看目录顺序。
       # 现在按通道读各自的清单，并要求 zip 文件名里含清单声明的版本（顺带挡住拿旧包顶包）。
-      - name: 校验产物（哈希与清单一致、包里无私钥）
+      # 【2026-10-05 起稳定版默认不发 zip】`release.js` 的 `--no-crx`（zip-only）已删除、zip 改成
+      # `--with-zip` 才产出 ⇒ 原来"必须找到 zip 且 sha256 与清单一致"的死条件在稳定通道不再成立
+      # （它会把一次完全正常的 crx-only 发版判成失败）。现在按通道分开校验：
+      #   · 稳定：`update.xml` 的 codebase 指向的那个文件**必须真的在 release/ 里**（名字含版本号）——
+      #     这正是"更新源指向不存在的文件 ⇒ 用户端 404"的那道闸；只有真发了 zip 才再核 sha256。
+      #   · 测试：仍按 latest-beta.json 的版本找 zip 核 sha256（release-beta.js 一直发 zip）。
+      - name: 校验产物（更新源指向的文件真的存在、哈希一致、包里无私钥）
         env:
           CH: ${{ steps.ch.outputs.channel }}
         run: |
@@ -143,21 +150,33 @@ jobs:
             const fs=require('fs'),crypto=require('crypto');
             const ch=process.env.CH;
             const man=ch==='beta'?'latest-beta.json':'latest.json';
+            const xml=ch==='beta'?'update-beta.xml':'update.xml';
             const j=JSON.parse(fs.readFileSync('release/'+man,'utf8'));
+            /* 1) 清单声明的更新源指向的文件必须在本地产物里 —— 少了它，线上就是 404 */
+            const x=fs.readFileSync('release/'+xml,'utf8');
+            const cb=(x.match(/codebase=\"([^\"]+)\"/)||[])[1]||'';
+            const base=decodeURIComponent(cb.split('/').pop());
+            if(!base){ console.error(xml+' 里没有 codebase'); process.exit(1); }
+            if(!fs.existsSync('release/'+base)){ console.error(xml+' 指向 release/'+base+'，但 release/ 里没有这个文件'); process.exit(1); }
+            /* 2) 发了 zip 就核 sha256（beta 恒有；stable 只有 --with-zip 才有） */
             const zips=fs.readdirSync('release').filter(f=>f.endsWith('.zip') && f.indexOf(j.version)>=0);
-            if(!zips.length) { console.error(man+' 声明的版本 '+j.version+' 在 release/ 里没有对应 zip'); process.exit(1); }
-            const h=crypto.createHash('sha256').update(fs.readFileSync('release/'+zips[0])).digest('hex').toUpperCase();
-            if(h!==j.sha256) { console.error('sha256 不一致：'+man+' 说 '+j.sha256+'，实测 '+h); process.exit(1); }
+            let note='（本次无 zip）';
+            if(zips.length){
+              const h=crypto.createHash('sha256').update(fs.readFileSync('release/'+zips[0])).digest('hex').toUpperCase();
+              if(h!==j.sha256){ console.error('sha256 不一致：'+man+' 说 '+j.sha256+'，实测 '+h); process.exit(1); }
+              note=zips[0]+' '+h.slice(0,16);
+            } else if(j.zip){ console.error(man+' 声明了 zip 地址，但 release/ 里没有对应 zip'); process.exit(1); }
             const allowed=['key.pem','key-beta.pem'];
             const keys=fs.readdirSync('release').filter(f=>/\.(pem|key)$/i.test(f) && allowed.indexOf(f)<0);
-            if(keys.length) { console.error('产物里含意外私钥：'+keys.join(',')); process.exit(1); }
+            if(keys.length){ console.error('产物里含意外私钥：'+keys.join(',')); process.exit(1); }
             for (const k of allowed) if (fs.existsSync('release/'+k)) console.log('提示：release/'+k+' 是本次由 Secret 注入的签名密钥，peaceiris 的 exclude_assets 已排除它');
-            console.log('产物校验通过 '+man+' '+zips[0]+' '+h.slice(0,16));
+            console.log('产物校验通过 '+man+' version='+j.version+' 更新源='+base+' '+note);
           "
 
-      # 【为什么必须单独一步】release.js 打 crx 失败时只打印一句 ⚠️（release.js:340-341、355-356）
-      # 「跳过 crx（zip 通道仍然可用）」就继续往下走，而 update.xml 里那个 codebase 是它照着线上路径推出来的
-      # ⇒ 没有 crx 也能"发布成功"，用户端却是 404。两条通道因此都必须硬断言 crx 真的产出来了；
+      # 【为什么必须单独一步】2026-10-05 起 `release.js` 自己也会在打不出 crx 时**硬失败**（它删除
+      # `--no-crx` 的同时加了 `if (!crxOk) die(...)`），所以这一层是 CI 的第二道闸：防止以后有人把那条
+      # die 撤掉、或换个脚本发版时又出现「没有 crx 也能发布成功」—— update.xml 里的 codebase 是照着
+      # 线上路径推出来的，产物不在，用户端就是 404。两条通道都硬断言 crx 真的产出来了；
       # 测试通道还要把 update-beta.xml 的版本也钉住（它是测试版用户唯一的升级入口）。
       - name: 本通道必须真的产出 crx（否则拒绝发布）
         env:

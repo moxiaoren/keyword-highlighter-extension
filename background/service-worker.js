@@ -2,43 +2,26 @@
  * background/service-worker.js · 后台（MV3 Service Worker）
  * ----------------------------------------------------------------------------
  * 职责（严格限定，不含任何高亮业务逻辑）：
- *   1. 安装/更新：写默认值、打开欢迎页、启动更新轮询
+ *   1. 安装/更新：写默认值、打开欢迎页
  *   2. 快捷键：转发成统一消息给当前标签页 / 打开设置页
  *   3. 消息路由：统一走 `KH.MSG` 协议常量，禁止硬编码字符串
  *   4. 图标状态：随 globalEnabled 切换亮/灰图标
- *   5. 定时任务：更新检查（6h）
+ *
+ * 【2026-10-05 用户口径】后台不再做任何"线上更新"：`background/update-checker.js`、6h 轮询 alarm、
+ * 动作栏 ↑ 徽标、`kh:update:*` 两条消息全部删除。更新通道只剩用户自己的本机开关
+ * （`chrome.storage.local.khUpdateChannel`，读写见 src/core/channel.js），后台不再读它。
  *
  * 版本号唯一真源：manifest.json（本文件只读，不定义版本字面量）。
  */
 'use strict';
 
-importScripts('../src/core/protocol.js', 'update-checker.js', 'ocr.js');
+importScripts('../src/core/protocol.js', 'ocr.js');
 
 const MSG = self.KH.MSG;
-const UPDATE_CHECK_INTERVAL_MIN = 360;   // 6 小时
 
 /** 版本唯一来源：manifest */
 function currentVersion() {
   try { return chrome.runtime.getManifest().version || '0.0.0'; } catch (e) { return '0.0.0'; }
-}
-
-/* ---------------- 更新通道 ---------------- */
-
-/**
- * @param {boolean} force true = 跳过 update-checker 的 6h 缓存（只有"用户手动点检查更新"才该传）
- */
-async function checkForUpdates(force) {
-  const info = await self.UpdateChecker.check(currentVersion(), { force: !!force });
-  await chrome.storage.local.set({ khUpdateInfo: info });
-  try {
-    if (info && info.hasUpdate) {
-      await chrome.action.setBadgeBackgroundColor({ color: '#e53935' });
-      await chrome.action.setBadgeText({ text: '↑' });
-    } else {
-      await chrome.action.setBadgeText({ text: '' });
-    }
-  } catch (e) { /* 图标 API 偶发失败不影响主流程 */ }
-  return info;
 }
 
 /* ---------------- 图标 ---------------- */
@@ -64,21 +47,8 @@ async function broadcast(type, payload) {
 
 chrome.runtime.onInstalled.addListener(async (details) => {
   if (details.reason === 'install' || details.reason === 'update') {
-    /* 【升级后必须清掉上一次检查的结论】否则缓存里那份 "hasUpdate:true"（当时本地还是旧版本）
-     * 会让弹窗一直显示「发现新版本 v<刚装上的这个版本>」（实测 bug）。徽标也一起清，避免残留 ↑。 */
-    try {
-      await chrome.storage.local.remove('khUpdateInfo');
-      await chrome.action.setBadgeText({ text: '' });
-    } catch (e) { /* 存储/徽标失败不影响安装流程 */ }
     await chrome.tabs.create({ url: chrome.runtime.getURL('welcome/welcome.html') });
   }
-  await checkForUpdates();
-  chrome.alarms.create('checkUpdate', { periodInMinutes: UPDATE_CHECK_INTERVAL_MIN });
-});
-
-chrome.runtime.onStartup.addListener(() => {
-  checkForUpdates();
-  chrome.alarms.create('checkUpdate', { periodInMinutes: UPDATE_CHECK_INTERVAL_MIN });
 });
 
 /* ---------------- 快捷键 ---------------- */
@@ -135,15 +105,6 @@ const HANDLERS = {
     return { ok: true, host, disabled: next };
   },
 
-  /* 手动「检查更新」会把 force:true 带进来 —— 旧写法 `async () => …` 直接把 payload 丢掉，
-   * 于是用户点多少次都只拿到 6h 缓存里的旧判决（C7 F-3）。 */
-  [MSG.UPDATE_CHECK]: async (msg) => ({ ok: true, info: await checkForUpdates(!!(msg && msg.force)) }),
-
-  [MSG.UPDATE_INFO]: async () => {
-    const { khUpdateInfo = null } = await chrome.storage.local.get('khUpdateInfo');
-    return { ok: true, info: khUpdateInfo };
-  },
-
   /* ---- ocr：内容脚本/设置页 → background → offscreen 文档（引擎在那里跑） ---- */
   [MSG.OCR_IMAGE]: (msg, sender) => self.OcrHost.submitImage(msg, sender),
 
@@ -185,16 +146,9 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && changes.globalEnabled) updateIcon(changes.globalEnabled.newValue);
 });
 
-/* ---------------- 定时任务 ---------------- */
-
-chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === 'checkUpdate') checkForUpdates();
-});
-
 /* ---------------- 冷启动自检 ---------------- */
 
 (async () => {
   const { globalEnabled = true } = await chrome.storage.local.get('globalEnabled');
   await updateIcon(globalEnabled);
-  chrome.alarms.create('checkUpdate', { periodInMinutes: UPDATE_CHECK_INTERVAL_MIN });
 })();
