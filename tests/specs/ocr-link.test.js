@@ -389,19 +389,24 @@ module.exports = async function run() {
       eq(O._debug().inflight, 4, '在途额度 = 4（`popup/popup.js:197` 读的就是这个键）');
 
       /* ★ #16 ③ 的靶心：viaCanvas / blob: 那条路回来的结果**不带 src**。
-       * 旧实现 `if (src) inflightCount--` ⇒ 额度永不归还，累积 4 次整页 OCR 静默全废。 */
+       * 旧实现 `if (src) inflightCount--` ⇒ 额度永不归还，累积 4 次整页 OCR 静默全废。
+       * 【2026-10-06 补发之后的语义】归还的额度会被**队里第 5 张立刻接管** ⇒
+       * 在途仍是 4（上限），但 `sent` 从 4 涨到 5 —— 这比"在途减 1"更能证明额度真的还回来了
+       * （没还的话第 5 张永远发不出去）。 */
       O._onResult({ requestId: 'img1', ok: true, text: '华为' });
-      eq(O._debug().inflight, 3, '★ 结果不带 src 也必须归还额度（旧实现会卡在 4）');
+      eq(O._debug().inflight, 4, '★ 结果不带 src 也必须归还额度（旧实现会卡在 4、第 5 张永远发不出去）');
+      eq(sent.length, 5, '归还的额度必须被队里那张接管（补发）');
 
       O._onResult({ requestId: 'img1', ok: true, text: '华为' });
-      eq(O._debug().inflight, 3, '幂等：同一条结果再来一次不许把额度还成负的/多还');
+      eq(O._debug().inflight, 4, '幂等：同一条结果再来一次不许把额度还成负的/多还，也不许重复补发');
+      eq(sent.length, 5, '幂等：不许因为重复结果又多发一张');
 
       /* 兜底收口：background 被 MV3 杀掉时不会有任何回执，内容脚本必须自己判死 */
       const n = O._sweep(Date.now() + 200000);
-      eq(n, 3, '★ 超过 JOB_STALE_MS（150s）的在途请求必须被内容脚本自己收口');
+      eq(n, 4, '★ 超过 JOB_STALE_MS（150s）的在途请求必须被内容脚本自己收口（此时在途＝4）');
       eq(O._debug().inflight, 0, '收口后额度归零，下一个标签页/下一次重建还能继续用');
       const timedOut = O.items().filter((it) => it.state === 'fail' && it.errorCode === 'timeout');
-      eq(timedOut.length, 3, '收口的条目必须落到终态 fail + errorCode=timeout（面板于是能说人话）');
+      eq(timedOut.length, 4, '收口的条目必须落到终态 fail + errorCode=timeout（面板于是能说人话）');
       eq(O._sweep(Date.now() + 400000), 0, '幂等：收口过的请求不许再收一次');
     });
   });

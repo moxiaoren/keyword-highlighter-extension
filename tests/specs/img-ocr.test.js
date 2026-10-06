@@ -84,7 +84,7 @@ function hitOf(a) {
 }
 
 module.exports = async function run() {
-  const { KH } = require('../bootstrap');
+  const { KH, driveOcrResults } = require('../bootstrap');
   const O = KH.ImgOcr;
 
   suite('图片命中：读不出地址的图不许被静默丢掉（K62）');
@@ -384,5 +384,36 @@ module.exports = async function run() {
       anchorCell: t.rows[0].children[0] };
     O.build({}, {}, [hitOf(anchor)]);
     eq(O.items().length, 2, '每处最多 2 张（上限沿用既有语义）');
+  });
+
+  /* ------------------------------------------------------------------
+   * 同页图超过并发上限：额度一归还就必须**补发**队列里剩下的
+   * ------------------------------------------------------------------
+   * 现场（用户手动测试套件里撞到的）：一页 9 张图（每行一张）⇒ 只有前几张出结果，
+   * 其余一直写「前面的图识别完就轮到它（同时最多 4 张在跑）」，实测 +30s / +90s 都没动。
+   * 根因：`submit()` 满额直接返回 false，而**归还额度的四个出口只看账、不看队列**。
+   * 这条用例走真机同一条链：发请求 → 回执带 requestId → 结果经 onMessage 回来 → 归还额度 → 补发
+   * （装置见 tests/bootstrap.js 的 sendMessage / onMessage 与 driveOcrResults）。
+   */
+  await test('★ 同页 9 张图：并发上限（4）之外的必须被补发（旧实现只跑前 4 张）', () => {
+    /* 先清掉前面用例留在途的额度（走**真实销毁路径**：`KH.features.get('img-ocr').clear`，
+     * 与 `src/core/rebuilder.js:111` 同签名）——否则它们占着 4 个位置，本用例一张也发不出去 */
+    KH.features.get('img-ocr').clear(null, { reason: 'destroy' });
+    const before = (global.__OCR_SENT__ || []).length;
+    const hits = [];
+    for (let i = 0; i < 9; i++) {
+      /* 原图得有尺寸，否则 pixelVerdict 判 too-small、条目直接 blocked（那是另一条用例的事） */
+      const im = fakeImg({ src: 'data:image/png;base64,iVBORw0KGgo' + i });
+      im.naturalWidth = 100; im.naturalHeight = 100;
+      hits.push(hitOf(anchorWith([im])));
+    }
+    O.build({}, {}, hits);
+    eq(O.items().length, 9, '9 张图应当有 9 条条目');
+    eq((global.__OCR_SENT__ || []).length - before, 4,
+      '同一时刻只发 4 张（MAX_INFLIGHT 仍然生效 —— 修的是"补发"，不是把上限调大）');
+    eq(O.items().filter((it) => it.state === 'idle').length, 5, '先有 5 张排在队里');
+    driveOcrResults(null, before);
+    eq(O.items().filter((it) => it.state === 'done').length, 9,
+      '★ 9 张都要落地：额度一归还就得接着发（否则面板永久停在「排队中…」）');
   });
 };

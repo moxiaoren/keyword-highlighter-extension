@@ -217,4 +217,93 @@ module.exports = async function run() {
     truthy(/this\.imgCollapsedKeys = this\.imgCollapsed\s*\r?\n\s*\?/.test(src),
       '收起动作要把当时的条目键记下来');
   });
+
+  /* ==========================================================================
+   * 【默认只显示命中】（用户 2026-10-06）
+   *   用户原话："这个功能的主要目的是命中，未命中的图片其实不需要展示出来
+   *   （可以留个渠道，后面人工打开复核）"。
+   *   口径：命中常显；**真失败（bad 类）也必须常显**（否则就是 D-14.5 禁止的静默 ——
+   *   用户看到空面板以为功能坏了）；其余（未命中 / 排队中 / 没认出文字 / 读不到图…）
+   *   进题头上的「显示全部」人工复核视图。状态类只从 KH.OcrCopy.stateClass 取。
+   * ========================================================================== */
+
+  suite('important-note · 🖼 图片分区：默认只显示命中，「显示全部」是人工复核入口');
+
+  await test('命中与"真失败"常显；未命中 / 排队中 / 没认出文字 / 读不到图默认不显示', () => {
+    const p = shadowPanel();
+    const hit = { state: 'done', text: '一对一', matched: [{ text: '一对一' }] };
+    const miss = { state: 'done', text: '别的话' };
+    const noText = { state: 'done', why: 'no-text' };
+    const running = { state: 'pending' };
+    const queued = { state: 'idle' };
+    const bad = { state: 'fail', error: 'boom' };
+    const timeout = { state: 'fail', errorCode: 'timeout' };
+    const crossOrigin = { state: 'blocked', why: 'cross-origin', host: 'cdn.example.com' };
+    eq(p.imgRowVisible(hit), true, '命中常显（这就是这个功能的目的）');
+    eq(p.imgRowVisible(bad), true, '★ 真失败必须露出来：藏起来就是"静默"（D-14.5）');
+    eq(p.imgRowVisible(timeout), true, '超时也是真失败（bad 类）');
+    eq(p.imgRowVisible(miss), false, '未命中默认不展示（用户明确要求）');
+    eq(p.imgRowVisible(noText), false, '「没认出文字」也不占默认版面（进复核视图）');
+    eq(p.imgRowVisible(running), false, '识别中/排队中不占默认版面');
+    eq(p.imgRowVisible(queued), false, '排队中同样进复核视图');
+    eq(p.imgRowVisible(crossOrigin), false, '读不到图（note 类）进复核视图');
+  });
+
+  await test('打开「显示全部」后什么条目都显示；关掉又回到只看命中', () => {
+    const p = shadowPanel();
+    const miss = { state: 'done', text: '别的话' };
+    p.imgShowAll = true;
+    eq(p.imgRowVisible(miss), true, '复核视图里未命中也要能看到（否则这个渠道是假的）');
+    p.imgShowAll = false;
+    eq(p.imgRowVisible(miss), false, '关掉后回到只看命中');
+  });
+
+  await test('★ 「显示全部」也按批有效：条目换代就回到"只看命中"（不做整页长期记忆）', () => {
+    const p = shadowPanel();
+    p.imgShowAll = true;
+    p.imgShowAllKeys = ['r|a', 'r|b'];
+    eq(p.imgShowAllSameBatch([{ key: 'r|a' }, { key: 'r|b' }, { key: 'r|c' }]), true, '旧键都在 = 同一批');
+    eq(p.imgShowAllSameBatch([]), true, '重建清底的瞬间不算换代');
+    eq(p.imgShowAllSameBatch([{ key: 'r|a' }, { key: 'r|x' }]), false, '有旧键消失 ⇒ 换代');
+    p.imgShowAll = false;
+    p.imgShowAllKeys = ['r|a'];
+    eq(p.imgShowAllSameBatch([{ key: 'r|a' }]), false, '本来就没开"显示全部"');
+  });
+
+  await test('★ 还没跑完的条目要"说出来"：计数与空视图都不许在结果回来之前说"没有命中"', () => {
+    const p = shadowPanel();
+    const running = { state: 'pending' };
+    const queued = { state: 'idle' };
+    const hit = { state: 'done', text: '一对一', matched: [{ text: '一对一' }] };
+    const miss = { state: 'done', text: '别的话' };
+    const bad = { state: 'fail', error: 'boom' };
+    eq(p.imgBusyCount([running, queued, hit, miss, bad]), 2, '识别中 + 排队中都算"还没跑完"');
+    eq(p.imgBusyCount([hit, miss, bad]), 0, '终态不算');
+    eq(p.imgBusyCount([]), 0, '空列表安全');
+  });
+
+  await test('★ 接线契约：渲染按 imgRowVisible 过滤；题头有「显示全部」；空视图留一行说明', () => {
+    const src = read('src/features/important-note.js');
+    truthy(src.indexOf('const shown = list.filter((it) => this.imgRowVisible(it));') >= 0,
+      '渲染必须按 imgRowVisible 过滤（不能另写一套条件）');
+    truthy(src.indexOf("'<span class=\"khin-imgall\" data-act=\"all\" hidden></span>'") >= 0,
+      '题头要有「显示全部」这个复核入口（否则默认视图把条目藏了就没地方看）');
+    truthy(src.indexOf('this.imgShowAll = !this.imgShowAll;') >= 0, '「显示全部」要能切换');
+    truthy(src.indexOf("none.className = 'khin-imgnone';") >= 0,
+      '默认视图一条都没有时要留说明行，不能悄悄空白');
+    truthy(src.indexOf('KH.OcrCopy.render(\n          busyN ? KH.OcrCopy.VIEW.noneHitBusy : KH.OcrCopy.VIEW.noneHit') >= 0 ||
+      src.indexOf('busyN ? KH.OcrCopy.VIEW.noneHitBusy : KH.OcrCopy.VIEW.noneHit') >= 0,
+      '说明文案走唯一真源 KH.OcrCopy（面板不许自己写中文），且还有在跑的条目时不许说"没有命中"');
+    truthy(src.indexOf('const busyN = this.imgBusyCount(list);') >= 0 &&
+      src.indexOf('KH.OcrCopy.render(KH.OcrCopy.VIEW.busy, { n: busyN })') >= 0,
+      '计数要把"识别中 N"说出来（默认视图把在跑的行藏起来了，不说就等于骗人）');
+    const copy = read('src/ui/ocr-copy.js');
+    truthy(copy.indexOf('VIEW: VIEW,') >= 0, '展示筛选文案要挂在 KH.OcrCopy.VIEW 上导出');
+    truthy(copy.indexOf('showAll:') >= 0 && copy.indexOf('onlyHits:') >= 0 && copy.indexOf('noneHit:') >= 0,
+      '三个视图文案都要在真源里（显示全部 / 只看命中 / 没有命中）');
+    truthy(copy.indexOf('noneHitBusy:') >= 0 && copy.indexOf('busy:') >= 0,
+      '"还在识别中"的两处文案（空视图 / 计数后缀）也要在真源里');
+    truthy(copy.indexOf('const VIEW = {') >= 0 && copy.indexOf('const COPY = {') >= 0,
+      'VIEW 与 COPY 必须分开：COPY 的键集合要与 img-ocr.js 终态集合完全相等（枚举对账）');
+  });
 };

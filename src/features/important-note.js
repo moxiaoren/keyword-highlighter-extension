@@ -158,7 +158,16 @@
       padding: 6px 2px 4px; font-size: 12px; font-weight: 600; color: var(--kh-text, #1f2937);
     }
     .khin-imghead .khin-imgcount { color: #64748b; font-weight: 500; }
+    /* 「显示全部 / 只看命中」= 人工复核入口（用户 2026-10-06：面板以命中为目的，
+       没命中的图默认不展示，但必须留一条能打开的渠道）。放在题头右侧、箭头左边。 */
+    .khin-imghead .khin-imgall {
+      margin-left: auto; color: #2563eb; font-size: 11px; font-weight: 500;
+      cursor: pointer; text-decoration: underline;
+    }
+    .khin-imghead .khin-imgall[hidden] { display: none; }
     .khin-imghead .khin-imgarrow { margin-left: auto; color: #94a3b8; font-size: 11px; }
+    /* 默认视图里一条都没有时的说明行（不能悄悄空白：那看起来就是坏了） */
+    .khin-imgnone { color: #94a3b8; font-size: 12px; padding: 2px 0 4px; }
     .khin-imglist { display: flex; flex-direction: column; gap: 8px; padding: 2px 0 4px; }
     .khin-imgitem { display: flex; gap: 8px; align-items: flex-start; }
     .khin-imgthumb {
@@ -592,9 +601,14 @@
      * 条目键一起记，条目换代（提交后翻页 / 重新扫描）即作废 —— 不做整页范围的长期记忆。 */
     imgUserCollapsed: false,
     imgCollapsedKeys: [],
+    /* 「显示全部」这个人工复核视图（用户 2026-10-06：面板以命中为目的，没命中的图默认不展示）。
+     * 和上面的收起记忆同一套口径：**按批**有效，条目换代（提交后翻页 / 重新扫描）就回到"只看命中"。 */
+    imgShowAll: false,
+    imgShowAllKeys: [],
     imgSecEl: null,
     imgListEl: null,
     imgCountEl: null,
+    imgAllEl: null,
     imgArrowEl: null,
     pos: { left: 20, top: 20 },
     dragState: null,
@@ -764,6 +778,7 @@
               '<div class="khin-imghead">' +
                 '<span>🖼 图片命中</span>' +
                 '<span class="khin-imgcount"></span>' +
+                '<span class="khin-imgall" data-act="all" hidden></span>' +
                 '<span class="khin-imgarrow">展开 ▾</span>' +
               '</div>' +
               '<div class="khin-imglist"></div>' +
@@ -775,7 +790,19 @@
         this.imgSecEl = this.root.querySelector('.khin-imgsec');
         this.imgListEl = this.root.querySelector('.khin-imglist');
         this.imgCountEl = this.root.querySelector('.khin-imgcount');
+        this.imgAllEl = this.root.querySelector('.khin-imgall');
         this.imgArrowEl = this.root.querySelector('.khin-imgarrow');
+        /* 「显示全部」= 人工复核入口（用户 2026-10-06）：切视图**不**收起/展开分区
+         * （那是题头的活），并且要连同当时的条目键记下来 —— 换代即作废。 */
+        this.imgAllEl.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.imgShowAll = !this.imgShowAll;
+          this.imgShowAllKeys = this.imgShowAll
+            ? (this.imgItems || []).map((it) => String(it.key || ''))
+            : [];
+          this.imgCollapsed = false;   // 点了"显示全部"就是想看，不能还收着
+          this.renderImgSection();
+        });
         this.root.querySelector('.khin-imghead').addEventListener('click', (e) => {
           e.stopPropagation();
           this.imgCollapsed = !this.imgCollapsed;
@@ -813,40 +840,95 @@
 
     /**
      * 图片命中分区。
-     * 展示口径（用户确认）：缩略图 + 命中词 + 「是否真在图里出现」标记 + 可展开的识别文本；
-     * 点缩略图走**现有灯箱**看大图；没有识别结果的条目也要显示（并说明原因：
-     * 排队中 / 跨域未授权 / 引擎缺语言包），否则用户只会觉得"它坏了"。
+     * 展示口径（用户 2026-10-06 确认）：缩略图 + 命中词 + 「是否真在图里出现」标记 + 可展开的识别文本；
+     * 点缩略图走**现有灯箱**看大图。
+     * **默认只显示命中**（外加"真失败"这类必须露出来的）—— 其余条目（未命中 / 排队中 /
+     * 没认出文字 / 读不到图…）进题头上的「显示全部」人工复核视图，见 `imgRowVisible`。
+     * 一条都没有时留一行说明（`.khin-imgnone`），不许悄悄空白 —— 空白看起来就是"坏了"。
      */
     /**
-     * 「用户手动收起过」这份记忆**还属于这批条目吗**（纯函数，不碰 DOM —— 好单测）。
+     * 记下的那批键**全都还在**吗（纯函数，不碰 DOM —— 好单测；两个"按批"的记忆共用一套判据）。
      *
-     * 判据：收起那一刻记下的键**全都还在** ⇒ 仍是同一批。于是：
+     * 判据：记下那一刻的键**全都还在** ⇒ 仍是同一批。于是：
      *   · 同一页里异步结果陆续回来（旧键都还在）→ 记忆有效，不被自动展开打断；
      *   · 提交后翻页 / 重新扫描（有键消失）→ 记忆作废，新场景里有命中照常自动展开。
      *
      * 为什么必须有这一层：只记一个布尔值就等于**整页范围的长期记忆** —— 用户提交后翻到
      * 下一页，那是全新场景，却再也不自动展开了（用户 2026-10-06 明确否决这种长期记忆）。
+     *
+     * 空列表 = "重建清底的瞬间"（ImgOcr 的条目会被清掉再重建，见 img-ocr.js 的 clear），
+     * 不是换代：这一轮分区本来就没东西可显示，记忆留着，等条目回来再用键判断。
+     * 判成换代的话，用户一收起、页面稍有变动就作废 ⇒ 又变回"每轮都被弹开"。
      */
+    stillSameBatch(keys, list) {
+      const ks = keys || [];
+      if (!ks.length) return false;
+      const now = (list || []).map((it) => String(it.key || ''));
+      if (!now.length) return true;
+      return ks.every((k) => now.indexOf(k) >= 0);
+    },
+
     imgSameBatch(list) {
       if (this.imgUserCollapsed !== true) return false;
-      const keys = this.imgCollapsedKeys || [];
-      if (!keys.length) return false;
-      const now = (list || []).map((it) => String(it.key || ''));
-      /* 空列表 = "重建清底的瞬间"（ImgOcr 的条目会被清掉再重建，见 img-ocr.js 的 clear），
-       * 不是换代：这一轮分区本来就没东西可显示，记忆留着，等条目回来再用键判断。
-       * 判成换代的话，用户一收起、页面稍有变动就作废 ⇒ 又变回"每轮都被弹开"。 */
-      if (!now.length) return true;
-      return keys.every((k) => now.indexOf(k) >= 0);
+      return this.stillSameBatch(this.imgCollapsedKeys, list);
+    },
+
+    /** 「显示全部」这份视图记忆还属于这批条目吗（口径同 `imgSameBatch`：换代就回到"只看命中"） */
+    imgShowAllSameBatch(list) {
+      if (this.imgShowAll !== true) return false;
+      return this.stillSameBatch(this.imgShowAllKeys, list);
+    },
+
+    /**
+     * 一条图片条目在**当前视图**下要不要显示（纯函数，不碰 DOM —— 好单测）。
+     *
+     * 口径（用户 2026-10-06）：这个功能的主要目的是**命中**，没命中的图不必展示，
+     * 另留「显示全部」做人工复核入口。但**真失败必须露出来**（`bad` 类：识别失败 /
+     * 超时 / 引擎不可用）—— 否则就退回 D-14.5 明令禁止的"静默"：用户看到空面板以为功能坏了。
+     * 状态类只从唯一真源 `KH.OcrCopy.stateClass()` 取，这里**不另立一套枚举**。
+     */
+    imgRowVisible(it) {
+      if (this.imgShowAll === true) return true;
+      const cls = KH.OcrCopy.stateClass(it);
+      return cls === 'hit' || cls === 'bad';
+    },
+
+    /** 还没跑完的条目数（纯函数）：默认视图把它们藏起来了，但计数与空视图必须说出来 ——
+     *  否则"藏起来 + 结果没回来"看起来就是"这次没有命中"（在结果出来之前下结论）。 */
+    imgBusyCount(list) {
+      return (list || []).filter((it) => KH.OcrCopy.stateClass(it) === 'wait').length;
     },
 
     renderImgSection() {
       if (!this.imgSecEl) return;
       const list = this.imgItems || [];
-      if (this.imgCountEl) this.imgCountEl.textContent = list.length ? '(' + list.length + ')' : '';
       /* 【命中就自动展开（K69）】用户报的：图里识别出关键词了，分区却还是收着的，得手动点开才看得到。
        * 规则：**只要有命中的条目就默认展开**；用户手动收起来过就尊重他 —— 但这份"尊重"只对
        * **当时那批条目**有效（`imgSameBatch`）：换代了就作废，新场景里照样自动展开。 */
       if (!this.imgSameBatch(list)) { this.imgUserCollapsed = false; this.imgCollapsedKeys = []; }
+      /* 「显示全部」这份视图记忆同理按批作废（用户 2026-10-06：不做整页范围的长期记忆） */
+      if (this.imgShowAll === true && !this.imgShowAllSameBatch(list)) {
+        this.imgShowAll = false;
+        this.imgShowAllKeys = [];
+      }
+      /* 【默认只显示命中】（用户 2026-10-06）：这个功能的主要目的是命中，没命中的图不必占版面；
+       * 「显示全部」把其余条目（未命中 / 排队中 / 没认出文字 / 读不到图…）留给人工复核。
+       * 哪条算"都要显示"由 `imgRowVisible` 一处决定（命中 + 真失败），这里不再各判一次。 */
+      const shown = list.filter((it) => this.imgRowVisible(it));
+      const hiddenN = list.length - shown.length;
+      /* 【还没跑完就不许说"没有命中"】默认视图把"识别中"的行也藏起来了，于是"藏起来 + 还没回来"
+       * 会显示成"这次没有命中" —— 那是在结果出来之前下结论。所以计数与空视图都要把在跑的数量说出来。 */
+      const busyN = this.imgBusyCount(list);
+      if (this.imgCountEl) {
+        this.imgCountEl.textContent = (shown.length ? '(' + shown.length + ')' : '') +
+          (busyN ? KH.OcrCopy.render(KH.OcrCopy.VIEW.busy, { n: busyN }) : '');
+      }
+      if (this.imgAllEl) {
+        this.imgAllEl.hidden = !hiddenN;
+        this.imgAllEl.textContent = hiddenN
+          ? KH.OcrCopy.render(this.imgShowAll ? KH.OcrCopy.VIEW.onlyHits : KH.OcrCopy.VIEW.showAll, { n: hiddenN })
+          : '';
+      }
       if (this.imgUserCollapsed !== true && list.some((it) => it.state === 'done' && it.matched && it.matched.length)) {
         this.imgCollapsed = false;
       }
@@ -857,7 +939,19 @@
 
       const doc = document;
       this.imgListEl.textContent = '';
-      for (const it of list) {
+      /* 默认视图一条都没有（全是未命中/排队中…）⇒ 留一行说明：复核入口就在题头上，
+       * 但**不许悄悄空白** —— 空白看起来就是"坏了"（D-14.5 的如实告知）。 */
+      if (!shown.length) {
+        const none = doc.createElement('div');
+        none.className = 'khin-imgnone';
+        none.textContent = KH.OcrCopy.render(
+          busyN ? KH.OcrCopy.VIEW.noneHitBusy : KH.OcrCopy.VIEW.noneHit,
+          { n: busyN || hiddenN }
+        );
+        this.imgListEl.appendChild(none);
+        return;
+      }
+      for (const it of shown) {
         const row = doc.createElement('div');
         row.className = 'khin-imgitem';
         row.setAttribute('data-kh-ocr-key', it.key);

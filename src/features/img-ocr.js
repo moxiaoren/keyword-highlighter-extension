@@ -354,6 +354,7 @@
       }
     }
     if (n) notify();
+    if (n) pump();                                   // 超时收口也归还了额度 ⇒ 补发队里的图
     if (!held.size && sweepTimer) { clearInterval(sweepTimer); sweepTimer = null; }
     return n;
   }
@@ -404,6 +405,7 @@
           entry.state = 'fail';
           entry.error = (res && res.error) || 'OCR 引擎未响应';
           notify();
+          pump();                                    // 额度已归还 ⇒ 把队里的接着发
         }
       });
     } catch (e) {
@@ -412,9 +414,38 @@
       entry.state = 'fail';
       entry.error = String((e && e.message) || e);
       notify();
+      pump();                                        // 同上：同步失败也占过一次额度
     }
     armSweep();
     return true;
+  }
+
+  /**
+   * 【补发：额度一归还就把队里的接着发】（用户报「一页多图卡在排队中」）
+   *
+   * 没有它的话：`submit()` 满额时**直接返回 false**（见上），而所有"归还额度"的出口
+   * （同步失败 / 回执没带 requestId / 结果回来 / 超时收口）以前都只管归还、**不再看队列**
+   * ⇒ 一页里超过 `MAX_INFLIGHT`（4）的图在**静态页面**上会一直停在「排队中…」，
+   * 要等下一次重建/扫描才可能被顺带提交。
+   * 实测（9 张图一页）：3 张完成后，其余 6 张在 +30s 与 +90s 两次取样都还没被提交。
+   *
+   * 重入用 `pumping` 挡住：`submit()` 里同步失败会立刻走到归还路径、再回调 `pump()`，
+   * 不挡的话递归深度＝剩余图片数（长页面会爆栈）。挡住之后由**最外层那一趟**继续往下发。
+   */
+  let pumping = false;
+  function pump() {
+    if (pumping) return 0;
+    pumping = true;
+    let n = 0;
+    try {
+      for (const it of items.values()) {
+        if (quotaUsed() >= MAX_INFLIGHT) break;
+        if (it.state !== 'idle') continue;
+        if (submit(it)) n += 1;             // 失败的会在 submit 内部落到 fail/blocked，不会在这里打转
+      }
+    } finally { pumping = false; }
+    if (n) notify();
+    return n;
   }
 
   /** 结果回来（background 中转） */
@@ -465,6 +496,7 @@
       }
     }
     if (targets.length) notify();
+    pump();                                          // 结果回来＝额度归还 ⇒ 补发队里的图
   }
 
   /* ---------------- Feature：⑦Consume 采集 ---------------- */
