@@ -889,8 +889,19 @@
      */
     imgRowVisible(it) {
       if (this.imgShowAll === true) return true;
+      return this.imgRowIsHitOrBad(it);
+    },
+
+    /** 默认视图本身会不会显示它（与当前视图无关）—— 「显示全部」的**条目数**要用它数：
+     *  若拿 `list.length - shown.length` 数，切到复核视图后 shown 就成全量、hiddenN 变 0，
+     *  按钮当场消失 ⇒ 只进不出（`VIEW.onlyHits` 永远渲染不出来）。 */
+    imgRowIsHitOrBad(it) {
       const cls = KH.OcrCopy.stateClass(it);
       return cls === 'hit' || cls === 'bad';
+    },
+
+    imgRowHiddenCount(list) {
+      return (list || []).filter((it) => !this.imgRowIsHitOrBad(it)).length;
     },
 
     /** 还没跑完的条目数（纯函数）：默认视图把它们藏起来了，但计数与空视图必须说出来 ——
@@ -915,7 +926,9 @@
        * 「显示全部」把其余条目（未命中 / 排队中 / 没认出文字 / 读不到图…）留给人工复核。
        * 哪条算"都要显示"由 `imgRowVisible` 一处决定（命中 + 真失败），这里不再各判一次。 */
       const shown = list.filter((it) => this.imgRowVisible(it));
-      const hiddenN = list.length - shown.length;
+      /* 要复核的条数按**默认口径**数（与当前视图无关）：切到「显示全部」后按钮要变成
+       * 「只看命中」留着，点得回去 —— 否则这个复核入口只进不出。 */
+      const hiddenN = this.imgRowHiddenCount(list);
       /* 【还没跑完就不许说"没有命中"】默认视图把"识别中"的行也藏起来了，于是"藏起来 + 还没回来"
        * 会显示成"这次没有命中" —— 那是在结果出来之前下结论。所以计数与空视图都要把在跑的数量说出来。 */
       const busyN = this.imgBusyCount(list);

@@ -258,6 +258,22 @@ module.exports = async function run() {
     eq(p.imgRowVisible(miss), false, '关掉后回到只看命中');
   });
 
+  await test('★ 「显示全部」的条数按默认口径数：切到复核视图后按钮还在，点得回去', () => {
+    const p = shadowPanel();
+    const hit = { state: 'done', text: '一对一', matched: [{ text: '一对一' }] };
+    const miss = { state: 'done', text: '别的话' };
+    const noText = { state: 'done', why: 'no-text' };
+    const bad = { state: 'fail', error: 'boom' };
+    const queued = { state: 'idle' };
+    const list = [hit, miss, noText, bad, queued];
+    eq(p.imgRowHiddenCount(list), 3, '要复核的＝未命中 + 没认出文字 + 排队中（命中 / 真失败不算）');
+    p.imgShowAll = true;
+    eq(p.imgRowVisible(miss), true, '此刻视图确实是全量（未命中都看得到）');
+    eq(p.imgRowHiddenCount(list), 3,
+      '★ 切到「显示全部」后条数不变 —— 若拿 list.length - 可见行数 数，这里会变 0，按钮当场消失、只进不出');
+    eq(p.imgRowHiddenCount([]), 0, '空列表安全');
+  });
+
   await test('★ 「显示全部」也按批有效：条目换代就回到"只看命中"（不做整页长期记忆）', () => {
     const p = shadowPanel();
     p.imgShowAll = true;
@@ -289,6 +305,8 @@ module.exports = async function run() {
     truthy(src.indexOf("'<span class=\"khin-imgall\" data-act=\"all\" hidden></span>'") >= 0,
       '题头要有「显示全部」这个复核入口（否则默认视图把条目藏了就没地方看）');
     truthy(src.indexOf('this.imgShowAll = !this.imgShowAll;') >= 0, '「显示全部」要能切换');
+    truthy(src.indexOf('const hiddenN = this.imgRowHiddenCount(list);') >= 0,
+      '★ 「显示全部」的条数要按默认口径数：用 `list.length - shown.length` 在切到复核视图后会变 0 ⇒ 按钮消失、点不回去');
     truthy(src.indexOf("none.className = 'khin-imgnone';") >= 0,
       '默认视图一条都没有时要留说明行，不能悄悄空白');
     truthy(src.indexOf('KH.OcrCopy.render(\n          busyN ? KH.OcrCopy.VIEW.noneHitBusy : KH.OcrCopy.VIEW.noneHit') >= 0 ||
