@@ -153,6 +153,27 @@ module.exports = async function run() {
     eq(impact.combine([]).text, 'none');
   });
 
+  /* ---- OCR 组的归属（2026-10-07）----
+   * 这两个**真实组名**断言的就是面板里的 OCR 分区，而"改了 important-note.js"选中的是
+   * `--areas=panel`。组名没被任何区域认领时 t.js 会**保守地照跑**（安全但白跑一整组）；
+   * 认领错则相反——直接被裁掉（假绿）。这里把组名的归属钉死，改名/改表两边不同步就红。
+   * 注：只断言区域表本身，**不去读 `_e2e/`**（CI 上没有那份联调装置，读了会红）。 */
+  await test('★ 区域级：两个 OCR 组必须同时归属 imgocr 与 panel（否则面板改坏了没人测）', () => {
+    const A = require(path.join(__dirname, '..', '..', 'scripts', 'regression-areas.js'));
+    const groups = [
+      '图片文字识别：图里的字也算命中（独立分区 / 不出高亮 / 区分未命中）',
+      '图片命中：普通词 + 抓取字段取图（@值格 / 命中 / 不污染抓取内容 / 负例）'
+    ];
+    for (const g of groups) {
+      const areas = A.areasOfGroupName(g);
+      eq(areas.indexOf('imgocr') >= 0, true, 'OCR 组必须归属 imgocr（改 img-ocr/offscreen 时要跑它）：' + g + ' → ' + JSON.stringify(areas));
+      eq(areas.indexOf('panel') >= 0, true, 'OCR 组必须归属 panel（改 important-note.js 时要跑它）：' + g + ' → ' + JSON.stringify(areas));
+      /* 复刻 t.js 的组级判定：选中 panel 时这两组必须靠**归属命中**跑，不是靠"空归属兜底"侥幸跑 */
+      const selected = new Set(['panel']);
+      eq(areas.some((k) => selected.has(k)), true, '--areas=panel 必须靠归属选中它：' + g + ' → ' + JSON.stringify(areas));
+    }
+  });
+
   await test('每个方面都至少有一个文件会触发它（防"某方面永远选不中"）', () => {
     const hit = new Set();
     for (const [rel] of CASES) {

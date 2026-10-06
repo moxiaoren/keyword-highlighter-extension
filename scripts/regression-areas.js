@@ -57,8 +57,13 @@ const AREAS = [
   { key: 'color', label: '色板 / 取色器 / 颜色胶囊', nameRe: /色板|取色/, fileRe: /^src\/ui\/components\/color-field\.js$/, implies: ['editor', 'groupsites', 'options'] },
   { key: 'groupsites', label: '分组与站点规则', nameRe: /分组|站点规则|11\. options/, fileRe: /^src\/features\/site-rules\.js$/ },
   { key: 'popup', label: '弹窗（工具栏 / 站点卡 / 通道开关 / 快速添加）', nameRe: /popup|12\. popup/, fileRe: /^popup\// },
-  { key: 'panel', label: '重要笔记面板 / 备注卡片 / 灯箱', nameRe: /面板|笔记|卡片|灯箱|7c/, fileRe: /^src\/features\/(important-note|note-card)\.js$/ },
-  { key: 'imgocr', label: '图片文字识别', nameRe: /图片文字识别|图片识别/, fileRe: /^src\/features\/img-ocr\.js$|^offscreen\// },
+  /* 面板也认领两个 OCR 组（2026-10-07）：它们断言的就是**面板里的 OCR 分区**
+   * （条目渲染 / 耗时徽标 / 「显示全部」往返 / 队列补发），而改 `important-note.js` 选中的是
+   * `--areas=panel` —— 不认领就是"面板改坏了，一条用例都没跑"（假绿）。 */
+  { key: 'panel', label: '重要笔记面板 / 备注卡片 / 灯箱', nameRe: /面板|笔记|卡片|灯箱|7c|图片文字识别|图片命中/, fileRe: /^src\/features\/(important-note|note-card)\.js$/ },
+  /* 补 `图片命中`：组名是「图片命中：普通词 + 抓取字段取图（…）」，旧 nameRe 匹配不上，
+   * 那组只靠 `/抓取/` 落到 fetch ⇒ 改 img-ocr 相关时它裁不掉（保守，但白跑一整组）。 */
+  { key: 'imgocr', label: '图片文字识别', nameRe: /图片文字识别|图片识别|图片命中|图片 OCR/, fileRe: /^src\/features\/img-ocr\.js$|^offscreen\// },
   { key: 'relevance', label: '变更相关性（不重建 / 仅消费）', nameRe: /变更相关性/, fileRe: /^src\/core\/relevance\.js$/ },
   { key: 'attrs', label: '属性观察（显隐变化）', nameRe: /属性观察/, fileRe: /^src\/features\/page-editor\.js$/ },
   { key: 'dynamic', label: '动态页面（SPA / bfcache / ShadowRoot / 虚拟滚动 / iframe）', nameRe: /SPA|bfcache|ShadowRoot|影子|虚拟滚动|iframe|布局改写|7e\.|7g\./, fileRe: /^src\/platform\//, implies: ['options', 'popup'] },

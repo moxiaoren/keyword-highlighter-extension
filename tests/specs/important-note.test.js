@@ -324,4 +324,37 @@ module.exports = async function run() {
     truthy(copy.indexOf('const VIEW = {') >= 0 && copy.indexOf('const COPY = {') >= 0,
       'VIEW 与 COPY 必须分开：COPY 的键集合要与 img-ocr.js 终态集合完全相等（枚举对账）');
   });
+
+  suite('important-note · 面板紧凑化 + 双滚动（用户 2026-10-07：条目多太占地方、超屏看不到全部）');
+
+  await test('★ 接线契约：OCR 分区不许把笔记列表挤没，自己封顶后交给列表滚', () => {
+    const src = read('src/features/important-note.js');
+    const imgsec = (src.match(/\.khin-imgsec \{[\s\S]*?\n    \}/) || [''])[0];
+    truthy(imgsec.length > 0, '要能定位到 .khin-imgsec 的样式块（否则下面的断言是在空串上跑，等于没测）');
+    truthy(/flex: 0 0 auto/.test(imgsec),
+      '分区不参与收缩 —— 否则它会把 .khin-body 挤到近零，就是用户说的"两者互相抢占展示"');
+    truthy(/min-height: 0/.test(imgsec), 'min-height:0 是 flex 子项能收缩的前提');
+    const cap = imgsec.match(/max-height:\s*(\d+)vh/);
+    truthy(cap, '分区要封顶（vh）：不然它顶破面板后会被 .khin-panel 的 overflow:hidden 裁掉，连滚动条都看不见');
+    truthy(cap && Number(cap[1]) <= 60, '封顶不超过 60vh，笔记列表至少留 40vh');
+    const list = (src.match(/\.khin-imglist \{[\s\S]*?\n    \}/) || [''])[0];
+    truthy(/flex: 1 1 auto/.test(list) && /min-height: 0/.test(list),
+      '列表要能在分区内收缩（flex:1 1 auto + min-height:0），否则出不了滚动条');
+    truthy(/overflow-y: auto/.test(list), '列表自己要能滚 —— 这是"超过浏览器高度看不到全部"的解药');
+    const body = (src.match(/\.khin-body \{[^}]*\}/) || [''])[0];
+    truthy(/overflow-y: auto/.test(body), '笔记列表也要能滚（上下两个滚动区各管自己）');
+    const panel = (src.match(/\.khin-panel \{[\s\S]*?\n    \}/) || [''])[0];
+    truthy(/max-height:\s*calc\(100vh/.test(panel), '面板总高仍受视口限制（这是滚动能成立的前提）');
+    truthy(/flex-direction: column/.test(panel), '面板仍是纵向 flex：header / 列表 / 分区三段');
+  });
+
+  await test('★ 接线契约：字号走紧凑档（正文 12px / 行距 1.45 / 缩略图 ≤ 48px）', () => {
+    const src = read('src/features/important-note.js');
+    const note = (src.match(/\.khin-item-note \{[\s\S]*?\n    \}/) || [''])[0];
+    truthy(/font-size: 12px/.test(note) && /line-height: 1\.45/.test(note),
+      '正文 12px / 1.45（用户 2026-10-07：条目一多就太占地方）');
+    const thumb = (src.match(/\.khin-imgthumb \{[\s\S]*?\n    \}/) || [''])[0];
+    const side = thumb.match(/width:\s*(\d+)px/);
+    truthy(side && Number(side[1]) <= 48, 'OCR 缩略图不超过 48px —— 9 张图的场景里它是主要高度来源');
+  });
 };

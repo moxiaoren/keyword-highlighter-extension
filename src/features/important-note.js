@@ -90,22 +90,24 @@
       color: #8a8a8a; padding: 2px 4px; border-radius: 4px; line-height: 1;
     }
     .khin-header-btn:hover { color: #333; background: rgba(0,0,0,.05); }
-    .khin-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 6px 0; }
+    .khin-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 4px 0; }
     .khin-body::-webkit-scrollbar { width: 5px; }
     .khin-body::-webkit-scrollbar-thumb { background: #d8d8d8; border-radius: 3px; }
     .khin-body::-webkit-scrollbar-track { background: transparent; }
-    .khin-item { padding: 9px 12px; border-bottom: 1px solid #f3f3f3; }
+    /* 紧凑档（用户 2026-10-07：条目一多就"占地方"）—— 字号与行距各降一档、内边距收紧，
+     * 一条正文的竖向占用约 34px → 24px；层级与可读性不变，只是不再松松垮垮。 */
+    .khin-item { padding: 6px 10px; border-bottom: 1px solid #f3f3f3; }
     .khin-item:last-child { border-bottom: none; }
-    .khin-item-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; margin-bottom: 5px; }
-    .khin-item-tags { display: flex; flex-wrap: wrap; gap: 5px; flex: 1; min-width: 0; }
+    .khin-item-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; margin-bottom: 3px; }
+    .khin-item-tags { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; min-width: 0; }
     .khin-item-kw {
-      font-size: 12px; font-weight: 600; color: #3579c2; background: #eaf1fb;
-      border-radius: 4px; padding: 1px 7px; max-width: 200px;
+      font-size: 11px; font-weight: 600; color: #3579c2; background: #eaf1fb;
+      border-radius: 4px; padding: 1px 6px; max-width: 200px;
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0;
     }
     .khin-item-adj {
-      font-size: 12px; font-weight: 600; color: #2e7d32; background: #e8f5e9;
-      border-radius: 4px; padding: 1px 7px; max-width: 200px;
+      font-size: 11px; font-weight: 600; color: #2e7d32; background: #e8f5e9;
+      border-radius: 4px; padding: 1px 6px; max-width: 200px;
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0;
     }
     .khin-item-close {
@@ -120,7 +122,7 @@
     .khin-item-note ::selection, .kh-table ::selection { background: #a6d3ff; color: inherit; }
     /* 重要笔记正文：**必须保留换行**（旧版 v1.8.3 教训；Markdown 渲染会在行间产生 \\n 文本节点） */
     .khin-item-note {
-      font-size: 13px; line-height: 1.6; color: #333;
+      font-size: 12px; line-height: 1.45; color: #333;
       white-space: pre-line; word-break: break-word; overflow-wrap: break-word;
     }
     .khin-item-note a { color: #1a73e8; text-decoration: none; }
@@ -151,11 +153,20 @@
       background: var(--kh-brand-soft, #eaf1fb); font-weight: 600; color: var(--kh-text, #1f2937);
     }
     /* ---- 🖼 图片命中分区（面板下半部分，独立成块；默认折叠） ---- */
-    .khin-imgsec { border-top: 1px solid rgba(148,163,184,.35); margin-top: 2px; }
+    /* 两个滚动区各自管自己（用户 2026-10-07）：面板总高受视口限制，OCR 分区若允许被压缩，
+     * 它就会把上面的笔记列表挤到近零（"互相抢占展示"）；若不许压缩又会被 .khin-panel 的
+     * overflow:hidden 直接裁掉（"超过浏览器高度就看不到全部、也没有滚动条"）。所以：分区不参与
+     * 收缩（flex:0 0 auto）但封顶半屏，超出部分交给 .khin-imglist 自己滚 —— 上下各一条滚动条。 */
+    .khin-imgsec {
+      border-top: 1px solid rgba(148,163,184,.35); margin-top: 2px;
+      flex: 0 0 auto; min-height: 0; max-height: 50vh;
+      display: flex; flex-direction: column;
+    }
     .khin-imgsec[hidden] { display: none; }
     .khin-imghead {
       display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none;
-      padding: 6px 2px 4px; font-size: 12px; font-weight: 600; color: var(--kh-text, #1f2937);
+      padding: 4px 2px 3px; font-size: 12px; font-weight: 600; color: var(--kh-text, #1f2937);
+      flex: 0 0 auto;
     }
     .khin-imghead .khin-imgcount { color: #64748b; font-weight: 500; }
     /* 「显示全部 / 只看命中」= 人工复核入口（用户 2026-10-06：面板以命中为目的，
@@ -168,13 +179,21 @@
     .khin-imghead .khin-imgarrow { margin-left: auto; color: #94a3b8; font-size: 11px; }
     /* 默认视图里一条都没有时的说明行（不能悄悄空白：那看起来就是坏了） */
     .khin-imgnone { color: #94a3b8; font-size: 12px; padding: 2px 0 4px; }
-    .khin-imglist { display: flex; flex-direction: column; gap: 8px; padding: 2px 0 4px; }
-    .khin-imgitem { display: flex; gap: 8px; align-items: flex-start; }
+    /* 分区封顶后由这份列表自己滚（min-height:0 是关键：否则 flex 子项不肯缩到内容高度以下，
+     * 出不了滚动条，还是会顶破面板） */
+    .khin-imglist {
+      display: flex; flex-direction: column; gap: 6px; padding: 2px 0 4px;
+      flex: 1 1 auto; min-height: 0; overflow-y: auto;
+    }
+    .khin-imglist::-webkit-scrollbar { width: 5px; }
+    .khin-imglist::-webkit-scrollbar-thumb { background: #d8d8d8; border-radius: 3px; }
+    .khin-imglist::-webkit-scrollbar-track { background: transparent; }
+    .khin-imgitem { display: flex; gap: 6px; align-items: flex-start; }
     .khin-imgthumb {
-      width: 56px; height: 56px; flex: 0 0 56px; object-fit: cover; border-radius: 6px;
+      width: 44px; height: 44px; flex: 0 0 44px; object-fit: cover; border-radius: 6px;
       border: 1px solid rgba(148,163,184,.45); background: #f1f5f9; cursor: zoom-in;
     }
-    .khin-imgmeta { min-width: 0; flex: 1; font-size: 12px; line-height: 1.5; color: #334155; }
+    .khin-imgmeta { min-width: 0; flex: 1; font-size: 11px; line-height: 1.4; color: #334155; }
     .khin-imgkw { font-weight: 600; color: #0f172a; }
     .khin-imgtag { font-size: 11px; border-radius: 4px; padding: 0 4px; margin-left: 4px; }
     /* 本次识别的真实耗时（S3-④）：只在有值时挂载，字号比标签再小一档、不抢主信息 */
@@ -197,7 +216,7 @@
     .khin-imgcopy:hover { background: #f1f5f9; }
     .khin-imgtext {
       margin-top: 2px; color: #475569; white-space: pre-wrap; word-break: break-word;
-      max-height: 84px; overflow: auto; background: rgba(148,163,184,.12); border-radius: 4px; padding: 3px 5px;
+      max-height: 56px; overflow: auto; background: rgba(148,163,184,.12); border-radius: 4px; padding: 2px 4px;
     }
     .khin-imgtext[hidden] { display: none; }
     .khin-imgempty { font-size: 12px; color: #64748b; padding: 2px 0 6px; }
@@ -671,7 +690,11 @@
       if (!this.root) return;
       const width = this.minimized ? 56 : 360;
       const maxLeft = Math.max(8, window.innerWidth - width - 8);
-      const maxTop = Math.max(8, window.innerHeight - 48);
+      /* 纵向钳位按**面板自己的实际高度**算（用户 2026-10-07：光有滚动条不够，还得滚得到）。
+       * 原来按固定 48px 留白，面板一高就能被拖到视口外，下半截连同滚动条一起看不见；
+       * 面板本身有 max-height: calc(100vh - 24px)，所以这里能让它整块留在视口内。 */
+      const h = this.minimized ? 48 : (this.root.getBoundingClientRect().height || 0);
+      const maxTop = Math.max(8, window.innerHeight - Math.min(h, window.innerHeight - 16) - 8);
       this.pos.left = Math.max(8, Math.min(this.pos.left, maxLeft));
       this.pos.top = Math.max(8, Math.min(this.pos.top, maxTop));
       this.root.style.left = this.pos.left + 'px';
