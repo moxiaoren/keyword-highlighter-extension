@@ -458,6 +458,7 @@ if (manifest) {
     ['src/core/index.js', 'src/features/site-rules.js'],
     ['src/features/combo/cells.js', 'src/features/combo/combo.js'],
     ['src/features/combo/combo.js', 'src/features/fetch.js'],
+    ['src/ui/ocr-copy.js', 'src/features/important-note.js'],
     ['src/features/fetch.js', 'src/features/important-note.js'],
     ['src/features/img-ocr.js', 'src/features/important-note.js'],
     ['src/platform/markdown.js', 'src/features/important-note.js'],

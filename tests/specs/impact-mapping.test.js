@@ -54,7 +54,10 @@ module.exports = async function run() {
     ['src/features/page-editor.js', 'interact,ui'],
     ['src/ui/components/fields.js', 'interact,ui'],
     ['src/ui/tokens.css', 'ui,visual'],
-    ['background/service-worker.js', 'interact,site,ui'],
+    /* 【2026-10-06】`background/` 补了 `hit`（OCR 的 job 生命周期 / 额度归还 / 看门狗都在
+     * `background/ocr.js` 里，改它直接影响"这张图到底能不能出结果"）。见 scripts/impact.js 的规则注释。 */
+    ['background/service-worker.js', 'hit,interact,site,ui'],
+    ['background/ocr.js', 'hit,interact,site,ui'],
 
     /* 管理端 */
     ['options/options.js', 'ui'],
@@ -62,6 +65,9 @@ module.exports = async function run() {
     ['welcome/welcome.js', 'ui'],
     ['src/ui/changelog.js', 'ui'],
     ['src/ui/fieldmap.js', 'ui'],
+    /* OCR 文案唯一真源：被**内容层**面板用，也被 options/popup 用 ⇒ 必须带 `interact`，
+     * 否则选择器会选中一个不含内容层的空范围（假绿）。 */
+    ['src/ui/ocr-copy.js', 'interact,ui'],
     ['src/build-info.js', 'ui'],
 
     /* 三端共用 / 影响面大 / 未归类 → 一律全量（用户口径：不好判断就全量回归） */

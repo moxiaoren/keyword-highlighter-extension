@@ -166,22 +166,49 @@
         文字识别<strong>完全在本机</strong>运行：图片不上传，唯一的联网动作是下面这一次语言包下载（也可手动导入，做到完全离线）。
       </p>
 
-      <h3 class="kh-sub">识别精度</h3>
+      <h3 class="kh-sub">识别引擎</h3>
+      <!-- 一次性迁移提示（S2）：存量档位被取消时显示一次，点「知道了」写回 migrated.ocrEngine=false。
+           文案写实话：新主引擎对难图更准**且**更快，用户不是"被降级"了。 -->
+      <div id="ocr-migrate-note" hidden>
+        <p class="kh-muted">
+          <strong>「识别档位」已经取消了。</strong>现在由<strong>主引擎</strong>负责识别质量，不用再选大语言包；
+          你的设置已自动改成<strong>自动（主引擎 + 兼容引擎兜底）</strong>。原来那两档语言包留着也不占额外空间，
+          想清掉可以在下面「兼容引擎语言包」里逐个清除。
+        </p>
+        <div class="kh-form-row">
+          <button class="kh-mini-btn" id="btn-ocr-migrate-ok" type="button">知道了</button>
+        </div>
+      </div>
       <div class="kh-form-row">
         <div class="kh-form-fld">
-          <label class="kh-fld-label" for="ocr-quality">识别档位</label>
-          <select class="kh-input" id="ocr-quality">
-            <option value="fast">快速（小语言包，省流量、更快）——默认</option>
-            <option value="best">高精度（大语言包，中文更准、单张更慢）</option>
+          <label class="kh-fld-label" for="ocr-engine">引擎</label>
+          <select class="kh-input" id="ocr-engine">
+            <option value="auto">自动：主引擎 PP-OCR，起不来就用兼容引擎兜底 —— 默认</option>
+            <option value="ppocr">只用主引擎 PP-OCR（不可用就如实报错，不偷偷降级）</option>
+            <option value="tesseract">只用兼容引擎 Tesseract（内存占用小、语言包也小）</option>
           </select>
         </div>
       </div>
       <p class="kh-muted">
-        两档<strong>各自独立</strong>保存语言包，切换不用重新下载；下面「语言包」一栏的下载 / 手动导入 / 清除都按<strong>当前档位</strong>生效。
-        高精度档用的是标准 LSTM 大模型（简体中文约 19MB），对<strong>艺术字 / 彩色底 / 照片上压字</strong>这类难图识别更准，但单张识别大约慢 2~4 倍。
+        主引擎 PP-OCR 在<strong>截屏里的小字</strong>上明显更快也更准（值格那种小图约 <strong>26ms</strong>，
+        整页约 <strong>0.5s</strong>）；兼容引擎 Tesseract 留着兜底，也供排查问题用。<br>
+        识别<strong>都完全在本机</strong>跑，图片不上传；唯一的联网动作是下面两栏的资产下载（也都能手动导入，做到完全离线）。
+        实际用的是哪个引擎，会在识别结果的<strong>展开说明</strong>里写清楚 —— 降级了就不会瞒着你。
       </p>
 
-      <h3 class="kh-sub">语言包</h3>
+      <h3 class="kh-sub">主引擎模型</h3>
+      <p class="kh-muted">
+        PP-OCR 的三件模型（文字检测 + 文字识别 + 字符集，合计约 6.3MB，来自 PaddleOCR·Apache-2.0）。
+        <strong>首次用到才下载</strong>，下完做 sha256 与字节数双校验后存在本机；不想要联网就在这台机器上手动导入。
+      </p>
+      <div id="ocr-model-list"></div>
+      <input type="file" id="ocr-model-import-file" accept=".onnx,.txt" multiple hidden>
+
+      <h3 class="kh-sub">兼容引擎语言包</h3>
+      <p class="kh-muted">
+        Tesseract 的中英快档语言包（合计约 3.7MB）。只有"自动兜底"或"只用兼容引擎"时会用到；
+        选了「只用主引擎」也可以不下载。
+      </p>
       <div id="ocr-lang-list"></div>
       <div class="kh-form-row" style="margin-top:8px">
         <button class="kh-btn" id="btn-ocr-selftest" type="button">识别自检</button>
@@ -202,6 +229,19 @@
         <button class="kh-btn" id="btn-ocr-site-add" type="button">＋ 允许这个站点</button>
       </div>
       <div id="ocr-site-list" class="kh-disabled-list"></div>
+
+      <!-- 只读「高级信息」（票 #17 D-17.7）：10 个引擎参数一律**不给可配**，但用户可以看一眼
+           "现在到底按什么参数在跑"，出问题时复制给我们。所有值都由代码常量决定（本页只展示）。 -->
+      <details class="kh-adv" id="ocr-adv">
+        <summary>⚙️ 高级信息（只读）</summary>
+        <div class="kh-adv-body">
+          <p class="kh-muted">这些是引擎的固定参数，<strong>不提供修改</strong>（改它们只会让识别变差且无从排查）。需要排障时把这整块复制出来。</p>
+          <div id="ocr-adv-body"></div>
+          <div class="kh-form-row">
+            <button class="kh-mini-btn" id="btn-ocr-adv-copy" type="button">复制</button>
+          </div>
+        </div>
+      </details>
     </section>
 
     <!-- ============================================================ 站点规则 -->
@@ -573,6 +613,7 @@
   <script src="../src/core/config.js"></script>
   <script src="../src/platform/storage.js"></script>
   <script src="../src/platform/markdown.js"></script>
+  <script src="../src/ui/ocr-copy.js"></script>
   <script src="../src/ui/fieldmap.js"></script>
   <script src="../src/ui/components/dom.js"></script>
   <script src="../src/ui/components/modal.js"></script>

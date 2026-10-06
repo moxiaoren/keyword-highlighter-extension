@@ -594,15 +594,23 @@ module.exports = async function run() {
     truthy(optHtml.indexOf('重要笔记图片「尺寸」默认值') >= 0, 'B8-5 options.html 新标签应在');
     falsy(readme.indexOf('配色与图片尺寸') >= 0, 'B8-5 README 旧串必须消失');
     truthy(readme.indexOf('分组可统一配色与尺寸') >= 0, 'B8-5 README 新串应在');
-    /* 6 死文案 */
+    /* 6 死文案 —— 【S2 更新（2026-10-06，地图 #10 · #12 裁决）】档位整个取消后，
+     *   B8 当时立的那两句**都**成了历史：`高精度语言包还没随站点提供`（B8-6 要删的）与
+     *   `本机还没有高精度语言包`（B8-6 当时要留的）现在都不该在设置页里出现。
+     *   这一条从"钉住某句新文案"改成"钉住档位文案整体清零 + 新分栏就位"（判据 ④ 的同一条线）。 */
     falsy(optJs.indexOf('高精度语言包还没随站点提供') >= 0, 'B8-6 死文案必须消失');
-    truthy(optJs.indexOf('本机还没有高精度语言包') >= 0, 'B8-6 新文案应在');
+    falsy(optJs.indexOf('本机还没有高精度语言包') >= 0, 'S2 起连"本机还没有高精度语言包"也不该有了（档位已取消）');
+    truthy(optHtml.indexOf('主引擎模型') >= 0 && optHtml.indexOf('兼容引擎语言包') >= 0,
+      'S2 起两条资产必须分栏（主引擎模型 / 兼容引擎语言包）');
     /* 7 changelog 加注（唯一允许动的历史条目） */
     truthy(changelog.indexOf('该包随后已一并托管') >= 0, 'B8-7 必须加注「该包随后已一并托管」');
     truthy(changelog.indexOf('英文高精度包还在下载') >= 0, 'B8-7 选的是"加注"，原文按历史保留');
-    /* 8 档位 toast */
+    /* 8 档位 toast —— 【S2 更新】两句都是档位时代的（"按这一档单独下载 / 保存"）：
+     *   档位没了，取而代之的是引擎切换的三条 toast（见 options.js 的 engineSel change）。 */
     falsy(optJs.indexOf('语言包按这一档单独下载') >= 0, 'B8-8 旧句必须消失');
-    truthy(optJs.indexOf('语言包按这一档单独保存') >= 0, 'B8-8 新句应在');
+    falsy(optJs.indexOf('语言包按这一档单独保存') >= 0, 'S2 起"按这一档"整体不成立（档位已取消）');
+    truthy(optJs.indexOf('已设为「只用主引擎」') >= 0 && optJs.indexOf('已设为「自动」') >= 0,
+      'S2 起 toast 要讲"引擎"，而不是"档位"');
     /* 9 快捷键 */
     falsy(welcome.indexOf('恢复本页高亮') >= 0, 'B8-9 旧说法「恢复本页高亮」必须消失');
     falsy(welcome.indexOf('恢复**本页**高亮') >= 0, 'B8-9 旧说法（加粗版）必须消失');

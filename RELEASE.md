@@ -32,7 +32,7 @@
 | `scripts/release.js` | **稳定版完整流水线**：门禁 → 打包 → 签名 crx → 生成 `latest.json` / `update.xml` → 汇总 | `node scripts/release.js --channel stable`（或 `--promote`） |
 | `scripts/release-beta.js` | **测试版流水线**（与正式版完全分离）：复用 `package.js` 的门禁与打包 → 改 manifest 三处 → 重打成测试版 zip → 用测试版密钥签 crx → 写 `latest-beta.json` / `update-beta.xml` | `node scripts/release-beta.js` |
 | `scripts/update-config.js` | **只重生成更新配置**（latest.json / latest-beta.json / update.xml / update-beta.xml），不重新打包 | `node scripts/update-config.js --channel stable --zip <zip> --crx <crx>` |
-| `scripts/publish-gh.js` | 推到 gh-pages（**不需要 git**，走 GitHub API）。**测试版必须加 `--beta-only`**：否则它还要去收集稳定版清单、而稳定版产物不在本机 ⇒ 直接中止；语言包没变时加 `--skip-lang`（gh-pages 建 tree 用 `base_tree`，不发＝原地保留） | 测试版：`GH_TOKEN=… node scripts/publish-gh.js --beta-only`<br>稳定版：`GH_TOKEN=… node scripts/publish-gh.js` |
+| `scripts/publish-gh.js` | 推到 gh-pages（**不需要 git**，走 GitHub API）。**测试版必须加 `--beta-only`**：否则它还要去收集稳定版清单、而稳定版产物不在本机 ⇒ 直接中止；站点资产（语言包 + OCR 模型）没变时加 `--skip-assets`（旧名 `--skip-lang` 仍兼容；gh-pages 建 tree 用 `base_tree`，不发＝原地保留）。**首次带模型发版必须去掉它**，否则站点上没有 `models/`，主引擎首次识别会 404 | 测试版：`GH_TOKEN=… node scripts/publish-gh.js --beta-only`<br>稳定版：`GH_TOKEN=… node scripts/publish-gh.js` |
 | `scripts/gh-release.js` | **线上 Release（只放稳定版）**：测试版**不建** Release；稳定版的说明 = **这一段测试版要点的汇总** + 本版正式说明；附件挂 crx（`--with-zip` 发版时多挂 zip）、幂等。`--prune-test` 删掉所有测试版 Release（含 tag），`--prune-above=<ver>` 删版本号大于该值的 | `node scripts/gh-release.js`（稳定版发完跑） |
 | `scripts/check-changelog-quotes.js` | 改完 changelog **先跑它**：文案行必须恰好 2 个半角双引号（正文用「」），否则整个文件语法错 | `node scripts/check-changelog-quotes.js` |
 | `scripts/package.js` | 只打包 zip + `latest.json`（门禁 + 真机回归也在这一步） | `node scripts/package.js` |
@@ -61,7 +61,7 @@
 ```bash
 # 测试版（release-beta.js 出测试版 zip + crx + latest-beta.json + update-beta.xml）
 node scripts/release-beta.js
-node scripts/publish-gh.js --beta-only --skip-lang   # 语言包有变时去掉 --skip-lang
+node scripts/publish-gh.js --beta-only --skip-assets   # 站点资产有变时去掉 --skip-assets
 
 # 测好后晋级稳定版（同一个版本号，走另一条通道）
 node scripts/release.js --promote --key release/key.pem
@@ -85,12 +85,37 @@ zip 里带时间戳，**同一次构建重新打包，哈希也会变**。所以
 node scripts/bump-version.js beta     # 先把版本号推一格（多轮测试版每轮都做）
 node scripts/release-beta.js          # 产出 release/keyword-highlighter-beta-v<ver>.{zip,crx}
                                       #   + release/latest-beta.json + release/update-beta.xml
-node scripts/publish-gh.js --beta-only --skip-lang   # 推 gh-pages（需要 GH_TOKEN）
+node scripts/publish-gh.js --beta-only --skip-assets   # 推 gh-pages（需要 GH_TOKEN）
 ```
 
 测试者这边：打开扩展弹窗 → 点「🔀 稳定版」→ **再点一下确认** → 切到「测试版」。
 （2026-10-05 起插件入口**不再有线上更新**：没有「检查更新」按钮、没有提示条、没有下载；
 这个开关只把选择写进本机 `chrome.storage.local.khUpdateChannel`，升级始终由浏览器自己的 crx 自动更新通道完成。）
+
+### 发布前手工一步：OCR 有改动时跑三个真机探针（票 #15 的过渡期口径）
+
+票 #15 原定「独立 `score.js --gate`」，但实现轮**没有落这个文件** —— 那两个职责由下面三个**真机探针**分别承担
+（`node scripts/package.js` 因此仍**不接** OCR 关卡）。它们都在**工作区根**（不是扩展目录）跑，都会打印数字但
+**都没有 `--gate` 退出码**，判读靠人工核对下表：
+
+```bash
+cd F:\harness\高亮词插件                      # 工作区根，不是 work\keyword-highlighter
+node _e2e/probe-s3-quality.js                # 22 例真样张质量（构造式真值，≥20 张样张那条的落点）
+node _e2e/probe-s1c-accept.js                # 长图 1080×8000 / rot90·180·270 / EXIF 6·8
+node _e2e/probe-s2d-thresholds.js            # 耗时阈值 ⓪①…⑥（含「我方开销 ≤200ms」）
+```
+
+| 探针 | 通过读数（2026-10-06 实测） |
+| --- | --- |
+| `probe-s3-quality.js` | **22/22 关键词命中**、艺术字 6/6、中位 ≈770ms（109 真机同样 22/22） |
+| `probe-s1c-accept.js` | 长图 `lines=200/230`、3/3 关键词、乱码 0、≤15s；rot90/180/270 **3/3**；EXIF 6/8 **2/2** |
+| `probe-s2d-thresholds.js` | ⓪ ≤300ms ／ ① ≤10s ／ ② ≤1.0s ／ ③ ≤5s ／ ④ ≤1.5s ／ ⑥ ≤200ms 全绿 |
+
+- 每个探针都是**冷 profile**（`_e2e/harness.js` 每次 `mkdtemp` + 退出即删）⇒ 每次都要重下 **6.27MB 模型**；
+  ① 那条是**网络口径**（模型下载+校验+初始化 ≤10s），实测 7.9–10.2s 横跨线上线 —— **不达标先怀疑网络，再怀疑代码**
+  （`IMPL-LOG.md` S3 段记过一次「22 例齐刷刷『语言包未就绪』≠ 代码回归、原样重跑即 22/22」）。
+- 长图那条判据是**两条同时成立**：「≤15s」且「200/200 行」——「快但行不全」＝未达标（acceptance-15 §2）。
+- 探针**不进默认回归**（对 `tests/` 的增量 0 秒）；单测与 meta-check 仍是每版必跑的门禁。
 
 ## 测好之后晋级稳定版
 
@@ -117,7 +142,7 @@ node scripts/release.js --promote --key D:\path\key.pem
 ```bash
 node scripts/bump-version.js beta       # 2.1.0 → 2.1.0.1（只动第四位；每轮测试版都做一次）
 node scripts/release-beta.js            # 可选：先 --skip-e2e 应急跳过真机回归
-node scripts/publish-gh.js --beta-only --skip-lang
+node scripts/publish-gh.js --beta-only --skip-assets
 ```
 
 | 轮次 | manifest.version | 发到 | 谁收到 |

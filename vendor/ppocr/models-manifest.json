@@ -1,0 +1,30 @@
+{
+  "_note": "图片文字识别（OCR）主引擎模型清单 —— 体积与 sha256 的唯一真源。运行时下载、离线导入、发布前校验都读这一份。",
+  "_engine": "PP-OCRv6 tiny（paddleocr / ppu-paddle-ocr 6.6.0 + onnxruntime-web 1.30.0，WASM 单线程）",
+  "_source": "https://github.com/PaddlePaddle/PaddleOCR（PP-OCRv6 tiny 推理模型，Apache-2.0）",
+  "_base": "https://moxiaoren.github.io/keyword-highlighter-extension/models",
+  "cacheKey": "kh-ocr-model-v1",
+  "license": "Apache-2.0",
+  "_why": "Tesseract（引擎 A）保留为兼容兜底；主引擎换成 PP-OCR 后，速度与中文准确度都由这三件决定。检测（det）先找文字框，识别（rec）逐框转文字，dict 是字符集（含空白类）。",
+  "_bytes_note": "bytes 与 sha256 都由 _stage/wayfinder-ocr/_vendor-s2.js 从 PoC 实测资产逐位生成；下载后先卡 sha256 再落盘，发布前 publish-gh.js 同时卡 bytes 与 sha256。",
+  "files": {
+    "detection": {
+      "file": "PP-OCRv6_tiny_det.onnx",
+      "label": "文字检测",
+      "bytes": 1780590,
+      "sha256": "193BAB7A04FCA699A6C82E6ABB5B81BDB28177F0ABD4062552B04908DAFB19F8"
+    },
+    "recognition": {
+      "file": "PP-OCRv6_tiny_rec.onnx",
+      "label": "文字识别",
+      "bytes": 4462639,
+      "sha256": "9EF676D6ED3C88256A2D92C640C44F25B0C40947E111B14B8BE8F594091563E6"
+    },
+    "dictionary": {
+      "file": "ppocrv6_tiny_dict.txt",
+      "label": "字符集",
+      "bytes": 27157,
+      "sha256": "2F3717BBD530B681B6DB3BE35CC485E8A41A932B9558B833986BF0894EB21F2D"
+    }
+  }
+}

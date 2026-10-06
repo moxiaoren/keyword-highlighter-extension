@@ -21,6 +21,11 @@
     'noteFormat',            // 全文无使用场景
     'comboFlipped',          // 翻转迁移已闭环，仅存量兼容读取
     'pageCleanMinGap',       // 由 pageRebuildGapMs 统一取代
+    /* 【S2】识别档位整个删掉（#12 裁决）：换成 `imgOcr.engine`。存量值由 `normalize`
+     * 回落成 `auto` 并置 `migrated.ocrEngine` 标记（设置页据此给**一次性**提示）。
+     * 放进 `DEPRECATED_KEYS` 的作用是**写回时物理删掉**它 —— 否则那个键会一直躺在存储里，
+     * 每次读都重新触发一次"迁移"（提示没完没了）。 */
+    'imgOcr.quality',
     'highlightStyle.defaultBorderColor',  // CSS.highlights 不支持边框
     'highlightStyle.defaultBorderWidth',
     'highlightStyle.defaultBorderRadius'  // 旧默认值含 typo 'iat::3px'
@@ -33,8 +38,9 @@
     'siteRules[].scope': ['domain', 'url'],
     /* 变更处理方式（K58）：smart = 相关性预筛（省资源，默认）；always = 任何变动都整页重建（旧行为，最保守） */
     'changeHandling': ['smart', 'always'],
-    /* 图片识别档位（K67）：fast = 小模型（默认）；best = 标准 LSTM 大模型（更准更慢） */
-    'imgOcr.quality': ['fast', 'best']
+    /* 图片识别引擎（S2 / #12 裁决）：`auto` = 主引擎 PP-OCR 失败时按会话回落兼容引擎（默认）；
+     *  `ppocr` = 只用主引擎（失败如实报错，不偷偷退回）；`tesseract` = 只用兼容引擎。 */
+    'imgOcr.engine': ['auto', 'ppocr', 'tesseract']
   };
 
   /**
@@ -172,9 +178,20 @@
       imgOcr: {
         defaultMax: 4,
         crossOriginSites: {},
-        /** 识别档位（K67）：`fast` = 4.0.0_fast 小模型（默认，省流量/更快）；
-         *  `best` = 标准 LSTM 大模型（约 19MB，中文更准、单张更慢）。包按档位各自下载/导入。 */
-        quality: 'fast'
+        /** 识别引擎（S2 取代旧的 `quality` 档位）：
+         *  `auto`（默认）= 主引擎 PP-OCR，失败按**会话**回落兼容引擎 Tesseract（首次主动告知）；
+         *  `ppocr` = 只用主引擎（失败如实报错，不回落 —— 给排障用）；
+         *  `tesseract` = 只用兼容引擎。
+         * 三档都不含"参数可调"：块高/PSM/边数上限等 10 个引擎参数一律不给用户改（票 #17 D-17.7）。 */
+        engine: 'auto'
+      },
+
+      /** 一次性迁移标记（S2）：`ocrEngine` = "存量档位已回落成 `engine`，还没告知过用户"。
+       *  由 `normalize` 在**发现存量 `imgOcr.quality` 时**置真；设置页提示过一次后写回假。
+       *  置真的条件只看"存储里还有没有那个废弃键"，所以**写回时必须把它一起删掉**
+       *  （`DEPRECATED_KEYS` 已包含 `imgOcr.quality`，任何 patch 都会顺手清掉它）。 */
+      migrated: {
+        ocrEngine: false
       },
 
       matchSettings: {
@@ -281,10 +298,19 @@
         cfg.changeHandling = this.defaults.changeHandling;
         changed.invalid.push('changeHandling');
       }
-      // ②c 图片识别档位（K67）：非法值回退 fast（默认档，行为与历史版本一致）
-      if (cfg.imgOcr && !ENUMS['imgOcr.quality'].includes(cfg.imgOcr.quality)) {
-        cfg.imgOcr.quality = this.defaults.imgOcr.quality;
-        changed.invalid.push('imgOcr.quality');
+      // ②c 图片识别引擎（S2）：非法值回退 auto（＝主引擎 + 会话内回落，行为最接近"档位取消前"）
+      if (cfg.imgOcr && !ENUMS['imgOcr.engine'].includes(cfg.imgOcr.engine)) {
+        cfg.imgOcr.engine = this.defaults.imgOcr.engine;
+        changed.invalid.push('imgOcr.engine');
+      }
+      /* ②d 档位 → 引擎的一次性迁移（S2 / #12 裁决）。**判据是"存储里还有没有 `imgOcr.quality`"**，
+       * 不是它的值：`best` 与 `fast` 都落 `auto` —— 换引擎后"更准"由主引擎承担，
+       * 不再需要用户去下一个 19MB 的大模型包。
+       * 标记**只置真、不自动清**（清是设置页告知过用户之后的写回动作）；否则用户刚点掉提示，
+       * 下一次读又把它置真 —— 因为那个废弃键还在存储里躺着（`DEPRECATED_KEYS` 负责在写回时删掉它）。 */
+      if (raw && raw.imgOcr && typeof raw.imgOcr === 'object' && 'quality' in raw.imgOcr) {
+        if (cfg.migrated.ocrEngine !== true) changed.invalid.push('migrated.ocrEngine');
+        cfg.migrated.ocrEngine = true;
       }
 
       // ③ 关键词字段补齐（不改语义、不翻转）

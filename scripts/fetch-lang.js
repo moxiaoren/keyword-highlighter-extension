@@ -8,9 +8,10 @@
  *   · 默认已存在且 sha256 对得上就跳过；
  *   · 校验用 vendor/tesseract/lang-manifest.json（体积/sha256 的唯一真源，与扩展运行时同一份）。
  *
- * 只管 **fast 档**（`packs`）：高精度档（`variants.best`）的两个包不在任何官方可下载源里
- * （清单 `_source` 是 4.0.0_fast，上游 4.0.0_best 那份与站点上的并不是同一套文件），
- * 要本地副本用 `node scripts/check-lang.js --fetch` 从站点按 sha256 校验着取回来。
+ * 只管清单 `packs` 里列出的包（S2 起档位取消，就是 chi_sim / eng 两个快档包）：
+ * 它们的 `_source` 是 tessdata 官方 4.0.0_fast，能直连下载并逐个核对 sha256。
+ * 万一将来清单里回了档位（`variants.*`），那些包不在任何官方可下载源里，
+ * 要本地副本只能 `node scripts/check-lang.js --fetch` 从站点按 sha256 校验着取回来。
  */
 'use strict';
 

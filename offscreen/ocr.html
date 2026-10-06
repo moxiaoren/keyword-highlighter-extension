@@ -14,7 +14,12 @@
   这个页面没有界面、不被用户看到；页面里的 script 顺序 = 依赖顺序：
     ① src/core/protocol.js  消息常量（唯一协议）
     ② vendor/tesseract/tesseract.min.js  OCR 引擎（第三方，见 vendor/tesseract/）
-    ③ offscreen/ocr.js      我们的引擎封装（语言包投递 + 串行队列 + 结果回传）
+    ③ offscreen/ocr.js      我们的引擎封装（语言包/模型投递 + 串行队列 + 结果回传）
+
+  【S2】主引擎（PP-OCR）的两个依赖**不在这里用 <script> 引**：`onnxruntime-web` 的胶水与
+  `ppu-paddle-ocr` 都由 `ocr.js` 用**动态 `import()`** 加载 —— 因为必须先给 `ort.env.wasm.wasmPaths`
+  赋值、**再**让 ppu 去 import ORT（ppu 在模块顶层就会把 wasmPaths 钉到默认 CDN，见 ocr.js 顶部注释）。
+  动态 import 也**不能**用相对路径（相对的是本文档 URL），一律用 `chrome.runtime.getURL()`。
 -->
 <body>
   <script src="../src/core/protocol.js"></script>

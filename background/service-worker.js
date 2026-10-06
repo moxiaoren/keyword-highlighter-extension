@@ -116,6 +116,11 @@ const HANDLERS = {
   [MSG.OCR_LANG_DOWNLOAD]: (msg) => self.OcrHost.ask(msg),
   [MSG.OCR_LANG_IMPORT]: (msg) => self.OcrHost.ask(msg),
   [MSG.OCR_LANG_CLEAR]: (msg) => self.OcrHost.ask(msg),
+  /* 主引擎的模型资产（S2-c）：同样走 ask（请求-应答，等它下完/校验完再回设置页） */
+  [MSG.OCR_MODEL_STATE]: (msg) => self.OcrHost.ask(msg),
+  [MSG.OCR_MODEL_DOWNLOAD]: (msg) => self.OcrHost.ask(msg),
+  [MSG.OCR_MODEL_IMPORT]: (msg) => self.OcrHost.ask(msg),
+  [MSG.OCR_MODEL_CLEAR]: (msg) => self.OcrHost.ask(msg),
   'kh:ocr:selftest': (msg) => self.OcrHost.submitImage(msg, { tab: null, url: 'chrome-extension://ui/' })
 };
 

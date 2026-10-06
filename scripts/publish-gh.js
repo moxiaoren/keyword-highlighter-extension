@@ -57,7 +57,10 @@ function readTokenFile() {
   }
   return '';
 }
-const TOKEN = process.env.GH_TOKEN || process.env.GITHUB_TOKEN || readTokenFile();
+/* 【为什么最后还要 trim 一遍】环境变量是常见的坑：cmd 里 `set GH_TOKEN=xxx && …` 会把 `&&`
+ * 前面那个空格一起塞进来，用 `set /p` 手粘时也常多带一个空格或换行。token 里的空白**永远没有意义**，
+ * 但它会让 HTTP 头非法（或让 GitHub 判 401），而报错完全指不到这里。所以统一掐掉。 */
+const TOKEN = String(process.env.GH_TOKEN || process.env.GITHUB_TOKEN || readTokenFile() || '').trim();
 
 /** 绝不能上传的文件（私钥/证书/签名包） */
 const FORBIDDEN_RE = /\.(pem|key|p12|pfx|jks)$/i;
@@ -239,62 +242,119 @@ async function api(method, url, body) {
     }
   })();
 
-  /* ---- OCR 语言包（release/lang/*.traineddata.gz → 站点 lang/<文件>）----
-   * 【为什么不放进交付包】两个包合计约 3.7MB，而多数用户用不到（不用图片识别就永不下载）；
-   * 它们由扩展在用户点「下载」时按需取，见 vendor/README.md 与 vendor/tesseract/lang-manifest.json。
-   * 上传前按**同一份清单**校验 sha256：否则会出现"本地包和清单哈希对不上、用户下载时才炸"。 */
+  /* ---- OCR 站点资产（语言包 + 模型，都从 release/ 传到 gh-pages）----
+   * 语言包 release/lang/*.traineddata.gz → 站点 lang/<文件>；
+   *   【为什么不放进交付包】两个包合计约 3.7MB，而多数用户用不到（不用图片识别就永不下载）；
+   *   它们由扩展在用户点「下载」时按需取，见 vendor/README.md 与 vendor/tesseract/lang-manifest.json。
+   * 模型 release/models/<文件> → 站点 models/<文件>（det/rec/字符集 + 清单本身）；
+   *   主引擎（PP-OCR）首次使用才下载，见 vendor/ppocr/models-manifest.json。
+   * 两边上传前都按**同一份清单**校验 sha256 + 字节数：否则会出现"本地文件与清单对不上、用户下载时才炸"。
+   * 清单在 vendor/ 下（进仓、可评审），实际文件在 release/ 下（不进仓、由脚本取回）。 */
   const entries = files.map((f) => ({ local: path.join(REL, f), remote: f }));
   const LANG_DIR = path.join(REL, 'lang');
   const LANG_MANIFEST = path.join(ROOT, 'vendor', 'tesseract', 'lang-manifest.json');
-  /* `--skip-lang`：语言包**已经在站点上**且内容没变时跳过重传。
-   * 为什么需要：GitHub 的 blob 接口对大文件（高精度包 19MB）频繁 5xx/401，
+  const MODEL_DIR = path.join(REL, 'models');
+  const MODEL_MANIFEST = path.join(ROOT, 'vendor', 'ppocr', 'models-manifest.json');
+  /* `--skip-assets`（旧名 `--skip-lang`）：站点资产**已经在站点上**且内容没变时跳过重传。
+   * 为什么需要：GitHub 的 blob 接口对大文件频繁 5xx/401，
    * 而 gh-pages 建 tree 用的是 `base_tree`（合并）——**不发就等于原地保留**，所以跳过是安全的。
-   * 发布日志里会明确打印"本次跳过语言包"，避免误以为它没发布。 */
-  const SKIP_LANG = process.argv.indexOf('--skip-lang') >= 0;
-  if (SKIP_LANG) log('⚠ --skip-lang：本次**不重传**语言包（站点上的保持原样，适合"包没变、只是重发版本号"）');
-  if (!SKIP_LANG && fs.existsSync(LANG_DIR) && fs.existsSync(LANG_MANIFEST)) {
-    const lm = JSON.parse(fs.readFileSync(LANG_MANIFEST, 'utf8'));
-    /* 两档都要发（K67）：fast 走 `packs`，高精度走 `variants.*.packs` —— 少发一档，
-     * 用户在设置页点了「下载高精度语言包」就会 404。 */
-    const allPacks = {};
-    for (const lang of Object.keys(lm.packs || {})) allPacks[lang] = { tier: 'fast', pack: lm.packs[lang] };
-    for (const v of Object.keys(lm.variants || {})) {
-      const ps = (lm.variants[v] && lm.variants[v].packs) || {};
-      for (const lang of Object.keys(ps)) allPacks[lang] = { tier: v, pack: ps[lang] };
+   * 发布日志里会明确打印"本次跳过站点资产"，避免误以为它没发布。 */
+  const SKIP_ASSETS = process.argv.indexOf('--skip-assets') >= 0 || process.argv.indexOf('--skip-lang') >= 0;
+  if (SKIP_ASSETS) log('⚠ --skip-assets（旧名 --skip-lang）：本次**不重传**站点资产（语言包与模型都保持站点原样，适合"包没变、只是重发版本号"）');
+  if (!SKIP_ASSETS) {
+    /* 语言包：只发清单上**真正列出的**包（S2 起档位取消，只剩快档两包）。 */
+    if (fs.existsSync(LANG_DIR) && fs.existsSync(LANG_MANIFEST)) {
+      const lm = JSON.parse(fs.readFileSync(LANG_MANIFEST, 'utf8'));
+      /* 向后兼容：万一清单里回了档位，也照发（否则用户在设置页点了就 404）。 */
+      const allPacks = {};
+      for (const lang of Object.keys(lm.packs || {})) allPacks[lang] = { tier: 'fast', pack: lm.packs[lang] };
+      for (const v of Object.keys(lm.variants || {})) {
+        const ps = (lm.variants[v] && lm.variants[v].packs) || {};
+        for (const lang of Object.keys(ps)) allPacks[lang] = { tier: v, pack: ps[lang] };
+      }
+      for (const lang of Object.keys(allPacks)) {
+        const pack = allPacks[lang].pack;
+        const abs = path.join(LANG_DIR, pack.file);
+        if (!fs.existsSync(abs)) {
+          /* 取包的路子按档位不同：快档有官方源，其余档位只能从站点取回（见清单 _why_no_variants）。 */
+          die('语言包不全：缺少 release/lang/' + pack.file + '（'
+            + (allPacks[lang].tier === 'fast'
+              ? '先跑 node scripts/fetch-lang.js'
+              : '该档没有官方可下载源，用 node scripts/check-lang.js --fetch 从站点校验着取回')
+            + '）');
+        }
+        const buf = fs.readFileSync(abs);
+        const sha = crypto.createHash('sha256').update(buf).digest('hex').toUpperCase();
+        if (sha !== String(pack.sha256).toUpperCase()) {
+          die('语言包 ' + pack.file + ' 与清单里的 sha256 不一致（清单 ' + pack.sha256 + '，实际 ' + sha + '）—— 先跑 node scripts/fetch-lang.js --force');
+        }
+        /* 体积也卡：清单自称"体积与 sha256 的唯一真源"，而 sha256 对得上、bytes 记错这种事
+         * 2026-10-05 真发生过（站点两份高精度包差了 1.8KB/3KB，谁都没发现）。 */
+        if (Number(pack.bytes) && buf.length !== Number(pack.bytes)) {
+          die('语言包 ' + pack.file + ' 的字节数与清单不一致（清单 ' + pack.bytes + '，实际 ' + buf.length
+            + '）—— 清单是体积/sha256 唯一真源，先跑 node scripts/check-lang.js --live 看站点实际值');
+        }
+        entries.push({ local: abs, remote: 'lang/' + pack.file });
+      }
+      log('语言包：' + entries.filter((e) => e.remote.indexOf('lang/') === 0).map((e) => e.remote).join('、'));
+    } else {
+      log('⚠ 没有 release/lang —— 本次不发布 OCR 语言包（图片识别的兼容引擎下载会 404）');
     }
-    for (const lang of Object.keys(allPacks)) {
-      const pack = allPacks[lang].pack;
-      const abs = path.join(LANG_DIR, pack.file);
-      if (!fs.existsSync(abs)) {
-        /* 取包的路子按档位不同：fast 有官方源，高精度档只能从站点取回（见清单 _variants_note）。 */
-        die('语言包不全：缺少 release/lang/' + pack.file + '（'
-          + (allPacks[lang].tier === 'fast'
-            ? '先跑 node scripts/fetch-lang.js'
-            : '高精度档没有官方可下载源，用 node scripts/check-lang.js --fetch 从站点校验着取回')
-          + '）');
+
+    /* 模型：det/rec/字符集三件 → 站点 models/<文件>，外加清单本身（离线导入与自查都读它）。
+     * 校验的是 `vendor/ppocr/models-manifest.json` —— 与扩展运行时同一份，缺件时报出**具体文件名**。 */
+    if (fs.existsSync(MODEL_DIR) && fs.existsSync(MODEL_MANIFEST)) {
+      const mm = JSON.parse(fs.readFileSync(MODEL_MANIFEST, 'utf8'));
+      const modelFiles = Object.keys(mm.files || {}).map((k) => mm.files[k]);
+      if (!modelFiles.length) {
+        die('模型清单里一个文件都没有：vendor/ppocr/models-manifest.json（先跑 node _stage/wayfinder-ocr/_vendor-s2.js）');
       }
-      const buf = fs.readFileSync(abs);
-      const sha = crypto.createHash('sha256').update(buf).digest('hex').toUpperCase();
-      if (sha !== String(pack.sha256).toUpperCase()) {
-        die('语言包 ' + pack.file + ' 与清单里的 sha256 不一致（清单 ' + pack.sha256 + '，实际 ' + sha + '）—— 先跑 node scripts/fetch-lang.js --force');
+      const missingModels = modelFiles.filter((f) => !fs.existsSync(path.join(MODEL_DIR, f.file)));
+      if (missingModels.length) {
+        die('模型不全：缺少 ' + missingModels.map((f) => 'release/models/' + f.file).join('、')
+          + '（先跑 node _stage/wayfinder-ocr/_vendor-s2.js，或从站点 ' + (mm._base || '') + ' 按 sha256 取回）');
       }
-      /* 体积也卡：清单自称"体积与 sha256 的唯一真源"，而 sha256 对得上、bytes 记错这种事
-       * 2026-10-05 真发生过（站点两份高精度包差了 1.8KB/3KB，谁都没发现）。 */
-      if (Number(pack.bytes) && buf.length !== Number(pack.bytes)) {
-        die('语言包 ' + pack.file + ' 的字节数与清单不一致（清单 ' + pack.bytes + '，实际 ' + buf.length
-          + '）—— 清单是体积/sha256 唯一真源，先跑 node scripts/check-lang.js --live 看站点实际值');
+      for (const f of modelFiles) {
+        const buf = fs.readFileSync(path.join(MODEL_DIR, f.file));
+        const sha = crypto.createHash('sha256').update(buf).digest('hex').toUpperCase();
+        if (sha !== String(f.sha256).toUpperCase()) {
+          die('模型 ' + f.file + ' 与清单里的 sha256 不一致（清单 ' + f.sha256 + '，实际 ' + sha + '）—— 从站点按清单重取');
+        }
+        if (Number(f.bytes) && buf.length !== Number(f.bytes)) {
+          die('模型 ' + f.file + ' 的字节数与清单不一致（清单 ' + f.bytes + '，实际 ' + buf.length + '）');
+        }
+        entries.push({ local: path.join(MODEL_DIR, f.file), remote: 'models/' + f.file });
       }
-      entries.push({ local: abs, remote: 'lang/' + pack.file });
+      entries.push({ local: MODEL_MANIFEST, remote: 'models/models-manifest.json' });
+      log('模型：' + entries.filter((e) => e.remote.indexOf('models/') === 0).map((e) => e.remote).join('、'));
+    } else {
+      log('⚠ 没有 release/models —— 本次不发布 OCR 模型（主引擎首次使用时会 404）');
     }
-    log('语言包：' + entries.filter((e) => e.remote.indexOf('lang/') === 0).map((e) => e.remote).join('、'));
-  } else {
-    log('⚠ 没有 release/lang —— 本次不发布 OCR 语言包（图片识别的运行时下载会 404）');
   }
 
   if (!TOKEN) {
     die('缺少凭据。请设置环境变量 GH_TOKEN（细粒度 token，只需该仓库 Contents: Read and write）。\n' +
         '  为了安全：建议用细粒度 token、只勾这一个仓库、设 1 天有效期，发完立即撤销。\n' +
         '  设置方式（当前 PowerShell 会话）：$env:GH_TOKEN = "github_pat_xxx"');
+  }
+  /* 【为什么必须在发第一个请求之前卡掉】token 里混进非法字符时，`Authorization` 头里就会出现
+   * >255 的字符（或非法的控制字符），底层 fetch 抛的是一句完全看不懂的
+   * `Cannot convert argument to a ByteString because the character at index 18 has a value of 26032…`
+   * —— 那句话说不出"你把命令里的占位符原样粘进来了"。
+   * 实测踩到过：把文档里的 `github_pat_新token` 当命令粘进 PowerShell，`Bearer ` + 前缀正好是 18 位 ⇒
+   * 报错里的 index 18 就是那个「新」字。这种错误必须自己检、并且说人话。 */
+  if (!/^[\x21-\x7e]+$/.test(TOKEN)) {
+    const chars = Array.from(TOKEN);
+    const idx = chars.findIndex((ch) => { const c = ch.charCodeAt(0); return c < 0x21 || c > 0x7e; });
+    const ch = chars[idx];
+    const code = ch.charCodeAt(0);
+    die('token 里有不该出现的字符：第 ' + (idx + 1) + ' 位是 ' + JSON.stringify(ch) + '（码位 ' + code + '，共 ' + chars.length + ' 位）。\n'
+      + (code > 126
+        ? '  这是**非 ASCII 字符** —— 最常见的原因是把命令/文档里的**占位符**原样粘了进来（例如 `github_pat_新token`）。\n'
+        : '  这是**空白或控制字符**（多半是粘贴时多带了一个空格/换行。这类字符已经被自动掐掉，'
+          + '走到这里说明它出现在 token **中间**）。\n')
+      + '  最省事的做法：把 token 单独存成一行到 `' + path.join(ROOT, '..', '..', '_gh_token.txt') + '`'
+      + '（脚本会自己读它，token 完全不经过命令行）。');
   }
 
   /* ① 校验凭据与仓库权限 */

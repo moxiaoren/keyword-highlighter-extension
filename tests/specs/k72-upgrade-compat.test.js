@@ -337,6 +337,7 @@ module.exports = async function run() {
 
   await test('B8-6..10：语言包/快捷键/窗口尺寸五条（旧串消失 / 新串存在）', () => {
     const js = readSrc('options/options.js');
+    const html = readSrc('options/options.html');
     const cl = readSrc('src/ui/changelog.js');
     const welcome = readSrc('welcome/welcome.html');
     const popup = readSrc('popup/popup.js');
@@ -344,12 +345,23 @@ module.exports = async function run() {
 
     falsy(js.indexOf('下一版会提供下载') >= 0, '★ B8-6 死文案必须消失');
     falsy(js.indexOf('还没随站点提供') >= 0, '★ B8-6 旧串必须消失');
-    truthy(js.indexOf('请在下面的「语言包」里下载') >= 0, 'B8-6 新串应在');
+    /* 【S2 更新（2026-10-06，地图 #10 · #12 裁决）】B8-6 当时立的新串是
+     * `请在下面的「语言包」里下载` —— 档位取消后「语言包」那一栏已改名
+     * 「兼容引擎语言包」（主引擎模型另起一栏），所以这条改成钉住**新的两条分栏名**。 */
+    falsy(js.indexOf('请在下面的「语言包」里下载') >= 0,
+      'S2 起"下面的「语言包」"这个说法没了（已分成 主引擎模型 / 兼容引擎语言包 两栏）');
+    truthy(html.indexOf('主引擎模型') >= 0 && html.indexOf('兼容引擎语言包') >= 0,
+      'B8-6（S2 口径）：两条资产必须在设置页分栏，且栏名与文案表里的一致');
 
     truthy(cl.indexOf('英文高精度包还在下载（该包随后已一并托管）') >= 0, 'B8-7 历史条目应已加注（唯一允许动的那条）');
 
     falsy(js.indexOf('语言包按这一档单独下载') >= 0, '★ B8-8 旧串必须消失');
-    truthy(js.indexOf('按这一档单独保存，切换档位后才需要下载') >= 0, 'B8-8 新串应在');
+    /* 【S2 更新】B8-8 当时立的新串 `按这一档单独保存，切换档位后才需要下载` 也是档位时代的 ——
+     * 档位没了，改成钉住引擎 toast（"已设为「只用主引擎」/「自动」/「只用兼容引擎」三条）。 */
+    falsy(js.indexOf('按这一档单独保存，切换档位后才需要下载') >= 0,
+      'S2 起没有"档位"可切换了（改成引擎三档）');
+    truthy(js.indexOf('已设为「只用主引擎」') >= 0 && js.indexOf('已设为「自动」') >= 0
+      && js.indexOf('已设为「只用兼容引擎」') >= 0, 'B8-8（S2 口径）：三条引擎 toast 都要在');
 
     falsy(welcome.indexOf('恢复本页高亮') >= 0, '★ B8-9 Ctrl+Shift+H 是全局开关，不能写"本页"');
     truthy(welcome.indexOf('恢复<strong>全局</strong>高亮') >= 0, 'B8-9 新串应在');

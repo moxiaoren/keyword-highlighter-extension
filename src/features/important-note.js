@@ -168,9 +168,18 @@
     .khin-imgmeta { min-width: 0; flex: 1; font-size: 12px; line-height: 1.5; color: #334155; }
     .khin-imgkw { font-weight: 600; color: #0f172a; }
     .khin-imgtag { font-size: 11px; border-radius: 4px; padding: 0 4px; margin-left: 4px; }
+    /* 本次识别的真实耗时（S3-④）：只在有值时挂载，字号比标签再小一档、不抢主信息 */
+    .khin-imgcost { font-size: 10px; color: #94a3b8; margin-left: 4px; font-variant-numeric: tabular-nums; }
     .khin-imgtag.hit { background: #dcfce7; color: #166534; }
     .khin-imgtag.miss { background: #f1f5f9; color: #64748b; }
     .khin-imgtag.bad { background: #fee2e2; color: #991b1b; }
+    /* 进行中（wait 类）与「读不到图 / 缺资产」（note 类）**都不是故障，不许染红** ——
+     * 票 #17 新登记的 P0：修复前所有非 done 状态都套 bad 类，于是 OCR 正常工作时
+     * 面板上显示的是**红底的「识别中…」**，用户第一反应就是「出错了」。
+     * 状态类由唯一真源 KH.OcrCopy.stateClass() 给出（见 src/ui/ocr-copy.js 文件头）。
+     * ⚠️ 这段样式在模板字符串里，注释里**不能出现反引号**（会把模板提前闭合）。 */
+    .khin-imgtag.wait { background: #e2e8f0; color: #475569; }
+    .khin-imgtag.note { background: #f1f5f9; color: #475569; }
     /* 复制识别文本的小按钮（识别出来的长串编号/理由，用户常要粘到别处） */
     .khin-imgcopy {
       margin-left: 4px; padding: 0 5px; font-size: 11px; line-height: 16px; cursor: pointer;
@@ -579,6 +588,10 @@
     /* ---- 🖼 图片命中（KH.ImgOcr 的结果；**独立分区**，与重要笔记卡片互不影响） ---- */
     imgItems: [],
     imgCollapsed: true,  // 默认折叠（图片识别是异步来的，先折叠不抢视线）
+    /* 「用户手动收起过」**只对当时那批条目有效**（见 `imgSameBatch`）：连同收起那一刻的
+     * 条目键一起记，条目换代（提交后翻页 / 重新扫描）即作废 —— 不做整页范围的长期记忆。 */
+    imgUserCollapsed: false,
+    imgCollapsedKeys: [],
     imgSecEl: null,
     imgListEl: null,
     imgCountEl: null,
@@ -766,8 +779,13 @@
         this.root.querySelector('.khin-imghead').addEventListener('click', (e) => {
           e.stopPropagation();
           this.imgCollapsed = !this.imgCollapsed;
-          /* 记住"用户手动收起来过"：之后有新的图片命中也不再把分区弹开（尊重用户选择） */
+          /* 记住"用户手动收起来过"：**只记到这批条目为止** —— 连同当时的条目键一起记，
+           * 条目换代就作废（用户 2026-10-06 口径：提交后翻到下一页是全新场景，不该被上一页
+           * 的收起动作长期压住；那时只要有命中就要照常自动展开）。 */
           this.imgUserCollapsed = this.imgCollapsed;
+          this.imgCollapsedKeys = this.imgCollapsed
+            ? (this.imgItems || []).map((it) => String(it.key || ''))
+            : [];
           this.renderImgSection();
           this.applyPosition();
         });
@@ -799,13 +817,36 @@
      * 点缩略图走**现有灯箱**看大图；没有识别结果的条目也要显示（并说明原因：
      * 排队中 / 跨域未授权 / 引擎缺语言包），否则用户只会觉得"它坏了"。
      */
+    /**
+     * 「用户手动收起过」这份记忆**还属于这批条目吗**（纯函数，不碰 DOM —— 好单测）。
+     *
+     * 判据：收起那一刻记下的键**全都还在** ⇒ 仍是同一批。于是：
+     *   · 同一页里异步结果陆续回来（旧键都还在）→ 记忆有效，不被自动展开打断；
+     *   · 提交后翻页 / 重新扫描（有键消失）→ 记忆作废，新场景里有命中照常自动展开。
+     *
+     * 为什么必须有这一层：只记一个布尔值就等于**整页范围的长期记忆** —— 用户提交后翻到
+     * 下一页，那是全新场景，却再也不自动展开了（用户 2026-10-06 明确否决这种长期记忆）。
+     */
+    imgSameBatch(list) {
+      if (this.imgUserCollapsed !== true) return false;
+      const keys = this.imgCollapsedKeys || [];
+      if (!keys.length) return false;
+      const now = (list || []).map((it) => String(it.key || ''));
+      /* 空列表 = "重建清底的瞬间"（ImgOcr 的条目会被清掉再重建，见 img-ocr.js 的 clear），
+       * 不是换代：这一轮分区本来就没东西可显示，记忆留着，等条目回来再用键判断。
+       * 判成换代的话，用户一收起、页面稍有变动就作废 ⇒ 又变回"每轮都被弹开"。 */
+      if (!now.length) return true;
+      return keys.every((k) => now.indexOf(k) >= 0);
+    },
+
     renderImgSection() {
       if (!this.imgSecEl) return;
       const list = this.imgItems || [];
       if (this.imgCountEl) this.imgCountEl.textContent = list.length ? '(' + list.length + ')' : '';
       /* 【命中就自动展开（K69）】用户报的：图里识别出关键词了，分区却还是收着的，得手动点开才看得到。
-       * 规则：**只要有命中的条目就默认展开**；但用户手动收起来之后要尊重他的选择（`imgUserCollapsed`），
-       * 不能每一轮重建都把面板又弹开（那会很烦）。 */
+       * 规则：**只要有命中的条目就默认展开**；用户手动收起来过就尊重他 —— 但这份"尊重"只对
+       * **当时那批条目**有效（`imgSameBatch`）：换代了就作废，新场景里照样自动展开。 */
+      if (!this.imgSameBatch(list)) { this.imgUserCollapsed = false; this.imgCollapsedKeys = []; }
       if (this.imgUserCollapsed !== true && list.some((it) => it.state === 'done' && it.matched && it.matched.length)) {
         this.imgCollapsed = false;
       }
@@ -836,7 +877,8 @@
         kw.textContent = '🖼 ' + (it.keyword || '') + (it.label ? '（' + it.label + '）' : '');
         head.appendChild(kw);
         const tag = doc.createElement('span');
-        tag.className = 'khin-imgtag ' + (it.state === 'done' ? (it.matched && it.matched.length ? 'hit' : 'miss') : 'bad');
+        /* 状态类只从唯一真源取（`hit`/`miss`/`wait`/`note`/`bad`）：进行中不再是红的 */
+        tag.className = 'khin-imgtag ' + KH.OcrCopy.stateClass(it);
         tag.textContent = this.imgTagText(it);
         tag.title = it.error || '';
         head.appendChild(tag);
@@ -861,7 +903,16 @@
         });
         head.appendChild(tag);
 
-        /* 📋 复制识别出的文字（只在识别成功且非空时给出）——识别结果常是一串编号/理由，用户要粘到别处 */
+        /* 本次识别的**真实**耗时（S3-④ 用户裁决）：数字来自回执（`img-ocr.js:445` 存在条目上），
+         * 文案与格式一律走真源 `KH.OcrCopy.costLabel/costTip` —— 面板不许自己拼数字或写中文。
+         * 没有值（排队中 / 还没跑到）时 `costLabel` 返回空串 ⇒ 连 span 都不挂，不留空标签。
+         * 【位置】必须在这句 `head.appendChild(tag)` **之后** —— 上面第 850 行已经 append 过一次 tag，
+         * 而 appendChild 对已存在的子节点是"移动"：插在 850 与 870 之间会被这一次挪到 cost 后面去。 */
+        const cost = doc.createElement('span');
+        cost.className = 'khin-imgcost';
+        cost.textContent = KH.OcrCopy.costLabel(it);
+        cost.title = KH.OcrCopy.costTip(it);
+        if (cost.textContent) head.appendChild(cost);
         if (it.state === 'done' && String(it.text || '').trim()) {
           const copy = doc.createElement('button');
           copy.className = 'khin-imgcopy';
@@ -893,34 +944,16 @@
       }
     },
 
+    /* 折叠标签 / 展开说明一律从**唯一真源** `KH.OcrCopy` 取（票 #17 D-17.1）。
+     * 措辞上的任何改动都应该去改 `src/ui/ocr-copy.js` —— 不要在这里写死中文：
+     * 之前正是"同一个原因在面板 / 设置页 / 弹窗各写一套"，改一处漏两处。
+     * （原 K63 的「把图片所在域名直接写出来」口径已搬进 ocr-copy.js 的 `cross-origin` 条目。） */
     imgTagText(it) {
-      if (it.state === 'done') return (it.matched && it.matched.length) ? ('命中：' + it.matched[0].text) : '未命中';
-      if (it.state === 'pending' || it.state === 'idle') return '识别中…';
-      if (it.state === 'blocked') {
-        if (it.why === 'cross-origin') return it.host ? ('跨域（未授权 ' + it.host + '）') : '跨域（未授权）';
-        if (it.why === 'lazy') return '图还没加载';
-        if (it.why === 'invisible') return '图当前不可见';
-        if (it.why === 'too-small') return '原图太小';
-        return '读不到像素';
-      }
-      return '识别失败';
+      return KH.OcrCopy.tag(it);
     },
 
     imgWhyText(it) {
-      if (it.state === 'blocked') {
-        if (it.why === 'cross-origin') {
-          /* 【K63】把**图片所在域名**直接写出来：用户照着填就能授权，不用猜是"本站"还是"图片站" */
-          return (it.host ? ('这张图来自 ' + it.host + '，默认不代为读取。') : '这张图来自其它网站，默认不代为读取。')
-            + '到设置页「图片文字识别 → 跨域图片」把' + (it.host ? (' ' + it.host) : '它所在的域名')
-            + ' 加进去即可（也可以直接授权本站点）。';
-        }
-        if (it.why === 'lazy') return '这张图是懒加载、还没真正加载出来；等它加载完会自动重扫一次。';
-        if (it.why === 'invisible') return '这张图当前不可见（折叠/未展开），显出来之后会自动识别。';
-        if (it.why === 'too-small') return '这张图的**原始尺寸**太小（两边都不到 24px），识别也认不出；如果页面上看着不小，说明它本来就是被放大的小图。';
-        return '这张图读不到像素（可能已失效或不是图片）。';
-      }
-      if (it.why === 'lang-missing') return '识别引擎还没准备好语言包：到设置页「图片文字识别」里下载或手动导入。';
-      return it.error || '识别失败。';
+      return KH.OcrCopy.why(it);
     },
 
     renderItems() {

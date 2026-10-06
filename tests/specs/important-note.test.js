@@ -2,6 +2,10 @@
 'use strict';
 const H = require('../harness');
 const { suite, test, eq, truthy, falsy } = H;
+const fs = require('fs');
+const path = require('path');
+const ROOT = path.join(__dirname, '..', '..');
+const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 
 module.exports = async function run() {
   const { KH } = require('../bootstrap');
@@ -162,5 +166,55 @@ module.exports = async function run() {
   await test('图片尺寸随卡片（词 > 分组 > 全局由编译期解决，这里只透传）', () => {
     const items = head.build([hit('甲', '', '笔记', { imgSize: 88 })], new Set());
     eq(items[0].imgSize, 88);
+  });
+
+  /* ==========================================================================
+   * 🖼 图片分区：「用户手动收起过」的**作用范围**（K80）
+   *
+   * 缺陷背景（用户 2026-10-06 报的）：原实现只记一个布尔值 `imgUserCollapsed`，而它
+   * **谁也不清**（rebuild 不清、destroy 也不清）⇒ 实际是**整页范围的长期记忆**。
+   * 用户场景是"提交之后翻到下一页"—— 那是全新场景、新的图，却因为上一页收过一次
+   * 而再也不自动展开了。要的是：同一批条目内尊重收起；换代即作废、有命中照常展开。
+   * ========================================================================== */
+
+  suite('important-note · 🖼 图片分区：「用户收起过」只在同一批条目内有效（K80）');
+
+  /** 面板是单例字面量：用原型继承造"影子面板"，只改自己的字段，不污染真面板 */
+  const shadowPanel = () => Object.create(KH.ImportantNote.panel);
+
+  await test('★ 同一批（异步结果陆续回来）→ 记忆保留，不被自动展开打断', () => {
+    const p = shadowPanel();
+    p.imgUserCollapsed = true;
+    p.imgCollapsedKeys = ['r|a', 'r|b'];
+    eq(p.imgSameBatch([{ key: 'r|a' }, { key: 'r|b' }, { key: 'r|c' }]), true, '旧键都在、只多不少 = 同一批');
+    eq(p.imgSameBatch([]), true, '重建清底的瞬间（列表暂空）不算换代，记忆要留着');
+  });
+
+  await test('★ 条目换代（提交后翻页 / 重新扫描）→ 记忆作废，有命中要重新自动展开', () => {
+    const p = shadowPanel();
+    p.imgUserCollapsed = true;
+    p.imgCollapsedKeys = ['r|a', 'r|b'];
+    eq(p.imgSameBatch([{ key: 'r|a' }, { key: 'r|x' }]), false, '有旧键消失 ⇒ 换代');
+    eq(p.imgSameBatch([{ key: 'r|x' }, { key: 'r|y' }]), false, '整批换新 ⇒ 换代');
+  });
+
+  await test('没收起过 / 没有记忆键 → 都不构成"记住收起"', () => {
+    const p = shadowPanel();
+    p.imgUserCollapsed = false;
+    p.imgCollapsedKeys = ['r|a'];
+    eq(p.imgSameBatch([{ key: 'r|a' }]), false, '用户没收起过');
+    p.imgUserCollapsed = true;
+    p.imgCollapsedKeys = [];
+    eq(p.imgSameBatch([{ key: 'r|a' }]), false, '没有记忆键');
+  });
+
+  await test('★ 接线契约：换代先作废记忆；收起时连同当时的键一起记（不许退回布尔长期记忆）', () => {
+    const src = read('src/features/important-note.js');
+    truthy(src.indexOf('if (!this.imgSameBatch(list)) { this.imgUserCollapsed = false; this.imgCollapsedKeys = []; }') >= 0,
+      '分区渲染必须先问 imgSameBatch 并作废记忆');
+    truthy(src.indexOf('if (this.imgUserCollapsed !== true && list.some(') >= 0,
+      '自动展开仍只看"用户有没有对这一批收起过"');
+    truthy(/this\.imgCollapsedKeys = this\.imgCollapsed\s*\r?\n\s*\?/.test(src),
+      '收起动作要把当时的条目键记下来');
   });
 };

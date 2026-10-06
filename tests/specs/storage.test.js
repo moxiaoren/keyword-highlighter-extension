@@ -355,8 +355,10 @@ module.exports = async function run() {
    * 1.99.99.24 的关键词字段就是被同类手写清单吞掉的。这条把"漏加"变成红灯。 */
   await test('★ 每个配置项都必须被导出清单覆盖到，或明确属于"不随导出走"', () => {
     /* 这四块走各自的区块（keywords / siteRules / siteDisabledMap），不重复列在 styles 里；
-     * imgOcr 含跨域站点授权（本机性质）；pageFingerprintIntervalMs 是内部兜底参数。 */
-    const EXPLICIT_SKIP = ['keywords', 'groups', 'siteRules', 'siteDisabledMap', 'imgOcr', 'pageFingerprintIntervalMs'];
+     * imgOcr 含跨域站点授权（本机性质）；pageFingerprintIntervalMs 是内部兜底参数；
+     * migrated 是"本机还有一次性提示没告知过"的状态（S2 的档位迁移）—— 跟着导出走只会让
+     * 换机器/恢复备份的人莫名收到一条"你以前的档位没了"的提示，而他其实压根没设过档位。 */
+    const EXPLICIT_SKIP = ['keywords', 'groups', 'siteRules', 'siteDisabledMap', 'imgOcr', 'pageFingerprintIntervalMs', 'migrated'];
     const listed = S.STYLE_KEYS.concat(S.GLOBAL_KEYS).concat(EXPLICIT_SKIP);
     const missing = Object.keys(KH.Config.defaults).filter((k) => listed.indexOf(k) < 0);
     deepEq(missing, [], '这些配置项既不在 STYLE_KEYS / GLOBAL_KEYS，也不在"明确不导出"清单里 —— 新加的配置项别只改一处（决定它跟不跟导出走，然后登记到相应的清单）');

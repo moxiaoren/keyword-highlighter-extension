@@ -91,7 +91,29 @@ const specs = [
   './specs/optional-batch8.test.js',
   /* OCR 语言包清单：结构合法 + 本地 release/lang/ 里已有的包与清单逐字节一致
    * —— 2026-10-05 抓到过一次「sha256 对、bytes 错」的清单谎（详见该 spec 头部） */
-  './specs/lang-manifest.test.js'
+  './specs/lang-manifest.test.js',
+  /* OCR 文案唯一真源（票 #17 D-17.1）：不变量 9–12 —— 进行中不得染红 / 文案单源/
+   * 枚举对账 / 10 个引擎参数不得可配。口径见 tests/specs/ocr-copy.test.js 头部 */
+  './specs/ocr-copy.test.js',
+  /* 图片 OCR 的链路所有权（S1-b）：不变量 5/7/8 —— 每条请求必有终态、终态必归还一次额度（幂等）、
+   * offscreen 不许碰 chrome.storage、不许调 116+ 的 offscreen.hasDocument。
+   * 口径见 tests/specs/ocr-link.test.js 头部 */
+  './specs/ocr-link.test.js',
+  /* 长图分块与方向纠正（S1-c）：不变量 1–4 —— 静默丢必须带告知字段 / 触块数上限必须带覆盖信息 /
+   * 未就绪不得静默降级 / 试转判决是纯函数。纯判决层 + **假引擎端到端**（真的跑一遍 runJob，
+   * 所以"回执里到底有没有那个字段"也是可断言的）。口径见 tests/specs/ocr-long-image.test.js 头部 */
+  './specs/ocr-long-image.test.js',
+  /* OCR 引擎资产（S2）：随包 ORT 三件的字节账、`vendor/ppu-*` 导入闭包自洽（无裸 specifier——
+   * MV3 无 import map，裸 specifier 必抛）、models-manifest ↔ release/models 逐字节一致。
+   * 口径见 tests/specs/engine-assets.test.js 头部 */
+  './specs/engine-assets.test.js',
+  /* 识别引擎选型与回落（S2-b）：不变量 6 + 判据 ④ —— `ppocr` 档不许回落、`auto` 档回落要带原因
+   * 且按会话持久、缺 `engine` 如实回 `missing-engine`、存量 `quality` 迁移成 `engine=auto`。
+   * 口径见 tests/specs/ocr-engine.test.js 头部 */
+  './specs/ocr-engine.test.js',
+  /* 设置页与面板的引擎可感知面（S2-c）：判据 ④（档位零命中）/ 只读「高级信息」与源码常量对账 /
+   * 迁移提示关得掉 / 自检三件事 / 面板降级告知。口径见 tests/specs/ocr-options.test.js 头部 */
+  './specs/ocr-options.test.js'
 ];
 
 (async () => {

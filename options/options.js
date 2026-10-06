@@ -1280,25 +1280,113 @@
     return row;
   }
 
-  /** 当前识别档位（K67）：fast（默认）/ best（高精度）。所有语言包操作都跟着它走。 */
-  function ocrQuality() {
-    return (cfg && cfg.imgOcr && cfg.imgOcr.quality) === 'best' ? 'best' : 'fast';
+  /** 主引擎模型的一行（三件各有自己的下载/导入/清除；整套下载与清除在列表末尾） */
+  function ocrModelRow(slot, info) {
+    const row = document.createElement('div');
+    row.className = 'kh-form-row';
+    row.setAttribute('data-ocr-model', slot);
+
+    const fld = document.createElement('div');
+    fld.className = 'kh-form-fld';
+    const name = document.createElement('div');
+    name.className = 'kh-fld-label';
+    name.textContent = (info.label || slot) + '（' + info.file + '，' + Math.round((info.bytes || 0) / 1024) + ' KB）';
+    const state = document.createElement('div');
+    state.className = 'kh-muted';
+    state.setAttribute('data-ocr-model-state', slot);
+    state.textContent = info.cached
+      ? ('已就绪（本地缓存 ' + Math.round((info.cachedBytes || 0) / 1024) + ' KB）')
+      : '未下载';
+    fld.appendChild(name);
+    fld.appendChild(state);
+    row.appendChild(fld);
+
+    const mkBtn = (id, text, title) => {
+      const b = document.createElement('button');
+      b.className = 'kh-mini-btn';
+      b.type = 'button';
+      b.id = id;
+      b.textContent = text;
+      b.title = title;
+      return b;
+    };
+    row.appendChild(mkBtn('btn-ocr-mdl-dl-' + slot, '下载', '只下这一件（校验 sha256 + 字节数后存到本机）'));
+    row.appendChild(mkBtn('btn-ocr-mdl-import-' + slot, '手动导入', '选择本地的 ' + info.file + '（完全离线）'));
+    row.appendChild(mkBtn('btn-ocr-mdl-clear-' + slot, '清除', '删除这一件的本地缓存'));
+    return row;
+  }
+
+  /** 当前识别引擎（S2 取代旧的「识别档位」）：auto（默认）/ ppocr / tesseract */
+  function ocrEngine() {
+    const v = (cfg && cfg.imgOcr && cfg.imgOcr.engine) || '';
+    return (v === 'ppocr' || v === 'tesseract') ? v : 'auto';
+  }
+
+  /**
+   * 只读「高级信息」的内容（票 #17 D-17.7：**10 个引擎参数一律不给可配**，但用户有权看到
+   * "现在到底按什么在跑"、并把这一块复制给我们排查）。
+   * 每行的值是**代码常量的真值**（分布在本文件同级的两处：`offscreen/ocr.js` 与
+   * `src/features/img-ocr.js`），由 `tests/specs/ocr-options.test.js` 逐条去源码里对账 ——
+   * 改了常量不改这里就会红，所以这张表不会悄悄变成谎话。
+   */
+  const OCR_ENGINE_PARAMS = [
+    ['MAX_EDGE', '识别前最长边上限（兼容引擎）', '1600'],
+    ['TARGET_H', '小图放大目标高度', '96'],
+    ['MAX_SCALE', '小图放大倍数上限', '4'],
+    ['CHUNK_H', '长图切块高度', '1600'],
+    ['CHUNK_OVERLAP', '相邻块重叠高度', '240'],
+    ['MIN_OVERLAP', '重叠下限（块高很小时）', '128'],
+    ['CHUNK_MAX', '长图最多识别块数', '8'],
+    ['CHUNK_H_RELAXED', '撞到块数上限时放宽到的块高', '2000'],
+    ['PSM_BLOCK', '兼容引擎版式模式（整块正文）', '6'],
+    ['PSM_SINGLE', '兼容引擎版式模式（单行）', '7'],
+    ['IDLE_MS', '引擎空闲多久释放（毫秒）', '90000'],
+    ['CANVAS_MAX_EDGE', '取图用画布最长边上限', '1200'],
+    ['MIN_EDGE', '小于这个边长直接跳过', '24'],
+    ['CACHE_MAX', '识别结果缓存条数上限', '200'],
+    ['MAX_INFLIGHT', '同时最多识别几张', '4']
+  ];
+
+  /** 只读高级信息那一段的正文（纯文本，复制出去的也是它） */
+  function ocrAdvText() {
+    const ver = (chrome.runtime.getManifest && chrome.runtime.getManifest().version) || '?';
+    const lines = [
+      '关键词高亮 v' + ver + ' · 图片文字识别（OCR）',
+      '引擎设置：' + ocrEngine(),
+      '浏览器：' + (navigator.userAgent || '?'),
+      ''
+    ];
+    for (const p of OCR_ENGINE_PARAMS) lines.push(p[0] + ' = ' + p[2] + '　（' + p[1] + '）');
+    return lines.join('\n');
+  }
+
+  function renderOcrAdv() {
+    const box = $('ocr-adv-body');
+    if (!box) return;
+    box.textContent = '';
+    const pre = document.createElement('pre');
+    pre.className = 'kh-muted';
+    pre.style.whiteSpace = 'pre-wrap';
+    pre.style.margin = '0';
+    pre.textContent = ocrAdvText();
+    box.appendChild(pre);
   }
 
   function renderOcrLangs() {
     const box = $('ocr-lang-list');
     if (!box) return;
     box.textContent = '语言包状态读取中…';
-    return ocrSend({ type: KH.MSG.OCR_LANG_STATE, quality: ocrQuality() }).then((res) => {
+    return ocrSend({ type: KH.MSG.OCR_LANG_STATE }).then((res) => {
       if (!res || !res.ok) { box.textContent = '读取失败：' + ((res && res.error) || '未知错误'); return; }
       box.textContent = '';
       const langs = (res.state && res.state.langs) || {};
+      /* 【S2 起没有档位】这里原来写的是"本机还没有**高精度**语言包" —— 档位取消后那句话已经
+       * 指向不存在的东西；现在只在"清单里一个包都没有"（站点/清单出问题）时才提示。 */
       if (res.state && res.state.available === false) {
         const p = document.createElement('p');
         p.className = 'kh-muted';
-        p.textContent = '本机还没有高精度语言包。请在下面的「语言包」里下载（只从本项目主页，下载后做 sha256 校验），'
-          + '或在这台机器上用「手动导入」喂一个标准模型包（tessdata 的 chi_sim.traineddata）。'
-          + '现在也可以先把档位留在「快速」。';
+        p.textContent = '清单里没有可用的语言包（清单没读到或站点未提供）—— 兼容引擎将无法使用，'
+          + '主引擎不受影响。';
         box.appendChild(p);
       }
       for (const key of Object.keys(langs)) box.appendChild(ocrRow(key, langs[key]));
@@ -1308,6 +1396,65 @@
         + '手动导入的包若与官方包一致会标注「校验一致」。引擎空闲约 90 秒后自动释放。';
       box.appendChild(tip);
     });
+  }
+
+  /** 主引擎模型那一栏（S2-c）：三件各自一行，下载/导入/清除；状态由 offscreen 读缓存给出 */
+  let ocrModelState = null;
+  function renderOcrModels() {
+    const box = $('ocr-model-list');
+    if (!box) return;
+    box.textContent = '模型状态读取中…';
+    return ocrSend({ type: KH.MSG.OCR_MODEL_STATE }).then((res) => {
+      if (!res || !res.ok) { box.textContent = '读取失败：' + ((res && res.error) || '未知错误'); return; }
+      box.textContent = '';
+      const state = res || {};
+      const files = state.files || {};
+      ocrModelState = state;                       // 成套导入要靠它把文件名映射回槽位
+      const slots = Object.keys(files);
+      if (!slots.length) {
+        const p = document.createElement('p');
+        p.className = 'kh-muted';
+        p.textContent = '模型清单是空的（清单没读到，或站点未提供）—— 主引擎不可用。';
+        box.appendChild(p);
+        return;
+      }
+      for (const slot of slots) box.appendChild(ocrModelRow(slot, files[slot]));
+      const ready = slots.filter((s) => files[s].cached).length;
+      const p = document.createElement('p');
+      p.className = 'kh-muted';
+      p.textContent = '已就绪 ' + ready + '/' + slots.length + ' 件（共约 '
+        + (Math.round((state.totalBytes || 0) / 1024 / 102.4) / 10) + 'MB，本机已存 '
+        + (Math.round((state.cachedBytes || 0) / 1024 / 102.4) / 10) + 'MB）。'
+        + '三件**成套**才有用：少一件时主引擎会直接报「模型文件没准备好」，不会静默退回兼容引擎。';
+      box.appendChild(p);
+
+      const row = document.createElement('div');
+      row.className = 'kh-form-row';
+      const dl = document.createElement('button');
+      dl.className = 'kh-btn';
+      dl.type = 'button';
+      dl.id = 'btn-ocr-mdl-dl';
+      dl.textContent = '下载模型';
+      const imp = document.createElement('button');
+      imp.className = 'kh-btn';
+      imp.type = 'button';
+      imp.id = 'btn-ocr-mdl-import';
+      imp.textContent = '整套手动导入';
+      const clr = document.createElement('button');
+      clr.className = 'kh-mini-btn';
+      clr.type = 'button';
+      clr.id = 'btn-ocr-mdl-clear';
+      clr.textContent = '清除全部模型';
+      row.appendChild(dl); row.appendChild(imp); row.appendChild(clr);
+      box.appendChild(row);
+    });
+  }
+
+  /** 迁移提示（S2 / 票 #17 D-17.4）：存量档位被取消时显示**一次**，点掉即写回 migrated.ocrEngine=false */
+  function renderOcrMigrate() {
+    const box = $('ocr-migrate-note');
+    if (!box) return;
+    box.hidden = !(cfg && cfg.migrated && cfg.migrated.ocrEngine === true);
   }
 
   function renderOcrSites() {
@@ -1352,24 +1499,64 @@
   function renderOcr() {
     if (!$('sec-ocr')) return;
     if (!ocrWired) { ocrWired = true; wireOcr(); }
-    const sel = $('ocr-quality');
-    if (sel) sel.value = ocrQuality();
+    const sel = $('ocr-engine');
+    if (sel) sel.value = ocrEngine();
+    renderOcrMigrate();
+    renderOcrModels();
     renderOcrLangs();
     renderOcrSites();
+    renderOcrAdv();
   }
 
   function wireOcr() {
     const importFile = $('ocr-import-file');
+    const modelFile = $('ocr-model-import-file');
     let importLang = '';
+    let importSlot = '';
+
+    /** 主引擎模型的一件：下载（单件）/ 清除（单件）—— 与语言包那两个 id 前缀分开，避免误命中 */
+    const modelOp = (slot, btn) => {
+      if (btn) { btn.disabled = true; btn.textContent = '下载中…'; }
+      ocrSend({ type: KH.MSG.OCR_MODEL_DOWNLOAD }).then((res) => {
+        if (btn) { btn.disabled = false; btn.textContent = '下载'; }
+        if (!res || !res.ok) { D.toast('模型下载失败：' + ((res && res.error) || '未知错误'), 'error'); return; }
+        D.toast('模型已下载并校验通过', 'ok');
+        renderOcrModels();
+      });
+    };
 
     document.addEventListener('click', (e) => {
       const id = e.target && e.target.id ? String(e.target.id) : '';
-      let m = /^btn-ocr-dl-(.+)$/.exec(id);
+      let m = /^btn-ocr-mdl-dl-(.+)$/.exec(id);
+      if (m) { modelOp(m[1], e.target); return; }
+      m = /^btn-ocr-mdl-import-(.+)$/.exec(id);
+      if (m && modelFile) { importSlot = m[1]; modelFile.value = ''; modelFile.click(); return; }
+      m = /^btn-ocr-mdl-clear-(.+)$/.exec(id);
+      if (m) {
+        ocrSend({ type: KH.MSG.OCR_MODEL_CLEAR, slots: [m[1]] }).then((res) => {
+          if (!res || !res.ok) { D.toast('清除失败', 'error'); return; }
+          D.toast('已清除这一件模型缓存', 'ok');
+          renderOcrModels();
+        });
+        return;
+      }
+      if (id === 'btn-ocr-mdl-dl') { modelOp('all', e.target); return; }
+      if (id === 'btn-ocr-mdl-clear') {
+        ocrSend({ type: KH.MSG.OCR_MODEL_CLEAR }).then((res) => {
+          if (!res || !res.ok) { D.toast('清除失败', 'error'); return; }
+          D.toast('已清除全部模型缓存', 'ok');
+          renderOcrModels();
+        });
+        return;
+      }
+      if (id === 'btn-ocr-mdl-import' && modelFile) { importSlot = ''; modelFile.value = ''; modelFile.click(); return; }
+
+      m = /^btn-ocr-dl-(.+)$/.exec(id);
       if (m) {
         const lang = m[1];
         e.target.disabled = true;
         e.target.textContent = '下载中…';
-        ocrSend({ type: KH.MSG.OCR_LANG_DOWNLOAD, lang: lang, quality: ocrQuality() }).then((res) => {
+        ocrSend({ type: KH.MSG.OCR_LANG_DOWNLOAD, lang: lang }).then((res) => {
           e.target.disabled = false;
           e.target.textContent = '下载';
           if (!res || !res.ok) { D.toast('下载失败：' + ((res && res.error) || '未知错误'), 'error'); return; }
@@ -1382,7 +1569,7 @@
       if (m && importFile) { importLang = m[1]; importFile.value = ''; importFile.click(); return; }
       m = /^btn-ocr-clear-(.+)$/.exec(id);
       if (m) {
-        ocrSend({ type: KH.MSG.OCR_LANG_CLEAR, langs: [m[1]], quality: ocrQuality() }).then((res) => {
+        ocrSend({ type: KH.MSG.OCR_LANG_CLEAR, langs: [m[1]] }).then((res) => {
           if (!res || !res.ok) { D.toast('清除失败', 'error'); return; }
           D.toast('已清除本地语言包', 'ok');
           renderOcrLangs();
@@ -1397,7 +1584,7 @@
         const fr = new FileReader();
         fr.onload = () => {
           const b64 = String(fr.result || '').split(',')[1] || '';
-          ocrSend({ type: KH.MSG.OCR_LANG_IMPORT, lang: importLang, base64: b64, name: f.name, quality: ocrQuality() }).then((res) => {
+          ocrSend({ type: KH.MSG.OCR_LANG_IMPORT, lang: importLang, base64: b64, name: f.name }).then((res) => {
             if (!res || !res.ok) { D.toast('导入失败：' + ((res && res.error) || '未知错误'), 'error'); return; }
             D.toast(res.official ? '导入成功（sha256 与官方包一致）' : '导入成功（本地文件，未与官方包比对）', 'ok');
             renderOcrLangs();
@@ -1407,15 +1594,87 @@
       });
     }
 
-    const qualitySel = $('ocr-quality');
-    if (qualitySel) {
-      qualitySel.addEventListener('change', async () => {
-        const q = qualitySel.value === 'best' ? 'best' : 'fast';
-        await mutate(() => KH.Store.patch({ imgOcr: Object.assign({}, cfg.imgOcr, { quality: q }) }));
-        D.toast(q === 'best'
-          ? '已切换到高精度识别（更准、单张更慢；语言包按这一档单独保存，切换档位后才需要下载）'
-          : '已切换到快速识别（省流量、更快）', 'ok');
-        renderOcrLangs();          // 语言包状态按档位重读（两档各自独立）
+    if (modelFile) {
+      /* 【成套导入】一次挑多件（也可以分几次逐件挑）：按**文件名**与清单对上号，
+       * 对不上的如实跳过并报出来 —— 模型文件名是 sha256 之外唯一能确认"这是哪一件"的线索。 */
+      modelFile.addEventListener('change', () => {
+        const list = Array.from(modelFile.files || []);
+        if (!list.length) return;
+        const files = (ocrModelState && ocrModelState.files) || {};
+        const byName = {};
+        for (const slot of Object.keys(files)) byName[String(files[slot].file).toLowerCase()] = slot;
+        const jobs = [];
+        const skipped = [];
+        for (const f of list) {
+          const slot = byName[String(f.name || '').toLowerCase()] || (importSlot && list.length === 1 ? importSlot : null);
+          if (slot) jobs.push({ slot: slot, f: f });
+          else skipped.push(f.name);
+        }
+        if (!jobs.length) {
+          D.toast('文件名与清单对不上（应为 ' + Object.keys(files).map((s) => files[s].file).join(' / ') + '）', 'error');
+          return;
+        }
+        const readOne = (job) => new Promise((resolve) => {
+          const fr = new FileReader();
+          fr.onload = () => {
+            const b64 = String(fr.result || '').split(',')[1] || '';
+            resolve(ocrSend({ type: KH.MSG.OCR_MODEL_IMPORT, slot: job.slot, base64: b64, name: job.f.name })
+              .then((res) => (res && res.ok ? { slot: job.slot, official: !!res.official } : null)));
+          };
+          fr.readAsDataURL(job.f);
+        });
+        let chain = Promise.resolve([]);
+        for (const job of jobs) chain = chain.then((acc) => readOne(job).then((r) => acc.concat([r])));
+        chain.then((results) => {
+          const ok = results.filter(Boolean);
+          const official = ok.filter((r) => r.official).length;
+          const bad = results.length - ok.length;
+          if (ok.length) D.toast('已导入 ' + ok.length + ' 件（其中 ' + official + ' 件与清单 sha256 一致）', 'ok');
+          if (bad) D.toast(bad + ' 件导入失败，其余已就位', 'error');
+          if (skipped.length) D.toast('跳过 ' + skipped.length + ' 个文件名对不上的文件：' + skipped.join('、'), 'error');
+          renderOcrModels();
+        });
+      });
+    }
+
+    const engineSel = $('ocr-engine');
+    if (engineSel) {
+      engineSel.addEventListener('change', async () => {
+        const e = engineSel.value === 'ppocr' || engineSel.value === 'tesseract' ? engineSel.value : 'auto';
+        await mutate(() => KH.Store.patch({ imgOcr: Object.assign({}, cfg.imgOcr, { engine: e }) }));
+        D.toast(e === 'ppocr' ? '已设为「只用主引擎」：主引擎不可用时会如实报错，不会偷偷退回兼容引擎'
+          : (e === 'tesseract' ? '已设为「只用兼容引擎」：更省内存，识别质量与速度由 Tesseract 决定'
+            : '已设为「自动」：先用主引擎，起不来就用兼容引擎兜底（并会在结果里告知你）'), 'ok');
+        renderOcrAdv();
+      });
+    }
+
+    const migOk = $('btn-ocr-migrate-ok');
+    if (migOk) {
+      migOk.addEventListener('click', async () => {
+        /* 【必须一起写 imgOcr】**`migrated` 只是"还没告知过"的标记，真正要落的是"把存量
+         * `imgOcr.quality` 从存储里删掉"** —— 只写 migrated 的话那个废弃键还在，下次读又置真，
+         * 提示就永远关不掉。`KH.Store.patch` 会经 `Config.stripDeprecated` 把 `imgOcr.quality` 剔掉，
+         * 而这里写的是**整份 imgOcr 对象**（`cfg.imgOcr` 已不含 quality）⇒ 存储里的脏键随之消失。 */
+        await mutate(() => KH.Store.patch({
+          imgOcr: Object.assign({}, cfg.imgOcr),
+          migrated: { ocrEngine: false }
+        }));
+        renderOcrMigrate();
+        D.toast('知道了：识别档位已取消，现在按「引擎」设置走', 'ok');
+      });
+    }
+
+    const advCopy = $('btn-ocr-adv-copy');
+    if (advCopy) {
+      advCopy.addEventListener('click', () => {
+        const text = ocrAdvText();
+        const done = () => D.toast('已复制高级信息', 'ok');
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(done, () => D.toast('复制失败（可手动选中后复制）', 'error'));
+        } else {
+          D.toast('这个环境不给剪贴板权限，请手动选中后复制', 'error');
+        }
       });
     }
 
@@ -1446,20 +1705,40 @@
         g.fillStyle = '#000'; g.font = '30px "Microsoft YaHei", SimHei, sans-serif';
         g.fillText('关键词自检 A12345', 12, 50);
         if (out) out.textContent = '识别中…';
+        /* 【自检＝"引擎真的能用吗"的唯一自测入口】（#16 D-16.6：requestId 比对 + 30s 超时 + 回显**实际引擎**）
+         * 三件事都必须有，少一件都会骗人：不比对 requestId ⇒ 页面里别的识别的结果会把自检"点亮"；
+         * 没有超时 ⇒ 引擎卡死时这里永远停在「识别中…」；不回显引擎 ⇒ 用户以为自己在测主引擎，
+         * 其实测的是回落后的兼容引擎。 */
+        let selftestId = '';
+        let selftestTimer = null;
         const done = (msg) => {
-          if (out) {
-            out.textContent = msg.ok
-              ? ('✓ 识别成功（' + Math.round(msg.confidence || 0) + '% / ' + msg.ocrMs + 'ms）：' + String(msg.text || '').replace(/\s+/g, ' ').trim())
-              : ('✗ ' + (msg.error || '识别失败') + (msg.code === 'lang-missing' ? ' —— 请先下载或导入语言包' : ''));
+          if (selftestTimer) { clearTimeout(selftestTimer); selftestTimer = null; }
+          chrome.runtime.onMessage.removeListener(once);
+          if (!out) return;
+          if (msg && msg.timeout) {
+            out.textContent = '✗ 30 秒没有回应（首次可能要下载模型，稍等后再点一次）';
+          } else if (msg && msg.ok) {
+            out.textContent = '✓ 引擎 ' + (msg.engine || '未知')
+              + '（' + Math.round(msg.confidence || 0) + '% / ' + (msg.ocrMs == null ? '?' : msg.ocrMs) + 'ms'
+              + '）：' + String(msg.text || '').replace(/\s+/g, ' ').trim()
+              + (msg.engineReason ? '　⚠ 已从主引擎回落（原因：' + msg.engineReason + '）' : '');
+          } else {
+            out.textContent = '✗ ' + ((msg && msg.error) || '识别失败')
+              + (msg && msg.code === 'lang-missing' ? ' —— 请先下载或导入语言包' : '')
+              + (msg && msg.code === 'engine-unavailable' ? ' —— 主引擎不可用；可把「引擎」改成「自动」或「只用兼容引擎」' : '');
           }
         };
-        chrome.runtime.onMessage.addListener(function once(m) {
+        function once(m) {
           if (!m || m.type !== KH.MSG.OCR_RESULT || m.to !== 'ui') return false;
-          chrome.runtime.onMessage.removeListener(once);
+          if (selftestId && m.requestId !== selftestId) return false;   // 别人的结果不认
           done(m);
           return false;
+        }
+        chrome.runtime.onMessage.addListener(once);
+        selftestTimer = setTimeout(() => { done({ timeout: true }); }, 30000);
+        ocrSend({ type: KH.MSG.OCR_IMAGE, dataUrl: cv.toDataURL('image/png'), keyword: '关键词' }).then((res) => {
+          selftestId = (res && res.requestId) || '';
         });
-        ocrSend({ type: KH.MSG.OCR_IMAGE, dataUrl: cv.toDataURL('image/png'), keyword: '关键词' });
       });
     }
   }

@@ -1,0 +1,1 @@
+import{setPlatform}from"./canvas-factory.js";import{webPlatform}from"./platform/web.js";setPlatform(webPlatform);export{getPlatform,setPlatform}from"./canvas-factory.js";export{webPlatform}from"./platform/web.js";export{CanvasToolkitBase as CanvasToolkit,CanvasToolkitBase}from"./canvas-toolkit.base.js";export{CanvasProcessor}from"./canvas-processor.js";

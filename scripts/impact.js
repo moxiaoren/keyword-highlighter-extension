@@ -147,18 +147,29 @@ const RULES = [
   { re: /^src\/ui\/components\//, aspects: ['ui', 'interact'] },   // 内容层页内编辑器也用
   { re: /^src\/ui\/tokens\.css$/, aspects: ['visual', 'ui'] },
   { re: /^src\/build-info\.js$/, aspects: ['ui'] },                // 版本徽标
+  /* 【2026-10-06】OCR 文案唯一真源（票 #17）：它同时被**内容层**的面板（`important-note.js`）
+   * 与 options/popup 使用 —— 只给 `['ui']` 会选中一个**不含内容层**的范围，
+   * 而"选中一个空范围"比全量还危险（假绿；`regression-areas.js:52-56` 记过同类陷阱）。
+   * 口径与 `src/ui/components/` 一致：`ui` + `interact`。 */
+  { re: /^src\/ui\/ocr-copy\.js$/, aspects: ['ui', 'interact'] },
   { re: /^src\/ui\//, aspects: ['ui'] },
   { re: /^src\//, aspects: ALL },                                  // src 下其它 → 全跑
 
   /* ---- 内容脚本 / 后台 ---- */
   { re: /^content\/content\.css$/, aspects: ['visual'] },
   { re: /^content\//, aspects: ['hit', 'interact', 'site'] },      // 入口：启动门禁 + 消息路由
-  { re: /^background\//, aspects: ['ui', 'site', 'interact'] },
+  /* 【2026-10-06】补上 `hit`：OCR 的 job 生命周期 / 额度归还 / 双向看门狗都在
+   * `background/ocr.js`（票 #16）—— 改它直接决定"这张图到底能不能出结果"，
+   * 那是命中口径而不是界面。旧表漏了它，等于改坏命中却只跑界面回归。 */
+  { re: /^background\//, aspects: ['hit', 'ui', 'site', 'interact'] },
 
   /* ---- 管理端页面 ---- */
   { re: /^(options|popup|welcome)\//, aspects: ['ui'] },
 
   /* ---- 影响面最大：一律全跑 ---- */
+  /* 【2026-10-06】`offscreen/**` **有意不在这里认领** ⇒ 落到上面那句"未归类文件 → 拿不准，全量回归"。
+   * 它是 OCR 引擎层（分块 / 方向判决 / PSM / 模型下载与校验），改它影响所有 OCR 行为，
+   * 全量是**刻意的保守选择**，不是漏写。 */
   { re: /^manifest\.json$/, aspects: ALL },
   { re: /^(icons|_locales)\//, aspects: ALL }
 ];

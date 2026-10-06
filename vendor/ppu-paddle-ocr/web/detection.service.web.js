@@ -1,0 +1,1 @@
+import{BaseDetectionService}from"../core/base-detection.service.js";import{WebPlatformProvider}from"./platform.web.js";export class DetectionService extends BaseDetectionService{constructor(session,options={},debugging={}){super(new WebPlatformProvider,session,options,debugging,"canvas-native")}}

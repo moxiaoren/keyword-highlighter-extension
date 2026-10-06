@@ -62,7 +62,14 @@
     OCR_LANG_DOWNLOAD: 'kh:ocr:langDownload', // 运行时下载（sha256 校验后落本地缓存）
     OCR_LANG_IMPORT: 'kh:ocr:langImport',   // 手动导入（离线；base64 传字节）
     OCR_LANG_CLEAR: 'kh:ocr:langClear',     // 清除本地语言包缓存
-    OCR_PROGRESS: 'kh:ocr:progress'         // 进度（语言包下载各阶段 / 排队情况）
+    /* ---- 主引擎（PP-OCR）的模型资产（S2-c）----
+     * 与语言包那四条一一对应，但**语义是"三件成套"**：det（找框）/ rec（认字）/ dict（字符集），
+     * 少一件都识别不出东西 ⇒ state/download/clear 都以整组为单位（只有导入按件，便于断点续传）。 */
+    OCR_MODEL_STATE: 'kh:ocr:modelState',       // 模型状态：三件各自是否已就绪 + 占用字节
+    OCR_MODEL_DOWNLOAD: 'kh:ocr:modelDownload', // 运行时下载（逐件卡 sha256 + 字节数后落缓存）
+    OCR_MODEL_IMPORT: 'kh:ocr:modelImport',     // 手动导入单件（离线；base64 传字节）
+    OCR_MODEL_CLEAR: 'kh:ocr:modelClear',       // 清除模型缓存（清掉后主引擎需重新下载/导入）
+    OCR_PROGRESS: 'kh:ocr:progress'         // 进度（语言包/模型下载各阶段 / 排队情况）
   };
 
   const ACTION_RESULT = { OK: 'ok', ERROR: 'error' };

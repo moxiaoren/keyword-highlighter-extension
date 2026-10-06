@@ -59,12 +59,46 @@
   let items = new Map();
   /** src → {text, conf, at}，跨重建复用（LRU：超上限丢最旧的） */
   const textCache = new Map();
-  /** requestId → key（结果回来时定位；结果里也带 src，双保险） */
+  /**
+   * 【S1-b · 额度按 **token** 记账，不再按 src 数数】
+   * 旧实现用 `inflightCount` + `inflight`(Set of src)，结果回来时靠 `if (msg.src)` 才归还 ——
+   * 而 `viaCanvas`（blob:/画布那条路）的回执**没有 src** ⇒ 额度只减不增，
+   * 累积 4 次（MAX_INFLIGHT）整页 OCR 静默全废（票 #16 ③ 的根因）。
+   * 现在 `held`(token → 记账) 是唯一真源、`pending`(requestId → token) 负责认领，
+   * 归还＝`held.delete(token)` ⇒ **天然幂等**（重复归还不会多减，也不会还成负数）。
+   */
+  const held = new Map();          // token -> { key, src, reqId, at }
+  /** requestId → token（结果回来时定位该还哪一笔） */
   const pending = new Map();
-  /** 正在识别中的 src，避免同一张图重复提交 */
+  /** 已经发出去、还没拿到 requestId 的那几笔（窗口极短，但额度必须算上） */
+  let awaitingId = 0;
+  /** 正在识别中的 src：只用于"同一张图别重复提交"的去重（**与额度无关**） */
   const inflight = new Set();
+  let tokenSeq = 0;
+  /**
+   * 超过这么久还没有终态 → 内容脚本**自己判死**。
+   * 比后台硬顶（120s）宽，是为了"后台先判"这条优先级：正常情况下后台的 `timeout` 先到，
+   * 这一层只兜真实存在的场景 —— MV3 把 service worker 杀了，回执永远不会来。
+   */
+  const JOB_STALE_MS = 150000;
+  /** 收口定时器（只在有在途请求时武装；`unref` 是不拖住 node 单测进程） */
+  let sweepTimer = null;
   /** 订阅者（面板） */
   const listeners = [];
+
+  /** 当前占用了几笔额度（在途 + 刚发出还没拿到 requestId 的） */
+  function quotaUsed() { return held.size + awaitingId; }
+
+  /** 归还一笔额度（**幂等**：认领不到就什么都不做） */
+  function releaseHold(token) {
+    if (!token) return false;
+    const rec = held.get(token);
+    if (!rec) return false;
+    held.delete(token);
+    if (rec.reqId) pending.delete(rec.reqId);
+    if (rec.src) inflight.delete(rec.src);
+    return true;
+  }
 
   function onChange(fn) { if (typeof fn === 'function') listeners.push(fn); }
   function notify() {
@@ -297,49 +331,104 @@
 
   /* ---------------- 提交与回收 ---------------- */
 
-  let inflightCount = 0;
+  /**
+   * 自己收口：`background` 被 MV3 杀掉、或消息彻底丢了时，内容脚本不能永远等下去。
+   * 归还额度 + 把条目落到终态（`errorCode='timeout'`，面板据此说人话）。
+   * @param {number} [now] 判决时刻（缺省＝现在；测试喂时刻用）
+   * @returns {number} 本次收口的条数
+   */
+  function sweepStale(now) {
+    const t = typeof now === 'number' ? now : Date.now();
+    let n = 0;
+    for (const [token, rec] of Array.from(held.entries())) {
+      if (t - rec.at < JOB_STALE_MS) continue;
+      if (rec.reqId) pending.delete(rec.reqId);
+      if (rec.src) inflight.delete(rec.src);
+      held.delete(token);
+      n += 1;
+      const it = items.get(rec.key);
+      if (it && it.state === 'pending') {
+        it.state = 'fail';
+        it.error = '识别引擎长时间没有回应（已超时）';
+        it.errorCode = 'timeout';
+      }
+    }
+    if (n) notify();
+    if (!held.size && sweepTimer) { clearInterval(sweepTimer); sweepTimer = null; }
+    return n;
+  }
+
+  /** 有在途请求时才武装收口定时器（自终止：`sweepStale` 里空了就关） */
+  function armSweep() {
+    if (sweepTimer || !held.size) return;
+    sweepTimer = setInterval(() => { sweepStale(); }, 5000);
+    if (sweepTimer && typeof sweepTimer.unref === 'function') sweepTimer.unref();
+  }
 
   function submit(entry, cfg) {
-    if (inflightCount >= MAX_INFLIGHT) return false;
+    if (quotaUsed() >= MAX_INFLIGHT) return false;
     const cls = entry.cls;
     let payload = null;
     if (cls.viaCanvas) {
       let dataUrl = null;
       try { dataUrl = canvasDataUrl(entry.img); } catch (e) { dataUrl = null; }
       if (!dataUrl) { entry.state = 'blocked'; entry.why = 'tainted'; return false; }
-      payload = { dataUrl: dataUrl };
+      /* 【必须同时带 src】回执里的 src 是"这笔结果属于哪张图"的唯一线索（写缓存与兜底认领都要它）。
+       * 旧实现只发 dataUrl ⇒ 回执没 src ⇒ 按 src 归还额度的老逻辑永远还不掉（#16 ③）。 */
+      payload = { dataUrl: dataUrl, src: cls.src };
     } else {
       payload = { src: cls.src };
     }
-    inflightCount += 1;
-    inflight.add(cls.src);
+    tokenSeq += 1;
+    const token = 't' + tokenSeq;
+    held.set(token, { key: entry.key, src: cls.src, reqId: null, at: Date.now() });
+    awaitingId += 1;
+    if (cls.src) inflight.add(cls.src);
     entry.state = 'pending';
     try {
       chrome.runtime.sendMessage(Object.assign({
         type: MSG.OCR_IMAGE,
-        keyword: (entry.rule && entry.rule.meta && entry.rule.meta.display) || entry.keyword || '',
-        /* 识别档位（K67）：跟配置走 —— 引擎按 `_std` 后缀选包，两档缓存互不覆盖 */
-        quality: (cfg && cfg.imgOcr && cfg.imgOcr.quality) === 'best' ? 'best' : 'fast'
+        keyword: (entry.rule && entry.rule.meta && entry.rule.meta.display) || entry.keyword || ''
+        /* 【S2 引擎选择不从这里发】`imgOcr.engine` 由 **background 单点读取并注入**（#16 D-16.1）：
+         * offscreen 读不到 `chrome.storage`，而内容脚本读又会让"用户改了设置"与"这条 job 排队"
+         * 两个时刻打架。所以发起方只管发图与关键词，回执里带**实际**用了哪个引擎。 */
       }, payload), (res) => {
         void chrome.runtime.lastError;
-        if (res && res.requestId) pending.set(res.requestId, entry.key);
-        else { inflightCount = Math.max(0, inflightCount - 1); inflight.delete(cls.src); entry.state = 'fail'; entry.error = (res && res.error) || 'OCR 引擎未响应'; notify(); }
+        awaitingId = Math.max(0, awaitingId - 1);
+        if (res && res.requestId) {
+          const rec = held.get(token);
+          if (rec) rec.reqId = res.requestId;
+          pending.set(res.requestId, token);
+        } else {
+          releaseHold(token);
+          entry.state = 'fail';
+          entry.error = (res && res.error) || 'OCR 引擎未响应';
+          notify();
+        }
       });
     } catch (e) {
-      inflightCount = Math.max(0, inflightCount - 1);
-      inflight.delete(cls.src);
+      awaitingId = Math.max(0, awaitingId - 1);
+      releaseHold(token);
       entry.state = 'fail';
       entry.error = String((e && e.message) || e);
+      notify();
     }
+    armSweep();
     return true;
   }
 
   /** 结果回来（background 中转） */
   function onResult(msg) {
-    const key = pending.get(msg.requestId) || null;
-    if (key) pending.delete(msg.requestId);
+    /* ① 先把这笔账认出来**按 token** 归还 —— 与 src 无关，这是 #16 ③ 的根治点 */
+    let token = pending.get(msg.requestId) || null;
     const src = msg.src || '';
-    if (src) { inflight.delete(src); inflightCount = Math.max(0, inflightCount - 1); }
+    if (!token && src) {
+      /* 兜底：结果带 src 但 requestId 对不上（页面重建 / 消息重投）→ 按 src 找回那一笔 */
+      for (const [t, rec] of held) { if (rec.src && rec.src === src) { token = t; break; } }
+    }
+    const rec = token ? held.get(token) : null;
+    const key = rec ? rec.key : null;
+    if (token) releaseHold(token);      /* 幂等：认领不到就没有副作用 */
 
     const text = String(msg.text || '');
     if (msg.ok && src) cachePut(src, { text: text, conf: msg.confidence || 0, at: Date.now() });
@@ -354,10 +443,24 @@
         it.conf = msg.confidence || 0;
         it.matched = matchedInText(it.rule, text);
         it.ocrMs = msg.ocrMs;
+        /* 引擎**如实告知**的"结果不完整/不可靠"（不变量 1/2，D-14.5）：
+         * `no-text`（一个字没认出）/`tilted`（方向可疑）/`truncated`（只读了前 8 块）。
+         * `why` 直接沿用引擎给的 notice 键 —— `ocr-copy.js` 认得这几个键，
+         * 且 `keyOf` 里 hit 优先：真命中就照常说命中，不拿"截断"掩盖已找到的词。 */
+        it.why = msg.notice || '';
+        it.coverPx = (msg.coverage && msg.coverage.coveredTo) || 0;
+        it.coverage = msg.coverage || null;
+        /* 实际用了哪个引擎（#12/#16）：`engineReason` 非空 = 这次是**回落**跑的。
+         * 面板据此在展开说明里写清"已从 PP-OCR 回落到兼容引擎：<原因>" —— 宁可让用户知道慢，
+         * 也不许让他以为"主引擎一直在正常工作"。 */
+        it.engine = msg.engine || '';
+        it.engineReason = msg.engineReason || '';
       } else {
         it.state = 'fail';
         it.error = msg.error || '识别失败';
         it.errorCode = msg.code || '';
+        it.engine = msg.engine || '';
+        it.engineReason = msg.engineReason || '';
         if (msg.code === 'lang-missing') it.why = 'lang-missing';
       }
     }
@@ -494,13 +597,23 @@
         build(cfg, ctx, hits);
         notify();
       },
-      /** 重建清底：条目清掉但**缓存留着**（同一张图不必反复识别） */
-      clear(reason) {
+      /**
+       * 重建清底：条目清掉但**缓存留着**（同一张图不必反复识别）。
+       * 【签名必须与调用方一致】`src/core/rebuilder.js:111` 调的是 `feat.clear(root, o)`，
+       * 旧实现写成 `clear(reason)` ⇒ 形参收到的是 `root`（恒为 null/元素），
+       * `reason === 'destroy'` **永远不成立** —— 销毁时在途额度与去重集根本不清，
+       * 下一次挂载就白少 4 个可用额度（S1-b 顺手修掉的附带缺陷）。
+       * 【`pending` 不再在重建时清】它记的是"在途请求该还哪一笔账"，不是本轮扫描状态：
+       * 清了会让晚到的结果认领不到（额度要等 150s 收口才回）。
+       */
+      clear(root, opts) {
         items = new Map();
-        pending.clear();
-        if (reason === 'destroy') {
+        if (opts && opts.reason === 'destroy') {
+          held.clear();
+          pending.clear();
+          awaitingId = 0;
           inflight.clear();
-          inflightCount = 0;
+          if (sweepTimer) { clearInterval(sweepTimer); sweepTimer = null; }
         }
         notify();
       }
@@ -535,7 +648,9 @@
         }
       }
       return {
-        items: items.size, cache: textCache.size, pending: pending.size, inflight: inflightCount,
+        items: items.size, cache: textCache.size, pending: pending.size,
+        /* `popup/popup.js:197` 读的就是这个键 ⇒ 键名不许改，含义＝当前占用的额度 */
+        inflight: quotaUsed(),
         blocked: blocked,
         states: Array.from(items.values()).map((i) => i.key + ':' + i.state)
       };
@@ -544,6 +659,9 @@
     matchedInText: matchedInText,
     /** 匹配口径的唯一编译点（诊断/单测用；见 `ocrPatternOf`） */
     ocrPatternOf: ocrPatternOf,
-    build: build
+    build: build,
+    /** 结果/收口的手动驱动（诊断与单测用：不依赖真实消息往返） */
+    _onResult: onResult,
+    _sweep: sweepStale
   };
 })();
