@@ -169,6 +169,25 @@
     .kh-table .kh-table-label {
       background: var(--kh-brand-soft, #eaf1fb); font-weight: 600; color: var(--kh-text, #1f2937);
     }
+    /* 字段标题格里的文本（= 设置「抓取字段」里填的那个名字）**不必整段展示**，省下的宽度留给内容。
+     * 用户 2026-10-11 原话："抓取字段的标题内容可以不完整展示…实际抓取到的内容展示还是需要完整展示的，节省宽度"。
+     * 做法：标题文本包一层 .kh-lbt（见下方 noteFragment 的补包裹），**宽度上限 + 单行裁切**，
+     * 内容格（值）**一律不截断** —— 让位的是标题，不是抓取到的内容；全文仍挂在 title 上，悬停即读回。
+     * 上限写成一个变量，现场觉得太窄/太宽只改这一处。
+     * 三条被真机实测淘汰的写法（改回去会红，别试）：
+     * ① 「white-space:nowrap」+「text-overflow:ellipsis」（观感最好）：nowrap 把这一列的**最小内容宽度**抬到标题
+     *    全文，auto 布局的表格再也压不下去 —— 真机实测表宽 185px > 容器 178px，既有用例「表格宽度按内容
+     *    收缩」当场变红；「overflow:hidden」不改固有尺寸，救不回来。
+     * ② 「-webkit-line-clamp:1」（含 -webkit-inline-box / -webkit-box）：Chromium 把计算 display 归一到
+     *    inline-block / flow-root，**line-clamp 在表格里不生效**（真机 5 个行盒、内容照旧换行堆叠）；而且
+     *    被省略的部分仍计进 scrollHeight，拿 scrollHeight 判「裁在一行」也会误判。
+     * ③ 块级「display:block」：块盒会让 innerText 在格末多一个换行，「字段名与它第一个值在同一行」的既有口径
+     *    （真机值行数 5 那条用例）被算成 6 行 —— 视觉没变、文本口径变了。
+     * 结论：inline 档盒子（不抬最小宽度、不加换行）+ max-width 设上限 + max-height 裁到一行。 */
+    .kh-table .kh-table-label .kh-lbt {
+      display: inline-block; max-width: var(--kh-lbt-maxw, 8em); max-height: 1.5em;
+      overflow: hidden; vertical-align: bottom;
+    }
     /* ---- 🖼 图片命中分区（面板下半部分，独立成块；默认折叠） ---- */
     /* 两个滚动区各自管自己（用户 2026-10-07）：面板总高受视口限制，OCR 分区若允许被压缩，
      * 它就会把上面的笔记列表挤到近零（"互相抢占展示"）；若不许压缩又会被 .khin-panel 的
@@ -1384,6 +1403,20 @@
         pushMd(src.slice(last, m.index));
         const tmp = doc.createElement('div');
         tmp.innerHTML = m[0];          // 本插件自产表格（值已在 Fetch 内转义，图片已走协议白名单）
+        /* 字段标题格补一层 .kh-lbt：抓取表格是**存进笔记**的 HTML，历史笔记里没有这层包裹，
+         * 只改生成侧等于只对新笔记生效。这里就地补（幂等：已包裹的不重复包），
+         * 「标题可截断、内容不截断」才对**所有**笔记一致（见 STYLE 里 .kh-lbt 的说明）。 */
+        for (const td of tmp.querySelectorAll('td.kh-table-label')) {
+          const first = td.firstElementChild;
+          if (first && first.className === 'kh-lbt') continue;
+          const txt = td.textContent || '';
+          const span = doc.createElement('span');
+          span.className = 'kh-lbt';
+          span.title = txt;            // 全文在悬停里可读回，截断只发生在视觉上
+          span.textContent = txt;
+          td.textContent = '';
+          td.appendChild(span);
+        }
         while (tmp.firstChild) frag.appendChild(tmp.firstChild);
         last = m.index + m[0].length;
       }

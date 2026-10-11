@@ -465,4 +465,48 @@ module.exports = async function run() {
     truthy(/\.khin-imgsec\s*\{/.test(mq), '矮屏规则必须落在 .khin-imgsec 上（别改到别的分区）');
     falsy(/flex/.test(mq), '矮屏只许改封顶 —— 在 @media 里动 flex 就是绕过"分区不参与收缩"的契约');
   });
+
+  suite('important-note · 抓取字段标题可截断、内容必须完整（用户 2026-10-11：标题省宽度）');
+
+  await test('★ 标题格里的文本单行裁切 + 宽度封顶；规则只落在标题格', () => {
+    const src = read('src/features/important-note.js');
+    const rule = (src.match(/\.kh-table \.kh-table-label \.kh-lbt \{[\s\S]*?\n    \}/) || [''])[0];
+    truthy(rule.length > 0, '要有 `.kh-table .kh-table-label .kh-lbt` 这条规则（否则 span 不截断）');
+    truthy(/max-width:\s*var\(--kh-lbt-maxw,\s*8em\)/.test(rule),
+      '标题列要有宽度封顶（默认 8em ≈ 88px @11px，用户 2026-10-11：标题可省宽度）');
+    truthy(/max-height:\s*1\.5em/.test(rule) && /overflow:\s*hidden/.test(rule),
+      '单行（max-height 1.5em）+ 溢出藏起来 —— 标题是"裁到一行"，不是竖排堆叠占高');
+    truthy(/display:\s*inline-block/.test(rule), 'display 用 inline 档（inline-block）');
+    /* 反例①：**不许**用 white-space:nowrap 裁单行 —— nowrap 把该列的**最小内容宽度**抬到标题全文，
+     * auto 布局表格再也压不下去（真机：表宽 185px > 容器 178px，既有用例当场红）。 */
+    falsy(/white-space:\s*nowrap/.test(rule),
+      '标题不许用 white-space:nowrap 裁行（会把表格的最小宽度抬到标题全文 ⇒ 表格溢出容器，真机 185>178）');
+    /* 反例②：**不许**用块级的 display —— 块级盒子会让 innerText 在格末多插换行（真机既有"值行数=5"用例变 6）。 */
+    falsy(/display:\s*(-webkit-)?box\s*;/.test(rule) || /display:\s*block/.test(rule),
+      'display 必须是 inline 那一档（inline-block）：块级会让 innerText 多一个换行');
+    /* 反例③：-webkit-line-clamp 在表格单元格里不生效（Chromium 把 display 归一成 inline-block/flow-root，
+     * 真机 5 个行盒、内容照旧换行），还让 scrollHeight 把被省略的内容算进去 ⇒ 别再用它当裁切手段。 */
+    falsy(/-webkit-line-clamp|-webkit-box-orient|-webkit-inline-box/.test(rule),
+      '-webkit-line-clamp 在表格里不生效（真机实测：计算 display 被归一到 inline-block，内容仍换行）');
+    /* 反例④：把截断写给**所有** td 就是拿内容换宽度 —— 用户明确要求"实际抓取到的内容展示还是需要完整展示" */
+    const tdRule = (src.match(/\n    \.kh-table td \{[\s\S]*?\n    \}/) || [''])[0];
+    truthy(tdRule.length > 0, '要能定位到 .kh-table td 的样式块（否则下面的反例是在空串上跑）');
+    falsy(/text-overflow/.test(tdRule) || /max-width/.test(tdRule),
+      '内容格（td）不许截断/封顶 —— 只有标题格让位');
+  });
+
+  await test('★ 历史笔记同样生效：渲染时就地给标题格补 .kh-lbt（幂等，已包裹的不重复包）', () => {
+    const src = read('src/features/important-note.js');
+    const frag = (src.match(/noteFragment\(doc, note\) \{[\s\S]*?\n    \},/) || [''])[0];
+    truthy(frag.length > 0, '要能定位到 noteFragment（否则下面的断言是在空串上跑）');
+    truthy(/querySelectorAll\('td\.kh-table-label'\)/.test(frag),
+      '渲染时要就地找标题格补包裹 —— 表格是**存进笔记**的 HTML，只改生成侧等于只对新笔记生效');
+    truthy(/className = 'kh-lbt'/.test(frag), '补的就是 CSS 认的那个类');
+    truthy(/span\.title = txt/.test(frag),
+      '全文要挂 title（视觉截断、hover 可读回，信息不许真丢）');
+    truthy(/first\.className === 'kh-lbt'/.test(frag),
+      '幂等：已经包过的不许再包一层（嵌套 span 会让省略号失效）');
+    falsy(/innerHTML = m\[0\][\s\S]{0,200}innerHTML/.test(frag),
+      '别在渲染里重写整串 innerHTML —— 只做补包裹，表格结构不动');
+  });
 };
