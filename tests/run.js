@@ -115,7 +115,10 @@ const specs = [
   './specs/ocr-engine.test.js',
   /* 设置页与面板的引擎可感知面（S2-c）：判据 ④（档位零命中）/ 只读「高级信息」与源码常量对账 /
    * 迁移提示关得掉 / 自检三件事 / 面板降级告知。口径见 tests/specs/ocr-options.test.js 头部 */
-  './specs/ocr-options.test.js'
+  './specs/ocr-options.test.js',
+  /* 交接清单单源（2026-10-11 任务 P 根治）：两条打包入口必须打同一份、PS1 必须带 BOM、
+   * Node 侧不许再打包期现渲染（原先 Node 现渲染 vs PS1 打手工快照＝同一个包两种内容） */
+  './specs/migration-checklist.test.js'
 ];
 
 (async () => {
