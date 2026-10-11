@@ -809,6 +809,52 @@ if (!syntaxBad) ok('JS 语法自检通过（' + JS_ALL.length + ' 个文件）')
 if (exists('src/build-info.js')) ok('存在 src/build-info.js（构建时间徽标）');
 else warn('缺少 src/build-info.js（帮助页"构建时间"会显示 —）');
 
+/* ===== 18. 外置记忆页「已发布」版本号不得超前于 manifest（F-90 反向核验） ===== */
+
+// 为什么：`_memory/STATUS.md` 是每个会话开头读的"当前事实"页，它写着 2.0.1.11 而
+// manifest 还是别的数（或反过来），下一轮就会拿错版本号做发版与线上核对 —— F-90 审计
+// 发现的真实缺陷（同一页两个单测数字 614 / 608 没标时点，就是同类病）。
+// 只看「已发布 / 线上核对」这两张表行的**第一列单元格**（即真正在声明当前版本的地方）：
+//   ① 这些行里出现的版本号都不得**高于** manifest.version（行内的更早版本天然更低，自动豁免；
+//      「已弃的 2.1.0/2.2.x 实验线」之类写在别的行，不会被误判）；
+//   ② manifest.version 必须**出现**在这些行里（漏记当前版本 = 反向不通过）。
+// 脱离工作区单独交付（交付包不含 .md）时 `_memory/` 不存在 ⇒ 跳过，不算红灯。
+if (manifest && manifest.version) {
+  const statusAbs = path.join(root, '..', '..', '_memory', 'STATUS.md');
+  let statusSrc = null, statusWhy = '不存在：脱离工作区运行';
+  try { statusSrc = fs.readFileSync(statusAbs, 'utf8'); }
+  catch (err) { if (err.code !== 'ENOENT') { warn('记忆页版本核对跳过：' + err.message); statusWhy = '读取失败：' + err.message; } }
+
+  if (statusSrc === null) {
+    ok('记忆页版本核对跳过（' + path.join('..', '..', '_memory', 'STATUS.md') + ' ' + statusWhy + '）');
+  } else {
+    const tuple = v => v.split('.').map(Number);
+    const cmp = (a, b) => {                       // 2.0.1.11 vs 2.0.1 → 补 0 后逐段比
+      const x = tuple(a), y = tuple(b), n = Math.max(x.length, y.length);
+      for (let i = 0; i < n; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) - (y[i] || 0);
+      return 0;
+    };
+    const ahead = [];
+    const seen = new Set();
+    let rows = 0;
+    statusSrc.split(/\r?\n/).forEach((line, i) => {
+      const firstCell = (/^\|\s*([^|]*?)\s*\|/.exec(line) || [])[1] || '';
+      if (!/已发布|线上核对|当前版本/.test(firstCell)) return;   // 只认「当前版本声明」那几行
+      rows++;
+      const re = /\b\d+\.\d+\.\d+(?:\.\d+)?\b/g;
+      let m;
+      while ((m = re.exec(line)) !== null) {
+        seen.add(m[0]);
+        if (cmp(m[0], manifest.version) > 0) ahead.push('STATUS.md:' + (i + 1) + '  声称 ' + m[0] + '（manifest 是 ' + manifest.version + '）');
+      }
+    });
+    if (!rows) warn('记忆页里没找到「已发布 / 线上核对」行，版本一致性核对跳过');
+    else if (ahead.length) bad('记忆页的当前版本声明比 manifest 更新（manifest = ' + manifest.version + '）', ahead.join('\n      '));
+    else if (!seen.has(manifest.version)) bad('记忆页没有出现当前版本 ' + manifest.version + '（已发布版本还没记进 STATUS.md？）');
+    else ok('记忆页版本一致：manifest ' + manifest.version + ' 未被超前，且已记载（' + rows + ' 行声明）');
+  }
+}
+
 /* ------------------------------------------------------------------ 输出 */
 
 console.log('\n=== meta-check · 关键词高亮 v2 ===\n');
