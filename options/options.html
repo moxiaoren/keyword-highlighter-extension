@@ -154,6 +154,20 @@
 会原样保留。</div>
         </div>
       </div>
+
+      <h3 class="kh-sub">重要笔记</h3>
+      <p class="kh-muted">页面左上角「<strong>重要笔记</strong>」悬浮面板的默认外观：面板里的<strong>图片分区</strong>与<strong>笔记正文</strong>各自有下界和自己的滚动条，收起一边就把空间全让给另一边。</p>
+      <div class="kh-form-row">
+        <div class="kh-form-fld">
+          <label class="kh-fld-label">重要笔记图片「尺寸」默认值</label>
+          <input class="kh-input" id="pf-imgSize" type="number" min="40" max="600" step="10">
+        </div>
+        <div class="kh-form-fld">
+          <label class="kh-fld-label">正文字号默认值 (px)</label>
+          <input class="kh-input" id="pf-noteFontSize" type="number" min="10" max="20" step="1">
+        </div>
+      </div>
+      <p class="kh-muted">「图片尺寸」管抓取字段值格里的缩略图/识别图（单个关键词留空即继承这里）。「字号」管面板里的<strong>笔记正文与表格</strong>（10–20px，默认 11）。每张图片下面的 📋 复制这张图的全部识别文字，命中词块点一下复制它所在的整句，整段文字在点开的大图右侧。</p>
     </section>
 
     <!-- ============================================================ 图片识别（OCR） -->
@@ -166,7 +180,15 @@
         文字识别<strong>完全在本机</strong>运行：图片不上传，唯一的联网动作是下面这一次语言包下载（也可手动导入，做到完全离线）。
       </p>
 
-      <h3 class="kh-sub">识别引擎</h3>
+      <p class="kh-muted" id="ocr-style-hint">
+        显示相关设置（缩略图尺寸、笔记字号）在侧栏的<strong>「样式 → 重要笔记」</strong>。
+      </p>
+
+      <!-- 折叠子卡（L2-b）：本页原本 1071px，首屏看不到「引擎」；按归属拆成三张，默认只展开「识别引擎」。
+           字段 id 一律不动（options.js 全按 id 绑定，探针也按 id 取），只是搬家。 -->
+      <details class="kh-adv" id="ocr-adv-engine" open>
+        <summary>识别引擎</summary>
+        <div class="kh-adv-body">
       <!-- 一次性迁移提示（S2）：存量档位被取消时显示一次，点「知道了」写回 migrated.ocrEngine=false。
            文案写实话：新主引擎对难图更准**且**更快，用户不是"被降级"了。 -->
       <div id="ocr-migrate-note" hidden>
@@ -195,16 +217,24 @@
         识别<strong>都完全在本机</strong>跑，图片不上传；唯一的联网动作是下面两栏的资产下载（也都能手动导入，做到完全离线）。
         实际用的是哪个引擎，会在识别结果的<strong>展开说明</strong>里写清楚 —— 降级了就不会瞒着你。
       </p>
+        </div>
+      </details>
 
-      <h3 class="kh-sub">主引擎模型</h3>
+      <details class="kh-adv" id="ocr-adv-model">
+        <summary>主引擎模型</summary>
+        <div class="kh-adv-body">
       <p class="kh-muted">
         PP-OCR 的三件模型（文字检测 + 文字识别 + 字符集，合计约 6.3MB，来自 PaddleOCR·Apache-2.0）。
         <strong>首次用到才下载</strong>，下完做 sha256 与字节数双校验后存在本机；不想要联网就在这台机器上手动导入。
       </p>
       <div id="ocr-model-list"></div>
       <input type="file" id="ocr-model-import-file" accept=".onnx,.txt" multiple hidden>
+        </div>
+      </details>
 
-      <h3 class="kh-sub">兼容引擎语言包</h3>
+      <details class="kh-adv" id="ocr-adv-lang">
+        <summary>兼容引擎语言包</summary>
+        <div class="kh-adv-body">
       <p class="kh-muted">
         Tesseract 的中英快档语言包（合计约 3.7MB）。只有"自动兜底"或"只用兼容引擎"时会用到；
         选了「只用主引擎」也可以不下载。
@@ -215,6 +245,8 @@
         <span class="kh-muted" id="ocr-selftest-result"></span>
       </div>
       <input type="file" id="ocr-import-file" accept=".gz,.traineddata" hidden>
+        </div>
+      </details>
 
       <h3 class="kh-sub">跨域图片</h3>
       <p class="kh-muted">
@@ -563,20 +595,11 @@
                   <label class="kh-fld-label">重建最小间隔 (ms)</label>
                   <input class="kh-input" id="pf-gap" type="number" min="0" step="100">
                 </div>
-                <div class="kh-form-fld">
-                  <label class="kh-fld-label">重要笔记图片「尺寸」默认值</label>
-                  <input class="kh-input" id="pf-imgSize" type="number" min="40" max="600" step="10">
-                </div>
-                <div class="kh-form-fld">
-                  <label class="kh-fld-label">重要笔记「字号」默认值 (px)</label>
-                  <input class="kh-input" id="pf-noteFontSize" type="number" min="10" max="20" step="1">
-                </div>
               </div>
               <p class="kh-muted">「重建最小间隔」是翻页四条通道共用的<strong>唯一</strong>限频口径，调小更灵敏、调大更省资源。
                 「变更处理方式」选<strong>保守</strong>时，页面上任何改动都会触发整页重建（不做相关性预筛、也不走"仅抓取字段变化"的快通道）——
                 更费资源，但遇到"页面变了却不亮"时可以先切到它，用来排除预筛的嫌疑。
-                「字号」管面板里的<strong>笔记正文与表格</strong>（10–20px，默认 11）；每张图片下面的 📋 复制这张图的全部识别文字，
-                命中词块点一下复制它所在的整句，整段文字在点开的大图右侧。</p>
+                面板的<strong>图片尺寸</strong>与<strong>笔记字号</strong>已挪到「样式」分区 —— 它们是外观默认值，不是性能开关（用户 2026-10-11 现场：埋在折叠的高级设置里没人找得到）。</p>
             </div>
           </details>
 

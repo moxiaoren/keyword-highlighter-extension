@@ -439,7 +439,30 @@ module.exports = async function run() {
       '收起态要有对应样式（只有类名没有规则 = 点了没反应）');
     /* 用户 2026-10-07 的"被挤没"：正文缩到 0 就是消失。给个下界，让两个分区都能看得见内容。 */
     truthy(/min-height:\s*60px/.test(body),
-      '正文要留得住一行（min-height:60px）—— 图片分区封顶 50vh 时它不许被压成 0');
+      '正文要留得住一行（min-height:60px）—— 图片分区封顶时它不许被压成 0');
     truthy(/overflow-y:\s*auto/.test(body), '正文自己仍要能滚');
+  });
+
+  await test('★ 封顶收到 40vh + 行内不再重复图标（用户 2026-10-11：矮屏图区吃掉笔记区、200px 下关键词格只剩 84px）', () => {
+    const src = read('src/features/important-note.js');
+    const imgsec = (src.match(/\.khin-imgsec \{[\s\S]*?\n    \}/) || [''])[0];
+    truthy(imgsec.length > 0, '要能定位到 .khin-imgsec 的样式块（否则下面是在空串上跑）');
+    truthy(/max-height:\s*40vh/.test(imgsec),
+      '分区封顶必须收到 40vh —— 实测 50vh 时矮屏（视口 520）笔记区只剩 165px 且上下双滚动条（_stage/ui-review-2026-10-11）');
+    falsy(/max-height:\s*50vh/.test(src), '不许再出现 50vh（改回去就是拿笔记区换图区）');
+    /* 行内不再重复「🖼 」：整块都在「🖼 图片」分区标题底下，省下的宽度全给关键词 */
+    falsy(src.indexOf("'🖼 ' + (it.keyword") >= 0, '行内关键词前不许再拼图标（200px 下关键词格只有 84px）');
+    truthy(src.indexOf("kw.textContent = (it.keyword || '') + (it.label") >= 0,
+      '关键词文本仍要说全「词（标签）」—— 省宽度不等于把标签一起删掉');
+    /* 矮屏（视口 ≤520px）再收一档：40vh 在 520px 高处仍吃 208px，正文只赢 9px（实测，见
+     * _e2e/probe-manual-ocr-note.js 第 [14] 节）。走 **@media 视口高**，不引 JS 量高 —— 纯声明式、
+     * 改窗口大小自动跟、也不给 render() 加第二个真源。 */
+    const mq = (src.match(/@media \(max-height: 520px\) \{[\s\S]*?\n    \}/) || [''])[0];
+    truthy(mq.length > 0, '矮屏要有一条 @media (max-height: 520px) 规则（否则 520 高处图区与正文只差 9px）');
+    const mqCap = mq.match(/max-height:\s*(\d+)vh/);
+    truthy(mqCap && Number(mqCap[1]) < 40,
+      '矮屏封顶要比常屏的 40vh 更小（收得不够就白收），实际 ' + (mqCap && mqCap[1]));
+    truthy(/\.khin-imgsec\s*\{/.test(mq), '矮屏规则必须落在 .khin-imgsec 上（别改到别的分区）');
+    falsy(/flex/.test(mq), '矮屏只许改封顶 —— 在 @media 里动 flex 就是绕过"分区不参与收缩"的契约');
   });
 };

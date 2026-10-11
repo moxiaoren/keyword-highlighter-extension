@@ -28,6 +28,8 @@ const specs = [
   './specs/combo-cell-offset.test.js',
   /* e2e 分组必须自包含 —— 按方面裁组的前提，靠"记得"守不住 */
   './specs/e2e-selfcontained.test.js',
+  /* 只读基线的 glob 匹配器：B1..B8 的老语义不许回归，B9 起的段内 '*' 必须不跨 '/' */
+  './specs/baseline-matcher.test.js',
   /* 变更相关性预筛（P1/P2）：无关变动不重建、抓取字段变化只走仅消费、拆词/慢填必须重建 */
   './specs/relevance.test.js',
   /* 延迟裁决的调度时机（K56）：还没安静要自己补排、拖过上限必须裁决、上限不许跳过判据 */

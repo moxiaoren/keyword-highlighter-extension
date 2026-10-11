@@ -1127,6 +1127,12 @@
     return li;
   }
 
+  /* 关于页默认只看最近 RECENT 条（用户 2026-10-11 现场：183 条全量渲染把「关于」页撑到 49,567px，
+   * 一屏只看得见 1.6%）。要翻全就点「展开全部」——就地切换，不必跳欢迎页；完整历史在欢迎页也一直有。
+   * 目录最多列 TOC_MAX 条：目录比正文还长本来就没意义（183 条版本号曾把目录撑到 525px）。
+   * 想改「默认几条」只改 RECENT 一处，目录与脚注文案都跟着它。 */
+  let chgExpanded = false;
+
   function renderChangelog() {
     const box = $('changelog-list');
     clear(box);
@@ -1134,8 +1140,12 @@
     if (toc) clear(toc);
     const list = (typeof window.CHANGELOG !== 'undefined' && Array.isArray(window.CHANGELOG)) ? window.CHANGELOG : [];
     if (!list.length) { box.appendChild(h('div', { class: 'kh-muted', text: '暂无更新日志' })); return; }
-    // 全量渲染 + 为每条版本生成锚点，右侧悬浮目录可点击跳转
-    for (const entry of list) {
+    const RECENT = 8;
+    const TOC_MAX = 20;
+    const shown = chgExpanded ? list : list.slice(0, RECENT);
+    let tocShown = 0;
+    // 每条版本一个锚点，右侧悬浮目录可点击跳转
+    for (const entry of shown) {
       const items = Array.isArray(entry.items) ? entry.items : [String(entry.items || '')];
       const ver = String(entry.version || '');
       const lid = 'chg-' + ver.replace(/[^\w.]/g, '_');
@@ -1143,7 +1153,8 @@
         h('div', { class: 'kh-log-ver', text: ver }),
         h('ul', { class: 'kh-log-list' }, items.map(changelogLi))
       ]));
-      if (toc) {
+      if (toc && tocShown < TOC_MAX) {
+        tocShown++;
         toc.appendChild(h('a', {
           class: 'kh-ver-toc-item', href: '#' + lid, text: ver,
           on: { click: (ev) => {
@@ -1155,6 +1166,20 @@
       }
     }
     const foot = h('div', { class: 'kh-ver-foot' });
+    if (list.length > shown.length) {
+      foot.appendChild(h('div', {
+        class: 'kh-muted',
+        text: '共 ' + list.length + ' 个版本，这里只列最近 ' + shown.length + ' 个。'
+      }));
+    }
+    if (list.length > RECENT) {
+      const toggle = h('button', {
+        class: 'kh-mini-btn', type: 'button',
+        text: chgExpanded ? '只看最近 ' + RECENT + ' 个' : '展开全部 ' + list.length + ' 个版本'
+      });
+      toggle.addEventListener('click', () => { chgExpanded = !chgExpanded; renderChangelog(); });
+      foot.appendChild(toggle);
+    }
     const more = h('button', { class: 'kh-mini-btn', type: 'button', text: '查看完整更新日志（欢迎页）' });
     more.addEventListener('click', () => window.open('../welcome/welcome.html', '_blank'));
     foot.appendChild(more);

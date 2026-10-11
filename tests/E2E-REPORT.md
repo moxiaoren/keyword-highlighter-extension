@@ -2164,4 +2164,37 @@ sha256 与 `vendor/tesseract/lang-manifest.json` 一致 → 落缓存 → 识别
   `:528-535` 超时即落独立窗口），负载高时它会**先**返回 `window`，内容脚本那侧的 `open()` 还在等「样式 fetch 失败」。
   `_e2e/ui.test.js` 改成 `waitForFunction(宿主消失, 8s)` 再读残留（断言强度不变：8s 还在 ⇒ 照旧判红）；单跑界面层 62 · 0，全量复跑 79 · 0 + 62 · 0。
 
+## 2.0.1.13 · 设置页与面板的 7 项 UX 整改（P1–P7 全做）（测试版 2.0.1.13，2026-10-11）
+
+- **本版真机全量**（`cd F:\harness\高亮词插件 && node _e2e/run.js --aspects=all`）：**内容层 80 · 失败 0 + 界面层单层 66 · 失败 0**
+  （日志第二块打的是全局累计 **146** = 80 + 66，**exit 0**；两层不许相加当单层）。单测 **736 · 0 · 跳过 1**；meta-check **通过 46 · 警告 1 · 错误 0**。
+- **动因**：round 28 委派 UI 架构师的只读梳理（`_stage/ui-review-2026-10-11/REVIEW.md`）§2 列了 P1–P7，用户 round 29 裁决**全部落地**；
+  本版即 REVIEW §3 的 L1-a…d（低风险快修）与 L2-a…c（结构小改）。**P6/P7 复核后无动作**：侧边栏 422px 空白 §4 已判不是缺陷（加设置搜索框被否），
+  性能面板右侧空白随 P1 搬走自然变薄。
+- **P1 / L1-a 两个外观默认值归位**（`options/options.html`）：`#pf-imgSize`、`#pf-noteFontSize` 两个 `.kh-form-fld` 从「帮助与隐私 → ⚡ 性能 → 折叠的高级设置」
+  搬进 `#sec-style` 新增的「重要笔记」子块，**id 一个不改**（`options.js` 与探针全按 id 取），性能页原处留一行「已挪到样式分区」。
+  真机新断言：两个元素必须落在 `#sec-style` 内且**不在任何 `<details>` 里**。
+- **P3 / L1-b + L2-c 更新日志不再把「关于」页撑成五万像素**（`options/options.js` `renderChangelog()`）：默认 `RECENT = 8` 条、左侧目录 `TOC_MAX = 20` 条，
+  底部给就地切换（`chgExpanded`）——「展开全部 N 个版本」⇄「只看最近 8 个」，完整历史在欢迎页照旧。改前 183 条全量渲染 = **49,567px**（一屏只看得见 1.6%、目录被撑成 525px）。
+  - 单测 `tests/specs/changelog-render.test.js` 逐字钉：`const RECENT = 8;`、`let chgExpanded = false;`、`const shown = chgExpanded ? list : list.slice(0, RECENT);`、
+    `const TOC_MAX = 20;` + `tocShown < TOC_MAX`、`chgExpanded = !chgExpanded; renderChangelog();`。
+  - 真机 `_e2e/ui.test.js`：默认 `items === 8` 且 `toc === items`、尾部含「共/最近」；真点「展开全部」⇒ `items === total`、`0 < toc ≤ 20`、按钮文案变「只看最近」；再点回 ⇒ `backItems === 8`。
+- **P4 / L2-b 图片识别页拆三张折叠卡**（`options/options.html` `#sec-ocr`）：`#ocr-adv-engine`（默认 `open`，含 `#ocr-engine` 与 `#ocr-migrate-note`）/
+  `#ocr-adv-model`（`#ocr-model-list`、`#ocr-model-import-file`）/ `#ocr-adv-lang`（`#ocr-lang-list`、`#btn-ocr-selftest`、`#ocr-selftest-result`、`#ocr-import-file`）；
+  原有 `<h3 class="kh-sub">` 标题交给 `<summary>`，「跨域图片」段与既有 `#ocr-adv` 高级信息块不动。折叠只是搬家，字段 id 全保留。
+  - 真机新断言「★ 图片识别页：三张折叠子卡 + 引擎控件在首屏内」实测 **`图片识别页高度 = 688px`（原 1071px）、引擎控件在分区内 `top = 216`（视口 808）**；
+    断言三个 `ocr-adv-*` 都是 `DETAILS`、引擎那张 `open`、7 个字段 id 全在、`height < 1000`。
+  - **首跑该条曾红**（`engTop = 990 > 808`）：断言原本用**文档绝对 top**，而 `#sec-ocr` 前面还有别的分区占位 ⇒ 改为量**分区内相对偏移**后全绿。
+    **是量法错、不是结构错**；教训：量「首屏可见」要相对**分区**，不是相对文档。
+  - **探针根因修复**：`_e2e/probe-ocr11.js` 在语言包步骤前把 `#ocr-adv-lang` 打开（该探针用 Playwright 真点 `#btn-ocr-import-<lang>` / `#btn-ocr-selftest`，
+    折叠后不可见会超时）；`probe-s2c-options.js` 全走 `evaluate`（隐藏元素也能点/读）⇒ 无需改。
+  - **回归面更正**：REVIEW §3 写「`_e2e/ui.test.js` 的 OCR 组会点这些控件」**不成立** —— grep `_e2e/*.js` 只命中 `probe-ocr11.js`/`probe-s2c-options.js`/`probe-ocr*.js`，
+    `content.test.js` 与 `ui.test.js` 零命中；`tests/specs/ocr-options.test.js` 只用正则读 `options.html` 文本、不看 DOM 层级。
+- **P2/P5 / L1-c + L1-d + L2-a 重要笔记面板**（`src/features/important-note.js`）：图区封顶 `50vh → 40vh`，并新增
+  `@media (max-height: 520px) { .khin-imgsec { max-height: 30vh; } }`（**只改封顶，不碰 `flex: 0 0 auto`** —— 破了就退回 2026-10-07「两个分区互相抢占」的老毛病；
+  也不用 `var()`，会破单测的 `(\d+)vh` 正则）；图片条目行首去掉重复的 `'🖼 '` 前缀（分区题头已写明是图片区，全称挂 `title`）。
+  单测 `tests/specs/important-note.test.js` 新增矮屏块断言（`@media (max-height: 520px)` 存在、封顶 < 40vh、块内出现 `.khin-imgsec` 且**不许出现 `flex`**）。
+- **口径**：本版只动 `options/**`、`src/features/important-note.js`、`src/ui/changelog.js` 与断言文件。`#sec-ocr` 的折叠不改任何 `id`；
+  图片识别页那行指路写成纯文本而非锚点链接（`options.js:1237` 只在启动时读一次 `location.hash`，且全文件没有 `hashchange` 监听 ⇒ 点了不会有反应）。
+
 

@@ -154,4 +154,26 @@ module.exports = async function run() {
     eq(f.querySelectorAll('a').length, 0, '★ 不许有链接：' + sample.slice(0, 80));
     truthy(ser(f).indexOf('http') >= 0, '网址要以字面文本留下：' + ser(f).slice(0, 80));
   });
+
+  await test('★ 设置页默认只渲染最近 8 条 + 目录最多 20 条 + 可就地展开（用户 2026-10-11：183 条把「关于」页撑到 49,567px）', () => {
+    const src = fs.readFileSync(path.join(ROOT, 'options', 'options.js'), 'utf8');
+    const body = (src.match(/function renderChangelog\(\)[\s\S]*?\n  \}\n/) || [''])[0];
+    truthy(body.length > 0, '要能定位到 renderChangelog()（否则下面是在空串上跑）');
+    truthy(/const RECENT = 8;/.test(body), '设置页默认只列最近 8 条（RECENT 常量是唯一的口径）');
+    truthy(/let chgExpanded = false;/.test(src), '"展开"必须是用户主动动作：默认视图就得是短的');
+    truthy(/const shown = chgExpanded \? list : list\.slice\(0, RECENT\);/.test(body),
+      '渲染集合必须是 chgExpanded ? list : list.slice(0, RECENT)');
+    truthy(/for \(const entry of shown\)/.test(body),
+      '★ 循环必须走截断后的 shown —— 走 list 就是白截（真机一屏只看得见 1.6% 就是这么来的）');
+    truthy(/const TOC_MAX = 20;/.test(body) && /tocShown < TOC_MAX/.test(body),
+      '目录最多列 20 条（183 个版本号曾把左侧目录也撑到 525px）');
+    truthy(/if \(list\.length > shown\.length\)/.test(body) && /共 ' \+ list\.length/.test(body),
+      '截断后要告诉用户「共 N 个版本，这里只列最近 8 个」（否则用户以为日志丢了）');
+    truthy(/展开全部 ' \+ list\.length/.test(body) && /只看最近 ' \+ RECENT/.test(body),
+      '★ 要有「展开全部 / 只看最近 8 个」切换（否则想看全只能跳欢迎页）');
+    truthy(/chgExpanded = !chgExpanded; renderChangelog\(\);/.test(body),
+      '切换必须重渲染（只改 flag 不重画 = 按钮是死的）');
+    truthy(CL.length > 8, '数据源本来就多于 8 条（少了这条断言是空跑，实际 ' + CL.length + '）');
+    truthy(src.indexOf('查看完整更新日志（欢迎页）') >= 0, '完整历史仍要有入口按钮');
+  });
 };

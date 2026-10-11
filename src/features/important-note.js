@@ -176,10 +176,21 @@
      * 收缩（flex:0 0 auto）但封顶半屏，超出部分交给 .khin-imglist 自己滚 —— 上下各一条滚动条。 */
     .khin-imgsec {
       border-top: 1px solid rgba(148,163,184,.35); margin-top: 2px;
-      flex: 0 0 auto; min-height: 0; max-height: 50vh;
+      /* 封顶收紧到 40vh（用户 2026-10-11：矮屏下 50vh 让图区吃到 260px，笔记区只剩 165px
+       * 且上下双滚动条）。实测（_stage/ui-review-2026-10-11）：200×900 图区实高 312px 由内容
+       * 决定、不受此上限影响；200×520 下 40vh = 208px，笔记区 165 → ≈217px。
+       * 别再往上加 —— 加回去就是拿笔记区换图区。 */
+      flex: 0 0 auto; min-height: 0; max-height: 40vh;
       display: flex; flex-direction: column;
     }
     .khin-imgsec[hidden] { display: none; }
+    /* 矮屏（视口 ≤520px）再收一档（用户 2026-10-11 现场：矮屏下正文被压成半截）。
+     * 40vh 在 520px 高处仍吃掉 208px，正文只剩 ≈217px —— 只赢 9px，一次微调就翻盘；
+     * 30vh ⇒ 图区 ≈156px / 正文 ≈269px，正文**明显**比图区高，才符合"打开面板是为了看正文"。
+     * 只改封顶，**不碰 flex: 0 0 auto**（改了就是破 2026-10-07 的"两个分区互相抢占"契约）。 */
+    @media (max-height: 520px) {
+      .khin-imgsec { max-height: 30vh; }
+    }
     /* 题头一行要放下：图标+短标题 / 计数 / 「全部 N」复核入口 / 折叠箭头。
      * 200px 宽下**不许折行**（2026-10-11 用户现场截图：折成两行把标题挤碎）——
      * nowrap + overflow:hidden，让计数这一格先让位（它最短、含义最不依赖宽度）。 */
@@ -1223,7 +1234,9 @@
         head.className = 'khin-imgrow';
         const kw = doc.createElement('span');
         kw.className = 'khin-imgkw';
-        kw.textContent = '🖼 ' + (it.keyword || '') + (it.label ? '（' + it.label + '）' : '');
+        /* 行内不再重复「🖼 」（用户 2026-10-11：200px 下关键词格只剩 84px）——整块都在
+         * 「🖼 图片」分区标题底下，行内再挂一个图标是冗余的，省下的宽度全给关键词。 */
+        kw.textContent = (it.keyword || '') + (it.label ? '（' + it.label + '）' : '');
         /* 200px 下关键词要能被 ellipsis 截断 ⇒ 全称挂 title，别让信息真的丢 */
         kw.title = kw.textContent;
         head.appendChild(kw);
