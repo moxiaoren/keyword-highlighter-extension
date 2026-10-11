@@ -318,7 +318,12 @@
       this._timers.shadow = setInterval(() => {
         if (document.hidden) return;
         if (KH.Rebuilder && KH.Rebuilder.inRebuildWindow) return;
-        try { this.sweepShadowRoots(); } catch (err) { /* 尽力而为，绝不因它中断 */ }
+        /* 关掉 Shadow DOM 扫描时**不跑全文档 TreeWalker**：`sweepShadowRoots` 会遍历整棵文档树
+         * （实测 21k 元素页面一次 ~10ms，每 2 秒白跑一遍；而 `shadowOn` 判定早已存在）。
+         * 看门狗 `ensureObserverTarget` 不受影响，照旧每 2 秒校验观察目标。 */
+        if (shadowOn) {
+          try { this.sweepShadowRoots(); } catch (err) { /* 尽力而为，绝不因它中断 */ }
+        }
         try { this.ensureObserverTarget(); } catch (err) { /* 看门狗同样绝不中断别人 */ }
       }, 2000);
     },

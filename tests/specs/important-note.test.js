@@ -361,4 +361,25 @@ module.exports = async function run() {
     const side = thumb.match(/width:\s*(\d+)px/);
     truthy(side && Number(side[1]) <= 48, 'OCR 缩略图不超过 48px —— 9 张图的场景里它是主要高度来源');
   });
+
+  suite('important-note · 默认宽度不遮挡标题列（用户 2026-10-11：360px 挡太多）');
+
+  await test('★ 默认宽度 ≤320px，且水平钳位读实测宽度（宽度真源只有 CSS 一处）', () => {
+    const src = read('src/features/important-note.js');
+    const panel = (src.match(/\.khin-panel \{[\s\S]*?\n    \}/) || [''])[0];
+    truthy(panel.length > 0, '要能定位 .khin-panel 样式块（否则下面的断言跑在空串上等于没测）');
+    const w = panel.match(/width:\s*(\d+)px/);
+    truthy(w, '.khin-panel 要有显式 width');
+    truthy(w && Number(w[1]) <= 320,
+      '默认宽度必须 ≤320px（1280 视口下 360px 会盖住页面标题列，用户 2026-10-11 实测），实际 ' + (w && w[1]));
+    truthy(/min-width:\s*220px/.test(panel), 'min-width:220px 要保留（拖窄的自由度不能收）');
+    const ap = (src.match(/applyPosition\(\)\s*\{[\s\S]*?\n    \}/) || [''])[0];
+    truthy(ap.length > 0, '要能定位 applyPosition');
+    const apCode = ap.replace(/\/\*[\s\S]*?\*\//g, '');   // 只看代码，不看注释里的解释文字
+    /* 反例防回归：以前这里是 `const width = this.minimized ? 56 : 360;` ——
+     * 改 CSS 后钳位不跟、用户 resize 拉宽后 maxLeft 算错，所以钉住「不许再出现宽度字面量」。 */
+    truthy(!/\b360\b/.test(apCode), 'applyPosition 里不许再出现写死的 360（那是 CSS 宽度的第二处真源）');
+    truthy(/getBoundingClientRect\(\)\.width/.test(apCode) || /rect\.width/.test(apCode),
+      '水平钳位必须读面板实测宽度（rect.width），否则 CSS 改了钳位不生效');
+  });
 };

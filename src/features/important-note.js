@@ -66,9 +66,11 @@
       font-size: 12px; font-weight: 600; line-height: 18px; text-align: center;
       border: 2px solid #fff;
     }
-    /* ---------- 展开态：面板 ---------- */
+    /* ---------- 展开态：面板 ----------
+     * 默认宽 300px（用户 2026-10-11：360px 在左侧遮挡标题列太多内容）。
+     * **这里是宽度的唯一真源**：applyPosition() 的水平钳位读面板实测宽度，不再抄一个字面量。 */
     .khin-panel {
-      width: 360px; min-width: 220px; max-width: calc(100vw - 32px);
+      width: 300px; min-width: 220px; max-width: calc(100vw - 32px);
       max-height: calc(100vh - 24px); background: #fff;
       border: 1px solid #e3e8f0; border-radius: 10px;
       box-shadow: 0 8px 28px rgba(0,0,0,.18);
@@ -789,12 +791,17 @@
 
     applyPosition() {
       if (!this.root) return;
-      const width = this.minimized ? 56 : 360;
+      /* 一次 rect 读，横纵共用（省一次强制布局）。
+       * 水平钳位用**面板实测宽度**：原来写死 360，与 `.khin-panel { width }` 成了两处真源 ——
+       * 改 CSS 后钳位不跟着动；用户自己 `resize: both` 拉宽后更会算出错的 maxLeft（拖到右侧越界）。
+       * 量不到时（hidden ⇒ display:none ⇒ width 0）钳位自然失效，此时面板不可见，无需钳位。 */
+      const rect = this.root.getBoundingClientRect();
+      const width = this.minimized ? 56 : rect.width;
       const maxLeft = Math.max(8, window.innerWidth - width - 8);
       /* 纵向钳位按**面板自己的实际高度**算（用户 2026-10-07：光有滚动条不够，还得滚得到）。
        * 原来按固定 48px 留白，面板一高就能被拖到视口外，下半截连同滚动条一起看不见；
        * 面板本身有 max-height: calc(100vh - 24px)，所以这里能让它整块留在视口内。 */
-      const h = this.minimized ? 48 : (this.root.getBoundingClientRect().height || 0);
+      const h = this.minimized ? 48 : (rect.height || 0);
       const maxTop = Math.max(8, window.innerHeight - Math.min(h, window.innerHeight - 16) - 8);
       this.pos.left = Math.max(8, Math.min(this.pos.left, maxLeft));
       this.pos.top = Math.max(8, Math.min(this.pos.top, maxTop));
