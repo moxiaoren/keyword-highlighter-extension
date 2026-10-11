@@ -567,15 +567,22 @@
                   <label class="kh-fld-label">重要笔记图片「尺寸」默认值</label>
                   <input class="kh-input" id="pf-imgSize" type="number" min="40" max="600" step="10">
                 </div>
+                <div class="kh-form-fld">
+                  <label class="kh-fld-label">重要笔记「字号」默认值 (px)</label>
+                  <input class="kh-input" id="pf-noteFontSize" type="number" min="10" max="20" step="1">
+                </div>
               </div>
               <p class="kh-muted">「重建最小间隔」是翻页四条通道共用的<strong>唯一</strong>限频口径，调小更灵敏、调大更省资源。
                 「变更处理方式」选<strong>保守</strong>时，页面上任何改动都会触发整页重建（不做相关性预筛、也不走"仅抓取字段变化"的快通道）——
-                更费资源，但遇到"页面变了却不亮"时可以先切到它，用来排除预筛的嫌疑。</p>
+                更费资源，但遇到"页面变了却不亮"时可以先切到它，用来排除预筛的嫌疑。
+                「字号」管面板里的<strong>笔记正文与表格</strong>（10–20px，默认 11）；每张图片下面的 📋 复制这张图的全部识别文字，
+                命中词块点一下复制它所在的整句，整段文字在点开的大图右侧。</p>
             </div>
           </details>
 
 
       </div>
+      </div><!-- /perf -->
       <div class="kh-hpanel" data-hpan="about">
       <h3>📦 版本信息</h3>
       <div class="kh-help">

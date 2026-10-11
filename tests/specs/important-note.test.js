@@ -348,11 +348,15 @@ module.exports = async function run() {
     truthy(/flex-direction: column/.test(panel), '面板仍是纵向 flex：header / 列表 / 分区三段');
   });
 
-  await test('★ 接线契约：字号走紧凑档（正文 12px / 行距 1.45 / 缩略图 ≤ 48px）', () => {
+  await test('★ 接线契约：字号走变量（缺省 11px / 行距 1.45 / 缩略图 ≤ 48px）且配置能覆盖它', () => {
     const src = read('src/features/important-note.js');
     const note = (src.match(/\.khin-item-note \{[\s\S]*?\n    \}/) || [''])[0];
-    truthy(/font-size: 12px/.test(note) && /line-height: 1\.45/.test(note),
-      '正文 12px / 1.45（用户 2026-10-07：条目一多就太占地方）');
+    truthy(/font-size: var\(--kh-note-fs, 11px\)/.test(note) && /line-height: 1\.45/.test(note),
+      '正文走 --kh-note-fs 变量、缺省 11px（用户 2026-10-09：比上一版再小一号，且要可配）');
+    truthy(src.indexOf("this.host.style.setProperty('--kh-note-fs'") >= 0,
+      '变量必须由 render() 从 config 写上去 —— 否则设置页改了字号面板不理');
+    const cfg = read('src/core/config.js');
+    truthy(/importantNote: \{[\s\S]*?fontSize: 11/.test(cfg), 'config 里默认字号必须是 11');
     const thumb = (src.match(/\.khin-imgthumb \{[\s\S]*?\n    \}/) || [''])[0];
     const side = thumb.match(/width:\s*(\d+)px/);
     truthy(side && Number(side[1]) <= 48, 'OCR 缩略图不超过 48px —— 9 张图的场景里它是主要高度来源');

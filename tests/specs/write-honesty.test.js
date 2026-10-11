@@ -351,7 +351,24 @@ module.exports = async function run() {
       '★ 写失败也要留痕：宁可见两遍，不许一次都见不到');
   });
 
+  /* ---------------- C7 F-10 续（issue #20）：当前版本说明永远可见 ---------------- */
+
+  await test('★「当前版本」那一块不许被 lastSeen 过滤掉（自动弹过那次 ≠ 用户主动看过）', () => {
+    const wjs = code(readSrc('welcome/welcome.js'));
+    const body = between(wjs, 'async function renderLog()', 'await chrome.storage.local.set({ khLastSeenVersion');
+    truthy(body, '应能找到 renderLog 主体');
+    truthy(/if \(vsCurrent > 0\) return false;/.test(body), '比当前版本更新的条目不上屏');
+    truthy(/if \(vsCurrent === 0\) return true;/.test(body),
+      '★ 当前版本块必须无条件留下：升级后那次是 onInstalled 自动弹开并标记已读的，' +
+      '事后用户自己点进来时 lastSeen 就等于 version，旧判据把这一块一起滤掉 → 页面恒为「暂无新版本说明」');
+    truthy(/const seenCurrent = !isFirst && cmp\(lastSeen, version\) >= 0;/.test(body),
+      '要能区分「本次更新还没看过」与「已读过、可回看」');
+    falsy(/cmp\(e\.version, version\) <= 0 && cmp\(e\.version, lastSeen\) > 0/.test(body),
+      '★ 旧的一行判据必须退休（它对 lastSeen === version 返回空集）');
+  });
+
   await test('★welcome 三个渲染各自兜底 + 订阅 storage 变化（一个坏掉不许带走整页）', () => {
+
     const wjs = code(readSrc('welcome/welcome.js'));
     truthy(/const boot = \(fn, what\) => fn\(\)\.catch\(/.test(wjs),
       '★ 旧写法是三个裸调用：谁先 reject 谁把后面的一起带走，且是 unhandled rejection');

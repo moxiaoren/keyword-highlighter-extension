@@ -214,4 +214,33 @@ module.exports = async function run() {
     /* 面板里不许出现"秒"这类中文（文案真源在 ocr-copy.js，这条防的是又写一套） */
     eq(src.indexOf('识别耗时'), -1, '面板里不该硬编码"识别耗时"（改文案请去 src/ui/ocr-copy.js）');
   });
+
+  await test('★ S3-⑤：命中词 → 复制它**所在的那一整句**（简展示 + 灯箱全文，票 #22 后需求）', () => {
+    /* 用户口径（2026-10-09）：命中"9月"，在"9月份的量，给你了"里就复制这一句。
+     * 切分只在句末标点/换行上做 —— 逗号不是边界（宁可多带，不许把一句话切成半截）。 */
+    eq(C.sentenceOf('9月份的量，给你了', '9月'), '9月份的量，给你了', '没有句末标点时取到文末');
+    eq(C.sentenceOf('第一句。9月份的量，给你了。第三句。', '9月'), '9月份的量，给你了。', '两侧都按句末标点切');
+    eq(C.sentenceOf('先9月。再9月！', '9月'), '先9月。', '取第一处出现的那一句');
+    eq(C.sentenceOf('甲\n9月乙\n丙', '9月'), '9月乙', '换行也是边界');
+    eq(C.sentenceOf('9月。后面', '9月'), '9月。', '句首命中');
+    eq(C.sentenceOf('英文!句子?9月好;收尾', '9月'), '9月好;', '半角句末标点同样算边界');
+    /* 定位不到就返回空串 —— 由调用方决定退化成什么（面板退化成复制命中词本身，不猜句子） */
+    eq(C.sentenceOf('页面里没有这个词', '9月'), '', '找不到 needle 必须返回空串');
+    for (const bad of [['', 'x'], [null, 'x'], ['abc', ''], [null, null]]) {
+      eq(C.sentenceOf(bad[0], bad[1]), '', '空输入返回空串：' + JSON.stringify(bad));
+    }
+
+    const src = read('src/features/important-note.js');
+    /* 面板不许自己写中文文案：标题/反馈都从真源取 */
+    truthy(/KH\.OcrCopy\.sentenceOf\(it\.text, w\)/.test(src), '词块点击必须用 KH.OcrCopy.sentenceOf 定位句子');
+    truthy(/KH\.OcrCopy\.VIEW\.copyAll/.test(src), '图片旁的固定复制按钮文案必须来自 VIEW.copyAll');
+    truthy(/KH\.OcrCopy\.VIEW\.copySentence/.test(src), '词块的可访问名/tooltip 必须来自 VIEW.copySentence');
+    truthy(src.indexOf('.khin-imgchip') >= 0, '缺少 .khin-imgchip 样式（没有样式就等于看不见）');
+    truthy(src.indexOf('.kh-lb-side') >= 0, '灯箱右侧全文栏缺少样式');
+    truthy(/classList\.toggle\('kh-lb-has-side', !!full\)/.test(src), '有全文时灯箱要把图片收窄（否则同屏互相挤）');
+    const lb = read('src/ui/ocr-copy.js');
+    for (const k of ['textPane', 'copyAll', 'copyAllDone', 'copySentence', 'copySentDone', 'copyFailed']) {
+      truthy(new RegExp(k + ':').test(lb), 'VIEW 缺键 ' + k + '（文案真源不许散落在面板里）');
+    }
+  });
 };

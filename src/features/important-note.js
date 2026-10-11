@@ -120,9 +120,11 @@
       user-select: text; -webkit-user-select: text;
     }
     .khin-item-note ::selection, .kh-table ::selection { background: #a6d3ff; color: inherit; }
-    /* 重要笔记正文：**必须保留换行**（旧版 v1.8.3 教训；Markdown 渲染会在行间产生 \\n 文本节点） */
+    /* 重要笔记正文：**必须保留换行**（旧版 v1.8.3 教训；Markdown 渲染会在行间产生 \\n 文本节点）
+     * 字号走 CSS 变量（2026-10-09 用户裁决：默认比上一版再小一号，并在设置页可配）。
+     * 变量由 panel.render() 从 config.importantNote.fontSize 写到 host 上（同 --kh-img-size 手法）。 */
     .khin-item-note {
-      font-size: 12px; line-height: 1.45; color: #333;
+      font-size: var(--kh-note-fs, 11px); line-height: 1.45; color: #333;
       white-space: pre-line; word-break: break-word; overflow-wrap: break-word;
     }
     .khin-item-note a { color: #1a73e8; text-decoration: none; }
@@ -143,7 +145,7 @@
      *   width:auto + max-width:100% = 内容短就窄（贴合观看习惯），内容长仍撑到容器宽度后换行、不溢出。 */
     .kh-table { border-collapse: collapse; margin-top: 4px; width: auto; max-width: 100%; }
     .kh-table td {
-      border: 1px solid #d3dae3; padding: 3px 8px; font-size: 12px; line-height: 1.5;
+      border: 1px solid #d3dae3; padding: 3px 8px; font-size: var(--kh-note-fs, 11px); line-height: 1.5;
       background: #fff; text-align: left; vertical-align: middle;
       white-space: pre-line; word-break: break-word;
     }
@@ -189,6 +191,9 @@
     .khin-imglist::-webkit-scrollbar-thumb { background: #d8d8d8; border-radius: 3px; }
     .khin-imglist::-webkit-scrollbar-track { background: transparent; }
     .khin-imgitem { display: flex; gap: 6px; align-items: flex-start; }
+    /* 缩略图 + 它下面**固定**的复制按钮（2026-10-09 用户裁决：一键复制这张图识别出的全部文字，
+     * 不再依赖"先点开文本再复制"）。按钮在列里不参与压缩，缩略图宽度仍是 44px。 */
+    .khin-imgthumbwrap { flex: 0 0 44px; display: flex; flex-direction: column; align-items: stretch; gap: 2px; }
     .khin-imgthumb {
       width: 44px; height: 44px; flex: 0 0 44px; object-fit: cover; border-radius: 6px;
       border: 1px solid rgba(148,163,184,.45); background: #f1f5f9; cursor: zoom-in;
@@ -208,17 +213,24 @@
      * ⚠️ 这段样式在模板字符串里，注释里**不能出现反引号**（会把模板提前闭合）。 */
     .khin-imgtag.wait { background: #e2e8f0; color: #475569; }
     .khin-imgtag.note { background: #f1f5f9; color: #475569; }
-    /* 复制识别文本的小按钮（识别出来的长串编号/理由，用户常要粘到别处） */
+    /* 复制按钮：缩略图下面那条 = 复制这张图的**全部**识别文字；
+     * 命中词块旁边那条（.khin-imgchip）＝复制含这个词的整句。 */
     .khin-imgcopy {
-      margin-left: 4px; padding: 0 5px; font-size: 11px; line-height: 16px; cursor: pointer;
+      padding: 0 4px; font-size: 10px; line-height: 15px; cursor: pointer;
       border: 1px solid rgba(148,163,184,.55); border-radius: 4px; background: #fff; color: #475569;
     }
     .khin-imgcopy:hover { background: #f1f5f9; }
-    .khin-imgtext {
-      margin-top: 2px; color: #475569; white-space: pre-wrap; word-break: break-word;
-      max-height: 56px; overflow: auto; background: rgba(148,163,184,.12); border-radius: 4px; padding: 2px 4px;
+    .khin-imgcopy[hidden] { display: none; }
+    /* 命中词块（2026-10-09 用户裁决）：面板上只留命中的词，点它复制**它所在的整句**，
+     * 整段识别文本改到光箱右侧与悬停说明里 —— 面板不再被一张图的长文本撑开。 */
+    .khin-imgchips { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 3px; }
+    .khin-imgchip {
+      max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      padding: 0 6px; font-size: 11px; line-height: 17px; border-radius: 9px; cursor: copy;
+      background: #dcfce7; color: #166534; border: 1px solid rgba(22,101,52,.25);
     }
-    .khin-imgtext[hidden] { display: none; }
+    .khin-imgchip:hover { background: #bbf7d0; }
+    .khin-imgchip.copied { background: #166534; color: #fff; }
     .khin-imgempty { font-size: 12px; color: #64748b; padding: 2px 0 6px; }
   `;
 
@@ -229,6 +241,61 @@
    *  —— v1.52 起"抓取到的图片"就可能是内嵌的 data URI（旧版注释写着"data: 内嵌图无需跳转"），
    *  它本身就是原图数据，在灯箱里显示是安全的（`<img src>` 不执行脚本）。 */
   const LIGHTBOX_SRC_OK = /^(https?:\/\/|data:image\/)/i;
+
+  /**
+   * 命中词去重列表：一段识别文本里同一个词命中多次只留一块
+   * （同一句，复制出来一样 —— 多块只是噪声）。
+   * @param {{matched?:Array}} it OCR 条目
+   * @returns {string[]}
+   */
+  function hitWords(it) {
+    const out = [];
+    const seen = Object.create(null);
+    const list = (it && it.matched) || [];
+    for (let i = 0; i < list.length; i++) {
+      const w = list[i] && list[i].text ? String(list[i].text) : '';
+      if (!w || seen[w]) continue;
+      seen[w] = 1;
+      out.push(w);
+    }
+    return out;
+  }
+
+  /**
+   * 复制到剪贴板，返回 `Promise<boolean>`（false = 两条路都不通）。
+   *
+   * `navigator.clipboard` 在没有焦点/无权限时会 **reject**（不是抛异常），所以两条路都要接。
+   * 兜底用临时 `<textarea>` + `execCommand('copy')`（老浏览器/无 clipboard API 时唯一能用的办法）。
+   *
+   * @param {string} text 要复制的文本
+   * @param {Node} [hostEl] 临时节点的落点（优先面板 ShadowRoot：页面 observer 看不到影子树里的变动，
+   *   不会因为"复制一下"就触发一次页面重建）。缺省挂 body。
+   */
+  function copyToClipboard(text, hostEl) {
+    const txt = String(text == null ? '' : text);
+    if (!txt) return Promise.resolve(false);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(txt).then(() => true, () => legacyCopy(txt, hostEl));
+    }
+    return Promise.resolve(legacyCopy(txt, hostEl));
+  }
+
+  function legacyCopy(txt, hostEl) {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = txt;
+      ta.setAttribute('data-kh-ext-ui', '1');       // 自身 UI 标记：不参与扫描/悬停
+      ta.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0;pointer-events:none';
+      const at = (hostEl && hostEl.isConnected) ? hostEl : document.body;
+      at.appendChild(ta);
+      ta.select();
+      const ok = !!(document.execCommand && document.execCommand('copy'));
+      ta.remove();
+      return ok;
+    } catch (e) {
+      return false;
+    }
+  }
 
   /* =================== 看大图（灯箱） ===================
    * 旧行为是 `window.open(src, '_blank')`（新标签页）——用户实测反馈："查看大图的效果是跳出新的标签页，
@@ -310,6 +377,20 @@
     .kh-lb-idx { min-width: 40px; text-align: center; opacity: .9; font-variant-numeric: tabular-nums; }
     .kh-lb-sep { opacity: .35; }
     .kh-lb-hint { opacity: .75; }
+    /* 全文栏（2026-10-09 用户裁决）：面板里不再铺长文本，点缩略图开大图后在**右侧**看全文。
+     * 只有识别出文字时才出现；出现时图片收窄，两者同屏不互相挤（见 .kh-lb-has-side）。 */
+    .kh-lb-side {
+      position: relative; z-index: 2; flex: 0 0 auto; width: 300px; max-width: 32vw; max-height: 78vh;
+      overflow: auto; padding: 8px 10px; border-radius: 8px;
+      background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.18);
+      color: #e8eef7; font-size: 12px; line-height: 1.5;
+      white-space: pre-wrap; word-break: break-word; user-select: text; -webkit-user-select: text;
+      cursor: text;
+    }
+    .kh-lb-side[hidden] { display: none !important; }
+    .kh-lb-side-h { font-weight: 600; font-size: 11px; opacity: .75; margin-bottom: 4px; user-select: none; }
+    /* 必须排在上面 .kh-lb img 之后：同特异度靠顺序取胜 */
+    .kh-lb-has-side .kh-lb img { max-width: 56vw; }
   `;
 
   /** 打开灯箱。`gallery`/`index` 为同一单元格内的相册（省略即单张）。返回是否打开成功 */
@@ -328,6 +409,10 @@
         '<button class="kh-lb-nav kh-lb-prev" type="button" title="上一张（←）" aria-label="上一张">‹</button>' +
         '<img class="kh-lb-img" alt="">' +
         '<button class="kh-lb-nav kh-lb-next" type="button" title="下一张（→）" aria-label="下一张">›</button>' +
+        '<div class="kh-lb-side" hidden>' +
+        '<div class="kh-lb-side-h"></div>' +
+        '<div class="kh-lb-side-t" data-kh-lb-text="1"></div>' +
+        '</div>' +
         '</div>' +
         '<div class="kh-lb-bar">' +
         '<span class="kh-lb-idx"></span>' +
@@ -345,6 +430,11 @@
       const prev = sr.querySelector('.kh-lb-prev');
       const next = sr.querySelector('.kh-lb-next');
       const idxEl = sr.querySelector('.kh-lb-idx');
+      /* 右侧全文栏（用户 m00631 口径：全文不再占据面板，点图放大后看这里）——
+       * 标题文案也来自唯一真源 KH.OcrCopy，面板不许自己写中文。 */
+      const side = sr.querySelector('.kh-lb-side');
+      const sideText = sr.querySelector('.kh-lb-side-t');
+      sr.querySelector('.kh-lb-side-h').textContent = KH.OcrCopy.VIEW.textPane;
       const close = () => { box.hidden = true; img.removeAttribute('src'); };
       /** 平移夹紧：最多让图挪到"还能看见"的范围（缩放变化后也要重夹，别把图拖丢） */
       const clampPan = (tx, ty) => {
@@ -368,6 +458,11 @@
         const multi = g.length > 1;
         prev.hidden = !multi;                               // 单张：隐藏（不是置灰）
         next.hidden = !multi;
+        /* 全文栏：有识别文本才显示（没识别出文字的图不摆空栏），并把图片让窄一点 */
+        const full = (cur && cur.text) ? String(cur.text) : '';
+        side.hidden = !full;
+        sideText.textContent = full;
+        box.classList.toggle('kh-lb-has-side', !!full);
         idxEl.textContent = multi ? ((i + 1) + ' / ' + g.length) : '';
         idxEl.setAttribute('title', multi ? ('第 ' + (i + 1) + ' 张 / 共 ' + g.length + ' 张') : '');
         const p = clampPan(host._tx || 0, host._ty || 0);
@@ -656,6 +751,12 @@
         e.preventDefault();
         const scope = (t.closest && (t.closest('td, th') || t.closest('table'))) || null;
         const all = scope ? Array.prototype.slice.call(scope.querySelectorAll('img')) : [t];
+        /* OCR 结果按 `src` 建索引：相册条目带上识别全文，灯箱右侧才能显示（用户 m00631 口径）。
+         * `imgItems` 就是本面板当前的 OCR 条目（`src` 与 `im.src` 同为解析后的绝对地址）。 */
+        const textBySrc = new Map();
+        for (const it of (this.imgItems || [])) {
+          if (it && it.src && it.text) textBySrc.set(it.src, String(it.text));
+        }
         const list = [];
         let index = 0;
         for (let i = 0; i < all.length; i++) {
@@ -663,7 +764,7 @@
           const s = im.src || '';                            // 用**解析后**的绝对地址，和 t.src 同一口径
           if (!s || !LIGHTBOX_SRC_OK.test(s)) continue;       // 占位/非法协议不进相册
           if (im === t) index = list.length;
-          list.push({ src: s, alt: im.getAttribute('alt') || '' });
+          list.push({ src: s, alt: im.getAttribute('alt') || '', text: textBySrc.get(s) || '' });
         }
         if (!list.length) return;
         openLightbox(list[index].src, list[index].alt, list, index);
@@ -729,6 +830,12 @@
       this.ensure(doc);
       const imgSize = (cfg && cfg.importantNote && cfg.importantNote.imgSize) || 70;
       this.host.style.setProperty('--kh-img-size', imgSize + 'px');
+      /* 面板正文字号（2026-10-09 可配）：同 imgSize 手法写成 CSS 变量。
+       * 合法区间夹在 10–20px —— 手改 storage / 导入旧备份塞进极端值时，
+       * 面板不许变成一行一个字或糊成一团（配置是信任边界）。 */
+      const rawFs = parseInt((cfg && cfg.importantNote && cfg.importantNote.fontSize), 10);
+      const noteFs = (isFinite(rawFs) && rawFs >= 10 && rawFs <= 20) ? rawFs : 11;
+      this.host.style.setProperty('--kh-note-fs', noteFs + 'px');
 
       /* 图片命中与重要笔记**共用这块面板**（用户口径：图片命中要有地方看，且不占页面）；
        * 但两者独立：没有重要笔记的关键词，它识别到的图片照样要显示。 */
@@ -992,12 +1099,33 @@
         row.className = 'khin-imgitem';
         row.setAttribute('data-kh-ocr-key', it.key);
 
+        /* 缩略图 + 它下面**固定**的 📋（2026-10-09 用户裁决：一键复制这张图识别出的全部文字）。
+         * 只有 done 且真有文字才挂 —— 没结果时挂着是按不出东西的假入口。 */
+        const thumbWrap = doc.createElement('div');
+        thumbWrap.className = 'khin-imgthumbwrap';
         const thumb = doc.createElement('img');
         thumb.className = 'khin-imgthumb';
         if (LIGHTBOX_SRC_OK.test(it.src || '')) thumb.src = it.src;
         thumb.alt = it.keyword || '';
-        thumb.title = '点开看大图';
-        row.appendChild(thumb);
+        thumb.title = KH.OcrCopy.VIEW.openLarge;
+        thumbWrap.appendChild(thumb);
+        if (it.state === 'done' && String(it.text || '').trim()) {
+          const copyAll = doc.createElement('button');
+          copyAll.className = 'khin-imgcopy';
+          copyAll.type = 'button';
+          copyAll.title = KH.OcrCopy.VIEW.copyAll;
+          copyAll.textContent = '📋';
+          copyAll.addEventListener('click', (e) => {
+            e.stopPropagation();
+            copyToClipboard(String(it.text), this.root).then((ok) => {
+              copyAll.textContent = ok ? '✓' : '✗';
+              if (!ok) copyAll.title = KH.OcrCopy.VIEW.copyFailed;
+              setTimeout(() => { copyAll.textContent = '📋'; copyAll.title = KH.OcrCopy.VIEW.copyAll; }, 1200);
+            });
+          });
+          thumbWrap.appendChild(copyAll);
+        }
+        row.appendChild(thumbWrap);
 
         const meta = doc.createElement('div');
         meta.className = 'khin-imgmeta';
@@ -1010,64 +1138,59 @@
         /* 状态类只从唯一真源取（`hit`/`miss`/`wait`/`note`/`bad`）：进行中不再是红的 */
         tag.className = 'khin-imgtag ' + KH.OcrCopy.stateClass(it);
         tag.textContent = this.imgTagText(it);
-        tag.title = it.error || '';
+        /* 悬停看完整理由（未命中时里面就有识别文本）：面板上不铺长文本，
+         * 但"这个结论是怎么来的"必须查得到 —— 文案一律走真源，面板不写中文。 */
+        tag.title = this.imgWhyText(it);
         head.appendChild(tag);
-        meta.appendChild(head);
-
-        const textEl = doc.createElement('div');
-        textEl.className = 'khin-imgtext';
-        textEl.setAttribute('data-kh-ocr-text', '1');
-        const hit = it.state === 'done' && it.matched && it.matched.length;
-        const body = it.state === 'done' ? (it.text || '（图里没识别出文字）') : this.imgWhyText(it);
-        /* 【命中的条目默认就展开识别文本（K69）】命中就是要给人看的：直接显示"图里认出了什么"，
-         * 未命中的条目仍然收起（面板不会被长文本撑开）。 */
-        textEl.textContent = hit ? ('命中「' + it.matched.map((m) => m.text).join('、') + '」：' + body) : body;
-        textEl.hidden = !hit;
-        meta.appendChild(textEl);
-        /* 点标题右侧的标记 → 展开/收起识别文本（未命中的默认收起） */
-        tag.style.cursor = 'zoom-in';
-        tag.title = hit ? '点一下收起/展开识别文本' : (it.error || '点一下展开识别文本');
-        tag.addEventListener('click', (e) => {
-          e.stopPropagation();
-          textEl.hidden = !textEl.hidden;
-        });
-        head.appendChild(tag);
-
         /* 本次识别的**真实**耗时（S3-④ 用户裁决）：数字来自回执（`img-ocr.js:445` 存在条目上），
          * 文案与格式一律走真源 `KH.OcrCopy.costLabel/costTip` —— 面板不许自己拼数字或写中文。
          * 没有值（排队中 / 还没跑到）时 `costLabel` 返回空串 ⇒ 连 span 都不挂，不留空标签。
-         * 【位置】必须在这句 `head.appendChild(tag)` **之后** —— 上面第 850 行已经 append 过一次 tag，
-         * 而 appendChild 对已存在的子节点是"移动"：插在 850 与 870 之间会被这一次挪到 cost 后面去。 */
+         * 【位置】必须在 appendChild(tag) 之后 —— appendChild 对已存在的子节点是"移动"，
+         * 插在 tag 之前会被后一次 append 挪到 tag 前面去（实测踩过）。 */
         const cost = doc.createElement('span');
         cost.className = 'khin-imgcost';
         cost.textContent = KH.OcrCopy.costLabel(it);
         cost.title = KH.OcrCopy.costTip(it);
         if (cost.textContent) head.appendChild(cost);
-        if (it.state === 'done' && String(it.text || '').trim()) {
-          const copy = doc.createElement('button');
-          copy.className = 'khin-imgcopy';
-          copy.type = 'button';
-          copy.title = '复制识别到的文字';
-          copy.textContent = '📋';
-          copy.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const txt = String(it.text || '');
-            try {
-              if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt);
-              else throw new Error('no clipboard');
-              copy.textContent = '✓';
-            } catch (err) {
-              /* 剪贴板不可用（老浏览器/无权限）→ 退化成"展开文本让用户自己选" */
-              textEl.hidden = false;
-              copy.textContent = '✗';
-            }
-            setTimeout(() => { copy.textContent = '📋'; }, 1200);
-          });
-          head.appendChild(copy);
-        }
         meta.appendChild(head);
-        /* ★ 别漏这一行：一张卡片行 = 缩略图 + 文本块（文本块里才有 tag/识别文本）。
-         * 实测踩过：加「📋 复制识别文本」时把这一行弄丢了 → 行里没有 tag 与文本 →
+
+        /* 命中词块（2026-10-09 用户裁决）：面板上只留**命中的词**，点它复制它所在的整句；
+         * 一段里同一个词命中多次只给一块（同一句，复制出来一样）。
+         * 整段识别文本搬去灯箱右侧（点缩略图放大）与上面的悬停说明。 */
+        const words = hitWords(it);
+        if (words.length) {
+          const chips = doc.createElement('div');
+          chips.className = 'khin-imgchips';
+          for (const w of words) {
+            const chip = doc.createElement('span');
+            chip.className = 'khin-imgchip';
+            chip.textContent = w;
+            chip.title = KH.OcrCopy.VIEW.copySentence;
+            /* 可用键盘操作（Tab 进来、Enter/空格触发）——它是个按钮，不是装饰 */
+            chip.setAttribute('role', 'button');
+            chip.setAttribute('tabindex', '0');
+            const copySentence = () => {
+              /* 定位不到整句（原文里没这个词 / 没有任何句末标点）就退回命中词本身 —— 不猜 */
+              copyToClipboard(KH.OcrCopy.sentenceOf(it.text, w) || w, this.root).then((ok) => {
+                chip.classList.toggle('copied', ok);
+                chip.title = ok ? KH.OcrCopy.VIEW.copySentDone : KH.OcrCopy.VIEW.copyFailed;
+                setTimeout(() => { chip.classList.remove('copied'); chip.title = KH.OcrCopy.VIEW.copySentence; }, 1200);
+              });
+            };
+            chip.addEventListener('click', (e) => {
+              e.stopPropagation();
+              copySentence();
+            });
+            chip.addEventListener('keydown', (e) => {
+              if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); copySentence(); }
+            });
+            chips.appendChild(chip);
+          }
+          meta.appendChild(chips);
+        }
+
+        /* ★ 别漏这一行：一张卡片行 = 缩略图 + 文本块（文本块里才有 tag/耗时/命中词块）。
+         * 实测踩过：加「📋 复制识别文本」时把这一行弄丢了 → 行里没有 tag →
          * 「图片文字识别」那条 e2e 的等待条件（两个 tag 都不是"识别中"）永远不成立 → 91s 超时。 */
         row.appendChild(meta);
         this.imgListEl.appendChild(row);

@@ -76,8 +76,11 @@
       why: '识别在本机进行，图片不上传。'
     },
 
-    /* ---- 有结果 ---- */
-    hit: { tag: '命中：{text}', why: '命中「{matched}」：{text}' },
+    /* ---- 有结果 ----
+     * `hit` 的折叠标签**不带识别文本**（2026-10-09 用户裁决）：命中词就在面板上传成
+     * 可点的词块（见 `VIEW.copySentence`），整段文本只在光箱右侧与悬停说明里，
+     * 免得一张图把面板撑成一大块。 */
+    hit: { tag: '命中', why: '命中「{matched}」：{text}' },
     miss: { tag: '未命中', why: '图里识别出的文字没有匹配「{keyword}」。识别文本：{text}' },
 
     /* ---- 读完了、但结果不可用（S1-c / D-14.5）----
@@ -178,7 +181,16 @@
     noneHit: '这次没有命中的图片（{n} 张没有命中，点「显示全部」人工复核）',
     /* 还有条目在跑时**不许**说"没有命中" —— 那是在结果出来之前下结论（面板只能如实说"还在识别"） */
     noneHitBusy: '图片还在识别中（{n} 张），结果出来会显示在这里',
-    busy: ' · 识别中 {n}'
+    busy: ' · 识别中 {n}',
+    /* ---- 2026-10-09 简约展示：命中词块 / 复制按钮 / 光箱全文栏 ----
+     * 面板不许自己写这些字（源码契约会红），一律从这张表取。 */
+    textPane: '识别出的文字',
+    copyAll: '复制这张图识别出的全部文字',
+    copyAllDone: '已复制全部文字',
+    copySentence: '复制这句话',
+    copySentDone: '已复制这句',
+    copyFailed: '复制失败，请点图放大后手动选中文字',
+    openLarge: '点开看大图'
   };
 
   /**
@@ -264,6 +276,42 @@
     };
   }
 
+  /**
+   * 句末标点 —— 句子切分只用这些（中英句号/叹问号/分号/换行）。
+   * 逗号、空格**不算**边界：原文用 `,` 断句时，"一句话"宁可切大一点，
+   * 也不要因为一个逗号就只复制半句（用户要的是"它所在的那句"）。
+   */
+  const SENT_END = /[。！？!?;；\n\r]/;
+
+  /**
+   * 取 `text` 里**包含** `needle` 第一次出现位置的那一整句（2026-10-09 用户口径：
+   * 命中「9月」，原文是「9月份的量，给你了」⇒ 复制这一整句，不是那两个字）。
+   *
+   * 找不到 `needle`、或原文没有任何边界可切时返回 `''` —— 调用方据此回退到命中词
+   * 本身（**不猜、不截一段**）。`needle` 可能跨句末标点出现（识别文本里词被换行切开），
+   * 这时以第一次出现处为准。
+   *
+   * @param {string} text 识别出的原文
+   * @param {string} needle 命中的词
+   * @returns {string} 含 `needle` 的那一句（带句末标点，已 trim）；定位不到则 `''`
+   */
+  function sentenceOf(text, needle) {
+    const s = String(text == null ? '' : text);
+    const n = String(needle == null ? '' : needle);
+    if (!n) return '';
+    const at = s.indexOf(n);
+    if (at < 0) return '';
+    let start = 0;
+    for (let i = at - 1; i >= 0; i -= 1) {
+      if (SENT_END.test(s.charAt(i))) { start = i + 1; break; }
+    }
+    let end = s.length;
+    for (let i = at + n.length; i < s.length; i += 1) {
+      if (SENT_END.test(s.charAt(i))) { end = i + 1; break; }
+    }
+    return s.slice(start, end).trim();
+  }
+
   /** 折叠态短标签（≤`MAX_TAG` 视觉字符） */
   function tag(it) {
     return render(COPY[keyOf(it)].tag, varsOf(it));
@@ -332,6 +380,7 @@
     costLabel: costLabel,
     costTip: costTip,
     stateClass: stateClass,
+    sentenceOf: sentenceOf,
     render: render,
     dump: dump
   };

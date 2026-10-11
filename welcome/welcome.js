@@ -77,13 +77,24 @@
       console.warn('[KH] welcome：读取 khLastSeenVersion 失败，本次不标记已读 ——', err && err.message);
     }
     const isFirst = !lastSeen;
+    /* 已经读过**当前版本**的说明了吗？升级后那次是 `onInstalled` 自动打开本页的（background.js），
+     * 打开即标记已读（见本函数末尾）——用户事后自己再点进来时 lastSeen 就等于 version。 */
+    const seenCurrent = !isFirst && cmp(lastSeen, version) >= 0;
 
-    // 只展示「上一个看过的版本 → 当前版本」之间的条目；首次安装只展示当前版本
-    const entries = (CHANGELOG || []).filter((e) => isFirst
-      ? cmp(e.version, version) === 0
-      : (cmp(e.version, version) <= 0 && cmp(e.version, lastSeen) > 0));
+    /* 展示「上一个看过的版本 → 当前版本」之间的条目；首次安装只展示当前版本。
+     * 但**当前版本那一块永远在里面**（issue #20）：更新成功那次本页是自动弹出来的、没人主动点，
+     * 那次就把版本标记成已读；之后再从帮助/关于点进来时若仍把当前版本排除在外，页面就恒为
+     * 「暂无新版本说明」——更新说明变成只在用户没主动看的那一次出现，而这是唯一可达的入口。
+     * 读过的本次更新允许多看几遍：宁可见两遍，不许一次都见不到。 */
+    const entries = (CHANGELOG || []).filter((e) => {
+      const vsCurrent = cmp(e.version, version);
+      if (vsCurrent > 0) return false;                 // 比当前版本更新的条目不上屏（旧版本残留数据）
+      if (vsCurrent === 0) return true;                // 当前版本块：始终给，可回看
+      return !isFirst && cmp(e.version, lastSeen) > 0; // 上次已读之后、当前版本之前的那几段
+    });
 
-    $('rel-head').textContent = isFirst ? '本次安装的版本' : '本次更新';
+    $('rel-head').textContent = isFirst ? '本次安装的版本'
+      : (seenCurrent ? '本次更新（已读过，可回看）' : '本次更新');
 
     const box = $('changelog');
     box.innerHTML = '';

@@ -1059,6 +1059,7 @@
     $('pf-silent').value = cfg.pageRebuildSilentMs;
     $('pf-gap').value = cfg.pageRebuildGapMs;
     $('pf-imgSize').value = (cfg.importantNote || {}).imgSize || '';
+    $('pf-noteFontSize').value = (cfg.importantNote || {}).fontSize || '';
   }
 
   for (const k of ['defaultCaseSensitive', 'defaultWholeWord', 'defaultUseRegex']) {
@@ -1095,6 +1096,14 @@
   $('pf-imgSize').addEventListener('change', async () => {
     const v = parseInt($('pf-imgSize').value, 10);
     await saveNested({ importantNote: { imgSize: (isNaN(v) || v <= 0) ? KH.Config.defaults.importantNote.imgSize : v } });
+  });
+  /* 面板字号（2026-10-09 用户裁决：默认比上一版小一号，且可配）。
+   * 夹在 10–20px：面板自己也夹一次（见 `important-note.js` 的 render），两头都不许被极端值搞坏。 */
+  $('pf-noteFontSize').addEventListener('change', async () => {
+    const v = parseInt($('pf-noteFontSize').value, 10);
+    const ok = !isNaN(v) && v >= 10 && v <= 20;
+    if (!ok) $('pf-noteFontSize').value = KH.Config.defaults.importantNote.fontSize;
+    await saveNested({ importantNote: { fontSize: ok ? v : KH.Config.defaults.importantNote.fontSize } });
   });
 
   /* ==================================================================== ⑧ 更新日志（单源） */
