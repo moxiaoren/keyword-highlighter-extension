@@ -67,10 +67,11 @@
       border: 2px solid #fff;
     }
     /* ---------- 展开态：面板 ----------
-     * 默认宽 300px（用户 2026-10-11：360px 在左侧遮挡标题列太多内容）。
+     * 默认宽 200px（用户 2026-10-11：360px 在左侧遮挡标题列太多 → 先收 300px → 再收到 200px）。
+     * min-width 必须跟着降到 160px —— CSS 里 min-width 压过 width，只改 width 等于白改。
      * **这里是宽度的唯一真源**：applyPosition() 的水平钳位读面板实测宽度，不再抄一个字面量。 */
     .khin-panel {
-      width: 300px; min-width: 220px; max-width: calc(100vw - 32px);
+      width: 200px; min-width: 160px; max-width: calc(100vw - 32px);
       max-height: calc(100vh - 24px); background: #fff;
       border: 1px solid #e3e8f0; border-radius: 10px;
       box-shadow: 0 8px 28px rgba(0,0,0,.18);
@@ -92,7 +93,19 @@
       color: #8a8a8a; padding: 2px 4px; border-radius: 4px; line-height: 1;
     }
     .khin-header-btn:hover { color: #333; background: rgba(0,0,0,.05); }
-    .khin-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 4px 0; }
+    /* ---- 📝 笔记区题头（2026-10-11 用户：笔记与图片都很长时互相抢占 ⇒ 两边都能收起，
+            收一边就把空间让给另一边）---- */
+    .khin-notebar {
+      display: flex; align-items: center; gap: 4px; cursor: pointer; user-select: none;
+      padding: 5px 10px 4px; font-size: 12px; font-weight: 600; color: var(--kh-text, #1f2937);
+      flex: 0 0 auto; white-space: nowrap;
+    }
+    .khin-notebar[hidden] { display: none; }
+    .khin-notebar .khin-notecount { color: #64748b; font-weight: 500; }
+    .khin-notebar .khin-notearrow { margin-left: auto; color: #94a3b8; font-size: 11px; }
+    /* 正文至少留得住一行（用户 2026-10-07 的"被挤没"就是缩到 0 了）—— 再多交给它自己滚 */
+    .khin-body { flex: 1 1 auto; min-height: 60px; overflow-y: auto; padding: 4px 0; }
+    .khin-body.khin-collapsed { display: none; }
     .khin-body::-webkit-scrollbar { width: 5px; }
     .khin-body::-webkit-scrollbar-thumb { background: #d8d8d8; border-radius: 3px; }
     .khin-body::-webkit-scrollbar-track { background: transparent; }
@@ -167,20 +180,30 @@
       display: flex; flex-direction: column;
     }
     .khin-imgsec[hidden] { display: none; }
+    /* 题头一行要放下：图标+短标题 / 计数 / 「全部 N」复核入口 / 折叠箭头。
+     * 200px 宽下**不许折行**（2026-10-11 用户现场截图：折成两行把标题挤碎）——
+     * nowrap + overflow:hidden，让计数这一格先让位（它最短、含义最不依赖宽度）。 */
     .khin-imghead {
-      display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none;
+      display: flex; align-items: center; gap: 4px; cursor: pointer; user-select: none;
       padding: 4px 2px 3px; font-size: 12px; font-weight: 600; color: var(--kh-text, #1f2937);
-      flex: 0 0 auto;
+      flex: 0 0 auto; flex-wrap: nowrap; overflow: hidden; white-space: nowrap;
     }
-    .khin-imghead .khin-imgcount { color: #64748b; font-weight: 500; }
+    .khin-imghead .khin-imgtitle { flex: 0 0 auto; }
+    .khin-imghead .khin-imgcount {
+      color: #64748b; font-weight: 500; min-width: 0; overflow: hidden;
+      text-overflow: ellipsis; white-space: nowrap;
+    }
     /* 「显示全部 / 只看命中」= 人工复核入口（用户 2026-10-06：面板以命中为目的，
-       没命中的图默认不展示，但必须留一条能打开的渠道）。放在题头右侧、箭头左边。 */
+       没命中的图默认不展示，但必须留一条能打开的渠道）。放在题头右侧、箭头左边。
+       2026-10-11：收到 200px 后改短标签「全部 N / 只命中」，完整语义挪到 title。 */
     .khin-imghead .khin-imgall {
       margin-left: auto; color: #2563eb; font-size: 11px; font-weight: 500;
-      cursor: pointer; text-decoration: underline;
+      cursor: pointer; text-decoration: underline; flex: 0 0 auto; white-space: nowrap;
     }
     .khin-imghead .khin-imgall[hidden] { display: none; }
-    .khin-imghead .khin-imgarrow { margin-left: auto; color: #94a3b8; font-size: 11px; }
+    .khin-imghead .khin-imgarrow { margin-left: auto; color: #94a3b8; font-size: 11px; flex: 0 0 auto; white-space: nowrap; }
+    /* 没有「全部 N」时箭头才吃 margin-left:auto；两者都有时只有前者吃（否则中间撕出一个大空隙） */
+    .khin-imghead .khin-imgall:not([hidden]) + .khin-imgarrow { margin-left: 0; }
     /* 默认视图里一条都没有时的说明行（不能悄悄空白：那看起来就是坏了） */
     .khin-imgnone { color: #94a3b8; font-size: 12px; padding: 2px 0 4px; }
     /* 分区封顶后由这份列表自己滚（min-height:0 是关键：否则 flex 子项不肯缩到内容高度以下，
@@ -201,10 +224,29 @@
       border: 1px solid rgba(148,163,184,.45); background: #f1f5f9; cursor: zoom-in;
     }
     .khin-imgmeta { min-width: 0; flex: 1; font-size: 11px; line-height: 1.4; color: #334155; }
-    .khin-imgkw { font-weight: 600; color: #0f172a; }
-    .khin-imgtag { font-size: 11px; border-radius: 4px; padding: 0 4px; margin-left: 4px; }
+    /* 一行里 = 关键词（可省） + 状态图标+短标签（必看） + 耗时（可省）。
+     * 200px 下让**关键词先让位**（ellipsis），状态标签绝不折行也绝不被挤掉。 */
+    .khin-imgrow { display: flex; align-items: baseline; gap: 3px; min-width: 0; flex-wrap: nowrap; overflow: hidden; }
+    .khin-imgkw {
+      font-weight: 600; color: #0f172a; flex: 1 1 auto; min-width: 0;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .khin-imgtag {
+      font-size: 11px; border-radius: 4px; padding: 0 4px; flex: 0 0 auto; white-space: nowrap;
+    }
+    /* 状态图标（2026-10-11 用户裁决：200px 放不下「未命中/识别中…」这类长标签，
+     * 图标让同类状态一眼可分）。它是**装饰**，单独一个 span —— 不许拼进
+     * .khin-imgtag 的文本里：那是状态标签的唯一措辞（_e2e/content.test.js 多处
+     * 用 tag.indexOf('命中') === 0、eq(tag,'命中') 钉着「标签只说结论」）。
+     * aria-hidden：语义已在标签里，读屏不必把图标再念一遍。 */
+    .khin-imgico {
+      flex: 0 0 auto; font-size: 11px; font-weight: 700; white-space: nowrap;
+    }
     /* 本次识别的真实耗时（S3-④）：只在有值时挂载，字号比标签再小一档、不抢主信息 */
-    .khin-imgcost { font-size: 10px; color: #94a3b8; margin-left: 4px; font-variant-numeric: tabular-nums; }
+    .khin-imgcost {
+      font-size: 10px; color: #94a3b8; flex: 0 0 auto; white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+    }
     .khin-imgtag.hit { background: #dcfce7; color: #166534; }
     .khin-imgtag.miss { background: #f1f5f9; color: #64748b; }
     .khin-imgtag.bad { background: #fee2e2; color: #991b1b; }
@@ -215,6 +257,12 @@
      * ⚠️ 这段样式在模板字符串里，注释里**不能出现反引号**（会把模板提前闭合）。 */
     .khin-imgtag.wait { background: #e2e8f0; color: #475569; }
     .khin-imgtag.note { background: #f1f5f9; color: #475569; }
+    /* 图标跟着同一个状态类走色（类名仍由 KH.OcrCopy.stateClass 给，面板不自己挑字符） */
+    .khin-imgico.hit { color: #166534; }
+    .khin-imgico.miss { color: #94a3b8; }
+    .khin-imgico.bad { color: #b91c1c; }
+    .khin-imgico.wait { color: #64748b; }
+    .khin-imgico.note { color: #64748b; }
     /* 复制按钮：缩略图下面那条 = 复制这张图的**全部**识别文字；
      * 命中词块旁边那条（.khin-imgchip）＝复制含这个词的整句。 */
     .khin-imgcopy {
@@ -709,6 +757,10 @@
     countEl: null,
     minimized: false,
     items: [],
+    /* 📝 笔记区收起（2026-10-11 用户：笔记与图片两边都很长时互相抢占 ⇒ 两边都能收，收一边让另一边）。
+     * 与图片分区的"按批作废"口径**不同**：这里只翻转标记，用户收起就保持收起
+     * —— 它是用户对视图的选择，不该被下一批结果自动弹开（图片那边有"命中必须露出来"的硬要求，这没有）。 */
+    noteCollapsed: false,
     ignored: new Set(),  // 本次页面会话内已被用户关闭的笔记（按 note 文本）
     /* ---- 🖼 图片命中（KH.ImgOcr 的结果；**独立分区**，与重要笔记卡片互不影响） ---- */
     imgItems: [],
@@ -910,10 +962,15 @@
               '<span class="khin-header-count">0 条</span>' +
               '<button class="khin-header-btn" data-act="min" title="收起为小按钮">—</button>' +
             '</div>' +
+            '<div class="khin-notebar" hidden>' +
+              '<span class="khin-notetitle">📝 笔记</span>' +
+              '<span class="khin-notecount"></span>' +
+              '<span class="khin-notearrow">收起 ▴</span>' +
+            '</div>' +
             '<div class="khin-body"></div>' +
             '<div class="khin-imgsec" hidden>' +
               '<div class="khin-imghead">' +
-                '<span>🖼 图片命中</span>' +
+                '<span class="khin-imgtitle" title="图片命中">🖼 图片</span>' +
                 '<span class="khin-imgcount"></span>' +
                 '<span class="khin-imgall" data-act="all" hidden></span>' +
                 '<span class="khin-imgarrow">展开 ▾</span>' +
@@ -924,11 +981,21 @@
         this.panelEl = this.root.querySelector('.khin-panel');
         this.bodyEl = this.root.querySelector('.khin-body');
         this.countEl = this.root.querySelector('.khin-header-count');
+        this.noteBarEl = this.root.querySelector('.khin-notebar');
+        this.noteCountEl = this.root.querySelector('.khin-notecount');
+        this.noteArrowEl = this.root.querySelector('.khin-notearrow');
         this.imgSecEl = this.root.querySelector('.khin-imgsec');
         this.imgListEl = this.root.querySelector('.khin-imglist');
         this.imgCountEl = this.root.querySelector('.khin-imgcount');
         this.imgAllEl = this.root.querySelector('.khin-imgall');
         this.imgArrowEl = this.root.querySelector('.khin-imgarrow');
+        /* 笔记区收起/展开（2026-10-11 用户：两边都很长时互相抢占，收一边让另一边）。
+         * 只翻转标记 + 换类名，不重建 DOM —— 展开时正文还在（收起期间不重渲染也不清空）。 */
+        this.noteBarEl.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.noteCollapsed = !this.noteCollapsed;
+          this.applyNoteCollapsed();
+        });
         /* 「显示全部」= 人工复核入口（用户 2026-10-06）：切视图**不**收起/展开分区
          * （那是题头的活），并且要连同当时的条目键记下来 —— 换代即作废。 */
         this.imgAllEl.addEventListener('click', (e) => {
@@ -971,8 +1038,22 @@
       }
 
       if (this.countEl) this.countEl.textContent = count + ' 条';
+      /* 笔记区题头：只在**真有笔记**时露出来（整页只有图片命中时，多一行「📝 笔记 0 条」是噪声） */
+      if (this.noteBarEl) {
+        this.noteBarEl.hidden = !this.items.length;
+        if (this.noteCountEl) this.noteCountEl.textContent = this.items.length + ' 条';
+      }
+      this.applyNoteCollapsed();
       this.renderItems();
       this.renderImgSection();
+    },
+
+    /** 笔记区的收起态落到 DOM（收起时正文整块藏起来，空间让给图片分区；两边都能收，对称） */
+    applyNoteCollapsed() {
+      if (!this.bodyEl) return;
+      const collapsed = this.noteCollapsed === true;
+      this.bodyEl.classList.toggle('khin-collapsed', collapsed);
+      if (this.noteArrowEl) this.noteArrowEl.textContent = collapsed ? '展开 ▾' : '收起 ▴';
     },
 
     /**
@@ -1078,6 +1159,8 @@
         this.imgAllEl.textContent = hiddenN
           ? KH.OcrCopy.render(this.imgShowAll ? KH.OcrCopy.VIEW.onlyHits : KH.OcrCopy.VIEW.showAll, { n: hiddenN })
           : '';
+        /* 短标签（全部 N / 只命中）会丢掉语义 ⇒ 完整意思挂 title（2026-10-11） */
+        this.imgAllEl.title = this.imgShowAll ? KH.OcrCopy.VIEW.onlyHitsTip : KH.OcrCopy.VIEW.showAllTip;
       }
       if (this.imgUserCollapsed !== true && list.some((it) => it.state === 'done' && it.matched && it.matched.length)) {
         this.imgCollapsed = false;
@@ -1137,10 +1220,22 @@
         const meta = doc.createElement('div');
         meta.className = 'khin-imgmeta';
         const head = doc.createElement('div');
+        head.className = 'khin-imgrow';
         const kw = doc.createElement('span');
         kw.className = 'khin-imgkw';
         kw.textContent = '🖼 ' + (it.keyword || '') + (it.label ? '（' + it.label + '）' : '');
+        /* 200px 下关键词要能被 ellipsis 截断 ⇒ 全称挂 title，别让信息真的丢 */
+        kw.title = kw.textContent;
         head.appendChild(kw);
+        /* 图标 + 短标签（2026-10-11 用户裁决：200px 放不下「未命中/识别中…」这类长标签，
+         * 图标让同类状态一眼可分）。图标同样只从真源取，面板不自己挑字符；
+         * 但它是**独立 span**：`tag.textContent` 必须保持"只说结论"（'命中'/'未命中'…）
+         * —— 真机与单测都拿它当状态措辞比对（`content.test.js:3127/3132/3176/3230/3289`）。 */
+        const ico = doc.createElement('span');
+        ico.className = 'khin-imgico ' + KH.OcrCopy.stateClass(it);
+        ico.textContent = KH.OcrCopy.icon(it);
+        ico.setAttribute('aria-hidden', 'true');
+        head.appendChild(ico);
         const tag = doc.createElement('span');
         /* 状态类只从唯一真源取（`hit`/`miss`/`wait`/`note`/`bad`）：进行中不再是红的 */
         tag.className = 'khin-imgtag ' + KH.OcrCopy.stateClass(it);

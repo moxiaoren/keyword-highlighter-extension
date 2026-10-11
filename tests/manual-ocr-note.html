@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>人工验证页 · 图片 OCR 命中 + 重要笔记面板</title>
+<!--
+  ============================================================================
+  人工验证页（双击即开 / file:// / 零构建 / 零网络）
+  ----------------------------------------------------------------------------
+  这个页面**不复制 src 逻辑**：它用相对路径直接加载两个真实模块
+    · ../src/ui/ocr-copy.js            状态键 / 文案 / 耗时格式的唯一真源
+    · ../src/features/important-note.js 面板本体（IIFE，零 chrome.*，可独立成页）
+  其余 window.KH.* 都是页面自己铺的**最小垫片**（模块对这些依赖都有 `if` 守卫）：
+    KH.config   字号 / 图片尺寸（改字号输入框就是改它，再喂给面板）
+    KH.features 带 register；注册进 'important-note'，**用真实扩展同一条入口** consume()
+    KH.ImgOcr   items() 返回下面 ITEMS 夹具；onChange() 存起来（可用来模拟 OCR 异步回填）
+    KH.Fetch    blockFor() 恒返回 ''（夹具的抓取表格直接写在 meta.fetchHtml 里，
+                因为 collectEffective 只在 h.textNode 存在时才调 blockFor —— 见 important-note.js:1348）
+    KH.Markdown 页面内 ~30 行的极简 md→fragment 垫片（只做加粗/斜体/链接，够渲染夹具的 markdown）
+    KH.registry { all: () => HITS } —— 「✕ 关闭」走 panel.refresh()，它只认 KH.registry.all()，
+                缺它的话点 ✕ 不会真的移除卡片（见 important-note.js:1290）
+  抓取表格夹具的形状照抄 src/features/fetch.js 的 rowsToTableHtml()：首行是
+  <td class="kh-table-label" rowspan="N">，其后每行一个值格 —— important-note.js 的
+  noteFragment() 就是靠 `<table class="kh-table kh-table-fetch">` 这个整串把它原样插进 DOM 的。
+  ============================================================================
+-->
+<style>
+  body { margin: 0; padding: 24px; font: 14px/1.6 "Microsoft YaHei", "PingFang SC", system-ui, sans-serif; color: #222; background: #f7f9fc; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  h2 { font-size: 15px; margin: 20px 0 6px; color: #3579c2; }
+  .howto { background: #fff; border: 1px solid #e3e8f0; border-radius: 10px; padding: 12px 16px; max-width: 720px; }
+  .howto ol { margin: 6px 0 0; padding-left: 22px; }
+  .howto li { margin: 3px 0; }
+  .ctl { margin: 12px 0; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .ctl input[type=number] { width: 70px; padding: 4px 6px; font-size: 14px; }
+  .ctl button { padding: 5px 12px; font-size: 13px; cursor: pointer; }
+  code { background: #eef3fa; padding: 0 4px; border-radius: 3px; }
+  #probe-readout { font-family: Consolas, monospace; font-size: 12px; color: #555; background: #fff; border: 1px dashed #cbd6e4; border-radius: 8px; padding: 8px 10px; max-width: 720px; }
+  #probe-readout b { color: #1a73e8; }
+  .note-tail { max-width: 720px; color: #777; font-size: 12px; margin-top: 20px; }
+</style>
+</head>
+<body>
+
+<h1>人工验证页 · 图片 OCR 命中 + 重要笔记面板</h1>
+
+<div class="howto">
+  <b>怎么点、看什么</b>
+  <ol>
+    <li><b>面板在哪</b>：左上角固定悬浮的白色卡片（真实模块的 Shadow DOM）。看不到就点浏览器地址栏按一下回车刷新。</li>
+    <li><b>图片命中列表</b>（面板下半部分「🖼 图片」）：默认只显示<b>命中</b>与<b>失败</b>两种状态 — 这是真实口径。点题头右边的「<b>全部 3</b>」把「未命中 / 识别中 / 排队中」也放出来。（面板宽 200px 后题头与每行都改<b>图标 + 短标签</b>：✓命中 ✕未命中 ⟳识别中 ⚠失败 ℹ其它；长文案挪到鼠标悬停。）</li>
+    <li><b>每张图下面的 📋</b>：复制这张图识别出的<b>全部文字</b>（按钮会变 ✓；<code>file://</code> 下走 <code>execCommand</code> 回落，一样能进剪贴板）。</li>
+    <li><b>命中词块</b>（图下面的蓝色小方块）：点它复制<b>含这个词的整句</b>；也可以用 Tab 聚焦后按 Enter/空格。剪贴板里拿到的应该是一整句，不是光秃秃一个词。</li>
+    <li><b>点缩略图</b>：开灯箱看大图，<b>右侧栏</b>显示该图识别全文（<code>识别出的文字</code>）；多张图时可以 ← → 翻页、Esc 关闭。</li>
+    <li><b>重要笔记卡片</b>（面板上半部分）：夹具里有两张 —— 一张是 markdown + 抓取字段表格（多行、带 rowspan），一张是「同标题多值 → 聚合标签」的形态。点卡片右上角 <b>✕</b> 会真的把这张卡从面板移除（真实口径：记进 ignored 后 refresh）。</li>
+    <li><b>字号输入框</b>（下面工具栏，10–20）：改一下立刻能看到卡片正文与表格文字变大变小；面板正文字号来自 CSS 变量 <code>--kh-note-fs</code>，由 <code>panel.render()</code> 写到宿主上。</li>
+    <li><b>面板实测宽度</b>：下面实时显示 <code>getBoundingClientRect().width</code> —— 这是宽度真源 <code>.khin-panel { width }</code> 的实测值（面板右下角还能手动 <code>resize</code>，拖一下数字会变）。</li>
+  </ol>
+</div>
+
+<div class="ctl">
+  <label>面板正文字号：<input id="fs" type="number" min="10" max="20" step="1" value="11"></label>
+  <span id="fs-state">合法区间 10–20，越界会回落 11</span>
+  <button id="toggle-all">切换「全部 N / 只命中」</button>
+  <button id="rerender">重渲染（同数据）</button>
+</div>
+
+<div id="probe-readout">面板实测宽度：<b id="w-readout">—</b> px　·　图片条目：<b id="n-readout">—</b>（命中 <b id="h-readout">—</b>）</div>
+
+<p class="note-tail">
+  无任何网络资源：缩略图是内联 <code>data:image/svg+xml</code>，字体只用系统字体。
+  夹具数据写在页面底部的 &lt;script&gt; 里，改数字保存后刷新即可。
+</p>
+
+<!--
+  垫片**必须**在真实模块之前：important-note.js 在 IIFE 末尾判 `if (KH.features)` 才注册
+  'important-note'（见 :1363）—— 垫片晚到一步，这个页面就只是把模块加载了却什么都没跑
+  （实测踩过：面板空，报 `Cannot read properties of undefined (reading 'consume')`）。
+  夹具数据放后面那个 script：它只做「取夹具 → 调 consume」和工具栏接线。
+-->
+<script>
+(function () {
+  'use strict';
+  const KH = (window.KH = window.KH || {});
+
+  /* ---------------- 1. 配置（字号 / 图片尺寸） ---------------- */
+  const cfg = { importantNote: { fontSize: 11, imgSize: 70 } };
+  KH.config = cfg;
+
+  /* ---------------- 2. 极小垫片 ---------------- */
+  const registered = {};
+  KH.features = { register(name, def) { registered[name] = def; } };
+
+  // 极简 markdown：只认 **粗** / *斜* / [文字](url)，其余当纯文本（夹具用不到别的）
+  KH.Markdown = {
+    toFragment(md, doc) {
+      const frag = doc.createDocumentFragment();
+      const lines = String(md == null ? '' : md).split('\n');
+      lines.forEach((line, i) => {
+        if (i) frag.appendChild(doc.createTextNode('\n'));
+        const re = /\*\*([^*]+)\*\*|\*([^*]+)\*|\[([^\]]+)\]\(([^)]+)\)/g;
+        let last = 0, m;
+        while ((m = re.exec(line)) !== null) {
+          if (m.index > last) frag.appendChild(doc.createTextNode(line.slice(last, m.index)));
+          if (m[1] != null) {
+            const b = doc.createElement('strong'); b.textContent = m[1]; frag.appendChild(b);
+          } else if (m[2] != null) {
+            const em = doc.createElement('em'); em.textContent = m[2]; frag.appendChild(em);
+          } else {
+            const a = doc.createElement('a'); a.textContent = m[3];
+            a.href = /^(https?:|\/|#)/i.test(m[4]) ? m[4] : '#';
+            frag.appendChild(a);
+          }
+          last = m.index + m[0].length;
+        }
+        if (last < line.length) frag.appendChild(doc.createTextNode(line.slice(last)));
+      });
+      return frag;
+    }
+  };
+
+  // 抓取：夹具把表格串直接写在 meta.fetchHtml 里，blockFor 用不上（返回空串，绝不联网）
+  KH.Fetch = { blockFor() { return ''; }, rowsToTableHtml() { return ''; } };
+
+  /* ---------------- 3. 内联图片（零网络） ---------------- */
+  /* 必须整体 percent-encode：SVG 里带 `#`（颜色），裸写在 data URI 里会被当成
+   * fragment 截断，`img.src` 再序列化出来就跟 `it.src` 不是一个串了 ——
+   * 灯箱靠 src 从 imgItems 反查全文（important-note.js:754-768），对不上就开不了。实测踩过。 */
+  function svgThumb(bg, fg, label) {
+    const s = '<svg xmlns="http://www.w3.org/2000/svg" width="220" height="140">' +
+      '<rect width="220" height="140" fill="' + bg + '"/>' +
+      '<circle cx="176" cy="34" r="20" fill="' + fg + '" opacity=".55"/>' +
+      '<text x="16" y="82" font-family="sans-serif" font-size="30" fill="' + fg + '">' + label + '</text>' +
+      '</svg>';
+    return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(s);
+  }
+  const SRC = {
+    hit: svgThumb('#eaf1fb', '#3579c2', 'IMG-01'),
+    miss: svgThumb('#f3f4f6', '#9aa3af', 'IMG-02'),
+    running: svgThumb('#fdf6e3', '#c79100', 'IMG-03'),
+    queued: svgThumb('#eef7ee', '#3f8f4f', 'IMG-04'),
+    fail: svgThumb('#fdecea', '#c62828', 'IMG-05')
+  };
+
+  /* ---------------- 4. 图片 OCR 夹具（字段口径见 src/features/img-ocr.js:586-594） ---------------- */
+  const HIT_TEXT = '法定代表人：张三。联系电话：13800001111。注册地址：杭州市西湖区文三路 100 号。';
+  const MISS_TEXT = '本页仅为装饰性插图，未识别到任何关键词。';
+  const ITEMS = [
+    { key: 'kw-a|src1', ruleId: 'kw-a', keyword: '张三', label: '法定代表人', src: SRC.hit,
+      host: 'example.com', state: 'done', text: HIT_TEXT, ocrMs: 1830, conf: 0.93,
+      matched: [{ text: '张三' }, { text: '法定代表人' }], why: '', error: '', errorCode: '' },
+
+    { key: 'kw-b|src2', ruleId: 'kw-b', keyword: '李四', label: '股东', src: SRC.miss,
+      host: 'example.com', state: 'done', text: MISS_TEXT, ocrMs: 960, conf: 0.12,
+      matched: [], why: '', error: '', errorCode: '' },
+
+    // 识别中：stateClass → wait，默认视图藏起来（题头会写「·识别中1」）
+    { key: 'kw-c|src3', ruleId: 'kw-c', keyword: '王五', label: '监事', src: SRC.running,
+      host: 'example.com', state: 'pending', text: '', ocrMs: 0, matched: [],
+      why: '', error: '', errorCode: '' },
+
+    // 排队中：state === 'idle' → queued
+    { key: 'kw-d|src4', ruleId: 'kw-d', keyword: '赵六', label: '', src: SRC.queued,
+      host: 'example.com', state: 'idle', text: '', ocrMs: 0, matched: [],
+      why: '', error: '', errorCode: '' },
+
+    // 失败：state === 'fail' → bad（默认视图**要**显示）
+    { key: 'kw-e|src5', ruleId: 'kw-e', keyword: '孙七', label: '法人', src: SRC.fail,
+      host: 'example.com', state: 'fail', text: '', ocrMs: 0, matched: [],
+      why: '', error: '识别引擎无响应', errorCode: '' }
+  ];
+  KH.ImgOcr = { items: () => ITEMS, onChange(fn) { KH.ImgOcr._cb = fn; } };
+
+  // 垫片先铺完，下面才是真实模块（模块加载时才会读到这些）
+  window.__KH_SHIM__ = { cfg, registered, ITEMS, HIT_TEXT };
+})();
+</script>
+
+<!-- 真实模块：先工具（状态键/文案真源），后面板本体 -->
+<script src="../src/ui/ocr-copy.js"></script>
+<script src="../src/features/important-note.js"></script>
+
+<script>
+(function () {
+  'use strict';
+  const KH = window.KH;
+  const shim = window.__KH_SHIM__;
+  const cfg = shim.cfg;
+  const registered = shim.registered;
+  const ITEMS = shim.ITEMS;
+
+  /* ---------------- 5. 重要笔记夹具（hits） ---------------- */
+  const PAGE_NOTE = [
+    '**人工验证用**：这是一条「重要笔记」内容（markdown）。',
+    '<table class="kh-table kh-table-fetch">',
+    '  <tbody>',
+    '    <tr><td class="kh-table-label" rowspan="3">基本信息</td><td class="kh-table-k">公司名称</td><td class="kh-table-v">杭州某某科技有限公司</td></tr>',
+    '    <tr><td class="kh-table-k">统一社会信用代码</td><td class="kh-table-v">91330100MA2XXXXX0A</td></tr>',
+    '    <tr><td class="kh-table-k">成立日期</td><td class="kh-table-v">2019-06-18</td></tr>',
+    '    <tr><td class="kh-table-label" rowspan="2">联系方式</td><td class="kh-table-k">法定代表人</td><td class="kh-table-v">张三</td></tr>',
+    '    <tr><td class="kh-table-k">联系电话</td><td class="kh-table-v">13800001111</td></tr>',
+    '  </tbody>',
+    '</table>',
+    '表下方这行是 markdown 尾巴，用来确认表格与文本按原顺序拼回。'
+  ].join('\n');
+
+  const AGG_NOTE = '聚合标签形态：同一个标题下多个值 → 值用 | 聚合到一个标签里。';
+
+  function mkHit(o) {
+    return { meta: Object.assign({ important: true, fetchHtml: '' }, o.meta), textNode: null };
+  }
+  const HITS = [
+    // 卡片 1：markdown + 抓取表格
+    mkHit({ meta: { text: '张三', label: '法定代表人', importantNote: PAGE_NOTE } }),
+    mkHit({ meta: { text: '李四', label: '股东', importantNote: PAGE_NOTE } }),   // 同 note ⇒ 并进同一张卡
+    // 卡片 2：多值聚合
+    mkHit({ meta: { text: '甲', label: '经营范围', importantNote: AGG_NOTE } }),
+    mkHit({ meta: { text: '乙', label: '经营范围', importantNote: AGG_NOTE } }),
+    // 不该出现：没开 important 的命中
+    { meta: { important: false, text: '丙' }, textNode: null }
+  ];
+  KH.registry = { all: () => HITS };
+
+  /* ---------------- 6. 走真实入口：KH.features.register → consume ---------------- */
+  const panel = KH.ImportantNote.panel;
+
+  function boot() {
+    registered['important-note'].consume(HITS, cfg);
+  }
+  boot();
+
+  /* ---------------- 7. 工具栏：字号 / 视图 / 重渲染 + 实测宽度读数 ---------------- */
+  const fsInput = document.getElementById('fs');
+  const fsState = document.getElementById('fs-state');
+  fsInput.addEventListener('input', () => {
+    const n = parseInt(fsInput.value, 10);
+    const ok = isFinite(n) && n >= 10 && n <= 20;
+    cfg.importantNote.fontSize = n;                     // 夹取在模块里（render:844-846），这里照实透传
+    fsState.textContent = ok ? '面板正文应为 ' + n + 'px' : '越界，面板会回落 11px';
+    boot();
+    tick();
+  });
+
+  document.getElementById('toggle-all').addEventListener('click', () => {
+    const all = panel.imgAllEl;
+    if (all && !all.hidden) all.click();
+  });
+  document.getElementById('rerender').addEventListener('click', boot);
+
+  function tick() {
+    const host = document.querySelector('#kh-important-note-host');
+    if (!host || !host.shadowRoot) return;
+    const root = host.shadowRoot;
+    const p = root.querySelector('.khin-panel');
+    const wEl = document.getElementById('w-readout');
+    if (p) wEl.textContent = p.getBoundingClientRect().width.toFixed(1);
+    document.getElementById('n-readout').textContent = ITEMS.length;
+    document.getElementById('h-readout').textContent =
+      ITEMS.filter((it) => it.state === 'done' && it.matched.length).length;
+  }
+  tick();
+  setInterval(tick, 400);       // 拖 resize 手柄时数字跟着变
+
+  window.__MANUAL__ = { panel, cfg, HITS, ITEMS, boot, tick, registered };
+})();
+</script>
+</body>
+</html>

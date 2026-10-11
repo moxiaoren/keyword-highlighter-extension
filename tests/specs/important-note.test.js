@@ -362,17 +362,19 @@ module.exports = async function run() {
     truthy(side && Number(side[1]) <= 48, 'OCR 缩略图不超过 48px —— 9 张图的场景里它是主要高度来源');
   });
 
-  suite('important-note · 默认宽度不遮挡标题列（用户 2026-10-11：360px 挡太多）');
+  suite('important-note · 默认宽度不遮挡标题列（用户 2026-10-11：360px 挡太多 → 收到 200px）');
 
-  await test('★ 默认宽度 ≤320px，且水平钳位读实测宽度（宽度真源只有 CSS 一处）', () => {
+  await test('★ 默认宽度就是 200px，且水平钳位读实测宽度（宽度真源只有 CSS 一处）', () => {
     const src = read('src/features/important-note.js');
     const panel = (src.match(/\.khin-panel \{[\s\S]*?\n    \}/) || [''])[0];
     truthy(panel.length > 0, '要能定位 .khin-panel 样式块（否则下面的断言跑在空串上等于没测）');
     const w = panel.match(/width:\s*(\d+)px/);
     truthy(w, '.khin-panel 要有显式 width');
-    truthy(w && Number(w[1]) <= 320,
-      '默认宽度必须 ≤320px（1280 视口下 360px 会盖住页面标题列，用户 2026-10-11 实测），实际 ' + (w && w[1]));
-    truthy(/min-width:\s*220px/.test(panel), 'min-width:220px 要保留（拖窄的自由度不能收）');
+    /* 用户 2026-10-11 二次收窄：360px 会盖住页面标题列 ⇒ 300px ⇒ 200px。钉住具体值（不许悄悄回弹）。 */
+    truthy(w && Number(w[1]) === 200,
+      '默认宽度必须是 200px（用户 2026-10-11 实测要求），实际 ' + (w && w[1]));
+    /* min-width 压过 width：只改 width 而 min-width 还停在 220px，面板实际还是 220px 宽。 */
+    truthy(/min-width:\s*160px/.test(panel), 'min-width 必须 ≤160px（否则压过 width:200px，宽度白改）');
     const ap = (src.match(/applyPosition\(\)\s*\{[\s\S]*?\n    \}/) || [''])[0];
     truthy(ap.length > 0, '要能定位 applyPosition');
     const apCode = ap.replace(/\/\*[\s\S]*?\*\//g, '');   // 只看代码，不看注释里的解释文字
@@ -381,5 +383,63 @@ module.exports = async function run() {
     truthy(!/\b360\b/.test(apCode), 'applyPosition 里不许再出现写死的 360（那是 CSS 宽度的第二处真源）');
     truthy(/getBoundingClientRect\(\)\.width/.test(apCode) || /rect\.width/.test(apCode),
       '水平钳位必须读面板实测宽度（rect.width），否则 CSS 改了钳位不生效');
+  });
+
+  suite('important-note · 200px 适配：题头图标+短标签 / 笔记区可收起（用户 2026-10-11）');
+
+  const CSS_OF = (src, sel) => (src.match(new RegExp(sel.replace(/\./g, '\\.') + ' \\{[\\s\\S]*?\\n    \\}')) || [''])[0];
+
+  await test('★ 题头与行内都是「图标 + 短标签」：图标走真源、短标签不折行', () => {
+    const src = read('src/features/important-note.js');
+    const copy = read('src/ui/ocr-copy.js');
+    /* 用户现场截图：200px 下题头折成两行（「图片命中」被拆、「收起全部/只看命中」挤成两行）。
+     * 所以题头一行必须 nowrap + 让计数先让位；标题缩短成「🖼 图片」（完整语义挂 title）。 */
+    const head = CSS_OF(src, '.khin-imghead');
+    truthy(head.length > 0, '要能定位 .khin-imghead 样式块');
+    truthy(/flex-wrap:\s*nowrap/.test(head) && /overflow:\s*hidden/.test(head),
+      '题头必须 nowrap + overflow:hidden —— 否则 200px 下就是现场截图里的折行');
+    truthy(src.indexOf('class="khin-imgtitle" title="图片命中"') >= 0,
+      '分区标题改短标签「🖼 图片」，完整名「图片命中」挂 title（短标签不许把语义弄丢）');
+    /* 行内：关键词可被 ellipsis，状态标签与耗时**不许**被挤掉 */
+    const kw = CSS_OF(src, '.khin-imgkw');
+    const tag = CSS_OF(src, '.khin-imgtag');
+    truthy(/flex:\s*1 1 auto/.test(kw) && /text-overflow:\s*ellipsis/.test(kw),
+      '关键词这一格要能让位（flex:1 1 auto + ellipsis）');
+    truthy(/flex:\s*0 0 auto/.test(tag) && /white-space:\s*nowrap/.test(tag),
+      '状态标签不许收缩、不许折行（它才是这一行的信息）');
+    /* 行内也吃图标：图标由唯一真源给出，面板不自己挑字符；
+     * 但它要挂在**独立 span** 上 —— `tag.textContent` 必须保持"只说结论"
+     * （2026-10-11 实测：把图标拼进 tag 文本会打红真机里三条拿 tag 当状态措辞的用例）。 */
+    truthy(src.indexOf('ico.textContent = KH.OcrCopy.icon(it);') >= 0 &&
+      src.indexOf('tag.textContent = this.imgTagText(it);') >= 0,
+      '状态图标来自 KH.OcrCopy，且与标签分开挂（tag 文本仍只说结论）');
+    truthy(src.indexOf("ico.className = 'khin-imgico ' + KH.OcrCopy.stateClass(it);") >= 0 &&
+      /\.khin-imgico\s*\{/.test(src) && /\.khin-imgico\.hit\s*\{/.test(src),
+      '图标 span 要挂状态类并各有配色（类名仍由 KH.OcrCopy.stateClass 给）');
+    truthy(src.indexOf('tag.textContent = KH.OcrCopy.icon(it)') < 0,
+      '禁止把图标拼进 tag 文本 —— 会打红真机里拿 tag 当状态措辞的那批用例');
+    truthy(/const ICON = \{/.test(copy) && copy.indexOf('icon: icon,') >= 0,
+      '图标表与 icon() 必须在唯一真源 ocr-copy.js 里导出（面板写死字符就等于各写一套）');
+    /* 复核入口短标签：文案短了，但完整意思要在 title 里 */
+    truthy(/showAll: '全部 \{n\}'/.test(copy) && /onlyHits: '只命中'/.test(copy),
+      '「显示全部 (N) / 只看命中」在 200px 下改短标签「全部 N / 只命中」');
+    truthy(copy.indexOf('showAllTip:') >= 0 && copy.indexOf('onlyHitsTip:') >= 0 &&
+      src.indexOf('this.imgAllEl.title = this.imgShowAll ?') >= 0,
+      '短标签必须把完整语义挂到 title（否则用户不知道「全部 3」是什么）');
+  });
+
+  await test('★ 笔记区可收起：标记 + 类名一处生效，收一边让另一边（用户 2026-10-11）', () => {
+    const src = read('src/features/important-note.js');
+    truthy(/noteCollapsed: false/.test(src), '收起标记要有默认值（未收起）');
+    truthy(src.indexOf("this.noteBarEl.addEventListener('click'") >= 0, '笔记区题头要能点');
+    truthy(src.indexOf('this.noteCollapsed = !this.noteCollapsed;') >= 0, '点击就是翻转标记');
+    truthy(src.indexOf('applyNoteCollapsed()') >= 0, '收起态要落到 DOM（标记改了界面不动等于没做）');
+    const body = CSS_OF(src, '.khin-body');
+    truthy(/\.khin-body\.khin-collapsed \{ display: none; \}/.test(src),
+      '收起态要有对应样式（只有类名没有规则 = 点了没反应）');
+    /* 用户 2026-10-07 的"被挤没"：正文缩到 0 就是消失。给个下界，让两个分区都能看得见内容。 */
+    truthy(/min-height:\s*60px/.test(body),
+      '正文要留得住一行（min-height:60px）—— 图片分区封顶 50vh 时它不许被压成 0');
+    truthy(/overflow-y:\s*auto/.test(body), '正文自己仍要能滚');
   });
 };
