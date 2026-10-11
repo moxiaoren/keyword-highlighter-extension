@@ -2197,4 +2197,34 @@ sha256 与 `vendor/tesseract/lang-manifest.json` 一致 → 落缓存 → 识别
 - **口径**：本版只动 `options/**`、`src/features/important-note.js`、`src/ui/changelog.js` 与断言文件。`#sec-ocr` 的折叠不改任何 `id`；
   图片识别页那行指路写成纯文本而非锚点链接（`options.js:1237` 只在启动时读一次 `location.hash`，且全文件没有 `hashchange` 监听 ⇒ 点了不会有反应）。
 
+## 2.0.1.13（续）· 抓取字段标题可截断（省宽度）+ 出包发布（测试版 2.0.1.13，2026-10-11）
+
+- **用户口径（m01247 逐字要点）**：设置-抓取字段里填的**字段标题**可以不完整展示、**实际抓取到的内容仍须完整展示**，目的是省宽度。
+- **实现**：渲染侧统一给 `<td class="kh-table-label">` 的文本包一层 `<span class="kh-lbt" title="全文">…</span>`，包裹动作放在 `src/features/important-note.js` 的 `noteFragment()` 里**就地幂等补做**（`tmp.querySelectorAll('td.kh-table-label')`，已包过就跳过）⇒ **旧缓存笔记里的历史表格串也一并生效**，不必等用户重存笔记；
+  样式 `.kh-table .kh-table-label .kh-lbt { display: inline-block; max-width: var(--kh-lbt-maxw, 8em); max-height: 1.5em; overflow: hidden; vertical-align: bottom; }`（上限做成 CSS 变量，现场只改这一处）。值格（抓取到的内容）**一律不截断**。
+- **三条被真机淘汰的写法（改回去必红）**：
+  1. `white-space: nowrap` ⇒ 该列最小内容宽被抬到标题全文，**表宽 185px > 容器 178px**，撞既有守卫「表格宽度按内容收缩」；
+  2. `-webkit-line-clamp: 1`（含 `-webkit-inline-box` / `-webkit-box`）⇒ Chromium 在表格单元格里把计算 display 归一为 `inline-block` / `flow-root`，**不生效**（真机量到 5 个行盒、内容照旧换行堆叠），且被省略内容**仍计进 `scrollHeight`**（实测 `clientHeight=17` / `scrollHeight=594`）；
+  3. 块级 `display` ⇒ `innerText` 在格末多一个换行，撞既有用例「右格只有控件 → 剔除后为空，不产生值行」（值行数 5 → 6）。
+- **真机读数**（`node _e2e/run.js --aspects=fetch`，新用例「★ 抓取字段标题可截断（省宽度）、抓取到的内容必须完整（用户 2026-10-11）」）：`通过 26 · 失败 0`；
+  读数行 `标题格 2 个 上限 88px 长文本 盒20 高17/594 短文本 盒16 高17 / 表 178 ≤ 容器 178 / 值格 6 个，最长 "资质材料不清晰\n请重新上传营业执照" overflow=0`。断言口径：标题盒是 `inline` 级 + `overflow: hidden` + `max-width`/`max-height` 有值 + `title` 与原文一致（全文可回看）；
+  **用「长文本盒高 == 短文本盒高」判「裁在一行」**（`long.ch <= short.ch + 1`，不能拿 `scrollHeight` 判 —— 见上第 2 条）；最长值格 `text-overflow !== 'ellipsis'` 且溢出 ≤ 1px。
+- **全量回归**：`node _e2e/run.js --aspects=all` ⇒ 内容层 **81 · 0** + 界面层单层 **66 · 0** = 累计 **147 · 0**（累计块含内容层，不跨块相加）；第 18 组「3000 行页面也要能就绪」**11120 / 11252 ms**（预算 12000ms）绿 —— 该用例对机器负载敏感（负载下曾 12.3 / 14.0s，撤掉本版改动照样 12.7 / 13.3s），已如实写进 changelog 第 7 项。
+- **门禁**：单测 **744 · 失败 0 · 跳过 1**；`node scripts/meta-check.js` **通过 46 · 警告 1 · 错误 0**（警告仍是 `options/options.css` 硬编码色值）。
+- **出包与发布**：`node scripts/package.js --full` EXIT 0（dist zip **104 文件 / 5684.5 KB**，包内真机 UI 层 147 · 0）；`node scripts/release-beta.js --skip-gates` EXIT 0（beta zip sha256 `09E36ADC41529CAA…`）；`node scripts/publish-gh.js --beta-only --skip-assets` EXIT 0 ⇒ gh-pages 提交 **`c38fa754`**（父 `488e232d` = 2.0.1.12），上传 8 文件；绕开 CDN 用 GitHub API Contents 核对 `latest-beta.json` version **2.0.1.13** 且 sha256 与本地 beta zip 一致、`update-beta.xml` appid `ohjcaheamdifcldcofpblbejlpmgnhjc` version **2.0.1.13**。
+- **口径**：本版只动 `src/features/important-note.js`、`src/ui/changelog.js`、`tests/specs/important-note.test.js` 与 `_e2e/content.test.js`；抓取表格**生成侧**（`src/features/fetch.js` 的 `rowsToTableHtml`）与值格渲染**未改**。
+
+## 2.0.1.14 · 卡顿治理 round 32：识别让路 + 配置空转 + 耗时徽标跟缓存（测试版 2.0.1.14，2026-10-11）
+
+- **用户口径（m01247 第③件事）**：按实测落地该做的修复 —— 只做「有真机读数、改动局部、可给等价性说明」的两处，其余候选登记并逐条给不做理由（见文末「口径」）。
+- **F1 识别在飞时给重建让路**（`src/core/scheduler.js`）：`_fire()` 是**唯一**重建出口，首行 `if (this._deferToOcr(source)) return false;`；`_deferToOcr` 读 `KH.ImgOcr.inflightCount()`（= `src/features/img-ocr.js` 的门户，与额度闸门同源 `quotaUsed()`），>0 时记 `_ocrYieldSince` 并排 **120ms** 复检（`_timers.ocrYield`），最多让 **3000ms**、到上限照跑，识别一空立刻补跑；`teardownAll()` 一并清账（`_timers.ocrYield` / `_pendingSource` / `_ocrYieldSince`）⇒ 让路是**顺延**，不是丢弃。
+- **F2 配置没真变就不许动页面**（`src/core/index.js`）：`configSig(cfg)` 只序列化 `Config.defaults` 的已知键（未知键仍宽容保留，只是不进签名）；`applyConfig` 在 `state.booted && 签名相同` 时直接返回 `{ total: 0, rendered: 0, skipped: 0, source: 'config-noop' }`（不 compileAll、不重挂六通道、不重建）。**根因**：`content/content.js:49-60` 把 `chrome.storage.local` **每个键**都拼成 patch，而 `khLastSeenVersion` / `kh-ocr-lang-v1` / `kh-ocr-model-v1` / 频道键都不在 `defaults` 里 ⇒ 写一次 storage 就触发**每标签页各一轮整页重建**。
+- **真机读数（before → after，同装置同机器）**：`_stage/wayfinder-perf/ocr-probe-page.js`（T2 装置）重页端到端 **43.7s → ≈8.7s**；H 组中位 **27467ms → 447ms**（命中派发 16173 → 8296ms），H 窗口内长任务 **27425ms → 0ms**；L 769 → 506；M 4224（长任务 4158ms）→ 2673（中位长任务 189ms）；blob 路径 Lb 3214 不变（本版不碰）。`rootcause-probe-main.js`（T3 装置）6a 配置变更臂：**目标页 12023.9ms + 第二页 9244.5ms → 窗口内 0 次 / 0ms**。
+- **顺带修掉的潜伏缺陷（首跑 1 红）**：F1 改时序后，用例「图片文字识别 … ② 图片命中进「🖼 图片命中」分区」首次变红 —— 条目表 `build()` 命中缓存时只恢复 `state/text/conf/matched`、**没恢复 `ocrMs`**，于是**任何页面变动触发的重建都会丢「识别耗时」徽标**（改前只是被「重建发生在识别在飞时」掩盖）。修法：`cachePut` 带 `ocrMs` + `build()` 缓存分支恢复它；补单测 1 条（`driveOcrResults` 投 `{ ocrMs: 812 }` → `KH.OcrCopy.costLabel(item) === '0.8s'` 且请求数不增）。定向 `node _e2e/run.js --aspects=hit` ⇒ **34 · 0** 转绿。
+- **全量回归**：`node _e2e/run.js --aspects=all` ⇒ 内容层 **81 · 0** + 界面层单层 **66 · 0** = 累计 **147 · 0**（内容层 80 → 81 ＝原红项转绿）；第 18 组「3000 行页面也要能就绪」本轮两次分别 **3687 / 4008ms** 与 **6383 / 6822ms**（预算 12000ms，均绿）—— 同一版同一机器能差近一倍，**该用例只当预算护栏，不当性能契约**。
+- **门禁**：单测 **756 · 失败 0 · 跳过 1**（+12 ＝ 识别让路 6 条 / 配置空转 5 条 / 耗时徽标跟缓存 1 条）；`node scripts/meta-check.js` **通过 46 · 警告 1 · 错误 0**；`node scripts/check-changelog-quotes.js` ✓；`_MIGRATION_CHECKLIST.md` 由 `node _tools/migration-make.js --write-checklist` 重渲染（4269 B，锚点 manifest 2.0.1.14 / latest 2.0.1）。
+- **出包与发布**：`node scripts/package.js --full` EXIT 0（dist zip **104 文件 / 5688.8 KB**，包内真机 UI 层 147 · 0）；`node scripts/release-beta.js --skip-gates` EXIT 0（beta zip sha256 `730F46F8D83CDFFC…`）；`node scripts/publish-gh.js --beta-only --skip-assets` EXIT 0 ⇒ gh-pages 提交 **`72a3ca31`**（父 `c38fa754` = 2.0.1.13）；绕开 CDN 用 GitHub API Contents 核对 `latest-beta.json` version **2.0.1.14** 且 sha256 与本地 beta zip 一致、`update-beta.xml` appid `ohjcaheamdifcldcofpblbejlpmgnhjc` version **2.0.1.14**。
+- **口径**：本版只动 `src/core/scheduler.js`、`src/core/index.js`、`src/features/img-ocr.js`、`src/ui/changelog.js` 与测试面（`tests/specs/ocr-yield.test.js`、`tests/specs/config-noop.test.js`、`tests/specs/img-ocr.test.js` 各一条/一组 + `tests/run.js` 注册）。**没做**的候选（登记备查，不在本版）：T2 的 P1/P2/P3/P4 与 T3 的 R1/R2/R3/R4/R6/R7 —— 都是结构性改动（重建管线、可见性判据、缓存分层），需单独立项 + 等价性证明 + 回归；F3「成本自适应限频」也不做（把降级藏进自动策略，涨了成本没人看得见）。
+
+
 

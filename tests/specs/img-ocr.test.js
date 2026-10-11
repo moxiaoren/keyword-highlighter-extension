@@ -416,4 +416,34 @@ module.exports = async function run() {
     eq(O.items().filter((it) => it.state === 'done').length, 9,
       '★ 9 张都要落地：额度一归还就得接着发（否则面板永久停在「排队中…」）');
   });
+
+  /* ------------------------------------------------------------------
+   * K80：耗时徽标必须跟着缓存走（页面一重建就从缓存重造条目 ⇒ 徽标不许丢）
+   * ------------------------------------------------------------------
+   * 真机现场（F1「识别在飞时给重建让路」上线后的全量 E2E）：
+   *   `✗ ② 图片命中进「🖼 图片命中」分区` —— `每个图片条目都该显示本次识别耗时；实际条目：[{"cost":""}]`
+   * 根因：`build()` 命中缓存时只恢复 `state/text/conf/matched`，`ocrMs` 没进缓存 ⇒
+   *   任何页面变动导致的重建都会把「这次识别耗时」整列抹空（让路只是把这个潜伏缺陷推到常见时序上）。
+   * 这里锁住口径：缓存里存 `ocrMs`，重建后的条目照旧能出 0.8s 这种真实数字。
+   */
+  await test('★ 页面重建（缓存命中）后耗时徽标必须还在：`ocrMs` 跟着缓存走', () => {
+    KH.features.get('img-ocr').clear(null, { reason: 'destroy' });
+    const before = (global.__OCR_SENT__ || []).length;
+    const im = fakeImg({ src: 'data:image/png;base64,iVBORw0KGgoK80' });
+    im.naturalWidth = 100; im.naturalHeight = 100;
+    const a = anchorWith([im]);
+    O.build({}, {}, [hitOf(a)]);
+    eq(O.items().length, 1, '先有一张可识别的图');
+    driveOcrResults(() => ({ ocrMs: 812 }), before);
+    eq(O.items()[0].state, 'done', '回执到手 ⇒ 条目完成');
+    eq(O.items()[0].ocrMs, 812, '回执里的耗时落在条目上');
+
+    const sentAfterFirst = (global.__OCR_SENT__ || []).length;
+    O.build({}, {}, [hitOf(a)]);            // 页面变了 ⇒ 条目表整体重造（走缓存分支）
+    eq(O.items().length, 1);
+    eq(O.items()[0].state, 'done', '缓存命中 ⇒ 重建后直接是完成态，不重新排队');
+    eq((global.__OCR_SENT__ || []).length, sentAfterFirst, '缓存命中不该再发一次请求（验的是缓存，不是重跑）');
+    eq(O.items()[0].ocrMs, 812, '★ 重建后耗时徽标必须还在（丢了面板上「本次识别耗时」整列空掉）');
+    eq(KH.OcrCopy.costLabel(O.items()[0]), '0.8s', '面板文案照旧出真实数字（0.8s）');
+  });
 };

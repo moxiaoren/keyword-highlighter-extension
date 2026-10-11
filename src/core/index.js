@@ -48,8 +48,28 @@
     config: null,
     rules: [],
     siteEnabled: false,
-    booted: false
+    booted: false,
+    /** 上一轮生效配置的签名（见 `configSig`）；热更新据此判断"配置到底变没变" */
+    configSig: ''
   };
+
+  /**
+   * 【配置签名】只序列化**已知配置键**（`KH.Config.defaults` 的顶层键），未知键一律不进签名。
+   * ---------------------------------------------------------------------------
+   * 为什么不能直接 `JSON.stringify(config)`：`KH.Config.merge` 对未知键**宽容保留**
+   * （`config.js:264`），而 `content/content.js:49-60` 会把 `chrome.storage.local` 里
+   * **每一个键**都当成配置送来 —— 版本标记（`khLastSeenVersion`）、OCR 语言/模型缓存
+   * （`kh-ocr-lang-v1` / `kh-ocr-model-v1`）、频道键全在里面。用全量签名 ⇒ 这些写入
+   * 也算"配置变了" ⇒ **每个打开的标签页各跑一轮整页重建**（T3 实测：一次写入 = 目标页
+   * 12023.9ms + 第二页 9244.5ms）。
+   * ⚠️ 新增配置键必须同时加进 `Config.defaults`，否则改了不生效（`tests/specs/config-noop.test.js`
+   * 末条钉这条：全仓 `cfg.<键>` / `state.config.<键>` 的读键必须都在 defaults 里）。
+   */
+  function configSig(cfg) {
+    const c = cfg || {};
+    const keys = (KH.Config && KH.Config.defaults) ? Object.keys(KH.Config.defaults) : Object.keys(c);
+    return JSON.stringify(c, keys.filter((k) => Object.prototype.hasOwnProperty.call(c, k)));
+  }
 
   /* ---------------- 公共 API ---------------- */
 
@@ -236,6 +256,21 @@
       const merged = KH.Config.merge(Object.assign({}, state.config || {}, patch || {}));
       const normalized = KH.Config.normalize(merged).config;
       state.config = normalized;
+
+      /* 【K80 · F2】只有**真配置**变了才动页面。
+       * 【病根】content.js 把 `chrome.storage.local` 的每个键都当配置送进来，
+       *  而 `Config.merge` 对未知键宽容保留 ⇒ 版本标记 / OCR 语言包与模型缓存 / 频道键
+       *  的写入都被当成"配置变了"，于是**每个打开的标签页各跑一轮整页重建**
+       *  （T3 实测候选 6a：一次写入 = 目标页 12023.9ms + 第二页 9244.5ms）。
+       * 【改法】比 `configSig`（只含已知配置键）：未知键变化 ⇒ 直接返回，不重挂调度通道、
+       *  不重建、不发 CONFIG_CHANGED（配置对象本身仍已更新，宽容保留语义不变）。
+       *  真配置变了 ⇒ 与原逻辑一模一样（重挂通道 + 重建 + emit）。 */
+      const sig = configSig(normalized);
+      if (state.booted && sig === state.configSig) {
+        return { total: 0, rendered: 0, skipped: 0, source: 'config-noop', siteEnabled: !!state.siteEnabled };
+      }
+      state.configSig = sig;
+
       state.rules = KH.Compiler.compileAll(normalized);
       KH.registry.emit(KH.EVENTS.CONFIG_CHANGED, normalized);
 
@@ -386,6 +421,8 @@
         observerFire: (KH.Scheduler && KH.Scheduler._observerFireCount) || 0,
         drainCount: (KH.Scheduler && KH.Scheduler._drainCount) || 0,
         deferCapped: (KH.Scheduler && KH.Scheduler._deferCappedCount) || 0,
+        /* K80：因图片识别在飞而顺延过几次重建（"识别被重建堵住"现场看这个数，见 scheduler._deferToOcr） */
+        ocrYield: (KH.Scheduler && KH.Scheduler._ocrYieldCount) || 0,
         /* K60：CSS 动画/过渡兜底触发过几次（"内容是被动画显出来的"现场看这个数） */
         animFallback: (KH.Scheduler && KH.Scheduler._animCount) || 0,
         /* K60：「文本量暴涨」兜底触发过几次（"记录丢了/换 body 空隙"现场看这个数） */
@@ -763,6 +800,8 @@
       if (state.booted) this.destroy();
       const { config } = await KH.Config.load();
       state.config = config;
+      // 记下启动时的配置签名：之后的每次热更新比它，只有真变了才重建（见 applyConfig 的 F2 注释）
+      state.configSig = configSig(config);
       state.rules = KH.Compiler.compileAll(config);
       state.booted = true;                 // 即使下面提前返回，也已完成一次"启动"（后续会先 destroy）
 

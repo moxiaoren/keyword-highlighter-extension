@@ -118,7 +118,13 @@ const specs = [
   './specs/ocr-options.test.js',
   /* 交接清单单源（2026-10-11 任务 P 根治）：两条打包入口必须打同一份、PS1 必须带 BOM、
    * Node 侧不许再打包期现渲染（原先 Node 现渲染 vs PS1 打手工快照＝同一个包两种内容） */
-  './specs/migration-checklist.test.js'
+  './specs/migration-checklist.test.js',
+  /* K80（2.0.1.14）识别在飞时给重建让路：上限必须硬、"顺延"不许变成"丢弃"。
+   * 口径与 T2 真机读数见 tests/specs/ocr-yield.test.js 头部 */
+  './specs/ocr-yield.test.js',
+  /* K80（2.0.1.14）配置没真变就不许动页面：未知键（版本标记/OCR 缓存）不许触发全页重建，
+   * 含一条"全仓配置读键 ⊆ Config.defaults"的守卫。口径见 tests/specs/config-noop.test.js 头部 */
+  './specs/config-noop.test.js'
 ];
 
 (async () => {

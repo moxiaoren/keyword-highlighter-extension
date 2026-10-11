@@ -25,8 +25,9 @@
   const Scheduler = {
     _observer: null,
     /** 观察参数（唯一一份，主文档与各 ShadowRoot 共用）
-     *  `characterData: true` 必须有（`nodeValue =` 是原地改值，不发 childList）；
-     *  `attributes: false` —— 属性变化不参与（class 切换不改变文本内容，避免噪声）。 */
+     *  `characterData: true` 必须有（`nodeValue =` 是原地改值，不发 childList）。
+     *  ⚠️ 属性是**参与**的（`attributes: true` + `attributeFilter`，见下）——
+     *  这里旧注释曾写「attributes: false」，与下方实参直接矛盾（T3 实测把它当事实引用会出错）。 */
     /* 观察范围：childList + characterData + subtree + **属性**（v1.99.99.22 启用）。
      * 【为什么要观察属性】折叠面板展开 / 抽屉拉开 / Tab 切换 / `hidden` 去掉 / 换图都是**属性变化**，
      * 不产生 childList 或 characterData —— 不观察就永远等不到重建，内容露出来了却不亮。
@@ -40,7 +41,7 @@
     },
     /** 已挂上观察器的 ShadowRoot 集合（teardown 时随 disconnect 一起失效） */
     _shadowRoots: null,
-    _timers: { silent: null, poll: null, fingerprint: null, growth: null, trailing: null, shadow: null },
+    _timers: { silent: null, poll: null, fingerprint: null, growth: null, trailing: null, shadow: null, ocrYield: null },
     _lastMutationAt: 0,
     /** ⏳ 延迟裁决的**上限**（ms）：静默窗口最多只能把裁决顺延这么久，到点必须判一次。
      *  【为什么必须有上限】静默窗口的判据是"距最后一次变动 ≥ silentMs"，而页面上源源不断的
@@ -53,6 +54,22 @@
     _drainFirstPendingAt: 0,
     /** 诊断：因为拖过上限而"不等安静直接判"的次数 */
     _deferCappedCount: 0,
+    /** ⏳ OCR 在飞时给重建让路（K80 · 2026-10-11，实测见 T2/#23）----
+     *  【为什么】重建是**同步**跑完一整轮全页扫描（重页单轮 4.2s / 27.5s 实测），它一跑起来
+     *  主线程就被占满，同一页面里已经提交的图片识别结果只能排队 —— 用户看到的是"识别一张也卡、
+     *  很久才出结果"。T2 真机读数（`_stage/wayfinder-perf/ocr-repro.md`）：
+     *  同一次识别在页面空闲时 0.77s，页面同时有重建时 4.2s（M 档）/ 27.5s（重页 H 档）。
+     *  【让路规则】有 OCR 在飞 ⇒ 把这一轮重建**顺延**（不丢：步长到了就复检），最多顺延
+     *  `_OCR_YIELD_MAX_MS`，到点照跑 —— 上限是必须的：识别永不回来时高亮不能永远不重建。
+     *  取舍：用户口径"高亮晚一拍没关系，别把识别堵住"（识别是用户主动点的、要等结果；
+     *  高亮是背景行为，晚 1–3 秒无感）。 */
+    _OCR_YIELD_MAX_MS: 3000,
+    /** 让路的复检步长（ms）：等 OCR 一有空就立刻补跑 */
+    _OCR_YIELD_STEP_MS: 120,
+    /** 本次"开始让路"的时刻（0 = 当前没在让路；到上限即清零并照跑） */
+    _ocrYieldSince: 0,
+    /** 诊断：因 OCR 在飞而顺延过几次（读 `KH.diagnostics().ocrYield`） */
+    _ocrYieldCount: 0,
     /** 四条通道共用的唯一限频时间戳（R14） */
     _lastRebuildAt: 0,
     /** 限频窗口内被合并的尾随请求来源（见 request() 注释） */
@@ -66,6 +83,7 @@
 
     /** 真正执行重建（唯一出口；限频与尾随合并都在 request 里判定） */
     _fire(source) {
+      if (this._deferToOcr(source)) return false;
       this._lastRebuildAt = Date.now();
       /* 记下"这一轮重建看到的文本总量"：之后若文本量暴涨（内容长出来了），
        * 而观察器又一条记录都没给（换 body 空隙 / CSS 动画显出来 / 记录丢失），
@@ -75,6 +93,39 @@
       clearTimeout(this._timers.trailing);
       this._timers.trailing = null;
       KH.rebuild({ source });
+      return true;
+    },
+
+    /**
+     * 有图片识别在飞时，把这一轮重建顺延（见 `_OCR_YIELD_MAX_MS` 注释）。
+     * 顺延不丢：步长一到就 `request(..., { gap: 0 })` 复检，OCR 一空就补跑。
+     *
+     * @param {string} source 被顺延的触发来源
+     * @returns {boolean} true = 本轮已顺延（调用方必须立刻返回，不要重建）
+     */
+    _deferToOcr(source) {
+      const api = KH.ImgOcr;
+      const inflight = (api && typeof api.inflightCount === 'function') ? api.inflightCount() : 0;
+      if (!inflight) {
+        this._ocrYieldSince = 0;
+        return false;
+      }
+      const now = Date.now();
+      if (!this._ocrYieldSince) this._ocrYieldSince = now;
+      // 到上限：不再等，照跑（识别卡死/超时也不能让高亮永远不更新）
+      if (now - this._ocrYieldSince >= this._OCR_YIELD_MAX_MS) {
+        this._ocrYieldSince = 0;
+        return false;
+      }
+      this._pendingSource = source;
+      this._ocrYieldCount++;
+      if (!this._timers.ocrYield) {
+        this._timers.ocrYield = setTimeout(() => {
+          this._timers.ocrYield = null;
+          const src = this._pendingSource;
+          if (src) this.request(src, { gap: 0 });
+        }, this._OCR_YIELD_STEP_MS);
+      }
       return true;
     },
 
@@ -598,11 +649,14 @@
       clearInterval(this._timers.fingerprint);
       clearInterval(this._timers.growth);
       clearTimeout(this._timers.trailing);
+      clearTimeout(this._timers.ocrYield);
       this._timers.poll = null;
       this._timers.fingerprint = null;
       this._timers.growth = null;
       this._timers.trailing = null;
+      this._timers.ocrYield = null;
       this._pendingSource = null;
+      this._ocrYieldSince = 0;
       this._lastRebuildAt = 0;
       if (this._pageClickHandler) {
         document.removeEventListener('click', this._pageClickHandler, true);

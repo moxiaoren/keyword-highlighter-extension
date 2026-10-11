@@ -462,7 +462,7 @@
     if (token) releaseHold(token);      /* 幂等：认领不到就没有副作用 */
 
     const text = String(msg.text || '');
-    if (msg.ok && src) cachePut(src, { text: text, conf: msg.confidence || 0, at: Date.now() });
+    if (msg.ok && src) cachePut(src, { text: text, conf: msg.confidence || 0, at: Date.now(), ocrMs: msg.ocrMs });
 
     /* 结果对应的那条（可能因为页面重建而不在了：那就只更新缓存，不动 UI） */
     const entry = key ? items.get(key) : null;
@@ -597,6 +597,11 @@
           item.text = cached.text;
           item.conf = cached.conf;
           item.matched = matchedInText(rule, cached.text);
+          /* 【耗时徽标必须跟着缓存走】(K80 · 真机踩到) 条目表每次重建都从缓存重建，
+           * 而 `ocrMs` 此前只活在**当时那个条目对象**上 ⇒ 页面一有变动（重建）耗时徽标就空了。
+           * 真机表现：E2E「每个图片条目都该显示本次识别耗时」变红（`cost:""`）。
+           * 缓存里带上它之后，重建出来的条目照旧显示**这张图那次识别**的耗时。 */
+          item.ocrMs = cached.ocrMs;
         } else if (!cls.ok) {
           item.state = 'blocked';
           item.why = cls.why;
@@ -664,6 +669,9 @@
 
   KH.ImgOcr = {
     items: () => Array.from(items.values()),
+    /** 当前在途额度（≥1 = 有识别在飞）。调度侧用它给重建让路（见 `scheduler.js:_deferToOcr`）
+     *  —— 重建是同步全页扫描，一跑起来就把识别结果挤在门外。 */
+    inflightCount: () => quotaUsed(),
     onChange: onChange,
     notify: notify,
     /** 诊断/回归用 */
