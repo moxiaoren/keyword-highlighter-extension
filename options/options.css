@@ -1,108 +1,10 @@
 /* ============================================================
    options/options.css · 设置页布局样式
    ------------------------------------------------------------
-   设计变量**全部**来自 src/ui/tokens.css（构建期注入，见 tools/build.js）。
+   设计变量**全部**来自 src/ui/tokens.css（options.html 直接 <link>，单一来源）。
    本文件禁止出现裸色值 —— meta-check #7 会扫描并拦截。
    组件自身样式在 src/ui/components/components.css；本文件只放页面级布局。
    ============================================================ */
-
-/* ==== 以下内容由 tools/build.js 从 src/ui/tokens.css 注入，请勿手工修改 ==== */
-:root {
-  /* ---- 品牌 ---- */
-  --brand: #4a90d9;
-  --brand-2: #5fb0ee;
-  --brand-deep: #3579c2;
-  --brand-soft: #eaf1fb;
-  --brand-softer: #f4f8fd;
-
-  /* ---- 语义色 ---- */
-  --success: #1a7f54;
-  --success-strong: #15803d;
-  --success-soft: #e9f7ef;
-  --danger: #dc2626;
-  --danger-strong: #c22b25;
-  --danger-soft: #fdeceb;
-  --warning: #b45309;
-  --warning-soft: #fef5e7;
-  --info: #1565c0;
-  --info-soft: #e7f0fc;
-  --purple: #7b1fa2;
-  --purple-soft: #f4e8f8;
-
-  /* ---- 文本层级 ---- */
-  --text: #1f2937;
-  --text-2: #4b5563;
-  --text-3: #6b7280;
-  --text-4: #9aa3b2;
-  --text-5: #c3cad6;
-
-  /* ---- 背景 / 边框 ---- */
-  --bg: #f4f6fb;
-  --bg-2: #eef1f7;
-  --card: #ffffff;
-  --card-2: #f8fafc;
-  --border: #e7ebf2;
-  --border-2: #dce3ee;
-
-  /* ---- 圆角 ---- */
-  --r-sm: 6px;
-  --r-md: 9px;
-  --r-lg: 12px;
-  --r-xl: 16px;
-  --r-pill: 999px;
-
-  /* ---- 阴影 ---- */
-  --sh-sm: 0 1px 2px rgba(16, 24, 40, .05);
-  --sh-md: 0 2px 8px rgba(16, 24, 40, .06), 0 1px 2px rgba(16, 24, 40, .04);
-  --sh-lg: 0 14px 34px rgba(16, 24, 40, .14);
-  --sh-brand: 0 4px 14px rgba(74, 144, 217, .32);
-
-  /* ---- 过渡 ---- */
-  --tr: .18s cubic-bezier(.4, 0, .2, 1);
-
-  /* ---- 字号 ---- */
-  --fs-xs: 11px;
-  --fs-sm: 12px;
-  --fs-base: 13px;
-  --fs-md: 14px;
-  --fs-lg: 16px;
-  --fs-xl: 20px;
-
-  /* ---- 页内组件（注入到被访问页面时使用，前缀 --kh-） ---- */
-  --kh-brand: #4a90d9;
-  --kh-brand-deep: #3579c2;
-  --kh-brand-soft: #eaf1fb;
-  --kh-border: #e3e8f0;
-  --kh-text: #1f2937;
-  --kh-text-2: #4b5563;
-  --kh-text-3: #6b7280;
-
-  /* ---- 运行时可被 JS 覆盖的尺寸令牌（保持旧名，勿改） ---- */
-  --kh-note-img-size: 70px;
-
-  /* ---- 层级（页内 UI 统一 z-index，禁止散落魔法数字） ---- */
-  --z-note-card: 2147483000;
-  --z-note-panel: 2147483100;
-  --z-toast: 2147483200;
-
-  /* ---- 中性 / 覆盖层 ----
-     说明：CSS 里"纯白"与"半透明黑/品牌色覆盖"若直接写死，会在暗色适配、
-     品牌换色时漏改。此处统一命名为语义 token，CSS 只允许引用，不允许再写裸值。
-     唯一豁免：本文件（tokens.css）自身。 */
-  --white: #ffffff;
-  --ink: #333333;
-  --overlay-brand-12: rgba(74, 144, 217, .12);
-  --overlay-brand-10: rgba(74, 144, 217, .10);
-  --overlay-ink-4: rgba(0, 0, 0, .04);
-  --overlay-ink-6: rgba(0, 0, 0, .06);
-  --overlay-ink-10: rgba(0, 0, 0, .10);
-  /* 弹窗遮罩：中性深色半透明。组件层只允许引用，不允许在 CSS 里现写 rgba() */
-  --overlay-mask: rgba(15, 23, 42, .38);
-  --border-hairline: rgba(0, 0, 0, .08);
-  --sh-note-pinned: 0 10px 32px rgba(16, 24, 40, .24);
-  --sh-tip: 0 4px 14px rgba(0, 0, 0, .14);
-  --sh-brand-inset: 0 0 0 2px rgba(74, 144, 217, .35);
-}
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -403,7 +305,7 @@ body {
 .kh-htab.active {
   background: linear-gradient(135deg, var(--brand), var(--brand-deep));
   border-color: transparent;
-  color: #fff;
+  color: var(--white);
   font-weight: 600;
 }
 .kh-hpanel { display: none; }
@@ -418,19 +320,19 @@ body {
   align-items: start;
 }
 .kh-hcard {
-  background: var(--brand-softer, #f6f8fc);
+  background: var(--brand-softer);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   padding: 13px 16px;
   transition: box-shadow .18s, transform .18s;
 }
 .kh-hcard:hover {
-  box-shadow: 0 4px 14px rgba(91, 107, 240, .12);
+  box-shadow: 0 4px 14px var(--overlay-brand-12);
   transform: translateY(-2px);
 }
-.kh-hcard h4 { margin: 0 0 8px; font-size: 14px; color: var(--text, #2f3640); }
+.kh-hcard h4 { margin: 0 0 8px; font-size: 14px; color: var(--text); }
 .kh-hcard ul { margin: 0; padding-left: 16px; }
-.kh-hcard li { margin: 4px 0; font-size: 12.5px; line-height: 1.6; color: var(--text-2, #5b6270); }
+.kh-hcard li { margin: 4px 0; font-size: 12.5px; line-height: 1.6; color: var(--text-2); }
 
 /* 版本信息：长列表 + 右侧悬浮目录 */
 .kh-ver-wrap { display: flex; gap: 14px; align-items: flex-start; }
@@ -445,7 +347,7 @@ body {
   overflow-y: auto;
   overflow-x: hidden;
   align-self: flex-start;
-  background: var(--card-2, #f8fafc);
+  background: var(--card-2);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   padding: 8px;
@@ -456,12 +358,12 @@ body {
   margin: 1px 0;
   border-radius: 6px;
   font-size: 11.5px;
-  color: var(--text-2, #5b6270);
+  color: var(--text-2);
   text-decoration: none;
   cursor: pointer;
   white-space: nowrap;
 }
-.kh-ver-toc-item:hover { background: var(--brand-soft, #eaf1fb); color: var(--brand, #4a90d9); }
+.kh-ver-toc-item:hover { background: var(--brand-soft); color: var(--brand); }
 .kh-log-item { scroll-margin-top: 10px; }
 .kh-ver-foot { margin-top: 10px; }
 
@@ -470,14 +372,14 @@ body {
   margin-top: 14px;
   border: 1px solid var(--border);
   border-radius: var(--r-md);
-  background: var(--card-2, #f8fafc);
+  background: var(--card-2);
 }
 .kh-adv > summary {
   padding: 10px 14px;
   cursor: pointer;
   font-size: 13px;
   font-weight: 600;
-  color: var(--text, #2f3640);
+  color: var(--text);
   user-select: none;
   list-style: none;
 }
@@ -486,7 +388,7 @@ body {
   content: '▸';
   display: inline-block;
   margin-right: 8px;
-  color: var(--brand, #4a90d9);
+  color: var(--brand);
   transition: transform .15s;
 }
 .kh-adv[open] > summary::before { transform: rotate(90deg); }

@@ -363,7 +363,7 @@ async function api(method, url, body) {
   if (!me.ok) {
     if (!looksGithub) {
       die('这个 token 不是 GitHub 的格式（它以 "' + TOKEN.slice(0, 5) + '" 开头）。\n' +
-          '  GitHub 的 token 只有两种前缀：ghp_（经典）或 github_pat_（细粒度）。\n' +
+          '  可接受的 GitHub 前缀：ghp_（经典）/ github_pat_（细粒度）/ gho_（OAuth，即 `gh auth token`）/ ghs_（服务端）。\n' +
           '  取一个：https://github.com/settings/tokens/new?scopes=repo&description=keyword-highlighter-release\n' +
           '  （若你刚才那个是别的服务的 token，建议立即吊销，它已经在对话里出现过了。）');
     }

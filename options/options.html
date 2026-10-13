@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <title>关键词高亮 · 设置</title>
-  <!-- 设计变量：src/ui/tokens.css 会在构建期注入到下面两个样式表的 @inject:tokens 标记处 -->
+  <!-- 设计变量：直接引 src/ui/tokens.css（单一来源；勿再往 options.css 里塞 token 副本） -->
+  <link rel="stylesheet" href="../src/ui/tokens.css">
   <link rel="stylesheet" href="../src/ui/components/components.css">
   <link rel="stylesheet" href="options.css">
 </head>
@@ -166,8 +167,15 @@
           <label class="kh-fld-label">正文字号默认值 (px)</label>
           <input class="kh-input" id="pf-noteFontSize" type="number" min="10" max="20" step="1">
         </div>
+        <!-- 面板默认宽度：min/max 由 options.js 从 KH.Config 的边界常量写进去（不在这里抄 160/600） -->
+        <div class="kh-form-fld">
+          <label class="kh-fld-label">面板默认宽度 (px)</label>
+          <input class="kh-input" id="pf-notePanelWidth" type="number" step="10">
+        </div>
       </div>
-      <p class="kh-muted">「图片尺寸」管抓取字段值格里的缩略图/识别图（单个关键词留空即继承这里）。「字号」管面板里的<strong>笔记正文与表格</strong>（10–20px，默认 11）。每张图片下面的 📋 复制这张图的全部识别文字，命中词块点一下复制它所在的整句，整段文字在点开的大图右侧。</p>
+      <p class="kh-muted">「图片尺寸」管抓取字段值格里的缩略图/识别图（单个关键词留空即继承这里）。「字号」管面板里的<strong>笔记正文与表格</strong>（10–20px，默认 11）。</p>
+      <p class="kh-muted">「面板宽度」＝面板的<strong>默认宽度</strong>（<strong>160–600px，默认 250</strong>）：这里是<strong>长期值</strong>，改完以后每次打开面板都按它来，各站点共用这一份设置。想临时改宽，直接拖面板的<strong>右下角</strong>——那是<strong>临时值</strong>，只对当前这一次显示有效、<strong>不写回这里</strong>，刷新页面就回到上面的默认值。一句话：要「以后都这么宽」就在设置页改；只是这会儿嫌窄/嫌宽，拖右下角。</p>
+      <p class="kh-muted">复制整段识别文字：<strong>点开大图，在右侧全文栏里选中后 Ctrl+C</strong>，也可以点全文栏自带的<strong>一键复制</strong>（该栏默认隐藏，点灯箱工具条上的<strong>眼睛</strong>开关才出现；栏一收起，复制按钮跟着一起藏起来）。图片条目上原来的 <strong>📋 一键复制已移除</strong>。命中词块点一下，复制的仍是它所在的<strong>整句</strong>。</p>
     </section>
 
     <!-- ============================================================ 图片识别（OCR） -->
@@ -252,6 +260,12 @@
       <p class="kh-muted">
         默认只识别<strong>同源 / data: / 页面自己声明过 CORS</strong> 的图片。其它网站的图片需要在这里<strong>按站点</strong>授权后，才会由扩展代为读取
         （不新增任何浏览器权限，只是允许扩展去读你已经看到的那张图）。
+      </p>
+      <p class="kh-muted">
+        <strong>两种「允许读这张图」的同意，一次说清（别混）：</strong><br>
+        · <strong>站点授权＝长期</strong>：就是下面这个白名单。加进去之后，扩展在<strong>自动扫描</strong>时就能代读<strong>该站点</strong>的跨域图，一直有效，直到你把它移除。<br>
+        · <strong>右键单张＝一次性</strong>（<strong>下一轮将支持</strong>）：在网页任意图片上点右键 → 只识别<strong>你点的那一张</strong>，不必先加白名单；<strong>右键即代表你同意本次代为读取这张图</strong>。它<strong>不</strong>会把该站点写进白名单，下一张图还要你再点一次。<br>
+        两条通路<strong>并存、互不取代</strong>：站点授权管「自动扫描时能不能代读」，右键管「你当下主动点的那一张」。<strong>本轮尚无右键入口</strong>，现在要读跨域图仍只能走上面的站点授权。
       </p>
       <div class="kh-form-row">
         <div class="kh-form-fld">
@@ -415,6 +429,7 @@
             <li>字段语法：<code>#图</code> 仅图片 / <code>#3</code> 最多 3 张 / <code>@表达式</code> 指定值格。</li>
             <li><strong>新后缀</strong>：末尾 <code>!</code> 去内部空格、<code>%N</code> 截前 N 字 / <code>%a-b</code> 截区间（不拆中文/emoji），如 <code>包名!</code>、<code>简介#1%4</code>。</li>
             <li>自动剔除按钮文字；图片仅接受 http/https。</li>
+            <li>某条字段<strong>取不到内容</strong>（值格空着、或整格什么都没抓到）时，这一项<strong>整张卡片都不出现</strong> —— 不会只剩一个只有字段名的空壳让你点。</li>
           </ul>
         </div>
 
@@ -425,6 +440,10 @@
             <li>可拖动、收起成圆钮、单条关闭（本次会话）；可<strong>看大图、相册翻页</strong>。</li>
             <li>配合「抓取 / 仅抓取」自动拼内容。</li>
             <li>图片尺寸按「关键词 &gt; 分组 &gt; 全局默认」取值（关键词那一档需<strong>本词</strong>勾「重要」才生效）。</li>
+            <li>同一处命中<strong>多个词</strong>时，条目上默认只显示<strong>最短</strong>的那一条；右边带一枚<strong>命中计数</strong>小标（如 <code>×3</code>），点开条目上的下拉箭头就能看到<strong>全部命中</strong>（多个词分多行列出），点其中一项可切换主显示。</li>
+            <li>同一条命中不会为了多值就铺开成好几条 —— 多出来的词都在那枚小标的下拉里，面板更省地方。</li>
+            <li>点缩略图＝看大图（灯箱）。该图的<strong>全部识别文字</strong>在<strong>右侧全文栏</strong>（浮层）里：它默认<strong>隐藏</strong>，点灯箱工具条上的<strong>眼睛</strong>开关才出现；栏里文字<strong>可选中</strong>，也可点栏里的<strong>一键复制</strong>，关掉大图即复位。<strong>图片条目上原来的 📋 复制按钮已移除</strong>，要整段文字请到这里取。</li>
+            <li>面板宽度：默认 <strong>250px</strong>；「重要笔记 → 面板默认宽度」里可调 <strong>160–600px</strong>（长期值），面板<strong>右下角</strong>随时能拖（临时值）—— 两者的区别见「📖 功能 → 注意事项」。</li>
           </ul>
         </div>
 
@@ -461,6 +480,9 @@
             <li>本地识别图片文字，匹配「图片命中关键词」。</li>
             <li>结果进面板「🖼 图片命中」分区，<strong>不产生文字高亮</strong>。</li>
             <li>识别全在本机；语言包按需下载 / 手动导入 / 自检；跨域图片按站点授权。</li>
+            <li>长截图会<strong>分段识别</strong>，跨分块的重叠区里，<strong>同一条物理行自动去重合并</strong>，不会因为切块把同一行文字算两遍（原图里本来就重复的内容不会被吃掉）。</li>
+            <li>大图（灯箱）里那张图的<strong>识别全文</strong>并列在<strong>右侧全文栏</strong>（浮层）展示：可用工具条上的<strong>眼睛</strong>开关<strong>隐藏 / 显示</strong>（默认隐藏），栏内文字<strong>可选中</strong>，还有<strong>一键复制</strong>（浮层隐藏时复制按钮一起隐藏）；关掉大图即复位。图片条目上原来的 <strong>📋 一键复制按钮已移除</strong>，要复制完整识别文字请到这个浮层里取。</li>
+            <li><strong>下一轮将支持：右键网页图片直接识别</strong>（右键即同意本次代读，无需事先加白名单）；与下面的「<strong>跨域图片</strong>」站点授权是两档同意口径，见「跨域图片」段的说明。</li>
           </ul>
         </div>
 
@@ -485,6 +507,18 @@
         </div>
       </div>
 
+      <div class="kh-help">
+        <h4>⚠️ 注意事项与已知局限（本轮）</h4>
+        <ul>
+          <li><strong>「面板宽度」有两个值，别弄混</strong>：设置页「重要笔记 → 面板默认宽度」调的是<strong>默认值（长期值）</strong>，160–600px、默认 250px，面板每次打开都按它来；面板<strong>右下角</strong>直接拖出来的是<strong>临时值</strong>，只对当前这一次显示有效、<strong>不写回设置</strong>，刷新页面就回到默认值。要「以后都这么宽」就在设置页改；只是这会儿嫌窄/嫌宽，拖右下角即可。两处数值不一样是正常的，不是没生效。</li>
+          <li><strong>命中词后面那个小数字是什么</strong>：面板每条笔记的命中词后面跟的<strong>裸数字</strong>（如 <code>3</code>）不是次数单位，而是<strong>该词在本页命中的处数</strong>（命中 1 处时不显示小标，2 处起才出现）；点开可看全部命中。</li>
+          <li><strong>「右键读图＝一次性同意」与「站点授权＝长期授权」</strong>：<strong>下一轮将支持</strong>在网页图片上点右键直接识别 —— <strong>右键即代表你同意本次代为读取这张图</strong>，只读你点的那一张，<strong>不</strong>写进白名单。而跨域图床的图，扩展默认读不到，必须在「图片识别 → 跨域图片」里<strong>按站点显式授权</strong>后，自动扫描时才会代读 —— 那是长期授权，登记一次以后都算数。两者不冲突：<strong>一次性的用右键，常去的站点进名单</strong>。<strong>本轮还没有右键入口</strong>，要读跨域图只能走站点授权。</li>
+          <li><strong>跨域图未授权时的表现</strong>：被标成「跨域（未授权）」的图片，默认视图里<strong>看不到</strong>，只在面板的「<strong>显示全部 (N)</strong>」里出现；把该站点加进「跨域图片」白名单后才会正常处理（既有行为，本轮不修）。</li>
+          <li><strong>长截图去重的边界</strong>：去重只认「<strong>删掉空白后完全相同</strong>」的行；同一行两次识别<strong>带错字</strong>（OCR 把它认成了不同的字）时仍可能残留一条重复，本轮不处理。</li>
+          <li><strong>超长截图有切块上限</strong>：切块数到顶之后，<strong>超出部分不会被识别</strong>（是内容缺失，不是重复）。这是既有天花板，本轮不处理，具体从多高开始触发还没定位。</li>
+          <li><strong>本轮只出方案、代码没改的两项</strong>：①整页重建 / 扫描<strong>提速</strong>——只产出了方案与测量读数，卡顿本轮不保证改善；②<strong>右键图片做 OCR</strong>——只做了方案与权限代价评估，入口下一轮才有。除此之外，本页描述的功能均已在本版本生效。</li>
+        </ul>
+      </div>
 
       </div>
       <div class="kh-hpanel" data-hpan="data">
@@ -525,13 +559,17 @@
         </ul>
 
         <h4>Q8：图片识别（OCR）怎么用？</h4>
-        <p>在「🖼 图片识别」分区确保语言包可用（可下载 / 手动导入 / 自检）；开启后，图片里含「图片命中关键词」的文字会被识别并进面板「🖼 图片命中」分区，<strong>不产生文字高亮</strong>。跨域图片需先在「图片识别」里按站点授权。</p>
+        <p>在「🖼 图片识别」分区确保语言包可用（可下载 / 手动导入 / 自检）；开启后，图片里含「图片命中关键词」的文字会被识别并进面板「🖼 图片命中」分区，<strong>不产生文字高亮</strong>。跨域图片需先在「图片识别」里按站点授权；<strong>下一轮</strong>还会支持在网页图片上<strong>右键</strong>直接识别单张 —— 右键即这一次同意扩展代读你点的那张，与站点白名单（长期授权）并存不冲突，口径见「🖼 图片识别 → 跨域图片」。</p>
         <h4>Q9：抓取字段的 <code>!</code> 和 <code>%N</code> 后缀是什么？</h4>
         <p>加在抓取字段末尾，用于<strong>清洗取值</strong>：<code>!</code> 去掉内容里的内部空格；<code>%N</code> 只取前 N 字、<code>%a-b</code> 取第 a~b 字（按字符截取，不拆开中文/emoji）。例 <code>包名!</code>、<code>简介#1%4</code>。</p>
         <h4>Q10：抓取的「层级」当前层 / 内层 / 外层是什么？</h4>
         <p>页面可能表格套表格。<strong>当前层</strong>＝命中格所在的那张表；<strong>内层</strong>＝当前层里嵌着的更小表格；<strong>外层</strong>＝当前层的祖先表。可多选，新建默认「当前层」。</p>
         <h4>Q11：更新日志去哪看？</h4>
         <p>设置页「ℹ️ 关于 → 版本信息」，可用<strong>右侧目录</strong>按版本号跳转；完整历史在<strong>欢迎页</strong>。</p>
+        <h4>Q12：设置页改了「面板默认宽度」，为什么面板没跟着变？</h4>
+        <p>「面板默认宽度」调的是<strong>默认值</strong>（以后每次打开的面板宽度）；没拖过<strong>右下角</strong>的面板，这会儿正开着也会<strong>立刻</strong>跟着变。一旦拖过<strong>右下角</strong>，面板就按你拖出来的宽度显示 —— 那是<strong>临时值</strong>，只作用在页面上、不写进设置，此时再改设置页也不会顶掉它，<strong>刷新页面就回到默认值</strong>。填 160–600 之外会自动夹到边界，填了非数字则回到 250。</p>
+        <h4>Q13：图片条目上的「📋 一键复制」去哪了？</h4>
+        <p>已移除（图片条目上不再有那个按钮），完整识别文字请到<strong>大图（灯箱）右侧全文栏</strong>里取：点<strong>一键复制</strong>，或在该栏里<strong>选中后 Ctrl+C</strong>；该栏默认隐藏，用灯箱工具条上的<strong>眼睛</strong>开关显示 / 隐藏，复制按钮跟着它一起显隐。面板里<strong>点命中的词块</strong>，复制的仍是它所在的<strong>整句</strong>。</p>
       </div>
 
       </div>

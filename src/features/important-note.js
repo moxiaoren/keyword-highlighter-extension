@@ -46,16 +46,25 @@
     :host { all: initial; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     .khin-wrap {
+      /* 面板默认宽度的**唯一真源**（T26 / 用户 2026-10-12：200 → 250）。
+       * 设置页选了别的值 ⇒ panel.render() 把同一个变量写成这一元素上的**内联**样式（内联压过本行）
+       * ⇒ 面板宽度与命中词块的上限一起跟着走；没设过（或 JS 还没跑到）就走这个默认。
+       * 变量定义处全文件只有这一处：测试会拿它跟 config 的默认值对表，防两处漂移。 */
+      --khin-panel-w: 250px;
       position: fixed; z-index: 2147483646;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif;
       user-select: none;
     }
     /* ---------- 收起态：圆形 FAB ---------- */
+    /* 收起态 FAB 现在是真按钮（T29 / F4.1：原来是个 div，只绑了 dblclick ⇒ 键鼠都只有
+     * 「双击」这一条隐性通路，能收不能开）。做成 <button> 后要自己清掉 UA 的按钮皮：
+     * 边框，以及表单控件不继承字体 —— 二者都得显式盖掉，否则圆里多一圈框、字号变默认。 */
     .khin-fab {
       width: 48px; height: 48px; border-radius: 50%;
       background: linear-gradient(135deg, #3579c2, #5fb0ee); color: #fff;
       display: flex; align-items: center; justify-content: center;
       font-size: 22px; cursor: move; position: relative;
+      border: 0; font-family: inherit;
       box-shadow: 0 4px 14px rgba(74, 144, 217, .4);
       transition: transform .15s ease, box-shadow .15s ease;
     }
@@ -67,11 +76,13 @@
       border: 2px solid #fff;
     }
     /* ---------- 展开态：面板 ----------
-     * 默认宽 200px（用户 2026-10-11：360px 在左侧遮挡标题列太多 → 先收 300px → 再收到 200px）。
+     * 默认宽 250px（用户 2026-10-12；2026-10-11 那轮的 360 → 300 → 200 已是上一版口径），
+     * **可经设置页调整**（变量 --khin-panel-w，定义处在 .khin-wrap）。
      * min-width 必须跟着降到 160px —— CSS 里 min-width 压过 width，只改 width 等于白改。
-     * **这里是宽度的唯一真源**：applyPosition() 的水平钳位读面板实测宽度，不再抄一个字面量。 */
+     * 宽度不再写死在这里：唯一真源是 .khin-wrap 上的 --khin-panel-w；applyPosition() 的水平钳位
+     * 读面板**实测**宽度，也不再抄一个字面量。 */
     .khin-panel {
-      width: 200px; min-width: 160px; max-width: calc(100vw - 32px);
+      width: var(--khin-panel-w); min-width: 160px; max-width: calc(100vw - 32px);
       max-height: calc(100vh - 24px); background: #fff;
       border: 1px solid #e3e8f0; border-radius: 10px;
       box-shadow: 0 8px 28px rgba(0,0,0,.18);
@@ -102,10 +113,17 @@
     }
     .khin-notebar[hidden] { display: none; }
     .khin-notebar .khin-notecount { color: #64748b; font-weight: 500; }
-    .khin-notebar .khin-notearrow { margin-left: auto; color: #94a3b8; font-size: 11px; }
+    /* 次要灰字统一 #64748b（白底 ≈4.76:1，过 WCAG AA 的 4.5:1）：原来四处用 #94a3b8
+     * （≈2.57:1，连大字门槛 3:1 都不到）⇒「展开/收起」这类唯一的操作线索读不出来。
+     * T29 / F4.5：本行 + 题头箭头 + 空说明行 + 耗时徽标四处同批改。 */
+    .khin-notebar .khin-notearrow { margin-left: auto; color: #64748b; font-size: 11px; }
     /* 正文至少留得住一行（用户 2026-10-07 的"被挤没"就是缩到 0 了）—— 再多交给它自己滚 */
     .khin-body { flex: 1 1 auto; min-height: 60px; overflow-y: auto; padding: 4px 0; }
     .khin-body.khin-collapsed { display: none; }
+    /* 整页只有图片命中时这份列表是空的，但它仍占着 min-height:60px 的 flex 槽位
+     * ⇒ 面板顶部白出一条 60px 的带子（T29 / F6.1）。它必须和别的分区一样有自己的
+     * [hidden] 兜底：display:none 才不参与 flex 布局（visibility/opacity 都不行）。 */
+    .khin-body[hidden] { display: none; }
     .khin-body::-webkit-scrollbar { width: 5px; }
     .khin-body::-webkit-scrollbar-thumb { background: #d8d8d8; border-radius: 3px; }
     .khin-body::-webkit-scrollbar-track { background: transparent; }
@@ -115,14 +133,17 @@
     .khin-item:last-child { border-bottom: none; }
     .khin-item-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; margin-bottom: 3px; }
     .khin-item-tags { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; min-width: 0; }
+    /* 命中词块的上限是**派生的**：一个词块不许超过面板里那一行的可用宽度
+     * （- 48px ≈ 条目左右内边距 20 + 关闭按钮与间隙 28），250px 面板下 ≈ 202px ——
+     * 与收窄前的 200px 等价，但面板宽度一改它自己跟着走，不留会过期的字面量。 */
     .khin-item-kw {
       font-size: 11px; font-weight: 600; color: #3579c2; background: #eaf1fb;
-      border-radius: 4px; padding: 1px 6px; max-width: 200px;
+      border-radius: 4px; padding: 1px 6px; max-width: calc(var(--khin-panel-w) - 48px);
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0;
     }
     .khin-item-adj {
       font-size: 11px; font-weight: 600; color: #2e7d32; background: #e8f5e9;
-      border-radius: 4px; padding: 1px 6px; max-width: 200px;
+      border-radius: 4px; padding: 1px 6px; max-width: calc(var(--khin-panel-w) - 48px);
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0;
     }
     .khin-item-close {
@@ -130,8 +151,27 @@
       font-size: 13px; padding: 2px 4px; border-radius: 4px; line-height: 1; flex-shrink: 0;
     }
     .khin-item-close:hover { color: #e53935; background: #ffe9e9; }
+    /* 命中计数小标：一张卡命中多个时才出现（N>1），点了在下面铺开下拉。 */
+    .khin-tag-more {
+      flex: 0 0 auto; font-size: 10px; font-weight: 600; line-height: 15px; padding: 0 5px;
+      border: 1px solid rgba(53,121,194,.45); border-radius: 8px;
+      background: #eaf1fb; color: #3579c2; cursor: pointer;
+    }
+    .khin-tag-more:hover { background: #d8e7fa; }
+    /* 下拉：整行铺开（flex-basis 100%），最多 20 条、超出在列表体内滚动。
+       条目一律单行 + ellipsis —— 只做视觉省略，DOM 里仍是完整文本。 */
+    .khin-tag-list { flex: 1 1 100%; min-width: 0; margin-top: 3px; }
+    .khin-tag-list-h { font-size: 10px; color: #64748b; margin-bottom: 2px; }
+    .khin-tag-list-b { max-height: 132px; overflow-y: auto; }
+    .khin-tag-item {
+      font-size: 11px; color: #334155; padding: 1px 4px; border-radius: 3px; cursor: pointer;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .khin-tag-item:hover { background: #f1f5f9; }
+    .khin-tag-item.khin-tag-on { background: #eaf1fb; color: #3579c2; font-weight: 600; }
     /* 内容 / 标签可选中复制；外壳保持 user-select:none 仅避免误选 */
-    .khin-item-note, .khin-item-tags, .khin-item-kw, .khin-item-adj, .kh-table {
+    .khin-item-note, .khin-item-tags, .khin-item-kw, .khin-item-adj, .kh-table,
+    .khin-tag-list-h, .khin-tag-item {
       user-select: text; -webkit-user-select: text;
     }
     .khin-item-note ::selection, .kh-table ::selection { background: #a6d3ff; color: inherit; }
@@ -145,15 +185,16 @@
     .khin-item-note a { color: #1a73e8; text-decoration: none; }
     .khin-item-note a:hover { text-decoration: underline; }
     .khin-item-note b, .khin-item-note strong { font-weight: 600; color: #1f2937; }
-    .khin-item-note img, .khin-item-body img {
+    /* 图片样式只服务 .khin-item-note（T29 / F1.1：那条并排的 .khin-item-body 选择器与
+     * .khin-item-body / .khin-empty 两条规则全仓零引用 —— 面板里没有任何元素带这些类，
+     * 留着只会让人以为"还有另一套正文容器"；同类死样式 .khin-imgempty 也已删） */
+    .khin-item-note img {
       max-width: var(--kh-img-size, 70px); max-height: var(--kh-img-size, 70px);
       width: auto; height: auto;          /* 等比缩放，**不裁剪** */
       border-radius: 4px; margin: 4px 8px 4px 0;
       display: inline-block; vertical-align: middle; cursor: pointer;
     }
-    .khin-item-note img:hover, .khin-item-body img:hover { opacity: .92; }
-    .khin-item-body { margin-top: 4px; }
-    .khin-empty { padding: 20px; text-align: center; color: #aaa; font-size: 13px; }
+    .khin-item-note img:hover { opacity: .92; }
     /* 抓取后续字段渲染的多行表格：**所有**单元格保留换行（v1.8.3）
      * 宽度（v1.99.99.11 用户实测要求）：**按内容收缩**，不再无条件 width:100%。
      *   用户原话："表格总宽度总是等于重要笔记宽度…避免明明就一列，结果宽度上还是填满了重要笔记"。
@@ -196,8 +237,8 @@
     .khin-imgsec {
       border-top: 1px solid rgba(148,163,184,.35); margin-top: 2px;
       /* 封顶收紧到 40vh（用户 2026-10-11：矮屏下 50vh 让图区吃到 260px，笔记区只剩 165px
-       * 且上下双滚动条）。实测（_stage/ui-review-2026-10-11）：200×900 图区实高 312px 由内容
-       * 决定、不受此上限影响；200×520 下 40vh = 208px，笔记区 165 → ≈217px。
+       * 且上下双滚动条）。实测（_stage/ui-review-2026-10-11，**当时面板宽 200px**）：200×900 图区
+       * 实高 312px 由内容决定、不受此上限影响；200×520 下 40vh = 208px，笔记区 165 → ≈217px。
        * 别再往上加 —— 加回去就是拿笔记区换图区。 */
       flex: 0 0 auto; min-height: 0; max-height: 40vh;
       display: flex; flex-direction: column;
@@ -211,7 +252,7 @@
       .khin-imgsec { max-height: 30vh; }
     }
     /* 题头一行要放下：图标+短标题 / 计数 / 「全部 N」复核入口 / 折叠箭头。
-     * 200px 宽下**不许折行**（2026-10-11 用户现场截图：折成两行把标题挤碎）——
+     * 面板窄时**不许折行**（2026-10-11 用户现场截图：折成两行把标题挤碎）——
      * nowrap + overflow:hidden，让计数这一格先让位（它最短、含义最不依赖宽度）。 */
     .khin-imghead {
       display: flex; align-items: center; gap: 4px; cursor: pointer; user-select: none;
@@ -225,17 +266,17 @@
     }
     /* 「显示全部 / 只看命中」= 人工复核入口（用户 2026-10-06：面板以命中为目的，
        没命中的图默认不展示，但必须留一条能打开的渠道）。放在题头右侧、箭头左边。
-       2026-10-11：收到 200px 后改短标签「全部 N / 只命中」，完整语义挪到 title。 */
+       2026-10-11：面板收窄后改短标签「全部 N / 只命中」，完整语义挪到 title。 */
     .khin-imghead .khin-imgall {
       margin-left: auto; color: #2563eb; font-size: 11px; font-weight: 500;
       cursor: pointer; text-decoration: underline; flex: 0 0 auto; white-space: nowrap;
     }
     .khin-imghead .khin-imgall[hidden] { display: none; }
-    .khin-imghead .khin-imgarrow { margin-left: auto; color: #94a3b8; font-size: 11px; flex: 0 0 auto; white-space: nowrap; }
+    .khin-imghead .khin-imgarrow { margin-left: auto; color: #64748b; font-size: 11px; flex: 0 0 auto; white-space: nowrap; }
     /* 没有「全部 N」时箭头才吃 margin-left:auto；两者都有时只有前者吃（否则中间撕出一个大空隙） */
     .khin-imghead .khin-imgall:not([hidden]) + .khin-imgarrow { margin-left: 0; }
     /* 默认视图里一条都没有时的说明行（不能悄悄空白：那看起来就是坏了） */
-    .khin-imgnone { color: #94a3b8; font-size: 12px; padding: 2px 0 4px; }
+    .khin-imgnone { color: #64748b; font-size: 12px; padding: 2px 0 4px; }
     /* 分区封顶后由这份列表自己滚（min-height:0 是关键：否则 flex 子项不肯缩到内容高度以下，
      * 出不了滚动条，还是会顶破面板） */
     .khin-imglist {
@@ -246,8 +287,8 @@
     .khin-imglist::-webkit-scrollbar-thumb { background: #d8d8d8; border-radius: 3px; }
     .khin-imglist::-webkit-scrollbar-track { background: transparent; }
     .khin-imgitem { display: flex; gap: 6px; align-items: flex-start; }
-    /* 缩略图 + 它下面**固定**的复制按钮（2026-10-09 用户裁决：一键复制这张图识别出的全部文字，
-     * 不再依赖"先点开文本再复制"）。按钮在列里不参与压缩，缩略图宽度仍是 44px。 */
+    /* 缩略图列（44px，在行里不参与压缩）。2.0.1.15 需求 7：用户裁决删掉它下面那条「复制全文」
+     * 按钮，容器保留 flex column + gap（缩略图本身仍按列排，宽度 44px 不变）。 */
     .khin-imgthumbwrap { flex: 0 0 44px; display: flex; flex-direction: column; align-items: stretch; gap: 2px; }
     .khin-imgthumb {
       width: 44px; height: 44px; flex: 0 0 44px; object-fit: cover; border-radius: 6px;
@@ -255,16 +296,20 @@
     }
     .khin-imgmeta { min-width: 0; flex: 1; font-size: 11px; line-height: 1.4; color: #334155; }
     /* 一行里 = 关键词（可省） + 状态图标+短标签（必看） + 耗时（可省）。
-     * 200px 下让**关键词先让位**（ellipsis），状态标签绝不折行也绝不被挤掉。 */
+     * 让位顺序（T29 / F2.2 修正）：关键词先 ellipsis → 还不够时状态标签自己缩到 2em 后再 ellipsis
+     * （完整措辞在 tag.title 里读得回）→ 耗时绝不参与让位。
+     * 原来标签是 flex: 0 0 auto 且没有上限 ⇒ 长标签（最多 16 字）先吃满自己需要的宽度、把关键词压到 0，
+     * 再把行尾的耗时连同省略号一起裁掉 —— 同一列表里别的行有耗时、这几行没有，看着就像没识别。 */
     .khin-imgrow { display: flex; align-items: baseline; gap: 3px; min-width: 0; flex-wrap: nowrap; overflow: hidden; }
     .khin-imgkw {
       font-weight: 600; color: #0f172a; flex: 1 1 auto; min-width: 0;
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
     .khin-imgtag {
-      font-size: 11px; border-radius: 4px; padding: 0 4px; flex: 0 0 auto; white-space: nowrap;
+      font-size: 11px; border-radius: 4px; padding: 0 4px; white-space: nowrap;
+      flex: 0 1 auto; min-width: 2em; overflow: hidden; text-overflow: ellipsis;
     }
-    /* 状态图标（2026-10-11 用户裁决：200px 放不下「未命中/识别中…」这类长标签，
+    /* 状态图标（2026-10-11 用户裁决：面板窄时放不下「未命中/识别中…」这类长标签，
      * 图标让同类状态一眼可分）。它是**装饰**，单独一个 span —— 不许拼进
      * .khin-imgtag 的文本里：那是状态标签的唯一措辞（_e2e/content.test.js 多处
      * 用 tag.indexOf('命中') === 0、eq(tag,'命中') 钉着「标签只说结论」）。
@@ -274,10 +319,14 @@
     }
     /* 本次识别的真实耗时（S3-④）：只在有值时挂载，字号比标签再小一档、不抢主信息 */
     .khin-imgcost {
-      font-size: 10px; color: #94a3b8; flex: 0 0 auto; white-space: nowrap;
+      font-size: 10px; color: #64748b; flex: 0 0 auto; white-space: nowrap;
       font-variant-numeric: tabular-nums;
     }
-    .khin-imgtag.hit { background: #dcfce7; color: #166534; }
+    /* 「命中」这一族改用语义 token（T29 / F5.2）：面板原来写的是 #dcfce7 / #166534
+     * （Tailwind green-100/800），与 tokens 的 --success-soft (#e9f7ef) / --success-strong (#15803d)
+     * 是同一个概念的两套值 ⇒ 面板里的绿与设置页、弹窗对不上。四处同批改完（标签/.图标/词块）；
+     * 都带 fallback，而 fallback 给的就是 token 的值，不是旧绿 —— 取不到变量也不许退回旧值。 */
+    .khin-imgtag.hit { background: var(--success-soft, #e9f7ef); color: var(--success-strong, #15803d); }
     .khin-imgtag.miss { background: #f1f5f9; color: #64748b; }
     .khin-imgtag.bad { background: #fee2e2; color: #991b1b; }
     /* 进行中（wait 类）与「读不到图 / 缺资产」（note 类）**都不是故障，不许染红** ——
@@ -288,30 +337,29 @@
     .khin-imgtag.wait { background: #e2e8f0; color: #475569; }
     .khin-imgtag.note { background: #f1f5f9; color: #475569; }
     /* 图标跟着同一个状态类走色（类名仍由 KH.OcrCopy.stateClass 给，面板不自己挑字符） */
-    .khin-imgico.hit { color: #166534; }
+    .khin-imgico.hit { color: var(--success-strong, #15803d); }
     .khin-imgico.miss { color: #94a3b8; }
     .khin-imgico.bad { color: #b91c1c; }
     .khin-imgico.wait { color: #64748b; }
     .khin-imgico.note { color: #64748b; }
-    /* 复制按钮：缩略图下面那条 = 复制这张图的**全部**识别文字；
-     * 命中词块旁边那条（.khin-imgchip）＝复制含这个词的整句。 */
-    .khin-imgcopy {
-      padding: 0 4px; font-size: 10px; line-height: 15px; cursor: pointer;
-      border: 1px solid rgba(148,163,184,.55); border-radius: 4px; background: #fff; color: #475569;
-    }
-    .khin-imgcopy:hover { background: #f1f5f9; }
-    .khin-imgcopy[hidden] { display: none; }
     /* 命中词块（2026-10-09 用户裁决）：面板上只留命中的词，点它复制**它所在的整句**，
-     * 整段识别文本改到光箱右侧与悬停说明里 —— 面板不再被一张图的长文本撑开。 */
+     * 整段识别文本改到光箱右侧与悬停说明里 —— 面板不再被一张图的长文本撑开。
+     * 缩略图下那条「复制全文」按钮已按用户 2026-10-12 裁决删除，样式与类名一并删净；
+     * 复制全文改走「进大图 → 在 OCR 全文栏里选中 → Ctrl+C」，大图工具栏也不许新增
+     * 复制按钮 —— 那条通路的承重件是下方 .kh-lb-side 的 user-select: text。 */
     .khin-imgchips { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 3px; }
     .khin-imgchip {
       max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
       padding: 0 6px; font-size: 11px; line-height: 17px; border-radius: 9px; cursor: copy;
-      background: #dcfce7; color: #166534; border: 1px solid rgba(22,101,52,.25);
+      background: var(--success-soft, #e9f7ef); color: var(--success-strong, #15803d);
+      border: 1px solid rgba(22,101,52,.25);
     }
     .khin-imgchip:hover { background: #bbf7d0; }
-    .khin-imgchip.copied { background: #166534; color: #fff; }
-    .khin-imgempty { font-size: 12px; color: #64748b; padding: 2px 0 6px; }
+    .khin-imgchip.copied { background: var(--success-strong, #15803d); color: #fff; }
+    /* 复制失败：就地红一下（T29 / F3.1）。原来只有 title 换了一句话 —— 那要悬停才看得见，
+     * 用户点完鼠标早已移开；剪贴板不可用是最常见的失败，必须一眼看出没复制上。
+     * 复用 .khin-imgtag.bad 那对现成的红（不新增色值），与 .copied 在同一次 1200ms 复位里清掉。 */
+    .khin-imgchip.failed { background: #fee2e2; color: #991b1b; border-color: rgba(153,27,27,.35); }
   `;
 
   /** 图片协议白名单（与内容脚本 sanitize 同口径：仅 http(s)） */
@@ -407,8 +455,11 @@
   const LIGHTBOX_ZOOM_MIN = 0.25;
   const LIGHTBOX_ZOOM_MAX = 8;
   const LIGHTBOX_ZOOM_STEP = 1.25;
-  /** 平移边界余量：即使图比视口小，也允许挪这么多（手感不死板），但不允许挪出视野丢掉 */
-  const LIGHTBOX_PAN_SLACK = 60;
+  /** 平移边界：图可以摆到**整屏任意位置**，但至少要有这么多像素还留在视口内（不至于被拖丢）。
+   * 旧口径是「图边贴视口边 + 60 余量」，图比视口小时被 Math.max(0, …) 压成 0 ⇒ 大图常态
+   * （84vw < 视口宽）只剩 60px 可挪，用户反馈「拖动范围有点小」（T43 放开）。
+   * 回程出口只有复位按钮与双击复位两处，都早已存在 —— 不需要新增恢复入口。 */
+  const LIGHTBOX_PAN_KEEP = 120;
   const LIGHTBOX_STYLE = `
     .kh-lb { position: fixed; inset: 0; z-index: 2147483647; background: rgba(0,0,0,.78);
       display: flex; align-items: center; justify-content: center; cursor: default; }
@@ -419,12 +470,16 @@
     .kh-lb-stage {
       display: flex; flex-direction: column; align-items: center; gap: 10px;
       padding: 12px; max-width: 96vw; max-height: 96vh;
+      position: relative;              /* T41：全文栏的定位祖先 —— 坐标按容器算，不再按整个视口算 */
       border: 1px solid rgba(255,255,255,.18); border-radius: 12px;
       background: rgba(22,26,34,.94);                      /* 实心底色：一眼看出"这是插件的容器" */
       box-shadow: 0 18px 60px rgba(0,0,0,.55), 0 0 0 1px rgba(0,0,0,.35);
       cursor: default;
     }
-    .kh-lb-row { display: flex; align-items: center; gap: 12px; }
+    .kh-lb-row { position: relative; display: flex; align-items: center; gap: 12px; }
+    /* 图片（2.0.1.15 需求 5 案④）：**大图尺寸完全不变** —— 全文栏移出这一行之后，行里只剩
+     * 图片 + 左右按钮，84vw 的上限在任何视口都放得下（1920：行 1733 < 容器 1843；1280：行 1195 < 1228）。
+     * 所以这里既不需要包裹层、也不需要 overflow 剪裁：「有全文 / 无全文」图宽完全相同。 */
     .kh-lb img { max-width: 84vw; max-height: 78vh; width: auto; height: auto;
       position: relative; z-index: 1;                 /* 图片在下层：放大溢出时不许压住按钮 */
       border-radius: 6px; box-shadow: 0 12px 40px rgba(0,0,0,.45); background: #fff;
@@ -457,20 +512,64 @@
     .kh-lb-idx { min-width: 40px; text-align: center; opacity: .9; font-variant-numeric: tabular-nums; }
     .kh-lb-sep { opacity: .35; }
     .kh-lb-hint { opacity: .75; }
-    /* 全文栏（2026-10-09 用户裁决）：面板里不再铺长文本，点缩略图开大图后在**右侧**看全文。
-     * 只有识别出文字时才出现；出现时图片收窄，两者同屏不互相挤（见 .kh-lb-has-side）。 */
+    /* 全文栏（2.0.1.15 需求 5 → T41 视觉重做 → T46 锚点修正）：**卡片内的右侧栏**（用户 2026-10-12 裁决方案 2）
+     *   · 定位祖先 = 行 .kh-lb-row 自己（它加了 position:relative），**不再是容器 .kh-lb-stage**。
+     *     T46 真机缺陷的根因就是基准不一致：浮层锚容器、翻页键锚行（列向 flex 居中、行宽 = 内容宽），
+     *     只要行的右缘比容器右缘内缩超过 60px，浮层右缘就必然压进行里 —— 实测 paneRect 与 nextRect
+     *     横向重叠 48px（= 整个按钮宽），elementFromPoint(› 中心) 命中的是浮层 ⇒ 真挡住点击。
+     *     现在浮层与两个导航键共用同一个祖先，右缘只可能落在导航外侧的间隙里，结构上不可能再重叠。
+     *   · 仍然**不参与行宽分配**（绝对定位）⇒「有全文 / 无全文」图一样宽（T41 验收项，不许回退）；
+     *     层级也仍高于图与导航（图 z-index:1、导航 z-index:2、本层 z-index:3）⇒ 放大溢出盖不住它。
+     *   · 右缘 60px = 导航宽 48 + 间隙 12；宽度上限再左右各留 60px ⇒ 行再窄也压不到 ‹/›。
+     *   · 纵向贴行的上下：top/bottom 都取 0 —— 旧的 12px / 48px 是**容器坐标**里的整定值
+     *     （12 = 卡片内边距、48 = 12 + 工具条 26 + 间距 10），换成"行"坐标后等价写法就是 0/0，
+     *     观感与 T41 一致：浮层与图片的上下边齐平。工具条是行的兄弟节点、在行外，压不到它。
+     *   · 默认隐藏（sideHidden 初始 true），工具条眼睛按钮与浮层自带的 × 是**同一个状态**；
+     *   · 外壳只管分栏与圆角：标题栏与两个按钮固定，**滚动只在正文区**（.kh-lb-side-t）。 */
     .kh-lb-side {
-      position: relative; z-index: 2; flex: 0 0 auto; width: 300px; max-width: 32vw; max-height: 78vh;
-      overflow: auto; padding: 8px 10px; border-radius: 8px;
-      background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.18);
+      position: absolute; top: 0; right: 60px; bottom: 0; z-index: 3;
+      width: 340px; max-width: min(342px, calc(100% - 120px));
+      display: flex; flex-direction: column; overflow: hidden;
+      border-radius: 8px; background: rgba(22,26,34,.96);
+      border: 1px solid rgba(255,255,255,.22);
+      box-shadow: 0 12px 40px rgba(0,0,0,.5);
       color: #e8eef7; font-size: 12px; line-height: 1.5;
-      white-space: pre-wrap; word-break: break-word; user-select: text; -webkit-user-select: text;
-      cursor: text;
     }
     .kh-lb-side[hidden] { display: none !important; }
-    .kh-lb-side-h { font-weight: 600; font-size: 11px; opacity: .75; margin-bottom: 4px; user-select: none; }
-    /* 必须排在上面 .kh-lb img 之后：同特异度靠顺序取胜 */
-    .kh-lb-has-side .kh-lb img { max-width: 56vw; }
+    .kh-lb-side-hd {
+      display: flex; align-items: center; gap: 8px;
+      padding: 7px 8px 7px 12px; border-bottom: 1px solid rgba(255,255,255,.13);
+      user-select: none; -webkit-user-select: none;
+    }
+    .kh-lb-side-h { font-weight: 600; font-size: 12px; }
+    /* 「共 N 行」是次要信息：靠 margin-right:auto 吃掉空档，把两个按钮顶到右侧 */
+    .kh-lb-side-n { font-weight: 400; font-size: 11.5px; opacity: .55; margin-right: auto; }
+    /* 容器自带的两个操作入口（复制 / 关闭）：同一个胶囊形态；复制成功转绿、失败转红并换文案 */
+    .kh-lb-side-abtn {
+      height: 24px; padding: 0 9px; border: 1px solid rgba(255,255,255,.35);
+      border-radius: 999px; background: #39404e; color: #fff;
+      font: inherit; font-size: 11.5px; line-height: 1; cursor: pointer;
+    }
+    .kh-lb-side-abtn:hover { background: #4b5464; }
+    .kh-lb-side-abtn.ok { background: var(--success-strong, #15803d); color: #fff; }
+    .kh-lb-side-abtn.bad { background: #fee2e2; color: #991b1b; }
+    .kh-lb-side-x { min-width: 24px; padding: 0 6px; }
+    /* 正文区：滚动与选中复制都在它身上（标签栏与按钮因此永远可见） */
+    .kh-lb-side-t {
+      flex: 1 1 auto; overflow: auto; padding: 10px 12px 12px;
+      white-space: pre-wrap; word-break: break-word;
+      user-select: text; -webkit-user-select: text; cursor: text;
+      font-size: 12.5px; line-height: 1.7;
+      scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.28) transparent;
+    }
+    .kh-lb-side-t::-webkit-scrollbar { width: 9px; }
+    .kh-lb-side-t::-webkit-scrollbar-thumb { background: rgba(255,255,255,.26); border-radius: 999px; }
+    .kh-lb-side-t::-webkit-scrollbar-track { background: transparent; }
+    /* 【已删】原来这里有一条 has-side 后代选择器（"全文栏出现就把图片收窄"）：
+     *   · 它本来就是**死规则** —— 类挂在 .kh-lb 自身、不在它的祖先链上，选择器要求的后代关系
+     *     永远不成立（真机实测匹配数为 0），真实生效的一直只有上面 .kh-lb img 的 84vw；
+     *   · 它表达的口径（图给全文栏让位）也已被用户否决：全文栏是浮层，大图尺寸不变。
+     * 所以是**删除**，不是改选择器。注释里不留旧规则的数值，免得看着像还有这条规则。 */
   `;
 
   /** 打开灯箱。`gallery`/`index` 为同一单元格内的相册（省略即单张）。返回是否打开成功 */
@@ -489,8 +588,17 @@
         '<button class="kh-lb-nav kh-lb-prev" type="button" title="上一张（←）" aria-label="上一张">‹</button>' +
         '<img class="kh-lb-img" alt="">' +
         '<button class="kh-lb-nav kh-lb-next" type="button" title="下一张（→）" aria-label="下一张">›</button>' +
+        /* 全文栏（T46）：DOM 顺序 = 图 → 导航（‹/›）→ 浮层。浮层排在行内最后，与两个导航键共用
+         * 同一个定位祖先（.kh-lb-row 的 position:relative），右缘只可能落在导航外侧的间隙里 ——
+         * 上一版把它挂成容器的直接子元素（行与工具条之后）时，真机实测它压住 › 按钮达 48px
+         * （= 整个按钮宽）并挡住点击；根因与修法见 .kh-lb-side 的几何注释。 */
         '<div class="kh-lb-side" hidden>' +
-        '<div class="kh-lb-side-h"></div>' +
+        '<div class="kh-lb-side-hd">' +
+        '<span class="kh-lb-side-h"></span>' +
+        '<span class="kh-lb-side-n"></span>' +
+        '<button class="kh-lb-side-abtn kh-lb-copy" type="button"></button>' +
+        '<button class="kh-lb-side-abtn kh-lb-side-x kh-lb-sidehide" type="button">×</button>' +
+        '</div>' +
         '<div class="kh-lb-side-t" data-kh-lb-text="1"></div>' +
         '</div>' +
         '</div>' +
@@ -501,10 +609,11 @@
         '<button class="kh-lb-btn kh-lb-in" type="button" title="放大（+）">＋</button>' +
         '<button class="kh-lb-btn kh-lb-rot" type="button" title="旋转 90°（R）">⟳</button>' +
         '<button class="kh-lb-btn kh-lb-reset" type="button" title="复位（也可双击图片）">复位</button>' +
+        '<button class="kh-lb-btn kh-lb-sidebtn" type="button" hidden></button>' +
         '<span class="kh-lb-sep">|</span>' +
         '<button class="kh-lb-open" type="button">在新标签页打开</button>' +
         '<span class="kh-lb-hint">拖动图片可平移；点图片外区域或按 Esc 关闭</span>' +
-        '</div></div></div>';
+        '</div>';
       const box = sr.querySelector('.kh-lb');
       const img = sr.querySelector('.kh-lb-img');
       const prev = sr.querySelector('.kh-lb-prev');
@@ -514,13 +623,37 @@
        * 标题文案也来自唯一真源 KH.OcrCopy，面板不许自己写中文。 */
       const side = sr.querySelector('.kh-lb-side');
       const sideText = sr.querySelector('.kh-lb-side-t');
+      const sideLines = sr.querySelector('.kh-lb-side-n');
+      const sideCopy = sr.querySelector('.kh-lb-copy');
+      const sideClose = sr.querySelector('.kh-lb-sidehide');
+      const sideBtn = sr.querySelector('.kh-lb-sidebtn');
       sr.querySelector('.kh-lb-side-h').textContent = KH.OcrCopy.VIEW.textPane;
-      const close = () => { box.hidden = true; img.removeAttribute('src'); };
-      /** 平移夹紧：最多让图挪到"还能看见"的范围（缩放变化后也要重夹，别把图拖丢） */
+      /* 「×」与工具条上的眼睛按钮是**同一个状态**（sideHidden），只是入口不同：
+       * 悬停说明也取自同一对 VIEW 键，不另写一套中文。 */
+      sideClose.title = KH.OcrCopy.VIEW.paneHide;
+      sideClose.setAttribute('aria-label', KH.OcrCopy.VIEW.paneHide);
+      sideCopy.textContent = KH.OcrCopy.VIEW.paneCopy;
+      sideCopy.title = KH.OcrCopy.VIEW.paneCopy;
+      /* 当前这张图的 **OCR 原文**（条目上的 text，即服务端识别结果）—— 一键复制只认它。
+       * 刻意不读 sideText.textContent：那是屏幕上的字，会被折行、被滚出视口，也可能被 UI 拼进来。 */
+      let curText = '';
+      /* 全文栏的显示态（2.0.1.15 需求 5）：**会话级**、**默认隐藏**（用户口径："默认隐藏，点眼睛才弹出"）。
+       * 只在这次开灯箱期间有效：close() 复位成隐藏，于是每次打开都从隐藏态开始。
+       * 刻意做成闭包变量：挂 host 上会跨次开灯箱存活（host 是缓存的 DOM 宿主），
+       * 存进扩展的持久化存储更会跨会话 —— 那都不是"临时隐藏全文"该有的生命周期。 */
+      let sideHidden = true;
+      const close = () => { box.hidden = true; img.removeAttribute('src'); sideHidden = true; };
+      /** 平移夹紧：图可以摆到**整屏任意位置**，只保证「至少 LIGHTBOX_PAN_KEEP 像素仍在视口内」，
+       * 所以怎么拖都不会把图丢掉（缩放变化后也要重夹，继续走它）。
+       * 推导：图中心在原点、宽 w，平移 tx 后跨度是 [tx − w/2, tx + w/2]；要求至少 KEEP 像素仍落在
+       * 视口 [−W/2, W/2] 内 ⇒ tx ≥ −(W+w)/2 + KEEP 且 tx ≤ (W+w)/2 − KEEP
+       * ⇒ 对称上界就是 (W+w)/2 − KEEP（Y 同构）。
+       * 旧式「图边贴视口边」在图比视口小时会被 Math.max(0, …) 压成 0（T43 换掉）。
+       * r 是含 transform 的实测盒 ⇒ 缩放/旋转后自动跟着变，不用另写分支。 */
       const clampPan = (tx, ty) => {
         const r = img.getBoundingClientRect();
-        const limX = Math.max(0, r.width - window.innerWidth) / 2 + LIGHTBOX_PAN_SLACK;
-        const limY = Math.max(0, r.height - window.innerHeight) / 2 + LIGHTBOX_PAN_SLACK;
+        const limX = Math.max(0, (window.innerWidth + r.width) / 2 - LIGHTBOX_PAN_KEEP);
+        const limY = Math.max(0, (window.innerHeight + r.height) / 2 - LIGHTBOX_PAN_KEEP);
         return {
           x: Math.min(limX, Math.max(-limX, tx)),
           y: Math.min(limY, Math.max(-limY, ty))
@@ -538,18 +671,35 @@
         const multi = g.length > 1;
         prev.hidden = !multi;                               // 单张：隐藏（不是置灰）
         next.hidden = !multi;
-        /* 全文栏：有识别文本才显示（没识别出文字的图不摆空栏），并把图片让窄一点 */
+        /* 全文栏：有识别文本才谈得上显示（没识别出文字的图不摆空栏），且**默认隐藏** —— 用户口径
+         * "默认隐藏，点眼睛才弹出"。本栏是浮层，它的显隐**不影响图片宽度**（案④）。 */
         const full = (cur && cur.text) ? String(cur.text) : '';
-        side.hidden = !full;
+        curText = full;                     /* 一键复制的唯一数据源（服务端 OCR 原文，不读屏幕文字） */
+        side.hidden = !full || sideHidden;
         sideText.textContent = full;
+        sideLines.textContent = full ? KH.OcrCopy.render(KH.OcrCopy.VIEW.paneLines, { n: full.split(/\r?\n/).length }) : '';
+        sideCopy.hidden = !full;            /* 没有 OCR 文本 ⇒ 按钮不出现（不是置灰） */
         box.classList.toggle('kh-lb-has-side', !!full);
+        /* 眼睛按钮：没识别出文字就没有可切的东西 ⇒ **不出现**（与 prev/next 单张时 hidden 同一手法；
+         * 置灰不可点会留下一个点了没反应的按钮，那才是噪声）。
+         * 文案取自真源 KH.OcrCopy.VIEW，灯箱不许自己写这两句。 */
+        sideBtn.hidden = !full;
+        sideBtn.textContent = sideHidden ? KH.OcrCopy.VIEW.paneShow : KH.OcrCopy.VIEW.paneHide;
         idxEl.textContent = multi ? ((i + 1) + ' / ' + g.length) : '';
         idxEl.setAttribute('title', multi ? ('第 ' + (i + 1) + ' 张 / 共 ' + g.length + ' 张') : '');
-        const p = clampPan(host._tx || 0, host._ty || 0);
+        /* 平移：**先把本次缩放/旋转写进 transform，再夹紧**（T43 追加）。clampPan 读的是活的
+         * getBoundingClientRect，顺序反了它拿到的就是上一次留下的尺寸 —— 从 4× 缩回 1× 时会按
+         * 旧的大盒算出很大的边界，平移量原样留下，用户看到的就是"缩回来后图飞出去"（要等下一次
+         * apply() 才收回）。夹紧若真的改了值才写第二次；没夹紧就不多写一次 style。 */
+        const tx0 = host._tx || 0, ty0 = host._ty || 0;
+        const s = host._scale || 1, rot = host._rot || 0;
+        img.style.transform = 'translate(' + tx0 + 'px, ' + ty0 + 'px) scale(' + s + ') rotate(' + rot + 'deg)';
+        const p = clampPan(tx0, ty0);
         host._tx = p.x;
         host._ty = p.y;
-        img.style.transform = 'translate(' + p.x + 'px, ' + p.y + 'px) scale(' +
-          (host._scale || 1) + ') rotate(' + (host._rot || 0) + 'deg)';
+        if (p.x !== tx0 || p.y !== ty0) {
+          img.style.transform = 'translate(' + p.x + 'px, ' + p.y + 'px) scale(' + s + ') rotate(' + rot + 'deg)';
+        }
       };
       const step = (d) => {
         const g = host._gallery || [];
@@ -576,6 +726,29 @@
       on(sr.querySelector('.kh-lb-out'), () => zoom(1 / LIGHTBOX_ZOOM_STEP));
       on(sr.querySelector('.kh-lb-rot'), rotate);
       on(sr.querySelector('.kh-lb-reset'), resetView);
+      /* 隐藏/显示右侧全文栏（需求 5）：用 on() 包装 —— 它做 preventDefault + stopPropagation，
+       * 否则这次点击会继续冒泡给 box 的关闭判定（按钮在 stage 内，虽然也不会关，但别留这个口子）。 */
+      on(sideBtn, () => { sideHidden = !sideHidden; apply(); });
+      /* 一键复制（T41 / 用户本次新增要求）：复制的是 curText —— 服务端 OCR 原文，不是屏幕文字，
+       * 也不是面板里的词。无文本时按钮已被 apply() 隐藏，所以这里不必判空（空串会被 copyToClipboard 拒掉）。
+       * 失败不静默：按钮就地转红并换成失败文案，1.2s 后复原（与面板词块的失败反馈同一套视觉语言）。 */
+      let copyFxTimer = 0;
+      on(sideCopy, () => {
+        copyToClipboard(curText, sr).then((ok) => {
+          sideCopy.textContent = ok ? KH.OcrCopy.VIEW.paneCopied : KH.OcrCopy.VIEW.paneCopyFail;
+          sideCopy.classList.toggle('ok', ok);
+          sideCopy.classList.toggle('bad', !ok);
+          clearTimeout(copyFxTimer);
+          copyFxTimer = setTimeout(() => {
+            sideCopy.textContent = KH.OcrCopy.VIEW.paneCopy;
+            sideCopy.classList.remove('ok');
+            sideCopy.classList.remove('bad');
+          }, 1200);
+        });
+      });
+      /* 「×」= 隐藏全文栏：与眼睛按钮共用同一个状态变量、共用一次 apply()，文案也取自同一对 VIEW 键，
+       * 所以两者永远不会不同步。它在浮层内 ⇒ 浮层隐藏时它一起隐藏（用户口径）。 */
+      on(sideClose, () => { sideHidden = true; apply(); });
 
       /* 图片：**拖动平移**（不再"点一下就退出"）。pointer 捕获 → 拖出图片范围也不丢指针。
        * 双击 = 复位（放大后想一步回到原始视图时的出口）。 */
@@ -600,15 +773,26 @@
       img.addEventListener('lostpointercapture', endDrag);
       img.addEventListener('dblclick', (e) => { e.preventDefault(); resetView(); });
 
-      /* 关闭：只在**点到容器（图片 + 左右按钮 + 工具条那一块）以外**时关。
-       * v1.99.99.12 用户口径："减小容器范围，改成点击容器内都不会退出" ——
-       * 判定用 `stage.contains(target)` 而不是"点在图片上吗"：容器内的空白（图与按钮之间的间隙、
-       * 工具条周围的留白）也一律不关，只有容器外的暗色遮罩才算"点出去了"。 */
+      /* 关闭：只在**按下点也在容器（图片 + 翻页键 + 工具条 + 浮层）以外**时，抬手/点击才关。
+       * v1.99.99.12 用户口径："减小容器范围，改成点击容器内都不会退出"；T46 真机又抓到两个反向误关：
+       *   · 在浮层里按下、往容器外拖（选词 / 滚动惯性）松手 —— click 的目标会退化成公共祖先 .kh-lb 自己，
+       *     容器里查不到它 ⇒ 被当成"点遮罩"把灯箱关掉；
+       *   · 从被浮层盖住的地方起手拖动、松手落在容器外 —— 同上。
+       * 所以判定改成以**按下的位置**为准（pointerdown 记一次，click 只读它），抬手落点不再决定关不关。 */
       const stage = sr.querySelector('.kh-lb-stage');
       const bar = sr.querySelector('.kh-lb-bar');
+      let pressInStage = false;
+      box.addEventListener('pointerdown', (e) => {
+        const t = e.target;
+        pressInStage = !!(t && stage.contains(t));
+      });
       box.addEventListener('click', (e) => {
         const t = e.target;
+        if (pressInStage) return;                           /* 按下在容器内 ⇒ 这一下不算"点遮罩" */
         if (t && stage.contains(t)) return;
+        /* 浮层现在就在容器内的行里，下面这条是兜底（T46 之前它在容器外，必须单列）—— 少了它，
+         * 在栏里点一下选词就会被当成"点到容器外"而把灯箱关掉（这栏存在的意义就是让人读和抄）。 */
+        if (t && side.contains(t)) return;
         if (bar && t && bar.contains(t)) return;
         close();
       });
@@ -656,56 +840,108 @@
     return d.innerHTML;
   }
 
+  /* 下拉最多渲染多少条（超出只显示总数，条目不再增多） */
+  const TAG_LIST_MAX = 20;
+
+  /* FAB 长按否决阈值（T40 / T37 真机取证）：收起态那颗 📌 既是"展开"按钮、又是"拖动"把手，
+   * 按住约 1 秒不动再松手 ⇒ 浏览器眼里就是一次普通 click ⇒ 面板自己弹开（鼠标与触屏都复现）。
+   * 判据：按住 ≥ 该阈值且期间无位移 ⇒ 不当作点击；快击照旧展开，拖完仍由 dragMoved 否决。
+   * 不用定时器：按下记时间戳、click 里比时长即可（键盘 Enter/空格不派发 pointerdown，
+   * 时间戳缺席 ⇒ heldMs 为 0 ⇒ 放行，键盘可达性不受影响）。 */
+  const FAB_LONG_PRESS_MS = 600;
+
+  /* 命中词块的复制反馈窗口（T63 · 真机 e2e 抓到的真产品缺陷）：
+   * 点 chip 后点亮 `.copied` / `.failed` 并换 title，这段反馈持续 IMG_COPY_MS 后复位。
+   * 原来是裸字面量写死在 setTimeout 里，现在**重建重放与到点复位读的是同一个数**（两处口径
+   * 必须一致），所以抽成常量 —— 顺带把窗口长度变成可查的契约。 */
+  const IMG_COPY_MS = 1200;
+
+  /* 命中文本的规范形：去首尾空白。**比较与显示都用它** ——
+     口径是"去首尾空白后按码点数比"，所以先归一再比。 */
+  const tagText = (s) => String(s == null ? '' : s).trim();
+
   const head = {
     /**
-     * 命中 → 卡片标签 HTML（`🔖 … / → …`），逐条对齐旧版 buildTagHtml 的四个分支。
-     * entries: [{ kw, adj }]
+     * 命中集 → 有效条目（顺序 = 入参顺序 = 文档序，全程**不排序**）。
+     * 一条 = 有 kw（去首尾空白后非空）；空文本命中不参与比较、也不计入命中数。
+     * @returns {Array<{kw: string, adj: string}>}
      */
-    tagHtml(entries) {
-      const plainVals = new Set();
-      const combo = new Map();       // adj -> Set<kw>
-      for (const e of entries || []) {
-        if (!e || !e.kw) continue;
-        if (e.adj) {
-          if (!combo.has(e.adj)) combo.set(e.adj, new Set());
-          combo.get(e.adj).add(e.kw);
-        } else {
-          plainVals.add(e.kw);
-        }
-      }
+    tagEntries(entries) {
       const out = [];
-      // 无标题普通词：多值聚合 🔖 a|b
-      if (plainVals.size) {
-        out.push('<span class="khin-item-kw">🔖 ' + Array.from(plainVals).map(escText).join('|') + '</span>');
+      for (const e of entries || []) {
+        if (!e) continue;
+        const kw = tagText(e.kw);
+        if (!kw) continue;
+        out.push({ kw, adj: tagText(e.adj) });
       }
-      const adjs = Array.from(combo.keys());
-      if (adjs.length) {
-        const valUnion = new Set();
-        adjs.forEach(a => combo.get(a).forEach(v => valUnion.add(v)));
-        const allSingle = adjs.every(a => combo.get(a).size === 1);
-        if (allSingle && valUnion.size === 1) {
-          // 多标题同值 → 标题合并，箭头随关键词模块
-          const val = Array.from(valUnion)[0];
-          out.push('<span class="khin-item-kw">🔖 ' + adjs.map(escText).join('|') + '</span>' +
-                   '<span class="khin-item-adj">→ ' + escText(val) + '</span>');
-        } else if (allSingle) {
-          // 各标题单值但值彼此不同 → 逐条平铺，不交叉
-          for (const a of adjs) {
-            const only = Array.from(combo.get(a))[0];
-            out.push('<span class="khin-item-kw">🔖 ' + escText(a) + '</span>' +
-                     '<span class="khin-item-adj">→ ' + escText(only) + '</span>');
-          }
-        } else {
-          // 存在某标题多值 → 按标题分开，同标题多值聚合
-          for (const a of adjs) {
-            const vals = Array.from(combo.get(a));
-            if (!vals.length) continue;
-            out.push('<span class="khin-item-kw">🔖 ' + escText(a) + '</span>' +
-                     '<span class="khin-item-adj">→ ' + vals.map(escText).join('|') + '</span>');
-          }
+      return out;
+    },
+
+    /**
+     * 命中 → 卡片标签 HTML（单条形态：`🔖 标题 → 关键词` / `🔖 关键词`）。
+     * **一张卡命中多个时默认只展示最短的那一个**；命中数 > 1 时后面追加一个计数小标，
+     * 点小标由 panel.renderTags 就地铺开下拉（本函数只出串，不碰 DOM）。
+     * 「最短」= 去首尾空白后按**码点数**（[...s].length，不是 String.length，避免代理对误算）；
+     * 并列最短取**文档序第一个** —— 只做挑选，不排序、不随机（同一输入必得同一输出）。
+     * @param {Array<{kw: string, adj: string}>} entries
+     * @param {number} [pickIdx] 用户从下拉里选过的条目序号（见 panel.pickedTags）；非法则回到最短
+     */
+    tagHtml(entries, pickIdx) {
+      const list = this.tagEntries(entries);
+      if (!list.length) return '';
+      let best = 0;
+      if (typeof pickIdx === 'number' && pickIdx >= 0 && pickIdx < list.length) {
+        best = pickIdx;
+      } else {
+        for (let i = 1; i < list.length; i++) {
+          if ([...list[i].kw].length < [...list[best].kw].length) best = i;
         }
       }
-      return out.join('');
+      const e = list[best];
+      let html = e.adj
+        ? '<span class="khin-item-kw">🔖 ' + escText(e.adj) + '</span>' +
+          '<span class="khin-item-adj">→ ' + escText(e.kw) + '</span>'
+        : '<span class="khin-item-kw">🔖 ' + escText(e.kw) + '</span>';
+      /* 命中 1 个：不出小标、不可展开。
+       * 悬停说明（title）**不在这一层挂** —— 字符串层只出元素骨架 + 计数，
+       * 免得"命中文本进属性"的口子有任何先例（说明文案在 renderTags 的 DOM 层挂）。 */
+      if (list.length > 1) {
+        html += '<button class="khin-tag-more" type="button" data-kh-tag-more="1">' +
+                list.length + '</button>';
+      }
+      return html;
+    },
+
+    /**
+     * 下拉内容 HTML（纯函数：数组进、字符串出；测试走 `KH.ImportantNote.head.*`，
+     * 没有面板 DOM 通路，所以**可断言的那一层就是这条串**）。
+     * 头行给总数、体里最多 TAG_LIST_MAX 条（超出只少渲染条目，不截断文本）。
+     * 安全：每条命中**各自**过 escText；且**绝不把命中文本拼进任何 HTML 属性** ——
+     * escText 只转义 & < >，双引号/单引号原样放行，拼进属性就是注入面。
+     * 列表项的完整文本因此走 DOM 层 `el.title = kw`（见 panel.renderTags）。
+     * @param {Array<{kw: string, adj: string}>} entries
+     * @param {number} [max] 覆盖上限（默认 TAG_LIST_MAX）
+     */
+    tagListHtml(entries, max) {
+      const list = this.tagEntries(entries);
+      if (!list.length) return '';
+      const cap = (typeof max === 'number' && isFinite(max) && max > 0)
+        ? Math.floor(max) : TAG_LIST_MAX;
+      let body = '';
+      for (let i = 0; i < list.length && i < cap; i++) {
+        /* 下拉条目要能键盘选中（T29 / F4.3：原来只能点，键盘打开了也选不了）。
+         * role + tabindex 让它进 Tab 序列、被读屏当按钮念；Enter/空格的绑定在
+         * panel.renderTags 的 DOM 层（元素每次重画都是新的，直接绑、不用委托）。
+         * 命中文本仍只做文本内容、绝不进任何属性（escText 不转义引号）。 */
+        body += '<div class="khin-tag-item" data-kh-tag-idx="' + i + '" role="button" tabindex="0">' +
+                escText(list[i].kw) + '</div>';
+      }
+      return '<div class="khin-tag-list">' +
+               '<div class="khin-tag-list-h">' +
+                 escText(KH.OcrCopy.render(KH.OcrCopy.VIEW.hitsTotal, { n: list.length })) +
+               '</div>' +
+               '<div class="khin-tag-list-b">' + body + '</div>' +
+             '</div>';
     },
 
     /**
@@ -792,6 +1028,11 @@
      * —— 它是用户对视图的选择，不该被下一批结果自动弹开（图片那边有"命中必须露出来"的硬要求，这没有）。 */
     noteCollapsed: false,
     ignored: new Set(),  // 本次页面会话内已被用户关闭的笔记（按 note 文本）
+    /* 标签下拉的展开态 / 选中的命中序号（均按 note 文本挂**面板侧**）。
+     * 不许挂 head：标签区每次重建（head.changed() 判脏 → renderContent() → renderItems()），
+     * 挂在 head 上会被重置，展开中的下拉会自己合上。 */
+    expandedTags: new Set(),
+    pickedTags: new Map(),
     /* ---- 🖼 图片命中（KH.ImgOcr 的结果；**独立分区**，与重要笔记卡片互不影响） ---- */
     imgItems: [],
     imgCollapsed: true,  // 默认折叠（图片识别是异步来的，先折叠不抢视线）
@@ -803,6 +1044,15 @@
      * 和上面的收起记忆同一套口径：**按批**有效，条目换代（提交后翻页 / 重新扫描）就回到"只看命中"。 */
     imgShowAll: false,
     imgShowAllKeys: [],
+    /* 复制反馈的**面板级待显示状态**（T63 真机缺陷）：这份瞬时反馈原来只活在 chip 节点的
+     * classList 上，而 `renderImgSection()` 每次都把列表整体重建
+     * （`this.imgListEl.textContent = ''`，:1554 那一行）—— 只要 OCR 状态变一变
+     * （`KH.ImgOcr.onChange(() => panel.renderImg())`）就重建一次 ⇒ 被点的那颗 chip 当场游离，
+     * 类名留在死节点上，屏幕上的绿框约 1/4 秒就没了（qa 的真机读数：ms≈94–330 整段 childList 删+加）。
+     * 现在记在面板上：建 chip 时命中同一 key 且仍在窗口内就补上类与 title（重建自动重放），
+     * 窗口一到由 imgClearCopyMark 复位。key = 条目稳定键 + '|' + 命中词 —— 同一个词在**别的条目**
+     * 里是另一块，不许互相点亮。 */
+    imgCopyMark: { key: '', ok: false, at: 0 },
     imgSecEl: null,
     imgListEl: null,
     imgCountEl: null,
@@ -810,6 +1060,19 @@
     imgArrowEl: null,
     pos: { left: 20, top: 20 },
     dragState: null,
+    /* FAB 本次按下的时间戳（T40）：pointerdown 记；**pointerup 结算**成 fabHeldMs（T41）。
+     * 默认 0/未记录 = 放行 —— 键盘 Enter/空格激活不派发指针事件，靠的就是这个语义。 */
+    fabPressAt: 0,
+    /* FAB 这次按住的毫秒数（T41）：由 startDrag 的 pointerup / pointercancel 结算，
+     * click 只读。默认 0 = 放行（键盘激活、或根本没有手势那一次 click）。 */
+    fabHeldMs: 0,
+    /* FAB 上一次展开面板的时刻（T60）。存在的唯一理由：**同一次鼠标双击的第二次落点**。
+     * 一次双击的派发序是 down/up/click(1) → down/up/click(2) → dblclick；click(1) 落点就是 FAB，
+     * :1264 的 click 里会 openPanel() ⇒ renderContent() 当场把 `.khin-fab` 换壳成
+     * `.khin-panel`+`.khin-header`（FAB 中心与标题栏那一行必然相交）⇒ 紧随其后的 click(2) 与
+     * dblclick 就落在刚生成的标题栏上，命中 :1377 的「双击收起」⇒ 面板闪一下又收回去（T60 症状）。
+     * 默认 0 = 没有刚展开过 ⇒ 标题栏双击照常收起。 */
+    fabOpenedAt: 0,
 
     ensure(doc) {
       if (this.host && this.host.isConnected) return this.host;
@@ -893,24 +1156,43 @@
 
     startDrag(e) {
       if (e.button === 2) return;                              // 忽略右键
-      if (e.target && e.target.tagName === 'BUTTON') return;   // 按钮上不拖
+      const hitFab = (el) => !!(el && el.classList && el.classList.contains('khin-fab'));
+      const t = e.target;
+      /* 按钮上不拖 —— 但收起态 FAB 例外（T29 / F4.1：它现在同时是"展开"按钮，
+       * 一起拦掉就把拖动把手废了）。FAB 里的 📌 / 徽标是两个 span，也算在把手内。
+       * 判定只看命中的元素自身与其父亲（不用 closest 反查 —— meta-check 对带 kh- 的
+       * closest 直接红灯，那条红线的教训已经踩过一次）。 */
+      const inFab = hitFab(t) || !!(t && t.tagName === 'SPAN' && hitFab(t.parentNode));
+      if (t && t.tagName === 'BUTTON' && !inFab) return;
       e.preventDefault();
       const rect = this.root.getBoundingClientRect();
-      const state = { startX: e.clientX, startY: e.clientY, startLeft: rect.left, startTop: rect.top };
+      const state = { startX: e.clientX, startY: e.clientY, startLeft: rect.left, startTop: rect.top, moved: false };
       this.dragState = state;
       const move = (ev) => {
         if (!this.dragState) return;
+        /* 挪过 3px 才算"拖"：FAB 同时是按钮，拖着挪位置时末尾也会补一个 click ——
+         * 不区分就会"拖完面板自己弹开"（原来只绑 dblclick，正是为了躲这个）。 */
+        if (Math.abs(ev.clientX - state.startX) + Math.abs(ev.clientY - state.startY) > 3) state.moved = true;
         this.pos.left = state.startLeft + (ev.clientX - state.startX);
         this.pos.top = state.startTop + (ev.clientY - state.startY);
         this.applyPosition();
       };
       const up = () => {
+        this.dragMoved = !!state.moved;      // 留给 FAB 的 click 判定：这一次是拖还是点
+        /* T41：按住时长在指针抬起时**结算**（不是在 click 里现算）。计时源必须是指针事件 ——
+         * click 的派发延迟是浏览器行为（触屏抬起后还要等一次双击/缩放手势判定），
+         * 拿它当计时源会把一次快速轻点误判成长按。缺省 0 ⇒ 没有指针手势的激活（键盘）一律放行。 */
+        if (this.fabPressAt) { this.fabHeldMs = Date.now() - this.fabPressAt; this.fabPressAt = 0; }
         this.dragState = null;
         window.removeEventListener('pointermove', move);
         window.removeEventListener('pointerup', up);
+        window.removeEventListener('pointercancel', up);
       };
       window.addEventListener('pointermove', move);
       window.addEventListener('pointerup', up);
+      /* 触屏被系统接管（滚动/多指手势）时不会有 pointerup：同样结算并清干净，
+       * 否则残留的时间戳会把下一次真实点击当成长按否决掉。 */
+      window.addEventListener('pointercancel', up);
     },
 
     /** 渲染（幂等；内容未变则不重建 DOM） */
@@ -925,6 +1207,15 @@
       const rawFs = parseInt((cfg && cfg.importantNote && cfg.importantNote.fontSize), 10);
       const noteFs = (isFinite(rawFs) && rawFs >= 10 && rawFs <= 20) ? rawFs : 11;
       this.host.style.setProperty('--kh-note-fs', noteFs + 'px');
+
+      /* 面板默认宽度（T26 / 用户 2026-10-12：200 → 250，且设置页可调）：同 imgSize 手法写成 CSS
+       * 变量。写在 this.root（= .khin-wrap，变量定义处也在那条规则里 ⇒ 内联压过规则里的默认值），
+       * 面板宽度与命中词块的上限共用这一个变量。
+       * 归一只有 config 的 normalizePanelWidth 一处（读路径 normalize 调的是同一个函数）：手改
+       * storage / 导入旧备份塞进 0 / 负值 / 非数字时回默认 250，越界夹到 160–600 ——
+       * 面板宽度是布局承重值，坏值绝不许把它变成 0 宽。 */
+      this.root.style.setProperty('--khin-panel-w',
+        KH.Config.normalizePanelWidth(cfg && cfg.notePanelWidth) + 'px');
 
       /* 图片命中与重要笔记**共用这块面板**（用户口径：图片命中要有地方看，且不占页面）；
        * 但两者独立：没有重要笔记的关键词，它识别到的图片照样要显示。 */
@@ -964,21 +1255,58 @@
       /* 计数 = 笔记卡片 + 图片命中（图片命中也在这块面板里，用户看不到的地方不该有"隐藏条目"） */
       const count = this.items.length + ((this.imgItems && this.imgItems.length) || 0);
 
-      // 收起态：整块换成圆形 FAB（双击展开 —— 避免拖动位置时误展开）
+      // 收起态：整块换成圆形 FAB（单击/双击/回车都能展开 —— 拖动收尾不算，见 startDrag）
       if (this.minimized) {
         this.panelEl = null;
         this.bodyEl = null;
         this.countEl = null;
+        /* FAB 是真按钮（T29 / F4.1）：原来是个 div、只绑了 dblclick ⇒ 键盘够不着、鼠标单击
+         * 也没反应，只有「双击」这一条隐性通路（能收不能开）。现在 click 展开、dblclick 保留
+         * （用户双击习惯不变）、pointerdown 仍交给拖动；计数进 aria-label，📌 与徽标都是装饰。
+         * 文案取自 KH.OcrCopy.VIEW（面板不许自己写这几句中文）。 */
         this.root.innerHTML =
-          '<div class="khin-fab" title="重要笔记（' + count + ' 条）">📌' +
-          '<span class="khin-fab-badge">' + count + '</span></div>';
+          '<button class="khin-fab" type="button"><span aria-hidden="true">📌</span>' +
+          '<span class="khin-fab-badge" aria-hidden="true">' + count + '</span></button>';
         const fab = this.root.querySelector('.khin-fab');
-        fab.addEventListener('pointerdown', (e) => this.startDrag(e));
-        fab.addEventListener('dblclick', () => {
+        const fabLabel = KH.OcrCopy.render(KH.OcrCopy.VIEW.fabLabel, { n: count });
+        fab.title = fabLabel;
+        fab.setAttribute('aria-label', fabLabel);
+        /* 展开的唯一通路（FAB click / FAB dblclick / 键盘激活）。
+         * `suppressMs` 只给测试注入时钟用（生产调用一律不带参数、也不传事件对象 ⇒ 取当前时刻）；
+         * 展开前先清窗口：上一次留下的时刻不该吞掉这一次的标题栏双击（这一行**无条件覆盖**就已
+         * 同时完成「清上一次」与「记这一次」，不必再单写一句 cleanup）。 */
+        const openPanel = (suppressMs) => {
           this.minimized = false;
+          this.fabOpenedAt = typeof suppressMs === 'number' ? suppressMs : Date.now();
           this.renderContent();
           this.applyPosition();
+        };
+        fab.addEventListener('pointerdown', (e) => {
+          this.fabPressAt = Date.now();      // T40：按住时长的起点（键盘不走这里 ⇒ 缺席=放行）
+          this.fabHeldMs = 0;                // 清上一次的结算值：新的一次按下不该继承旧时长
+          this.dragMoved = false;            // 每次按下先清上一次的拖动标记：拖动若没派发 click，
+                                             // 别让它留在 true 上吞掉下一次键盘激活（T40 顺手补）
+          this.startDrag(e);
         });
+        fab.addEventListener('click', (e) => {
+          /* 键盘激活（Enter / 空格）派发的 click 没有指针手势：detail === 0，且前面没有 pointerdown
+           * ⇒ 一律放行，并清掉可能残留的手势状态（拖动收尾没派发 click、pointercancel 之后留下的
+           * 旧值），否则键盘这一次会被上一次手势的旧状态吞掉。 */
+          const keyboard = !e || e.detail === 0;
+          if (keyboard) { this.dragMoved = false; this.fabHeldMs = 0; openPanel(); return; }
+          if (this.dragMoved) { this.dragMoved = false; this.fabHeldMs = 0; return; }   // 刚才是拖动，不是点
+          /* 长按否决（T40）：按住 ≥600ms 且没位移 ⇒ 不当作点击（真机取证：按住约 1 秒松手会误开面板）。
+           * 时长由 startDrag 的 pointerup **结算**（T41：计时源必须是指针事件 —— click 的派发延迟
+           * 是浏览器行为，触屏抬起后还要等双击/缩放手势判定，拿它当计时源会把快速轻点误判成长按）；
+           * 这里只读结算值，缺席（没有 pointerdown）⇒ 0 ⇒ 放行。 */
+          const heldMs = this.fabHeldMs;
+          this.fabHeldMs = 0;
+          if (heldMs >= FAB_LONG_PRESS_MS) return;
+          openPanel();
+        });
+        fab.addEventListener('dblclick', () => openPanel());
+        /* 键盘：原生 <button> 的 Enter 与空格都会派发 click ⇒ 键盘通路到此闭合，
+         * 不必再补 keydown（补了会双触发）。 */
         return;
       }
 
@@ -987,21 +1315,21 @@
         this.root.innerHTML =
           '<div class="khin-panel">' +
             '<div class="khin-header">' +
-              '<span class="khin-header-icon">📌</span>' +
+              '<span class="khin-header-icon" aria-hidden="true">📌</span>' +
               '<span class="khin-header-title">重要笔记</span>' +
               '<span class="khin-header-count">0 条</span>' +
-              '<button class="khin-header-btn" data-act="min" title="收起为小按钮">—</button>' +
+              '<button class="khin-header-btn" data-act="min">—</button>' +
             '</div>' +
-            '<div class="khin-notebar" hidden>' +
+            '<div class="khin-notebar" role="button" tabindex="0" aria-expanded="true" hidden>' +
               '<span class="khin-notetitle">📝 笔记</span>' +
               '<span class="khin-notecount"></span>' +
               '<span class="khin-notearrow">收起 ▴</span>' +
             '</div>' +
             '<div class="khin-body"></div>' +
             '<div class="khin-imgsec" hidden>' +
-              '<div class="khin-imghead">' +
-                '<span class="khin-imgtitle" title="图片命中">🖼 图片</span>' +
-                '<span class="khin-imgcount"></span>' +
+              '<div class="khin-imghead" role="button" tabindex="0" aria-expanded="false">' +
+                '<span class="khin-imgtitle">🖼 图片</span>' +
+                '<span class="khin-imgcount" role="status" aria-live="polite"></span>' +
                 '<span class="khin-imgall" data-act="all" hidden></span>' +
                 '<span class="khin-imgarrow">展开 ▾</span>' +
               '</div>' +
@@ -1019,13 +1347,28 @@
         this.imgCountEl = this.root.querySelector('.khin-imgcount');
         this.imgAllEl = this.root.querySelector('.khin-imgall');
         this.imgArrowEl = this.root.querySelector('.khin-imgarrow');
+        this.imgHeadEl = this.root.querySelector('.khin-imghead');
+        this.imgTitleEl = this.root.querySelector('.khin-imgtitle');
+        /* 分区标题的完整语义挂 title（可见短标签「🖼 图片」只是缩写）—— 四条面板标题文案
+         * 一律取自 KH.OcrCopy.VIEW（T29 / F1.2：原来写死在面板里，改文案的人改不动）。 */
+        if (this.imgTitleEl) this.imgTitleEl.title = KH.OcrCopy.VIEW.imgSectionTip;
+        /* 两个题头都是"整行可点的 div"，键盘完全够不着（T29 / F4.2）：补 role/tabindex/
+         * aria-expanded 之后，回车与空格要跟点击做同一件事。范式照抄命中词块那段
+         * （给元素各自直接绑 —— 不用 closest 反查父节点，那是 meta-check 的红线）。 */
+        const onActivate = (el, fn) => el.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); fn(); }
+        });
+        const toggleNotes = () => {
+          this.noteCollapsed = !this.noteCollapsed;
+          this.applyNoteCollapsed();
+        };
         /* 笔记区收起/展开（2026-10-11 用户：两边都很长时互相抢占，收一边让另一边）。
          * 只翻转标记 + 换类名，不重建 DOM —— 展开时正文还在（收起期间不重渲染也不清空）。 */
         this.noteBarEl.addEventListener('click', (e) => {
           e.stopPropagation();
-          this.noteCollapsed = !this.noteCollapsed;
-          this.applyNoteCollapsed();
+          toggleNotes();
         });
+        onActivate(this.noteBarEl, toggleNotes);
         /* 「显示全部」= 人工复核入口（用户 2026-10-06）：切视图**不**收起/展开分区
          * （那是题头的活），并且要连同当时的条目键记下来 —— 换代即作废。 */
         this.imgAllEl.addEventListener('click', (e) => {
@@ -1037,8 +1380,7 @@
           this.imgCollapsed = false;   // 点了"显示全部"就是想看，不能还收着
           this.renderImgSection();
         });
-        this.root.querySelector('.khin-imghead').addEventListener('click', (e) => {
-          e.stopPropagation();
+        const toggleImgs = () => {
           this.imgCollapsed = !this.imgCollapsed;
           /* 记住"用户手动收起来过"：**只记到这批条目为止** —— 连同当时的条目键一起记，
            * 条目换代就作废（用户 2026-10-06 口径：提交后翻到下一页是全新场景，不该被上一页
@@ -1049,17 +1391,31 @@
             : [];
           this.renderImgSection();
           this.applyPosition();
+        };
+        this.imgHeadEl.addEventListener('click', (e) => {
+          e.stopPropagation();
+          toggleImgs();
         });
+        onActivate(this.imgHeadEl, toggleImgs);
 
         const header = this.panelEl.querySelector('.khin-header');
         header.addEventListener('pointerdown', (e) => this.startDrag(e));
         // 双击标题栏收起为 FAB（策划案 §5.2.3）
         header.addEventListener('dblclick', () => {
+          /* T60：同一次鼠标双击的**第二次落点**。若这块标题栏是不久前刚被 FAB 的 click(1) 换壳出来的，
+           * 这一下 dblclick 不是用户新起的手势，不许当成「双击收起」——否则面板刚展开就被收回去。
+           * 一次性：命中即清零（不清就是永久抑制，展开久了再双击标题栏将永远收不起来）。
+           * ponytail: 600ms 是浏览器双击间隔上限（沿用 FAB_LONG_PRESS_MS），用户「点开、停顿、再双击标题栏收起」会被吞掉一次；真要精确就得在 FAB 换壳时吞掉紧随其后的那一次 click/dblclick（事件层面认序列，而不是拿时间窗近似）。
+           * 只在 fabOpenedAt 非 0 时生效 ⇒ 未经过 FAB 展开的面板（例如页面刷新后恢复）不受影响。 */
+          const sinceFabOpen = Date.now() - this.fabOpenedAt;
+          if (this.fabOpenedAt && sinceFabOpen >= 0 && sinceFabOpen < FAB_LONG_PRESS_MS) { this.fabOpenedAt = 0; return; }
           this.minimized = true;
           this.renderContent();
           this.applyPosition();
         });
-        this.panelEl.querySelector('[data-act="min"]').addEventListener('click', (e) => {
+        const minBtn = this.panelEl.querySelector('[data-act="min"]');
+        minBtn.title = KH.OcrCopy.VIEW.minTip;      // 文案真源（T29 / F1.2）
+        minBtn.addEventListener('click', (e) => {
           e.stopPropagation();
           this.minimized = true;
           this.renderContent();
@@ -1073,6 +1429,9 @@
         this.noteBarEl.hidden = !this.items.length;
         if (this.noteCountEl) this.noteCountEl.textContent = this.items.length + ' 条';
       }
+      /* 笔记列表整块没有时也要藏（T29 / F6.1）：它带 min-height:60px，空着就是面板顶部
+       * 一条 60px 白带（整页只有图片命中时最明显）。[hidden] 的规则与收起态并列写在 CSS 里。 */
+      if (this.bodyEl) this.bodyEl.hidden = !this.items.length;
       this.applyNoteCollapsed();
       this.renderItems();
       this.renderImgSection();
@@ -1084,6 +1443,9 @@
       const collapsed = this.noteCollapsed === true;
       this.bodyEl.classList.toggle('khin-collapsed', collapsed);
       if (this.noteArrowEl) this.noteArrowEl.textContent = collapsed ? '展开 ▾' : '收起 ▴';
+      /* 收起态也要说给读屏听（T29 / F4.2）：视觉上换了箭头字符，aria-expanded 才是
+       * 辅助技术读得懂的那一位。这里已确保 bodyEl（= 面板在展开态）存在，题头就在。 */
+      if (this.noteBarEl) this.noteBarEl.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
     },
 
     /**
@@ -1196,6 +1558,9 @@
         this.imgCollapsed = false;
       }
       if (this.imgArrowEl) this.imgArrowEl.textContent = this.imgCollapsed ? '展开 ▾' : '收起 ▴';
+      /* 题头的 role/tabindex/aria-expanded 让它成为可操作控件（T29 / F4.2）：视觉上只是
+       * 箭头字符在变，读屏读的是这一位。放在早退之前 —— 空列表时状态也得是对的。 */
+      if (this.imgHeadEl) this.imgHeadEl.setAttribute('aria-expanded', this.imgCollapsed ? 'false' : 'true');
       if (!list.length) { this.imgSecEl.hidden = true; this.imgListEl.textContent = ''; return; }
       this.imgSecEl.hidden = false;
       if (this.imgCollapsed) { this.imgListEl.textContent = ''; return; }
@@ -1219,8 +1584,8 @@
         row.className = 'khin-imgitem';
         row.setAttribute('data-kh-ocr-key', it.key);
 
-        /* 缩略图 + 它下面**固定**的 📋（2026-10-09 用户裁决：一键复制这张图识别出的全部文字）。
-         * 只有 done 且真有文字才挂 —— 没结果时挂着是按不出东西的假入口。 */
+        /* 缩略图。它下面原来挂一条固定的「📋 复制全文」按钮（2026-10-09 用户裁决加的），
+         * 2.0.1.15 需求 7 用户又裁定删掉 —— 复制全文改走大图里的选中复制。 */
         const thumbWrap = doc.createElement('div');
         thumbWrap.className = 'khin-imgthumbwrap';
         const thumb = doc.createElement('img');
@@ -1229,22 +1594,6 @@
         thumb.alt = it.keyword || '';
         thumb.title = KH.OcrCopy.VIEW.openLarge;
         thumbWrap.appendChild(thumb);
-        if (it.state === 'done' && String(it.text || '').trim()) {
-          const copyAll = doc.createElement('button');
-          copyAll.className = 'khin-imgcopy';
-          copyAll.type = 'button';
-          copyAll.title = KH.OcrCopy.VIEW.copyAll;
-          copyAll.textContent = '📋';
-          copyAll.addEventListener('click', (e) => {
-            e.stopPropagation();
-            copyToClipboard(String(it.text), this.root).then((ok) => {
-              copyAll.textContent = ok ? '✓' : '✗';
-              if (!ok) copyAll.title = KH.OcrCopy.VIEW.copyFailed;
-              setTimeout(() => { copyAll.textContent = '📋'; copyAll.title = KH.OcrCopy.VIEW.copyAll; }, 1200);
-            });
-          });
-          thumbWrap.appendChild(copyAll);
-        }
         row.appendChild(thumbWrap);
 
         const meta = doc.createElement('div');
@@ -1253,13 +1602,13 @@
         head.className = 'khin-imgrow';
         const kw = doc.createElement('span');
         kw.className = 'khin-imgkw';
-        /* 行内不再重复「🖼 」（用户 2026-10-11：200px 下关键词格只剩 84px）——整块都在
-         * 「🖼 图片」分区标题底下，行内再挂一个图标是冗余的，省下的宽度全给关键词。 */
+        /* 行内不再重复「🖼 」（用户 2026-10-11：面板刚收到 200px 那会儿关键词格只剩 84px）——
+         * 整块都在「🖼 图片」分区标题底下，行内再挂一个图标是冗余的，省下的宽度全给关键词。 */
         kw.textContent = (it.keyword || '') + (it.label ? '（' + it.label + '）' : '');
-        /* 200px 下关键词要能被 ellipsis 截断 ⇒ 全称挂 title，别让信息真的丢 */
+        /* 面板窄时关键词要能被 ellipsis 截断 ⇒ 全称挂 title，别让信息真的丢 */
         kw.title = kw.textContent;
         head.appendChild(kw);
-        /* 图标 + 短标签（2026-10-11 用户裁决：200px 放不下「未命中/识别中…」这类长标签，
+        /* 图标 + 短标签（2026-10-11 用户裁决：面板窄时放不下「未命中/识别中…」这类长标签，
          * 图标让同类状态一眼可分）。图标同样只从真源取，面板不自己挑字符；
          * 但它是**独立 span**：`tag.textContent` 必须保持"只说结论"（'命中'/'未命中'…）
          * —— 真机与单测都拿它当状态措辞比对（`content.test.js:3127/3132/3176/3230/3289`）。 */
@@ -1300,15 +1649,31 @@
             chip.className = 'khin-imgchip';
             chip.textContent = w;
             chip.title = KH.OcrCopy.VIEW.copySentence;
+            /* 稳定键（T63）：列表每次重建都把 chip 整批换新，靠它把这颗认回来、把反馈重放上去。
+             * 用条目已有的 key（img-ocr.js 的 `ruleId|src`，面板别处也用它）+ 命中词 ——
+             * **不许**用条目下标（条目对象上没有 idx，写 `it.idx` 恒为 undefined，两张图里的同一个词
+             * 会互相点亮），也不许只用命中词（两个条目里的同一个词会串台）。 */
+            const copyKey = String(it.key || '') + '|' + w;
+            chip.dataset.k = copyKey;
+            /* 重建重放（T63）：命中同一键且这笔反馈还在窗口内 ⇒ 当场补上 —— 否则整段重建会把屏幕上
+             * 的绿框吃掉（真机 ms≈94–330 就重建，绿框约 1/4 秒就没了）。 */
+            const mark = this.imgCopyMark;
+            if (mark && mark.key === copyKey && Date.now() - mark.at < IMG_COPY_MS) {
+              this.imgApplyCopyMark(chip, mark.ok);
+            }
             /* 可用键盘操作（Tab 进来、Enter/空格触发）——它是个按钮，不是装饰 */
             chip.setAttribute('role', 'button');
             chip.setAttribute('tabindex', '0');
             const copySentence = () => {
               /* 定位不到整句（原文里没这个词 / 没有任何句末标点）就退回命中词本身 —— 不猜 */
               copyToClipboard(KH.OcrCopy.sentenceOf(it.text, w) || w, this.root).then((ok) => {
-                chip.classList.toggle('copied', ok);
-                chip.title = ok ? KH.OcrCopy.VIEW.copySentDone : KH.OcrCopy.VIEW.copyFailed;
-                setTimeout(() => { chip.classList.remove('copied'); chip.title = KH.OcrCopy.VIEW.copySentence; }, 1200);
+                /* 反馈提升为面板级状态（T63），重建后照旧重放。at 也要一起记 ——
+                 * 到点复位只认「还是这一笔」（key 与 at 都对得上才清标记），
+                 * 晚到的旧定时器不许把刚点的那一笔清掉。 */
+                const at = Date.now();
+                this.imgCopyMark = { key: copyKey, ok: ok, at: at };
+                this.imgApplyCopyMark(chip, ok);
+                setTimeout(() => this.imgClearCopyMark(copyKey, at), IMG_COPY_MS);
               });
             };
             chip.addEventListener('click', (e) => {
@@ -1331,6 +1696,39 @@
       }
     },
 
+    /**
+     * 给 chip 点亮 / 熄灭这一次复制反馈（T63）：**只有这一处**写这两个类与 title ——
+     * 建 chip 时的重放与点击当场都走它，两条通路的口径不会各自漂移。
+     *
+     * 复制失败要就地红一下（T29 / F3.1）：原来只有 title 换了句字，那得悬停才看得见，而用户点完
+     * 鼠标早移开了。剪贴板不可用（非 https / 无焦点）是最常见的失败，必须一眼看出没复制上；
+     * 与 copied 共用同一次 IMG_COPY_MS 复位，文案仍是真源里的 VIEW.copyFailed。
+     */
+    imgApplyCopyMark(chip, ok) {
+      chip.classList.toggle('copied', ok);
+      chip.classList.toggle('failed', !ok);
+      chip.title = ok ? KH.OcrCopy.VIEW.copySentDone : KH.OcrCopy.VIEW.copyFailed;
+    },
+
+    /**
+     * 复制反馈窗口到点复位（T63）。两步分开做：
+     *  ① 标记：只清「还是这一笔」（key 与 at 都对得上）—— 晚到的旧定时器不许清掉刚点的那一笔；
+     *  ② 屏幕：在**活着的**列表里按稳定键把当前那颗 chip 找回来复位。闭包里那颗早就游离了
+     *     （列表每次重建都整批换新），所以必须重找。
+     * **不**用命中词拼 CSS 选择器：关键词是用户输入，含引号/方括号会当场抛错。
+     */
+    imgClearCopyMark(key, at) {
+      const mark = this.imgCopyMark;
+      if (mark && mark.key === key && mark.at === at) this.imgCopyMark = { key: '', ok: false, at: 0 };
+      const live = this.imgListEl ? this.imgListEl.querySelectorAll('.khin-imgchip') : [];
+      for (const chip of live) {
+        if (chip.dataset.k !== key) continue;
+        chip.classList.remove('copied');
+        chip.classList.remove('failed');
+        chip.title = KH.OcrCopy.VIEW.copySentence;
+      }
+    },
+
     /* 折叠标签 / 展开说明一律从**唯一真源** `KH.OcrCopy` 取（票 #17 D-17.1）。
      * 措辞上的任何改动都应该去改 `src/ui/ocr-copy.js` —— 不要在这里写死中文：
      * 之前正是"同一个原因在面板 / 设置页 / 弹窗各写一套"，改一处漏两处。
@@ -1341,6 +1739,53 @@
 
     imgWhyText(it) {
       return KH.OcrCopy.why(it);
+    },
+
+    /**
+     * 标签区就地重画（展开/收起/选条都走这里，**绝不走 refresh()/render()**）。
+     * 为什么必须就地：`head.changed()` 在 entries 未变时判"不脏" ⇒ render() 整个空转、
+     * 界面不更新（render 里的 dirty 判定），所以这里只重画这一个容器。
+     * 只负责画；点击委托在 renderItems 里挂一次（每次点都读实时状态，不吃闭包快照）。
+     */
+    renderTags(tagsEl, item) {
+      const entries = (item && item.entries) || [];
+      const list = head.tagEntries(entries);
+      const picked = this.pickedTags.get(item.note);
+      const open = this.expandedTags.has(item.note);
+      tagsEl.innerHTML = head.tagHtml(entries, picked);
+      if (open) tagsEl.insertAdjacentHTML('beforeend', head.tagListHtml(entries));
+      const more = tagsEl.querySelector('[data-kh-tag-more]');
+      if (more) {
+        more.setAttribute('aria-expanded', open ? 'true' : 'false');
+        /* 悬停说明走 DOM 属性，不进字符串层（文案真源在 KH.OcrCopy.VIEW） */
+        more.title = KH.OcrCopy.render(KH.OcrCopy.VIEW.moreHits, { n: list.length });
+        /* 交互定位一律**直接绑元素**，不用 closest 反查（meta-check 红线：closest 里出现 kh- 一律拒收）。
+         * 元素每次重画都是新的 ⇒ 监听器随之重建：既不会叠加，也不会吃到旧的展开态快照。 */
+        more.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (this.expandedTags.has(item.note)) this.expandedTags.delete(item.note);
+          else this.expandedTags.add(item.note);
+          this.renderTags(tagsEl, item);
+        });
+      }
+      /* 完整命中文本只在这里落到 DOM 属性上 —— escText 不转义引号，拼进 HTML 属性就是注入面 */
+      const items = tagsEl.querySelectorAll('.khin-tag-item');
+      for (let i = 0; i < items.length; i++) {
+        if (!list[i]) continue;
+        items[i].title = list[i].kw;
+        if (i === picked) items[i].className += ' khin-tag-on';
+        /* 下拉条目原来只有 click —— 能展开、选不了（T29 / F4.3）。role/tabindex 写在
+         * 展开后的那段 HTML 串里（见 tagListHtml），键盘激活的绑定与 click 共用同一处。 */
+        const pickOne = (e) => {
+          e.stopPropagation();
+          this.pickedTags.set(item.note, i);
+          this.renderTags(tagsEl, item);
+        };
+        items[i].addEventListener('click', pickOne);
+        items[i].addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pickOne(e); }
+        });
+      }
     },
 
     renderItems() {
@@ -1358,10 +1803,10 @@
         headEl.className = 'khin-item-head';
         const tagsEl = doc.createElement('div');
         tagsEl.className = 'khin-item-tags';
-        tagsEl.innerHTML = head.tagHtml(item.entries);
+        this.renderTags(tagsEl, item);
         const closeBtn = doc.createElement('button');
         closeBtn.className = 'khin-item-close';
-        closeBtn.title = '本次页面不再显示';
+        closeBtn.title = KH.OcrCopy.VIEW.removeTip;   // 文案真源（T29 / F1.2）
         closeBtn.textContent = '✕';
         closeBtn.addEventListener('click', (e) => {
           e.stopPropagation();

@@ -1417,13 +1417,21 @@
       return { label: m.label, textLines, grid, rows: m.rows || [], opt: opt, budget: budget };
     });
 
-    let html = '<table class="kh-table kh-table-fetch">';
+    /* 【v2.0.1.15 需求 2 · 外壳由内容构造】本函数返回 `''` = 有行但**有效值全空**
+     * （值 `trim` 后为空即视为空 ⇒ 值不显示、字段名也不显示，整块不渲染）。
+     * 判定点**唯一**：每个字段先渲进局部 `buf` + 局部 `anyVal`，出块前 `if (!anyVal) continue;`。
+     * 空卡片两种形态都在此收口：① 文本分支的空壳表（原先 `:1446`/`:1448` 逐项 continue 后仍拼 `</table>`）；
+     * ② grid 分支的「有 label 表头 + 空 `<td>`」（原先根本没有字段级判空）。
+     * ⚠️ 判空**不许**二次调用 `applyImgPolicy`（`it.budget` 跨格累计有状态，跑两遍会吃掉「前 N 张」预算）。 */
+    let body = '';
     for (const it of items) {
       if (it.grid) {
         const total = it.rows.length;
         /* 该字段里是否有图片：决定"纯数字格"要不要当噪音去掉（见下） */
         const fieldHasImg = (it.rows || []).some((line) => line.some((c) => String(c.t).indexOf('\u0001KHIMG\u0001') >= 0));
         let firstInBlock = true;
+        let buf = '';
+        let anyVal = false;
         for (const line of it.rows) {
           let cells = '';
           for (const c of line) {
@@ -1436,16 +1444,21 @@
              * 判据：本字段**别处有图片** + 本格**没有图片** + 本格文字是**纯数字** → 视为计数，留空
              * （留空而不是删格，列才对得齐）。 */
             if (fieldHasImg && !/\u0001KHIMG\u0001/.test(String(c.t)) && /^\s*\d+\s*$/.test(String(c.t))) val = '';
+            /* 判空只看**最终写入的 val**（已过 applyImgPolicy + 上面的纯数字抑制）—— 本格只算一次 */
+            if (String(val).trim()) anyVal = true;
             cells += '<td' + attrs + '>' + escHtml(val) + '</td>';
           }
-          html += '<tr>' + (firstInBlock && it.label != null ? '<td class="kh-table-label" rowspan="' + total + '">' + escHtml(it.label) + '</td>' : '') + cells + '</tr>';
+          buf += '<tr>' + (firstInBlock && it.label != null ? '<td class="kh-table-label" rowspan="' + total + '">' + escHtml(it.label) + '</td>' : '') + cells + '</tr>';
           firstInBlock = false;
         }
+        /* 值格全空 ⇒ 连 label 表头一起不渲染（空卡片形态②） */
+        if (!anyVal) continue;
+        body += buf;
         continue;
       }
-      if (!it.textLines.length) continue;
+      /* 文本分支：「值」只认 `s.lines[i]`；`b.gtitle`（一级分组标题）、`label`、`s.title`（二级标题）
+       * 都不算值 —— 只有标题没有值的块 = 空字段。原 `:1446`/`:1448` 两条 continue 收敛进下方唯一判定点。 */
       const filled = parseBlock(it.textLines, it.label);
-      if (!filled.length) continue;
 
       const blockTotal = filled.reduce(
         (n, b) => n + (b.gtitle != null ? 1 : 0) + b.subs.reduce((m2, s) => m2 + s.lines.length, 0), 0);
@@ -1482,9 +1495,11 @@
         return '<td class="kh-table-label"' + rs + '>' + escHtml(it.label) + '</td>';
       };
 
+      let buf = '';
+      let anyVal = false;
       for (const b of filled) {
         if (b.gtitle != null) {
-          html += '<tr>' + labelCell() +
+          buf += '<tr>' + labelCell() +
             '<td colspan="' + afterLabelColspan + '">' + escHtml(b.gtitle) + '</td></tr>';
         }
 
@@ -1492,24 +1507,27 @@
           const cap = s.title == null ? '' : s.title;
           const n = s.lines.length;
           for (let i = 0; i < n; i++) {
+            if (String(s.lines[i]).trim()) anyVal = true;
             if (!cap) {
               // ④ 无二级标题：内容跨「二级标题 + 内容」两列
-              html += '<tr>' + labelCell() +
+              buf += '<tr>' + labelCell() +
                 '<td colspan="' + afterLabelColspan + '">' + escHtml(s.lines[i]) + '</td></tr>';
             } else if (i === 0) {
               // ③ 首行：二级标题 rowspan + 内容
-              html += '<tr>' + labelCell() +
+              buf += '<tr>' + labelCell() +
                 '<td rowspan="' + n + '">' + escHtml(cap) + '</td><td>' + escHtml(s.lines[i]) + '</td></tr>';
             } else {
               // ③ 续行：只写内容格（第 1、2 列已被两个 rowspan 占住）
-              html += '<tr><td>' + escHtml(s.lines[i]) + '</td></tr>';
+              buf += '<tr><td>' + escHtml(s.lines[i]) + '</td></tr>';
             }
           }
         }
       }
+      /* 无有效值 ⇒ 连 label 一起不渲染（空卡片形态①） */
+      if (!anyVal) continue;
+      body += buf;
     }
-    html += '</table>';
-    return html;
+    return body ? '<table class="kh-table kh-table-fetch">' + body + '</table>' : '';
   }
 
   /** 「标签（内层）/（本层）/（外层）」这类层级后缀剥掉 —— 只用于把 label 映射回它的字段选项。

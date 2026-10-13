@@ -630,7 +630,7 @@
       'pageResidualClean', 'pageCleanClick', 'pageRebuildOnChange',
       /* K78·① 折叠内容的扫描开关：也是"行为档位"（换机器/恢复备份后应当跟着走） */
       'scanCollapsedCustom',
-      'pageRebuildSilentMs', 'pageRebuildGapMs',
+      'pageRebuildSilentMs', 'pageRebuildGapMs', 'notePanelWidth',
       /* K58 变更处理方式：这是用户选的"行为档位"，换台机器/恢复备份后应该跟着走
        * （与 globalEnabled / shadowDOMEnabled 这类"本机开关"不同）。 */
       'changeHandling'

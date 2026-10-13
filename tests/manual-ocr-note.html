@@ -48,10 +48,10 @@
   <b>怎么点、看什么</b>
   <ol>
     <li><b>面板在哪</b>：左上角固定悬浮的白色卡片（真实模块的 Shadow DOM）。看不到就点浏览器地址栏按一下回车刷新。</li>
-    <li><b>图片命中列表</b>（面板下半部分「🖼 图片」）：默认只显示<b>命中</b>与<b>失败</b>两种状态 — 这是真实口径。点题头右边的「<b>全部 3</b>」把「未命中 / 识别中 / 排队中」也放出来。（面板宽 200px 后题头与每行都改<b>图标 + 短标签</b>：✓命中 ✕未命中 ⟳识别中 ⚠失败 ℹ其它；长文案挪到鼠标悬停。）</li>
-    <li><b>每张图下面的 📋</b>：复制这张图识别出的<b>全部文字</b>（按钮会变 ✓；<code>file://</code> 下走 <code>execCommand</code> 回落，一样能进剪贴板）。</li>
+    <li><b>图片命中列表</b>（面板下半部分「🖼 图片」）：默认只显示<b>命中</b>与<b>失败</b>两种状态 — 这是真实口径。点题头右边的「<b>全部 3</b>」把「未命中 / 识别中 / 排队中」也放出来。（面板宽 250px 后题头与每行都改<b>图标 + 短标签</b>：✓命中 ✕未命中 ⟳识别中 ⚠失败 ℹ其它；长文案挪到鼠标悬停。）</li>
+    <li><b>图片条目里没有「📋 复制全文」了</b>（2.0.1.15 需求 7 删掉）：条目只有 缩略图 + 「命中」标记 + 命中的词（词块）。点命中的词仍是复制<b>含它的那一整句</b>（见下一条）；要看/复制<b>完整识别文字</b>就点缩略图进大图 —— 全文在<b>右侧浮层</b>里显示、可选中复制。该浮层<b>默认隐藏</b>，靠灯箱工具条上的<b>开关（眼睛）</b>弹出/收起；关掉大图即复位。</li>
     <li><b>命中词块</b>（图下面的蓝色小方块）：点它复制<b>含这个词的整句</b>；也可以用 Tab 聚焦后按 Enter/空格。剪贴板里拿到的应该是一整句，不是光秃秃一个词。</li>
-    <li><b>点缩略图</b>：开灯箱看大图，<b>右侧栏</b>显示该图识别全文（<code>识别出的文字</code>）；多张图时可以 ← → 翻页、Esc 关闭。</li>
+    <li><b>点缩略图</b>：开灯箱看大图，该图的识别全文在<b>右侧浮层</b>里（<code>识别出的文字</code>）—— 该浮层<b>默认隐藏</b>，点灯箱工具条上的<b>开关（眼睛）</b>弹出/收起，关掉大图即复位；多张图时可以 ← → 翻页、Esc 关闭。</li>
     <li><b>重要笔记卡片</b>（面板上半部分）：夹具里有两张 —— 一张是 markdown + 抓取字段表格（多行、带 rowspan），一张是「同标题多值 → 聚合标签」的形态。点卡片右上角 <b>✕</b> 会真的把这张卡从面板移除（真实口径：记进 ignored 后 refresh）。</li>
     <li><b>字号输入框</b>（下面工具栏，10–20）：改一下立刻能看到卡片正文与表格文字变大变小；面板正文字号来自 CSS 变量 <code>--kh-note-fs</code>，由 <code>panel.render()</code> 写到宿主上。</li>
     <li><b>面板实测宽度</b>：下面实时显示 <code>getBoundingClientRect().width</code> —— 这是宽度真源 <code>.khin-panel { width }</code> 的实测值（面板右下角还能手动 <code>resize</code>，拖一下数字会变）。</li>
@@ -176,7 +176,11 @@
 })();
 </script>
 
-<!-- 真实模块：先工具（状态键/文案真源），后面板本体 -->
+<!-- 真实模块（顺序与 manifest.json 的 content_scripts 一致）：先 config（
+     `defaults`/`normalizePanelWidth`/`PANEL_WIDTH_MIN|MAX` 的唯一真源，
+     important-note.js:1040 渲染时**必读** `KH.Config.normalizePanelWidth`）、
+     再工具（状态键/文案真源），后面板本体 -->
+<script src="../src/core/config.js"></script>
 <script src="../src/ui/ocr-copy.js"></script>
 <script src="../src/features/important-note.js"></script>
 
@@ -204,7 +208,7 @@
     '表下方这行是 markdown 尾巴，用来确认表格与文本按原顺序拼回。'
   ].join('\n');
 
-  const AGG_NOTE = '聚合标签形态：同一个标题下多个值 → 值用 | 聚合到一个标签里。';
+  const AGG_NOTE = '聚合标签形态：同一个标题下多个命中 → 只展最短的一条 + 右侧计数小标。';
 
   function mkHit(o) {
     return { meta: Object.assign({ important: true, fetchHtml: '' }, o.meta), textNode: null };

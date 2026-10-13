@@ -136,6 +136,27 @@
   /** 规范值 → 方向数组（顺序固定为 self / inner / outer） */
   function fetchDirections(value) { return normalizeFetchScope(value).split('+'); }
 
+  /* ---- 重要笔记面板的默认宽度（T26，用户 2026-10-12：200 → 250，且设置页要能调）----
+   * 三个常量是**唯一真源**：设置页数字输入的 min/max、面板侧的夹紧、读路径的归一全从这取。
+   * 散成三份就是 R1-3③「两处逐字同一条」要防的东西（改一处忘一处 → 设置页能填、面板不认）。 */
+  const PANEL_WIDTH_MIN = 160;
+  const PANEL_WIDTH_MAX = 600;
+  const PANEL_WIDTH_DEFAULT = 250;
+
+  /**
+   * 面板默认宽度的**唯一归一函数**（读路径 `normalize` 与消费侧 `important-note.js` 共用）。
+   * 口径（用户 2026-10-12）：
+   *   · 整数、范围 160–600：**越界夹到边界**（用户真填了 100 或 9999，意图明确，收进合法区即可）；
+   *   · 非数字 / 空 / `null` / `NaN` / `0` / 负值 → **回默认 250**：这些不是"填小了"而是坏值，
+   *     面板宽度是布局承重值，坏值不许把它变成 0 宽或负宽；
+   *   · `'320'` 这类**字符串数字**照收（storage 里躺过字符串，来源是手改 / 导入的旧备份）。
+   */
+  function normalizePanelWidth(value) {
+    const n = (typeof value === 'number') ? value : parseInt(String(value == null ? '' : value).trim(), 10);
+    if (!isFinite(n) || n <= 0) return PANEL_WIDTH_DEFAULT;
+    return Math.min(PANEL_WIDTH_MAX, Math.max(PANEL_WIDTH_MIN, Math.round(n)));
+  }
+
   const Config = {
     /** 默认值 —— 唯一真源（方案 §7.1 定稿形态） */
     defaults: {
@@ -174,6 +195,12 @@
          * `.khin-item-note` 与面板内表格一起跟随。 */
         fontSize: 11
       },
+
+      /** 重要笔记面板的**默认宽度**（px；T26 / 用户 2026-10-12：200 → 250）。
+       *  单一真源：面板侧把它写成 CSS 变量 `--khin-panel-w`（`panel.render`），面板右下角仍可临时
+       *  拖动调整（拖动改的是内联宽度，不改这里）。范围 160–600、坏值回默认的口径见
+       *  `normalizePanelWidth`；设置页数字输入的 min/max 也从这个常量取。 */
+      notePanelWidth: PANEL_WIDTH_DEFAULT,
 
       /* ---- 图片文字识别（OCR）----
        * `defaultMax`：每个锚点最多识别几张图（关键词上可单独覆盖，留空即用这个默认）
@@ -243,6 +270,12 @@
     FETCH_DIRECTIONS,
     FETCH_SCOPE_DEFAULT,
     FETCH_SCOPES,
+
+    /** 面板默认宽度的唯一归一 + 它的边界常量（设置页 / 面板 / 读路径共用一份；见文件顶部） */
+    normalizePanelWidth,
+    PANEL_WIDTH_MIN,
+    PANEL_WIDTH_MAX,
+    PANEL_WIDTH_DEFAULT,
 
     /**
      * 深度合并：以 defaults 为骨架，用存储值覆盖。
@@ -315,6 +348,14 @@
       if (raw && raw.imgOcr && typeof raw.imgOcr === 'object' && 'quality' in raw.imgOcr) {
         if (cfg.migrated.ocrEngine !== true) changed.invalid.push('migrated.ocrEngine');
         cfg.migrated.ocrEngine = true;
+      }
+
+      /* ②e 重要笔记面板宽度（T26）：越界夹到边界、坏值回默认 —— 口径只在 `normalizePanelWidth`
+       * 一处（消费侧调的是同一个函数）。面板宽度是布局承重值：存储里躺过 `0` / `''` / `'abc'`
+       * 这类脏值时，绝不许把面板变成 0 宽。 */
+      {
+        const pw = normalizePanelWidth(cfg.notePanelWidth);
+        if (pw !== cfg.notePanelWidth) { cfg.notePanelWidth = pw; changed.invalid.push('notePanelWidth'); }
       }
 
       // ③ 关键词字段补齐（不改语义、不翻转）

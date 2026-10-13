@@ -761,6 +761,98 @@
     return b.chunks.length > a.chunks.length ? [a, b] : [a];
   }
 
+  /* ---- 跨块同一行的去重（第 4 项）----
+   * 真机取证（1080×11560 / 480 行 / 行距 24）：同一行被相邻两块各读一次时
+   *   · 两块的 y 换算只差 0–5px ⇒ **18px 阈值不是病根**；
+   *   · 两次识别的差异**只在空白位置**（「第75行12.00」×「第75行 12.00」），
+   *     而旧的 `prev.t === l.t` 是严格全等 ⇒ 判不中，6 条复制行一路活到最终 `text`。
+   * 所以判等键 = **删掉全部空白字符**（空白位置本身就是 OCR 噪声，不是内容差异）；
+   * **大小写仍不折**（大小写是真实文本差异）。 */
+  const OVERLAP_MATCH_X = 16;      // 实测 |Δx| ≤ 5px（flat/tight 两轮样张）⇒ 取 ~3 倍余量；回执 overlap.maxDx 如实上报
+  const keyOf = (t) => String(t == null ? '' : t).replace(/\s+/g, '');
+
+  /**
+   * **重叠带**（纯函数）：相邻两块在切块轴上的公共区间。
+   * 必须**从 plan 实际几何算** —— `overlapFor` 让重叠随块高变（1600⇒240、放宽 2000⇒仍 240、
+   * 密排 `bandPlan`⇒24–128），写死 240 在密排那套上要错到 10 倍。
+   */
+  function overlapBands(chunks) {
+    const list = Array.isArray(chunks) ? chunks : [];
+    const out = [];
+    for (let i = 0; i + 1 < list.length; i++) {
+      const a = list[i], b = list[i + 1];
+      if (!a || !b) continue;
+      const axis = (a.axis === 'x' || b.axis === 'x') ? 'x' : 'y';
+      const len = (c) => (axis === 'x' ? (c.w || 0) : (c.h || 0));
+      const pos = (c) => (axis === 'x' ? (c.x || 0) : (c.y || 0));
+      const lo = Math.max(pos(a), pos(b));
+      const hi = Math.min(pos(a) + len(a), pos(b) + len(b));
+      if (hi > lo) out.push({ a: i, b: i + 1, lo: lo, hi: hi, axis: axis });
+    }
+    return out;
+  }
+
+  /**
+   * 跨块同一行的**唯一去重入口**（纯函数）。一条被丢要四条**同时**成立：
+   *   ① 落在同一个重叠带内（两边的坐标都在 `[lo, hi]`）② 来自**不同**块（`ci` 不同）
+   *   ③ `keyOf(t)` **非空且逐字相等** ④ `|Δx| ≤ OVERLAP_MATCH_X`
+   * 外加**一对一**：每行至多当一次伙伴 —— 只有"相邻两块各自多读一次"才配得掉一对，
+   * 原图里真的重复两遍的文本（4 行）只能配掉 2 条、**仍留 2 条**。
+   * 配对取**就近 |Δy|**（同带里若有真重复值，优先配同一物理行的那条）；保留 y 较小者。
+   * `chunks < 2` 或无重叠带 ⇒ 原样返回 `merged=0`（不许改变今天的单块路径）。
+   */
+  function mergeOverlap(lines, chunks) {
+    const all = Array.isArray(lines) ? lines : [];
+    const bands = (Array.isArray(chunks) && chunks.length > 1) ? overlapBands(chunks) : [];
+    if (!bands.length) return { lines: all, merged: 0, maxDy: null, maxDx: null };
+    const drop = new Set();
+    let merged = 0, maxDy = null, maxDx = null;
+    for (const band of bands) {
+      const pool = [];
+      for (let i = 0; i < all.length; i++) {
+        const l = all[i];
+        if (!l || drop.has(i)) continue;
+        if (l.ci !== band.a && l.ci !== band.b) continue;
+        const v = band.axis === 'x' ? l.x : l.y;
+        if (typeof v !== 'number' || v < band.lo || v > band.hi) continue;
+        const k = keyOf(l.t);
+        if (!k) continue;
+        pool.push({ i: i, l: l, k: k });
+      }
+      if (pool.length < 2) continue;
+      const byKey = new Map();
+      for (const p of pool) {
+        if (!byKey.has(p.k)) byKey.set(p.k, []);
+        byKey.get(p.k).push(p);
+      }
+      for (const grp of byKey.values()) {
+        const yx = (p, q) => (p.l.y - q.l.y) || ((p.l.x || 0) - (q.l.x || 0));
+        const A = grp.filter((p) => p.l.ci === band.a).sort(yx);
+        const B = grp.filter((p) => p.l.ci === band.b).sort(yx);
+        if (!A.length || !B.length) continue;
+        const usedB = new Set();
+        for (const pa of A) {
+          let best = null, bestDy = Infinity;
+          for (const pb of B) {
+            if (usedB.has(pb.i)) continue;
+            if (Math.abs((pa.l.x || 0) - (pb.l.x || 0)) > OVERLAP_MATCH_X) continue;
+            const dy = Math.abs(pa.l.y - pb.l.y);
+            if (dy < bestDy) { best = pb; bestDy = dy; }
+          }
+          if (!best) continue;
+          usedB.add(best.i);                                   // 一对一：这条 B 不再配别人
+          drop.add((pa.l.y <= best.l.y) ? best.i : pa.i);       // 保留 y 较小者
+          merged += 1;
+          const dx = Math.abs((pa.l.x || 0) - (best.l.x || 0));
+          maxDy = maxDy === null ? bestDy : Math.max(maxDy, bestDy);
+          maxDx = maxDx === null ? dx : Math.max(maxDx, dx);
+        }
+      }
+    }
+    if (!merged) return { lines: all, merged: 0, maxDy: null, maxDx: null };
+    return { lines: all.filter((l, i) => !drop.has(i)), merged: merged, maxDy: maxDy, maxDx: maxDx };
+  }
+
   /** 小角度纠偏的**候选角度**（拍屏/PPT 常见 2–8°；90 的倍数不在这里，那些走试转） */
   const TILT_CANDIDATES = [-8, -6, -4, -2, 2, 4, 6, 8];
 
@@ -934,6 +1026,8 @@
     CHUNK_H_RELAXED: CHUNK_H_RELAXED, MIN_OVERLAP: MIN_OVERLAP, ROT_ORDER: ROT_ORDER.slice(),
     overlapFor: overlapFor, scaleFor: scaleFor, layoutChunks: layoutChunks, planChunks: planChunks,
     bandPlan: bandPlan, denseBandPlans: denseBandPlans, DENSE_BANDS: DENSE_BANDS,
+    overlapBands: overlapBands, mergeOverlap: mergeOverlap, keyOf: keyOf,
+    OVERLAP_MATCH_X: OVERLAP_MATCH_X,
     needsRotation: needsRotation, rotationsFor: rotationsFor,
     TILT_CANDIDATES: TILT_CANDIDATES.slice(), pickTilt: pickTilt,
     ADOPT_MIN_CONF: ADOPT_MIN_CONF, isCredible: isCredible,
@@ -1224,8 +1318,15 @@
         const wordish = (chars.match(/[\u4e00-\u9fffA-Za-z0-9]/g) || []).length;
         return wordish / chars.length >= 0.5;
       };
-      const tidy = (all) => {
-        const kept = all.filter(keepLine).sort((a, b) => (a.y - b.y) || (a.x - b.x));
+      /* 最后一次 `tidy` 的跨块去重读数（进回执 `overlap`，additive） */
+      let overlapStat = { merged: 0, maxDy: null, maxDx: null };
+      const tidy = (all, chunks) => {
+        /* 【第 4 项】先跨块配对去重（重叠带内 + keyOf(t) 相等 + |Δx|≤16 + 一对一），
+         * 再 filter/sort；下面的 prev-only 18px 规则**保留当兜底**（它现在只管同块内那一道）。
+         * 为什么合并必须在 sort 之前：`prev` 只比"上一个保留项"，同名两条一旦被别的行隔开就永远配不上。 */
+        const mr = mergeOverlap(all, chunks);
+        overlapStat = { merged: mr.merged, maxDy: mr.maxDy, maxDx: mr.maxDx };
+        const kept = mr.lines.filter(keepLine).sort((a, b) => (a.y - b.y) || (a.x - b.x));
         const out = [];
         for (const l of kept) {
           const prev = out[out.length - 1];
@@ -1376,7 +1477,9 @@
           const kept = raw.filter(keepLine);
           keptN += kept.length;
           for (const l of kept) confSum += l.conf;
-          lines.push.apply(lines, raw);
+          /* 【第 4 项】逐行挂块号 `ci`（只增字段，行结构 = `{t, conf, y, x, ci}`）：
+           * 跨块去重要知道"这两条来自哪一块"，否则 y 差小也认不出是重叠带里的同一行。 */
+          lines.push.apply(lines, raw.map((l) => Object.assign({ ci: i }, l)));
           if (tell) {
             emitProgress({
               phase: 'band', requestId: job.requestId,
@@ -1498,7 +1601,7 @@
         if (!reject && win) chosen = win;
       }
 
-      const finalLines = tidy(chosen.lines);
+      const finalLines = tidy(chosen.lines, chosen.plan.chunks);
       const text = finalLines.map((l) => l.t).join('\n');
       const cov = chosen.plan.coverage;
       /* 告知字段（不变量 1/2，D-14.5）：`null` = 唯一允许静默"未命中"的情形 */
@@ -1520,6 +1623,9 @@
         psm: chosen.psm, passes: chosen.passes,
         pre: (chosen.pre0 && chosen.pre0.pre) || {},
         bands: cov.usedChunks,
+        /* 【第 4 项】跨块去重读数（additive）：合并了几条、配对的 |Δy|/|Δx| 上界各是多少。
+         * `maxDx` 是 `OVERLAP_MATCH_X`（16）能不能再收的依据，必须如实给。 */
+        overlap: overlapStat,
         lines: finalLines.length, rawLines: chosen.stat.rawLines,
         notice: notice, coverage: cov, orientation: orientation,
         queueMs: Math.round(t1 - t0), ocrMs: Math.round(performance.now() - t1),

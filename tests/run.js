@@ -124,7 +124,11 @@ const specs = [
   './specs/ocr-yield.test.js',
   /* K80（2.0.1.14）配置没真变就不许动页面：未知键（版本标记/OCR 缓存）不许触发全页重建，
    * 含一条"全仓配置读键 ⊆ Config.defaults"的守卫。口径见 tests/specs/config-noop.test.js 头部 */
-  './specs/config-noop.test.js'
+  './specs/config-noop.test.js',
+  /* T57（真机事故）备注卡片的配置刷新：第二次 bind 的新引用必须生效、卡片开着时当场落新配色，
+   * 同时钉住"监听只装一次 / 引用没变不碰 UI / 没显示不碰 DOM"三条不许被顺手改掉的契约。
+   * 口径见 tests/specs/note-card.test.js 头部（分类那条仍在 config-noop.test.js 的 T36b） */
+  './specs/note-card.test.js'
 ];
 
 (async () => {

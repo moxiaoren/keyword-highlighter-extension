@@ -44,36 +44,137 @@ module.exports = async function run() {
     eq(head.build([hit('甲', '', '笔记')], new Set(['笔记'])).length, 0);
   });
 
-  suite('important-note · 标签形态聚合（🔖 标题 → 关键词）');
+  suite('important-note · 多命中只展最短一条 + 计数小标 + 下拉（2.0.1.15 需求 1）');
 
-  await test('★ 无标题普通词：多值聚合为 `🔖 a|b`', () => {
+  /* ★ 原「标签形态聚合」四条的老意图全部保留，只是**断言方向反了**：
+   * 旧行为把同卡多命中平铺/合并（`🔖 a|b`、`🔖 标题1|标题2 → a`）会撑爆 200px 面板；
+   * 新行为一律只展**最短的一条** + 右侧计数小标，具体名字去下拉里看。
+   * 所以「含有聚合串」改成「不再含有聚合串」，并补上「出小标 + 小标报数」。 */
+
+  await test('★ 无标题多值：只展最短一条，不再平铺 `🔖 a|b`', () => {
     const html = head.tagHtml([{ kw: 'a', adj: '' }, { kw: 'b', adj: '' }]);
-    truthy(html.indexOf('🔖 a|b') >= 0, html);
+    truthy(html.indexOf('🔖 a') >= 0, html);
+    falsy(html.indexOf('a|b') >= 0, '多值不许再平铺：' + html);
+    truthy(html.indexOf('data-kh-tag-more') >= 0, '命中 2 个要出计数小标：' + html);
+    truthy(html.indexOf('>2</button>') >= 0, '小标要报命中数：' + html);
   });
 
-  await test('★ 同标题多值 → `🔖 标题 → a|b`', () => {
+  await test('★ 同标题多值 → 只展最短那条 `🔖 标题 → kw`', () => {
     const html = head.tagHtml([{ kw: 'a', adj: '状态' }, { kw: 'b', adj: '状态' }]);
     truthy(html.indexOf('🔖 状态') >= 0, html);
-    truthy(html.indexOf('→ a|b') >= 0, html);
-  });
-
-  await test('★ 多标题同值 → 标题合并 `🔖 标题1|标题2 → a`', () => {
-    const html = head.tagHtml([{ kw: 'a', adj: '状态' }, { kw: 'a', adj: '结果' }]);
-    truthy(html.indexOf('🔖 状态|结果') >= 0, html);
     truthy(html.indexOf('→ a') >= 0, html);
+    falsy(html.indexOf('→ a|b') >= 0, html);
+    truthy(html.indexOf('>2</button>') >= 0, html);
   });
 
-  await test('★ 各标题单值但值不同 → 逐条平铺不交叉', () => {
+  await test('★ 多标题同值 → 标题不再合并 `🔖 标题1|标题2`', () => {
+    const html = head.tagHtml([{ kw: 'a', adj: '状态' }, { kw: 'a', adj: '结果' }]);
+    truthy(html.indexOf('🔖 状态') >= 0 && html.indexOf('→ a') >= 0, html);
+    falsy(html.indexOf('🔖 状态|结果') >= 0, '标题不许再合并：' + html);
+    truthy(html.indexOf('>2</button>') >= 0, html);
+  });
+
+  await test('★ 各标题单值但值不同 → 只展最短那条，不再逐条平铺', () => {
     const html = head.tagHtml([{ kw: 'a', adj: '状态' }, { kw: 'b', adj: '结果' }]);
     truthy(html.indexOf('🔖 状态') >= 0 && html.indexOf('→ a') >= 0, html);
-    truthy(html.indexOf('🔖 结果') >= 0 && html.indexOf('→ b') >= 0, html);
+    falsy(html.indexOf('🔖 结果') >= 0, '第 2 条不许再平铺到卡上：' + html);
+    falsy(html.indexOf('→ b') >= 0, html);
     falsy(/状态\|结果/.test(html), '不应把不同标题合并：' + html);
+    truthy(html.indexOf('>2</button>') >= 0, html);
+  });
+
+  await test('单条命中：逐字钉死形态，且不出小标', () => {
+    eq(head.tagHtml([{ kw: 'a', adj: '' }]), '<span class="khin-item-kw">🔖 a</span>');
+    eq(head.tagHtml([{ kw: 'a', adj: '状态' }]),
+       '<span class="khin-item-kw">🔖 状态</span><span class="khin-item-adj">→ a</span>');
+  });
+
+  await test('★「最短」按码点数算：代理对不许用 String.length 误算', () => {
+    // 😀 码点数 1、ab 码点数 2 ⇒ 展 😀。若误用 String.length，😀 也是 2 ⇒ 并列取文档序首个 ab，本断言必红。
+    const html = head.tagHtml([{ kw: 'ab', adj: '' }, { kw: '😀', adj: '' }]);
+    truthy(html.indexOf('🔖 😀') >= 0, '😀 码点数 1 最小，应展它：' + html);
+    falsy(html.indexOf('🔖 ab') >= 0, html);
+  });
+
+  await test('★ 并列最短取文档序第一个（不排序、不随机）：连调两次结果相同', () => {
+    const es = [{ kw: 'ab', adj: '甲' }, { kw: 'cd', adj: '乙' }, { kw: 'ef', adj: '丙' }];
+    const a = head.tagHtml(es);
+    const b = head.tagHtml(es);
+    eq(a, b, '同一输入必须得到同一结果（可复现、可测，不许随机挑）；a=' + a + ' b=' + b);
+    truthy(a.indexOf('🔖 甲') >= 0, '三条并列最长 2，取文档序第一个：' + a);
+    // 入参顺序反过来就该跟着反 —— 证明跟的是文档序，不是"哪个词看着好"
+    const r = head.tagHtml([{ kw: 'cd', adj: '乙' }, { kw: 'ab', adj: '甲' }]);
+    truthy(r.indexOf('🔖 乙') >= 0, '并列时跟着文档序走：' + r);
+  });
+
+  await test('★ 命中数 ≤1：不显示小标、不可展开', () => {
+    eq(head.tagHtml([]), '');
+    eq(head.tagHtml(null), '');
+    falsy(head.tagHtml([{ kw: 'a', adj: '' }]).indexOf('data-kh-tag-more') >= 0);
+  });
+
+  await test('★ 空文本命中（全空白）既不参与"最短"、也不计入命中数', () => {
+    eq(head.tagHtml([{ kw: 'a', adj: '' }, { kw: '   ', adj: '' }]),
+       '<span class="khin-item-kw">🔖 a</span>');
+  });
+
+  await test('★ 下拉内容：头行报总数、条目逐字完整，超过 20 条只渲染 20 条（不截断数据）', () => {
+    const many = [];
+    for (let i = 0; i < 5; i++) many.push({ kw: '命中' + i, adj: '' });
+    many.push({ kw: '长'.repeat(40), adj: '' });
+    const html = head.tagListHtml(many);
+    truthy(html.indexOf('共 6 条') >= 0, html);
+    truthy(html.indexOf('长'.repeat(40)) >= 0, '长文本必须逐字完整（超出只许 CSS 省略号）：' + html);
+    eq((html.match(/class="khin-tag-item"/g) || []).length, 6);
+    eq(head.tagListHtml([]), '');
+
+    const over = [];
+    for (let i = 0; i < 25; i++) over.push({ kw: 'k' + i, adj: '' });
+    const h2 = head.tagListHtml(over);
+    truthy(h2.indexOf('共 25 条') >= 0, '头行报的是真实总数（不许被 20 条截断）：' + h2);
+    eq((h2.match(/class="khin-tag-item"/g) || []).length, 20, '最多渲染 20 条');
   });
 
   await test('标签文本被 HTML 转义（防注入）', () => {
     const html = head.tagHtml([{ kw: '<img src=x onerror=1>', adj: '' }]);
     falsy(html.indexOf('<img') >= 0, html);
     truthy(html.indexOf('&lt;img') >= 0);
+  });
+
+  await test('★ 命中文本绝不进 HTML 属性（escText 放行引号 ⇒ 属性就是新增注入面）', () => {
+    // 下拉：命中只落文本节点，连 title 都不出（完整文本走 DOM 层 el.title）
+    const list = head.tagListHtml([{ kw: '<b>x</b>" onmouseover="alert(1)', adj: '' }]);
+    falsy(list.indexOf('<b>') >= 0, '尖括号要转义：' + list);
+    truthy(list.indexOf('&lt;b&gt;') >= 0, list);
+    falsy(/\stitle=/.test(list), '下拉里不许出现 title 属性：' + list);
+    // 小标：字符串层只有骨架 + 计数，悬停说明在 DOM 层挂（下面那条契约用例钉它）
+    const badge = head.tagHtml([{ kw: 'a', adj: '' }, { kw: 'b', adj: '' }]);
+    falsy(/\stitle=/.test(badge), '小标串里不许带属性文案：' + badge);
+    truthy(badge.indexOf('data-kh-tag-more') >= 0, badge);
+  });
+
+  await test('★ 文案真源：小标悬停说明 / 下拉头行都从 KH.OcrCopy.VIEW 取，面板不写死中文', () => {
+    const src = read('src/features/important-note.js');
+    const copy = read('src/ui/ocr-copy.js');
+    truthy(/moreHits:\s*'点开看全部 \{n\} 个命中'/.test(copy), '文案真源要落在 ocr-copy.js 的 VIEW 表里');
+    truthy(/hitsTotal:\s*'共 \{n\} 条'/.test(copy), copy.slice(0, 40));
+    truthy(src.indexOf('KH.OcrCopy.VIEW.moreHits') >= 0 && src.indexOf('KH.OcrCopy.VIEW.hitsTotal') >= 0,
+      '面板只许引用 VIEW，不许自己写这两句');
+    falsy(/点开看全部|共 \{n\} 条/.test(src), '面板里不许出现这两句字面量（写死就是各写一套）：');
+    truthy(src.indexOf('more.title = KH.OcrCopy.render(KH.OcrCopy.VIEW.moreHits') >= 0,
+      '悬停说明要在 renderTags 的 DOM 层挂（字符串层不带 title 属性）');
+  });
+
+  await test('★ 契约：展开/收起就地重画标签区（不走 refresh/render ⇒ head.changed 不脏也能更新）', () => {
+    const src = read('src/features/important-note.js');
+    truthy(src.indexOf('this.renderTags(tagsEl, item);') >= 0, '唯一注入点要改成就地重画');
+    falsy(src.indexOf('tagsEl.innerHTML = head.tagHtml(item.entries);') >= 0, '旧的一行注入必须消失');
+    const fn = src.slice(src.indexOf('renderTags(tagsEl, item) {'), src.indexOf('renderItems() {'));
+    truthy(fn.length > 0, '要能定位 renderTags 函数体（否则下面的断言是在空串上跑）');
+    falsy(/this\.(refresh|render)\(/.test(fn), 'head.changed 在 entries 未变时判不脏 ⇒ 不许走 refresh()/render()');
+    // 展开态必须挂面板侧：head 每次重建会把状态清掉
+    truthy(/expandedTags: new Set\(\)/.test(src) && /pickedTags: new Map\(\)/.test(src),
+      '展开态 / 选中态要挂在 panel 上');
   });
 
   suite('important-note · 脏检查（命中未变不重建 DOM）');
@@ -154,6 +255,20 @@ module.exports = async function run() {
   await test('只有抓取、没有手写笔记 → 也算有内容（占面板）', () => {
     const h = hit('应用名称', '', '', { fetchHtml: '<table class="kh-table"><tr><td>a</td><td>b</td></tr></table>' });
     eq(head.build([h], new Set()).length, 1);
+  });
+
+  await test('★ 消费侧：fetchHtml 为 \'\' / null ⇒ 该字段卡片不渲染（真值判定在 important-note.js 那一处）', () => {
+    // 空串与 null 对下游不可区分 ⇒ 两种入参都要落进"没有内容 ⇒ 不留卡"
+    eq(head.build([hit('应用名称', '', '', { fetchHtml: '' })], new Set()).length, 0);
+    eq(head.build([hit('应用名称', '', '', { fetchHtml: null })], new Set()).length, 0);
+    // 反例：真有表格照旧成卡（上面两条不是把"抓取内容"整体关掉了）
+    const ok = head.build([hit('应用名称', '', '',
+      { fetchHtml: '<table class="kh-table"><tr><td>a</td><td>b</td></tr></table>' })], new Set());
+    eq(ok.length, 1);
+    // 手写笔记 + 空 fetchHtml：卡片照旧 —— 空掉的是"抓取那一块"，不是整张卡
+    const withNote = head.build([hit('应用名称', '', '用户写的笔记', { fetchHtml: '' })], new Set());
+    eq(withNote.length, 1);
+    truthy(withNote[0].note.indexOf('<table') < 0, '空 fetchHtml 不许留下表格痕迹：' + withNote[0].note);
   });
 
   await test('★ 复用高亮底色：impNoteBg 进卡片，空串则不铺', () => {
@@ -362,19 +477,28 @@ module.exports = async function run() {
     truthy(side && Number(side[1]) <= 48, 'OCR 缩略图不超过 48px —— 9 张图的场景里它是主要高度来源');
   });
 
-  suite('important-note · 默认宽度不遮挡标题列（用户 2026-10-11：360px 挡太多 → 收到 200px）');
+  suite('important-note · 默认宽度 250px 可经设置页调整（T26 / 用户 2026-10-12：200 → 250）');
 
-  await test('★ 默认宽度就是 200px，且水平钳位读实测宽度（宽度真源只有 CSS 一处）', () => {
+  await test('★ 宽度只有一处真源（--khin-panel-w 变量），默认值跟 config 对表', () => {
     const src = read('src/features/important-note.js');
     const panel = (src.match(/\.khin-panel \{[\s\S]*?\n    \}/) || [''])[0];
     truthy(panel.length > 0, '要能定位 .khin-panel 样式块（否则下面的断言跑在空串上等于没测）');
-    const w = panel.match(/width:\s*(\d+)px/);
-    truthy(w, '.khin-panel 要有显式 width');
-    /* 用户 2026-10-11 二次收窄：360px 会盖住页面标题列 ⇒ 300px ⇒ 200px。钉住具体值（不许悄悄回弹）。 */
-    truthy(w && Number(w[1]) === 200,
-      '默认宽度必须是 200px（用户 2026-10-11 实测要求），实际 ' + (w && w[1]));
-    /* min-width 压过 width：只改 width 而 min-width 还停在 220px，面板实际还是 220px 宽。 */
-    truthy(/min-width:\s*160px/.test(panel), 'min-width 必须 ≤160px（否则压过 width:200px，宽度白改）');
+    truthy(/width:\s*var\(--khin-panel-w\)/.test(panel), '.khin-panel 的宽度必须走变量：' + panel);
+    /* 反例防回归：宽度原来写死在这里（200px）——「设置页能填、面板不理」就是从这儿来的。
+     * [^-] 是为了放过 min-width / max-width 两条合法声明（它们的值本来就不吃这个变量）。 */
+    falsy(/[^-]width:\s*\d+px/.test(panel), '.khin-panel 里不许再写死宽度数字：' + panel);
+    const wrap = (src.match(/\.khin-wrap \{[\s\S]*?\n    \}/) || [''])[0];
+    truthy(/--khin-panel-w:\s*\d+px/.test(wrap), '变量默认值要定义在 .khin-wrap（render 往同一元素写内联值）：' + wrap);
+    eq((src.match(/--khin-panel-w:\s*\d+px/g) || []).length, 1, '变量的默认值只许有一处定义');
+    /* 两处真源不许漂移：CSS 默认值 == config 默认值；min-width == config 的下界。 */
+    eq(Number((wrap.match(/--khin-panel-w:\s*(\d+)px/) || [])[1]), KH.Config.defaults.notePanelWidth,
+      'CSS 的默认宽度必须跟 config 的默认值一致（漂移了，设置页读到的与面板显示的不是一回事）');
+    truthy(new RegExp('min-width:\\s*' + KH.Config.PANEL_WIDTH_MIN + 'px').test(panel),
+      'min-width 必须等于 config 的下界 ' + KH.Config.PANEL_WIDTH_MIN + 'px（min-width 压过 width，只改 width 白改）');
+    /* 命中词块的上限是**派生**的（250 下 ≈ 202，与旧的 200 等价），不留会过期的字面量 */
+    const kw = (src.match(/\.khin-item-kw \{[\s\S]*?\n    \}/) || [''])[0];
+    truthy(/max-width:\s*calc\(var\(--khin-panel-w\) - 48px\)/.test(kw),
+      '命中词块上限必须跟着面板宽度变量走：' + kw);
     const ap = (src.match(/applyPosition\(\)\s*\{[\s\S]*?\n    \}/) || [''])[0];
     truthy(ap.length > 0, '要能定位 applyPosition');
     const apCode = ap.replace(/\/\*[\s\S]*?\*\//g, '');   // 只看代码，不看注释里的解释文字
@@ -383,6 +507,51 @@ module.exports = async function run() {
     truthy(!/\b360\b/.test(apCode), 'applyPosition 里不许再出现写死的 360（那是 CSS 宽度的第二处真源）');
     truthy(/getBoundingClientRect\(\)\.width/.test(apCode) || /rect\.width/.test(apCode),
       '水平钳位必须读面板实测宽度（rect.width），否则 CSS 改了钳位不生效');
+  });
+
+  await test('★ 新配置键 notePanelWidth：默认 250、越界夹边界、坏值回默认（归一函数只有一个）', () => {
+    const C = KH.Config;
+    eq(C.defaults.notePanelWidth, 250, '默认宽度 250（用户 2026-10-12）');
+    eq(C.normalize({}).config.notePanelWidth, 250, '缺键 ⇒ 回默认');
+    eq(C.normalize({ notePanelWidth: 320 }).config.notePanelWidth, 320, '合法值原样保留');
+    eq(C.normalize({ notePanelWidth: 100 }).config.notePanelWidth, 160, '小于下界 ⇒ 夹到 160（不丢用户的数）');
+    eq(C.normalize({ notePanelWidth: 9999 }).config.notePanelWidth, 600, '超过上界 ⇒ 夹到 600');
+    for (const bad of [0, -5, '', null, undefined, 'abc', NaN]) {
+      eq(C.normalize({ notePanelWidth: bad }).config.notePanelWidth, 250, '坏值 ⇒ 回默认 250：' + String(bad));
+    }
+    eq(C.normalizePanelWidth('320'), 320, '字符串数字要认（导入的旧备份里存过字符串）');
+    eq(C.normalizePanelWidth(250.6), 251, '面板宽度只收整数');
+    eq(C.PANEL_WIDTH_MIN, 160, '下界常量');
+    eq(C.PANEL_WIDTH_MAX, 600, '上界常量');
+    /* 配置 → 面板的接线：写入口只有 render() 一处，且用的是 config 的归一函数（不许复制一份边界） */
+    const src = read('src/features/important-note.js');
+    truthy(/KH\.Config\.normalizePanelWidth\(/.test(src), '面板必须调 config 的唯一归一函数');
+    /* config ⇒ 变量的唯一证据层：写入的值必须直接由 cfg.notePanelWidth 经唯一归一函数得出。
+     * 字面量不可能满足这个正则（样式表里的默认值只是首屏兜底，真正生效的是这一行内联写入）。 */
+    truthy(/setProperty\('--khin-panel-w',\s*\n\s*KH\.Config\.normalizePanelWidth\(cfg && cfg\.notePanelWidth\)/.test(src),
+      '面板宽度必须由 render() 从 cfg.notePanelWidth 写到 CSS 变量上（否则设置页改了面板不理）');
+    /* consume(hits, cfg) 必须把 cfg 交给 render —— 否则上面那行永远拿不到用户选的值 */
+    const cons = (src.match(/consume\(hits, cfg\) \{[\s\S]*?\n      \},/) || [''])[0];
+    truthy(/panel\.render\([\s\S]*?, cfg\)/.test(cons), 'consume 必须把 cfg 传给 render：' + cons);
+  });
+
+  await test('★ 设置页宽度输入框接线（min/max 取自 config 常量，不许另抄 160/600）', () => {
+    const html = read('options/options.html');
+    truthy(html.indexOf('id="pf-notePanelWidth"') >= 0, '设置页要有面板宽度输入框');
+    falsy(/id="pf-notePanelWidth"[^>]*min=/.test(html), 'min 不许写死在 HTML 里（那会和 config 的下界漂移）');
+    const js = read('options/options.js');
+    truthy(js.indexOf("$('pf-notePanelWidth')") >= 0, '输入框必须在 options.js 里接线');
+    truthy(/pwInput\.min = KH\.Config\.PANEL_WIDTH_MIN/.test(js)
+      && /pwInput\.max = KH\.Config\.PANEL_WIDTH_MAX/.test(js),
+      'min/max 必须从 config 的边界常量写进去');
+    truthy(/KH\.Config\.normalizePanelWidth\(\$\('pf-notePanelWidth'\)\.value\)/.test(js),
+      '保存前必须过 config 的归一函数（坏值不许落盘）');
+    truthy(/patch\(\{ notePanelWidth: w \}\)/.test(js), '归一后的值才落盘（顶层键，不走 saveNested）');
+    truthy(js.indexOf("$('pf-notePanelWidth').value = w;") >= 0,
+      '归一后的值要回显进框里（别让框里停着一个没生效的数）');
+    /* 陈旧说明：那段「📋 复制这张图的全部识别文字」说的是 T25 已删的按钮 */
+    falsy(html.indexOf('复制这张图的全部识别文字') >= 0, '设置页不许再描述那个已删的复制按钮');
+    truthy(html.indexOf('在右侧全文栏里选中后 Ctrl+C') >= 0, '要写清真正可用的复制通路（大图全文栏选中复制）');
   });
 
   suite('important-note · 200px 适配：题头图标+短标签 / 笔记区可收起（用户 2026-10-11）');
@@ -398,15 +567,25 @@ module.exports = async function run() {
     truthy(head.length > 0, '要能定位 .khin-imghead 样式块');
     truthy(/flex-wrap:\s*nowrap/.test(head) && /overflow:\s*hidden/.test(head),
       '题头必须 nowrap + overflow:hidden —— 否则 200px 下就是现场截图里的折行');
-    truthy(src.indexOf('class="khin-imgtitle" title="图片命中"') >= 0,
-      '分区标题改短标签「🖼 图片」，完整名「图片命中」挂 title（短标签不许把语义弄丢）');
+    truthy(src.indexOf('class="khin-imgtitle"') >= 0 &&
+      src.indexOf('this.imgTitleEl.title = KH.OcrCopy.VIEW.imgSectionTip;') >= 0 &&
+      copy.indexOf('imgSectionTip:') >= 0,
+      '分区标题改短标签「🖼 图片」，完整名「图片命中」挂 title，且文案真源在 ocr-copy.js（T29 / F1.2）');
     /* 行内：关键词可被 ellipsis，状态标签与耗时**不许**被挤掉 */
     const kw = CSS_OF(src, '.khin-imgkw');
     const tag = CSS_OF(src, '.khin-imgtag');
     truthy(/flex:\s*1 1 auto/.test(kw) && /text-overflow:\s*ellipsis/.test(kw),
       '关键词这一格要能让位（flex:1 1 auto + ellipsis）');
-    truthy(/flex:\s*0 0 auto/.test(tag) && /white-space:\s*nowrap/.test(tag),
-      '状态标签不许收缩、不许折行（它才是这一行的信息）');
+    /* T29 / F2.2：标签原来是 flex:0 0 auto 且没有上限 ⇒ 长标签先吃满自己要的宽度、把关键词
+     * 压到 0，再把行尾耗时连同省略号一起裁掉（同一列表里别的行有耗时、这几行没有）。
+     * 现在标签自己也让位（0 1 auto），但缩到 2em 就停 —— 「标签才是这一行的信息」仍然成立。 */
+    truthy(/flex:\s*0 1 auto/.test(tag) && /min-width:\s*2em/.test(tag) &&
+      /text-overflow:\s*ellipsis/.test(tag),
+      '状态标签可以让位，但必须有下界（0 1 auto + min-width:2em + ellipsis）');
+    truthy(/white-space:\s*nowrap/.test(tag), '状态标签不许折行（它才是这一行的信息）');
+    const cost = CSS_OF(src, '.khin-imgcost');
+    truthy(/flex:\s*0 0 auto/.test(cost),
+      '耗时绝不参与让位（T29 / F2.2：被整条裁掉会看着像这几张图没耗时）');
     /* 行内也吃图标：图标由唯一真源给出，面板不自己挑字符；
      * 但它要挂在**独立 span** 上 —— `tag.textContent` 必须保持"只说结论"
      * （2026-10-11 实测：把图标拼进 tag 文本会打红真机里三条拿 tag 当状态措辞的用例）。 */
@@ -508,5 +687,590 @@ module.exports = async function run() {
       '幂等：已经包过的不许再包一层（嵌套 span 会让省略号失效）');
     falsy(/innerHTML = m\[0\][\s\S]{0,200}innerHTML/.test(frag),
       '别在渲染里重写整串 innerHTML —— 只做补包裹，表格结构不动');
+  });
+
+  suite('important-note · 面板 UI 修复批（T29）');
+
+  /** 单行规则（`{ … }` 不换行的那种）—— CSS_OF 用的是"到下一个 4 空格缩进的 }"，单行规则会多吞。 */
+  const RULE = (src, sel) => (src.match(new RegExp(sel.replace(/\./g, '\\.').replace(/\s+/g, '\\s+') + ' \\{[^}]*\\}')) || [''])[0];
+
+  await test('★ 死样式删净 + STYLE 模板串的注释成对（T29 / F1.1）', () => {
+    const src = read('src/features/important-note.js');
+    /* 守卫按"规则形状"写，不按裸类名：注释里还会提到它们（那是解释，不是样式）。 */
+    falsy(/\.khin-item-body\s*[,{]/.test(src), '.khin-item-body 规则必须删掉（全仓零引用）');
+    falsy(/\.khin-item-body\s+img/.test(src), '并排的那条 .khin-item-body img 选择器也要删');
+    falsy(/\.khin-empty\s*\{/.test(src), '.khin-empty 规则必须删掉');
+    falsy(/\.khin-imgempty\s*\{/.test(src), '.khin-imgempty 规则必须删掉');
+    truthy(src.indexOf("none.className = 'khin-imgnone';") >= 0,
+      '活着的那条（.khin-imgnone）不许被误伤 —— 一条都没有时要留说明行');
+    /* 注释配平：删样式时掉一个收尾符，就会把后面整条规则吃掉（浏览器静默丢弃候选规则，
+     * node --check 查不出，只有这么守）。T25 删「复制全文」按钮时就掉过一个尾巴。 */
+    const style = (src.match(/const STYLE = `([\s\S]*?)`;/) || ['', ''])[1];
+    truthy(style.length > 0, '要能抠出 STYLE 模板串');
+    eq((style.match(/\/\*/g) || []).length, (style.match(/\*\//g) || []).length,
+      'STYLE 里 /* 与 */ 必须成对 —— 掉一个会让后面整条规则被静默丢弃');
+  });
+
+  await test('★ 面板四条标题文案归真源（T29 / F1.2）', () => {
+    const src = read('src/features/important-note.js');
+    const copy = read('src/ui/ocr-copy.js');
+    eq(src.indexOf('收起为小按钮') >= 0, false, '「收起为小按钮」不许再写死在面板里');
+    eq(src.indexOf('本次页面不再显示') >= 0, false, '「本次页面不再显示」同上');
+    eq(src.indexOf('title="图片命中"') >= 0, false, '「图片命中」同上（改由 JS 从 VIEW 赋 title）');
+    for (const k of ['fabLabel', 'minTip', 'imgSectionTip', 'removeTip']) {
+      truthy(copy.indexOf(k + ':') >= 0, '真源 VIEW 表要有 ' + k);
+      truthy(src.indexOf('KH.OcrCopy.VIEW.' + k) >= 0, '面板要真的去读 ' + k + '（键加了没人用等于没加）');
+    }
+    truthy(/fabLabel: '重要笔记（\{n\} 条）'/.test(copy), '小按钮的完整语义（含计数占位符）');
+    truthy(src.indexOf('fab.setAttribute(\'aria-label\', fabLabel);') >= 0,
+      '计数不能只靠徽标里那个数字 —— 读屏要靠 aria-label 读出「N 条」');
+    truthy(src.indexOf('fab.title = fabLabel;') >= 0, '悬停说明也取自同一处');
+  });
+
+  await test('★ 复制失败就地红一下（T29 / F3.1）', () => {
+    const src = read('src/features/important-note.js');
+    const rule = RULE(src, '.khin-imgchip.failed');
+    truthy(rule.length > 0, '要有 .khin-imgchip.failed 这条规则');
+    truthy(/#991b1b/.test(rule) && /#fee2e2/.test(rule), '复用 .khin-imgtag.bad 那对现成的红（不新增色值）');
+    truthy(/chip\.classList\.toggle\('failed', !ok\);/.test(src), '失败态由同一次 ok 决定（不许另起一套判定）');
+    truthy(/chip\.classList\.remove\('failed'\);/.test(src), '1200ms 复位要把它一起清掉');
+    truthy(src.indexOf('KH.OcrCopy.VIEW.copyFailed') >= 0, '失败文案仍走真源（面板不写这句话）');
+  });
+
+  await test('★ 小按钮是真按钮：点得开、双击照旧、还能拖（T29 / F4.1 + F4.4）', () => {
+    const src = read('src/features/important-note.js');
+    truthy(src.indexOf('<button class="khin-fab" type="button">') >= 0,
+      'FAB 必须是真 <button>（原来是 div：键盘够不着、单击没反应，只有双击这一条隐性通路）');
+    truthy(/\.khin-fab \{[\s\S]{0,400}?border: 0; font-family: inherit;/.test(src),
+      '做成按钮后要盖掉 UA 的皮（边框 + 字体不继承）');
+    truthy(src.indexOf("fab.addEventListener('click'") >= 0, '单击要能展开');
+    /* T60：FAB 的 dblclick 由 `openPanel` 直接当处理器，改成包一层 —— 直接传处理器会把事件对象
+     * 当 suppressMs 传进去（`typeof {} === 'object'` ⇒ 取 Date.now()，行为侥幸正确但不该靠侥幸），
+     * 所以这里钉的是「仍然调 openPanel、且不把事件对象喂给它」。 */
+    truthy(/fab\.addEventListener\('dblclick', \(\) => openPanel\(\)\)/.test(src), '双击习惯保留（且不把事件对象当 suppressMs 喂进去）');
+    truthy(src.indexOf("fab.addEventListener('pointerdown'") >= 0, '拖动把手仍在（pointerdown）');
+    truthy(/const inFab = hitFab\(t\)/.test(src) && /t\.tagName === 'BUTTON' && !inFab/.test(src),
+      '拖动守卫必须放行 FAB 自己 —— 否则"按钮上不拖"会把它一起拦掉，面板再也拖不动');
+    truthy(src.indexOf('<span aria-hidden="true">📌</span>') >= 0 &&
+      src.indexOf('khin-fab-badge" aria-hidden="true"') >= 0,
+      '📌 与徽标都是装饰：语义由 aria-label 承载，读屏不必再念一遍图标');
+  });
+
+  await test('★ 长按不当作点击：按住 ≥600ms 且没位移 ⇒ 不打开面板（T40 / T37 真机实测）', () => {
+    const src = read('src/features/important-note.js');
+    /* 真机实测（qa 取证）：按住约 1 秒不动再松手 ⇒ 面板自己弹开，鼠标与触屏都复现
+     * —— FAB 同时是「展开」按钮与「拖动」把手，长按在浏览器眼里就是一次普通 click。
+     * 判据：按住 ≥600ms 且期间无位移 ⇒ 不打开；快击照旧；拖完仍由 dragMoved 否决；
+     * 键盘（Enter/空格不派发 pointerdown）必须仍然可用。 */
+    const clickAt = src.indexOf("fab.addEventListener('click'");
+    truthy(clickAt >= 0, 'FAB 的 click 通路不见了（T29 加的展开入口）');
+    const fabClick = src.slice(clickAt, src.indexOf('});', clickAt));
+    const downAt = src.indexOf("fab.addEventListener('pointerdown'");
+    truthy(downAt >= 0, 'FAB 的 pointerdown 通路不见了（拖动把手）');
+    const fabDown = src.slice(downAt, src.indexOf('});', downAt));
+
+    truthy(/const FAB_LONG_PRESS_MS = 600;/.test(src), '阈值必须是具名常量 600ms（用户拍板值）');
+    const constAt = src.indexOf('const FAB_LONG_PRESS_MS = 600;');
+    truthy(/真机|按住/.test(src.slice(Math.max(0, constAt - 400), constAt)),
+      '常量上方要写明理由（真机实测：按住约 1 秒松手会误开面板）');
+
+    truthy(/this\.fabPressAt = Date\.now\(\);/.test(fabDown),
+      '按下时要记时间戳 —— 这是时长判定的起点');
+    truthy(/this\.dragMoved = false;/.test(fabDown),
+      '每次按下先清掉上一次的拖动标记：拖动后若没派发 click，别让它吞掉下一次键盘激活');
+    truthy(/fabPressAt: 0/.test(src), '时间戳默认值是 0（未记录 = 放行）');
+
+    /* T41（lead 2026-10-12 口径）：时长必须在**指针事件**里量、click 只读 —— click 的派发延迟是
+     * 浏览器行为（触屏尤其明显：指针抬起后还要等一次双击/缩放手势判定），拿它当计时源会把一次
+     * 快速轻点误判成长按，"轻点开面板"在触屏上就没了。结算点 = startDrag 的 pointerup 收尾。 */
+    truthy(/fabHeldMs: 0/.test(src), '要有一个结算字段，默认 0（未记录 = 放行，供键盘通路用）');
+    truthy(/if \(this\.fabPressAt\) \{ this\.fabHeldMs = Date\.now\(\) - this\.fabPressAt; this\.fabPressAt = 0; \}/.test(src),
+      '时长必须在 pointerup 里结算（指针事件里量），不许在 click 里现算');
+    truthy(/window\.addEventListener\('pointercancel', up\)/.test(src),
+      'pointercancel（触屏被系统接管，没有 pointerup）也要结算并清干净：否则残留时间戳会把下一次真实点击当成长按否决');
+    truthy(/const heldMs = this\.fabHeldMs;/.test(fabClick), 'click 只读结算值，不参与计时');
+    falsy(/Date\.now\(\)/.test(fabClick), 'click 里不许出现计时源（派发延迟不可控）');
+    truthy(/const keyboard = !e \|\| e\.detail === 0;/.test(fabClick),
+      '键盘激活（detail 为 0，前面没有 pointerdown）必须能分辨出来');
+    truthy(/if \(keyboard\) \{ this\.dragMoved = false; this\.fabHeldMs = 0; openPanel\(\); return; \}/.test(fabClick),
+      '键盘这一次一律放行，并清掉可能残留的手势状态（否则拖动收尾/pointercancel 的旧状态会吞掉键盘激活）');
+    falsy(/keyboard[\s\S]{0,120}?FAB_LONG_PRESS_MS/.test(fabClick),
+      '键盘通路不许过时长闸门（T29 刚让 FAB 键盘可达，不许改回不可达）');
+    truthy(/this\.fabHeldMs = 0;/.test(fabClick), '结算值用完即清，别把上一次的按住时长带到下一次');
+    truthy(/if \(heldMs >= FAB_LONG_PRESS_MS\) return;/.test(fabClick),
+      '按住 ≥600ms 且没位移 ⇒ 直接返回，不打开面板');
+    truthy(/if \(this\.dragMoved\) \{ this\.dragMoved = false; this\.fabHeldMs = 0; return; \}/.test(fabClick),
+      '拖完补发的 click 仍由 dragMoved 否决，并且要一起清掉结算值（别让拖动时长污染下一次点击）');
+    falsy(/setTimeout|setInterval/.test(fabClick), '不许为此新造长按定时器（按下记时间戳足够）');
+    falsy(/(keydown|keyup)[^]{0,160}?fabPressAt/.test(src),
+      '键盘通路不许与按住时长挂钩（T29 刚把 FAB 变成键盘可达，别改回不可达）');
+  });
+
+  await test('★ T52 反向用例：位移 ≤3px 不算「拖」⇒ 松手仍按点击处理（阈值是曼哈顿距离 >3px，不是 ≥）', () => {
+    const src = read('src/features/important-note.js');
+    /* 反向（"不算拖"那一侧）用例：FAB 同时是「展开」按钮与「拖动」把手，手按上去松开的途中只抖
+     * 1~3px 的**必须仍算点击**（面板照开）。阈值实现在 important-note.js:1153：
+     * 曼哈顿距离 |dx|+|dy| > 3 才 `state.moved = true`。
+     * 装置说明：tests/harness.js 的 ShimElement（:42-192）**完全没有 addEventListener**，
+     * document 的监听器也是空实现（:326），真机式 pointerdown/move/up 在这里得另造一套事件管线 ——
+     * 所以照本文件既有手法（上面 T40 那条）**静态钉住源码表达式**，不新造装置。 */
+    const at = src.indexOf('startDrag(e) {');
+    truthy(at >= 0, 'startDrag 不见了（FAB 的拖动把手）');
+    const drag = src.slice(at, src.indexOf("window.addEventListener('pointermove'", at));
+    truthy(drag.length > 0, '要在 startDrag 到 pointermove 注册之间取到拖动实现（否则下面是在空串上跑）');
+
+    truthy(/const state = \{[^\n]*moved: false \};/.test(drag), 'moved 默认必须是假（"没动过"是默认，不是靠事后清）');
+    truthy(/if \(Math\.abs\(ev\.clientX - state\.startX\) \+ Math\.abs\(ev\.clientY - state\.startY\) > 3\) state\.moved = true;/.test(drag),
+      '阈值必须是曼哈顿距离 |dx|+|dy| **严格大于** 3 ⇒ 位移 ≤3px 的抖动不算拖（否则"明明点了、面板没开"会回来）');
+    falsy(/>=\s*3/.test(drag), '禁 `>= 3`：恰好 3px 的抖动会被判成拖 —— 这条反向用例钉的就是这一侧');
+    eq((src.match(/state\.moved = true/g) || []).length, 1, '置真只许有一处（就是那条 >3 比较），别在别处补"顺手也算拖"');
+    truthy(/this\.dragMoved = !!state\.moved;/.test(drag), 'dragMoved 只由 state.moved 派生（指针抬起时结算）');
+    eq((src.match(/this\.dragMoved = true/g) || []).length, 0, 'dragMoved 不许被任何地方直接置真 —— 它只能是">3px"的结果');
+    const clickAt = src.indexOf("fab.addEventListener('click'");
+    truthy(clickAt >= 0, 'FAB 的 click 通路不见了');
+    const fabClick = src.slice(clickAt, src.indexOf('});', clickAt));
+    truthy(/if \(this\.dragMoved\) \{ this\.dragMoved = false; this\.fabHeldMs = 0; return; \}/.test(fabClick),
+      'FAB 的 click 只认 dragMoved ⇒ ≤3px 松手时该分支不成立，照常 openPanel（反向用例的另一半）');
+  });
+
+  await test('★ 两个题头键盘可达、状态可播报（T29 / F4.2）', () => {
+    const src = read('src/features/important-note.js');
+    truthy(src.indexOf('<div class="khin-notebar" role="button" tabindex="0" aria-expanded="true" hidden>') >= 0,
+      '笔记区题头要 role/tabindex/aria-expanded');
+    truthy(src.indexOf('<div class="khin-imghead" role="button" tabindex="0" aria-expanded="false">') >= 0,
+      '图片区题头同上');
+    truthy(/e\.key === 'Enter' \|\| e\.key === ' '/.test(src), '键盘激活要认 Enter 与空格（照抄词块那段）');
+    truthy(src.indexOf('onActivate(this.noteBarEl, toggleNotes);') >= 0,
+      '笔记区题头要真的挂上键盘 —— 只加属性不绑键盘等于没修');
+    truthy(src.indexOf('onActivate(this.imgHeadEl, toggleImgs);') >= 0, '图片区题头同上');
+    truthy(src.indexOf("this.noteBarEl.setAttribute('aria-expanded'") >= 0 &&
+      src.indexOf("this.imgHeadEl.setAttribute('aria-expanded'") >= 0,
+      '收起/展开都要同步 aria-expanded（视觉上只有箭头字符在变，读屏读的是这一位）');
+  });
+
+  await test('★ 多命中的下拉条目键盘选得了（T29 / F4.3）', () => {
+    const src = read('src/features/important-note.js');
+    const list = (src.match(/tagListHtml\(entries, max\) \{[\s\S]*?\n    \},/) || [''])[0];
+    truthy(list.length > 0, '要能定位 tagListHtml（否则下面的断言是在空串上跑）');
+    truthy(/class="khin-tag-item" data-kh-tag-idx="[^"]*" role="button" tabindex="0"/.test(list),
+      '下拉条目要 role/tabindex —— 原来能展开、选不了，键盘用户卡在门外');
+    const rt = (src.match(/renderTags\(tagsEl, item\) \{[\s\S]*?\n    \},/) || [''])[0];
+    truthy(rt.length > 0, '要能定位 renderTags');
+    truthy(/items\[i\]\.addEventListener\('keydown'/.test(rt), 'Enter/空格要触发选择');
+    truthy(/items\[i\]\.addEventListener\('click', pickOne\)/.test(rt),
+      '点击与键盘共用同一处选择逻辑（两套写法迟早走岔）');
+    falsy(/closest\s*\(/.test(rt), '交互定位不许用 closest 反查（meta-check 红线）');
+  });
+
+  await test('★ 计数是异步改的 ⇒ 用 aria-live 播报（T29 / F4.6）', () => {
+    const src = read('src/features/important-note.js');
+    truthy(src.indexOf('<span class="khin-imgcount" role="status" aria-live="polite"></span>') >= 0,
+      '计数在渲染后才被写上，只有 role=status + aria-live 播报得到');
+    truthy(/this\.imgCountEl\.textContent =/.test(src), '播报的就是那个真在写的元素');
+  });
+
+  await test('★ 次要灰字统一 #64748b，状态图标不跟着换（T29 / F4.5）', () => {
+    const src = read('src/features/important-note.js');
+    for (const sel of ['.khin-notebar .khin-notearrow', '.khin-imghead .khin-imgarrow', '.khin-imgnone', '.khin-imgcost']) {
+      const rule = RULE(src, sel);
+      truthy(rule.length > 0, '要能定位 ' + sel);
+      truthy(/#64748b/.test(rule), sel + ' 的灰字要用 #64748b（白底 ≈4.76:1，过 WCAG AA）');
+      falsy(/#94a3b8/.test(rule), sel + ' 不许再用 #94a3b8（2.57:1，不达标）');
+    }
+    const miss = RULE(src, '.khin-imgico.miss');
+    truthy(/#94a3b8/.test(miss),
+      '状态图标 miss 仍用 #94a3b8 —— F4.5 只点名四处文字，图标不在内（改它要与 wait/note 的 #64748b 撞色）');
+  });
+
+  await test('★ 笔记列表整块没有时不许留 60px 白带（T29 / F6.1）', () => {
+    const src = read('src/features/important-note.js');
+    truthy(/\.khin-body\[hidden\] \{ display: none; \}/.test(src),
+      '要补一条 [hidden] 规则（它是唯一没吃到 [hidden] 的 flex 子项）');
+    truthy(src.indexOf('if (this.bodyEl) this.bodyEl.hidden = !this.items.length;') >= 0,
+      '整页只有图片命中时要真的把正文整块藏起来，而不是留一条空高');
+    const body = RULE(src, '.khin-body');
+    truthy(/min-height:\s*60px/.test(body), 'min-height 仍要留给"有笔记"的正常态（不许为了这块白带去删它）');
+  });
+
+  await test('★ T43：大图平移放开到整屏 —— 只保证"不被拖丢"（120px 仍在视口内）', () => {
+    const src = read('src/features/important-note.js');
+    /* 用户原话（2026-10-12）："大图模式，图片拖动范围有点小，被限制在容器里面"。
+     * 旧式是「图边贴视口边 + 60px 余量」，而大图常态是 84vw < 视口宽 ⇒ Math.max(0, …) 把整项压成 0
+     * ⇒ scale=1 时只剩 60px 可挪。新式按「至少 KEEP 像素还在视口内」推导，图可以摆到整屏任意位置。 */
+    truthy(/const LIGHTBOX_PAN_KEEP = 120;/.test(src),
+      '常量必须是 LIGHTBOX_PAN_KEEP = 120（lead 拍板值：不至于把图拖丢的下限）');
+    const fnAt = src.indexOf('const clampPan = (tx, ty) => {');
+    truthy(fnAt >= 0, '要有 clampPan 本体（没匹配到说明它被重写了）');
+    const fn = src.slice(fnAt, src.indexOf('};', fnAt));
+    truthy(/const limX = Math\.max\(0, \(window\.innerWidth \+ r\.width\) \/ 2 - LIGHTBOX_PAN_KEEP\);/.test(fn),
+      'X 上界必须是 (视口宽 + 图宽) / 2 − KEEP：图能摆到整屏，只保证不被拖丢');
+    truthy(/const limY = Math\.max\(0, \(window\.innerHeight \+ r\.height\) \/ 2 - LIGHTBOX_PAN_KEEP\);/.test(fn),
+      'Y 同构（一次改完 X/Y，别只改一半）');
+    truthy(/Math\.min\(limX, Math\.max\(-limX, tx\)\)/.test(fn), '夹紧仍绕原点对称（复位/双击回中的前提）');
+    /* 反向守卫：只加不改 —— 旧式一旦留下，小图又会退回"只剩 60px 可挪"，而且更难发现。
+     * 注意注释里也不许写出旧式，否则这条会把注释算成命中。 */
+    falsy(/r\.width - window\.innerWidth/.test(src), '旧式（图边贴视口边）不许留在文件里');
+    falsy(/r\.height - window\.innerHeight/.test(src), 'Y 同构的旧式同样不许留');
+    falsy(/LIGHTBOX_PAN_SLACK/.test(src), '旧常量名必须彻底消失（不许两个常量并存）');
+    /* 求值顺序（lead 追加要求）：clampPan 读的是**活的** getBoundingClientRect ⇒ 必须先把本次
+     * 缩放/旋转写进 transform、再夹紧。顺序反了它拿到的是上一次留下的尺寸 —— 从 4× 缩回 1× 时
+     * 按旧的大盒算出很大的边界，平移量原样留下（用户看到"缩回来图飞出去"），要等下次 apply 才收回。 */
+    const ap = (src.match(/const apply = \(\) => \{[\s\S]*?\n      \};/) || [''])[0];
+    truthy(ap.length > 0, '要有 apply 本体（没匹配到说明它被重写了）');
+    const firstTransform = ap.indexOf('img.style.transform');
+    const clampCall = ap.indexOf('clampPan(');
+    truthy(firstTransform >= 0 && clampCall > firstTransform,
+      'apply 里必须"先写 transform 再 clampPan"（否则按上一次的盒算边界）');
+    /* 反向守卫（可判定，不是永远为真）：被夹紧时要写第二次 transform ⇒ apply 体内恰好两次赋值；
+     * 旧顺序只有一次赋值 ⇒ 这条会红。且第二次必须在"确实被夹紧"的条件里，不夹紧不许写。 */
+    eq((ap.match(/img\.style\.transform/g) || []).length, 2,
+      'apply 体内 img.style.transform 必须恰好两次（首次无条件、第二次只在被夹紧时）');
+    truthy(/if \(p\.x !== tx0 \|\| p\.y !== ty0\) \{[\s\S]{0,240}?img\.style\.transform/.test(ap),
+      '第二次赋值必须在"确实被夹紧"的条件分支里（不夹紧时不许多写一次 style）');
+  });
+
+  await test('★ T46：全文栏回进 .kh-lb-row（与翻页键同祖先）+ 关闭只认按下的位置', () => {
+    const src = read('src/features/important-note.js');
+    /* 真机缺陷（qa 取证，不是推断）：浮层锚**容器**（.kh-lb-stage）、‹/› 锚**行**（.kh-lb-row，
+     * 列向 flex 居中、行宽 = 内容宽）。只要行的右缘比容器右缘内缩超过 60px，浮层右缘就必然压进行里
+     * —— 实测 paneRect 与 nextRect 横向重叠 48px（= 整个按钮宽），elementFromPoint(› 中心) 命中的
+     * 是浮层里的 .kh-lb-side-t ⇒ 真压住、真挡点击（浮层 z-index:3 > 导航 z-index:2）。 */
+    const rowAt = src.indexOf('<div class="kh-lb-row">');
+    const sideAt = src.indexOf('<div class="kh-lb-side" hidden>');
+    const barAt = src.indexOf('<div class="kh-lb-bar">');
+    truthy(rowAt > 0 && sideAt > rowAt, '浮层必须回到 .kh-lb-row 里（与 ‹/› 共用同一个定位祖先）');
+    truthy(barAt > sideAt, 'DOM 顺序 = 图 → 导航（‹/›）→ 浮层，浮层在工具条之前');
+    const rowSeg = src.slice(rowAt, sideAt);
+    truthy(rowSeg.indexOf('‹') >= 0 && rowSeg.indexOf('›') >= 0, '浮层前面必须已经有两个翻页键');
+    truthy(rowSeg.indexOf('<img class="kh-lb-img" alt="">') >= 0, 'img 标签仍原样（一个字不许改）');
+    /* 定位祖先 = 行；浮层仍绝对定位 ⇒ 不参与行宽 ⇒「有/无浮层图一样宽」不许回退（T41 验收项） */
+    const rowRule = RULE(src, '.kh-lb-row');
+    truthy(/position:\s*relative/.test(rowRule), '.kh-lb-row 必须成为定位祖先：' + rowRule);
+    const sideRule = RULE(src, '.kh-lb-side');
+    truthy(/position:\s*absolute/.test(sideRule), '浮层必须绝对定位（否则又参与行宽分配）：' + sideRule);
+    /* 几何：右缘 60px（导航 48 + 间隙 12）；宽度上限左右各留 60px ⇒ 行再窄也压不到 ‹/› */
+    truthy(/right:\s*60px/.test(sideRule), '右缘必须让开导航键（48 + 12）：' + sideRule);
+    truthy(/max-width:\s*min\(342px,\s*calc\(100% - 120px\)\)/.test(sideRule),
+      '宽度上限要左右各留 60px（保证小图时也不反向盖住 ‹）：' + sideRule);
+    truthy(/top:\s*0/.test(sideRule) && /bottom:\s*0/.test(sideRule),
+      '纵向贴行的上下（top/bottom = 0 = 与图片上下边齐平）：' + sideRule);
+    truthy(/\bz-index:\s*3\b/.test(sideRule), '层级仍高于图与导航（放大溢出盖不住它）');
+    /* 关闭语义（T46 第二症状：在浮层里按下、往外松手 → 灯光箱被误关）：
+     * 只有 pointerdown 也落在容器外，click 才关；抬手落点不再决定关不关。 */
+    const pdAt = src.indexOf("box.addEventListener('pointerdown'");
+    truthy(pdAt > 0, '要由 pointerdown 记下"按下的位置"');
+    const pdSeg = src.slice(pdAt, pdAt + 260);
+    truthy(/pressInStage = !!\(t && stage\.contains\(t\)\)/.test(pdSeg), '按下时判定是否落在容器内：' + pdSeg);
+    const clAt = src.indexOf("box.addEventListener('click'");
+    truthy(clAt > 0, '点击处理器仍在');
+    const clSeg = src.slice(clAt, clAt + 420);
+    truthy(/if \(pressInStage\) return;/.test(clSeg), '按下在容器内 ⇒ 这一下不算"点遮罩"，不许关：' + clSeg);
+    truthy(src.indexOf('if (t && side.contains(t)) return;') >= 0,
+      '浮层白名单仍要保留（承重件：进大图 → 选中 → Ctrl+C 的复制通路）');
+    truthy(src.indexOf('if (t && stage.contains(t)) return;') >= 0, '容器白名单仍要保留');
+  });
+
+  /* ==========================================================================
+   * T60 回归：「双击收起态 FAB 无法展开面板」——真机 e2e（_e2e/content.test.js
+   * 「★ 双击标题栏收起为圆形 FAB，再双击展开」）第二步红，`.khin-panel` 300ms 后不存在。
+   *
+   * 机制（源码全路径，逐行可核）：一次鼠标双击 = down/up/click(1) → down/up/click(2) → dblclick。
+   *   · click(1) 落点 = FAB 中心：`important-note.js:1264` 的 click 过三道具后调 openPanel()
+   *     （:1252-1256），里面 `renderContent()` **就地换壳** `this.root.innerHTML = …`
+   *     （:1245-1247 的 FAB → :1288-1311 的 `.khin-panel` + `.khin-header`）；
+   *   · 第二次 click 与 dblclick 仍落在同一屏幕坐标 —— 坐标处已经是刚生成的 `.khin-header`
+   *     （FAB 是 48×48 的圆、贴 wrap 左上角，wrap 就是面板起画点；header 是面板第一行、
+   *      横向铺满，两盒必然相交），于是命中 :1377-1381 的 header dblclick ⇒ 当场 `minimized = true`
+   *     又收回去（用户看到闪一下）⇒ e2e 断言 `.khin-panel` 不存在。
+   * 回归来处：click 打开 FAB 是 T29 把 FAB 从 div 改成真 <button> 时加的（:1241-1243 注释），
+   * 在那之前 FAB 只绑 dblclick、第一次 click 不开面板，所以这条用例当时是绿的。
+   *
+   * 装置说明（与上面 T40 / T52 同一条边界）：tests/harness.js 的 ShimElement（:42-192）
+   * **没有 addEventListener / dispatchEvent**，document 的监听器也是空实现（:326）——
+   * 本套件里没有任何事件管线可用，所以这里照本文件既有手法**逐字钉住源码表达式**。
+   * 「≤600ms 不许收起」这条同时封住 "删掉守卫" 与 "守卫挂错事件" 两种改法（下面第 ② 条）。
+   * 真机复验（第二次落点是不是 header）由 qa 用 _e2e 仪器做，本文件不下结论。
+   * ========================================================================== */
+
+  suite('important-note · T60 回归：刚由 FAB 展开的同一秒内，header 双击不许把面板收回去');
+
+  await test('★ FAB click 展开后 ≤600ms 内 header dblclick **不得**收起（第一次落点的代价，不是用户的第二次手势）', () => {
+    const src = read('src/features/important-note.js');
+
+    /* ① 展开时要记下时刻，且**无条件覆盖**上一次的值（复刻时必须靠这句把旧窗口清掉，
+     * 另写一句 `= 0` 是多余的）。suppressMs 是测试注入时钟的口子：`typeof 数字` 才认，
+     * 传事件对象（`typeof {} === 'object'`）会回落到 Date.now()，所以下面还要钉住调用点不喂事件对象。 */
+    const openAt = src.indexOf('const openPanel = (suppressMs) => {');
+    truthy(openAt >= 0, '要能定位 openPanel（FAB 的展开通路，:1252）');
+    truthy(src.indexOf("fab.addEventListener('pointerdown'", openAt) > openAt, 'openPanel 后面应紧跟 FAB 的 pointerdown 处理器');
+    const openFn = src.slice(openAt, src.indexOf("fab.addEventListener('pointerdown'", openAt));
+    eq((openFn.match(/this\.fabOpenedAt = /g) || []).length, 1,
+      'openPanel 里对 fabOpenedAt 只许有**一次**无条件赋值（覆盖 = 清旧+记新一体），不许拆成两句或藏着分支：' + openFn);
+    truthy(/this\.fabOpenedAt = typeof suppressMs === 'number' \? suppressMs : Date\.now\(\);/.test(openFn),
+      'openPanel 必须记下这次展开的时刻，且抑制窗口只来自 FAB 的这次展开（suppressMs 参数，缺省 = 现在）：' + openFn);
+
+    /* ② header 的双击收起步必须过这道否决闸，且**只认刚由 FAB 打开这一次** */
+    const hdrAt = src.indexOf("header.addEventListener('dblclick'");
+    truthy(hdrAt >= 0, '标题栏双击收起通路仍在（策划案 §5.2.3）');
+    const hdr = src.slice(hdrAt, src.indexOf('});', hdrAt));
+    /* 钉住四要素：窗口来自 fabOpenedAt、比较的是 FAB_LONG_PRESS_MS（既有常量，不另造魔数）、
+     * 命中就 return 且**清掉**（一次性 —— 不清就是永久抑制：展开久了再双击标题栏永远收不起来）、
+     * 放行方向仍是 `minimized = true`。 */
+    const guard = /const sinceFabOpen = Date\.now\(\) - this\.fabOpenedAt;\s*\n\s*if \(this\.fabOpenedAt && sinceFabOpen >= 0 && sinceFabOpen < FAB_LONG_PRESS_MS\) \{ this\.fabOpenedAt = 0; return; \}/;
+    truthy(guard.test(hdr),
+      '★ 这条就是本票的修复：刚由 FAB 展开的一次双击，第二次落点落在标题栏上不许当"收起"，且窗口用既有常量 FAB_LONG_PRESS_MS；实际：' + hdr);
+    truthy(/this\.minimized = true;/.test(hdr), '放行方向仍是收起（守卫不许把收起功能整体废掉）');
+    /* 反向：不许顺手拿别的东西（时间戳比较、setTimeout 定时器）代替一次性窗口 */
+    falsy(/setTimeout|setInterval/.test(hdr), '不许为这个窗口新造定时器：距 fabOpenedAt 不足阈值就够判了');
+  });
+
+  await test('★ >600ms 之后 header dblclick **必须**照旧收起（正常"展开久了再双击标题栏"，不受影响）', () => {
+    const src = read('src/features/important-note.js');
+    truthy(/const FAB_LONG_PRESS_MS = 600;/.test(src),
+      '窗口阈值复用既有常量（用户拍板 600ms），不许另造一个魔数');
+    /* 窗口是"距展开不足阈值"，不是"展开过就不再收起" ⇒ 时间一过闸门自己失效。 */
+    const hdrAt = src.indexOf("header.addEventListener('dblclick'");
+    const hdr = src.slice(hdrAt, src.indexOf('});', hdrAt));
+    truthy(/sinceFabOpen < FAB_LONG_PRESS_MS/.test(hdr), '闸门是**上界**比较（< 阈值）—— 若写成 <= 或去掉比较，长窗口会吃掉正常收起：' + hdr);
+    /* 本票不许碰的另外两条收起通路：`—` 按钮（:1384-1389）与 FAB 自身。 */
+    const minAt = src.indexOf("minBtn.addEventListener('click'");
+    truthy(minAt >= 0, '`—` 按钮的收起通路不见了');
+    const minSeg = src.slice(minAt, minAt + 220);
+    truthy(/this\.minimized = true;/.test(minSeg), '`—` 按钮不受本守卫影响（它没有"同一次双击的第二次落点"这回事）');
+    falsy(/fabOpenedAt/.test(minSeg), '`—` 按钮不许被卷进这个窗口');
+    /* 这条闸只许出现在 header 上：别的收起入口（若以后新增）不许悄悄吃到它。
+     * 先剥注释再数 —— 上面解释机制的那几行注释里也写着这个名字，不剥就把自己的说明数进去了。
+     * 口径：代码里这个名字一共只该有 3 处落点 —— 实例字段默认值 / openPanel 的赋值 /
+     * header 守卫那一行（它在同一行里读值、算差、清零所以出现 3 次，这是允许的）。 */
+    const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+    const hits = (code.match(/fabOpenedAt/g) || []).length;
+    truthy(hits === 5, 'fabOpenedAt 在代码里应恰好 5 次（字段 1 + openPanel 赋值 1 + header 守卫那一行的读/算/清零 3），实测 ' + hits);
+    const codeHdr = code.slice(code.indexOf("header.addEventListener('dblclick'"), code.indexOf("minBtn.addEventListener('click'"));
+    truthy((codeHdr.match(/fabOpenedAt/g) || []).length === 3, '窗口逻辑必须只长在 header 的双击收起步里');
+  });
+
+  /* ==========================================================================
+   * 【T63 · 真机 e2e 抓到的真产品缺陷】命中词块的复制反馈被列表重建吃掉
+   *
+   * 现场：点图片命中卡片上的命中词 chip，产品给它加 `.copied`（成功）/ `.failed`（失败）并改
+   * title，1200ms 后复位 —— 这是承诺给用户的反馈窗口。但 `renderImgSection()` 每次都把列表
+   * **整体重建**（`this.imgListEl.textContent = ''`，:1554），而只要 OCR 状态一变
+   * （`KH.ImgOcr.onChange(() => panel.renderImg())`，:1918）就会重建一次 ⇒ 被点的 chip 当场游离，
+   * 类名留在死节点上，屏幕上的绿框约 1/4 秒就没了。
+   * qa（T62）真机读数：点击后 `.copied` 在 ms≈17–21 出现；ms≈94–330 图片列表整段 childList 删+加；
+   * ms≈306–335 被点的 chip 已 `connected:false`，活着的面板里同文本 chip 的类名已不含 copied。
+   *
+   * 修法（本套用例钉的就是它）：这份瞬时反馈从**节点状态**提升为**面板级待显示状态**
+   * `panel.imgCopyMark = { key, ok, at }`；建 chip 时命中同一稳定键且仍在窗口内就把类与 title
+   * 一并补上（重建自动重放）；窗口一到由 `imgClearCopyMark` 在**活着的**列表里按 `dataset.k`
+   * 找回 chip 复位 —— 只用节点 classList 记状态，就必然被下一次重建吃掉。
+   *
+   * 装置说明（与上面 T40 / T52 同一条边界）：tests/harness.js 的 ShimElement（:42-192）
+   * **没有 addEventListener / removeEventListener / dataset**（:89 只有 classList；document 的
+   * 监听器也是空实现，:326）⇒ 这里临时给原型补最小实现、用完原样还原（同 k76-r4 那个文件对
+   * querySelector 的处理手法）；`setTimeout` 收进队列由用例自己触发（**不真等 1200ms**）；
+   * 剪贴板成败由 navigator.clipboard 的有无决定（垫片没有 execCommand ⇒ 退回 legacyCopy 必然 false，
+   * 失败态因此是**真实**走出来的，不是硬塞的）。面板实例照本文件既有手法：原型继承造影子面板。
+   * ========================================================================== */
+
+  suite('important-note · T63 命中词块的复制反馈必须活过列表重建（真机 e2e 缺陷）');
+
+  const copyView = KH.OcrCopy.VIEW;
+
+  /** 面板是单例字面量：用原型继承造"影子面板"（同上面 K80 那套），只改自己的字段 */
+  const imgPanel = () => {
+    const p = shadowPanel();
+    p.imgSecEl = H.el('div');
+    p.imgListEl = H.el('div');
+    p.imgItems = [{ key: 'r1|https://ex.com/a.png', state: 'done', text: '甲。一对一乙。',
+      matched: [{ text: '一对一' }] }];
+    p.renderImgSection();
+    return p;
+  };
+  const chipsOf = (p) => p.imgListEl.querySelectorAll('.khin-imgchip');
+  const chipKey = (p) => p.imgItems[0].key + '|一对一';
+
+  /** 点这颗 chip —— 处理器由下面的装置记在元素上（垫片没有 addEventListener） */
+  const clickChip = (chip) => {
+    const h = (chip && chip._ev || {}).click;
+    truthy(h, '这颗 chip 上没有 click 处理器（装置没接上，下面的断言会全落空）');
+    h({ stopPropagation() {} });
+  };
+  /** 等 promise 链落定：**不用**真定时器（rig 里 setTimeout 已被收走） */
+  const flush = () => new Promise((r) => setImmediate(r));
+
+  /**
+   * 装一套最小装置跑 fn，随后一律还原：
+   *  · ShimElement.prototype.addEventListener/removeEventListener —— 处理器记在元素上（`el._ev`）；
+   *  · ShimElement.prototype.dataset —— data-* ↔ 驼峰的最小代理（产品用 chip.dataset.k 记稳定键）；
+   *  · global.setTimeout —— 收进 jobs 队列，由用例手动触发（**不真等 1200ms**）；
+   *  · global.navigator.clipboard —— 复制成败的唯一开关（`clip.has` 可中途改，故用 getter）。
+   */
+  async function copyRig(fn) {
+    const proto = H.ShimElement.prototype;
+    const saved = {
+      add: Object.getOwnPropertyDescriptor(proto, 'addEventListener'),
+      remove: Object.getOwnPropertyDescriptor(proto, 'removeEventListener'),
+      dataset: Object.getOwnPropertyDescriptor(proto, 'dataset'),
+      nav: Object.getOwnPropertyDescriptor(global, 'navigator')
+    };
+    const prevTimer = global.setTimeout;
+    const jobs = [];
+    const clip = { has: true };
+    proto.addEventListener = function (t, h) { (this._ev = this._ev || {})[t] = h; };
+    proto.removeEventListener = function (t) { if (this._ev) delete this._ev[t]; };
+    Object.defineProperty(proto, 'dataset', {
+      configurable: true,
+      get() {
+        const el = this;
+        if (!el.__ds) {
+          el.__ds = new Proxy({}, {
+            get: (_, k) => el.getAttribute('data-' + String(k).replace(/[A-Z]/g, (c) => '-' + c.toLowerCase())),
+            set: (_, k, v) => { el.setAttribute('data-' + String(k).replace(/[A-Z]/g, (c) => '-' + c.toLowerCase()), v); return true; }
+          });
+        }
+        return el.__ds;
+      }
+    });
+    global.setTimeout = (cb, ms) => { jobs.push({ cb: cb, ms: ms }); return jobs.length; };
+    /* Node 18+ 的 navigator 在 globalThis 上是只读的 ⇒ 照 harness.js:335 defineGlobal 的手法覆盖 */
+    const nav = { userAgent: 'node' };
+    Object.defineProperty(nav, 'clipboard', {
+      configurable: true,
+      get: () => (clip.has ? { writeText: () => Promise.resolve() } : undefined)
+    });
+    try {
+      Object.defineProperty(global, 'navigator', { value: nav, writable: true, configurable: true, enumerable: true });
+    } catch (e) { /* 覆盖不了就沿用既有 navigator（下面的成功用例会当场失败，不静默） */ }
+    const restore = (k, d) => { if (d) Object.defineProperty(proto, k, d); else delete proto[k]; };
+    try { return await fn({ jobs: jobs, clip: clip }); }
+    finally {
+      restore('addEventListener', saved.add);
+      restore('removeEventListener', saved.remove);
+      restore('dataset', saved.dataset);
+      global.setTimeout = prevTimer;
+      if (saved.nav) Object.defineProperty(global, 'navigator', saved.nav);
+      else delete global.navigator;
+    }
+  }
+
+  await test('★ T63-1 复制成功后重建列表：新的那颗 chip 必须还在绿框里（修前：类名留在游离节点上）', async () => {
+    await copyRig(async ({ jobs }) => {
+      const p = imgPanel();
+      const chip = chipsOf(p)[0];
+      truthy(chip, '装置没渲染出命中词 chip，下面的断言会全部落空');
+      clickChip(chip);
+      await flush();
+      eq(chip.classList.contains('copied'), true, '点完当场点亮（既有行为不许回退）');
+      eq(chip.title, copyView.copySentDone, '点完当场换成完成文案');
+      eq(jobs.length, 1, '反馈窗口只许排一个定时器');
+
+      p.renderImgSection();                       // 真机上 OCR 状态一变（结果回来/进行中）就重建
+      const after = chipsOf(p)[0];
+      truthy(after && after !== chip, '重建必须换节点（否则这条用例测的不是重建）');
+      eq(after.classList.contains('copied'), true,
+        '★ 重建后新 chip 必须带 copied —— 修前这里是 false，绿框被重建吃掉，就是真机那个缺陷');
+      eq(after.classList.contains('failed'), false, '成功不许同时带失败态');
+      eq(after.title, copyView.copySentDone, 'title 要跟着一起重放');
+    });
+  });
+
+  await test('★ T63-2 复制失败后重建列表：新 chip 必须还在红框里（红框同理不许丢）', async () => {
+    await copyRig(async ({ clip }) => {
+      clip.has = false;                           // 剪贴板不可用（非 https / 无焦点那类）
+      const p = imgPanel();
+      clickChip(chipsOf(p)[0]);
+      await flush();
+      eq(chipsOf(p)[0].classList.contains('failed'), true, '点完当场转红（T29 / F3.1 的既有行为）');
+      eq(chipsOf(p)[0].title, copyView.copyFailed, '失败文案仍走真源');
+      p.renderImgSection();
+      eq(chipsOf(p)[0].classList.contains('failed'), true, '★ 重建后新 chip 必须还是红的');
+      eq(chipsOf(p)[0].classList.contains('copied'), false, '失败不许带成功态');
+      eq(chipsOf(p)[0].title, copyView.copyFailed, 'title 一起重放');
+    });
+  });
+
+  await test('★ T63-3 窗口内重建后过 1200ms：类与 title 复位 —— 复位的是**活着的**那颗', async () => {
+    await copyRig(async ({ jobs }) => {
+      const p = imgPanel();
+      clickChip(chipsOf(p)[0]);
+      await flush();
+      p.renderImgSection();                       // 窗口内重建一次
+      const live = chipsOf(p)[0];
+      eq(live.classList.contains('copied'), true, '前置：重建后是点亮的（否则下面三条都在空节点上跑）');
+      eq(jobs.length, 1, '重建只重放、不重新计时 —— 不许因此再排一个定时器');
+      eq(jobs[0].ms, 1200, '窗口仍是 1200ms（IMG_COPY_MS）');
+      jobs[0].cb();                               // 到点复位
+      eq(live.classList.contains('copied'), false, '活着的 chip 必须被清掉');
+      eq(live.classList.contains('failed'), false, '两个类一起清');
+      eq(live.title, copyView.copySentence, 'title 复位成点击前的样子');
+      p.renderImgSection();
+      eq(chipsOf(p)[0].classList.contains('copied'), false,
+        '窗口过了再重建**不许**把绿框放回来（标记已清）');
+    });
+  });
+
+  await test('★ T63-4 窗口之外（at 已过期）重建不许带上类；恰好 1200ms 也算窗口外', async () => {
+    await copyRig(async () => {
+      const p = imgPanel();
+      const key = chipKey(p);
+      const now = Date.now();
+      p.imgCopyMark = { key: key, ok: true, at: now - 1201 };
+      p.renderImgSection();
+      eq(chipsOf(p)[0].classList.contains('copied'), false, '过期 1ms 就不许重放');
+      eq(chipsOf(p)[0].title, copyView.copySentence, 'title 也不许带完成文案');
+      p.imgCopyMark = { key: key, ok: true, at: now - 1200 };
+      p.renderImgSection();
+      eq(chipsOf(p)[0].classList.contains('copied'), false, '恰好 1200ms 是边界外（窗口判的是"不足"）');
+      p.imgCopyMark = { key: key, ok: true, at: now };
+      p.renderImgSection();
+      eq(chipsOf(p)[0].classList.contains('copied'), true, '反向：窗口内必须重放（否则上面两条是空断言）');
+    });
+  });
+
+  await test('★ T63-5 反向：没点过的 chip 不许带任何反馈类；别的条目的同一个词不许互相点亮', async () => {
+    await copyRig(async () => {
+      const p = imgPanel();
+      eq(chipsOf(p)[0].classList.contains('copied'), false, '没点过就不许是成功的');
+      eq(chipsOf(p)[0].classList.contains('failed'), false, '也不许是失败的');
+      eq(chipsOf(p)[0].title, copyView.copySentence, '默认 title 是「复制这句话」');
+      p.imgCopyMark = { key: 'r2|other.png|一对一', ok: true, at: Date.now() };
+      p.renderImgSection();
+      eq(chipsOf(p)[0].classList.contains('copied'), false,
+        '别的条目里的同一个词不许被点亮 —— 稳定键必须含条目（it.key），不能只用命中词');
+    });
+  });
+
+  await test('★ T63-6 接线契约：窗口单源常量 / 键走 dataset / 复位按 dataset.k 找回 / 不许拿词拼选择器', () => {
+    const src = read('src/features/important-note.js');
+    truthy(src.indexOf('const IMG_COPY_MS = 1200;') >= 0,
+      '反馈窗口要抽成具名常量（重放与复位必须读同一个数；原来是裸 1200 写在 setTimeout 里）');
+
+    const buildAt = src.indexOf('for (const w of words) {');
+    const clickAt = src.indexOf("chip.addEventListener('click'", buildAt);
+    truthy(buildAt >= 0 && clickAt > buildAt, '要能定位命中词块的构建段（words 循环 → click 注册）');
+    const build = src.slice(buildAt, clickAt);
+    truthy(/chip\.dataset\.k = /.test(build), 'chip 要写稳定键（重建后靠它认回来）');
+    truthy(/imgCopyMark/.test(build), '建 chip 时要查面板级的待显示状态（重建重放就靠这一步）');
+    truthy(/Date\.now\(\) - mark\.at < IMG_COPY_MS/.test(build), '窗口判定必须读 IMG_COPY_MS');
+    falsy(/1200/.test(build), '★ 这个块里不许再出现裸 1200（常量之外一处都不留）');
+    falsy(/it\.idx/.test(src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')),
+      'OCR 条目上没有 idx —— 稳定键必须用条目已有的 it.key（img-ocr.js 的 ruleId|src）；'
+      + '按**代码**判（注释里解释这个坑不算违规，同文件先剥注释再数的手法见 T60 那条）');
+
+    const clrAt = src.indexOf('imgClearCopyMark(key, at) {');
+    truthy(clrAt >= 0, '到点复位要有一个专门的 imgClearCopyMark(key, at)');
+    const clr = src.slice(clrAt, src.indexOf('\n    },', clrAt));
+    truthy(clr.indexOf("querySelectorAll('.khin-imgchip')") >= 0,
+      '复位要在**活着的**列表里找 chip（只复位闭包里那颗 = 真机上早就游离了）');
+    truthy(/chip\.dataset\.k !== key/.test(clr), '按稳定键认 chip');
+    truthy(/mark\.key === key && mark\.at === at/.test(clr),
+      '只清「还是这一笔」的标记（晚到的旧定时器不许清掉刚点的那一笔）');
+    falsy(/querySelectorAll\([^)]*\+/.test(clr),
+      '★ 不许拿命中词拼 CSS 选择器：关键词是用户输入，含引号/方括号会当场抛错');
+    truthy(/chip\.classList\.remove\('copied'\)/.test(clr) && /chip\.classList\.remove\('failed'\)/.test(clr),
+      '两个类都要复位');
+    truthy(/chip\.title = KH\.OcrCopy\.VIEW\.copySentence/.test(clr), 'title 也要复位');
+    falsy(/clearTimeout|setInterval/.test(clr), '到点复位不该另造一套定时器管线：at 对得上就清');
   });
 };

@@ -1060,6 +1060,12 @@
     $('pf-gap').value = cfg.pageRebuildGapMs;
     $('pf-imgSize').value = (cfg.importantNote || {}).imgSize || '';
     $('pf-noteFontSize').value = (cfg.importantNote || {}).fontSize || '';
+    /* T26：面板默认宽度（顶层键）。数字输入框的 min/max 也从 config 的边界常量写进去 ——
+     * 设置页不再抄一份 160/600（抄一份就是"改了不生效 / 能填进非法值"的种子）。 */
+    const pwInput = $('pf-notePanelWidth');
+    pwInput.min = KH.Config.PANEL_WIDTH_MIN;
+    pwInput.max = KH.Config.PANEL_WIDTH_MAX;
+    pwInput.value = cfg.notePanelWidth;
   }
 
   for (const k of ['defaultCaseSensitive', 'defaultWholeWord', 'defaultUseRegex']) {
@@ -1104,6 +1110,14 @@
     const ok = !isNaN(v) && v >= 10 && v <= 20;
     if (!ok) $('pf-noteFontSize').value = KH.Config.defaults.importantNote.fontSize;
     await saveNested({ importantNote: { fontSize: ok ? v : KH.Config.defaults.importantNote.fontSize } });
+  });
+  /* 面板默认宽度（T26 / 用户 2026-10-12：200 → 250，且可配）。
+   * 归一**只调 config 的唯一函数**（越界夹到边界、坏值回默认 250）；然后把归一后的值回显进框里，
+   * 别让框里停着一个没生效的数（用户填 9999 → 框里显示 600，他才知道真的被收进合法区了）。 */
+  $('pf-notePanelWidth').addEventListener('change', async () => {
+    const w = KH.Config.normalizePanelWidth($('pf-notePanelWidth').value);
+    $('pf-notePanelWidth').value = w;
+    await mutate(() => KH.Store.patch({ notePanelWidth: w }));
   });
 
   /* ==================================================================== ⑧ 更新日志（单源） */

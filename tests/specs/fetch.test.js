@@ -515,6 +515,97 @@ module.exports = async function run() {
     truthy(html.indexOf('&lt;script&gt;') >= 0);
   });
 
+  /* ------------------------------------------------------------------
+   * v2.0.1.15 需求 2：抓取字段值 `trim` 后为空 ⇒ **整块不渲染**（值不显示、字段名也不显示）
+   *   判定落点 = 生成侧 `rowsToTableHtml`（唯一汇聚点：面板 + content 状态上报 + blockFor 缓存）。
+   *   两种空卡片形态都必须断言「整块不出现」：
+   *     ① 非 grid 的**空壳表串**（原先无条件开表 + 逐项 continue 后仍拼 `</table>`）
+   *     ② grid 的「**有 label 表头 + 空 `<td>`**」（原先根本没有字段级判空）
+   *   ⚠️ 装置禁令：这些用例一律是「标签/字段在位 + 值渲染后为空」，**不**靠"内外层同名标签"造。
+   * ------------------------------------------------------------------ */
+
+  await test('★ 需求 2 · 形态①：非 grid 值渲染后为空 ⇒ 返回空串（不再有空壳表）', () => {
+    // 「标签找得到 + 值渲染后为空」：字段 label 在位，值格只有空白
+    const html = F.rowsToTableHtml([{ label: '备注', rows: [[{ t: '   ', rs: 1, cs: 1 }]] }]);
+    console.log('        形态①（值只有空白）= ' + JSON.stringify(html));
+    eq(html, '', '值全空必须返回空串（不是空壳表），实际 ' + JSON.stringify(html));
+    falsy(html.indexOf('<table') >= 0, '不许留下任何表格外壳');
+    falsy(html.indexOf('备注') >= 0, '字段名也不许出现');
+  });
+
+  await test('★ 需求 2 · 形态①b：只有标题没有值（二级标题 / 分组标题）⇒ 空串', () => {
+    // 二级标题行 `基本信息\t`（tab 后的值部分为空）
+    eq(F.rowsToTableHtml([{ label: '信息', rows: [[{ t: '基本信息\t', rs: 1, cs: 1 }]] }]), '',
+      '只有二级标题没有值 = 空字段');
+    // 整串只有标题词（无 tab、无内容）
+    eq(F.rowsToTableHtml([{ label: '信息', rows: [[{ t: '运营备注', rs: 1, cs: 1 }]] }]), '',
+      '只有分组标题没有值 = 空字段');
+  });
+
+  await test('★ 需求 2 · 形态②：grid 值格全空 ⇒ 连 label 表头一起不渲染', () => {
+    // 「有 label 表头 + 空 <td>」只出现在 grid 分支（表头在 <td class="kh-table-label">）
+    const one = F.rowsToTableHtml([{ label: '驳回原因', rows: [[{ t: '', rs: 1, cs: 1 }]] }]);
+    console.log('        形态②（单列空值格）= ' + JSON.stringify(one));
+    eq(one, '', 'grid 全空必须返回空串，实际 ' + JSON.stringify(one));
+    falsy(one.indexOf('驳回原因') >= 0, '字段名（label 表头）也不许出现');
+    // 多列全空（值格多于一个、全都为空）
+    eq(F.rowsToTableHtml([{ label: '截图', rows: [[{ t: '', rs: 1, cs: 1 }, { t: '   ', rs: 1, cs: 1 }]] }]), '',
+      'grid 多列全空也必须空串');
+    // 反向守卫：同一字段**有值**时，空值格照旧保留（列对齐不许被"判空"改坏）
+    const keep = F.rowsToTableHtml([{ label: '截图', rows: [[{ t: '图', rs: 1, cs: 1 }, { t: '', rs: 1, cs: 1 }]] }]);
+    truthy(keep.indexOf('kh-table-label') >= 0, '有值时 label 表头照旧在：' + keep);
+    eq((keep.match(/<td/g) || []).length, 3, 'label + 有值格 + 空值格（留空不删格，列才对得齐）：' + keep);
+  });
+
+  await test('★ 需求 2 · 混合字段：空字段整块消失、有值字段照旧，仍是一张表', () => {
+    const html = F.rowsToTableHtml([
+      { label: '空备注', rows: [[{ t: '', rs: 1, cs: 1 }]] },
+      { label: '驳回原因', rows: [[{ t: '有值', rs: 1, cs: 1 }]] }
+    ]);
+    console.log('        混合 = ' + html.slice(0, 90));
+    truthy(html.indexOf('<table class="kh-table kh-table-fetch">') === 0,
+      '非空时必须仍以固定外壳开头（既有断言依赖这个前缀）：' + html.slice(0, 60));
+    truthy(html.indexOf('有值') >= 0, '有值字段照旧渲染');
+    falsy(html.indexOf('空备注') >= 0, '空字段的字段名不许出现');
+    eq((html.match(/<table/g) || []).length, 1, '仍是一张表');
+    eq(F.rowsToTableHtml([]), '', '空数组 ⇒ 空串');
+    eq(F.rowsToTableHtml(null), '', 'null 入参 ⇒ 空串（不抛）');
+  });
+
+  await test('★ 需求 2 · 值被 applyImgPolicy 剥空 ⇒ 整块不渲染；判空不得二次消费图片预算', () => {
+    // 「仅图片」字段里只写了文字 ⇒ 渲染后为空 ⇒ 空串（非 grid）
+    eq(F.rowsToTableHtml([{ label: '截图', rows: [[{ t: '只有文字', rs: 1, cs: 1 }]], opt: { imgOnly: true } }]), '',
+      '仅图片 + 只有文字 ⇒ 空串');
+    // 同上走 grid 分支
+    eq(F.rowsToTableHtml([{ label: '截图', opt: { imgOnly: true },
+      rows: [[{ t: '只有文字', rs: 1, cs: 1 }, { t: '', rs: 1, cs: 1 }]] }]), '',
+      'grid + 仅图片 + 只有文字 ⇒ 空串');
+    /* 「前 N 张」是**整字段跨格累计**的有状态预算：判空若再跑一遍 applyImgPolicy，预算会被吃两倍，
+     * 正确实现下第 1 格的第 1 张必须留住（跑两遍 ⇒ 渲染那一遍预算已耗尽 ⇒ 一张都不剩）。 */
+    const html = F.rowsToTableHtml([{ label: '截图', opt: { imgOnly: false, imgLimit: 1 },
+      rows: [[{ t: PH('a1', 'https://ex.com/a1.png') + ' ' + PH('a2', 'https://ex.com/a2.png'), rs: 1, cs: 1 },
+              { t: PH('b1', 'https://ex.com/b1.png'), rs: 1, cs: 1 }]] }]);
+    console.log('        前 1 张 = ' + html);
+    eq((html.match(/<img /g) || []).length, 1, '整字段只许留第 1 张（预算只许被**一次**遍历消费）：' + html);
+    truthy(html.indexOf('https://ex.com/a1.png') >= 0, '留下的必须是第 1 张 a1');
+    falsy(html.indexOf('https://ex.com/a2.png') >= 0, '第 2 张应被丢掉');
+    falsy(html.indexOf('https://ex.com/b1.png') >= 0, '第 2 格的图应被丢掉（预算已用完）');
+  });
+
+  await test('★ 需求 2 · 消费侧路径：值格为空（带 rowspan）⇒ blockFor 返回空串', () => {
+    /* 真 DOM 路径（标签**找得到** + 值渲染后为空）：空值格带 rowspan>1 时不会被 `:768` 过滤掉
+     * ⇒ 仍进 rows ⇒ 走到 rowsToTableHtml —— 这正是空卡片产物的产生路径。 */
+    const t = table([['关键词', 'x'], ['备注', ''], ['其它', 'y']]);
+    t.rows[1].children[1].rowSpan = 2;
+    const tn = t.rows[0].children[0].childNodes[0];
+    const html = F.blockFor(tn, '备注', new WeakMap(), 'self');
+    console.log('        消费侧（备注值为空）= ' + JSON.stringify(html));
+    eq(html, '', '值全空必须冒泡成空串（不是空壳表）：' + JSON.stringify(html));
+    falsy(html.indexOf('备注') >= 0, '字段名也不许出现');
+    // `''` 是**合法结果**，缓存/再取一次都必须照旧（不许被当成"没算过"）
+    eq(F.blockFor(tn, '备注', new WeakMap(), 'self'), '', '再取一次仍是空串');
+  });
+
   suite('fetch · collectRightBlock（rowspan 合并块）');
 
   await test('★ 标签格 rowspan=2 → 右侧两行内容都抓到（策划案 §7.3 坑 8）', () => {

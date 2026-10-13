@@ -330,6 +330,13 @@
      *  冒泡处理器执行，页面在行/卡片上 stopPropagation() 也挡不住我们拿坐标 ——
      *  冒泡阶段监听在真实站点上会被大量拦截（v2.0.0 实测：备注悬停/点击在真实页面失效）。 */
     bind(configRef) {
+      /* 【T57 真机事故】`_bound` 只挡**重复装监听**，不挡**配置刷新** —— 别把两件事合回一个
+       * 一次性早退里：那样配置引用会被顺带冻住。`consume` 每次传的都是新闭包（`() => cfg`），
+       * 一旦后续闭包被丢掉，`show()` 就永远拿到 boot 那次的对象 ⇒ 已打开页面上改「笔记卡配色」
+       * 不变色、刷新才变（qa 真机读数：`rebuildCount` 不变 `4→4`、`consumeOnlyCount` 1→2，
+       * 卡片 `varBg` 恒为 `#ffffff`；`page.reload()` 之后才变成 `#123456`）。
+       * 所以这里：引用**每次都更新**，监听**仍然只装一次**。 */
+      this._configRef = configRef;
       if (this._bound) return;
       this._bound = true;
 
@@ -375,7 +382,7 @@
         }
 
         tip.hide();                                 // 弹固定卡片时收起悬停提示（旧版同口径）
-        this.show(hit, e.clientX, e.clientY, configRef && configRef());
+        this.show(hit, e.clientX, e.clientY, this._configRef && this._configRef());
       }, true);
 
       /* ---- 悬停备注 tooltip（v1.10.17）：移入命中点显示，移出隐藏；setTimeout 节流 ---- */
@@ -412,7 +419,7 @@
           if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || ''))) return;
           const hit = KH.hitAtPoint(this._lastHover.x, this._lastHover.y);
           const note = hit && hit.meta && hit.meta.note;
-          if (note) { tip.hide(); this.show(hit, this._lastHover.x, this._lastHover.y, configRef && configRef()); }
+          if (note) { tip.hide(); this.show(hit, this._lastHover.x, this._lastHover.y, this._configRef && this._configRef()); }
         }
       }, true);
 
@@ -455,6 +462,9 @@
         // 配置未变 → 这是页面自身变动触发的重建，不要碰正在显示的交互 UI
         if (card._lastCfg === cfg) return;
         card._lastCfg = cfg;
+        /* 【T57】卡片正开着的时候改配色：不能等"关掉再点开"才变 —— 当场把新样式落到 host 上。
+         * `applyStyle` 写的是 `this.host.style`，只有 `visible` 为真时 host 才必然存在。 */
+        if (card.visible) card.applyStyle(cfg);
         if (tip.visible && tip._anchor) {
           const hit = KH.hitAtPoint(tip._anchor.x, tip._anchor.y);
           if (!(hit && hit.meta && hit.meta.note)) tip.hide();

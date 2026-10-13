@@ -629,7 +629,15 @@
       consume(hits, cfg, ctx) {
         /* 【仅消费通道要跳过这里】P2 的快通道只重跑 ⑦Consume 来刷"抓取字段"，
          * 它给的 hits 里没有本轮的全部命中 —— 照常 build 会把已有图片命中**清空**。
-         * 图片相关的变更本来就会判成 'full'（见 relevance.js ④），所以这里直接不动是最安全的。 */
+         * 图片相关的变更本来就会判成 'full'（见 relevance.js ④），所以这里直接不动是最安全的。
+         *
+         * 【本早退的**前提**，T52 写显】上面那句"图片相关的变更必然判 'full'"不是自动成立的，
+         * 它靠的是「`imgOcr` 在核心签名里」这一件事：改它 ⇒ 核心签名变 ⇒ 整页重建 ⇒ 走的是
+         * 非 consumeOnly 路径 ⇒ `classify()` 用新配置重算。**别把 `imgOcr` 移进 `index.js` 的
+         * `UI_ONLY_KEYS`**（T36b 正是这么干的，结果跨域白名单 `crossOriginSites` 的页面侧唯一读点
+         * —— 本文件 `:190` 的 `crossOriginAllowed`，只在 `build()` 里跑 —— 在已打开的页面上不生效，
+         * 要等一次真正的整页重建；回归编号 F1）。除非哪天把 `build()` 改成能安全合并"部分命中"，
+         * 否则这个早退与那条分类是绑在一起的。 */
         if (ctx && ctx.consumeOnly) return;
         build(cfg, ctx, hits);
         notify();

@@ -190,7 +190,7 @@ module.exports = async function run() {
 
   await test('★ 不变量 2：1080×8000 按**原图**切块 —— 步长 1360、末块贴底（D-14.1 样张验算）', () => {
     const P = loadOffscreen({ lines: () => null }).self.__khOcrPure;
-    truthy(P, '★ offscreen/ocr.js 必须导出纯判决层 self.__khOcrPure（planChunks / scaleFor / judgeOrientation / needsRotation / rotationsFor / noticeOf）');
+    truthy(P, '★ offscreen/ocr.js 必须导出纯判决层 self.__khOcrPure（planChunks / scaleFor / judgeOrientation / needsRotation / rotationsFor / noticeOf / overlapBands / mergeOverlap）');
     const plan = P.planChunks(1080, 8000);
     eq(plan.chunks.length, 6, '8000 高 ⇒ 6 块（0 / 1360 / 2720 / 4080 / 5440 / 6800）');
     eq(plan.chunks[0].y, 0);
@@ -338,6 +338,135 @@ module.exports = async function run() {
     truthy(PB({ lines: 8, conf: 90 }, { lines: 3, conf: 90 }, 0, 0), '同等条件下行多者胜');
     falsy(PB({ lines: 3, conf: 90 }, { lines: 8, conf: 90 }, 0, 0), '行少者不胜');
     truthy(PB({ lines: 3, conf: 95 }, { lines: 3, conf: 90 }, 0, 0), '行数相同 ⇒ conf 高者胜');
+  });
+
+  /* ---------------- 第 4 项：长图跨块同一行重复（T08 真机取证后补） ---------------- */
+
+  await test('★ 第 4 项：重叠带必须从 plan 实际几何算（不许写死 240）', () => {
+    const P = loadOffscreen({ lines: () => null }).self.__khOcrPure;
+    const plan6 = P.planChunks(1080, 8000);
+    const b6 = P.overlapBands(plan6.chunks);
+    eq(b6.length, 5, '6 块 ⇒ 相邻 5 条重叠带');
+    eq(b6[0].a, 0);
+    eq(b6[0].b, 1);
+    eq(b6[0].lo, 1360, '第 0/1 块的重叠带 = [1360, 1600]（= 下一块的起点）');
+    eq(b6[0].hi, 1600);
+    eq(b6[0].axis, 'y');
+    truthy(b6.every((x) => x.hi - x.lo === plan6.overlap), '带高 = 计划的 overlap（240）');
+    /* 密排那套（S3-⑥ 切带）带高只有 64 —— 写死 240 会错到 4 倍，正是本函数要求"从几何算"的原因 */
+    const bp = P.bandPlan(900, 600);
+    const bb = P.overlapBands(bp.chunks);
+    eq(bb.length, 2);
+    eq(bb[1].lo, 400);
+    eq(bb[1].hi, 464, '密排带高 64（= bandPlan 的 overlap），不是 240');
+    truthy(bb.every((x) => x.hi - x.lo === bp.overlap));
+    /* 换块高 ⇒ 重叠跟着变（overlapFor(800) 夹到下限 128），进一步证明不是常量 */
+    const p8 = P.planChunks(1080, 3000, { chunkH: 800 });
+    const b8 = P.overlapBands(p8.chunks);
+    eq(p8.overlap, 128);
+    eq(b8[0].hi - b8[0].lo, 128, '块高 800 ⇒ 重叠 128');
+    eq(P.overlapBands(plan6.chunks.slice(0, 1)).length, 0, '只有一块 ⇒ 没有重叠带');
+    eq(P.overlapBands([]).length, 0, '空计划 ⇒ 空数组');
+    /* 横带（axis x）也要按 x 算 —— layoutChunks 在横图上沿长边切竖带 */
+    const hz = P.planChunks(8000, 1080);
+    const bz = P.overlapBands(hz.chunks);
+    eq(bz[0].axis, 'x', '横图切的是竖带 ⇒ 重叠带按 x 轴算');
+    eq(bz[0].hi - bz[0].lo, hz.overlap);
+  });
+
+  await test('★ 第 4 项：mergeOverlap 四条同时成立才丢 + 一对一（含反向守卫）', () => {
+    const P = loadOffscreen({ lines: () => null }).self.__khOcrPure;
+    /* 两块：块 0 = y∈[0,400]、块 1 = y∈[264,664] ⇒ 重叠带 = [264, 400] */
+    const pair = [
+      { x: 0, y: 0, w: 900, h: 400, axis: 'y' },
+      { x: 0, y: 264, w: 900, h: 400, axis: 'y' }
+    ];
+    const L = (t, y, ci, x) => ({ t: t, conf: 95, y: y, x: x == null ? 10 : x, ci: ci });
+
+    eq(P.OVERLAP_MATCH_X, 16, '实测 |Δx| ≤ 5px ⇒ 取 ~3 倍余量 16（回执 overlap.maxDx 会如实上报，供再收）');
+
+    /* ① 同带 + ci 不同 + 文本相等 + |Δx| ≤ 16 ⇒ 丢一条；保留 y 较小者 */
+    const a = P.mergeOverlap([L('abcd', 320, 0), L('abcd', 300, 1)], pair);
+    eq(a.merged, 1);
+    eq(a.lines.length, 1);
+    eq(a.lines[0].y, 300, '保留 y 较小者（同一行在两块里的 y 换算差是噪声）');
+    eq(a.lines[0].ci, 1, '留下的是块 1 那条（y 更小）');
+    eq(a.maxDy, 20, '回执如实报配对的 |Δy| 上界');
+    eq(a.maxDx, 0);
+
+    /* ② **这就是真机复现的那一类**：两次识别只差空白位置，旧的 `prev.t === l.t` 严格全等判不中 */
+    const ws = P.mergeOverlap([L('第75行12.00', 300, 0), L('第75行 12.00', 300, 1)], pair);
+    eq(ws.merged, 1, '★ 空白位置不同 = 同一行（keyOf 删掉全部空白）；严格全等会漏，这就是用户看到的重复行');
+    eq(ws.lines.length, 1);
+    /* 但**大小写仍不折**（大小写是真实文本差异） */
+    eq(P.mergeOverlap([L('Abcd', 300, 0), L('abcd', 300, 1)], pair).merged, 0, '大小写不同 ⇒ 不当同一行');
+    eq(P.keyOf(' 第75行 12.00 '.replace(/\s+/g, '')), '第75行12.00');
+    eq(P.keyOf('第75行12.00'), P.keyOf('第75行 12.00'), 'keyOf 只删空白');
+    eq(P.keyOf('   '), '', '全空白 ⇒ 空键（不许当有效文本去配对）');
+    eq(P.mergeOverlap([L('  ', 300, 0), L('   ', 300, 1)], pair).merged, 0, '空键不配对');
+
+    /* ③ ci 必须不同：同块内两条归旧的 prev-only 那道兜底，不归这里 */
+    eq(P.mergeOverlap([L('abcd', 300, 0), L('abcd', 350, 0)], pair).merged, 0, '同块两条 ⇒ 不在这里去重');
+    /* ④ 必须落在同一重叠带内 */
+    eq(P.mergeOverlap([L('abcd', 100, 0), L('abcd', 300, 1)], pair).merged, 0, '块 0 那条在带外（y=100 < 264）⇒ 不配对');
+    eq(P.mergeOverlap([L('abcd', 300, 0), L('abcd', 600, 1)], pair).merged, 0, '块 1 那条在带外（y=600 > 400）⇒ 不配对');
+    /* ⑤ |Δx| ≤ 16（边界：16 配对、17 不配对） */
+    const dxOk = P.mergeOverlap([L('abcd', 300, 0, 10), L('abcd', 300, 1, 26)], pair);
+    eq(dxOk.merged, 1, '|Δx| = 16 正好在闸内');
+    eq(dxOk.maxDx, 16);
+    eq(P.mergeOverlap([L('abcd', 300, 0, 10), L('abcd', 300, 1, 27)], pair).merged, 0,
+      '|Δx| = 17 ⇒ 不当同一行（实测只到 5px，17 已是别的列）');
+
+    /* ⑥ 一对一（**反向守卫**）：原图里真的重复两遍的文本，被两块各读两次 = 4 行 ⇒ 只配掉 2 条、仍留 2 条 */
+    const dup = P.mergeOverlap([
+      L('abc', 300, 0), L('abc', 340, 0), L('abc', 300, 1), L('abc', 340, 1)
+    ], pair);
+    eq(dup.merged, 2, '2 对 2 ⇒ 只能配掉 2 条');
+    eq(dup.lines.length, 2, '★ 仍留 2 条：真重复的内容不许被吃成 1 条');
+    /* 一对一：块 0 一条 vs 块 1 两条 ⇒ 只配掉一对 */
+    const one2 = P.mergeOverlap([L('abc', 300, 0), L('abc', 300, 1), L('abc', 340, 1)], pair);
+    eq(one2.merged, 1);
+    eq(one2.lines.length, 2, '块 0 只有一条 ⇒ 块 1 那条多余的必须留着');
+
+    /* ⑦ 没有重叠带（两块不相接）/ 只有一块 ⇒ 原样返回、merged=0（不改今天的单块路径） */
+    const apart = P.mergeOverlap([L('abcd', 300, 0), L('abcd', 300, 1)],
+      [{ x: 0, y: 0, w: 900, h: 100, axis: 'y' }, { x: 0, y: 200, w: 900, h: 100, axis: 'y' }]);
+    eq(apart.merged, 0, '两块之间没有重叠区 ⇒ 不去重');
+    eq(apart.lines.length, 2);
+    const single = [L('abcd', 300, 0)];
+    eq(P.mergeOverlap(single, [pair[0]]).merged, 0, '只有一块 ⇒ identity');
+    truthy(P.mergeOverlap(single, [pair[0]]).lines === single, 'identity 必须原样返回同一个数组引用');
+    eq(P.mergeOverlap(single, null).merged, 0, '没有 chunks ⇒ identity');
+    eq(P.mergeOverlap([], pair).merged, 0, '没有行 ⇒ identity');
+    /* ⑧ 没挂 ci 的行（老路径/未接线）一律不动 */
+    eq(P.mergeOverlap([{ t: 'abcd', conf: 95, y: 300, x: 10 }, { t: 'abcd', conf: 95, y: 300, x: 10 }], pair).merged, 0,
+      '没有 ci 就没法判"来自不同块" ⇒ 一条都不动');
+  });
+
+  await test('★ 第 4 项（端到端）：相邻两块各读一次的同一行只留一条，回执如实报 overlap', async () => {
+    /* 真机取证（1080×11560/480 行）的形状：同一物理行被相邻两块各读一次，
+     * 两次只在空白位置不同 —— 第 0 块读成「供应商 甲」（bbox y0=1400 ⇒ 原图 y=1400），
+     * 第 1 块读成「供应商甲」（bbox y0=40 ⇒ y=1360+40=1400）⇒ 都落在重叠带 [1360,1600] 里。 */
+    const env = loadOffscreen({
+      lines: (i) => (i === 0
+        ? { conf: 92, lines: [{ t: '供应商 甲', conf: 92, y: 1400, x: 4 }] }
+        : i === 1
+          ? { conf: 92, lines: [{ t: '供应商甲', conf: 92, y: 40, x: 4 }] }
+          : { conf: 92, lines: [] })
+    });
+    env.job({ type: MSG.OCR_IMAGE, requestId: 'r8', tabId: 7, keyword: '供应商', dataUrl: 'data:,W=1080;H=8000' });
+    const res = await env.result('r8');
+    eq(res.ok, true);
+    eq(res.rawLines, 2, '两块各读出 1 行（原始 2 行）');
+    eq(res.lines, 1, '★ 同一物理行只留一条（旧代码在 sort 前只比 prev、且要 t 严格全等 ⇒ 这里会留 2 条）');
+    eq(res.overlap.merged, 1, '回执必须如实报"合并了几条"');
+    eq(res.overlap.maxDy, 0);
+    eq(res.overlap.maxDx, 0);
+    eq(res.bands, 6, '既有字段保持不动（additive）');
+    eq(res.coverage.usedChunks, 6);
+    eq(res.text.split('\n').length, 1, '文本里也只有一行');
+    truthy(res.text.indexOf('供应商 甲') >= 0, '同 y 时留先出现的那条（块 0）');
+    eq(env.calls.recognize, 6, '长图 6 块 ⇒ 6 次识别（去重不该多跑一遍）');
   });
 
   await test('★ 不变量 1：告知字段的判决（全丢 / 截断 / 方向可疑 / 唯一允许静默的情形）', () => {

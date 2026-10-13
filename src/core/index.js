@@ -50,7 +50,9 @@
     siteEnabled: false,
     booted: false,
     /** 上一轮生效配置的签名（见 `configSig`）；热更新据此判断"配置到底变没变" */
-    configSig: ''
+    configSig: '',
+    /** 同一轮配置的**核心签名**（见 `configSigCore`）：摘掉 UI-only 键后的签名 */
+    configSigCore: ''
   };
 
   /**
@@ -64,11 +66,85 @@
    * 12023.9ms + 第二页 9244.5ms）。
    * ⚠️ 新增配置键必须同时加进 `Config.defaults`，否则改了不生效（`tests/specs/config-noop.test.js`
    * 末条钉这条：全仓 `cfg.<键>` / `state.config.<键>` 的读键必须都在 defaults 里）。
+   *
+   * ⚠️ **不许把它写成 `JSON.stringify(c, keys)`（数组式 replacer）** —— T36 实测缺陷：
+   * 数组式 replacer 是**每一层**的属性白名单（不是"只作用于顶层"），嵌套对象会被掏成 `{}`：
+   * `{keywords:[{text:'abc'}]}` 与 `{keywords:[{text:'xyz'}]}` 的签名**都是** `{"keywords":[{}]}`，
+   * `{matchSettings:{defaultCaseSensitive:false}}` 与 `…true}` 都是 `{"matchSettings":{}}`，
+   * **只有数组长度可见**（1 项 vs 2 项）。后果：设置页改某个关键词的文字（数量不变）、
+   * 翻转 `matchSettings` 默认值、改 `siteDisabledMap` / `imgOcr` / `noteCardStyle` ⇒ 签名不变
+   * ⇒ `applyConfig` 报 `config-noop` ⇒ **不重编译、不重建** ⇒ 已打开页面永远高亮旧词。
+   * 现实现改为「先按顶层键挑出对象、再整体序列化」：顶层仍只认已知键（K80/F2 的意图不丢），
+   * 嵌套内容原样进入签名。
    */
+  /* 【连签名都不进】页面侧**零读点**的顶层键（连 ⑦Consume 都不读它）。
+   * 写它 ⇒ 两个签名都不变 ⇒ `config-noop` ⇒ **永不动任何东西**（不重建、也不仅消费）。
+   *   · `migrated` ＝ OCR 迁移提示"还没告知过"的标记：只有 `options.js:1505` 拿它显示、
+   *     `config.js:349-350` 归一置位；点掉提示时写它（`ocr-options.test.js:118` 钉着）。
+   * 判据 = **零页面侧读点**：有任何一处读它就必须归到另两类（UI-only 或核心签名）。 */
+  const NOT_A_RENDER_INPUT = ['migrated'];
+
   function configSig(cfg) {
     const c = cfg || {};
     const keys = (KH.Config && KH.Config.defaults) ? Object.keys(KH.Config.defaults) : Object.keys(c);
-    return JSON.stringify(c, keys.filter((k) => Object.prototype.hasOwnProperty.call(c, k)));
+    const picked = {};
+    for (const k of keys) {
+      if (NOT_A_RENDER_INPUT.indexOf(k) >= 0) continue;
+      if (Object.prototype.hasOwnProperty.call(c, k)) picked[k] = c[k];
+    }
+    return JSON.stringify(picked);
+  }
+
+  /**
+   * 【UI-only 配置键】只被 **⑦Consume** 的 feature 读取的顶层配置键 —— 改它们**不需要**重扫整页。
+   * ---------------------------------------------------------------------------------
+   * 判据（可判定，不是"大概"）：把全仓对 `cfg.<键>` / `config.<键>` 的读点逐个过一遍，
+   * 该键**全部**生产代码读点必须落在 feature 的 `consume(hits, cfg, ctx)` 调用链里；
+   * 只要有一个落在 ③Scan / ⑤Render / `Compiler.compileAll` / `SiteRules.shouldHighlight`
+   * （或站点门禁）阶段，就**不许**进本表 —— 漏重建 = 页面不更新，比多重建严重得多。
+   *
+   * 现表三键的读点清单（T33 / T36b 逐点核过，T52 复核行号；只列**从配置对象取值**的生产读点）：
+   *   · `importantNote` ＝ `config.js:191-197` 的 `{imgSize, fontSize}`
+   *     → `important-note.js:1181` / `:1187`（`panel.render` 里写 `--kh-img-size` / `--kh-note-fs`）。
+   *     ⚠️ **同名陷阱**：`kw.importantNote`（词/组自己的笔记正文，`fieldmap.js:256`）是**另一个东西**，
+   *     由 `compiler.js:142-143` 读进 `meta` ⇒ 它出现在签名的**嵌套层**，改它必须重编译 + 重建。
+   *     所以 `configSigCore` 只摘**顶层**键，绝不能把 `importantNote` 从 replacer 数组里删掉。
+   *   · `notePanelWidth` → `important-note.js:1195-1196`（写 `--khin-panel-w`）。
+   *   · `noteCardStyle`（T36b 追加）→ `note-card.js:238` 的 `applyStyle(cfg)`。
+   *     ⚠️ **别拿 consume 当它的生效路径**（T36b 原写「调用点 `:271` 在 consume 链上」，**不成立**）：
+   *     `applyStyle` 只被 `note-card.js:267` 的 `show()` 调用（`:271`）；consume（`note-card.js:453-466`）
+   *     只调 `card.bind()`，而 `bind`（`note-card.js:332-334`）第二次调用即早退 —— 改配色**不**在
+   *     仅消费那一轮落到卡片上，要等卡片下次 `show()`。**判据本身仍成立**：Scan / Render / Compiler /
+   *     站点门禁一个都不读它（`src/core/` 侧零读点，`config.js:179` 只是 defaults 表），
+   *     所以分类不动，只订正这条理由。
+   *   · ⚠️ **`imgOcr` 不许进本表**（T52 从本表摘掉，回归 F1）：`img-ocr.js:641` 在**仅消费通道直接早退**
+   *     （`if (ctx && ctx.consumeOnly) return;`），它依赖的不变式是「图片相关的变更必然判 'full'」
+   *     （`relevance.js:345-346`）。而白名单 `cfg.imgOcr.crossOriginSites` 的页面侧唯一读点是
+   *     `img-ocr.js:190`（`crossOriginAllowed`），那个函数只在 `build()` 里跑 —— 判成 UI-only 就等于
+   *     **设置页把站点加进白名单后，已打开页面不生效**（要等一次真正的整页重建），与设置页文案
+   *     「登记一次以后都算数」直接冲突。**变体乙（让它重跑跨域判定）也不要**：仅消费通道给的 `hits`
+   *     不是全量命中，照常 `build()` 会把已有图片命中清空（见 `img-ocr.js:630-631`），要安全就得动
+   *     `build()` / 条目合并逻辑，风险不成比例。
+   *     **接受的代价**：改 `imgOcr.engine`（页面侧零读点，由 background 单点读并注入 payload，
+   *     `background/ocr.js:71-73`）也会顺带整页重建一次 —— 罕见、一次性。**别为它做精细分类**。
+   * `panel.render` 在判 `dirty`（`important-note.js:1210`）**与提前 return**之前就把三个 CSS 变量
+   * 写掉了（`:1181` / `:1187` / `:1195-1196`），所以「仅消费」这条路即使面板内容一个字没变，
+   * 新宽度 / 字号 / 图片尺寸也照旧生效。
+   */
+  const UI_ONLY_KEYS = ['importantNote', 'notePanelWidth', 'noteCardStyle'];
+
+  /**
+   * 【核心签名】摘掉**顶层** UI-only 键后算的同一个签名。
+   * 全键签名变了而核心签名没变 ⇒ 变的全是只喂 ⑦Consume 的键 ⇒ 只重跑 Consume，不整页重建。
+   *
+   * 实现上先浅拷贝再 `delete`（不是把键踢出 replacer 数组）：`JSON.stringify` 的 replacer
+   * 数组在**每一层**生效，删掉 `importantNote` 会连嵌套的 `kw.importantNote`（笔记正文）
+   * 一起吃掉 —— 那会让"改笔记正文"变成"只重画面板"，正文永远不更新。
+   */
+  function configSigCore(cfg) {
+    const sub = Object.assign({}, cfg || {});
+    for (const k of UI_ONLY_KEYS) delete sub[k];
+    return configSig(sub);
   }
 
   /* ---------------- 公共 API ---------------- */
@@ -269,7 +345,24 @@
       if (state.booted && sig === state.configSig) {
         return { total: 0, rendered: 0, skipped: 0, source: 'config-noop', siteEnabled: !!state.siteEnabled };
       }
+      /* 【T33】全键签名变了、但**核心签名**没变 ⇒ 变的全是 UI-only 键（面板宽度 / 面板字号 /
+       * 图片尺寸，判据见 `UI_ONLY_KEYS`）：命中集、编译规则、观察范围、站点门禁一个都没动
+       * ⇒ 不重挂任何通道、不 `compileAll`、不整页重建（重页面实测一轮 4.3s × 每个打开的标签页），
+       * 只重跑 ⑦Consume 让 `panel.render` 把新值写到 CSS 变量上。
+       * **站点当前不启用时不走这条路**：那条路的终点是 `destroy()` 下线，别让 Consume 把面板叫回来
+       * （面板有图片命中分区，`show()` 不只看笔记卡片）。
+       * 比较必须在 `state.config` / 签名被覆盖**之前**取值（下面先比、再记）。 */
+      const core = configSigCore(normalized);
+      const coreChanged = core !== state.configSigCore;
       state.configSig = sig;
+      state.configSigCore = core;
+
+      if (state.booted && !coreChanged && state.siteEnabled) {
+        KH.registry.emit(KH.EVENTS.CONFIG_CHANGED, normalized);
+        const only = this.consumeOnly('config');
+        only.siteEnabled = !!state.siteEnabled;
+        return only;
+      }
 
       state.rules = KH.Compiler.compileAll(normalized);
       KH.registry.emit(KH.EVENTS.CONFIG_CHANGED, normalized);
@@ -802,6 +895,7 @@
       state.config = config;
       // 记下启动时的配置签名：之后的每次热更新比它，只有真变了才重建（见 applyConfig 的 F2 注释）
       state.configSig = configSig(config);
+      state.configSigCore = configSigCore(config);
       state.rules = KH.Compiler.compileAll(config);
       state.booted = true;                 // 即使下面提前返回，也已完成一次"启动"（后续会先 destroy）
 
