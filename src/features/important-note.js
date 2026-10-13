@@ -1249,10 +1249,15 @@
 
     /** 图片命中变化时（异步结果回来）只刷图片分区，不重建笔记卡片 */
     renderImg() {
-      if (!this.root) return;
       this.imgItems = (KH.ImgOcr && typeof KH.ImgOcr.items === 'function') ? KH.ImgOcr.items() : [];
+      /* 【2.0.1.17 右键任意图 OCR】整页既没有笔记、也没有图片命中时，外壳从未被造过
+       * （见本文件底部 `consume` 的 `if (!list.length && !imgCount && !panel.host) return;`），
+       * 而右键识别是用户**主动**要的一次动作 —— 结果必须能显示。
+       * 旧实现首行是 `if (!this.root) return;` ⇒ 这种情况下面板永远不出现（用户以为功能坏了）。
+       * 但**不能无条件**走完整渲染：`render()` 一进来就 `ensure()` 造壳 ⇒ 整页明明没东西也会
+       * 多出一个空宿主（K71 的「两者都关 ⇒ 面板不存在」就是这么红的）。所以只在真有右键条目时补渲染。 */
+      if (!this.root && !this.imgItems.some((it) => it && it.via === 'contextMenu')) return;
       if (!this.panelEl) {
-        /* 还没建过面板（例如整页只有图片命中、且首次渲染时列表为空）→ 走完整渲染 */
         this.render(this.items, KH.config);
         return;
       }
@@ -1526,7 +1531,11 @@
       const cls = KH.OcrCopy.stateClass(it);
       /* T21：`action`（跨域未授权）与命中和真失败一样常显 —— 它不是"没命中"，
        * 是"把这个域名授权一次就能读"，用户照折叠标签里的域名去设置页填一行就解决。 */
-      return cls === 'hit' || cls === 'bad' || cls === 'action';
+      if (cls === 'hit' || cls === 'bad' || cls === 'action') return true;
+      /* 【2.0.1.17 右键任意图 OCR】用户**自己点名**的那张图（右键识别）必须常显：
+       * 状态类是中性 `note`（"已识别"不是命中也不是故障），但它是用户主动要的一次动作 ——
+       * 默认视图把它折进复核视图就等于"右键之后什么都没发生"。 */
+      return !!(it && it.via === 'contextMenu');
     },
 
     imgRowHiddenCount(list) {

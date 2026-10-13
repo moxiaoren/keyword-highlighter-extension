@@ -146,9 +146,13 @@
     return pack;
   }
 
-  /** 关键词要哪些语言：含中日韩统一表意文字 → 中英双包；纯 ASCII → 只 eng（快一倍） */
+  /** 关键词要哪些语言：含中日韩统一表意文字 → 中英双包；纯 ASCII → 只 eng（快一倍）。
+   *  【2.0.1.17 右键任意图 OCR】没有关键词（用户随手右键一张图，没有词可参考）时**不能**按 ASCII 走
+   *  ——那等于赌图上是拉丁字母，中文图会白白报「没认出文字」。这种情况取中英双包（缺哪个用哪个）。 */
   function langsForKeyword(text) {
-    return CJK_RE.test(String(text == null ? '' : text)) ? ['chi_sim', 'eng'] : ['eng'];
+    const s = String(text == null ? '' : text);
+    if (!s.trim()) return ['chi_sim', 'eng'];
+    return CJK_RE.test(s) ? ['chi_sim', 'eng'] : ['eng'];
   }
 
   /**
@@ -634,8 +638,14 @@
   /** 块间重叠：≈6 行（40px 行距），足够渡过被切断的整行 */
   const CHUNK_OVERLAP = 240;
   const MIN_OVERLAP = 128;
-  /** 块数上限；超了先把块高放宽到 2000 重算，仍超才截断（且**必须如实告知**） */
-  const CHUNK_MAX = 8;
+  /**
+   * 块数上限（T23）——纯护栏，不是"长图预算"。
+   * · 8 块 ⇒ 14321px 就开始丢内容（1080 宽实测），而整页长图 2~4 万像素很常见 ⇒ 上限太小就是丢数据；
+   * · 40 块 ⇒ 覆盖到 70640px（放宽几何 39×1760+2000）；真机实测长图 7 块 ≈ 32s（T51 A/B 同机同图）
+   *   ⇒ 约 4.6s/块，40 块 ≈ 185s，仍在 background 的绝对上限 `JOB_ABS_MAX_MS = 600s` 内（3 倍余量）；
+   * · 超了先把块高放宽到 2000 重算，仍超才截断（且**必须如实告知**覆盖率）。
+   */
+  const CHUNK_MAX = 40;
   const CHUNK_H_RELAXED = 2000;
   /** PSM 6 = 统一文本块（版式规整的一段正文），PSM 7 = 单行（表格里的一行值） */
   const PSM_BLOCK = '6';
@@ -772,6 +782,50 @@
   const keyOf = (t) => String(t == null ? '' : t).replace(/\s+/g, '');
 
   /**
+   * 【T22 近失配对】逐字相等吃不到的那一类：同一物理行被相邻两块各读一次，**两次各带一个错字**
+   * （真机样本「慎377行 2026-10-12」×「第377行2026-10-12」，字符二元 Dice 0.93）⇒ 最终 text 里留两行。
+   * 判据（四条**同时**成立，比第一遍严得多）：
+   *   · 同一个重叠带 + `ci` 不同 + `|Δx| ≤ OVERLAP_MATCH_X`（与第一遍同）；
+   *   · **`|Δy| ≤ NEAR_MATCH_MAX_DY`** —— 同一物理行实测只差 0–5px（tight/flat 0–5、tall 2–4），
+   *     而真机里"长得像但确实不是同一行"的假匹配跨 139–148px ⇒ 8px 这条线两边都够不着；
+   *   · 字符二元 Dice ≥ 0.8（兄弟行「第12行 12.00」×「第13行 12.00」只有 0.75，被这条挡掉）；
+   *   · 长度 ≥ 6 且长度差 ≤ 2（短串 Dice 抖动大；同时防"短串是长串子串"）。
+   * 仍然**一对一**；留下**引擎更确信**的那条（见 `NEAR_CONF_MARGIN`）⇒ 原图里真的重复两遍的文本照样只配掉一半。
+   * ponytail: 行距 <12px 的极密排图上相邻两行理论上能落进 8px 窗（密排样张未出现），
+   *   真碰上就把 NEAR_MATCH_MAX_DY 收到 6 —— 宁可留重复，也不吃内容。
+   */
+  const NEAR_MATCH_MAX_DY = 8;
+  const NEAR_MATCH_DICE = 0.8;
+  const NEAR_MATCH_MIN_LEN = 6;
+  const NEAR_MATCH_MAX_DLEN = 2;
+  /**
+   * 【谁更对，分不出来就别动】近失配对要**删掉一条**，就必须说清"留哪条"。
+   * 依据（真机 tight 样张里唯一那条真错字对）：「第66行客户要求一对一最进」conf=92 ×
+   * 「第66行客户要求一对一跟进」conf=96 ⇒ 引擎自己对**正确**那条更确信，差 4 分。
+   * 所以判据 = 两边行 conf 差 ≥ 4 才配对，并留下 conf 高的那条；**差距不够就两条都留**
+   * （用户看到重复，但内容不会被我猜错 —— T22 的红线是"不许误删真实内容"）。
+   * 反例就是第一版实现：无脑"留 y 较小者"把 conf 高的正确读法丢了，真机真值命中 474 → 473。
+   */
+  const NEAR_CONF_MARGIN = 4;
+  /** 字符二元组 Dice（纯函数）。短于 2 字的串返回 0 —— 长度闸由调用方先做。 */
+  function bigramDice(a, b) {
+    const A = String(a == null ? '' : a), B = String(b == null ? '' : b);
+    if (A.length < 2 || B.length < 2) return 0;
+    const cnt = new Map();
+    for (let i = 0; i + 1 < A.length; i++) {
+      const g = A.slice(i, i + 2);
+      cnt.set(g, (cnt.get(g) || 0) + 1);
+    }
+    let hit = 0;
+    for (let i = 0; i + 1 < B.length; i++) {
+      const g = B.slice(i, i + 2);
+      const c = cnt.get(g) || 0;
+      if (c > 0) { hit += 1; cnt.set(g, c - 1); }
+    }
+    return (2 * hit) / ((A.length - 1) + (B.length - 1));
+  }
+
+  /**
    * **重叠带**（纯函数）：相邻两块在切块轴上的公共区间。
    * 必须**从 plan 实际几何算** —— `overlapFor` 让重叠随块高变（1600⇒240、放宽 2000⇒仍 240、
    * 密排 `bandPlan`⇒24–128），写死 240 在密排那套上要错到 10 倍。
@@ -799,14 +853,16 @@
    * 外加**一对一**：每行至多当一次伙伴 —— 只有"相邻两块各自多读一次"才配得掉一对，
    * 原图里真的重复两遍的文本（4 行）只能配掉 2 条、**仍留 2 条**。
    * 配对取**就近 |Δy|**（同带里若有真重复值，优先配同一物理行的那条）；保留 y 较小者。
+   * 【T22】第一遍之后还有**第二遍近失配对**：逐字相等配不上、但错字只差一两个字的同一物理行
+   * （判据见 `NEAR_MATCH_*` 常量），吃掉的那部分记在返回值的 `near` 里。
    * `chunks < 2` 或无重叠带 ⇒ 原样返回 `merged=0`（不许改变今天的单块路径）。
    */
   function mergeOverlap(lines, chunks) {
     const all = Array.isArray(lines) ? lines : [];
     const bands = (Array.isArray(chunks) && chunks.length > 1) ? overlapBands(chunks) : [];
-    if (!bands.length) return { lines: all, merged: 0, maxDy: null, maxDx: null };
+    if (!bands.length) return { lines: all, merged: 0, near: 0, maxDy: null, maxDx: null };
     const drop = new Set();
-    let merged = 0, maxDy = null, maxDx = null;
+    let merged = 0, near = 0, maxDy = null, maxDx = null;
     for (const band of bands) {
       const pool = [];
       for (let i = 0; i < all.length; i++) {
@@ -848,9 +904,44 @@
           maxDx = maxDx === null ? dx : Math.max(maxDx, dx);
         }
       }
+      /* —— 第二遍：近失配对（只在第一遍没吃掉的里面找，逐字相等的已被上面拿走）—— */
+      const rest = pool.filter((p) => !drop.has(p.i));
+      if (rest.length >= 2) {
+        const A = rest.filter((p) => p.l.ci === band.a);
+        const B2 = rest.filter((p) => p.l.ci === band.b);
+        const cands = [];
+        for (const pa of A) {
+          if (pa.k.length < NEAR_MATCH_MIN_LEN) continue;
+          for (const pb of B2) {
+            if (pb.k.length < NEAR_MATCH_MIN_LEN) continue;
+            if (pb.k === pa.k) continue;
+            if (Math.abs(pa.k.length - pb.k.length) > NEAR_MATCH_MAX_DLEN) continue;
+            if (Math.abs((pa.l.x || 0) - (pb.l.x || 0)) > OVERLAP_MATCH_X) continue;
+            const dy = Math.abs(pa.l.y - pb.l.y);
+            if (dy > NEAR_MATCH_MAX_DY) continue;
+            const d = bigramDice(pa.k, pb.k);
+            if (d < NEAR_MATCH_DICE) continue;
+            const ca = typeof pa.l.conf === 'number' ? pa.l.conf : 0;
+            const cb = typeof pb.l.conf === 'number' ? pb.l.conf : 0;
+            const gap = Math.abs(ca - cb);
+            if (gap < NEAR_CONF_MARGIN) continue;          // 谁更对分不出来 ⇒ 宁可留重复
+            cands.push({ a: pa, b: pb, dy: dy, d: d, gap: gap, keepA: ca >= cb });
+          }
+        }
+        cands.sort((p, q) => (p.dy - q.dy) || (q.gap - p.gap) || (q.d - p.d));
+        const used = new Set();
+        for (const c of cands) {
+          if (used.has(c.a.i) || used.has(c.b.i)) continue;
+          if (drop.has(c.a.i) || drop.has(c.b.i)) continue;
+          used.add(c.a.i);
+          used.add(c.b.i);
+          drop.add(c.keepA ? c.b.i : c.a.i);              // 留 conf 高的那条，不是"留 y 小"
+          near += 1;
+        }
+      }
     }
-    if (!merged) return { lines: all, merged: 0, maxDy: null, maxDx: null };
-    return { lines: all.filter((l, i) => !drop.has(i)), merged: merged, maxDy: maxDy, maxDx: maxDx };
+    if (!merged && !near) return { lines: all, merged: 0, near: 0, maxDy: null, maxDx: null };
+    return { lines: all.filter((l, i) => !drop.has(i)), merged: merged, near: near, maxDy: maxDy, maxDx: maxDx };
   }
 
   /** 小角度纠偏的**候选角度**（拍屏/PPT 常见 2–8°；90 的倍数不在这里，那些走试转） */
@@ -1028,11 +1119,16 @@
     bandPlan: bandPlan, denseBandPlans: denseBandPlans, DENSE_BANDS: DENSE_BANDS,
     overlapBands: overlapBands, mergeOverlap: mergeOverlap, keyOf: keyOf,
     OVERLAP_MATCH_X: OVERLAP_MATCH_X,
+    NEAR_MATCH_MAX_DY: NEAR_MATCH_MAX_DY, NEAR_MATCH_DICE: NEAR_MATCH_DICE,
+    NEAR_MATCH_MIN_LEN: NEAR_MATCH_MIN_LEN, NEAR_MATCH_MAX_DLEN: NEAR_MATCH_MAX_DLEN,
+    NEAR_CONF_MARGIN: NEAR_CONF_MARGIN,
+    bigramDice: bigramDice,
     needsRotation: needsRotation, rotationsFor: rotationsFor,
     TILT_CANDIDATES: TILT_CANDIDATES.slice(), pickTilt: pickTilt,
     ADOPT_MIN_CONF: ADOPT_MIN_CONF, isCredible: isCredible,
     DENSE_RESCALE: DENSE_RESCALE, picksBetter: picksBetter,
-    judgeOrientation: judgeOrientation, noticeOf: noticeOf
+    judgeOrientation: judgeOrientation, noticeOf: noticeOf,
+    langsForKeyword: langsForKeyword
   };
   self.__khOcrPure = PURE;
 
@@ -1343,18 +1439,29 @@
         return wordish / chars.length >= 0.5;
       };
       /* 最后一次 `tidy` 的跨块去重读数（进回执 `overlap`，additive） */
-      let overlapStat = { merged: 0, maxDy: null, maxDx: null };
+      let overlapStat = { merged: 0, near: 0, maxDy: null, maxDx: null };
       const tidy = (all, chunks) => {
         /* 【第 4 项】先跨块配对去重（重叠带内 + keyOf(t) 相等 + |Δx|≤16 + 一对一），
+         * 【T22】再补一遍近失配对（错字导致逐字不等、但确实是同一物理行）；`near` 进回执 `overlap`。
          * 再 filter/sort；下面的 prev-only 18px 规则**保留当兜底**（它现在只管同块内那一道）。
          * 为什么合并必须在 sort 之前：`prev` 只比"上一个保留项"，同名两条一旦被别的行隔开就永远配不上。 */
         const mr = mergeOverlap(all, chunks);
-        overlapStat = { merged: mr.merged, maxDy: mr.maxDy, maxDx: mr.maxDx };
+        overlapStat = { merged: mr.merged, near: mr.near, maxDy: mr.maxDy, maxDx: mr.maxDx };
         const kept = mr.lines.filter(keepLine).sort((a, b) => (a.y - b.y) || (a.x - b.x));
         const out = [];
         for (const l of kept) {
           const prev = out[out.length - 1];
-          if (prev && prev.t === l.t && Math.abs(prev.y - l.y) < 18) continue;   // 切条重叠 → 同一行重复
+          /* 【T22 兜底修正】旧写法 `prev.t === l.t` 是**严格全等** ⇒ 「第171行12.00」与「第171行 12.00」
+           * 只差一个空格就判不中。真机上那对是同一个物理行被相邻两块各读一次，但块 2 那条的 y
+           * (4079) 落在重叠带下界(4080)外 1px ⇒ 第一遍的入池闸也收不到它，于是两行一路活到 text。
+           * 这里改走 `keyOf`（去空白）归一化 + 非空守卫：空白差异不算内容差异（与第一遍同一口径），
+           * 空行/纯空白不参与（否则会被吞掉）。18px 闸仍比常规行距(24px)小 ⇒ 不会跨物理行误吞。
+           * 留哪条**与近失那遍同一口径：conf 高的胜**（真机就是靠这个选对原图写法：「第171行 12.00」
+           * conf=100 胜出；只按 y 小保下来的那条 conf=99，会让真值逐字命中白掉 1）；conf 持平则保先出现的。 */
+          if (prev && keyOf(l.t) !== '' && keyOf(prev.t) === keyOf(l.t) && Math.abs(prev.y - l.y) < 18) {
+            if (l.conf > prev.conf) out[out.length - 1] = l;
+            continue;
+          }
           out.push(l);
         }
         return out;

@@ -200,8 +200,58 @@
     return killed;
   }
 
+  /* ---------------- 右键入口的地址闸门（SECURITY.md 附录 B.5） ----------------
+   * 为什么必须有：扫描链读的是**页面自己已经在显示的图**（同源直接放行、跨域要白名单）；
+   * 右键是"替用户去读一个他点名的外部地址" —— 于是私有地址一律拒（回环/内网/链路本地/IPv6 字面量）。
+   * 判定**只对 `via:'contextMenu'` 生效**：两条路汇进同一个 `submitImage`，无条件套会把
+   * 扫描链对 `http://localhost:3000/` 的既有放行打断，而且表现成"识别中…"这种最难查的形态（B.6）。
+   * 顺序照附录 B.5：解析 → 只放 http(s) → 取 hostname → 规范化 → 逐类拒。
+   */
+  const PRIVATE_HOST_SUFFIXES = ['.localhost', '.local', '.internal', '.home.arpa'];
+
+  /** 私有/不可路由的 IPv4 字面量（域名形态直接放行，交给后缀规则） */
+  function isPrivateIpv4(host) {
+    const parts = host.split('.');
+    if (parts.length !== 4) return false;
+    for (const p of parts) if (!/^\d{1,3}$/.test(p)) return false;
+    const n = parts.map(Number);
+    if (n.some((x) => x > 255)) return true;            // 形态像 IP 却越界 ⇒ 宁可保守拒掉
+    const a = n[0];
+    const b = n[1];
+    if (a === 0 || a === 127 || a === 10 || a >= 224) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 169 && b === 254) return true;             // 链路本地（云元数据地址就在这）
+    if (a === 100 && b >= 64 && b <= 127) return true;   // CGNAT
+    return false;
+  }
+
+  /** 右键入口能不能去读这个地址（true = 放行） */
+  function isContextMenuSrcAllowed(raw) {
+    let u = null;
+    try { u = new URL(String(raw == null ? '' : raw).trim()); } catch (e) { return false; }
+    const scheme = String(u.protocol || '').toLowerCase();
+    if (scheme !== 'http:' && scheme !== 'https:') return false;   // data:/blob:/file: 一律拒
+    let host = String(u.hostname || '').toLowerCase();
+    while (host.length > 1 && host.charAt(host.length - 1) === '.') host = host.slice(0, -1);
+    if (host.charAt(0) === '[' && host.charAt(host.length - 1) === ']') host = host.slice(1, -1);
+    if (!host) return false;
+    if (host.indexOf(':') >= 0) return false;                       // IPv6 字面量一律拒
+    if (host === 'localhost') return false;
+    for (const suf of PRIVATE_HOST_SUFFIXES) {
+      if (host.slice(-suf.length) === suf) return false;
+    }
+    if (isPrivateIpv4(host)) return false;
+    return true;
+  }
+
   /** 内容脚本的识别请求：不等待结果（结果另外送回该标签页），只登记路由 */
   async function submitImage(msg, sender) {
+    /* 闸门必须在**入口**：`via` 不向下转发（`toOffscreen` 只带 src/dataUrl/keyword/engine），
+     * 推到 offscreen 就没得判了。拒的时候一个字都不发出去、也不给任何回执（静默）。 */
+    if (msg && msg.via === 'contextMenu' && !isContextMenuSrcAllowed(msg.src)) {
+      return { ok: false, code: 'src-rejected' };
+    }
     _sweep();                                    // 顺手清一遍（SW 睡过一觉时也能自愈）
     await ensureOffscreen();
     const requestId = nextId('img');
@@ -214,6 +264,8 @@
       requestId: requestId, tabId: tabId,
       /* frameId 必须记住：同源 iframe 也会跑内容脚本，结果要投回**发起那一帧** */
       frameId: sender ? sender.frameId : undefined,
+      /* 右键入口的路由标记：内容脚本靠回执上的 `via` 认领成「右键识别」（见 deliver） */
+      via: (msg && msg.via === 'contextMenu') ? 'contextMenu' : '',
       engine: engine, isExtPage: isExtPage, at: now, lastProgressAt: 0, sawProgress: false, timer: null
     };
     imageJobs.set(requestId, job);
@@ -238,6 +290,9 @@
     if (!job) return;
     const base = { type: MSG.OCR_RESULT, requestId: payload.requestId, ok: payload.ok };
     const out = Object.assign({}, payload, base);
+    /* 右键入口：把路由标记带回给发起方那一帧（内容脚本据此认领成「右键识别」）。
+     * 只加在**回执**上 —— offscreen 侧一个字都不许知道（见 submitImage 的 toOffscreen）。 */
+    if (job.via) out.via = job.via;
     if (job.tabId == null || job.isExtPage) {
       try { chrome.runtime.sendMessage(Object.assign({}, out, { to: 'ui' })); } catch (e) { /* ignore */ }
       return;

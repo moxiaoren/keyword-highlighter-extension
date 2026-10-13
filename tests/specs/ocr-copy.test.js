@@ -52,6 +52,8 @@ function itemFor(key) {
   if (key === 'running') return { state: 'pending' };
   if (key === 'hit') return { state: 'done', matched: [{ text: '一对一' }], text: '一对一' };
   if (key === 'miss') return { state: 'done', text: '别的字', keyword: '一对一' };
+  /* 2.0.1.17 右键任意图 OCR：与 hit/miss 同类的**派生键**（由 `via` 派生，不由 `why` 派生） */
+  if (key === 'ctxmenu') return { state: 'done', via: 'contextMenu', text: '识别出来的字' };
   if (key === 'fail') return { state: 'fail', error: '引擎炸了' };
   return { state: 'blocked', why: key, host: 'cdn.example.com' };
 }
@@ -69,7 +71,7 @@ module.exports = async function run() {
     }
     truthy(Array.isArray(C.KEYS), 'KEYS 必须是数组');
     /* 键数写死是刻意的：新增一个原因键就必须来改这一行（顺带被迫想清楚归属与文案） */
-    eq(C.KEYS.length, 21, '文案表的键数变了 —— 新增/删除原因键请同步本行与 RESERVED');
+    eq(C.KEYS.length, 22, '文案表的键数变了 —— 新增/删除原因键请同步本行与 RESERVED');
   });
 
   await test('★ 不变量 10：三处注册都在，且真源排在消费者之前', () => {
@@ -99,6 +101,19 @@ module.exports = async function run() {
      * 面板的 imgRowVisibleByDefault() 依赖这个类：默认视图必须把它露出来，不许静默隐藏。 */
     eq(C.stateClass(itemFor('cross-origin')), 'action', '跨域未授权必须是 action 类（默认视图常显）');
     eq(C.icon(itemFor('cross-origin')), '⚙', 'action 类的图标（去设置页动手）');
+  });
+
+  await test('★ 右键识别（2.0.1.17）：成功是中性 note、标签「已识别」、悬停带全文', () => {
+    const it = itemFor('ctxmenu');
+    eq(C.stateClass(it), 'note', '右键识别成功是中性告知（不是命中、更不是故障）');
+    eq(C.tag(it), '已识别', '折叠标签');
+    truthy(C.why(it).indexOf('识别出来的字') >= 0, '悬停理由必须带出识别全文（用户右键就是为了这段字）');
+    /* 失败时**不许**还挂着「已识别」：右键路也走同一条 `keyOf()` 兜底 */
+    const failed = { state: 'fail', via: 'contextMenu', error: '识别引擎不可用', errorCode: 'engine-unavailable' };
+    eq(C.keyOf(failed), 'engine-unavailable', '失败优先说引擎原因（错误码在表内就直接用它）');
+    eq(C.stateClass(failed), 'bad', '失败是红的');
+    const silent = { state: 'fail', via: 'contextMenu', error: '说不清' };
+    eq(C.keyOf(silent), 'fail', '没有可用的错误码时落到 fail（不得静默）');
   });
 
   await test('★ 不变量 9：面板不再自己写死状态类与文案（源码契约）', () => {
@@ -146,7 +161,9 @@ module.exports = async function run() {
     for (const r of produced) if (C.KEYS.indexOf(r) < 0) noCopy.push(r);
     eq(noCopy.length, 0, 'img-ocr.js 会产出、但文案表里没有的原因：' + noCopy.join('、'));
 
-    const known = new Set(['queued', 'running', 'hit', 'miss']);
+    /* `ctxmenu` 与 hit/miss 同类：**派生键**，生产者是 `img-ocr.js` 的 `via` 标记而不是 `why` 字面量
+     * （2.0.1.17 右键任意图 OCR —— SPEC 需求 6） */
+    const known = new Set(['queued', 'running', 'hit', 'miss', 'ctxmenu']);
     const orphan = C.KEYS.filter((k) => !produced.has(k) && !known.has(k) && !RESERVED[k]);
     eq(orphan.length, 0, '文案表里既没有生产者、也没登记归属票号的键：' + orphan.join('、'));
 

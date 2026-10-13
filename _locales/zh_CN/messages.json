@@ -13,5 +13,8 @@
   },
   "shortcutOpenSettings": {
     "message": "打开设置页"
+  },
+  "menuOcrImage": {
+    "message": "用高亮词识别这张图"
   }
 }

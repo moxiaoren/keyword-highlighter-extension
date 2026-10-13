@@ -496,4 +496,64 @@ module.exports = async function run() {
       '★ 全页 4 张图总共只发 4 次（旧实现：首批 4 张各发一次，额度归还后又把孪生条目各补发一次 ⇒ 8 次）');
     eq(O.items().filter((it) => it.state === 'done').length, 8, '4 张图的结果把 8 条全部落地');
   });
+
+  /* ------------------------------------------------------------------
+   * 右键任意图 OCR（2.0.1.17 · SPEC 需求 6 / SECURITY.md 附录 B）：结果进图片模块
+   * ------------------------------------------------------------------
+   * 口径：右键识别的结果**不是**扫描链的产物（没有规则、没有命中、没有关键词），
+   * 但它必须变成图片模块里看得见的一行 —— 否则用户右键半天，面板上什么都没发生。
+   * 三条硬要求：① 用户手动要的那一行不受"默认只显示命中"约束；② 同一张图重复右键不堆行；
+   * ③ 失败也建行（有状态类可判），不得静默。另加一条：页面重建不许把它冲掉。
+   */
+  suite('右键任意图 OCR：结果进图片模块（2.0.1.17）');
+
+  await test('★ 右键识别的回执 ⇒ 当场建条目并常显（面板默认视图必须露出来）', () => {
+    KH.features.get('img-ocr').clear(null, { reason: 'destroy' });
+    O._onResult({
+      requestId: 'imgCtx-1', ok: true, via: 'contextMenu', src: 'https://cdn.example.com/a.png',
+      text: '华为技术有限公司', confidence: 97, ocrMs: 1200
+    });
+    const items = O.items();
+    eq(items.length, 1, '右键识别的结果要变成一条条目（否则用户什么都看不到）');
+    const it = items[0];
+    eq(it.via, 'contextMenu', '条目要记住它是右键来的（面板与文案都靠它）');
+    eq(it.src, 'https://cdn.example.com/a.png', '缩略图要有地址');
+    eq(it.state, 'done');
+    eq(it.text, '华为技术有限公司', '识别全文要落进条目（灯箱/悬停读的就是它）');
+    eq(it.ocrMs, 1200, '耗时徽标照旧');
+    eq(KH.OcrCopy.stateClass(it), 'note', '状态类走文案真源：note（不是 hit、更不是 bad）');
+    eq(KH.OcrCopy.tag(it), '已识别', '标签文字走文案真源');
+    truthy(KH.OcrCopy.why(it).indexOf('华为技术有限公司') >= 0, '悬停理由要能读到识别全文');
+    eq(KH.ImportantNote.panel.imgRowVisibleByDefault(it), true,
+      '★ 用户手动右键要的那一行不许被"默认只显示命中"藏起来');
+    /* 用例隔离：右键条目按设计会**跨 build 存活**（下一个用例正是钉这件事），
+     * 所以在用例末尾按真实销毁路径清掉，免得影响别的 spec。 */
+    KH.features.get('img-ocr').clear(null, { reason: 'destroy' });
+  });
+
+  await test('★ 同一张图再右键一次：只一行、取最新结果；失败也建行且判成 bad（不静默）', () => {
+    KH.features.get('img-ocr').clear(null, { reason: 'destroy' });
+    O._onResult({ requestId: 'imgCtx-2', ok: true, via: 'contextMenu', src: 'https://cdn.example.com/dup.png', text: '甲', confidence: 90, ocrMs: 10 });
+    O._onResult({ requestId: 'imgCtx-3', ok: true, via: 'contextMenu', src: 'https://cdn.example.com/dup.png', text: '乙', confidence: 91, ocrMs: 11 });
+    const dup = O.items().filter((it) => it.src.indexOf('/dup.png') > 0);
+    eq(dup.length, 1, '同一张图重复右键 = 同一行（按 src 去重，不许堆行）');
+    eq(dup[0].text, '乙', '后一次结果覆盖前一次（用户刚右键的就是它）');
+
+    O._onResult({ requestId: 'imgCtx-4', ok: false, via: 'contextMenu', code: 'engine-unavailable', error: '识别引擎不可用', src: 'https://cdn.example.com/bad.png' });
+    const bad = O.items().filter((it) => it.src.indexOf('/bad.png') > 0)[0];
+    truthy(bad, '失败也要建行（SPEC 需求 6：识别服务不可用时必须如实告知，不得静默）');
+    eq(bad.state, 'fail');
+    eq(KH.OcrCopy.stateClass(bad), 'bad', '★ 失败落成 bad 类（默认视图常显，用户能看见）');
+    KH.features.get('img-ocr').clear(null, { reason: 'destroy' });
+  });
+
+  await test('★ 页面重建（下一次扫描）不许把右键识别的条目冲掉', () => {
+    KH.features.get('img-ocr').clear(null, { reason: 'destroy' });
+    O._onResult({ requestId: 'imgCtx-5', ok: true, via: 'contextMenu', src: 'https://cdn.example.com/keep.png', text: '保留', confidence: 88, ocrMs: 5 });
+    O.build({}, {}, []);                       /* 下一次页面扫描：这次一个图片命中都没有 */
+    const kept = O.items().filter((it) => it.via === 'contextMenu');
+    eq(kept.length, 1, '★ 扫描链重建（build）不许把右键识别的条目冲掉（它不属于任何规则）');
+    eq(kept[0].text, '保留', '重建后内容照旧');
+    KH.features.get('img-ocr').clear(null, { reason: 'destroy' });
+  });
 };

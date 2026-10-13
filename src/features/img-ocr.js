@@ -74,6 +74,13 @@
   let awaitingId = 0;
   /** 正在识别中的 src：只用于"同一张图别重复提交"的去重（**与额度无关**） */
   const inflight = new Set();
+  /**
+   * 【2.0.1.17 右键任意图 OCR】用户手动点名的图（key = `ctxmenu|<src>`）。
+   * 为什么单开一张表、而不是塞进 `items`：`items` 每轮扫描都被**整体重造**（`items = next`），
+   * 而右键识别的结果不属于任何规则、不会由 `build()` 重新产出来 —— 塞进去下一次页面变动就没了。
+   * 它与 `items` 的关系是"并集"：面板读 `items()`，本表在 `build()` 里并回去、`clear()` 时按档清。
+   */
+  const manual = new Map();
   let tokenSeq = 0;
   /**
    * 超过这么久还没有终态 → 内容脚本**自己判死**。
@@ -479,8 +486,51 @@
     return n;
   }
 
+  /**
+   * 采纳一条「右键识别」的回执（2.0.1.17 · SPEC 需求 6）。
+   * 为什么单开一条路：这条结果**不是扫描链发起的** —— 没有规则、没有命中、`held`/`pending`
+   * 里也没有它的账（`via` 只在 `background` 的回执上加，见 `background/ocr.js` 的 `deliver`），
+   * 所以不能走 token 认领。键按 `src` 去重：同一张图重复右键只留一行，且**取最新一次**
+   * （用户刚点的就是它）。失败也要建行 —— SPEC `L274`：识别服务不可用时必须如实告知，不得静默。
+   */
+  function adoptContextMenu(msg) {
+    const src = String(msg.src || '');
+    const key = 'ctxmenu|' + (src || ('#' + String(msg.requestId || '')));
+    let it = manual.get(key);
+    if (!it) {
+      it = {
+        key: key, ruleId: '@ctxmenu', rule: null,
+        keyword: '', label: '',
+        src: src, cls: { ok: true, src: src, host: hostOfSrc(src) }, host: hostOfSrc(src),
+        state: 'pending', matched: [], text: '', conf: 0, via: 'contextMenu'
+      };
+      manual.set(key, it);
+    }
+    it.engine = msg.engine || '';
+    it.engineReason = msg.engineReason || '';
+    if (msg.ok) {
+      it.state = 'done';
+      it.text = String(msg.text || '');
+      it.conf = msg.confidence || 0;
+      it.ocrMs = msg.ocrMs;
+      it.why = msg.notice || '';
+      it.coverPx = (msg.coverage && msg.coverage.coveredTo) || 0;
+      it.coverage = msg.coverage || null;
+    } else {
+      it.state = 'fail';
+      it.error = msg.error || '识别失败';
+      it.errorCode = msg.code || '';
+      /* 失败时**不许**留着成功态的 why：`ocr-copy.js` 的 `keyOf()` 会先认表内 why，
+       * 留着就会把一次失败说成「已识别」。只有引擎明确的 lang-missing 才写进 why。 */
+      it.why = (msg.code === 'lang-missing') ? 'lang-missing' : '';
+    }
+    notify();
+  }
+
   /** 结果回来（background 中转） */
   function onResult(msg) {
+    /* 【右键任意图 OCR】先认领这一类：它没有 token 账可对，硬走下面的额度逻辑只会空转 */
+    if (msg.via === 'contextMenu') { adoptContextMenu(msg); return; }
     /* ① 先把这笔账认出来**按 token** 归还 —— 与 src 无关，这是 #16 ③ 的根治点 */
     let token = pending.get(msg.requestId) || null;
     const src = msg.src || '';
@@ -646,6 +696,9 @@
         next.set(key, item);
       }
     }
+    /* 右键识别的条目不属于任何规则：扫描链重建时**并回去**，别把它冲掉（用户手动要的那一行
+     * 不该因为页面变动就消失；它自己有过结果、也留在 `manual` 里） */
+    for (const pair of manual) if (!next.has(pair[0])) next.set(pair[0], pair[1]);
     items = next;
     /* 采集完再统一排队（先建表再提交，避免结果回来时条目还没建） */
     for (const it of items.values()) {
@@ -687,8 +740,12 @@
        * 清了会让晚到的结果认领不到（额度要等 150s 收口才回）。
        */
       clear(root, opts) {
-        items = new Map();
-        if (opts && opts.reason === 'destroy') {
+        const destroy = !!(opts && opts.reason === 'destroy');
+        /* 销毁（换页/停用）连 `manual` 一起清；普通重建只把扫描链条目清底，
+         * 右键识别的行**留着**（它不属于本轮命中，清掉就等于用户白右键一次） */
+        if (destroy) manual.clear();
+        items = new Map(Array.from(manual));
+        if (destroy) {
           held.clear();
           pending.clear();
           awaitingId = 0;
@@ -710,8 +767,19 @@
     });
   }
 
+  /**
+   * 面板读的就是这个：扫描链条目 + 右键识别的条目（**并集**，键不重复）。
+   * 两张表分开存是因为生命周期不同（见 `manual` 的注释：一条随扫描重建生灭、一条由用户手动产生），
+   * 但对读者必须是一个列表 —— 否则右键识别的结果在面板上根本不存在。
+   */
+  function allItems() {
+    const out = Array.from(items.values());
+    for (const pair of manual) if (!items.has(pair[0])) out.push(pair[1]);
+    return out;
+  }
+
   KH.ImgOcr = {
-    items: () => Array.from(items.values()),
+    items: allItems,
     /** 当前在途额度（≥1 = 有识别在飞）。调度侧用它给重建让路（见 `scheduler.js:_deferToOcr`）
      *  —— 重建是同步全页扫描，一跑起来就把识别结果挤在门外。 */
     inflightCount: () => quotaUsed(),

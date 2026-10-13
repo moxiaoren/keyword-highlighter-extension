@@ -47,9 +47,57 @@ async function broadcast(type, payload) {
 
 chrome.runtime.onInstalled.addListener(async (details) => {
   if (details.reason === 'install' || details.reason === 'update') {
+    registerMenus();
     await chrome.tabs.create({ url: chrome.runtime.getURL('welcome/welcome.html') });
   }
 });
+
+/* ---------------- 右键任意图 OCR（2.0.1.17 · SPEC 需求 6） ----------------
+ * 权限增量只有 `contextMenus`（`host_permissions` 不变 —— 图能不能读由 `<all_urls>` 决定，
+ * 而那是本功能之前就有的）。口径见 `SECURITY.md` 附录 B：右键即**逐次显式同意**，
+ * 所以不走 `crossOriginSites` 白名单，也不新增任何 storage 键。
+ */
+const MENU_OCR_IMAGE = 'kh-ocr-image';
+
+/** 注册（幂等）：`removeAll` + `create` —— SW 被 MV3 杀掉后菜单由浏览器保留，
+ *  但更新/重载会丢，所以安装、更新与每次冷启动都补一次。 */
+function registerMenus() {
+  try {
+    chrome.contextMenus.removeAll(() => {
+      try {
+        chrome.contextMenus.create({
+          id: MENU_OCR_IMAGE,
+          title: chrome.i18n.getMessage('menuOcrImage') || '用高亮词识别这张图',
+          contexts: ['image']
+        });
+      } catch (e) { console.warn('[KH] 创建右键菜单失败', e); }
+    });
+  } catch (e) { console.warn('[KH] 注册右键菜单失败', e); }
+}
+
+/** B.5 第 1/2 步：只有 handler 拿得到 `info`；地址闸门（3–6 步）在 submitImage 入口，
+ *  因为那里才有 `via` 可判（两条路汇入同一个函数 —— 见附录 B.6）。
+ *  返回值只是给测试缝用（浏览器不看它）；失败一律静默：`via:'contextMenu'` 的回执
+ *  不许往页面 DOM 回显任何东西（B.9）。 */
+function onCtxMenuClicked(info, tab) {
+  if (!info || info.menuItemId !== MENU_OCR_IMAGE) return;
+  if (info.mediaType !== 'image') return;
+  if (!info.srcUrl) return;
+  return Promise.resolve()
+    .then(() => self.OcrHost.submitImage(
+      { type: MSG.OCR_IMAGE, src: info.srcUrl, via: 'contextMenu' },
+      { tab: { id: (tab && tab.id != null) ? tab.id : null }, frameId: info.frameId || 0 }
+    ))
+    .catch(() => ({ ok: false, code: 'submit-failed' }));
+}
+
+chrome.contextMenus.onClicked.addListener(onCtxMenuClicked);
+
+/* 真机探针的测试缝：原生右键菜单点不动（Chrome 的 UI 不给自动化），探针只能在 SW
+ * 上下文里**直接调这个 handler**，传一份与浏览器同形的 `(info, tab)` —— 这才是与生产
+ * 完全同形的入口（内容脚本自己 `sendMessage` 冒充右键过不了 `sender.tab` 那一关）。
+ * 与 offscreen 的 `self.__khOcrDebug` 同类：只读不写、不参与业务路径。 */
+self.__khCtxMenu = { onClicked: onCtxMenuClicked };
 
 /* ---------------- 快捷键 ---------------- */
 
@@ -154,6 +202,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
 /* ---------------- 冷启动自检 ---------------- */
 
 (async () => {
+  registerMenus();
   const { globalEnabled = true } = await chrome.storage.local.get('globalEnabled');
   await updateIcon(globalEnabled);
 })();

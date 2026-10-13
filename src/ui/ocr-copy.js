@@ -82,6 +82,9 @@
      * 免得一张图把面板撑成一大块。 */
     hit: { tag: '命中', why: '命中「{matched}」：{text}' },
     miss: { tag: '未命中', why: '图里识别出的文字没有匹配「{keyword}」。识别文本：{text}' },
+    /* 【2.0.1.17 右键任意图 OCR】用户自己点名的图：没有关键词可匹配 ⇒ 既不是命中也不是未命中。
+     * 它是"你要的那段字"，所以标签说「已识别」、悬停直接把全文摊给他看。 */
+    ctxmenu: { tag: '已识别', why: '这是你右键识别的那张图。识别文本：{text}' },
 
     /* ---- 读完了、但结果不可用（S1-c / D-14.5）----
      * 这三条与 `hit`/`miss` 同级，都是 `done` 态。**必须顶掉「未命中」**：
@@ -253,7 +256,11 @@
      * 授权一次就能读"。给独立一类 `action` 而不是 `note`，两个理由：
      * ① 默认视图必须露出来（藏进复核视图就是静默：面板空着，用户以为 OCR 坏了，而答案就在设置页）；
      * ② 底色/图标要跟"读不到图的其它原因"（note 类是纯告知，用户没什么可做的）区分开。 */
-    'cross-origin': 'action'
+    'cross-origin': 'action',
+    /* 右键识别（2.0.1.17）：用户手动的动作，成功了就是一句中性告知（跟"读不到图"的理由同级，
+     * 都不是故障）。它**默认视图常显**不是靠这个类，而是靠 `important-note.js` 的
+     * `imgRowVisibleByDefault()` 里那条 `via === 'contextMenu'` —— 用户手动要的行不许被折叠规则藏掉。 */
+    ctxmenu: 'note'
   };
 
   /**
@@ -269,7 +276,7 @@
 
   /**
    * "读过了、但结果不可用"的三类告知（S1-c / D-14.5）—— 也是 `done` 态。
-   * 必须在 `miss` 之前判：`truncated`（长图只读了前 8 块）/`no-text`（一个字都没认出来）/
+   * 必须在 `miss` 之前判：`truncated`（长图超过块数上限，只读了前若干块）/`no-text`（一个字都没认出来）/
    * `tilted`（方向可疑）。判据与生产者都在 `offscreen/ocr.js` 的 `noticeOf()`。
    */
   const NOTICE = { truncated: true, 'no-text': true, tilted: true };
@@ -298,6 +305,9 @@
     if (state === 'done') {
       if (o.matched && o.matched.length) return 'hit';
       if (o.why && NOTICE[o.why]) return String(o.why);
+      /* ④ 右键识别（2.0.1.17）：没有关键词可匹配 ⇒ 既非命中亦非未命中。
+       *    放在 NOTICE 之后：引擎说"图太大只读了前 8 块 / 一个字没认出"比「已识别」具体得多。 */
+      if (o.via === 'contextMenu') return 'ctxmenu';
       return 'miss';
     }
     if (state === 'idle') return 'queued';

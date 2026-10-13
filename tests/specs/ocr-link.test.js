@@ -420,4 +420,109 @@ module.exports = async function run() {
     falsy(/quality:\s*\(cfg[\s\S]{0,120}?'best'\s*:\s*'fast'\)/.test(src),
       'quality 是死代码（两处都被丢，永远到不了引擎）—— S1 必须删掉它');
   });
+
+  /* ==========================================================================================
+   * 右键任意图 OCR（2.0.1.17 · SPEC 需求 6 / SECURITY.md 附录 B）：新入口的地址闸门
+   * ------------------------------------------------------------------------------------------
+   * 为什么必须存在：内容脚本的扫描链**必须**读得了本机/内网图（自建页面同源直接放行），
+   * 而右键入口是"替用户去读一个任意外部地址" —— 于是私有地址一律拒。
+   * 两条路汇进同一个 `submitImage` ⇒ 闸门**只能**认 `via:'contextMenu'`（B.6 回归陷阱：
+   * 不限定就会把扫描链现有用例打断，而且是"识别中…"这种最难查的形态）。
+   * 拒的时候**一个字都不许发出去**：不发请求 = 不给对面任何可观测信号。
+   * ========================================================================================== */
+  suite('右键任意图 OCR：新入口的地址闸门（2.0.1.17）');
+
+  await test('★ 闸门：`via:"contextMenu"` 的私有/非法地址一律不发出去（静默拒）', async () => {
+    const bad = [
+      ['http://127.0.0.1:8080/x.png', '回环'],
+      ['http://localhost/x.png', 'localhost'],
+      ['http://foo.localhost/x.png', '*.localhost'],
+      ['http://nas.local/x.png', '*.local'],
+      ['http://router.internal/x.png', '*.internal'],
+      ['http://printer.home.arpa/x.png', '*.home.arpa'],
+      ['http://0.0.0.0/x.png', '0.'],
+      ['http://10.1.2.3/x.png', '10.'],
+      ['http://172.16.0.1/x.png', '172.16'],
+      ['http://172.31.255.254/x.png', '172.31'],
+      ['http://192.168.1.1/x.png', '192.168.'],
+      ['http://169.254.169.254/x.png', '链路本地（云元数据地址）'],
+      ['http://100.64.0.1/x.png', 'CGNAT'],
+      ['http://224.0.0.1/x.png', '组播/保留段'],
+      ['http://[::1]/x.png', 'IPv6 字面量'],
+      ['http://[fe80::1]/x.png', 'IPv6 字面量'],
+      ['data:image/png;base64,iVBORw0KGgo=', 'data: 一律拒'],
+      ['blob:https://a.com/9f2c-uuid', 'blob: 一律拒'],
+      ['/relative/x.png', '解析不出地址'],
+      ['not a url', '解析不出地址']
+    ];
+    for (const pair of bad) {
+      const src = pair[0];
+      const why = pair[1];
+      const m = loadHost(MSG, null, { storage: {} });
+      const r = await m.host.submitImage(
+        { type: MSG.OCR_IMAGE, src: src, via: 'contextMenu' },
+        { tab: { id: 5 }, frameId: 0 }
+      );
+      eq(m.host._debug().jobs.length, 0, why + '（' + src + '）：不许登记 job');
+      eq(m.toOffscreen.length, 0, why + '：一个字都不许发给 offscreen');
+      eq(r && r.ok, false, why + '：如实回 ok:false（调用方是 SW 内部，不是页面）');
+    }
+  });
+
+  await test('★ 闸门：公网 http(s) 放行；且 `via` 不许漏给 offscreen', async () => {
+    const good = ['https://cdn.example.com/a.png', 'http://img.example.cn/b.jpg', 'https://example.com:8443/c.png'];
+    for (const src of good) {
+      const m = loadHost(MSG, null, { storage: {} });
+      const r = await m.host.submitImage(
+        { type: MSG.OCR_IMAGE, src: src, via: 'contextMenu' },
+        { tab: { id: 6 }, frameId: 0 }
+      );
+      eq(m.host._debug().jobs.length, 1, src + '：公网地址要放行');
+      eq(r && r.ok, true, src + '：放行要如实回 ok:true');
+      let got = null;
+      for (const p of m.toOffscreen) if (p.type === MSG.OCR_IMAGE) { got = p; break; }
+      truthy(got, src + '：要真的发给 offscreen');
+      falsy(Object.prototype.hasOwnProperty.call(got, 'via'), 'via 是内容脚本侧的路由标记，不许漏给 offscreen');
+      eq(got.src, src);
+    }
+  });
+
+  await test('★ B.6 回归陷阱：不带 via 的老路径（扫描链/扩展页自检）仍放行本机·内网·data:', async () => {
+    const legacy = [
+      ['http://localhost:3000/a.png', '自建页面的同源图（`img-ocr.js` 的 sameOrigin 分支放行）'],
+      ['http://127.0.0.1:8080/b.png', '本机服务'],
+      ['http://192.168.1.9/c.png', '内网'],
+      ['data:image/png;base64,AAAA', 'canvas 兜底转出来的 data URL']
+    ];
+    for (const pair of legacy) {
+      const m = loadHost(MSG, null, { storage: {} });
+      await m.host.submitImage(
+        { type: MSG.OCR_IMAGE, src: pair[0], keyword: '华为' },
+        { tab: { id: 7 }, frameId: 0, url: 'http://localhost:3000/page' }
+      );
+      eq(m.host._debug().jobs.length, 1, pair[1] + '：既有链路不许被新闸门打断');
+      eq(m.toOffscreen.length, 1, pair[1] + '：要照常发出去');
+    }
+  });
+
+  await test('★ 回执要把 `via` 带回发起方那一帧（结果落点靠它认领）', async () => {
+    const m = loadHost(MSG, null, { storage: {} });
+    await m.host.submitImage(
+      { type: MSG.OCR_IMAGE, src: 'https://cdn.example.com/a.png', via: 'contextMenu' },
+      { tab: { id: 9 }, frameId: 4 }
+    );
+    const id = m.host._debug().jobs[0].requestId;
+    m.host.onOffscreenMessage({ to: 'background', type: MSG.OCR_RESULT, requestId: id, ok: true, text: '华为', src: 'https://cdn.example.com/a.png' });
+    eq(m.toTab.length, 1, '结果要投回发起方');
+    eq(m.toTab[0].tabId, 9, '要投给被右键那个标签页');
+    eq(m.toTab[0].frameId, 4, '★ 多 frame 页面：必须投回被右键那一帧');
+    eq(m.toTab[0].payload.via, 'contextMenu', '★ 内容脚本靠它认领成「右键识别」而不是当成扫描链的结果');
+
+    /* 老路径不许凭空多出这个字段 —— 内容脚本的判据就是"有没有它" */
+    const m2 = loadHost(MSG, null, { storage: {} });
+    await m2.host.submitImage({ src: 'https://a.test/x.png', keyword: '华为' }, { tab: { id: 7 }, frameId: 0, url: 'https://a.test/' });
+    const id2 = m2.host._debug().jobs[0].requestId;
+    m2.host.onOffscreenMessage({ to: 'background', type: MSG.OCR_RESULT, requestId: id2, ok: true, text: 'x' });
+    falsy(m2.toTab[0].payload.via, '老路径的回执不许带 via');
+  });
 };

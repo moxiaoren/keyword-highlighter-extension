@@ -212,16 +212,27 @@ module.exports = async function run() {
     truthy(P.scaleFor(48, 20) > 1, '过小的块仍要放大（沿用 TARGET_H 的口径）');
   });
 
-  await test('★ 不变量 2：超 8 块先放宽块高到 2000；仍超则只识别前 8 块并如实告知覆盖', () => {
+  await test('★ 不变量 2：4 万像素高的长图必须整张覆盖（T23：块数上限 8 → 40）', () => {
     const P = loadOffscreen({ lines: () => null }).self.__khOcrPure;
     const plan = P.planChunks(1080, 40000);
+    eq(plan.coverage.truncated, false, '旧上限 8 块在 14321px 就开始丢内容；4 万像素的整页长图不许再丢');
+    eq(plan.coverage.relaxed, false, '块数够用 ⇒ 块高保持 1600（1:1，不降采样）');
+    eq(plan.chunks.length, 30, '(40000 − 1600) / 1360 向上取整 + 1 = 30 块');
+    eq(plan.coverage.usedChunks, 30);
+    eq(plan.coverage.droppedChunks, 0, '一块都不许丢');
+    eq(plan.coverage.coveredTo, 40000, '末块贴底 ⇒ 整张覆盖到最后一行');
+  });
+
+  await test('★ 不变量 2：只有超过块数上限才截断，且如实给出覆盖范围（T23 新上限 40）', () => {
+    const P = loadOffscreen({ lines: () => null }).self.__khOcrPure;
+    const plan = P.planChunks(1080, 72000);
     eq(plan.coverage.truncated, true);
     eq(plan.coverage.relaxed, true, '先放宽块高到 2000 重算块数（不许一上来就截断）');
-    eq(plan.chunks.length, 8, '仍超 ⇒ 只用前 8 块');
-    eq(plan.coverage.usedChunks, 8);
-    eq(plan.coverage.coveredTo, 14320, '覆盖原图前 14320px = 7×1760 + 2000');
-    eq(plan.coverage.totalH, 40000);
-    truthy(plan.coverage.droppedChunks > 0, '丢掉多少块也要给数（面板要说「共 N 块，已识别前 8 块」）');
+    eq(plan.chunks.length, 40, '仍超 ⇒ 只用前 40 块');
+    eq(plan.coverage.usedChunks, 40);
+    eq(plan.coverage.coveredTo, 70640, '覆盖原图前 70640px = 39×1760 + 2000');
+    eq(plan.coverage.totalH, 72000);
+    truthy(plan.coverage.droppedChunks > 0, '丢掉多少块也要给数（面板要说「共 N 块，已识别前 40 块」）');
   });
 
   await test('★ 不变量 4：试转判决是纯函数（行数最多者胜 / 同数取 conf / 只有严格更优才采用）', () => {
@@ -443,6 +454,66 @@ module.exports = async function run() {
       '没有 ci 就没法判"来自不同块" ⇒ 一条都不动');
   });
 
+  await test('★ T22：OCR 错字造成的近失重复（第二遍配对）—— 保守，只吃同一物理行', () => {
+    const P = loadOffscreen({ lines: () => null }).self.__khOcrPure;
+    /* 与上一条同一套几何：块 0 = y∈[0,400]、块 1 = y∈[264,664] ⇒ 重叠带 = [264,400] */
+    const pair = [
+      { x: 0, y: 0, w: 900, h: 400, axis: 'y' },
+      { x: 0, y: 264, w: 900, h: 400, axis: 'y' }
+    ];
+    const L = (t, y, ci, x, conf) => ({ t: t, conf: conf == null ? 95 : conf, y: y, x: x == null ? 10 : x, ci: ci });
+
+    eq(P.NEAR_MATCH_DICE, 0.8, 'Dice 线 0.8：真机样本 0.93，而「第12行/第13行」这类兄弟行只有 0.75 ⇒ 两边都分开');
+    eq(P.NEAR_MATCH_MAX_DY, 8, '同一物理行实测 |Δy| ≤ 5px（tight/flat 0–5、tall 2–4）⇒ 8 贴着实测；行距 24 的相邻行 |Δy| ≥ 19');
+    eq(P.NEAR_CONF_MARGIN, 4, '真机那条真错字对 conf=92（错字「最进」）× 96（正确「跟进」）⇒ 差 4 才敢配对');
+
+    /* ① 真机那一类：同一物理行、两块各读一次、各有错字（Dice 0.93）、**错字那条 conf 更低**
+     * ⇒ 只留一条，且留下的必须是 conf 高的正确读法（第一版"留 y 小"把真值吃了：474 → 473） */
+    const nm = P.mergeOverlap([L('慎377行 2026-10-12', 300, 0, 10, 92), L('第377行2026-10-12', 305, 1, 10, 96)], pair);
+    eq(nm.merged, 0, '逐字不等 ⇒ 第一遍不动它（这就是用户看到的残留重复）');
+    eq(nm.near, 1, '★ 第二遍近失配对吃掉一条');
+    eq(nm.lines.length, 1);
+    eq(nm.lines[0].t, '第377行2026-10-12', '★ 留 conf 更高的那条（92 的错字那条被丢）');
+    eq(nm.lines[0].conf, 96);
+    /* ①b 反过来：conf 高的是「慎377行」那条 ⇒ 留下的也换过来（不是按 y、不是按 ci） */
+    const nm2 = P.mergeOverlap([L('慎377行 2026-10-12', 300, 0, 10, 96), L('第377行2026-10-12', 305, 1, 10, 92)], pair);
+    eq(nm2.lines.length, 1);
+    eq(nm2.lines[0].t, '慎377行 2026-10-12');
+    /* ①c conf 一样（差 < 4）⇒ **两条都留**：宁可让用户看到重复，也不许猜错内容 */
+    eq(P.mergeOverlap([L('慎377行 2026-10-12', 300, 0, 10, 95), L('第377行2026-10-12', 305, 1, 10, 95)], pair).near, 0,
+      'conf 差 0 < 4 ⇒ 不动（T22 红线：不许误删真实内容）');
+    eq(P.mergeOverlap([L('慎377行 2026-10-12', 300, 0, 10, 95), L('第377行2026-10-12', 305, 1, 10, 98)], pair).near, 0,
+      'conf 差 3 < 4 ⇒ 也不动（差 4 才是真机验过的线）');
+
+    /* ② 反向守卫：同样一对错字（conf 差够），但相距 80px（**不同物理行**）⇒ 一条都不许吃 */
+    eq(P.mergeOverlap([L('慎377行 2026-10-12', 300, 0, 10, 92), L('第377行2026-10-12', 380, 1, 10, 96)], pair).near, 0,
+      '|Δy| = 80 ⇒ 不是同一行（真机里那对假匹配跨 139–148px，就靠这条挡）');
+    /* ③ 反向守卫：Dice 不够（兄弟行「第12行/第13行」= 0.75）⇒ 不吃 */
+    eq(P.mergeOverlap([L('第12行 12.00', 300, 0, 10, 90), L('第13行 12.00', 305, 1, 10, 96)], pair).near, 0,
+      'Dice 0.75 < 0.8 ⇒ 宁可留重复，也不吃内容');
+    /* ④ 短串不配（≤5 字 Dice 抖动大） */
+    eq(P.mergeOverlap([L('ab1', 300, 0, 10, 90), L('ab2', 305, 1, 10, 96)], pair).near, 0, '短串不配');
+    /* ⑤ 长度差 > 2 不配（防「短串是长串子串」） */
+    eq(P.mergeOverlap([L('北京 上海 广州', 300, 0, 10, 90), L('北京 上海 广州南站 东', 305, 1, 10, 96)], pair).near, 0,
+      '长度差过大不配');
+    /* ⑥ |Δx| 仍受 OVERLAP_MATCH_X 约束 */
+    eq(P.mergeOverlap([L('慎377行 2026-10-12', 300, 0, 10, 92), L('第377行2026-10-12', 305, 1, 40, 96)], pair).near, 0,
+      '|Δx| = 30 > 16 ⇒ 不是同一列');
+    /* ⑦ 一对一：原图里真的重复两遍（4 行）⇒ 只配掉 2 条、仍留 2 条 */
+    const dup = P.mergeOverlap([
+      L('慎377行 2026-10-12', 300, 0, 10, 92), L('慎377行 2026-10-12', 340, 0, 10, 96),
+      L('第377行2026-10-12', 300, 1, 10, 96), L('第377行2026-10-12', 340, 1, 10, 92)
+    ], pair);
+    eq(dup.lines.length, 2, '★ 真重复的内容不许被吃成 1 条');
+    /* ⑧ 逐字相等的仍走第一遍，两条通路不重叠 */
+    const ex = P.mergeOverlap([L('供应商 甲', 300, 0, 10, 95), L('供应商甲', 305, 1, 10, 95)], pair);
+    eq(ex.merged, 1);
+    eq(ex.near, 0, 'keyOf 相等 ⇒ 第一遍就吃掉，不该记到近失上');
+    /* ⑨ ci 必须不同：同块两条不许靠近失配对 */
+    eq(P.mergeOverlap([L('慎377行 2026-10-12', 300, 0, 10, 92), L('第377行2026-10-12', 305, 0, 10, 96)], pair).near, 0,
+      '同块 ⇒ 不在这里去重');
+  });
+
   await test('★ 第 4 项（端到端）：相邻两块各读一次的同一行只留一条，回执如实报 overlap', async () => {
     /* 真机取证（1080×11560/480 行）的形状：同一物理行被相邻两块各读一次，
      * 两次只在空白位置不同 —— 第 0 块读成「供应商 甲」（bbox y0=1400 ⇒ 原图 y=1400），
@@ -460,6 +531,7 @@ module.exports = async function run() {
     eq(res.rawLines, 2, '两块各读出 1 行（原始 2 行）');
     eq(res.lines, 1, '★ 同一物理行只留一条（旧代码在 sort 前只比 prev、且要 t 严格全等 ⇒ 这里会留 2 条）');
     eq(res.overlap.merged, 1, '回执必须如实报"合并了几条"');
+    eq(res.overlap.near, 0, 'T22 近失那一路不该抢第一遍的活（keyOf 相等 ⇒ near 记 0）');
     eq(res.overlap.maxDy, 0);
     eq(res.overlap.maxDx, 0);
     eq(res.bands, 6, '既有字段保持不动（additive）');
@@ -467,6 +539,46 @@ module.exports = async function run() {
     eq(res.text.split('\n').length, 1, '文本里也只有一行');
     truthy(res.text.indexOf('供应商 甲') >= 0, '同 y 时留先出现的那条（块 0）');
     eq(env.calls.recognize, 6, '长图 6 块 ⇒ 6 次识别（去重不该多跑一遍）');
+  });
+
+  await test('★ T22 兜底（端到端）：同块相邻两条只差空白 ⇒ 只留一条（重叠带外 1px 那对真机残留）', async () => {
+    /* 真机取证（tight 样张第 171 行）：同一物理行被相邻两块各读一次，块 2 那条 y=4079 落在重叠带
+     * 下界(4080)**外 1px** ⇒ mergeOverlap 的入池闸收不到它；旧兜底又是 `prev.t === l.t` 严格全等
+     * ⇒ 两行一路活到 text（用户看到重复行）。这里用"同一块内两条"把第一遍/第二遍都摘掉，
+     * 只剩兜底能兜住 —— 它必须按 `keyOf`（去空白）归一化判同一行。 */
+    const env = loadOffscreen({
+      lines: (i) => (i === 0
+        ? { conf: 99, lines: [
+            { t: '第171行12.00', conf: 99, y: 4079, x: 4 },
+            { t: '第171行 12.00', conf: 100, y: 4084, x: 4 }
+          ] }
+        : { conf: 92, lines: [] })
+    });
+    env.job({ type: MSG.OCR_IMAGE, requestId: 'r22', tabId: 7, keyword: '供应商', dataUrl: 'data:,W=1080;H=8000' });
+    const res = await env.result('r22');
+    eq(res.ok, true);
+    eq(res.lines, 1, '★ 空白差异不算两行（旧兜底严格全等 ⇒ 这里会留 2 条）');
+    eq(res.text.split('\n').length, 1, '落在页面文本里的也只有一行');
+    eq(res.overlap.merged, 0, '第一遍（跨块逐字相等）没参与');
+    eq(res.overlap.near, 0, '第二遍（近失配对）也没参与 —— 这活是兜底干的');
+    truthy(res.text.indexOf('第171行 12.00') >= 0, '★ 留 conf 高的那条（100 > 99）—— 真机靠这条选对原图写法「第171行 12.00」');
+    truthy(res.text.indexOf('第171行12.00') < 0, 'conf 低的那条不许留下');
+  });
+
+  await test('★ T22 兜底（端到端）：conf 持平时保 y 较小那条（同一条线两种读法不许两条都留）', async () => {
+    const env = loadOffscreen({
+      lines: (i) => (i === 0
+        ? { conf: 95, lines: [
+            { t: '供应商甲', conf: 95, y: 1400, x: 4 },
+            { t: '供应商 甲', conf: 95, y: 1403, x: 4 }
+          ] }
+        : { conf: 92, lines: [] })
+    });
+    env.job({ type: MSG.OCR_IMAGE, requestId: 'r22b', tabId: 7, keyword: '供应商', dataUrl: 'data:,W=1080;H=8000' });
+    const res = await env.result('r22b');
+    eq(res.ok, true);
+    eq(res.lines, 1, 'conf 持平也是一条（否则用户看到重复行）');
+    truthy(res.text.indexOf('供应商甲') >= 0, 'y 较小的那条胜出');
   });
 
   await test('★ 不变量 1：告知字段的判决（全丢 / 截断 / 方向可疑 / 唯一允许静默的情形）', () => {
@@ -477,6 +589,15 @@ module.exports = async function run() {
     eq(F({ lines: 9, rawLines: 12, conf: 88, suspicious: true }), 'tilted', '方向可疑 ⇒ 告知不可靠');
     eq(F({ lines: 9, rawLines: 12, conf: 40 }), 'tilted', '试转后仍 conf<50 ⇒ 不可靠');
     eq(F({ lines: 9, rawLines: 9, conf: 88 }), null, '**唯一**允许静默"未命中"：读到字、方向可信、确实没命中关键词');
+  });
+
+  await test('★ 没有关键词时不许赌 ASCII（2.0.1.17 右键任意图 OCR ⇒ 中文图要认得出）', () => {
+    const F = loadOffscreen({ lines: () => null }).self.__khOcrPure.langsForKeyword;
+    eq(F('').join('+'), 'chi_sim+eng', '★ 空关键词 ⇒ 中英双包（旧实现按 ASCII 判 ⇒ 只给 eng，中文图必然报「没认出文字」）');
+    eq(F(undefined).join('+'), 'chi_sim+eng', '缺字段同上（右键入口本来就不带关键词）');
+    eq(F('   ').join('+'), 'chi_sim+eng', '只有空白也当没有');
+    eq(F('华为').join('+'), 'chi_sim+eng', '有关键词时口径不变');
+    eq(F('AWS').join('+'), 'eng', '纯 ASCII 关键词仍只上 eng（快一倍）');
   });
 
   /* ---------------- 假引擎端到端：回执里到底有没有那些字段 ---------------- */
