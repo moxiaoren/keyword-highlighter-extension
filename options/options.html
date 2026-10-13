@@ -167,14 +167,14 @@
           <label class="kh-fld-label">正文字号默认值 (px)</label>
           <input class="kh-input" id="pf-noteFontSize" type="number" min="10" max="20" step="1">
         </div>
-        <!-- 面板默认宽度：min/max 由 options.js 从 KH.Config 的边界常量写进去（不在这里抄 160/600） -->
+        <!-- 面板默认宽度：min/max 由 options.js 从 KH.Config 的边界常量写进去（不在这里抄 200/600） -->
         <div class="kh-form-fld">
           <label class="kh-fld-label">面板默认宽度 (px)</label>
           <input class="kh-input" id="pf-notePanelWidth" type="number" step="10">
         </div>
       </div>
       <p class="kh-muted">「图片尺寸」管抓取字段值格里的缩略图/识别图（单个关键词留空即继承这里）。「字号」管面板里的<strong>笔记正文与表格</strong>（10–20px，默认 11）。</p>
-      <p class="kh-muted">「面板宽度」＝面板的<strong>默认宽度</strong>（<strong>160–600px，默认 250</strong>）：这里是<strong>长期值</strong>，改完以后每次打开面板都按它来，各站点共用这一份设置。想临时改宽，直接拖面板的<strong>右下角</strong>——那是<strong>临时值</strong>，只对当前这一次显示有效、<strong>不写回这里</strong>，刷新页面就回到上面的默认值。一句话：要「以后都这么宽」就在设置页改；只是这会儿嫌窄/嫌宽，拖右下角。</p>
+      <p class="kh-muted">「面板宽度」＝面板的<strong>默认宽度</strong>（<strong>200–600px，默认 250</strong>）：这里是<strong>长期值</strong>，改完以后每次打开面板都按它来，各站点共用这一份设置。想临时改宽，直接拖面板的<strong>右下角</strong>——那是<strong>临时值</strong>，只对当前这一次显示有效、<strong>不写回这里</strong>，刷新页面就回到上面的默认值。一句话：要「以后都这么宽」就在设置页改；只是这会儿嫌窄/嫌宽，拖右下角。</p>
       <p class="kh-muted">复制整段识别文字：<strong>点开大图，在右侧全文栏里选中后 Ctrl+C</strong>，也可以点全文栏自带的<strong>一键复制</strong>（该栏默认隐藏，点灯箱工具条上的<strong>眼睛</strong>开关才出现；栏一收起，复制按钮跟着一起藏起来）。图片条目上原来的 <strong>📋 一键复制已移除</strong>。命中词块点一下，复制的仍是它所在的<strong>整句</strong>。</p>
     </section>
 
@@ -443,7 +443,7 @@
             <li>同一处命中<strong>多个词</strong>时，条目上默认只显示<strong>最短</strong>的那一条；右边带一枚<strong>命中计数</strong>小标（如 <code>×3</code>），点开条目上的下拉箭头就能看到<strong>全部命中</strong>（多个词分多行列出），点其中一项可切换主显示。</li>
             <li>同一条命中不会为了多值就铺开成好几条 —— 多出来的词都在那枚小标的下拉里，面板更省地方。</li>
             <li>点缩略图＝看大图（灯箱）。该图的<strong>全部识别文字</strong>在<strong>右侧全文栏</strong>（浮层）里：它默认<strong>隐藏</strong>，点灯箱工具条上的<strong>眼睛</strong>开关才出现；栏里文字<strong>可选中</strong>，也可点栏里的<strong>一键复制</strong>，关掉大图即复位。<strong>图片条目上原来的 📋 复制按钮已移除</strong>，要整段文字请到这里取。</li>
-            <li>面板宽度：默认 <strong>250px</strong>；「重要笔记 → 面板默认宽度」里可调 <strong>160–600px</strong>（长期值），面板<strong>右下角</strong>随时能拖（临时值）—— 两者的区别见「📖 功能 → 注意事项」。</li>
+            <li>面板宽度：默认 <strong>250px</strong>；「重要笔记 → 面板默认宽度」里可调 <strong>200–600px</strong>（长期值），面板<strong>右下角</strong>随时能拖（临时值）—— 两者的区别见「📖 功能 → 注意事项」。</li>
           </ul>
         </div>
 
@@ -510,7 +510,7 @@
       <div class="kh-help">
         <h4>⚠️ 注意事项与已知局限（本轮）</h4>
         <ul>
-          <li><strong>「面板宽度」有两个值，别弄混</strong>：设置页「重要笔记 → 面板默认宽度」调的是<strong>默认值（长期值）</strong>，160–600px、默认 250px，面板每次打开都按它来；面板<strong>右下角</strong>直接拖出来的是<strong>临时值</strong>，只对当前这一次显示有效、<strong>不写回设置</strong>，刷新页面就回到默认值。要「以后都这么宽」就在设置页改；只是这会儿嫌窄/嫌宽，拖右下角即可。两处数值不一样是正常的，不是没生效。</li>
+          <li><strong>「面板宽度」有两个值，别弄混</strong>：设置页「重要笔记 → 面板默认宽度」调的是<strong>默认值（长期值）</strong>，200–600px、默认 250px，面板每次打开都按它来；面板<strong>右下角</strong>直接拖出来的是<strong>临时值</strong>，只对当前这一次显示有效、<strong>不写回设置</strong>，刷新页面就回到默认值。要「以后都这么宽」就在设置页改；只是这会儿嫌窄/嫌宽，拖右下角即可。两处数值不一样是正常的，不是没生效。</li>
           <li><strong>命中词后面那个小数字是什么</strong>：面板每条笔记的命中词后面跟的<strong>裸数字</strong>（如 <code>3</code>）不是次数单位，而是<strong>该词在本页命中的处数</strong>（命中 1 处时不显示小标，2 处起才出现）；点开可看全部命中。</li>
           <li><strong>「右键读图＝一次性同意」与「站点授权＝长期授权」</strong>：<strong>下一轮将支持</strong>在网页图片上点右键直接识别 —— <strong>右键即代表你同意本次代为读取这张图</strong>，只读你点的那一张，<strong>不</strong>写进白名单。而跨域图床的图，扩展默认读不到，必须在「图片识别 → 跨域图片」里<strong>按站点显式授权</strong>后，自动扫描时才会代读 —— 那是长期授权，登记一次以后都算数。两者不冲突：<strong>一次性的用右键，常去的站点进名单</strong>。<strong>本轮还没有右键入口</strong>，要读跨域图只能走站点授权。</li>
           <li><strong>跨域图未授权时的表现</strong>：被标成「跨域（未授权）」的图片，默认视图里<strong>看不到</strong>，只在面板的「<strong>显示全部 (N)</strong>」里出现；把该站点加进「跨域图片」白名单后才会正常处理（既有行为，本轮不修）。</li>
@@ -567,7 +567,7 @@
         <h4>Q11：更新日志去哪看？</h4>
         <p>设置页「ℹ️ 关于 → 版本信息」，可用<strong>右侧目录</strong>按版本号跳转；完整历史在<strong>欢迎页</strong>。</p>
         <h4>Q12：设置页改了「面板默认宽度」，为什么面板没跟着变？</h4>
-        <p>「面板默认宽度」调的是<strong>默认值</strong>（以后每次打开的面板宽度）；没拖过<strong>右下角</strong>的面板，这会儿正开着也会<strong>立刻</strong>跟着变。一旦拖过<strong>右下角</strong>，面板就按你拖出来的宽度显示 —— 那是<strong>临时值</strong>，只作用在页面上、不写进设置，此时再改设置页也不会顶掉它，<strong>刷新页面就回到默认值</strong>。填 160–600 之外会自动夹到边界，填了非数字则回到 250。</p>
+        <p>「面板默认宽度」调的是<strong>默认值</strong>（以后每次打开的面板宽度）；没拖过<strong>右下角</strong>的面板，这会儿正开着也会<strong>立刻</strong>跟着变。一旦拖过<strong>右下角</strong>，面板就按你拖出来的宽度显示 —— 那是<strong>临时值</strong>，只作用在页面上、不写进设置，此时再改设置页也不会顶掉它，<strong>刷新页面就回到默认值</strong>。填 200–600 之外会自动夹到边界，填了非数字则回到 250。</p>
         <h4>Q13：图片条目上的「📋 一键复制」去哪了？</h4>
         <p>已移除（图片条目上不再有那个按钮），完整识别文字请到<strong>大图（灯箱）右侧全文栏</strong>里取：点<strong>一键复制</strong>，或在该栏里<strong>选中后 Ctrl+C</strong>；该栏默认隐藏，用灯箱工具条上的<strong>眼睛</strong>开关显示 / 隐藏，复制按钮跟着它一起显隐。面板里<strong>点命中的词块</strong>，复制的仍是它所在的<strong>整句</strong>。</p>
       </div>

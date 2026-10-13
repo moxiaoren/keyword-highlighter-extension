@@ -1073,11 +1073,21 @@
    * `opts.sx/sy/sw/sh` 是**源矩形**（分块用）：裁剪与缩放**一趟完成**，
    * 不落中间 PNG —— 长图 6 块能省 6 次编解码。
    */
-  async function prepareBlob(blob, opts) {
+  /* 【T51】解码计数：本模块所有 `createImageBitmap` 都必须走 `openBitmap`，读数暴露在
+   * `self.__khOcrDebug().decodes`（累计）与回执的 `decodes`（本任务）里。纯计数，不参与业务逻辑。 */
+  let decodeCount = 0;
+  async function openBitmap(blob) {
+    decodeCount += 1;
+    return createImageBitmap(blob);
+  }
+
+  async function prepareBlob(blob, opts, borrowed) {
     const o = opts || {};
-    let bitmap = null;
+    /* 【T51】`borrowed` = 调用方已经解好的整图 bitmap（长图逐块裁时复用同一张）：
+     * 给了就不再解码，**也不许在这里 close** —— 见下面 `bitmap.close()` 处的说明。 */
+    let bitmap = borrowed || null;
     try {
-      bitmap = await createImageBitmap(blob);
+      if (!bitmap) bitmap = await openBitmap(blob);
     } catch (e) {
       throw Object.assign(new Error('这张图无法解码（可能不是图片或已失效）'), { code: 'decode-failed' });
     }
@@ -1096,7 +1106,9 @@
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(bitmap, sx, sy, sw, sh, margin, margin, cw, ch);
-    bitmap.close();
+    /* 【T51】借来的 bitmap（`borrowed`）**不属于本函数**：它由整任务的调用方（`runJob`）在
+     * `finally` 里统一 close。这里关掉 = 第一个块识别完、后面所有块全炸（已解好的图不复存在）。 */
+    if (!borrowed) bitmap.close();
 
     const pre = { scale: Number(scale.toFixed(2)), gray: false, invert: false, span: 0 };
     try {
@@ -1159,21 +1171,24 @@
   }
 
   /**
-   * 量出**原图**尺寸（只解码、不做任何处理）。
+   * 【T51】量出**原图**尺寸 + **交出仍打开**的整图 bitmap（由调用方负责 close）—— 合掉了原来那次
+   * "量完就关"的解码。
    *
-   * 必须有这一步：切块与"块内 1:1"都建立在**原图坐标**上。旧路径拿"降采样后的画布尺寸"去切条，
+   * 必须有量尺寸这一步：切块与"块内 1:1"都建立在**原图坐标**上。旧路径拿"降采样后的画布尺寸"去切条，
    * 于是 1080×8000 先被缩成 216×1600 —— 正文小字在那一刻就没了，后面怎么切都救不回来。
+   *
+   * 长图跑一趟原本是「这里解一次拿宽高 + 每块 `prepareBlob` 各解一次同一张图」（h=11560 / 7 块
+   * ⇒ 8 次解码、整个任务期间压着好几张整图级位图）。这里与 `prepareBlob` 的 `borrowed` 参数配成
+   * 一对：解码 8 → 1。
    */
-  async function measureBlob(blob) {
+  async function openSized(blob) {
     let bmp = null;
     try {
-      bmp = await createImageBitmap(blob);
+      bmp = await openBitmap(blob);
     } catch (e) {
       throw Object.assign(new Error('这张图无法解码（可能不是图片或已失效）'), { code: 'decode-failed' });
     }
-    const w = bmp.width, h = bmp.height;
-    bmp.close();
-    return { w: Math.max(1, w), h: Math.max(1, h) };
+    return { w: Math.max(1, bmp.width), h: Math.max(1, bmp.height), bitmap: bmp };
   }
 
   /* ---------------- 串行队列 ---------------- */
@@ -1226,6 +1241,9 @@
     const t0 = performance.now();
     let kind = '';
     let engineReason = '';
+    /* 【T51】整图 bitmap 的唯一持有者：`openSized` 交出来、`finally` 里 close（正常/异常/回落都走那里）。
+     * 声明在 `try` 之外，`finally` 才看得见它。 */
+    let baseBmp = null;
     const reply = (payload) => post(Object.assign({
       requestId: job.requestId, tabId: job.tabId, src: job.src, keyword: job.keyword
     }, payload));
@@ -1246,8 +1264,14 @@
         worker = await getEngine(langs);
       }
       const got = await bytesFromRequest(job);
-      /* **原图尺寸**，不是预处理后的画布尺寸：切块与"块内 1:1"都建立在原图坐标上 */
-      const orig = await measureBlob(got.blob);
+      /* 【T51】整图只解一次：`openSized` 量完尺寸**把 bitmap 留在打开状态交给本任务**，
+       * deg 0 的每一块都借它裁（`chunkFor` → `prepareBlob(..., f.bitmap)`），
+       * 本函数在 `finally` 里统一 close。关闭责任链：**谁 open 谁 close** ——
+       * `rotateBlob`/`estimateTilt` 解的是它们自己的 blob（自解自关），与本图无关。
+       * `decodes`（本任务解码次数）随回执上报，供真机核对"8 → 1"。 */
+      const decBefore = decodeCount;
+      const orig = await openSized(got.blob);
+      baseBmp = orig.bitmap;
       const t1 = performance.now();
       /* PSM 只有 Tesseract 有（PP-OCR 是"检测给框 + 逐框识别"，没有这个旋钮） */
       const setPsm = async (psm) => {
@@ -1341,7 +1365,7 @@
 
       /** 把整图转 deg 度（**只在试转真的发生时**才被调用） */
       async function rotateBlob(blob, w, h, deg) {
-        const bmp = await createImageBitmap(blob);
+        const bmp = await openBitmap(blob);
         /* 【任意角度（S3-① 小角度纠偏要用）】外接矩形按 |cos|/|sin| 算；
          * 90 的整数倍自动退化成原来的 `swap ? h : w`。 */
         const rad = (deg * Math.PI) / 180;
@@ -1384,9 +1408,9 @@
        *   ① 结构闸：0° 的方差太低（整幅没有"成行的字"，例如图是躺倒的）⇒ 直接弃权，交给试转；
        *   ② 相对闸：候选要明显优于 0°（≥8%），由纯函数 `pickTilt` 判。
        */
-      async function estimateTilt(blob) {
-        let bmp = null;
-        try { bmp = await createImageBitmap(blob); } catch (e) { return 0; }
+      /* 【T51】参数是**调用方已解好的整图位图**（借用）：本函数不解码、也不 close —— 原来它自己
+       * `createImageBitmap(got.blob)` 又解了一遍同一张图（这份像素早就有了）。 */
+      async function estimateTilt(bmp) {
         const sc = Math.min(1, 360 / bmp.width);
         const w = Math.max(32, Math.round(bmp.width * sc));
         const h = Math.max(32, Math.round(bmp.height * sc));
@@ -1395,7 +1419,6 @@
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, w, h);
         ctx.drawImage(bmp, 0, 0, w, h);
-        bmp.close();
         const d = ctx.getImageData(0, 0, w, h).data;
         const g = new Uint8Array(w * h);
         for (let i = 0, p = 0; i < d.length; i += 4, p++) g[p] = (d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114) | 0;
@@ -1411,8 +1434,10 @@
         if (frames.has(k)) return frames.get(k);
         let f;
         if (!deg) {
-          /* 首帧直接用**原图 blob**（不先整图预处理）—— 每一块自己裁自己缩，块内 1:1 */
-          f = { deg: 0, blob: got.blob, w: orig.w, h: orig.h };
+          /* 首帧直接用**原图 blob**（不先整图预处理）—— 每一块自己裁自己缩，块内 1:1。
+           * 【T51】顺手把那张**已经解好的整图 bitmap** 挂上来：同一帧的所有块共用它，
+           * 不再每块解一次同一张图（`chunkFor` 把它当 `borrowed` 传给 `prepareBlob`）。 */
+          f = { deg: 0, blob: got.blob, w: orig.w, h: orig.h, bitmap: baseBmp };
         } else {
           const r = await rotateBlob(got.blob, orig.w, orig.h, deg);
           f = { deg: deg, blob: r.blob, w: r.w, h: r.h };
@@ -1445,7 +1470,7 @@
           kk !== 1 ? { scale: kk * scaleFor(c.w, c.h) } : null,
           /* ppocr 吃画布 ⇒ 别产出没人读的 PNG（tesseract 仍需 blob） */
           kind === ENGINE_PPOCR ? { noBlob: true } : null
-        ));
+        ), f.bitmap);   // 【T51】deg 0 的块借整图那张 bitmap（试转出来的帧没有 ⇒ undefined ⇒ 自己解）
         prepped.set(key, pre);
         return pre;
       }
@@ -1567,7 +1592,10 @@
          * ⇒ **对本来正常的图零副作用**。只在 `needsRotation` 已成立时才走这段，正常图不花这个钱。 */
         let tiltDeg = 0;
         try {
-          const est = await estimateTilt(got.blob);
+          /* 【T51】借 `baseBmp`（已解的整图）来估斜 —— 这里原本又解了一次**同一张图**：
+           * 长图一趟变成"量尺寸 1 次 + 逐块 7 次 + 估斜 1 次"共 9 次解码。借来的位图由
+           * `runJob` 统一 close，`estimateTilt` 不碰它的生命周期。 */
+          const est = await estimateTilt(baseBmp);
           if (est) {
             for (const d2 of [est, -est]) {
               const s2 = await scanFrame(d2, false);
@@ -1628,6 +1656,8 @@
         overlap: overlapStat,
         lines: finalLines.length, rawLines: chosen.stat.rawLines,
         notice: notice, coverage: cov, orientation: orientation,
+        /* 【T51】本任务的整图解码次数（长图 7 块原本 = 1 次量尺寸 + 7 次逐块 = 8）。 */
+        decodes: decodeCount - decBefore,
         queueMs: Math.round(t1 - t0), ocrMs: Math.round(performance.now() - t1),
         totalMs: Math.round(performance.now() - t0)
       });
@@ -1637,6 +1667,13 @@
         error: String((err && err.message) || err),
         engine: kind || null, engineReason: engineReason || ''
       });
+    } finally {
+      /* 【T51】整图 bitmap 的**唯一 close 点**：正常回执、异常、引擎回落、提前 return 全都会经过这里。
+       * 放到 `prepareBlob` 里关就成了"第一块识别完、其余块全炸"（那张图已经不存在了）。 */
+      if (baseBmp) {
+        try { baseBmp.close(); } catch (e) { /* 已关/已失效：忽略 */ }
+        baseBmp = null;
+      }
     }
   }
 
@@ -1658,6 +1695,8 @@
     creating: !!creating,
     queue: queue.length,
     draining: draining,
+    /* 【T51】本 offscreen 文档累计的 `createImageBitmap` 次数（每次 OCR 任务的 +N 见回执 `decodes`）。 */
+    decodes: decodeCount,
     langs: (engine && engine.langs) || [],
     /** 主引擎（PP-OCR）与会话级回落状态（S2）：`session.reason` 非空 = 本次会话已回落 */
     ppocr: !!ppocr,

@@ -580,11 +580,15 @@
 .kh-fld-wide { flex: 1 1 100%; }
 /* 标签与控件**同一行**（`inline: true`）：如「尺寸：[ ]」，不再"标签一行 + 输入一行"。
  * `flex-basis: 60px` 而不是半行宽 —— 这样它能和前面的胶囊行**挤在同一行**（用户要求
- * 「复用底色 + 尺寸」跟在「重要」后面一行展示），多出来的空间再给输入框（`flex-grow: 1`）。 */
-.kh-fld-inline { flex: 1 1 60px; flex-direction: row; align-items: center; gap: 6px; }
+ * 「复用底色 + 尺寸」跟在「重要」后面一行展示），多出来的空间再给输入框（`flex-grow: 1`）。
+ * T56：**必须有宽度下限**。basis 只有 60px + 标签不换行 ⇒ 并排时容器只分到 89px、标签吃掉 60px，
+ * 数字输入框被压到 **clientWidth 21px（内宽 3px）**，当前值一个字都看不见（真机实测）。
+ * 下限 = 最长标签 60 + 间距 6 + 数字框最小可读 44 = 110；父容器 `flex-wrap: wrap` 会让放不下的
+ * 那一个自己换行，而不是把输入框压成 0。 */
+.kh-fld-inline { flex: 1 1 60px; min-width: 110px; flex-direction: row; align-items: center; gap: 6px; }
 .kh-fld-inline .kh-fld-label { flex: 0 0 auto; white-space: nowrap; }
 .kh-fld-inline .kh-fld-label::after { content: '：'; }
-.kh-fld-inline .kh-input { flex: 1 1 auto; min-width: 0; }
+.kh-fld-inline .kh-input { flex: 1 1 auto; min-width: 44px; }
 .kh-fld-bool { display: flex; align-items: center; gap: 6px; }
 /* 无抓取字段时「识别图片文字」是**真禁用**（点击无效），但此前没有置灰规则 → 看起来还是能点（K70 补） */
 .kh-fld-bool.is-disabled { opacity: .5; }

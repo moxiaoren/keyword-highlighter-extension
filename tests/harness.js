@@ -181,6 +181,37 @@ class ShimElement {
   getBoundingClientRect() { return this._rect || { top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0 }; }
 
   /**
+   * 事件：垫片长期**一个监听器都没有** ⇒ `panel.ensure()` 一挂 click 委托就抛（T38），
+   * 面板的 DOM 交互通路在单测里根本走不起来。这里只给本工程真正需要的那一层：
+   * 同类型多个监听器按注册序、**冒泡**（影子根再接到 host，真实 DOM 里 click 是 composed）、
+   * `stopPropagation` 生效。不实现捕获阶段 / once / passive，也不解析事件对象 ——
+   * 用例自己传 `{ type, ... }`，缺的回调由这里补上。
+   */
+  addEventListener(type, fn) {
+    this._ev = this._ev || {};
+    this._ev[type] = (this._ev[type] || []).concat(fn);
+  }
+  removeEventListener(type, fn) {
+    const list = this._ev && this._ev[type];
+    if (!list) return;
+    const i = list.indexOf(fn);
+    if (i >= 0) list.splice(i, 1);
+  }
+  dispatchEvent(ev) {
+    const type = ev && ev.type;
+    if (!type) return true;
+    if (!ev.target) ev.target = this;
+    if (typeof ev.preventDefault !== 'function') ev.preventDefault = () => { ev.defaultPrevented = true; };
+    if (typeof ev.stopPropagation !== 'function') ev.stopPropagation = () => { ev._stop = true; };
+    for (let n = this; n; n = n.parentNode || n.host || null) {
+      const list = (n._ev && n._ev[type]) || [];
+      for (const fn of list.slice()) fn.call(n, ev);
+      if (ev._stop) break;
+    }
+    return !ev.defaultPrevented;
+  }
+
+  /**
    * innerHTML —— 垫片里也提供，因为被测代码用它做"HTML 转义"（`div.textContent = s; return div.innerHTML`）
    * 与"插入自产表格"。只支持本工程实际用到的子集：无属性的常规标签 + 文本。
    */

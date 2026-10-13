@@ -91,9 +91,14 @@ module.exports = async function run() {
     const red = C.KEYS.filter((k) => (C.dump().class[k] || 'note') === 'bad').sort();
     eq(red.join(','), 'engine-unavailable,fail,timeout', '允许标红（bad 类）的键只能是这三个');
     /* 「读不到图 / 缺资产」必须是中性 note，不是红 */
-    for (const k of ['cross-origin', 'lazy', 'invisible', 'too-small', 'no-src', 'scheme', 'bad-url', 'tainted', 'lang-missing', 'model-missing', 'engine-lost', 'truncated']) {
+    for (const k of ['lazy', 'invisible', 'too-small', 'no-src', 'scheme', 'bad-url', 'tainted', 'lang-missing', 'model-missing', 'engine-lost', 'truncated']) {
       eq(C.stateClass(itemFor(k)), 'note', k + ' 应该是中性 note（不是故障）');
     }
+    /* T21（用户 2026-10-13 拍板）：跨域未授权**单独一类 action** —— 不红（读不到图不是故障），
+     * 也不能混进 note（note 是"用户没事可做"的纯告知；这条用户照着域名填一行就能读）。
+     * 面板的 imgRowVisibleByDefault() 依赖这个类：默认视图必须把它露出来，不许静默隐藏。 */
+    eq(C.stateClass(itemFor('cross-origin')), 'action', '跨域未授权必须是 action 类（默认视图常显）');
+    eq(C.icon(itemFor('cross-origin')), '⚙', 'action 类的图标（去设置页动手）');
   });
 
   await test('★ 不变量 9：面板不再自己写死状态类与文案（源码契约）', () => {
@@ -109,8 +114,8 @@ module.exports = async function run() {
     const MOVED = ['读不到像素', '图还没加载', '图当前不可见', '原图太小', '识别引擎还没准备好语言包', '跨域（未授权'];
     const back = MOVED.filter((s) => src.indexOf(s) >= 0);
     eq(back.length, 0, 'important-note.js 里不该再硬编码这些文案（改文案请去 src/ui/ocr-copy.js）：' + back.join('、'));
-    /* 样式表里 `wait` / `note` 两个类必须真有定义，否则"不红"是假的 */
-    for (const cls of ['khin-imgtag.wait', 'khin-imgtag.note']) {
+    /* 样式表里 `wait` / `note` / `action` 三个类必须真有定义，否则"不红"和"要你动手"都是假的 */
+    for (const cls of ['khin-imgtag.wait', 'khin-imgtag.note', 'khin-imgtag.action']) {
       truthy(src.indexOf(cls) >= 0, '缺少样式 ' + cls + '（状态类没有样式就等于没生效）');
     }
   });

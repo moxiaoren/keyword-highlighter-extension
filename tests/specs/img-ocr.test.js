@@ -446,4 +446,54 @@ module.exports = async function run() {
     eq(O.items()[0].ocrMs, 812, '★ 重建后耗时徽标必须还在（丢了面板上「本次识别耗时」整列空掉）');
     eq(KH.OcrCopy.costLabel(O.items()[0]), '0.8s', '面板文案照旧出真实数字（0.8s）');
   });
+
+  /* ------------------------------------------------------------------
+   * T55：同一张图被**两条规则**抓到时只许识别一次
+   * ------------------------------------------------------------------
+   * 现场（用户报）：两个关键词都开了「识别图片文字」、抓的是同一个字段 ⇒ 同一张图各建一条条目
+   * （键 = `ruleId|src`）。识别是按**图片**算的，旧实现却按条目算：排队循环逐条 `submit()`，
+   * 而 `submit()` 顶部只看额度、不看"这张图已经在飞" ⇒ 一张图发两次（4 张图 = 8 次识别）。
+   * 口径：提交按 `src` 去重；结果 / 超时 / 同步失败都扇给同 `src` 的每条；两条的匹配文本
+   * 各按自己的规则算、面板行数照旧（**禁**"合并成一行"）。
+   */
+  const srcImg = (src) => { const im = fakeImg({ src: src }); im.naturalWidth = 100; im.naturalHeight = 100; return im; };
+  const asRule = (a, id) => { a.rule.ruleId = id; return a; };
+
+  await test('★ 同一张图两条规则：只发 1 次请求，回执回来两条都落地（各按自己的规则匹配）', () => {
+    KH.features.get('img-ocr').clear(null, { reason: 'destroy' });
+    const before = (global.__OCR_SENT__ || []).length;
+    const src = 'data:image/png;base64,iVBORw0KGgoT55a';
+    const a1 = anchorWith([srcImg(src)]);
+    const a2 = asRule(anchorWith([srcImg(src)]), 'kOcrUnitB');
+    O.build({}, {}, [hitOf(a1), hitOf(a2)]);
+    eq(O.items().length, 2, '两条规则各一条条目（面板行数照旧，不许合并成一行）');
+    eq((global.__OCR_SENT__ || []).length - before, 1,
+      '★ 同一张图只发一次（旧实现两条各发一次 ⇒ 2 次：识别按图片算，不按条目算）');
+    driveOcrResults(null, before);
+    const items = O.items();
+    eq(items.filter((it) => it.state === 'done').length, 2,
+      '★ 回执要把同 src 的孪生条目一起落地（旧实现只更新提交的那条，另一条永远停在「识别中」）');
+    eq(items[0].matched.length, 1, '第一条按自己的规则算出匹配文本');
+    eq(items[1].matched.length, 1, '第二条也按自己的规则算出匹配文本');
+  });
+
+  await test('★ 4 张图 × 2 条规则 = 8 条条目 ⇒ 只发 4 次（去重不许越过 MAX_INFLIGHT）', () => {
+    KH.features.get('img-ocr').clear(null, { reason: 'destroy' });
+    const before = (global.__OCR_SENT__ || []).length;
+    const hits = [];
+    for (let i = 0; i < 4; i++) {
+      const src = 'data:image/png;base64,iVBORw0KGgoT55b' + i;
+      hits.push(hitOf(anchorWith([srcImg(src)])));
+      hits.push(hitOf(asRule(anchorWith([srcImg(src)]), 'kOcrUnitB' + i)));
+    }
+    O.build({}, {}, hits);
+    eq(O.items().length, 8, '4 张图 × 2 规则 = 8 条条目');
+    eq((global.__OCR_SENT__ || []).length - before, 4,
+      '首批只发 4 次（满额就停 —— 上限仍然生效）');
+    truthy(O.inflightCount() <= 4, '并发上限仍受 MAX_INFLIGHT 约束（不许靠去重绕过）');
+    driveOcrResults(null, before);
+    eq((global.__OCR_SENT__ || []).length - before, 4,
+      '★ 全页 4 张图总共只发 4 次（旧实现：首批 4 张各发一次，额度归还后又把孪生条目各补发一次 ⇒ 8 次）');
+    eq(O.items().filter((it) => it.state === 'done').length, 8, '4 张图的结果把 8 条全部落地');
+  });
 };

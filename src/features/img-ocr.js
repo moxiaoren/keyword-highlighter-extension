@@ -352,6 +352,7 @@
         it.error = '识别引擎长时间没有回应（已超时）';
         it.errorCode = 'timeout';
       }
+      failTwin(rec.src, rec.key, '识别引擎长时间没有回应（已超时）', 'timeout');   // T55
     }
     if (n) notify();
     if (n) pump();                                   // 超时收口也归还了额度 ⇒ 补发队里的图
@@ -366,9 +367,37 @@
     if (sweepTimer && typeof sweepTimer.unref === 'function') sweepTimer.unref();
   }
 
+  /**
+   * 【T55】**同一张图的条目要整组走**：两条规则抓同一字段时，同一个 `src` 会各建一条条目
+   * （键 = `ruleId|src`）。识别是按**图片**算的 —— 提交按 `src` 去重，结果 / 超时 / 同步失败
+   * 也都必须扇给同 `src` 的另一条，否则孪生条目会永远停在「识别中」。
+   * @param {string} src 图片地址（空串＝没地址、按序号建的条目，不参与分组）
+   * @param {string} [exceptKey] 已经单独处理过的那条，避免重复写
+   */
+  function sameSrcItems(src, exceptKey) {
+    const out = [];
+    if (!src) return out;
+    for (const it of items.values()) if (it.src === src && it.key !== exceptKey) out.push(it);
+    return out;
+  }
+
+  /** 同 `src` 的孪生条目一起落失败态（只动还在等结果的那条） */
+  function failTwin(src, exceptKey, error, code) {
+    for (const it of sameSrcItems(src, exceptKey)) {
+      if (it.state !== 'pending') continue;
+      it.state = 'fail';
+      it.error = error;
+      if (code) it.errorCode = code;
+    }
+  }
+
   function submit(entry, cfg) {
     if (quotaUsed() >= MAX_INFLIGHT) return false;
     const cls = entry.cls;
+    /* 【T55】这张图**已经在飞**就不重复发：旧实现顶部只看额度，排队循环按条目逐条提交
+     * ⇒ 两条规则抓同一张图时各发一次（4 张图 = 8 次识别）。这里只把它置「识别中」，
+     * 结果回来由 `onResult` 扇给同 `src` 的每条（缓存与额度都只按图片算一次）。 */
+    if (cls.src && inflight.has(cls.src)) { entry.state = 'pending'; return false; }
     let payload = null;
     if (cls.viaCanvas) {
       let dataUrl = null;
@@ -404,6 +433,7 @@
           releaseHold(token);
           entry.state = 'fail';
           entry.error = (res && res.error) || 'OCR 引擎未响应';
+          failTwin(cls.src, entry.key, entry.error, '');   // T55：这张图的孪生条目一起落失败
           notify();
           pump();                                    // 额度已归还 ⇒ 把队里的接着发
         }
@@ -413,6 +443,7 @@
       releaseHold(token);
       entry.state = 'fail';
       entry.error = String((e && e.message) || e);
+      failTwin(cls.src, entry.key, entry.error, '');     // T55：同上
       notify();
       pump();                                        // 同上：同步失败也占过一次额度
     }
@@ -466,7 +497,11 @@
 
     /* 结果对应的那条（可能因为页面重建而不在了：那就只更新缓存，不动 UI） */
     const entry = key ? items.get(key) : null;
-    const targets = entry ? [entry] : Array.from(items.values()).filter((it) => it.src && it.src === src);
+    /* 【T55】结果属于**一张图**：同 `src` 的条目要一起更新（两条规则各一条）。
+     * 旧实现写成 `entry ? [entry] : 同 src 全部` ⇒ 命中 token 那张时孪生条目拿不到结果。 */
+    const targets = [];
+    if (entry) targets.push(entry);
+    for (const it of sameSrcItems(src, entry ? entry.key : null)) targets.push(it);
     for (const it of targets) {
       if (msg.ok) {
         it.state = 'done';

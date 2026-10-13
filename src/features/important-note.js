@@ -45,6 +45,11 @@
   const STYLE = `
     :host { all: initial; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
+    /* 键盘焦点环自己给（F4.7，用户 2026-10-13 拍板「做吧」）。原来全靠 Chromium 默认环：
+     * 默认环的配色由浏览器定、与面板的蓝紫主题无关，深色主题下不够显眼。只认 :focus-visible
+     * —— 鼠标点击不留环；色走 tokens 的 --brand-deep（本项目面板模板是门禁的扫描盲区，
+     * 这里按同文件既有写法给字面兜底）。 */
+    :focus-visible { outline: 2px solid var(--brand-deep, #3579c2); outline-offset: 1px; }
     .khin-wrap {
       /* 面板默认宽度的**唯一真源**（T26 / 用户 2026-10-12：200 → 250）。
        * 设置页选了别的值 ⇒ panel.render() 把同一个变量写成这一元素上的**内联**样式（内联压过本行）
@@ -78,11 +83,11 @@
     /* ---------- 展开态：面板 ----------
      * 默认宽 250px（用户 2026-10-12；2026-10-11 那轮的 360 → 300 → 200 已是上一版口径），
      * **可经设置页调整**（变量 --khin-panel-w，定义处在 .khin-wrap）。
-     * min-width 必须跟着降到 160px —— CSS 里 min-width 压过 width，只改 width 等于白改。
+     * min-width 必须跟着抬到 200px（用户 2026-10-13 拍板：160 → 200）—— CSS 里 min-width 压过 width，只改 width 等于白改。
      * 宽度不再写死在这里：唯一真源是 .khin-wrap 上的 --khin-panel-w；applyPosition() 的水平钳位
      * 读面板**实测**宽度，也不再抄一个字面量。 */
     .khin-panel {
-      width: var(--khin-panel-w); min-width: 160px; max-width: calc(100vw - 32px);
+      width: var(--khin-panel-w); min-width: 200px; max-width: calc(100vw - 32px);
       max-height: calc(100vh - 24px); background: #fff;
       border: 1px solid #e3e8f0; border-radius: 10px;
       box-shadow: 0 8px 28px rgba(0,0,0,.18);
@@ -266,7 +271,8 @@
     }
     /* 「显示全部 / 只看命中」= 人工复核入口（用户 2026-10-06：面板以命中为目的，
        没命中的图默认不展示，但必须留一条能打开的渠道）。放在题头右侧、箭头左边。
-       2026-10-11：面板收窄后改短标签「全部 N / 只命中」，完整语义挪到 title。 */
+       2026-10-11 曾为 200px 收窄改短标签「全部 N / 只命中」；F2.1（2.0.1.16）默认宽已回
+       250px，文案恢复成自解释的「显示全部 N / 只看命中」，title 仍挂完整句兜底。 */
     .khin-imghead .khin-imgall {
       margin-left: auto; color: #2563eb; font-size: 11px; font-weight: 500;
       cursor: pointer; text-decoration: underline; flex: 0 0 auto; white-space: nowrap;
@@ -336,12 +342,17 @@
      * ⚠️ 这段样式在模板字符串里，注释里**不能出现反引号**（会把模板提前闭合）。 */
     .khin-imgtag.wait { background: #e2e8f0; color: #475569; }
     .khin-imgtag.note { background: #f1f5f9; color: #475569; }
+    /* T21（用户 2026-10-13 拍板）：跨域未授权既不是故障（不许红）也不是普通告知（用户没事可做）——
+     * 它是"去设置页把这个域名填进去就行" ⇒ 用 info 那一族语义色（与上面的 hit 一样走 token + fallback，
+     * 不新造色值）。它同时是唯一的 action 类，默认视图常显，见 imgRowVisibleByDefault()。 */
+    .khin-imgtag.action { background: var(--info-soft, #e7f0fc); color: var(--info, #1565c0); }
     /* 图标跟着同一个状态类走色（类名仍由 KH.OcrCopy.stateClass 给，面板不自己挑字符） */
     .khin-imgico.hit { color: var(--success-strong, #15803d); }
     .khin-imgico.miss { color: #94a3b8; }
     .khin-imgico.bad { color: #b91c1c; }
     .khin-imgico.wait { color: #64748b; }
     .khin-imgico.note { color: #64748b; }
+    .khin-imgico.action { color: var(--info, #1565c0); }
     /* 命中词块（2026-10-09 用户裁决）：面板上只留命中的词，点它复制**它所在的整句**，
      * 整段识别文本改到光箱右侧与悬停说明里 —— 面板不再被一张图的长文本撑开。
      * 缩略图下那条「复制全文」按钮已按用户 2026-10-12 裁决删除，样式与类名一并删净；
@@ -1212,7 +1223,7 @@
        * 变量。写在 this.root（= .khin-wrap，变量定义处也在那条规则里 ⇒ 内联压过规则里的默认值），
        * 面板宽度与命中词块的上限共用这一个变量。
        * 归一只有 config 的 normalizePanelWidth 一处（读路径 normalize 调的是同一个函数）：手改
-       * storage / 导入旧备份塞进 0 / 负值 / 非数字时回默认 250，越界夹到 160–600 ——
+       * storage / 导入旧备份塞进 0 / 负值 / 非数字时回默认 250，越界夹到 200–600 ——
        * 面板宽度是布局承重值，坏值绝不许把它变成 0 宽。 */
       this.root.style.setProperty('--khin-panel-w',
         KH.Config.normalizePanelWidth(cfg && cfg.notePanelWidth) + 'px');
@@ -1312,6 +1323,8 @@
 
       // 展开态：外壳只创建一次（避免每次命中变化重播入场动画 → 闪烁）
       if (!this.panelEl) {
+        /* 题头措辞（含箭头字符）一律取自 KH.OcrCopy.VIEW（F3.4：原来两个题头逐字相同，
+         * 读屏听不出展开的是哪一块）；aria-controls 各自指向受控区（笔记正文 / 图片列表）。 */
         this.root.innerHTML =
           '<div class="khin-panel">' +
             '<div class="khin-header">' +
@@ -1320,20 +1333,20 @@
               '<span class="khin-header-count">0 条</span>' +
               '<button class="khin-header-btn" data-act="min">—</button>' +
             '</div>' +
-            '<div class="khin-notebar" role="button" tabindex="0" aria-expanded="true" hidden>' +
+            '<div class="khin-notebar" role="button" tabindex="0" aria-expanded="true" aria-controls="khin-note-body" hidden>' +
               '<span class="khin-notetitle">📝 笔记</span>' +
               '<span class="khin-notecount"></span>' +
-              '<span class="khin-notearrow">收起 ▴</span>' +
+              '<span class="khin-notearrow">' + KH.OcrCopy.VIEW.noteCollapse + '</span>' +
             '</div>' +
-            '<div class="khin-body"></div>' +
+            '<div class="khin-body" id="khin-note-body"></div>' +
             '<div class="khin-imgsec" hidden>' +
-              '<div class="khin-imghead" role="button" tabindex="0" aria-expanded="false">' +
+              '<div class="khin-imghead" role="button" tabindex="0" aria-expanded="false" aria-controls="khin-img-list">' +
                 '<span class="khin-imgtitle">🖼 图片</span>' +
                 '<span class="khin-imgcount" role="status" aria-live="polite"></span>' +
                 '<span class="khin-imgall" data-act="all" hidden></span>' +
-                '<span class="khin-imgarrow">展开 ▾</span>' +
+                '<span class="khin-imgarrow">' + KH.OcrCopy.VIEW.imgExpand + '</span>' +
               '</div>' +
-              '<div class="khin-imglist"></div>' +
+              '<div class="khin-imglist" id="khin-img-list"></div>' +
             '</div>' +
           '</div>';
         this.panelEl = this.root.querySelector('.khin-panel');
@@ -1442,7 +1455,9 @@
       if (!this.bodyEl) return;
       const collapsed = this.noteCollapsed === true;
       this.bodyEl.classList.toggle('khin-collapsed', collapsed);
-      if (this.noteArrowEl) this.noteArrowEl.textContent = collapsed ? '展开 ▾' : '收起 ▴';
+      if (this.noteArrowEl) {
+        this.noteArrowEl.textContent = collapsed ? KH.OcrCopy.VIEW.noteExpand : KH.OcrCopy.VIEW.noteCollapse;
+      }
       /* 收起态也要说给读屏听（T29 / F4.2）：视觉上换了箭头字符，aria-expanded 才是
        * 辅助技术读得懂的那一位。这里已确保 bodyEl（= 面板在展开态）存在，题头就在。 */
       if (this.noteBarEl) this.noteBarEl.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
@@ -1495,23 +1510,27 @@
      * 口径（用户 2026-10-06）：这个功能的主要目的是**命中**，没命中的图不必展示，
      * 另留「显示全部」做人工复核入口。但**真失败必须露出来**（`bad` 类：识别失败 /
      * 超时 / 引擎不可用）—— 否则就退回 D-14.5 明令禁止的"静默"：用户看到空面板以为功能坏了。
+     * **要用户动手的告知（`action` 类：跨域未授权）同样常显**（T21，用户 2026-10-13 拍板）——
+     * 藏进复核视图等于把答案锁在用户找不到的地方，而这条恰恰一句话就能解决。
      * 状态类只从唯一真源 `KH.OcrCopy.stateClass()` 取，这里**不另立一套枚举**。
      */
     imgRowVisible(it) {
       if (this.imgShowAll === true) return true;
-      return this.imgRowIsHitOrBad(it);
+      return this.imgRowVisibleByDefault(it);
     },
 
     /** 默认视图本身会不会显示它（与当前视图无关）—— 「显示全部」的**条目数**要用它数：
      *  若拿 `list.length - shown.length` 数，切到复核视图后 shown 就成全量、hiddenN 变 0，
      *  按钮当场消失 ⇒ 只进不出（`VIEW.onlyHits` 永远渲染不出来）。 */
-    imgRowIsHitOrBad(it) {
+    imgRowVisibleByDefault(it) {
       const cls = KH.OcrCopy.stateClass(it);
-      return cls === 'hit' || cls === 'bad';
+      /* T21：`action`（跨域未授权）与命中和真失败一样常显 —— 它不是"没命中"，
+       * 是"把这个域名授权一次就能读"，用户照折叠标签里的域名去设置页填一行就解决。 */
+      return cls === 'hit' || cls === 'bad' || cls === 'action';
     },
 
     imgRowHiddenCount(list) {
-      return (list || []).filter((it) => !this.imgRowIsHitOrBad(it)).length;
+      return (list || []).filter((it) => !this.imgRowVisibleByDefault(it)).length;
     },
 
     /** 还没跑完的条目数（纯函数）：默认视图把它们藏起来了，但计数与空视图必须说出来 ——
@@ -1534,7 +1553,7 @@
       }
       /* 【默认只显示命中】（用户 2026-10-06）：这个功能的主要目的是命中，没命中的图不必占版面；
        * 「显示全部」把其余条目（未命中 / 排队中 / 没认出文字 / 读不到图…）留给人工复核。
-       * 哪条算"都要显示"由 `imgRowVisible` 一处决定（命中 + 真失败），这里不再各判一次。 */
+       * 哪条算"都要显示"由 `imgRowVisible` 一处决定（命中 + 真失败 + 要你动手的 action），这里不再各判一次。 */
       const shown = list.filter((it) => this.imgRowVisible(it));
       /* 要复核的条数按**默认口径**数（与当前视图无关）：切到「显示全部」后按钮要变成
        * 「只看命中」留着，点得回去 —— 否则这个复核入口只进不出。 */
@@ -1551,13 +1570,15 @@
         this.imgAllEl.textContent = hiddenN
           ? KH.OcrCopy.render(this.imgShowAll ? KH.OcrCopy.VIEW.onlyHits : KH.OcrCopy.VIEW.showAll, { n: hiddenN })
           : '';
-        /* 短标签（全部 N / 只命中）会丢掉语义 ⇒ 完整意思挂 title（2026-10-11） */
+        /* 文案本身已自解释（F2.1）；title 仍挂完整句，范围口径写清楚 */
         this.imgAllEl.title = this.imgShowAll ? KH.OcrCopy.VIEW.onlyHitsTip : KH.OcrCopy.VIEW.showAllTip;
       }
       if (this.imgUserCollapsed !== true && list.some((it) => it.state === 'done' && it.matched && it.matched.length)) {
         this.imgCollapsed = false;
       }
-      if (this.imgArrowEl) this.imgArrowEl.textContent = this.imgCollapsed ? '展开 ▾' : '收起 ▴';
+      if (this.imgArrowEl) {
+        this.imgArrowEl.textContent = this.imgCollapsed ? KH.OcrCopy.VIEW.imgExpand : KH.OcrCopy.VIEW.imgCollapse;
+      }
       /* 题头的 role/tabindex/aria-expanded 让它成为可操作控件（T29 / F4.2）：视觉上只是
        * 箭头字符在变，读屏读的是这一位。放在早退之前 —— 空列表时状态也得是对的。 */
       if (this.imgHeadEl) this.imgHeadEl.setAttribute('aria-expanded', this.imgCollapsed ? 'false' : 'true');

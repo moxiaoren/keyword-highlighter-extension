@@ -14,6 +14,9 @@
 'use strict';
 const H = require('../harness');
 const { suite, test, eq, truthy, falsy } = H;
+const fs = require('fs');
+const path = require('path');
+const ROOT = path.join(__dirname, '..', '..');
 
 module.exports = async function run() {
   const { KH } = require('../bootstrap');
@@ -293,6 +296,23 @@ module.exports = async function run() {
     truthy(max.indexOf('张') >= 0, 'imgOcrMax 的 hint 应交代"几张"，实际 ' + JSON.stringify(max));
     falsy(max.indexOf('尺寸') >= 0, '★ imgOcrMax 不该再出现"尺寸"（原来 int 分支硬编码写错了对象）');
     truthy((FM.byKey('imgSize').hint || '').indexOf('尺寸') >= 0, 'imgSize 的 hint 应交代尺寸');
+  });
+
+  await test('C5b（T56）：imgOcrMax 的 label 收短成「张数」——它和「图片命中关键词」并排，长标签会把输入框挤到看不见', () => {
+    const f = FM.byKey('imgOcrMax');
+    eq(f.label, '张数', '★ 用户 2026-10-13：「前面文本太长，看不到当前配置的是最多识别多少张图」→ 与 C1/C2 同口径收短');
+    truthy(f.label.length <= 3, '★ 该 label 必须 ≤3 字（并排时每多 1 字就从输入框身上扣 15px），实际 ' + f.label.length);
+    truthy(f.inline === true, '★ 它必须仍是 inline（标签与输入框同一行）——改回竖排是另一套布局，T56 不走那条路');
+    truthy((f.hint || '').indexOf('每处最多识别几张') === 0, '长语义收进 tooltip 后不许丢：hint 仍要以「每处最多识别几张」开头，实际 ' + JSON.stringify(f.hint));
+    /* 光收短 label 还不够：.kh-fld-inline 原来 basis 60px + min-width 0，并排时整个容器只分到
+     * 89px（真机实测），label 再短也可能被压没。所以这一层同时钉住"宽度下限"这条机制 ——
+     * 活几何由真机层（`_e2e/ui.test.js` 的 T56 用例量 clientWidth ≥ 数字宽）兜底。 */
+    const css = fs.readFileSync(path.join(ROOT, 'src', 'ui', 'components', 'components.css'), 'utf8');
+    const inlineRule = (css.match(/\.kh-fld-inline\s*\{[^}]*\}/) || [''])[0];
+    const inputRule = (css.match(/\.kh-fld-inline \.kh-input\s*\{[^}]*\}/) || [''])[0];
+    const minW = parseFloat((inlineRule.match(/min-width:\s*([\d.]+)px/) || [0, '0'])[1]);
+    truthy(minW >= 100, '★ `.kh-fld-inline` 必须有 ≥100px 的 min-width（标签 60 + 间距 6 + 数字框 ≥44），实际 ' + minW + 'px');
+    falsy(/min-width:\s*0\s*;/.test(inputRule), '★ `.kh-fld-inline .kh-input` 不许再是 min-width:0（那正是被挤成 0 宽的原因）');
   });
 
   await test('C7：四条模块说明都是短句（≤18 字）且长解释进了 tooltip；combo 静态值与 AXIS.lr 同一句', () => {

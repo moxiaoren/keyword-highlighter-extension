@@ -1061,7 +1061,7 @@
     $('pf-imgSize').value = (cfg.importantNote || {}).imgSize || '';
     $('pf-noteFontSize').value = (cfg.importantNote || {}).fontSize || '';
     /* T26：面板默认宽度（顶层键）。数字输入框的 min/max 也从 config 的边界常量写进去 ——
-     * 设置页不再抄一份 160/600（抄一份就是"改了不生效 / 能填进非法值"的种子）。 */
+     * 设置页不再抄一份 200/600（抄一份就是"改了不生效 / 能填进非法值"的种子）。 */
     const pwInput = $('pf-notePanelWidth');
     pwInput.min = KH.Config.PANEL_WIDTH_MIN;
     pwInput.max = KH.Config.PANEL_WIDTH_MAX;
