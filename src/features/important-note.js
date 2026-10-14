@@ -89,7 +89,7 @@
     .khin-panel {
       width: var(--khin-panel-w); min-width: 200px; max-width: calc(100vw - 32px);
       max-height: calc(100vh - 24px); background: #fff;
-      border: 1px solid #e3e8f0; border-radius: 10px;
+      border: 1px solid #e3e8f0; border-radius: 12px;
       box-shadow: 0 8px 28px rgba(0,0,0,.18);
       overflow: hidden; display: flex; flex-direction: column;
       resize: both; animation: khin-in .16s ease-out;
@@ -123,7 +123,7 @@
      * T29 / F4.5：本行 + 题头箭头 + 空说明行 + 耗时徽标四处同批改。 */
     .khin-notebar .khin-notearrow { margin-left: auto; color: #64748b; font-size: 11px; }
     /* 正文至少留得住一行（用户 2026-10-07 的"被挤没"就是缩到 0 了）—— 再多交给它自己滚 */
-    .khin-body { flex: 1 1 auto; min-height: 60px; overflow-y: auto; padding: 4px 0; }
+    .khin-body { flex: 1 1 auto; min-height: 60px; overflow-y: auto; padding: 6px 0; }
     .khin-body.khin-collapsed { display: none; }
     /* 整页只有图片命中时这份列表是空的，但它仍占着 min-height:60px 的 flex 槽位
      * ⇒ 面板顶部白出一条 60px 的带子（T29 / F6.1）。它必须和别的分区一样有自己的
@@ -134,21 +134,28 @@
     .khin-body::-webkit-scrollbar-track { background: transparent; }
     /* 紧凑档（用户 2026-10-07：条目一多就"占地方"）—— 字号与行距各降一档、内边距收紧，
      * 一条正文的竖向占用约 34px → 24px；层级与可读性不变，只是不再松松垮垮。 */
-    .khin-item { padding: 6px 10px; border-bottom: 1px solid #f3f3f3; }
-    .khin-item:last-child { border-bottom: none; }
+    /* 条目 = **一张圆角卡片**（需求 3，2026-10-13）：旧样式是平铺列表 + 一条 1px 分隔线，
+     * 条目一多就糊成一片、看不出"一条到哪儿结束"。现在卡片自己带浅底 + 细边 + 8px 圆角，
+     * 间隔由 margin 提供（分隔线退场），面板白底上一眼能数清几条。
+     * 内边距是**派生宽度的另一半契约**：这里改数值，.khin-item-kw/.khin-item-adj 的减数必须同步改。 */
+    .khin-item {
+      margin: 0 6px 6px; padding: 7px 10px;
+      background: #f8fafc; border: 1px solid #eef1f6; border-radius: 8px;
+    }
+    .khin-item:last-child { margin-bottom: 0; }
     .khin-item-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; margin-bottom: 3px; }
     .khin-item-tags { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; min-width: 0; }
     /* 命中词块的上限是**派生的**：一个词块不许超过面板里那一行的可用宽度
-     * （- 48px ≈ 条目左右内边距 20 + 关闭按钮与间隙 28），250px 面板下 ≈ 202px ——
-     * 与收窄前的 200px 等价，但面板宽度一改它自己跟着走，不留会过期的字面量。 */
+     * （- 62px ≈ 卡片外边距 12 + 边框 2 + 内边距 20 + 关闭按钮与间隙 28），250px 面板下 ≈ 188px ——
+     * 面板宽度一改它自己跟着走，不留会过期的字面量；卡片内边距一改也必须回来改这个减数。 */
     .khin-item-kw {
       font-size: 11px; font-weight: 600; color: #3579c2; background: #eaf1fb;
-      border-radius: 4px; padding: 1px 6px; max-width: calc(var(--khin-panel-w) - 48px);
+      border-radius: 4px; padding: 1px 6px; max-width: calc(var(--khin-panel-w) - 62px);
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0;
     }
     .khin-item-adj {
       font-size: 11px; font-weight: 600; color: #2e7d32; background: #e8f5e9;
-      border-radius: 4px; padding: 1px 6px; max-width: calc(var(--khin-panel-w) - 48px);
+      border-radius: 4px; padding: 1px 6px; max-width: calc(var(--khin-panel-w) - 62px);
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0;
     }
     .khin-item-close {
@@ -261,7 +268,9 @@
      * nowrap + overflow:hidden，让计数这一格先让位（它最短、含义最不依赖宽度）。 */
     .khin-imghead {
       display: flex; align-items: center; gap: 4px; cursor: pointer; user-select: none;
-      padding: 4px 2px 3px; font-size: 12px; font-weight: 600; color: var(--kh-text, #1f2937);
+      /* 左右 6px：与笔记卡片的左缘对齐（.khin-item 的 margin 是 0 6px）——
+       * 两个分区共用同一道竖线，面板里不会一个贴边、一个缩进 */
+      padding: 4px 6px 3px; font-size: 12px; font-weight: 600; color: var(--kh-text, #1f2937);
       flex: 0 0 auto; flex-wrap: nowrap; overflow: hidden; white-space: nowrap;
     }
     .khin-imghead .khin-imgtitle { flex: 0 0 auto; }
@@ -282,11 +291,12 @@
     /* 没有「全部 N」时箭头才吃 margin-left:auto；两者都有时只有前者吃（否则中间撕出一个大空隙） */
     .khin-imghead .khin-imgall:not([hidden]) + .khin-imgarrow { margin-left: 0; }
     /* 默认视图里一条都没有时的说明行（不能悄悄空白：那看起来就是坏了） */
-    .khin-imgnone { color: #64748b; font-size: 12px; padding: 2px 0 4px; }
+    .khin-imgnone { color: #64748b; font-size: 12px; padding: 2px 6px 4px; }
     /* 分区封顶后由这份列表自己滚（min-height:0 是关键：否则 flex 子项不肯缩到内容高度以下，
      * 出不了滚动条，还是会顶破面板） */
     .khin-imglist {
-      display: flex; flex-direction: column; gap: 6px; padding: 2px 0 4px;
+      /* 左右 6px：与笔记卡片的左缘对齐（.khin-item 的 margin 是 0 6px），两个分区共用一道竖线 */
+      display: flex; flex-direction: column; gap: 6px; padding: 2px 6px 4px;
       flex: 1 1 auto; min-height: 0; overflow-y: auto;
     }
     .khin-imglist::-webkit-scrollbar { width: 5px; }
@@ -297,7 +307,7 @@
      * 按钮，容器保留 flex column + gap（缩略图本身仍按列排，宽度 44px 不变）。 */
     .khin-imgthumbwrap { flex: 0 0 44px; display: flex; flex-direction: column; align-items: stretch; gap: 2px; }
     .khin-imgthumb {
-      width: 44px; height: 44px; flex: 0 0 44px; object-fit: cover; border-radius: 6px;
+      width: 44px; height: 44px; flex: 0 0 44px; object-fit: cover; border-radius: 8px;
       border: 1px solid rgba(148,163,184,.45); background: #f1f5f9; cursor: zoom-in;
     }
     .khin-imgmeta { min-width: 0; flex: 1; font-size: 11px; line-height: 1.4; color: #334155; }
@@ -523,35 +533,37 @@
     .kh-lb-idx { min-width: 40px; text-align: center; opacity: .9; font-variant-numeric: tabular-nums; }
     .kh-lb-sep { opacity: .35; }
     .kh-lb-hint { opacity: .75; }
-    /* 全文栏（2.0.1.15 需求 5 → T41 视觉重做 → T46 锚点修正）：**卡片内的右侧栏**（用户 2026-10-12 裁决方案 2）
-     *   · 定位祖先 = 行 .kh-lb-row 自己（它加了 position:relative），**不再是容器 .kh-lb-stage**。
-     *     T46 真机缺陷的根因就是基准不一致：浮层锚容器、翻页键锚行（列向 flex 居中、行宽 = 内容宽），
-     *     只要行的右缘比容器右缘内缩超过 60px，浮层右缘就必然压进行里 —— 实测 paneRect 与 nextRect
-     *     横向重叠 48px（= 整个按钮宽），elementFromPoint(› 中心) 命中的是浮层 ⇒ 真挡住点击。
-     *     现在浮层与两个导航键共用同一个祖先，右缘只可能落在导航外侧的间隙里，结构上不可能再重叠。
-     *   · 仍然**不参与行宽分配**（绝对定位）⇒「有全文 / 无全文」图一样宽（T41 验收项，不许回退）；
+    /* 全文栏（2.0.1.15 需求 5 → T41 视觉重做 → T46 锚点修正 → 2.0.2.1 需求 4）：**独立的可拖动悬浮容器**。
+     *   · position: fixed ⇒ 坐标按**视口**算（不再借 .kh-lb-row 当定位祖先）：拖到哪儿就停在哪儿，
+     *     行变宽/变窄也不跟着飘。左/上/高由 JS 写（dockSide() 默认停靠、拖动时实时改写）。
+     *   · 默认停靠 = **大图右侧并排**（dockSide 的首选位）；视口右侧放不下时退回**行内右侧**
+     *     —— 那一档与 T46 定稿位逐像素一致（右缘让开 48px 导航键 + 12px 间隙），所以
+     *     「结构上压不到 ‹/›」这条没有回退：T46 的病根是"浮层锚容器、导航锚行"两套基准错位，
+     *     现在浮层两个位次都以**图的实际矩形**为基准算，且都不越进导航所在的那条带。
+     *   · **默认可见**（用户 2.0.2.1 口径："默认在大图容器右侧并排展示"）——
+     *     旧版"默认隐藏、点眼睛才弹出"已作废；眼睛按钮与浮层自带的 × 仍是**同一个状态**。
+     *   · 仍然**不参与行宽分配**（脱流）⇒「有全文 / 无全文」图一样宽（T41 验收项，不许回退）；
      *     层级也仍高于图与导航（图 z-index:1、导航 z-index:2、本层 z-index:3）⇒ 放大溢出盖不住它。
-     *   · 右缘 60px = 导航宽 48 + 间隙 12；宽度上限再左右各留 60px ⇒ 行再窄也压不到 ‹/›。
-     *   · 纵向贴行的上下：top/bottom 都取 0 —— 旧的 12px / 48px 是**容器坐标**里的整定值
-     *     （12 = 卡片内边距、48 = 12 + 工具条 26 + 间距 10），换成"行"坐标后等价写法就是 0/0，
-     *     观感与 T41 一致：浮层与图片的上下边齐平。工具条是行的兄弟节点、在行外，压不到它。
-     *   · 默认隐藏（sideHidden 初始 true），工具条眼睛按钮与浮层自带的 × 是**同一个状态**；
-     *   · 外壳只管分栏与圆角：标题栏与两个按钮固定，**滚动只在正文区**（.kh-lb-side-t）。 */
+     *   · 外壳只管分栏与圆角：标题栏（也是**拖动抓手**）与两个按钮固定，**滚动只在正文区**（.kh-lb-side-t）。 */
     .kh-lb-side {
-      position: absolute; top: 0; right: 60px; bottom: 0; z-index: 3;
-      width: 340px; max-width: min(342px, calc(100% - 120px));
+      position: fixed; left: 0; top: 0; z-index: 3;
+      width: 340px; max-width: min(342px, calc(100vw - 16px));
       display: flex; flex-direction: column; overflow: hidden;
-      border-radius: 8px; background: rgba(22,26,34,.96);
+      border-radius: 12px; background: rgba(22,26,34,.97);
       border: 1px solid rgba(255,255,255,.22);
-      box-shadow: 0 12px 40px rgba(0,0,0,.5);
+      box-shadow: 0 16px 48px rgba(0,0,0,.6);
       color: #e8eef7; font-size: 12px; line-height: 1.5;
     }
     .kh-lb-side[hidden] { display: none !important; }
     .kh-lb-side-hd {
       display: flex; align-items: center; gap: 8px;
-      padding: 7px 8px 7px 12px; border-bottom: 1px solid rgba(255,255,255,.13);
+      padding: 7px 8px 7px 10px; border-bottom: 1px solid rgba(255,255,255,.13);
       user-select: none; -webkit-user-select: none;
+      /* 标题栏 = 拖动抓手（需求 4）：抓手光标 + 不参与触屏滚动手势，pointermove 才收得到 */
+      cursor: move; touch-action: none;
     }
+    /* 抓手纹样：拖动这条通路没有天然的可发现性（不像按钮有边框），给一个淡纹当提示 */
+    .kh-lb-side-hd::before { content: '⠿'; opacity: .5; font-size: 13px; line-height: 1; }
     .kh-lb-side-h { font-weight: 600; font-size: 12px; }
     /* 「共 N 行」是次要信息：靠 margin-right:auto 吃掉空档，把两个按钮顶到右侧 */
     .kh-lb-side-n { font-weight: 400; font-size: 11.5px; opacity: .55; margin-right: auto; }
@@ -623,7 +635,7 @@
         '<button class="kh-lb-btn kh-lb-sidebtn" type="button" hidden></button>' +
         '<span class="kh-lb-sep">|</span>' +
         '<button class="kh-lb-open" type="button">在新标签页打开</button>' +
-        '<span class="kh-lb-hint">拖动图片可平移；点图片外区域或按 Esc 关闭</span>' +
+        '<span class="kh-lb-hint">滚轮缩放；拖动图片可平移；拖动全文栏标题可移动，双击复位；点图片外区域或按 Esc 关闭</span>' +
         '</div>';
       const box = sr.querySelector('.kh-lb');
       const img = sr.querySelector('.kh-lb-img');
@@ -648,12 +660,12 @@
       /* 当前这张图的 **OCR 原文**（条目上的 text，即服务端识别结果）—— 一键复制只认它。
        * 刻意不读 sideText.textContent：那是屏幕上的字，会被折行、被滚出视口，也可能被 UI 拼进来。 */
       let curText = '';
-      /* 全文栏的显示态（2.0.1.15 需求 5）：**会话级**、**默认隐藏**（用户口径："默认隐藏，点眼睛才弹出"）。
-       * 只在这次开灯箱期间有效：close() 复位成隐藏，于是每次打开都从隐藏态开始。
+      /* 全文栏的显示态（2.0.2.1 需求 4）：**会话级**、**默认可见**（用户口径："默认在大图容器右侧并排展示"）。
+       * 只在这次开灯箱期间有效：close() 复位成可见，于是每次打开都从"并排展示"这一档开始。
        * 刻意做成闭包变量：挂 host 上会跨次开灯箱存活（host 是缓存的 DOM 宿主），
-       * 存进扩展的持久化存储更会跨会话 —— 那都不是"临时隐藏全文"该有的生命周期。 */
-      let sideHidden = true;
-      const close = () => { box.hidden = true; img.removeAttribute('src'); sideHidden = true; };
+       * 存进扩展的持久化存储更会跨会话 —— 那都不是"临时收起全文"该有的生命周期。 */
+      let sideHidden = false;
+      const close = () => { box.hidden = true; img.removeAttribute('src'); sideHidden = false; };
       /** 平移夹紧：图可以摆到**整屏任意位置**，只保证「至少 LIGHTBOX_PAN_KEEP 像素仍在视口内」，
        * 所以怎么拖都不会把图丢掉（缩放变化后也要重夹，继续走它）。
        * 推导：图中心在原点、宽 w，平移 tx 后跨度是 [tx − w/2, tx + w/2]；要求至少 KEEP 像素仍落在
@@ -682,11 +694,15 @@
         const multi = g.length > 1;
         prev.hidden = !multi;                               // 单张：隐藏（不是置灰）
         next.hidden = !multi;
-        /* 全文栏：有识别文本才谈得上显示（没识别出文字的图不摆空栏），且**默认隐藏** —— 用户口径
-         * "默认隐藏，点眼睛才弹出"。本栏是浮层，它的显隐**不影响图片宽度**（案④）。 */
+        /* 全文栏：有识别文本才谈得上显示（没识别出文字的图不摆空栏），且**默认可见** —— 用户口径
+         * "默认在大图容器右侧并排展示"（收起入口 = 工具条眼睛按钮 / 浮层自带的 ×）。
+         * 本栏是浮层，它的显隐**不影响图片宽度**（T41 验收项，不许回退）。 */
         const full = (cur && cur.text) ? String(cur.text) : '';
         curText = full;                     /* 一键复制的唯一数据源（服务端 OCR 原文，不读屏幕文字） */
         side.hidden = !full || sideHidden;
+        /* 默认停靠（需求 4）只对"还没被拖过"的这一档生效：拖动过之后位置由 host._sidePos 说了算。
+         * apply() 也会被翻页/缩放/换图回调触发，不能每次都把用户摆好的位置推回默认位。 */
+        if (!side.hidden && !host._sideMoved) dockSide();
         sideText.textContent = full;
         sideLines.textContent = full ? KH.OcrCopy.render(KH.OcrCopy.VIEW.paneLines, { n: full.split(/\r?\n/).length }) : '';
         sideCopy.hidden = !full;            /* 没有 OCR 文本 ⇒ 按钮不出现（不是置灰） */
@@ -726,6 +742,82 @@
       };
       const rotate = () => { host._rot = ((host._rot || 0) + 90) % 360; apply(); };
       const resetView = () => { host._scale = 1; host._rot = 0; host._tx = 0; host._ty = 0; apply(); };
+
+      /* 默认停靠（2.0.2.1 需求 4）：**大图右侧并排展示**。
+       *   · 首选位 = 图右缘 + 12 间隙 + 48 导航 + 12 间隙 ⇒ 落在导航**外侧**那条空档里，
+       *     结构上不可能压到 ‹/›（T46 那条缺陷的判据，不许回退）；
+       *   · 视口右侧放不下（大图/窄屏的常态）⇒ 退回**行内右侧**：右缘齐图右缘
+       *     （让开 12 + 48 那条导航带），左缘随宽度往左长 —— 与 T46 定稿的 right: 60px 逐像素等价。
+       *     注意别写成 r.right + 12：那正是导航带的起点，会压住 › 头 12px（T47-A 判据是重叠 = 0）；
+       *   · 纵向与图上下齐平、高度取图高（浮层自己滚，不撑破视口）；
+       *   · 图还没解码完（rect 全 0，正是开灯箱那一刻的常态）⇒ 先按一个中庸高度摆上，
+       *     解码后由 img 的 load 回调重摆一次（否则会拿 0 高摆出一条 120px 的窄条）。 */
+      const dockSide = () => {
+        const r = img.getBoundingClientRect();
+        const gap = 12;
+        const w = side.offsetWidth || 340;
+        const vw = window.innerWidth, vh = window.innerHeight;
+        let x = r.right + gap + 48 + gap;
+        if (x + w > vw - gap) x = r.right - w;
+        x = Math.max(gap, Math.min(x, Math.max(gap, vw - w - gap)));
+        const y = Math.max(gap, Math.min(r.top, Math.max(gap, vh - 120)));
+        const h = Math.min(Math.max(120, r.height || 320), Math.max(120, vh - y - gap));
+        side.style.left = Math.round(x) + 'px';
+        side.style.top = Math.round(y) + 'px';
+        side.style.height = Math.round(h) + 'px';
+      };
+
+      /* 拖动全文栏（需求 4）：抓手 = 标题栏。坐标走**视口**（.kh-lb-side 是 position:fixed）。
+       * 夹紧只保证标题栏还留在视野里（最坏也留 80px 宽、40px 高）—— 拖动是这条通路唯一的位移出口，
+       * 拖出去找不回来等于把识别全文弄丢；双击标题栏可复位回默认停靠位（回程出口）。 */
+      let paneDrag = null;
+      const paneHd = sr.querySelector('.kh-lb-side-hd');
+      paneHd.title = KH.OcrCopy.VIEW.paneDrag;
+      paneHd.addEventListener('pointerdown', (e) => {
+        if (e.button != null && e.button !== 0) return;
+        if (e.target && e.target.closest && e.target.closest('button')) return;   // 复制 / × 交给按钮
+        const pr = side.getBoundingClientRect();
+        paneDrag = { x: e.clientX, y: e.clientY, left: pr.left, top: pr.top };
+        e.preventDefault();
+        try { paneHd.setPointerCapture(e.pointerId); } catch (err) { /* 拿不到捕获也还能靠 move */ }
+      });
+      paneHd.addEventListener('pointermove', (e) => {
+        if (!paneDrag) return;
+        e.preventDefault();
+        const w = side.offsetWidth || 340;
+        const x = Math.min(window.innerWidth - 80, Math.max(80 - w, paneDrag.left + (e.clientX - paneDrag.x)));
+        const y = Math.min(window.innerHeight - 40, Math.max(0, paneDrag.top + (e.clientY - paneDrag.y)));
+        host._sideMoved = true;                     /* 拖过之后 apply() 不许再把位置推回默认位 */
+        side.style.left = Math.round(x) + 'px';
+        side.style.top = Math.round(y) + 'px';
+      });
+      const endPaneDrag = () => { paneDrag = null; };
+      paneHd.addEventListener('pointerup', endPaneDrag);
+      paneHd.addEventListener('pointercancel', endPaneDrag);
+      paneHd.addEventListener('lostpointercapture', endPaneDrag);
+      paneHd.addEventListener('dblclick', (e) => {
+        e.preventDefault();
+        host._sideMoved = false;
+        dockSide();
+      });
+      /* 图解码完才拿得到真实矩形 ⇒ 默认停靠要在 load 后再摆一次（首次打开那一刻 rect 还是 0）。
+       * ponytail: 只认 load，不挂 window resize —— 开灯箱期间改窗口大小，浮层会停在旧视口坐标上
+       * （可能偏出视野）；回程出口是双击标题栏复位（或直接拖回来）。真要跟手，再加一个 resize 监听，
+       * 但 tests/harness.js 的 window 垫片没有 addEventListener，得先补垫片。 */
+      img.addEventListener('load', () => {
+        if (!box.hidden && !side.hidden && !host._sideMoved) dockSide();
+      });
+
+      /* 滚轮缩放（需求 5）：作用域 = 整块遮罩，但**正文区里滚 = 读文本**，不抢它的滚动。
+       * 每 100px 滚动 ≈ 一档（LIGHTBOX_ZOOM_STEP）并夹在 ±2 档内 —— 滚轮与触控板的 deltaY
+       * 量纲差得远（行模式一滚就是 3），不夹的话一次能跳四倍。 */
+      box.addEventListener('wheel', (e) => {
+        if (side.contains(e.target)) return;
+        e.preventDefault();
+        const k = Math.max(-2, Math.min(2, e.deltaY / 100));
+        if (k) zoom(Math.pow(LIGHTBOX_ZOOM_STEP, -k));
+      }, { passive: false });
+
       const on = (el, fn) => el.addEventListener('click', (e) => {
         e.preventDefault();                                 // 别把按钮点击当成页面交互
         e.stopPropagation();
@@ -838,6 +930,7 @@
     host._rot = 0;
     host._tx = 0;
     host._ty = 0;
+    host._sideMoved = false;                                // 全文栏每次打开都回到默认停靠位（需求 4）
     host._apply();
     host.shadowRoot.querySelector('.kh-lb').hidden = false;
     return true;

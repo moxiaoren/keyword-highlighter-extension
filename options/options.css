@@ -312,18 +312,20 @@ body {
 .kh-hpanel.active { display: block; animation: khFadeIn .22s ease; }
 @keyframes khFadeIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
 
-/* 「功能说明」卡片墙 */
+/* 「功能说明」卡片墙。align-items 用默认的 stretch（需求 2 前是 start）：
+ * 每张卡的内容长短不同，start 会让同一行的卡片底部参差、整面墙像没对齐；
+ * stretch 让同一行等高，行与行之间才是整齐的横线。 */
 .kh-fn-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
   gap: 12px;
-  align-items: start;
+  align-items: stretch;
 }
 .kh-hcard {
   background: var(--brand-softer);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
-  padding: 13px 16px;
+  padding: 12px 14px;
   transition: box-shadow .18s, transform .18s;
 }
 .kh-hcard:hover {
@@ -394,10 +396,40 @@ body {
 .kh-adv[open] > summary::before { transform: rotate(90deg); }
 .kh-adv-body { padding: 2px 14px 14px; }
 
-.kh-privacy { padding: 10px 12px; border-radius: var(--r-md); background: var(--success-soft); }
+/* 卡片口径统一（需求 2，2026-10-13）：帮助区里的块级内容原先有四种观感 ——
+ *   ①「功能说明」的 .kh-hcard 卡片墙（品牌浅底 + 边框 + 圆角）② .kh-sub-card / .kh-adv（中性浅底 + 边框）
+ *   ③ .kh-privacy（绿色浅底但**没有边框**）④ .kh-help（FAQ / 数据 / 安全 / 注意事项，出现最多 ——
+ *   原来**完全没有卡片外观**，就是一坨裸文本）。③④ 正是"卡片参差不一"的现场。
+ * 统一到同一套口径：形状 = 1px var(--border) + var(--r-md) + 12px/14px 内边距；
+ * 底色只表语义（中性 --card-2 / 品牌 --brand-softer / 成功 --success-soft）。
+ * 祖先 .kh-card 是白底 ⇒ 这些浅底卡片就是"卡中卡"，与 #sec-misc 的既有写法同手法。 */
+.kh-privacy {
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--success-soft);
+}
 .kh-privacy p { margin: 3px 0; color: var(--text-2); }
-.kh-help { line-height: 1.8; color: var(--text-2); }
-.kh-help h4 { margin: 12px 0 4px; color: var(--text); font-size: var(--fs-base); }
+.kh-help {
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--card-2);
+  line-height: 1.8;
+  color: var(--text-2);
+}
+.kh-fn-grid + .kh-help { margin-top: 14px; }
+.kh-help + .kh-help { margin-top: 12px; }
+/* 一块 .kh-help 里塞多条问答（FAQ 的 Q1–Q13 就是这种）时，条目之间用发丝线分档 ——
+ * 十几条问答全糊在一张卡里，读不出"上一条到哪儿结束"。首条不吃线也不吃上边距。 */
+.kh-help h4 {
+  margin: 12px 0 4px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-2);
+  color: var(--text);
+  font-size: var(--fs-base);
+}
+.kh-help h4:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
 .kh-help p { margin: 4px 0; }
 .kh-help ul, .kh-help ol { margin: 4px 0 4px 20px; }
 .kh-help li { margin: 3px 0; }

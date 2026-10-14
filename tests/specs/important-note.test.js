@@ -537,10 +537,16 @@ module.exports = async function run() {
       'CSS 的默认宽度必须跟 config 的默认值一致（漂移了，设置页读到的与面板显示的不是一回事）');
     truthy(new RegExp('min-width:\\s*' + KH.Config.PANEL_WIDTH_MIN + 'px').test(panel),
       'min-width 必须等于 config 的下界 ' + KH.Config.PANEL_WIDTH_MIN + 'px（min-width 压过 width，只改 width 白改）');
-    /* 命中词块的上限是**派生**的（250 下 ≈ 202，与旧的 200 等价），不留会过期的字面量 */
+    /* 命中词块的上限是**派生**的（需求 3 改卡片后 250 下 ≈ 188：卡片外边距 12 + 边框 2 + 内边距 20 +
+     * 关闭按钮与间隙 28 = 62），不留会过期的字面量 */
     const kw = (src.match(/\.khin-item-kw \{[\s\S]*?\n    \}/) || [''])[0];
-    truthy(/max-width:\s*calc\(var\(--khin-panel-w\) - 48px\)/.test(kw),
-      '命中词块上限必须跟着面板宽度变量走：' + kw);
+    truthy(/max-width:\s*calc\(var\(--khin-panel-w\) - 62px\)/.test(kw),
+      '命中词块上限必须跟着面板宽度变量走，且减数 = 卡片外边距 12 + 边框 2 + 内边距 20 + 关闭按钮 28：' + kw);
+    /* 卡片化的那一半契约：减数改了，卡片的内边距/外边距也得是那个口径 —— 两边漂了会截字或溢出。 */
+    const item = (src.match(/\.khin-item \{[\s\S]*?\n    \}/) || [''])[0];
+    truthy(/margin:\s*0 6px 6px/.test(item) && /padding:\s*7px 10px/.test(item) && /border:\s*1px/.test(item),
+      '卡片口径（外边距 6 / 内边距 10 / 1px 边框）必须与上面那条减数对得上：' + item);
+    truthy(/border-radius:\s*8px/.test(item), '条目的圆角（需求 3：卡片化）：' + item);
     const ap = (src.match(/applyPosition\(\)\s*\{[\s\S]*?\n    \}/) || [''])[0];
     truthy(ap.length > 0, '要能定位 applyPosition');
     const apCode = ap.replace(/\/\*[\s\S]*?\*\//g, '');   // 只看代码，不看注释里的解释文字
@@ -593,7 +599,11 @@ module.exports = async function run() {
       '归一后的值要回显进框里（别让框里停着一个没生效的数）');
     /* 陈旧说明：那段「📋 复制这张图的全部识别文字」说的是 T25 已删的按钮 */
     falsy(html.indexOf('复制这张图的全部识别文字') >= 0, '设置页不许再描述那个已删的复制按钮');
-    truthy(html.indexOf('在右侧全文栏里选中后 Ctrl+C') >= 0, '要写清真正可用的复制通路（大图全文栏选中复制）');
+    /* 2.0.2.1 需求 4 起全文栏默认可见、还能拖走，措辞随之改；断言只钉「通路说清没有」，
+     * 不钉整句 —— 否则改一句文案就红，护栏变成绊脚石。 */
+    truthy(html.indexOf('选中后 Ctrl+C') >= 0, '要写清真正可用的复制通路（大图全文栏选中复制）');
+    truthy(html.indexOf('全文栏') >= 0 && html.indexOf('一键复制') >= 0,
+      '复制通路要连「去哪复制」一起说清：全文栏 + 它自带的一键复制');
   });
 
   suite('important-note · 200px 适配：题头图标+短标签 / 笔记区可收起（用户 2026-10-11）');
@@ -1041,22 +1051,23 @@ module.exports = async function run() {
     const rowAt = src.indexOf('<div class="kh-lb-row">');
     const sideAt = src.indexOf('<div class="kh-lb-side" hidden>');
     const barAt = src.indexOf('<div class="kh-lb-bar">');
-    truthy(rowAt > 0 && sideAt > rowAt, '浮层必须回到 .kh-lb-row 里（与 ‹/› 共用同一个定位祖先）');
+    truthy(rowAt > 0 && sideAt > rowAt, '浮层仍在行内（需求 4 后位置由 fixed + JS 决定，DOM 不动是少一处改动）');
     truthy(barAt > sideAt, 'DOM 顺序 = 图 → 导航（‹/›）→ 浮层，浮层在工具条之前');
     const rowSeg = src.slice(rowAt, sideAt);
     truthy(rowSeg.indexOf('‹') >= 0 && rowSeg.indexOf('›') >= 0, '浮层前面必须已经有两个翻页键');
     truthy(rowSeg.indexOf('<img class="kh-lb-img" alt="">') >= 0, 'img 标签仍原样（一个字不许改）');
-    /* 定位祖先 = 行；浮层仍绝对定位 ⇒ 不参与行宽 ⇒「有/无浮层图一样宽」不许回退（T41 验收项） */
-    const rowRule = RULE(src, '.kh-lb-row');
-    truthy(/position:\s*relative/.test(rowRule), '.kh-lb-row 必须成为定位祖先：' + rowRule);
+    /* 定位（2.0.2.1 需求 4）：浮层改成 **position: fixed** —— 坐标按视口算，不再借任何祖先当基准，
+     * 于是 T46 那条"锚容器 vs 锚行"的错位病根从根上消失（两个位次都由 dockSide 按图的实际矩形算，
+     * 且都不越进导航所在的那条带）。脱流这条不变 ⇒「有/无浮层图一样宽」不许回退（T41 验收项）。 */
     const sideRule = RULE(src, '.kh-lb-side');
-    truthy(/position:\s*absolute/.test(sideRule), '浮层必须绝对定位（否则又参与行宽分配）：' + sideRule);
-    /* 几何：右缘 60px（导航 48 + 间隙 12）；宽度上限左右各留 60px ⇒ 行再窄也压不到 ‹/› */
-    truthy(/right:\s*60px/.test(sideRule), '右缘必须让开导航键（48 + 12）：' + sideRule);
-    truthy(/max-width:\s*min\(342px,\s*calc\(100% - 120px\)\)/.test(sideRule),
-      '宽度上限要左右各留 60px（保证小图时也不反向盖住 ‹）：' + sideRule);
-    truthy(/top:\s*0/.test(sideRule) && /bottom:\s*0/.test(sideRule),
-      '纵向贴行的上下（top/bottom = 0 = 与图片上下边齐平）：' + sideRule);
+    truthy(/position:\s*fixed/.test(sideRule), '浮层必须脱流（fixed；否则又参与行宽分配）：' + sideRule);
+    truthy(/width:\s*340px/.test(sideRule), '定宽 340px（不参与行宽分配，宽度只能自己定）：' + sideRule);
+    truthy(/max-width:\s*min\(342px,\s*calc\(100vw - 16px\)\)/.test(sideRule),
+      '窄视口下的上限（不许横着溢出行外）：' + sideRule);
+    /* 几何的承重件已迁到 JS：两个位次就是 T46 缺陷的防线 —— 谁删掉兜底那档，浮层就重新压住 › */
+    truthy(/x = r\.right \+ gap \+ 48 \+ gap/.test(src), '首选位落在导航外侧（结构上压不到 ›）');
+    truthy(/if \(x \+ w > vw - gap\) x = r\.right - w;/.test(src),
+      '放不下时退回行内右侧：右缘齐图右缘（让开 12 + 48 那条导航带 —— T46 缺陷的防线，不许删）');
     truthy(/\bz-index:\s*3\b/.test(sideRule), '层级仍高于图与导航（放大溢出盖不住它）');
     /* 关闭语义（T46 第二症状：在浮层里按下、往外松手 → 灯光箱被误关）：
      * 只有 pointerdown 也落在容器外，click 才关；抬手落点不再决定关不关。 */

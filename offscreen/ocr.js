@@ -789,7 +789,7 @@
    *   · **`|Δy| ≤ NEAR_MATCH_MAX_DY`** —— 同一物理行实测只差 0–5px（tight/flat 0–5、tall 2–4），
    *     而真机里"长得像但确实不是同一行"的假匹配跨 139–148px ⇒ 8px 这条线两边都够不着；
    *   · 字符二元 Dice ≥ 0.8（兄弟行「第12行 12.00」×「第13行 12.00」只有 0.75，被这条挡掉）；
-   *   · 长度 ≥ 6 且长度差 ≤ 2（短串 Dice 抖动大；同时防"短串是长串子串"）。
+   *   · 长度 ≥ 6 且长度差 ≤ 2（短串二元组太少，见下方 `NEAR_MATCH_SHORT_DICE` 的短串分支）。
    * 仍然**一对一**；留下**引擎更确信**的那条（见 `NEAR_CONF_MARGIN`）⇒ 原图里真的重复两遍的文本照样只配掉一半。
    * ponytail: 行距 <12px 的极密排图上相邻两行理论上能落进 8px 窗（密排样张未出现），
    *   真碰上就把 NEAR_MATCH_MAX_DY 收到 6 —— 宁可留重复，也不吃内容。
@@ -798,6 +798,22 @@
   const NEAR_MATCH_DICE = 0.8;
   const NEAR_MATCH_MIN_LEN = 6;
   const NEAR_MATCH_MAX_DLEN = 2;
+  /**
+   * 【短串换度量】（用户真机复现：「你好啊」被两个切片各读一次 —— 一块读成「尔好啊」、
+   * 另一块读成「你好阿」⇒ 最终 text 里两行）。上面那条 `NEAR_MATCH_MIN_LEN = 6` 与二元 Dice
+   * 在 3 字串上**必然吃不到**：二元组一边是 {尔好,好啊}、另一边 {你好,好阿}，交集为空 ⇒ Dice = 0，
+   * 和"完全不相干的两句话"读数一样。病根是**度量选错了**：短串的二元组本来就只剩两组，
+   * 一个错字就把一组打穿。
+   * 所以短串（`keyOf` 长度 < `NEAR_MATCH_MIN_LEN`）改用**单字 Dice**，阈值 1/3 ——
+   * 即"3 个字里至少对上 1 个"（「尔好啊」×「你好阿」正好 1/3，是该长度下的下限）。
+   * 长度差同时收到 ≤1：短串多一个字往往已经是别的内容了。
+   * ponytail: 单字 Dice 对「北京站 × 上海站」这类同尾短词是过宽的（0.33 也能过）——
+   *   真正的护栏是几何：同一重叠带 + `|Δy| ≤ 8` + `|Δx| ≤ 16` 已经断言"这俩是同一条物理行"
+   *   （行距 24 的相邻行 |Δy| ≥ 19，够不着）。同一物理行上不可能并存两段不同的原文。
+   *   真遇上误吃，就把 `NEAR_MATCH_SHORT_DICE` 抬到 0.5（4 字以上就要对上 2 个字）。
+   */
+  const NEAR_MATCH_SHORT_DICE = 1 / 3;
+  const NEAR_MATCH_SHORT_MAX_DLEN = 1;
   /**
    * 【谁更对，分不出来就别动】近失配对要**删掉一条**，就必须说清"留哪条"。
    * 依据（真机 tight 样张里唯一那条真错字对）：「第66行客户要求一对一最进」conf=92 ×
@@ -823,6 +839,25 @@
       if (c > 0) { hit += 1; cnt.set(g, c - 1); }
     }
     return (2 * hit) / ((A.length - 1) + (B.length - 1));
+  }
+
+  /**
+   * 单字（多重集）Dice —— 短串的度量，见 `NEAR_MATCH_SHORT_DICE`。
+   * 与 `bigramDice` 同一套归一化（`2 × 交集 / 总字数和`），只是把"字"换成"字"而不是"二元组"。
+   * 用 `Array.from` 取码点：emoji / 生僻字是代理对，按 UTF-16 长度切会把它劈成半个。
+   */
+  function charDice(a, b) {
+    const A = Array.from(String(a == null ? '' : a));
+    const B = Array.from(String(b == null ? '' : b));
+    if (!A.length || !B.length) return 0;
+    const cnt = new Map();
+    for (const ch of A) cnt.set(ch, (cnt.get(ch) || 0) + 1);
+    let hit = 0;
+    for (const ch of B) {
+      const c = cnt.get(ch) || 0;
+      if (c > 0) { hit += 1; cnt.set(ch, c - 1); }
+    }
+    return (2 * hit) / (A.length + B.length);
   }
 
   /**
@@ -911,21 +946,31 @@
         const B2 = rest.filter((p) => p.l.ci === band.b);
         const cands = [];
         for (const pa of A) {
-          if (pa.k.length < NEAR_MATCH_MIN_LEN) continue;
+          const la = Array.from(pa.k).length;
+          const shortA = la < NEAR_MATCH_MIN_LEN;
           for (const pb of B2) {
-            if (pb.k.length < NEAR_MATCH_MIN_LEN) continue;
+            const lb = Array.from(pb.k).length;
+            const shortB = lb < NEAR_MATCH_MIN_LEN;
+            if (shortA !== shortB) continue;               // 长×短不配（原先由长度闸整体挡掉的那类）
             if (pb.k === pa.k) continue;
-            if (Math.abs(pa.k.length - pb.k.length) > NEAR_MATCH_MAX_DLEN) continue;
+            if (Math.abs(la - lb) > (shortA ? NEAR_MATCH_SHORT_MAX_DLEN : NEAR_MATCH_MAX_DLEN)) continue;
             if (Math.abs((pa.l.x || 0) - (pb.l.x || 0)) > OVERLAP_MATCH_X) continue;
             const dy = Math.abs(pa.l.y - pb.l.y);
             if (dy > NEAR_MATCH_MAX_DY) continue;
-            const d = bigramDice(pa.k, pb.k);
-            if (d < NEAR_MATCH_DICE) continue;
+            const d = shortA ? charDice(pa.k, pb.k) : bigramDice(pa.k, pb.k);
+            if (d < (shortA ? NEAR_MATCH_SHORT_DICE : NEAR_MATCH_DICE)) continue;
             const ca = typeof pa.l.conf === 'number' ? pa.l.conf : 0;
             const cb = typeof pb.l.conf === 'number' ? pb.l.conf : 0;
             const gap = Math.abs(ca - cb);
-            if (gap < NEAR_CONF_MARGIN) continue;          // 谁更对分不出来 ⇒ 宁可留重复
-            cands.push({ a: pa, b: pb, dy: dy, d: d, gap: gap, keepA: ca >= cb });
+            /* 长串：conf 咬得近 ⇒ 谁更对分不出来，宁可留重复（T22 红线）。
+             * 短串：几何已经断言"这俩是同一条物理行"（同一带 + |Δy| ≤ 8 + |Δx| ≤ 16），
+             * 那就不存在"两段不同的原文"——"分不出谁更对"不是留两行的理由。conf 只用来
+             * **决定留哪条**：conf 高者胜 → 字数多者胜（信息更全）→ y 小者胜（靠上稳定）。 */
+            if (!shortA && gap < NEAR_CONF_MARGIN) continue;
+            const keepA = shortA
+              ? (ca !== cb ? ca > cb : (la !== lb ? la > lb : pa.l.y <= pb.l.y))
+              : ca >= cb;
+            cands.push({ a: pa, b: pb, dy: dy, d: d, gap: gap, keepA: keepA });
           }
         }
         cands.sort((p, q) => (p.dy - q.dy) || (q.gap - p.gap) || (q.d - p.d));
@@ -1121,8 +1166,9 @@
     OVERLAP_MATCH_X: OVERLAP_MATCH_X,
     NEAR_MATCH_MAX_DY: NEAR_MATCH_MAX_DY, NEAR_MATCH_DICE: NEAR_MATCH_DICE,
     NEAR_MATCH_MIN_LEN: NEAR_MATCH_MIN_LEN, NEAR_MATCH_MAX_DLEN: NEAR_MATCH_MAX_DLEN,
+    NEAR_MATCH_SHORT_DICE: NEAR_MATCH_SHORT_DICE, NEAR_MATCH_SHORT_MAX_DLEN: NEAR_MATCH_SHORT_MAX_DLEN,
     NEAR_CONF_MARGIN: NEAR_CONF_MARGIN,
-    bigramDice: bigramDice,
+    bigramDice: bigramDice, charDice: charDice,
     needsRotation: needsRotation, rotationsFor: rotationsFor,
     TILT_CANDIDATES: TILT_CANDIDATES.slice(), pickTilt: pickTilt,
     ADOPT_MIN_CONF: ADOPT_MIN_CONF, isCredible: isCredible,

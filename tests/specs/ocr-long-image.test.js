@@ -491,8 +491,27 @@ module.exports = async function run() {
     /* ③ 反向守卫：Dice 不够（兄弟行「第12行/第13行」= 0.75）⇒ 不吃 */
     eq(P.mergeOverlap([L('第12行 12.00', 300, 0, 10, 90), L('第13行 12.00', 305, 1, 10, 96)], pair).near, 0,
       'Dice 0.75 < 0.8 ⇒ 宁可留重复，也不吃内容');
-    /* ④ 短串不配（≤5 字 Dice 抖动大） */
-    eq(P.mergeOverlap([L('ab1', 300, 0, 10, 90), L('ab2', 305, 1, 10, 96)], pair).near, 0, '短串不配');
+    /* ④ 短串（`keyOf` 长度 < 6）换**单字 Dice**：同一物理行上各带一个错字的短句必须配掉 ——
+     *    用户真机样本：原文「你好啊」，切片 A 读成「尔好啊」、切片 B 读成「你好阿」。
+     *    二元组 Dice = 0（{尔好,好啊} ∩ {你好,好阿} = ∅）⇒ 旧实现永远分两行。 */
+    eq(P.NEAR_MATCH_SHORT_DICE, 1 / 3, '短串阈值 1/3：3 字里至少对上 1 个字（用户样本正好踩在这条线上）');
+    const shortM = P.mergeOverlap([L('尔好啊', 300, 0, 10, 90), L('你好阿', 305, 1, 10, 96)], pair);
+    eq(shortM.near, 1, '★ 两个错字的三字短句也要配掉（旧实现：长度闸 + 二元 Dice 双重漏过）');
+    eq(shortM.lines.length, 1);
+    eq(shortM.lines[0].t, '你好阿', '留 conf 高的那条');
+    /* ④b 短串里一个字都对不上 ⇒ 仍不配（反向守卫：单字度量不是"随便配"） */
+    eq(P.mergeOverlap([L('ab1', 300, 0, 10, 90), L('xy2', 305, 1, 10, 96)], pair).near, 0, '零交集仍不配');
+    /* ④c 长×短不配（原长度闸的职责原样保留） */
+    eq(P.mergeOverlap([L('ab1', 300, 0, 10, 90), L('abcdefg', 305, 1, 10, 96)], pair).near, 0, '长×短不配');
+    eq(P.mergeOverlap([L('ab1', 300, 0, 10, 90), L('ab1cd', 305, 1, 10, 96)], pair).near, 0, '短串长度差 ≤ 1（差 2 已是别的内容）');
+    eq(P.mergeOverlap([L('ab1', 300, 0, 10, 90), L('ab12', 305, 1, 10, 96)], pair).near, 1,
+      '短串差一个字（多认/少认一个）⇒ 配掉，留字数多的那条');
+    /* ④d 短串 conf 持平：几何已断言同一条物理行 ⇒ **不拿"分不出谁更对"当留两行的借口**，
+     *    改按 字数 → y 定序，仍是只留一条（这正是用户要的"同一句话别出现两次"）。 */
+    const shortTie = P.mergeOverlap([L('尔好啊', 300, 0, 10, 95), L('你好阿', 305, 1, 10, 95)], pair);
+    eq(shortTie.near, 1, '短串同一物理行 + 几何吻合 ⇒ conf 持平也合并');
+    eq(shortTie.lines.length, 1);
+    eq(shortTie.lines[0].t, '尔好啊', 'conf 持平、字数相同 ⇒ 留 y 较小者（靠上那条）');
     /* ⑤ 长度差 > 2 不配（防「短串是长串子串」） */
     eq(P.mergeOverlap([L('北京 上海 广州', 300, 0, 10, 90), L('北京 上海 广州南站 东', 305, 1, 10, 96)], pair).near, 0,
       '长度差过大不配');
@@ -539,6 +558,27 @@ module.exports = async function run() {
     eq(res.text.split('\n').length, 1, '文本里也只有一行');
     truthy(res.text.indexOf('供应商 甲') >= 0, '同 y 时留先出现的那条（块 0）');
     eq(env.calls.recognize, 6, '长图 6 块 ⇒ 6 次识别（去重不该多跑一遍）');
+  });
+
+  await test('★ 用户真机复现（端到端）：三字短句被两个切片各读一次、各带一个错字 ⇒ 只留一条', async () => {
+    /* 用户原话：原文「你好啊」，一个切片 OCR 成「尔好啊」、另一个成「你好阿」，会分两行展示。
+     * 形状照 T22 那对（同一物理行 y=1400，块 1 的块内 y = 1400 − 1360 = 40）。 */
+    const env = loadOffscreen({
+      lines: (i) => (i === 0
+        ? { conf: 90, lines: [{ t: '尔好啊', conf: 90, y: 1400, x: 4 }] }
+        : i === 1
+          ? { conf: 96, lines: [{ t: '你好阿', conf: 96, y: 40, x: 4 }] }
+          : { conf: 96, lines: [] })
+    });
+    env.job({ type: MSG.OCR_IMAGE, requestId: 'rshort', tabId: 7, keyword: '你好', dataUrl: 'data:,W=1080;H=8000' });
+    const res = await env.result('rshort');
+    eq(res.ok, true);
+    eq(res.lines, 1, '★ 同一条物理行只留一条（旧实现：长度闸 + 二元 Dice 双重漏过 ⇒ 这里留 2 条）');
+    eq(res.overlap.near, 1, '这一对记在近失配对的账上');
+    eq(res.overlap.merged, 0, '逐字不等 ⇒ 第一遍不该认领它');
+    eq(res.text.split('\n').length, 1, '最终文本里也只有一行');
+    truthy(res.text.indexOf('你好阿') >= 0, '留 conf 高的那条');
+    truthy(res.text.indexOf('尔好啊') < 0, 'conf 低的那条不许留下');
   });
 
   await test('★ T22 兜底（端到端）：同块相邻两条只差空白 ⇒ 只留一条（重叠带外 1px 那对真机残留）', async () => {

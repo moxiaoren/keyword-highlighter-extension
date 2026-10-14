@@ -304,22 +304,23 @@ module.exports = async function run() {
      * 保证 —— 谁把浮层改回参与 flex 布局，图宽就会跟着全文栏一起变。 */
     const rowSeg = src.slice(src.indexOf('<div class="kh-lb-row">'), src.indexOf('<div class="kh-lb-bar">'));
     truthy(rowSeg.indexOf('<div class="kh-lb-side"') >= 0,
-      'T46：全文栏必须是 .kh-lb-row 的子元素（锚点跟着行；落回容器会与行坐标错位、压住翻页键）');
+      '需求 4 后浮层位置由 position:fixed + JS 决定，DOM 里仍留在行内（少一处结构改动，也让点击白名单顺理成章）');
     truthy(rowSeg.indexOf('<img class="kh-lb-img" alt="">') >= 0, '图片留在行内，img 标签原样');
     /* 案③ 的包裹层已作废：不许留任何残件 */
     falsy(src.indexOf('kh-lb-imgwrap') >= 0, '案③ 包裹层必须清干净（连注释都不留）');
     falsy(/min\(84vw/.test(src), '图的上限回到 84vw，不许再有"收在容器 100% 内"那种让位写法');
-    /* 浮层三要素：脱流（absolute）、贴右（right）、压在图上（z-index 高于 .kh-lb img 的 1） */
+    /* 浮层三要素：脱流（fixed）、坐标由 JS 写（left/top/height）、压在图上（z-index > .kh-lb img 的 1）。
+     * 需求 4 把定位从 absolute + right:60px 换成 **position: fixed**：坐标按视口算，拖动才"拖到哪儿停在
+     * 哪儿"、图变宽变窄也不跟着飘。脱流这条不变 —— 谁把浮层改回参与 flex 布局，图宽就跟着全文栏一起变。 */
     const sideRule = (src.match(/\.kh-lb-side \{[\s\S]*?\}/) || [''])[0];
     truthy(sideRule.length > 0, '要有 .kh-lb-side 规则本体');
-    truthy(/position:\s*absolute/.test(sideRule), '浮层必须绝对定位（否则仍参与行宽分配）：' + sideRule);
-    truthy(/right:\s*\d/.test(sideRule), '浮层贴右侧：' + sideRule);
+    truthy(/position:\s*fixed/.test(sideRule), '浮层必须脱流（fixed；否则仍参与行宽分配）：' + sideRule);
     const z = Number((sideRule.match(/z-index:\s*(\d+)/) || [0, 0])[1]);
     truthy(z > 1, '浮层层级要高于图（.kh-lb img 是 z-index:1），当前 ' + z);
-    /* T41（用户 2026-10-12 裁决方案 2 · 卡片内右侧栏）：坐标基准从"画满视口的 .kh-lb"换成
-     * **容器自身** —— 定位祖先由 .kh-lb-stage 的 position:relative 提供（几何口径见下面专测）。 */
-    truthy(/\.kh-lb-stage \{[\s\S]*?position:\s*relative/.test(src),
-      '.kh-lb-stage 必须成为定位祖先（否则浮层又按整个视口算坐标，越过卡片边框）');
+    /* 坐标不再是 CSS 里写死的 right: 60px（那只对得上一种视口），而是 dockSide() 按**图的实际矩形**
+     * 算出来写进 style —— 几何口径见下面专测。这里只钉"确有 JS 写坐标"这条。 */
+    truthy(/side\.style\.left = Math\.round\(x\) \+ 'px'/.test(src),
+      '浮层坐标必须由 JS 按图的实际位置算（写死一条 right 就当不了"并排 + 可拖"）');
     /* 复制通路的承重件：需求 7 删掉面板按钮后，「进大图 → 在全文里选中 → Ctrl+C」仍是一条通路，
      * 它靠的就是正文区那条 user-select: text（T41 起随正文区走，不再挂在外壳上）—— 谁去掉它，
      * 手工复制就断了（另一条通路是容器自带的复制按钮）。 */
@@ -350,20 +351,20 @@ module.exports = async function run() {
     truthy(/LIGHTBOX_PAN_KEEP/.test(fn), '手感余量（LIGHTBOX_PAN_KEEP = 120）保留，图可摆到整屏、不被拖丢');
   });
 
-  await test('★ 需求 5：全文栏默认隐藏 —— 会话级状态、关大图复位、开关在工具栏、文案取自 VIEW', () => {
+  await test('★ 2.0.2.1 需求 4：全文栏默认可见 + 默认停靠大图右侧 + 可拖动 —— 会话级状态、工具栏开关', () => {
     const src = read('src/features/important-note.js');
     const lb = read('src/ui/ocr-copy.js');
-    truthy(/let sideHidden = true;/.test(src), '默认隐藏：状态初始就是隐藏（用户口径"点眼睛才弹出"）');
+    truthy(/let sideHidden = false;/.test(src),
+      '默认可见：状态初始就是"显示"（用户 2.0.2.1 口径"默认在大图容器右侧并排展示"）');
     /* 会话级的两条反证：不许挂 host（host 是缓存宿主，会跨次开灯箱存活）、不许进 chrome.storage */
     falsy(/host\._sideHidden/.test(src), '显示态不许挂到 host 上（会跨次开灯箱存活）');
     falsy(src.indexOf('chrome.storage') >= 0, '显示态不许进扩展存储（那是跨会话的持久状态）');
-    truthy(/const close = \(\) => \{ box\.hidden = true; img\.removeAttribute\('src'\); sideHidden = true; \};/.test(src),
-      '关大图必须复位成隐藏（= 每次打开都从隐藏态开始）');
+    truthy(/const close = \(\) => \{ box\.hidden = true; img\.removeAttribute\('src'\); sideHidden = false; \};/.test(src),
+      '关大图必须复位成可见（= 每次打开都从"并排展示"这一档开始）');
     truthy(src.indexOf('side.hidden = !full || sideHidden;') >= 0,
       '显隐用 .kh-lb-side 既有的 hidden（不另写一套隐藏样式）');
     eq((src.match(/\.kh-lb-side\[hidden\]/g) || []).length, 1, '只许有既有那一条隐藏规则');
-    /* 开关挂在**现有工具条**上（不新造条），且在浮层 div 之前 —— 说明它确实在工具条里 */
-    /* T46 起浮层在 bar **之前**（行内），所以这段切片不能再用"浮层起点"当终点 —— 用 bar 自己的收尾。 */
+    /* 开关挂在**现有工具条**上（不新造条），且在这段切片里 —— 说明它确实在工具条里 */
     const barAt = src.indexOf('<div class="kh-lb-bar">');
     const barSeg = src.slice(barAt, src.indexOf('</div>', barAt));
     truthy(barSeg.indexOf('kh-lb-sidebtn') >= 0, '眼睛按钮挂现有工具条（不新造条）');
@@ -373,9 +374,50 @@ module.exports = async function run() {
       '切换按钮必须走 on() 包装（preventDefault + stopPropagation）');
     truthy(/sideBtn\.textContent = sideHidden \? KH\.OcrCopy\.VIEW\.paneShow : KH\.OcrCopy\.VIEW\.paneHide/.test(src),
       '两个标签都必须取自 VIEW（灯箱不许自己写这两句）');
-    for (const k of ['paneHide', 'paneShow']) {
+    /* ---- 默认停靠（需求 4）：要"并排"，就不能只钉 CSS 的一条 right ---- */
+    const dock = (src.match(/const dockSide = \(\) => \{[\s\S]*?\n      \};/) || [''])[0];
+    truthy(dock.length > 0, '要有 dockSide 本体（默认停靠的唯一实现）');
+    truthy(/x = r\.right \+ gap \+ 48 \+ gap/.test(dock),
+      '首选位 = 图右缘 + 间隙 + 48 导航 + 间隙 ⇒ 落在导航**外侧**，结构上压不到 ‹/›：' + dock);
+    truthy(/if \(x \+ w > vw - gap\) x = r\.right - w;/.test(dock),
+      '视口里放不下 ⇒ 退回行内右侧：右缘齐图右缘（让开 12 + 48 导航带，与 T46 定稿位同口径）');
+    truthy(/side\.style\.height = Math\.round\(h\) \+ 'px'/.test(dock), '高度跟图走（浮层自己滚，不撑破视口）');
+    truthy(/if \(!side\.hidden && !host\._sideMoved\) dockSide\(\);/.test(src),
+      '默认停靠只对**没被拖过**的一档生效（拖过之后不许被 apply 推回原位）');
+    truthy(/host\._sideMoved = false;/.test(src), '每次打开复位"拖过"标记（否则第二次开箱就丢了默认停靠）');
+    /* ---- 拖动（需求 4）：抓手 = 标题栏；夹紧只保证标题栏还留在视野里；双击是回程出口 ---- */
+    truthy(/const paneHd = sr\.querySelector\('\.kh-lb-side-hd'\);/.test(src), '拖动抓手 = 标题栏');
+    truthy(/paneHd\.title = KH\.OcrCopy\.VIEW\.paneDrag;/.test(src),
+      '抓手的提示文案取自 VIEW（灯箱不许自己写中文）');
+    truthy(/paneHd\.addEventListener\('pointerdown'/.test(src) && /paneHd\.addEventListener\('pointermove'/.test(src),
+      '拖动走 pointer 事件对');
+    truthy(/closest\('button'\)/.test(src), '标题栏里的按钮（复制 / ×）不许被当成拖动起点');
+    truthy(/if \(!paneDrag\) return;/.test(src), '没有拖动中的指针就不改坐标');
+    truthy(/host\._sideMoved = true;/.test(src), '拖动中要标记"已拖过"，apply() 才不会把位置推回去');
+    truthy(/paneHd\.addEventListener\('dblclick'/.test(src), '双击标题栏 = 回默认停靠位（拖远之后的唯一回程出口）');
+    for (const k of ['paneHide', 'paneShow', 'paneDrag']) {
       truthy(new RegExp(k + ':').test(lb), 'VIEW 缺键 ' + k + '（文案真源不许散落在灯箱里）');
     }
+  });
+
+  /* --------------------------------------------------------------------------
+   * 2.0.2.1 需求 5：大图模式支持**鼠标滚轮调整大小**。
+   * 已有的缩放入口只有工具条 ± 与键盘 +/-（都按 LIGHTBOX_ZOOM_STEP 一档一档走）；
+   * 滚轮是连续量，必须换算成"档"并夹住 —— 触控板与滚轮 deltaY 量纲差得远，不夹一次能跳四倍。
+   * 全文栏里滚 = 读文本，不能抢它的滚动。
+   * -------------------------------------------------------------------------- */
+  await test('★ 2.0.2.1 需求 5：大图滚轮缩放（换算成档 + 夹紧 + 不抢全文栏滚动）', () => {
+    const src = read('src/features/important-note.js');
+    const wh = (src.match(/box\.addEventListener\('wheel'[\s\S]*?\}, \{ passive: false \}\);/) || [''])[0];
+    truthy(wh.length > 0, '要有挂在遮罩上的 wheel 监听（滚轮缩放的唯一入口）');
+    truthy(/\{ passive: false \}/.test(wh), '必须显式 passive:false —— 否则 preventDefault 无效，页面跟着滚');
+    truthy(/e\.preventDefault\(\)/.test(wh), '滚轮不许穿透到底层页面');
+    truthy(/if \(side\.contains\(e\.target\)\) return;/.test(wh), '全文栏里滚 = 读文本，不抢它的滚动');
+    truthy(/Math\.max\(-2, Math\.min\(2, e\.deltaY \/ 100\)\)/.test(wh),
+      '每 100px 滚动 ≈ 一档，且夹在 ±2 档内（滚轮/触控板量纲差得远）：' + wh);
+    truthy(/if \(k\) zoom\(Math\.pow\(LIGHTBOX_ZOOM_STEP, -k\)\)/.test(wh),
+      '实际缩放仍走既有的 zoom()（夹在 LIGHTBOX_ZOOM_MIN/MAX，不另写一套）');
+    truthy(/zoom\(1 \/ LIGHTBOX_ZOOM_STEP\)/.test(src), 'zoom() 的两个既有调用方（± 按钮 / 键盘）不许删');
   });
 
   /* --------------------------------------------------------------------------
@@ -395,11 +437,11 @@ module.exports = async function run() {
     truthy(stageAt > 0 && sideAt > stageAt, '模板里要能找到 .kh-lb-stage 与 .kh-lb-side');
     eq((src.slice(stageAt, sideAt).match(/<\/div>/g) || []).length, 0,
       'stage 与 side 之间不许有收尾（T46：side 是 .kh-lb-row 的子元素，行还没关）');
-    /* ② 几何（T46 坐标基准 = .kh-lb-row）：贴行上下、右缘让开 48px 导航键 + 12px 间隙；
-     * 宽度上限左右各留 60px ⇒ 数学上不可能压到 ‹ ›；纵向 0/0 = 与图片上下边齐平（行高 = 图高）。 */
+    /* ② 几何（需求 4 后的口径）：**定宽 + 坐标由 JS 写**（并排/可拖的几何口径见上面 dockSide 专测）。
+     * 这里钉的是那几件不许被顺手删掉的：定宽 340px、窄视口下的上限（不许横着溢出行外）。
+     * 右缘让开导航那条"压不到 ‹/›"的保证，已从 CSS 的 right:60px 迁到 dockSide 的两个位次里。 */
     const sideRule = (src.match(/\.kh-lb-side \{[\s\S]*?\}/) || [''])[0];
-    for (const p of [/top:\s*0/, /right:\s*60px/, /bottom:\s*0/, /width:\s*340px/,
-      /max-width:\s*min\(342px,\s*calc\(100% - 120px\)\)/]) {
+    for (const p of [/width:\s*340px/, /max-width:\s*min\(342px,\s*calc\(100vw - 16px\)\)/]) {
       truthy(p.test(sideRule), '几何口径 ' + p + ' 必须在 .kh-lb-side 里：' + sideRule);
     }
     truthy(/display:\s*flex/.test(sideRule) && /flex-direction:\s*column/.test(sideRule),
