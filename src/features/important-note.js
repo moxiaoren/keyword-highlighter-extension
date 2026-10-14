@@ -241,6 +241,12 @@
       display: inline-block; max-width: var(--kh-lbt-maxw, 8em); max-height: 1.5em;
       overflow: hidden; vertical-align: bottom;
     }
+    /* 一致性核对（2.0.2.2 需求 4）：与抓取表格同一副表格骨架（复用 .kh-table），
+     * 只按结论给整格上色 —— 三种状态各一色，扫一眼就能分辨「一致 / 不一致 / 还没识别完」。 */
+    .kh-table-check td { width: auto; }
+    .kh-table-check .kh-check-ok { color: #15803d; }
+    .kh-table-check .kh-check-bad { color: #b45309; font-weight: 600; }
+    .kh-table-check .kh-check-wait { color: #64748b; }
     /* ---- 🖼 图片命中分区（面板下半部分，独立成块；默认折叠） ---- */
     /* 两个滚动区各自管自己（用户 2026-10-07）：面板总高受视口限制，OCR 分区若允许被压缩，
      * 它就会把上面的笔记列表挤到近零（"互相抢占展示"）；若不许压缩又会被 .khin-panel 的
@@ -800,11 +806,16 @@
         host._sideMoved = false;
         dockSide();
       });
-      /* 图解码完才拿得到真实矩形 ⇒ 默认停靠要在 load 后再摆一次（首次打开那一刻 rect 还是 0）。
-       * ponytail: 只认 load，不挂 window resize —— 开灯箱期间改窗口大小，浮层会停在旧视口坐标上
-       * （可能偏出视野）；回程出口是双击标题栏复位（或直接拖回来）。真要跟手，再加一个 resize 监听，
-       * 但 tests/harness.js 的 window 垫片没有 addEventListener，得先补垫片。 */
+      /* 图解码完才拿得到真实矩形 ⇒ 默认停靠要在 load 后再摆一次（首次打开那一刻 rect 还是 0）。 */
       img.addEventListener('load', () => {
+        if (!box.hidden && !side.hidden && !host._sideMoved) dockSide();
+      });
+      /* 开灯箱期间改窗口大小也要跟手（2.0.2.2 需求 1；原「下版本修复预录」那一条）——不然浮层停在
+       * 旧视口坐标上，窗口一变小整条可能偏出视野。两条限制缺一不可：
+       *   · 浮层藏着（眼睛收起）时不摆，免得再展开时跳一下；
+       *   · **只对没被手动拖过的那一档跟手** —— 用户拖到的位置就是他的意图，resize 不许抢走。
+       *     双击标题栏复位会把 `_sideMoved` 归 false ⇒ 之后重新跟手（回程出口没被削掉）。 */
+      window.addEventListener('resize', () => {
         if (!box.hidden && !side.hidden && !host._sideMoved) dockSide();
       });
 
@@ -1061,8 +1072,11 @@
         if (!h || !h.meta) continue;
         let note = String(h.meta.importantNote || '').trim();
         const fieldsHtml = h.meta.fetchHtml || '';
-        // 重要笔记正文 = 用户重要笔记（Markdown）+ 抓取字段的多行表格
+        /* 一致性核对（2.0.2.2 需求 4）：**排在抓取字段之后** —— 先摆事实（各字段的值），再给结论 */
+        const checkHtml = h.meta.fetchCheckHtml || '';
+        // 重要笔记正文 = 用户重要笔记（Markdown）+ 抓取字段的多行表格 + 一致性核对结论
         if (fieldsHtml) note = note ? (note + '\n' + fieldsHtml) : fieldsHtml;
+        if (checkHtml) note = note ? (note + '\n' + checkHtml) : checkHtml;
         if (!note) continue;                                   // 空内容忽略
         if (ignored && ignored.has(note)) continue;
         const kw = String(h.meta.text || h.meta.display || '').trim();
@@ -1073,15 +1087,17 @@
         rawMap.set(key, {
           note, kw, adj,
           imgSize: h.meta.imgSize || '',
+          noteFontSize: h.meta.noteFontSize || '',
           bg: h.meta.impNoteBg || ''
         });
       }
 
-      const noteMap = new Map();    // note -> { note, imgSize, bg, entrySet }
+      const noteMap = new Map();    // note -> { note, imgSize, noteFontSize, bg, entrySet }
       rawMap.forEach((r) => {
         let g = noteMap.get(r.note);
-        if (!g) { g = { note: r.note, imgSize: r.imgSize, bg: r.bg, entrySet: new Set() }; noteMap.set(r.note, g); }
+        if (!g) { g = { note: r.note, imgSize: r.imgSize, noteFontSize: r.noteFontSize, bg: r.bg, entrySet: new Set() }; noteMap.set(r.note, g); }
         if (!g.imgSize && r.imgSize) g.imgSize = r.imgSize;
+        if (!g.noteFontSize && r.noteFontSize) g.noteFontSize = r.noteFontSize;
         if (!g.bg && r.bg) g.bg = r.bg;
         g.entrySet.add(r.kw + '\u0000' + (r.adj || ''));
       });
@@ -1093,7 +1109,7 @@
           const i = k.indexOf('\u0000');
           entries.push({ kw: k.slice(0, i), adj: k.slice(i + 1) });
         });
-        items.push({ note: g.note, entries, imgSize: g.imgSize || '', bg: g.bg || '' });
+        items.push({ note: g.note, entries, imgSize: g.imgSize || '', noteFontSize: g.noteFontSize || '', bg: g.bg || '' });
       });
       return items;
     },
@@ -1101,15 +1117,16 @@
     /**
      * 内容脏检查：命中集合未变 → 不重建 DOM（避免无关变化导致闪烁/重播入场动画）。
      *
-     * 【key 必须含 imgSize】单卡尺寸是靠 `renderItems` 给该卡写**内联** `--kh-img-size`
-     * （`el.style.setProperty('--kh-img-size', item.imgSize + 'px')`）生效的，
-     * 而它是**渲染期**写的：key 不含 imgSize 时，"只改某词/分组的图片尺寸、内容一字未变"
-     * 会判成不脏 → 跳过 renderContent → 卡片尺寸不刷新（把词级尺寸删掉时更糟：
-     * 旧的内联值会一直残留）。所以尺寸变化必须算脏。
+     * 【key 必须含 imgSize / noteFontSize】单卡的尺寸与字号都是靠 `renderItems` 给该卡写**内联**
+     * `--kh-img-size` / `--kh-note-fs`（`el.style.setProperty(…)`）生效的，
+     * 而它们是**渲染期**写的：key 不含这两个键时，"只改某词/分组的图片尺寸或字号、内容一字未变"
+     * 会判成不脏 → 跳过 renderContent → 卡片尺寸/字号不刷新（把词级值删掉时更糟：
+     * 旧的内联值会一直残留）。所以尺寸与字号变化必须算脏。
      */
     changed(oldItems, newItems) {
       if ((oldItems || []).length !== (newItems || []).length) return true;
       const key = (it) => (it.note || '') + '\u0001' + (it.bg || '') + '\u0001' + (it.imgSize || '') + '\u0001' +
+        (it.noteFontSize || '') + '\u0001' +
         (it.entries || []).map(e => (e.kw || '') + '\u0003' + (e.adj || '')).sort().join('\u0002');
       const oldKeys = new Set((oldItems || []).map(key));
       for (const it of newItems) if (!oldKeys.has(key(it))) return true;
@@ -1919,6 +1936,9 @@
         const el = doc.createElement('div');
         el.className = 'khin-item';
         if (item.imgSize) el.style.setProperty('--kh-img-size', item.imgSize + 'px');
+        /* 词级正文字号（2.0.2.2 需求 2）：卡级内联 `--kh-note-fs` 盖掉宿主级那个全局字号。
+         * 该变量由 `.khin-item-note`（笔记正文）与抓取字段表格统一消费，所以写在这一层就能同时管住两者。 */
+        if (item.noteFontSize) el.style.setProperty('--kh-note-fs', item.noteFontSize + 'px');
         // 「复用高亮底色」：铺该词实际底色（分组色 > 词色 > 全局默认）；空串不铺
         if (/^#[0-9a-fA-F]{3,8}$/.test(item.bg || '')) el.style.background = item.bg;
 
@@ -1950,17 +1970,18 @@
 
     /**
      * 笔记内容 → DOM 片段。
-     * 内容里**混有**两类东西：
+     * 内容里**混有**三类东西：
      *   · 用户写的 Markdown（`KH.Markdown.toFragment`）
      *   · 抓取字段生成的 `<table class="kh-table kh-table-fetch">` HTML（`KH.Fetch.rowsToTableHtml`）
-     * 抓取表格是本插件自己生成的**可信结构**，必须原样插入而不是当 Markdown 文本转义掉；
+     *   · 一致性核对生成的 `<table class="kh-table kh-table-check">` HTML（`KH.Fetch.checkFor`，2.0.2.2 需求 4）
+     * 这两类表格都是本插件自己生成的**可信结构**，必须原样插入而不是当 Markdown 文本转义掉；
      * 因此先把表格片段摘出来，其余按 Markdown 渲染，最后按原顺序拼回。
      */
     noteFragment(doc, note) {
       const frag = doc.createDocumentFragment();
       const src = String(note == null ? '' : note);
       // 兼容不带 `kh-table-fetch` 标记的旧串（历史数据 / 已缓存的笔记内容），两种都认
-      const re = /<table class="kh-table(?: kh-table-fetch)?">[\s\S]*?<\/table>/g;
+      const re = /<table class="kh-table(?: kh-table-(?:fetch|check))?">[\s\S]*?<\/table>/g;
       let last = 0;
       let m;
       const pushMd = (text) => {
@@ -2044,6 +2065,30 @@
    *     必须按标签**确实抓到内容**才算这条记录有效；抓不到 → 不显示、**不回退抓标题右格**。
    *   · 每轮重建都重算（值后到/异步填充后自动补上），不缓存"未命中"结论。
    */
+  /**
+   * 某个字段（**含层级后缀**，按 `baseLabelOf` 归一）的图片识别结果汇总。
+   * 一致性核对的右字段靠它读「图里写了什么」（2.0.2.2 需求 4）。
+   *   · `scheduled`：这个字段确实有图排进了识别（没有 ⇒ 多半是「识别图片文字」没开）
+   *   · `done`：这些图都跑完了（`idle`/`pending` 还在排队时不算完）
+   *   · `text`：读出来的文字（一张都没读出字时是空串 —— 调用方据此说"没识别出文字"，不当不一致）
+   */
+  function ocrTextOf(label) {
+    const want = String(label == null ? '' : label);
+    let text = '';
+    let n = 0;
+    let pending = false;
+    const items = (KH.ImgOcr && typeof KH.ImgOcr.items === 'function') ? KH.ImgOcr.items() : [];
+    for (const it of items) {
+      if (!it) continue;
+      const base = (KH.Fetch && KH.Fetch.baseLabelOf) ? KH.Fetch.baseLabelOf(it.label) : String(it.label || '');
+      if (base !== want) continue;
+      n++;
+      if (it.state === 'idle' || it.state === 'pending') pending = true;
+      else if (it.state === 'done' && it.text) text += '\n' + it.text;
+    }
+    return { text: text, done: n > 0 && !pending, scheduled: n > 0 };
+  }
+
   function collectEffective(hits) {
     const list = (hits || []).filter(h => h && h.meta && h.meta.important);
     const effective = [];
@@ -2058,6 +2103,17 @@
           : '';
       } catch (err) {
         h.meta.fetchHtml = '';
+      }
+      /* 一致性核对（2.0.2.2 需求 4）：读的是**同一份取到的值**（共用 fetchCache ⇒ 不重复走查 DOM），
+       * 右字段的图片文字走 `ocrTextOf`（`KH.ImgOcr` 的结果）。没配规则时 checkFor 立刻返回 ''。 */
+      h.meta.fetchCheckHtml = '';
+      try {
+        if (KH.Fetch && typeof KH.Fetch.checkFor === 'function') {
+          h.meta.fetchCheckHtml = KH.Fetch.checkFor(
+            h.textNode, h.meta.fetchCheck, h.meta.fetchLabels, fetchCache, h.meta.fetchScope, ocrTextOf) || '';
+        }
+      } catch (err) {
+        h.meta.fetchCheckHtml = '';
       }
       // 仅抓取：抓不到内容即视为无内容（旧版 v1.13.6「空值守卫」）
       if (h.meta.fetchOnly && !h.meta.fetchHtml) continue;
@@ -2094,7 +2150,20 @@
   /* 图片识别的结果是**异步**回来的（OCR 在 offscreen 文档里跑），面板得自己刷新，
    * 不能等下一次页面重建 —— 否则用户要等页面变动才看见识别结果。 */
   if (KH.ImgOcr && typeof KH.ImgOcr.onChange === 'function') {
-    KH.ImgOcr.onChange(() => panel.renderImg());
+    KH.ImgOcr.onChange(() => {
+      panel.renderImg();
+      /* 2.0.2.2 需求 4：一致性核对的右字段读的正是图片识别文字 ⇒ 识别完后**笔记卡也得重画**，
+       * 否则结论会停在 ⏳。只在真有「一致性核对」规则时才付这份代价（否则每个 OCR 回调都要
+       * 重跑一遍全量抓取 —— 大表格上那笔开销不能白花）；重画由 `changed()` 的脏检查挡住无变化的情况。 */
+      if (hasCheckRules()) panel.refresh();
+    });
+  }
+
+  /** 配置里是否存在任何「一致性核对」规则（决定 OCR 回调要不要顺带重画笔记卡） */
+  function hasCheckRules() {
+    const c = KH.config || {};
+    const any = (list) => (list || []).some((k) => !!(k && String(k.fetchCheck == null ? '' : k.fetchCheck).trim()));
+    return any(c.keywords) || any(c.groups);
   }
 
   KH.ImportantNote = { panel, head, collectEffective, IMG_PROTOCOL_OK };

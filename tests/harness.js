@@ -376,6 +376,26 @@ function installDOM() {
   defineGlobal('document', doc);
   // KH 挂在 window 上；Node 里 window 可能不存在或不可覆盖，统一指向 globalThis
   defineGlobal('window', global.window || global);
+  /* window 的事件通路（2.0.2.2 需求 1）：生产代码会挂 `window.addEventListener('resize'|'pointermove'…)`
+   * —— 灯箱全文栏跟手窗口大小、面板拖动都走它。垫片里 `window` 就是 global，而 Node 的 globalThis
+   * **没有** addEventListener ⇒ 以前这些分支一挂就抛，"别挂"成了唯一绕法（两处 specs 的注释都记着）。
+   * 这里给一个最小实现：按注册序回调、可移除，并暴露 `__khFire(type)` 供单测直接派发一次。 */
+  if (typeof global.window.addEventListener !== 'function') {
+    const bus = Object.create(null);
+    defineGlobal('addEventListener', function (type, fn) {
+      if (typeof fn !== 'function') return;
+      (bus[type] = bus[type] || []).push(fn);
+    });
+    defineGlobal('removeEventListener', function (type, fn) {
+      const list = bus[type];
+      if (!list) return;
+      const i = list.indexOf(fn);
+      if (i >= 0) list.splice(i, 1);
+    });
+    global.window.__khFire = function (type, ev) {
+      for (const fn of (bus[type] || []).slice()) fn(ev || { type: type, preventDefault() {}, stopPropagation() {} });
+    };
+  }
   defineGlobal('Node', { TEXT_NODE: 3, ELEMENT_NODE: 1, DOCUMENT_NODE: 9, DOCUMENT_FRAGMENT_NODE: 11 });
   defineGlobal('NodeFilter', { SHOW_TEXT: 4, SHOW_ELEMENT: 1, FILTER_ACCEPT: 1, FILTER_REJECT: 2, FILTER_SKIP: 3 });
   defineGlobal('location', { href: 'https://example.com/a/b?x=1', hostname: 'example.com' });

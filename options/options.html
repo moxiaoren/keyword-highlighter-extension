@@ -173,9 +173,7 @@
           <input class="kh-input" id="pf-notePanelWidth" type="number" step="10">
         </div>
       </div>
-      <p class="kh-muted">「图片尺寸」管抓取字段值格里的缩略图/识别图（单个关键词留空即继承这里）。「字号」管面板里的<strong>笔记正文与表格</strong>（10–20px，默认 11）。</p>
-      <p class="kh-muted">「面板宽度」＝面板的<strong>默认宽度</strong>（<strong>200–600px，默认 250</strong>）：这里是<strong>长期值</strong>，改完以后每次打开面板都按它来，各站点共用这一份设置。想临时改宽，直接拖面板的<strong>右下角</strong>——那是<strong>临时值</strong>，只对当前这一次显示有效、<strong>不写回这里</strong>，刷新页面就回到上面的默认值。一句话：要「以后都这么宽」就在设置页改；只是这会儿嫌窄/嫌宽，拖右下角。</p>
-      <p class="kh-muted">复制整段识别文字：<strong>点开大图，全文栏默认就在大图右侧并排显示</strong>，在里面选中后 Ctrl+C，也可以点全文栏自带的<strong>一键复制</strong>。不想看这栏，点灯箱工具条上的<strong>眼睛</strong>收起它（再点一次弹回来）；按住栏的<strong>标题</strong>还能把它拖到别处，<strong>双击标题</strong>回到大图右侧。图片条目上原来的 <strong>📋 一键复制已移除</strong>。命中词块点一下，复制的仍是它所在的<strong>整句</strong>。</p>
+      <p class="kh-muted">三个都只是<strong>默认值</strong>：单个关键词或分组<strong>留空即继承</strong>这里。「图片尺寸」管抓取字段值格里的缩略图/识别图；「字号」管面板里的<strong>笔记正文与表格</strong>（10–20px，默认 11）；「面板宽度」是长期值、拖面板右下角只算当前这一次 —— 两条口径的完整解释见「帮助与隐私 → ❓ 常见」Q12 / Q13。</p>
     </section>
 
     <!-- ============================================================ 图片识别（OCR） -->
@@ -427,6 +425,7 @@
             <li><code>地址|籍贯</code> 可抓多标签；支持多行 / 合并单元格，表格化展示。</li>
             <li><code>#1</code>＝只取右邻一格；三方向<strong>层级</strong>（当前层/内层/外层，下拉 8 档可多选）。</li>
             <li>字段语法：<code>#图</code> 仅图片 / <code>#3</code> 最多 3 张 / <code>@表达式</code> 指定值格。</li>
+            <li><strong>一致性核对</strong>：下面「一致性核对」里一行写一条 <code>包名 = 软著</code>，就拿「包名」的值去「软著」的<strong>文字与图片识别结果</strong>里找 —— 找到标 ✅、找不到标 ⚠️，结论直接附在这条重要笔记里（<code>!=</code> 是反过来要求<strong>不出现</strong>）。用法与口径见「❓ 常见」Q15。</li>
             <li><strong>新后缀</strong>：末尾 <code>!</code> 去内部空格、<code>%N</code> 截前 N 字 / <code>%a-b</code> 截区间（不拆中文/emoji），如 <code>包名!</code>、<code>简介#1%4</code>。</li>
             <li>自动剔除按钮文字；图片仅接受 http/https。</li>
             <li>某条字段<strong>取不到内容</strong>（值格空着、或整格什么都没抓到）时，这一项<strong>整张卡片都不出现</strong> —— 不会只剩一个只有字段名的空壳让你点。</li>
@@ -566,9 +565,15 @@
         <h4>Q11：更新日志去哪看？</h4>
         <p>设置页「ℹ️ 关于 → 版本信息」，可用<strong>右侧目录</strong>按版本号跳转；完整历史在<strong>欢迎页</strong>。</p>
         <h4>Q12：设置页改了「面板默认宽度」，为什么面板没跟着变？</h4>
-        <p>「面板默认宽度」调的是<strong>默认值</strong>（以后每次打开的面板宽度）；没拖过<strong>右下角</strong>的面板，这会儿正开着也会<strong>立刻</strong>跟着变。一旦拖过<strong>右下角</strong>，面板就按你拖出来的宽度显示 —— 那是<strong>临时值</strong>，只作用在页面上、不写进设置，此时再改设置页也不会顶掉它，<strong>刷新页面就回到默认值</strong>。填 200–600 之外会自动夹到边界，填了非数字则回到 250。</p>
+        <p>「面板默认宽度」调的是<strong>默认值</strong>（以后每次打开的面板宽度，<strong>各站点共用这一份设置</strong>）；没拖过<strong>右下角</strong>的面板，这会儿正开着也会<strong>立刻</strong>跟着变。一旦拖过<strong>右下角</strong>，面板就按你拖出来的宽度显示 —— 那是<strong>临时值</strong>，只作用在页面上、不写进设置，此时再改设置页也不会顶掉它，<strong>刷新页面就回到默认值</strong>。填 200–600 之外会自动夹到边界，填了非数字则回到 250。</p>
         <h4>Q13：图片条目上的「📋 一键复制」去哪了？</h4>
         <p>已移除（图片条目上不再有那个按钮），完整识别文字请到<strong>大图（灯箱）的全文栏</strong>里取：该栏默认就在<strong>大图右侧并排</strong>显示，点<strong>一键复制</strong>，或在栏里<strong>选中后 Ctrl+C</strong>；用灯箱工具条上的<strong>眼睛</strong>开关收起 / 展开，复制按钮跟着它一起显隐（按住栏的<strong>标题</strong>可拖动、<strong>双击标题</strong>回位）。面板里<strong>点命中的词块</strong>，复制的仍是它所在的<strong>整句</strong>。</p>
+        <h4>Q14：重要笔记里每个词的<strong>正文字号</strong>能单独设吗？</h4>
+        <p>能（2.0.2.2 起）。<strong>全局默认</strong>在「🎨 样式 → 重要笔记 → 正文字号默认值」（10–20px，默认 11）；想只让某个词/分组不一样：打开该关键词（或分组）的编辑弹窗，在「重要笔记」区把<strong>字号</strong>填上 —— 该区要先勾选<strong>重要</strong>才会亮（关掉只是置灰，填过的内容保留）。<strong>留空＝继承全局默认</strong>。词级字号同时管住面板里的<strong>笔记正文</strong>与<strong>抓取字段表格</strong>；图片尺寸（同一区的「尺寸」）不走这条链路，它只管图片。</p>
+        <h4>Q15：怎么核对「表里的字段值」和「图片识别出来的值」对得上？</h4>
+        <p>用<strong>一致性核对</strong>（2.0.2.2 起）。在关键词编辑弹窗的「📎 抓取后续字段」区，先把要比对的字段名填进<strong>「字段」</strong>（例如 <code>包名|软著</code>），再在<strong>「一致性核对」</strong>里一行写一条规则：<code>包名 = 软著</code>。</p>
+        <p>含义是：「包名」取到的值，必须出现在「软著」这一格的<strong>文字</strong>或它<strong>图片的识别结果</strong>里 —— 对得上就在这条重要笔记里标 <strong>✅ 一致</strong>，对不上标 <strong>⚠️ 不一致</strong>并写明<strong>没找到哪个值</strong>。把 <code>=</code> 换成 <code>!=</code> 表示<strong>必须不出现</strong>（例如 <code>包名 != 备注</code>＝备注里不该再出现这个包名）。一行一条，<code>#</code> 开头是注释，留空＝不核对。</p>
+        <p>几个刻意的口径：比对<strong>忽略空格与大小写</strong>（识别结果里的空格常不稳定，不去掉就会"明明一样却报不一致"）；「字段」没取到值、或右字段的值格是<strong>空的</strong>时<strong>不报</strong>不一致（宁可什么都不提示，也不误报）；右字段里有图时，结论会等图片识别完再给，等待中显示 <strong>⏳ 待图片识别</strong>并写明原因（<strong>没开启「识别图片文字」</strong>／图片还在识别中／图片没识别出文字）—— 想让图片参与比对，记得把该字段填进「字段」并开启「识别图片文字」。</p>
       </div>
 
       </div>

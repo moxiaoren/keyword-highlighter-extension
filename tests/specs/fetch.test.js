@@ -1212,4 +1212,115 @@ module.exports = async function run() {
     eq(F.extractFor(tn, '简介!#1%4')[0].rows[0][0].t, '关键词高亮'.slice(0, 4));   // 去空格后前4字
     eq(F.extractFor(tn, '简介%2-3')[0].rows[0][0].t, '键词');
   });
+
+  /* ---------------- 一致性核对（2.0.2.2 需求 4） ----------------
+   * 用户场景：表格里「包名」= 2345，「软著」格是图片、图里写着「包名：2345」→ 一致就在重要笔记提示。
+   * 这些用例守四件事：结论正确、**不误报**（左字段没值 / 图还没识别）、`!=` 反向、结论是可信 HTML。 */
+
+  suite('fetch · 一致性核对（2.0.2.2 需求 4）');
+
+  await test('规则行解析：`=` / `!=`；空行与 # 注释跳过；认不出的行整行忽略', () => {
+    const r = F.parseCheckRules('包名 = 软著\n\n# 这是注释\nA != B\n没有运算符\n= 缺左边\n右边缺 =');
+    eq(r.length, 2);
+    eq(r[0].left + r[0].op + r[0].right, '包名=软著');
+    eq(r[1].left + r[1].op + r[1].right, 'A!=B');
+    eq(F.parseCheckRules('').length, 0);
+    eq(F.parseCheckRules(null).length, 0);
+  });
+
+  await test('★ 左字段的值出现在右字段的文字里 → ✅ 一致', () => {
+    const t = table([['关键词', 'x'], ['包名', '2345'], ['软著', '软著登记证：2345']]);
+    const tn = t.rows[0].children[0].childNodes[0];
+    const html = F.checkFor(tn, '包名 = 软著', '包名|软著', null, 'self');
+    truthy(html.indexOf('kh-table-check') >= 0, html);
+    truthy(html.indexOf('kh-check-ok') >= 0, html);
+    truthy(html.indexOf('✅') >= 0, html);
+    falsy(html.indexOf('⚠️') >= 0, html);
+  });
+
+  await test('★ 对不上 → ⚠️ 不一致，并报出没找到的那个值', () => {
+    const t = table([['关键词', 'x'], ['包名', '2345'], ['软著', '软著登记证：9999']]);
+    const tn = t.rows[0].children[0].childNodes[0];
+    const html = F.checkFor(tn, '包名 = 软著', '包名|软著', null, 'self');
+    truthy(html.indexOf('kh-check-bad') >= 0, html);
+    truthy(html.indexOf('2345') >= 0, html);
+  });
+
+  await test('★ 忽略空格与大小写（OCR 在空白上极不稳定）', () => {
+    const t = table([['关键词', 'x'], ['包名', ' 2345 '], ['软著', '包 名 ： 2 3 4 5']]);
+    const tn = t.rows[0].children[0].childNodes[0];
+    truthy(F.checkFor(tn, '包名 = 软著', '包名|软著', null, 'self').indexOf('kh-check-ok') >= 0);
+    const t2 = table([['关键词', 'x'], ['包名', 'ABC'], ['软著', '证书编号 abc']]);
+    const tn2 = t2.rows[0].children[0].childNodes[0];
+    truthy(F.checkFor(tn2, '包名 = 软著', '包名|软著', null, 'self').indexOf('kh-check-ok') >= 0);
+  });
+
+  await test('★ `!=` 反向：出现即不一致', () => {
+    const bad = table([['关键词', 'x'], ['包名', '2345'], ['备注', '重复项 2345']]);
+    const badHtml = F.checkFor(bad.rows[0].children[0].childNodes[0], '包名 != 备注', '包名|备注', null, 'self');
+    truthy(badHtml.indexOf('kh-check-bad') >= 0, badHtml);
+    const ok = table([['关键词', 'x'], ['包名', '2345'], ['备注', '无关内容']]);
+    const okHtml = F.checkFor(ok.rows[0].children[0].childNodes[0], '包名 != 备注', '包名|备注', null, 'self');
+    truthy(okHtml.indexOf('kh-check-ok') >= 0, okHtml);
+  });
+
+  await test('★ 左字段没取到值 / 没有规则 → 什么都不输出（宁可不报，也不误报）', () => {
+    const t = table([['关键词', 'x'], ['包名', ''], ['软著', '软著登记证：2345']]);
+    const tn = t.rows[0].children[0].childNodes[0];
+    eq(F.checkFor(tn, '包名 = 软著', '包名|软著', null, 'self'), '', '空值不许报不一致');
+    eq(F.checkFor(tn, '包名 = 不存在的字段', '包名|软著', null, 'self'), '', '右字段不存在时取值侧也给空');
+    eq(F.checkFor(tn, '', '包名|软著', null, 'self'), '', '没规则不输出');
+    eq(F.checkFor(tn, '包名 = 软著', '', null, 'self'), '', '没声明字段就没有值可比');
+  });
+
+  await test('★ 右字段的图还没识别完 → ⏳（不许拿"还没 OCR"当"不一致"）', () => {
+    const t = table([['关键词', 'x'], ['包名', '2345'],
+      ['软著', { html: [H.el('img', { src: 'https://cdn.example.com/a.png', alt: '' })] }]]);
+    const tn = t.rows[0].children[0].childNodes[0];
+    const wait = F.checkFor(tn, '包名 = 软著', '包名|软著', null, 'self', () => ({ text: '', done: false, scheduled: true }));
+    truthy(wait.indexOf('kh-check-wait') >= 0, wait);
+    truthy(wait.indexOf('⏳') >= 0, wait);
+    truthy(wait.indexOf('还在识别中') >= 0, '要写清在等什么：' + wait);
+    // 识别完成、图里的字正是左值 → ✅
+    const ok = F.checkFor(tn, '包名 = 软著', '包名|软著', null, 'self', () => ({ text: '包名：2345', done: true, scheduled: true }));
+    truthy(ok.indexOf('kh-check-ok') >= 0, ok);
+    // 识别完成但图里没有这个值 → ⚠️ 才算数
+    const bad = F.checkFor(tn, '包名 = 软著', '包名|软著', null, 'self', () => ({ text: '包名：777', done: true, scheduled: true }));
+    truthy(bad.indexOf('kh-check-bad') >= 0, bad);
+    // 这个字段的图根本没参与识别（没开「识别图片文字」）→ ⏳ 且明说原因，不许装成"不一致"
+    const off = F.checkFor(tn, '包名 = 软著', '包名|软著', null, 'self', () => ({ text: '', done: false, scheduled: false }));
+    truthy(off.indexOf('kh-check-wait') >= 0, off);
+    truthy(off.indexOf('识别图片文字') >= 0, '要指向真正的开关：' + off);
+    // 图跑了、一张都没读出字 → 同样不下"不一致"的断言
+    const blank = F.checkFor(tn, '包名 = 软著', '包名|软著', null, 'self', () => ({ text: '', done: true, scheduled: true }));
+    truthy(blank.indexOf('kh-check-wait') >= 0, blank);
+    truthy(blank.indexOf('没识别出文字') >= 0, blank);
+  });
+
+  await test('★ 已经能定的就先定：右格文字里已有左值 ⇒ 直接 ✅，不让用户白等 OCR', () => {
+    const t2 = table([['关键词', 'x'], ['包名', '2345'],
+      ['软著', { html: [H.txt('证书号 2345'), H.el('img', { src: 'https://cdn.example.com/b.png', alt: '' })] }]]);
+    const tn2 = t2.rows[0].children[0].childNodes[0];
+    const got = F.checkFor(tn2, '包名 = 软著', '包名|软著', null, 'self', () => ({ text: '', done: false, scheduled: true }));
+    truthy(got.indexOf('kh-check-ok') >= 0, got);
+  });
+
+  await test('★ 同一份 cache 复用取值：抓取表格与核对结论同源（不重复走查 DOM）', () => {
+    const t = table([['关键词', 'x'], ['包名', '2345'], ['软著', '软著登记证：2345']]);
+    const tn = t.rows[0].children[0].childNodes[0];
+    const cache = new WeakMap();
+    const html1 = F.blockFor(tn, '包名|软著', cache, 'self');
+    const chk = F.checkFor(tn, '包名 = 软著', '包名|软著', cache, 'self');
+    truthy(String(html1).indexOf('2345') >= 0, html1);
+    truthy(chk.indexOf('kh-check-ok') >= 0, chk);
+    eq(F.blockFor(tn, '包名|软著', cache, 'self'), html1, '两次结果必须逐字相同（缓存不许串味）');
+  });
+
+  await test('★ 值是可信 HTML：字段名里的尖括号被转义（不许当结构注入）', () => {
+    const t = table([['关键词', 'x'], ['<b>包名</b>', '2345'], ['软著', '无']]);
+    const tn = t.rows[0].children[0].childNodes[0];
+    const html = F.checkFor(tn, '<b>包名</b> = 软著', '<b>包名</b>|软著', null, 'self');
+    truthy(html.indexOf('&lt;b&gt;') >= 0, html);
+    falsy(html.indexOf('<b>包名</b>') >= 0, html);
+  });
 };

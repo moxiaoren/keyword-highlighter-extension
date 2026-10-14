@@ -312,6 +312,8 @@
       setDisabled(fetchCtl, !on);
       /* K74：「抓取范围」也跟着模块开关走（抓取模块没启用时它没有意义） */
       setDisabled(byKey('fetchScope'), !on);
+      /* 2.0.2.2 需求 4：「一致性核对」比的就是「字段」取到的值 ⇒ 没字段可比时一并禁用 */
+      setDisabled(byKey('fetchCheck'), !on || !hasLabels);
       setDisabled(ocrCtl, !on || !hasLabels);
       for (const key of ['imgOcrKeyword', 'imgOcrMax']) setDisabled(byKey(key), !on || !hasLabels || !ocrOn);
       if (ocrNote) {
@@ -344,9 +346,10 @@
 
     /**
      * 「重要笔记」联动（K71 裁定 1 · 红牌 A）——**各管各的**，覆盖 `fieldsOf('imp')` 里
-     * **除胶囊自身（`important`）以外**的三个字段：
-     *   `importantNote`（富文本编辑器）、`impNoteUseHlColor`（底色胶囊）、`imgSize`（尺寸）。
-     * 未勾选 → 三个字段置灰不可操作、**内容一律保留**；勾回 → 立即可编辑、可保存。
+     * **除胶囊自身（`important`）以外**的四个字段：
+     *   `importantNote`（富文本编辑器）、`impNoteUseHlColor`（底色胶囊）、`imgSize`（尺寸）、
+     *   `noteFontSize`（字号，2.0.2.2 需求 2 新增）。
+     * 未勾选 → 四个字段置灰不可操作、**内容一律保留**；勾回 → 立即可编辑、可保存。
      * **不新增说明节点**：胶囊就在同一标题行，置灰已自解释（imp 区不做"当前不会生效"那类说明；
      * 这同时保住了另两条已验的不变量：combo 区「最多 1 条可见说明」、fetch 区节点恒 1 个）。
      * 用户原话：「重要笔记相关部分都置灰无法操作，开启后才能填内容（当然，填了内容可以关闭，内容保留）」。
@@ -357,6 +360,7 @@
       setDisabledRich(byKey('importantNote'), !on);   // 富文本要额外处理 contenteditable
       setDisabled(byKey('impNoteUseHlColor'), !on);
       setDisabled(byKey('imgSize'), !on);
+      setDisabled(byKey('noteFontSize'), !on);
     }
     if (impCtl) {
       const cb = impCtl.el.querySelector('input');

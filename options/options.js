@@ -743,7 +743,8 @@
           bgColor: v.bgColor || '', textColor: v.textColor || '',
           important: !!v.important, impNoteUseHlColor: !!v.impNoteUseHlColor,
           importantNote: v.importantNote || '',
-          imgSize: v.imgSize === '' || v.imgSize == null ? '' : v.imgSize
+          imgSize: v.imgSize === '' || v.imgSize == null ? '' : v.imgSize,
+          noteFontSize: v.noteFontSize === '' || v.noteFontSize == null ? '' : v.noteFontSize
         }));
         D.toast(group ? '分组已保存' : '分组已创建', 'ok');
       }

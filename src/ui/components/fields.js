@@ -130,7 +130,13 @@
       }
       case 'int': {
         const inp = h('input', {
-          class: 'kh-input', type: 'number', id: id, min: '40', max: '600',
+          /* min/max/step 改为**字段可覆盖**（原来写死 40–600，那是 imgSize 的量纲）——
+           * `noteFontSize`（10–20px）与 `imgOcrMax`（张数）共用这一条分支，写死的范围只会误导。
+           * 不声明就沿用老值，既有字段渲染出的 DOM 一字不变。 */
+          class: 'kh-input', type: 'number', id: id,
+          min: spec.min == null ? '40' : String(spec.min),
+          max: spec.max == null ? '600' : String(spec.max),
+          step: spec.step == null ? '1' : String(spec.step),
           /* C5：原来硬编码「留空＝用全局默认尺寸」—— 但 `#fld-imgOcrMax`（每处最多＝**张数**）
            * 走的是同一条分支，提示写错了对象。改为优先用字段自己的 hint。 */
           title: spec.hint || '留空＝用全局默认', value: value === '' || value == null ? '' : String(value),

@@ -1540,7 +1540,7 @@
 
   /** 真正算一次（不缓存时走这条）。字段级的图片选项（仅图片 / 前 N 张）按 label 带进渲染。 */
   function computeBlock(textNode, rawLabels, scope, memo) {
-    const fetched = extractFor(textNode, rawLabels, scope, memo);
+    const fetched = extractCached(textNode, rawLabels, scope, memo);
     if (!fetched.length) return null;
     const optOf = {};
     for (const it of parseLabels(rawLabels)) optOf[it.label] = it;
@@ -1560,6 +1560,37 @@
     const rows = ownRowsOf(root);                                       // 垫片兜底
     const i = rows.indexOf(tr);
     return i >= 0 ? String(i) : '-';
+  }
+
+  /** `cache`（WeakMap<表格根, 盒>）里取/建**同一只**盒；盒里三张表各管一摊。
+   *  抓取表格（`html`）与一致性核对（`values`，见 `extractCached`）共用它 ⇒ 不重复取值。 */
+  function cacheBox(cache, textNode) {
+    const root = nearestTable(textNode.parentNode) || textNode.parentElement;
+    if (!root) return null;
+    let box = cache.get(root);
+    if (!box || typeof box !== 'object' || !box.html) {
+      box = { html: new Map(), values: new Map(), cells: new Map(), span: new Map() };
+      cache.set(root, box);
+    }
+    if (!box.values) box.values = new Map();
+    return box;
+  }
+
+  /**
+   * `extractFor` 的**带缓存**版本：同一轮重建内，同一 `(表格根, 命中行, labels, scope)` 只算一次。
+   * 存在的理由是**第二个消费者**：一致性核对（`checkFor`）也要取值，而取值是
+   * `collectRightBlock` 级的 DOM 走查 —— 不缓存就等于在大表格上把抓取那笔开销再付一遍。
+   * 键与 `blockFor` 的 `html` 键同构（同一个盒、同一套判据），因此两者的"同键必然同值"前提一致。
+   */
+  function extractCached(textNode, rawLabels, scope, box) {
+    if (!box || !textNode) return extractFor(textNode, rawLabels, scope, box);
+    const root = nearestTable(textNode.parentNode) || textNode.parentElement;
+    if (!root) return extractFor(textNode, rawLabels, scope, box);
+    const k = String(rawLabels == null ? '' : rawLabels) + '\u0001' + scopeOf(scope) + '\u0001' + rowKeyOf(root, textNode);
+    if (box.values.has(k)) return box.values.get(k);
+    const v = extractFor(textNode, rawLabels, scope, box);
+    box.values.set(k, v);
+    return v;
   }
 
   /**
@@ -1588,16 +1619,131 @@
     if (!cache || !textNode) return computeBlock(textNode, rawLabels, sc, null);
     const root = nearestTable(textNode.parentNode) || textNode.parentElement;
     if (!root) return computeBlock(textNode, rawLabels, sc, null);
-    let box = cache.get(root);
-    if (!box || typeof box !== 'object' || !box.html) {
-      box = { html: new Map(), cells: new Map(), span: new Map() };
-      cache.set(root, box);
-    }
+    const box = cacheBox(cache, textNode);
+    if (!box) return computeBlock(textNode, rawLabels, sc, null);
     const k = String(rawLabels == null ? '' : rawLabels) + '\u0001' + sc + '\u0001' + rowKeyOf(root, textNode);
     if (box.html.has(k)) return box.html.get(k);
     const v = computeBlock(textNode, rawLabels, sc, box);
     box.html.set(k, v);
     return v;
+  }
+
+  /* ------------------------------------------------- 一致性核对（2.0.2.2 需求 4） */
+
+  const CHECK_RE = /^(.+?)\s*(!=|=)\s*(.+)$/;
+
+  /**
+   * 「一致性核对」规则文本 → `[{left, op, right}]`。
+   * 一行一条：`包名 = 软著`（左字段的值必须出现在右侧文本里）、`包名 != 备注`（必须不出现）。
+   * 空行与 `#` 开头的注释行跳过；**格式不认识的行整行忽略**（不报错、不抛 —— 用户手写的东西，
+   * 错一行不该让整个面板红）。
+   */
+  function parseCheckRules(raw) {
+    const out = [];
+    const lines = String(raw == null ? '' : raw).split(/[\n\r]+/);
+    for (const line of lines) {
+      const s = line.trim();
+      if (!s || s.charAt(0) === '#') continue;
+      const m = CHECK_RE.exec(s);
+      if (!m) continue;
+      const left = m[1].trim();
+      const right = m[3].trim();
+      if (!left || !right) continue;
+      out.push({ left: left, op: m[2], right: right });
+    }
+    return out;
+  }
+
+  /** 比对用的归一：剥掉图片占位符与标签、**去掉所有空白**、统一小写。
+   *  去空白是关键 —— OCR 结果在空格/全角空格上极不稳定，不去掉就是"明明一样却报不一致"。 */
+  const CHECK_IMG_RE = /\u0001KHIMG\u0001[^\u0001]*\u0001ENDIMG\u0001/g;
+  function checkNorm(s) {
+    return String(s == null ? '' : s)
+      .replace(CHECK_IMG_RE, ' ')
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/\s+/g, '')
+      .toLowerCase();
+  }
+
+  /** 取到的字段值 → `Map<baseLabel, 多行文本>`（同名多份按 `baseLabelOf` 合并，层级后缀不算不同字段） */
+  function valuesByBaseLabel(fetched) {
+    const map = new Map();
+    for (const f of (fetched || [])) {
+      const base = baseLabelOf(f.label);
+      const t = (f.rows || []).map((r) => (r || [])
+        .map((c) => String(c && c.t != null ? c.t : '')).join('\n')).join('\n');
+      map.set(base, map.has(base) ? (map.get(base) + '\n' + t) : t);
+    }
+    return map;
+  }
+
+  /** 结论 → 卡片里的 HTML。用 `.kh-table` 这一条**既有可信 HTML 通道**（见 important-note 的 noteFragment） */
+  function checkRowsHtml(rows) {
+    let body = '';
+    for (const x of rows) {
+      const cls = x.st === 'ok' ? 'kh-check-ok' : (x.st === 'bad' ? 'kh-check-bad' : 'kh-check-wait');
+      const mark = x.st === 'ok' ? '✅' : (x.st === 'bad' ? '⚠️' : '⏳');
+      const head = x.left + ' ' + x.op + ' ' + x.right;
+      let tail = '';
+      if (x.st === 'ok') tail = ' 一致';
+      else if (x.st === 'bad') tail = (x.op === '=') ? (' 不一致：没找到「' + x.evidence + '」') : (' 不一致：出现了「' + x.evidence + '」');
+      /* 认不出时要说清"在等什么"：否则一个永远停着的 ⏳ 等于没说 */
+      else tail = ' 待图片识别' + (x.why ? ('（' + x.why + '）') : '');
+      body += '<tr><td class="' + cls + '">' + mark + ' ' + escHtml(head + tail) + '</td></tr>';
+    }
+    return body ? ('<table class="kh-table kh-table-check">' + body + '</table>') : '';
+  }
+
+  /**
+   * 一致性核对（2.0.2.2 需求 4）：把「左字段的值」与「右字段的值 ＋ 右字段里图片的识别全文」比对。
+   *
+   * 口径（用户 2026 场景：表格左格「包名」右格 `2345`、左格「软著」右格是图片且图里写着「包名：2345」）：
+   *   · `=`  左字段的**每个非空值片段**都必须出现在右侧文本里 → ✅；否则 ⚠️
+   *   · `!=` 左字段的值**不得**出现 → 否则 ⚠️
+   *   · 左字段没取到值（没这字段 / 值是空的）→ **整条静默跳过**：宁可什么都不提示，也不误报不一致
+   *   · 结论**尚未确定**（右字段有图、而图还没识别完 / 没识别出字 / 根本没参与识别）→ ⏳ + 说清在等什么；
+   *     但**已经能定的就先定**：右格文字里已经能找到左值 ⇒ 直接 ✅，不让用户白等 OCR。
+   *
+   * @param {Text} textNode 命中文本节点（定位层级/行）
+   * @param {string} rawRules `fetchCheck` 原文
+   * @param {string} rawLabels `fetchLabels` 原文（左/右字段名字都从这份声明里查值）
+   * @param {object} [cache] `blockFor` 的同一只缓存盒（复用取值，见 `extractCached`）
+   * @param {string} [scope] `fetchScope`
+   * @param {(label:string)=>{text?:string,done?:boolean,scheduled?:boolean}} [ocrOf] 取某字段图片的识别全文
+   * @returns {string} HTML；无规则 / 无结论时返回 `''`
+   */
+  function checkFor(textNode, rawRules, rawLabels, cache, scope, ocrOf) {
+    const rules = parseCheckRules(rawRules);
+    if (!rules.length || !textNode) return '';
+    const useBox = cache ? cacheBox(cache, textNode) : null;
+    const fetched = extractCached(textNode, rawLabels, scope, useBox);
+    const vals = valuesByBaseLabel(fetched);
+    const rows = [];
+    for (const r of rules) {
+      const leftAll = vals.has(r.left) ? vals.get(r.left) : '';
+      const leftTokens = leftAll.split('\n').map(checkNorm).filter(Boolean);
+      if (!leftTokens.length) continue;                      // 左字段没值：静默（见函数注释）
+      const rightAll = vals.has(r.right) ? vals.get(r.right) : '';
+      const ocr = (typeof ocrOf === 'function') ? (ocrOf(r.right) || {}) : {};
+      const hasImg = rightAll.indexOf('\u0001KHIMG\u0001') >= 0;
+      const withOcr = checkNorm(rightAll) + checkNorm(ocr.text || '');
+      /* 图片这条信息路能不能采信：没参与识别 / 还在排队 / 一张都没读出字 ⇒ 都不能 */
+      const waiting = hasImg && !(ocr.scheduled && ocr.done && String(ocr.text || '').trim());
+      const why = (ocr.scheduled === false) ? '未开启「识别图片文字」'
+        : (ocr.done ? '图片没识别出文字' : '图片还在识别中');
+      if (r.op === '=') {
+        const missing = leftTokens.filter((t) => withOcr.indexOf(t) < 0);
+        if (!missing.length) rows.push({ st: 'ok', left: r.left, op: r.op, right: r.right });
+        else if (waiting) rows.push({ st: 'wait', left: r.left, op: r.op, right: r.right, why: why });
+        else rows.push({ st: 'bad', left: r.left, op: r.op, right: r.right, evidence: missing.join('、') });
+      } else {
+        const seen = leftTokens.filter((t) => withOcr.indexOf(t) >= 0);
+        if (seen.length) rows.push({ st: 'bad', left: r.left, op: r.op, right: r.right, evidence: seen.join('、') });
+        else if (waiting) rows.push({ st: 'wait', left: r.left, op: r.op, right: r.right, why: why });
+        else rows.push({ st: 'ok', left: r.left, op: r.op, right: r.right });
+      }
+    }
+    return checkRowsHtml(rows);
   }
 
   KH.Fetch = {
@@ -1606,6 +1752,10 @@
     rowsToTableHtml, blockFor, triggerOk, fakeRightValue, nearestTable, isPlaceholderText,
     /* 图片选项（仅图片 / 前 N 张）：单测直接锁 */
     applyImgPolicy,
+    /* 一致性核对（2.0.2.2 需求 4）：规则解析 + 结论 HTML（消费侧在 important-note 的 collectEffective） */
+    parseCheckRules, checkFor,
+    /** 层级后缀剥离（内层/本层/外层）：一致性核对要按它把 label 归一到字段名 */
+    baseLabelOf,
     /* 「抓取字段的值格（含图）」**只读访问口**（img-ocr 取图用；不改抓取内容语义） */
     cellsForHit, valueCellsOf, splitLabelTokens, findLabelCell
   };

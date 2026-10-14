@@ -395,6 +395,13 @@ module.exports = async function run() {
     truthy(/if \(!paneDrag\) return;/.test(src), '没有拖动中的指针就不改坐标');
     truthy(/host\._sideMoved = true;/.test(src), '拖动中要标记"已拖过"，apply() 才不会把位置推回去');
     truthy(/paneHd\.addEventListener\('dblclick'/.test(src), '双击标题栏 = 回默认停靠位（拖远之后的唯一回程出口）');
+    /* ---- 窗口 resize 跟手（2.0.2.2 需求 1）：原来只认 img 的 load ⇒ 开箱期间改窗口大小，
+     * 浮层停在旧视口坐标上（窗口一变小可能整条偏出视野）。回程出口（双击标题栏复位）保持不变。 ---- */
+    const resizeSeg = (src.match(/window\.addEventListener\('resize', \(\) => \{[\s\S]*?\n      \}\);/) || [''])[0];
+    truthy(resizeSeg.length > 0, '要挂 window resize 才会重摆（否则 resize 后停在旧视口坐标）');
+    truthy(/!box\.hidden && !side\.hidden/.test(resizeSeg), '浮层藏着时不重摆（免得再展开时跳一下）');
+    truthy(/_sideMoved/.test(resizeSeg) && /dockSide\(\);/.test(resizeSeg),
+      'resize 必须复用同一套 dockSide，且**避开已拖过的位置**（用户摆过的位置不许被抢）');
     for (const k of ['paneHide', 'paneShow', 'paneDrag']) {
       truthy(new RegExp(k + ':').test(lb), 'VIEW 缺键 ' + k + '（文案真源不许散落在灯箱里）');
     }

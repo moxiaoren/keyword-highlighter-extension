@@ -158,6 +158,9 @@
      * 未启用 ⇒ `meta.fetchLabels` 归一成空串（下游零改动）。缺键（`!== false`）＝照旧抓取。 */
     const fetchOn = kw.fetchEnabled !== false;
     const fetchLabels = fetchOn ? String(kw.fetchLabels == null ? '' : kw.fetchLabels) : '';
+    /* 「一致性核对」（2.0.2.2 需求 4）：与 compiler.js 的 normal 适配器**同一口径**（同一个开关，
+     * 未启用 ＝ 空串）。两条编译路径都写一遍是既有的 `fetchLabels` 写法，改一处忘一处才是真风险。 */
+    const fetchCheck = fetchOn ? String(kw.fetchCheck == null ? '' : kw.fetchCheck) : '';
     const fetchOnly = !coreIsRare && !core.trim();     // 仅抓取：无核心词（罕见字核心不算"无核心"）
     const pattern = (fetchOnly || coreIsRare) ? null : B.buildPattern(core, flags);
     if (!fetchOnly && !coreIsRare && !pattern) return null;
@@ -190,6 +193,7 @@
         note: kw.note || '',
         fetchOnly,
         fetchLabels,
+        fetchCheck,
         /** 取值格表达式（右起视觉列，如 `2` / `1-3` / `1,3,5`）；空串 = 旧行为（相邻右格、跳空格） */
         cellOffset: String(kw.cellOffset == null ? '' : kw.cellOffset).trim(),
         groupId: kw.groupId || null,

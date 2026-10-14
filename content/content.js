@@ -199,7 +199,8 @@
                 display: h.meta.display, label: h.meta.label, fetchLabels: h.meta.fetchLabels,
                 fetchOnly: h.meta.fetchOnly, important: h.meta.important,
                 importantNote: h.meta.importantNote, note: h.meta.note,
-                axis: h.meta.axis, imgSize: h.meta.imgSize, impNoteBg: h.meta.impNoteBg
+                axis: h.meta.axis, imgSize: h.meta.imgSize, impNoteBg: h.meta.impNoteBg,
+                noteFontSize: h.meta.noteFontSize
               } : null,
               fetchHtml: fetchOn && KH.Fetch && h.textNode
                 ? (function () { try { return KH.Fetch.blockFor(h.textNode, h.meta && h.meta.fetchLabels) || ''; } catch (e) { return 'ERR:' + e.message; } })()

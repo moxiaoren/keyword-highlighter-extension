@@ -217,6 +217,36 @@ module.exports = async function run() {
     falsy(head.changed(a, b));
   });
 
+  /* 2.0.2.2 需求 2：词级**正文字号**与尺寸同构——也是渲染期内联 `--kh-note-fs`，
+   * 判脏口径必须一模一样（漏了就会出现"改了字号卡片不变、删掉字号旧字一直残留"） */
+  await test('★ 只有 noteFontSize 变化 → 必须判脏（否则该词字号不刷新）', () => {
+    const a = head.build([hit('甲', '', '笔记', { noteFontSize: '14' })], new Set());
+    const b = head.build([hit('甲', '', '笔记', { noteFontSize: '18' })], new Set());
+    truthy(head.changed(a, b), '字号变了却不判脏 → 卡片会一直用旧字号');
+  });
+
+  await test('★ noteFontSize 从有到无 → 也必须判脏（否则旧内联字号会残留）', () => {
+    const a = head.build([hit('甲', '', '笔记', { noteFontSize: '18' })], new Set());
+    const b = head.build([hit('甲', '', '笔记')], new Set());
+    truthy(head.changed(a, b));
+  });
+
+  await test('noteFontSize 相同 → 不脏；且字号与尺寸互不串味', () => {
+    const a = head.build([hit('甲', '', '笔记', { noteFontSize: '18' })], new Set());
+    const b = head.build([hit('甲', '', '笔记', { noteFontSize: '18' })], new Set());
+    falsy(head.changed(a, b));
+    /* 同一条笔记、只换尺寸不换字号：仍要判脏（说明两个键各占一格，没有互相顶掉） */
+    const c = head.build([hit('甲', '', '笔记', { noteFontSize: '18', imgSize: '70' })], new Set());
+    const d = head.build([hit('甲', '', '笔记', { noteFontSize: '18', imgSize: '96' })], new Set());
+    truthy(head.changed(c, d));
+  });
+
+  await test('★ noteFontSize 从有到无（同笔记另一词仍带值）也得判脏', () => {
+    const a = head.build([hit('甲', '', '笔记', { noteFontSize: '18' })], new Set());
+    const b = head.build([hit('甲', '', '笔记', { noteFontSize: '' })], new Set());
+    truthy(head.changed(a, b));
+  });
+
   suite('important-note · 展示内容（用**实际命中的文本**，不是配置原文）');
 
   await test('★ 正则 `a|b` 只命中 `a` → 卡片标签展示 `a`（旧实现展示配置原文 `a|b`）', () => {
@@ -269,6 +299,33 @@ module.exports = async function run() {
     const withNote = head.build([hit('应用名称', '', '用户写的笔记', { fetchHtml: '' })], new Set());
     eq(withNote.length, 1);
     truthy(withNote[0].note.indexOf('<table') < 0, '空 fetchHtml 不许留下表格痕迹：' + withNote[0].note);
+  });
+
+  await test('★ 一致性核对结论也拼进卡片内容（字段表格之后，2.0.2.2 需求 4）', () => {
+    const chk = '<table class="kh-table kh-table-check"><tr><td class="kh-check-ok">✅ 包名 = 软著 一致</td></tr></table>';
+    const fields = '<table class="kh-table kh-table-fetch"><tr><td>包名</td><td>2345</td></tr></table>';
+    const h = hit('应用名称', '', '用户写的笔记', { fetchHtml: fields, fetchCheckHtml: chk });
+    const items = head.build([h], new Set());
+    eq(items.length, 1);
+    truthy(items[0].note.indexOf('kh-table-check') >= 0, '核对结论要在卡片内容里');
+    truthy(items[0].note.indexOf('kh-table-check') > items[0].note.indexOf('kh-table-fetch'),
+      '顺序：先字段表格、后核对结论（先给证据再给判断）');
+    // 只有核对结论、没有字段表格 → 也算有内容（不许被"没有抓取内容"那条吞掉）
+    const only = head.build([hit('应用名称', '', '', { fetchCheckHtml: chk })], new Set());
+    eq(only.length, 1);
+    truthy(only[0].note.indexOf('kh-check-ok') >= 0);
+    // 空串 / 缺省 → 不许留痕
+    const none = head.build([hit('应用名称', '', '笔记', { fetchCheckHtml: '' })], new Set());
+    eq(none.length, 1);
+    truthy(none[0].note.indexOf('kh-table-check') < 0, none[0].note);
+  });
+
+  await test('★ 核对结论走可信 HTML 通道：noteFragment 的表格白名单要含 kh-table-check', () => {
+    const src = read('src/features/important-note.js');
+    const frag = (src.match(/noteFragment\(doc, note\) \{[\s\S]*?\n    \},/) || [''])[0];
+    truthy(frag.length > 0, '要能定位到 noteFragment');
+    truthy(/kh-table-\(\?:fetch\|check\)/.test(frag),
+      '表格白名单漏了 check ⇒ 核对结论会被当纯文本原样吐出来（标签可见）');
   });
 
   await test('★ 复用高亮底色：impNoteBg 进卡片，空串则不铺', () => {
@@ -517,6 +574,14 @@ module.exports = async function run() {
     const thumb = (src.match(/\.khin-imgthumb \{[\s\S]*?\n    \}/) || [''])[0];
     const side = thumb.match(/width:\s*(\d+)px/);
     truthy(side && Number(side[1]) <= 48, 'OCR 缩略图不超过 48px —— 9 张图的场景里它是主要高度来源');
+    /* 2.0.2.2 需求 2：**词级字号** = 卡级内联 `--kh-note-fs`（与 --kh-img-size 同一层），
+     * 盖住上面那个宿主级全局值；它是在 renderItems 里写的，所以必须配判脏用例一起钉住。 */
+    truthy(/if \(item\.noteFontSize\) el\.style\.setProperty\('--kh-note-fs', item\.noteFontSize \+ 'px'\)/.test(src),
+      '词级字号必须在 renderItems 里写成卡级内联 --kh-note-fs（否则"每词单独设字号"无处生效）');
+    truthy(src.indexOf("noteFontSize: h.meta.noteFontSize || ''") >= 0,
+      'meta.noteFontSize 必须从 compiler 一路接到面板（链路断了字段就白填）');
+    truthy(read('src/core/compiler.js').indexOf('noteFontSize: (kw.important && kw.noteFontSize)') >= 0,
+      'compiler 必须按 K71 裁定 2 乘 kw.important（否则"重要笔记"关掉的词也会吃字号）');
   });
 
   suite('important-note · 默认宽度 250px 可经设置页调整（T26 / 用户 2026-10-12：200 → 250）');
@@ -1493,5 +1558,26 @@ module.exports = async function run() {
     child.dispatchEvent({ type: 'click' });
     eq(seq.join(','), 'a,parent:true',
       '摘掉监听器后冒泡恢复；target 是**被派发的那个节点**，不是当前正在跑的监听器宿主');
+  });
+
+  await test('★ T38-5 window 事件通道（需求 1 的垫片前提）：window 就是 global，现给它 add/remove + __khFire', () => {
+    eq(typeof window.addEventListener, 'function', 'window 上必须有 addEventListener（生产代码挂 resize 靠它）');
+    eq(typeof window.removeEventListener, 'function', 'window 上必须有 removeEventListener');
+    eq(typeof window.__khFire, 'function', '要有派发口，单测才谈得上"派发一次 resize"');
+    const seq = [];
+    const a = () => seq.push('a');
+    const b = () => seq.push('b');
+    window.addEventListener('resize', a);
+    window.addEventListener('resize', b);
+    window.__khFire('resize');
+    eq(seq.join(','), 'a,b', '按注册序派发');
+    window.removeEventListener('resize', a);
+    seq.length = 0;
+    window.__khFire('resize');
+    eq(seq.join(','), 'b', 'removeEventListener 真摘掉（不是只摆个空实现）');
+    window.removeEventListener('resize', b);
+    seq.length = 0;
+    window.__khFire('resize');
+    eq(seq.join(','), '', '摘干净后再派发不该有回调');
   });
 };
