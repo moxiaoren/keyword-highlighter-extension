@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-10-13T17:22:14.287Z",
-  "version": "2.0.1.17",
+  "generatedAt": "2026-10-14T00:08:19.497Z",
+  "version": "2.0.2",
   "fileCount": 185,
   "files": {
     ".gitattributes": "76ad96d3c458f45ebb6bde60aabbab98ed9725225953670d978e1af6ed86f4a2",
@@ -21,11 +21,11 @@
     "icons/icon32.png": "f1f182da889bb0e9735abe53525e01896e2c658ba1a7154ff692d8c44efb99c8",
     "icons/icon48-paused.png": "c8ebc2362502a2edc139c3686fc82e94d07d7ccc55097f140411b7f6b85ee6c0",
     "icons/icon48.png": "f81d0aa4477cf056e4278b8881559014ace4d88d2d164187447b1316914b5c5d",
-    "manifest.json": "12f165ffc8842ad0c6f3ccecfc7d9b65d21c32c02f34d06392eec525198f9ef3",
+    "manifest.json": "1a6bb0178abb15dcc30614564d2cf496a7fe530c2f19463a6c7d321f48006a62",
     "offscreen/ocr.html": "0e4c9ddf5c47105f0e7351a0f8ff70a7f523b224194e30e1b013f01981797c6b",
     "offscreen/ocr.js": "b9fc7d09d7ba74dca0bbc9241daa2351158804dce1bc4bc721a2a22a6c440e79",
     "options/options.css": "2a8b8c393425cfacab802c151330b5cfbc1a1b68f762a56abef364bc6a7f56b8",
-    "options/options.html": "09b5b774a263fcf0a3ee22b0f5b1090e708add5dd62864328a10db3029817a72",
+    "options/options.html": "0f62cb671ab0ccab708b74f583558aae9b3cf42c483dee7f8c6983a7a78cbaff",
     "options/options.js": "c4c59dabded968b9eae4a2d276cc2589bdd5404228c193eda6a5094513d08357",
     "popup/editor.html": "fd6dfb61f14c25fc31f533c22abaca5ddb75e3bd6890a4549ade2a904b9da9a5",
     "popup/editor.js": "b0c5cda86d8172b2aa4a75585ec603494c73d2b42498d297c4d0437c47870f19",
@@ -75,7 +75,7 @@
     "src/features/site-rules.js": "c60131154c89d53623f23adc499d11672034c47fe75dc031b1eea9c90bc70b85",
     "src/platform/markdown.js": "5775be8c8c2f5abc142a0a1056b78ddd6be9c0f5eacef25ea1d925ad013e2c25",
     "src/platform/storage.js": "496f6cc449c60f83305b1d54e0b1df5770d501f8ef036b2a26062e84a8479b19",
-    "src/ui/changelog.js": "77bcf80252ca186fdec8671f213e4e88c0bd4885ab13fc124a775ff0b4003df5",
+    "src/ui/changelog.js": "6ee6f9d0acdec26459b71437ea7108c6d0902aa44d0d394ef1141c27a62b46e8",
     "src/ui/components/chip.js": "75cd8cfd412fdeebec5ab0f90a3a579566a2f81e7b0aa7141d1bbf994d41626d",
     "src/ui/components/color-field.js": "1030937c5e2160200cf8fd7f2f6e172e213035b1202562dad0f90df3efaa3b22",
     "src/ui/components/components.css": "551903bd1da74bc3f230871c0d0d90553c30695caf5189c6c124a9b8f138df45",
@@ -186,7 +186,7 @@
     "vendor/tesseract/tesseract.min.js": "a8e29918d098b2b06e1012bdaeffb4aec0445c5d5654709023e0bd1f442a80e8",
     "vendor/tesseract/worker.min.js": "aca1229639fc9907d86f96e825955a2b7c5716d17f3bc3acd71f9c7ab66181fc",
     "welcome/welcome.css": "6b1e4a85de34e6d3df0e8c5b9b2aba749d272f78dfd399a6c404ef28bb534a90",
-    "welcome/welcome.html": "75f364b860891f5d5448ad528a22c06b8084a27d4c471a736157f12cb7a5a85e",
+    "welcome/welcome.html": "40007077c85c675eefa0d3753577a19db4fe364294af8d33a9cc9dda28774a21",
     "welcome/welcome.js": "8b13c7a47664d9e5768635a0f59a68cc3552de63bfce0a862bd16176e8930f9e"
   }
 }
