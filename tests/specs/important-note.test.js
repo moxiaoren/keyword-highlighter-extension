@@ -301,33 +301,6 @@ module.exports = async function run() {
     truthy(withNote[0].note.indexOf('<table') < 0, '空 fetchHtml 不许留下表格痕迹：' + withNote[0].note);
   });
 
-  await test('★ 一致性核对结论也拼进卡片内容（字段表格之后，2.0.2.2 需求 4）', () => {
-    const chk = '<table class="kh-table kh-table-check"><tr><td class="kh-check-ok">✅ 包名 = 软著 一致</td></tr></table>';
-    const fields = '<table class="kh-table kh-table-fetch"><tr><td>包名</td><td>2345</td></tr></table>';
-    const h = hit('应用名称', '', '用户写的笔记', { fetchHtml: fields, fetchCheckHtml: chk });
-    const items = head.build([h], new Set());
-    eq(items.length, 1);
-    truthy(items[0].note.indexOf('kh-table-check') >= 0, '核对结论要在卡片内容里');
-    truthy(items[0].note.indexOf('kh-table-check') > items[0].note.indexOf('kh-table-fetch'),
-      '顺序：先字段表格、后核对结论（先给证据再给判断）');
-    // 只有核对结论、没有字段表格 → 也算有内容（不许被"没有抓取内容"那条吞掉）
-    const only = head.build([hit('应用名称', '', '', { fetchCheckHtml: chk })], new Set());
-    eq(only.length, 1);
-    truthy(only[0].note.indexOf('kh-check-ok') >= 0);
-    // 空串 / 缺省 → 不许留痕
-    const none = head.build([hit('应用名称', '', '笔记', { fetchCheckHtml: '' })], new Set());
-    eq(none.length, 1);
-    truthy(none[0].note.indexOf('kh-table-check') < 0, none[0].note);
-  });
-
-  await test('★ 核对结论走可信 HTML 通道：noteFragment 的表格白名单要含 kh-table-check', () => {
-    const src = read('src/features/important-note.js');
-    const frag = (src.match(/noteFragment\(doc, note\) \{[\s\S]*?\n    \},/) || [''])[0];
-    truthy(frag.length > 0, '要能定位到 noteFragment');
-    truthy(/kh-table-\(\?:fetch\|check\)/.test(frag),
-      '表格白名单漏了 check ⇒ 核对结论会被当纯文本原样吐出来（标签可见）');
-  });
-
   await test('★ 复用高亮底色：impNoteBg 进卡片，空串则不铺', () => {
     const withBg = head.build([hit('甲', '', '笔记', { impNoteBg: '#112233' })], new Set());
     eq(withBg[0].bg, '#112233');
@@ -770,8 +743,12 @@ module.exports = async function run() {
     falsy(/max-height:\s*50vh/.test(src), '不许再出现 50vh（改回去就是拿笔记区换图区）');
     /* 行内不再重复「🖼 」：整块都在「🖼 图片」分区标题底下，省下的宽度全给关键词 */
     falsy(src.indexOf("'🖼 ' + (it.keyword") >= 0, '行内关键词前不许再拼图标（200px 下关键词格只有 84px）');
-    truthy(src.indexOf("kw.textContent = (it.keyword || '') + (it.label") >= 0,
+    /* 【2.0.2.4 需求②】同图合并行要把组内每个关键词都列全（`g.items` 循环）——
+     * 这里钉的是同一件事：文本仍然必须是「词（标签）」，不许为了合并把标签丢掉。 */
+    truthy(src.indexOf("const n = (x.keyword || '') + (x.label ? '（' + x.label + '）' : '');") >= 0,
       '关键词文本仍要说全「词（标签）」—— 省宽度不等于把标签一起删掉');
+    truthy(src.indexOf('kw.textContent = names.join') >= 0,
+      '合并行的关键词必须是组内各条的「词（标签）」并起来（只取第一条会让合并后的行说不清是谁抓的）');
     /* 矮屏（视口 ≤520px）再收一档：40vh 在 520px 高处仍吃 208px，正文只赢 9px（实测，见
      * _e2e/probe-manual-ocr-note.js 第 [14] 节）。走 **@media 视口高**，不引 JS 量高 —— 纯声明式、
      * 改窗口大小自动跟、也不给 render() 加第二个真源。 */
@@ -826,6 +803,24 @@ module.exports = async function run() {
       '幂等：已经包过的不许再包一层（嵌套 span 会让省略号失效）');
     falsy(/innerHTML = m\[0\][\s\S]{0,200}innerHTML/.test(frag),
       '别在渲染里重写整串 innerHTML —— 只做补包裹，表格结构不动');
+  });
+
+  /* 【2.0.2.4 需求④】补包裹要**绕开后缀徽标**：`.kh-lbt` 是 max-width:8em + max-height:1.5em 的裁切层，
+   * 把「名称 + 后缀」一起卷进去 = 后缀被裁掉（用户再也看不出那一格的取值为什么长这样）。
+   * 只锁源码形状：垫片的 `ShimElement` 没有 `firstChild`，`noteFragment` 的搬移循环在 node 环境里跑不起来
+   * （上面那条"历史笔记同样生效"也是源码断言，同一原因）；真机行为由 `_e2e/ui.test.js` 覆盖。 */
+  await test('★ 需求④：补包裹不许把后缀徽标卷进 .kh-lbt（后缀要留在裁切层外面）', () => {
+    const src = read('src/features/important-note.js');
+    const frag = (src.match(/noteFragment\(doc, note\) \{[\s\S]*?\n    \},/) || [''])[0];
+    truthy(frag.length > 0, '要能定位到 noteFragment（否则下面的断言是在空串上跑）');
+    truthy(/const suf = td\.querySelector\('\.kh-table-suffix'\)/.test(frag),
+      '要把后缀徽标先摘出来（否则下面 td.textContent = "" 会把它一起清掉）');
+    truthy(/n\.nodeType === 1 && n\.className === 'kh-table-suffix'\) continue/.test(frag),
+      '★ 标题文字只许累加**除徽标以外**的子节点 —— 把后缀算进 txt，它就被卷进裁切层了');
+    truthy(/if \(suf\) td\.appendChild\(suf\)/.test(frag), '包完必须把徽标搬回标题格（否则后缀凭空消失）');
+    /* 反向：老的"整格 textContent 一把抓"写法不许回来 —— 那正是会把后缀卷进 .kh-lbt 的写法 */
+    falsy(/const txt = td\.textContent \|\| ''/.test(frag),
+      '不许再用「整格 textContent」当标题（有后缀时会把后缀一起卷进 .kh-lbt）');
   });
 
   suite('important-note · 面板 UI 修复批（T29）');
@@ -1619,5 +1614,95 @@ module.exports = async function run() {
     seq.length = 0;
     window.__khFire('resize');
     eq(seq.join(','), '', '摘干净后再派发不该有回调');
+  });
+
+  /* ==================================================================
+   * 2.0.2.4 需求②：**同一张图只占一行**
+   *
+   * 【用户原话】「关键词a，抓取字段：截图，图片命中词，一对一；关键词b，抓取字段：截图，
+   *   图片命中词，美女。这种情况会重复识别，浪费资源。」引擎侧只识别一次由 ocr-long-image
+   *   那条端到端钉住；这里钉面板侧：同一张图（同 `src`）的多条命中并成一行，**每个关键词
+   *   各占一行命中词块**，不许把命中词丢掉、也不许把两个词的关键词头糊成一个。
+   * ================================================================== */
+  suite('important-note · 同图合并成一行（2.0.2.4 需求②）');
+
+  const IMG_A = 'https://ex.com/a.png';
+
+  await test('★ groupImgItems：按 src 归并，无 src 的条目各自成组（纯函数）', () => {
+    const p = shadowPanel();
+    const g = p.groupImgItems([
+      { key: 'r1|' + IMG_A, src: IMG_A },
+      { key: 'r2|' + IMG_A, src: IMG_A },
+      { key: 'r3|https://ex.com/b.png', src: 'https://ex.com/b.png' },
+      { key: 'r4|', src: '' },
+      { key: 'r5|', src: '' }
+    ]);
+    eq(g.length, 4, '同一张图的 2 条并成 1 组；另一张图 1 组；两条没有 src 的各成 1 组');
+    eq(g[0].items.length, 2, '并入第一条的是同 src 的那条');
+    eq(g[1].items.length, 1, '不同 src 不许并');
+    eq(g[2].items[0].key, 'r4|', '无 src 的条目按自己的 key 单独成组（空 src 不能当成"同一张图"）');
+    eq(g[3].items[0].key, 'r5|', '另一条无 src 的也必须单独成组');
+    eq(p.groupImgItems(null).length, 0, '空列表 ⇒ 空组（不许抛）');
+  });
+
+  await test('★ 同一张图、两个关键词各命中一个词 ⇒ 一行缩略图 + 每个关键词一行词块', async () => {
+    await copyRig(async () => {
+    const p = shadowPanel();
+    p.imgSecEl = H.el('div');
+    p.imgListEl = H.el('div');
+    p.imgAllEl = H.el('span');
+    p.imgCountEl = H.el('span');
+    p.imgCollapsed = false;
+    p.imgUserCollapsed = false;
+    p.imgShowAll = false;
+    p.imgItems = [
+      { key: 'r1|' + IMG_A, src: IMG_A, state: 'done', keyword: '交友', label: '截图',
+        text: '甲。一对一乙。', matched: [{ text: '一对一' }] },
+      { key: 'r2|' + IMG_A, src: IMG_A, state: 'done', keyword: '相亲', label: '截图',
+        text: '丙。美女丁。', matched: [{ text: '美女' }] }
+    ];
+    p.renderImgSection();
+
+    const rows = p.imgListEl.querySelectorAll('.khin-imgitem');
+    eq(rows.length, 1, '★ 同一张图只许占一行（这就是用户要的"别重复"）');
+    eq(p.imgListEl.querySelectorAll('.khin-imgchips').length, 2, '两个关键词各占一行命中词块（命中词一条都不能丢）');
+    const chips = p.imgListEl.querySelectorAll('.khin-imgchip');
+    eq(chips.length, 2, '两颗词块：一对一 + 美女');
+    eq(chips[0].textContent, '一对一');
+    eq(chips[1].textContent, '美女');
+    const owners = p.imgListEl.querySelectorAll('.khin-imgchipkw');
+    eq(owners.length, 2, '合并行里每行词块要标出是哪个关键词命中的');
+    eq(owners[0].textContent, '交友（截图）', '归属小标要说全「词（标签）」');
+    eq(owners[1].textContent, '相亲（截图）');
+    eq(p.imgCountEl.textContent, '(1)', '计数按**行**数（屏上就一行，写 (2) 会让人以为漏渲染了）');
+    eq(rows[0].querySelectorAll('.khin-imgthumb').length, 1, '缩略图只有一张（图只铺一遍）');
+    const tag = rows[0].querySelector('.khin-imgtag');
+    eq(tag.textContent, '命中', '合并行的状态取"先命中的那条"（真源文案一字不改）');
+    });
+  });
+
+  await test('★ 反向：不同图的两条命中仍是两行，且单条行不加归属小标（不回归单图观感）', async () => {
+    await copyRig(async () => {
+    const p = shadowPanel();
+    p.imgSecEl = H.el('div');
+    p.imgListEl = H.el('div');
+    p.imgAllEl = H.el('span');
+    p.imgCountEl = H.el('span');
+    p.imgCollapsed = false;
+    p.imgUserCollapsed = false;
+    p.imgShowAll = false;
+    p.imgItems = [
+      { key: 'r1|' + IMG_A, src: IMG_A, state: 'done', keyword: '交友', label: '截图',
+        text: '甲。一对一乙。', matched: [{ text: '一对一' }] },
+      { key: 'r3|https://ex.com/b.png', src: 'https://ex.com/b.png', state: 'done', keyword: '相亲',
+        label: '截图', text: '丙。美女丁。', matched: [{ text: '美女' }] }
+    ];
+    p.renderImgSection();
+    eq(p.imgListEl.querySelectorAll('.khin-imgitem').length, 2, '不同图不许并');
+    eq(p.imgListEl.querySelectorAll('.khin-imgchips').length, 2, '各一行词块');
+    eq(p.imgListEl.querySelectorAll('.khin-imgchipkw').length, 0,
+      '单条行不加归属小标（同一个关键词重复写在词块前面只是噪声 —— 关键词头已经写了）');
+    eq(p.imgCountEl.textContent, '(2)');
+    });
   });
 };

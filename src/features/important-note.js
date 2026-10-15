@@ -241,12 +241,13 @@
       display: inline-block; max-width: var(--kh-lbt-maxw, 8em); max-height: 1.5em;
       overflow: hidden; vertical-align: bottom;
     }
-    /* 一致性核对（2.0.2.2 需求 4）：与抓取表格同一副表格骨架（复用 .kh-table），
-     * 只按结论给整格上色 —— 三种状态各一色，扫一眼就能分辨「一致 / 不一致 / 还没识别完」。 */
-    .kh-table-check td { width: auto; }
-    .kh-table-check .kh-check-ok { color: #15803d; }
-    .kh-table-check .kh-check-bad { color: #b45309; font-weight: 600; }
-    .kh-table-check .kh-check-wait { color: #64748b; }
+    /* 【2.0.2.4 需求④】字段名后面的**后缀徽标**（#图3 / @2 / ! / ^锚文本 / %4）：
+       让用户看得出这一格的取值为什么长这样。淡、小、单行；**不放进 .kh-lbt**（那层要裁切标题，
+       放进去后缀会被裁掉），所以 noteFragment 的补包裹要把它原样搬出来（见那里的注释）。 */
+    .kh-table .kh-table-suffix {
+      margin-left: 4px; font-weight: 400; font-size: 9px; line-height: 1.5;
+      color: var(--kh-text-3, #94a3b8); white-space: nowrap;
+    }
     /* ---- 🖼 图片命中分区（面板下半部分，独立成块；默认折叠） ---- */
     /* 两个滚动区各自管自己（用户 2026-10-07）：面板总高受视口限制，OCR 分区若允许被压缩，
      * 它就会把上面的笔记列表挤到近零（"互相抢占展示"）；若不许压缩又会被 .khin-panel 的
@@ -382,6 +383,12 @@
       border: 1px solid rgba(22,101,52,.25);
     }
     .khin-imgchip:hover { background: #bbf7d0; }
+    /* 同图合并行里"这一行词块是哪个关键词命中的"小标（2.0.2.4 需求②）：只做归属区分，
+     * 不抢缩略图与词块的分量 —— 用中性灰，**不用**命中绿（它不是命中内容本身）。 */
+    .khin-imgchipkw {
+      align-self: center; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      font-size: 10px; line-height: 15px; color: #64748b;
+    }
     .khin-imgchip.copied { background: var(--success-strong, #15803d); color: #fff; }
     /* 复制失败：就地红一下（T29 / F3.1）。原来只有 title 换了一句话 —— 那要悬停才看得见，
      * 用户点完鼠标早已移开；剪贴板不可用是最常见的失败，必须一眼看出没复制上。
@@ -1072,11 +1079,8 @@
         if (!h || !h.meta) continue;
         let note = String(h.meta.importantNote || '').trim();
         const fieldsHtml = h.meta.fetchHtml || '';
-        /* 一致性核对（2.0.2.2 需求 4）：**排在抓取字段之后** —— 先摆事实（各字段的值），再给结论 */
-        const checkHtml = h.meta.fetchCheckHtml || '';
-        // 重要笔记正文 = 用户重要笔记（Markdown）+ 抓取字段的多行表格 + 一致性核对结论
+        // 重要笔记正文 = 用户重要笔记（Markdown）+ 抓取字段的多行表格
         if (fieldsHtml) note = note ? (note + '\n' + fieldsHtml) : fieldsHtml;
-        if (checkHtml) note = note ? (note + '\n' + checkHtml) : checkHtml;
         if (!note) continue;                                   // 空内容忽略
         if (ignored && ignored.has(note)) continue;
         const kw = String(h.meta.text || h.meta.display || '').trim();
@@ -1658,6 +1662,29 @@
       return (list || []).filter((it) => KH.OcrCopy.stateClass(it) === 'wait').length;
     },
 
+    /**
+     * 同一张图的多条条目并成一组（2.0.2.4 需求② · 纯函数，不碰 DOM —— 好单测）。
+     *
+     * 【为什么】不同关键词抓同一个字段 = 同一张图被识别一次、各自命中不同的词：
+     * 面板上就该是**一行**缩略图 + 每个关键词一行命中词块，而不是同一张缩略图铺两遍。
+     * 【归并键】`src` 串（同一张图在条目里就是同一个 src）。**没有 src 的条目一律各自成组**
+     * （跨域读不到 / 被拦下的条目 `src` 可能为空，按空值归并会把不相干的图并成一行）。
+     * 组内保持原顺序、组间保持首次出现顺序。
+     */
+    groupImgItems(list) {
+      const groups = [];
+      const at = new Map();
+      let seq = 0;
+      for (const it of (list || [])) {
+        const src = String((it && it.src) || '');
+        const g = src || ('#' + (seq++) + String((it && it.key) || ''));
+        let i = src ? at.get(src) : undefined;
+        if (i === undefined) { i = groups.length; if (src) at.set(src, i); groups.push({ items: [] }); }
+        groups[i].items.push(it);
+      }
+      return groups;
+    },
+
     renderImgSection() {
       if (!this.imgSecEl) return;
       const list = this.imgItems || [];
@@ -1674,6 +1701,9 @@
        * 「显示全部」把其余条目（未命中 / 排队中 / 没认出文字 / 读不到图…）留给人工复核。
        * 哪条算"都要显示"由 `imgRowVisible` 一处决定（命中 + 真失败 + 要你动手的 action），这里不再各判一次。 */
       const shown = list.filter((it) => this.imgRowVisible(it));
+      /* 【2.0.2.4 需求②】同一张图的多条命中并成一行：行数按**组**数，条目数口径不变
+       * （「显示全部」的收起点数仍按条目数数，那是复核入口的语义）。 */
+      const groups = this.groupImgItems(shown);
       /* 要复核的条数按**默认口径**数（与当前视图无关）：切到「显示全部」后按钮要变成
        * 「只看命中」留着，点得回去 —— 否则这个复核入口只进不出。 */
       const hiddenN = this.imgRowHiddenCount(list);
@@ -1681,7 +1711,7 @@
        * 会显示成"这次没有命中" —— 那是在结果出来之前下结论。所以计数与空视图都要把在跑的数量说出来。 */
       const busyN = this.imgBusyCount(list);
       if (this.imgCountEl) {
-        this.imgCountEl.textContent = (shown.length ? '(' + shown.length + ')' : '') +
+        this.imgCountEl.textContent = (groups.length ? '(' + groups.length + ')' : '') +
           (busyN ? KH.OcrCopy.render(KH.OcrCopy.VIEW.busy, { n: busyN }) : '');
       }
       if (this.imgAllEl) {
@@ -1719,10 +1749,14 @@
         this.imgListEl.appendChild(none);
         return;
       }
-      for (const it of shown) {
+      for (const g of groups) {
+        /* 【2.0.2.4 需求②】组内第一条管缩略图与状态（状态取"先命中的那条"，真源文案一字不改），
+         * 组内每条的关键词命中词各占一行词块（下面那个 `g.items` 循环）——
+         * 同一张图只铺一遍，命中词一个不少。 */
+        const it = g.items.find((x) => KH.OcrCopy.stateClass(x) === 'hit') || g.items[0];
         const row = doc.createElement('div');
         row.className = 'khin-imgitem';
-        row.setAttribute('data-kh-ocr-key', it.key);
+        row.setAttribute('data-kh-ocr-key', g.items.map((x) => String((x && x.key) || '')).join(' '));
 
         /* 缩略图。它下面原来挂一条固定的「📋 复制全文」按钮（2026-10-09 用户裁决加的），
          * 2.0.1.15 需求 7 用户又裁定删掉 —— 复制全文改走大图里的选中复制。 */
@@ -1743,8 +1777,15 @@
         const kw = doc.createElement('span');
         kw.className = 'khin-imgkw';
         /* 行内不再重复「🖼 」（用户 2026-10-11：面板刚收到 200px 那会儿关键词格只剩 84px）——
-         * 整块都在「🖼 图片」分区标题底下，行内再挂一个图标是冗余的，省下的宽度全给关键词。 */
-        kw.textContent = (it.keyword || '') + (it.label ? '（' + it.label + '）' : '');
+         * 整块都在「🖼 图片」分区标题底下，行内再挂一个图标是冗余的，省下的宽度全给关键词。
+         * 【2.0.2.4 需求②】同图合并行里有几个关键词就都列出来（去重、保持原顺序）——
+         * 否则合并之后"You看不出这行是哪几个词抓的"。 */
+        const names = [];
+        for (const x of g.items) {
+          const n = (x.keyword || '') + (x.label ? '（' + x.label + '）' : '');
+          if (n && names.indexOf(n) < 0) names.push(n);
+        }
+        kw.textContent = names.join('、');
         /* 面板窄时关键词要能被 ellipsis 截断 ⇒ 全称挂 title，别让信息真的丢 */
         kw.title = kw.textContent;
         head.appendChild(kw);
@@ -1779,11 +1820,21 @@
 
         /* 命中词块（2026-10-09 用户裁决）：面板上只留**命中的词**，点它复制它所在的整句；
          * 一段里同一个词命中多次只给一块（同一句，复制出来一样）。
-         * 整段识别文本搬去灯箱右侧（点缩略图放大）与上面的悬停说明。 */
-        const words = hitWords(it);
-        if (words.length) {
+         * 整段识别文本搬去灯箱右侧（点缩略图放大）与上面的悬停说明。
+         * 【2.0.2.4 需求②】合并行里**每个关键词一行词块**：图只铺一遍，但"哪个词命中了什么"
+         * 一条都不能丢。单条组（绝大多数）行为与合并前完全一致（不加归属小标）。 */
+        for (const mem of g.items) {
+        const words = hitWords(mem);
+        if (!words.length) continue;
           const chips = doc.createElement('div');
           chips.className = 'khin-imgchips';
+          if (g.items.length > 1) {
+            const owner = doc.createElement('span');
+            owner.className = 'khin-imgchipkw';
+            owner.textContent = (mem.keyword || '') + (mem.label ? '（' + mem.label + '）' : '');
+            owner.title = owner.textContent;
+            chips.appendChild(owner);
+          }
           for (const w of words) {
             const chip = doc.createElement('span');
             chip.className = 'khin-imgchip';
@@ -1793,7 +1844,7 @@
              * 用条目已有的 key（img-ocr.js 的 `ruleId|src`，面板别处也用它）+ 命中词 ——
              * **不许**用条目下标（条目对象上没有 idx，写 `it.idx` 恒为 undefined，两张图里的同一个词
              * 会互相点亮），也不许只用命中词（两个条目里的同一个词会串台）。 */
-            const copyKey = String(it.key || '') + '|' + w;
+            const copyKey = String(mem.key || '') + '|' + w;
             chip.dataset.k = copyKey;
             /* 重建重放（T63）：命中同一键且这笔反馈还在窗口内 ⇒ 当场补上 —— 否则整段重建会把屏幕上
              * 的绿框吃掉（真机 ms≈94–330 就重建，绿框约 1/4 秒就没了）。 */
@@ -1816,7 +1867,7 @@
               this.imgCopyMark = { key: copyKey, ok: true, at: at };
               this.imgApplyCopyMark(chip, true);
               setTimeout(() => this.imgClearCopyMark(copyKey, at), IMG_COPY_MS);
-              copyToClipboard(KH.OcrCopy.sentenceOf(it.text, w) || w, this.root).then((ok) => {
+              copyToClipboard(KH.OcrCopy.sentenceOf(mem.text, w) || w, this.root).then((ok) => {
                 if (ok) return;
                 /* 还是这一笔才改判（晚到的旧 promise 不许把刚点的那一笔改成红的） */
                 const m = this.imgCopyMark;
@@ -1993,17 +2044,18 @@
 
     /**
      * 笔记内容 → DOM 片段。
-     * 内容里**混有**三类东西：
+     * 内容里**混有**两类东西：
      *   · 用户写的 Markdown（`KH.Markdown.toFragment`）
      *   · 抓取字段生成的 `<table class="kh-table kh-table-fetch">` HTML（`KH.Fetch.rowsToTableHtml`）
-     *   · 一致性核对生成的 `<table class="kh-table kh-table-check">` HTML（`KH.Fetch.checkFor`，2.0.2.2 需求 4）
-     * 这两类表格都是本插件自己生成的**可信结构**，必须原样插入而不是当 Markdown 文本转义掉；
+     * 这类表格是本插件自己生成的**可信结构**，必须原样插入而不是当 Markdown 文本转义掉；
      * 因此先把表格片段摘出来，其余按 Markdown 渲染，最后按原顺序拼回。
      */
     noteFragment(doc, note) {
       const frag = doc.createDocumentFragment();
       const src = String(note == null ? '' : note);
       // 兼容不带 `kh-table-fetch` 标记的旧串（历史数据 / 已缓存的笔记内容），两种都认
+      // `check` 分支只为**旧笔记**保留（2.0.2.2 生成的核对结论表还留在用户已存的笔记里，
+      // 丢了它会被当纯文本原样吐出来、标签可见）；2.0.2.4 起不再生成该类表格。
       const re = /<table class="kh-table(?: kh-table-(?:fetch|check))?">[\s\S]*?<\/table>/g;
       let last = 0;
       let m;
@@ -2021,13 +2073,22 @@
         for (const td of tmp.querySelectorAll('td.kh-table-label')) {
           const first = td.firstElementChild;
           if (first && first.className === 'kh-lbt') continue;
-          const txt = td.textContent || '';
+          /* 【2.0.2.4 需求④】字段名格现在可能是「名字 + 后缀徽标」两段：徽标**不许**进 .kh-lbt
+           * （那层 max-height:1.5em + max-width:8em 会把后缀裁掉），所以先把它摘出来、包完再搬回。
+           * 名字只取"除徽标以外"的子节点文本 —— 老笔记（没有徽标）走这条也逐字不变。 */
+          const suf = td.querySelector('.kh-table-suffix');
+          let txt = '';
+          for (const n of Array.prototype.slice.call(td.childNodes)) {
+            if (n.nodeType === 1 && n.className === 'kh-table-suffix') continue;
+            txt += (n.textContent || '');
+          }
           const span = doc.createElement('span');
           span.className = 'kh-lbt';
           span.title = txt;            // 全文在悬停里可读回，截断只发生在视觉上
           span.textContent = txt;
           td.textContent = '';
           td.appendChild(span);
+          if (suf) td.appendChild(suf);
         }
         while (tmp.firstChild) frag.appendChild(tmp.firstChild);
         last = m.index + m[0].length;
@@ -2088,30 +2149,6 @@
    *     必须按标签**确实抓到内容**才算这条记录有效；抓不到 → 不显示、**不回退抓标题右格**。
    *   · 每轮重建都重算（值后到/异步填充后自动补上），不缓存"未命中"结论。
    */
-  /**
-   * 某个字段（**含层级后缀**，按 `baseLabelOf` 归一）的图片识别结果汇总。
-   * 一致性核对的右字段靠它读「图里写了什么」（2.0.2.2 需求 4）。
-   *   · `scheduled`：这个字段确实有图排进了识别（没有 ⇒ 多半是「识别图片文字」没开）
-   *   · `done`：这些图都跑完了（`idle`/`pending` 还在排队时不算完）
-   *   · `text`：读出来的文字（一张都没读出字时是空串 —— 调用方据此说"没识别出文字"，不当不一致）
-   */
-  function ocrTextOf(label) {
-    const want = String(label == null ? '' : label);
-    let text = '';
-    let n = 0;
-    let pending = false;
-    const items = (KH.ImgOcr && typeof KH.ImgOcr.items === 'function') ? KH.ImgOcr.items() : [];
-    for (const it of items) {
-      if (!it) continue;
-      const base = (KH.Fetch && KH.Fetch.baseLabelOf) ? KH.Fetch.baseLabelOf(it.label) : String(it.label || '');
-      if (base !== want) continue;
-      n++;
-      if (it.state === 'idle' || it.state === 'pending') pending = true;
-      else if (it.state === 'done' && it.text) text += '\n' + it.text;
-    }
-    return { text: text, done: n > 0 && !pending, scheduled: n > 0 };
-  }
-
   function collectEffective(hits) {
     const list = (hits || []).filter(h => h && h.meta && h.meta.important);
     const effective = [];
@@ -2126,17 +2163,6 @@
           : '';
       } catch (err) {
         h.meta.fetchHtml = '';
-      }
-      /* 一致性核对（2.0.2.2 需求 4）：读的是**同一份取到的值**（共用 fetchCache ⇒ 不重复走查 DOM），
-       * 右字段的图片文字走 `ocrTextOf`（`KH.ImgOcr` 的结果）。没配规则时 checkFor 立刻返回 ''。 */
-      h.meta.fetchCheckHtml = '';
-      try {
-        if (KH.Fetch && typeof KH.Fetch.checkFor === 'function') {
-          h.meta.fetchCheckHtml = KH.Fetch.checkFor(
-            h.textNode, h.meta.fetchCheck, h.meta.fetchLabels, fetchCache, h.meta.fetchScope, ocrTextOf) || '';
-        }
-      } catch (err) {
-        h.meta.fetchCheckHtml = '';
       }
       // 仅抓取：抓不到内容即视为无内容（旧版 v1.13.6「空值守卫」）
       if (h.meta.fetchOnly && !h.meta.fetchHtml) continue;
@@ -2175,18 +2201,7 @@
   if (KH.ImgOcr && typeof KH.ImgOcr.onChange === 'function') {
     KH.ImgOcr.onChange(() => {
       panel.renderImg();
-      /* 2.0.2.2 需求 4：一致性核对的右字段读的正是图片识别文字 ⇒ 识别完后**笔记卡也得重画**，
-       * 否则结论会停在 ⏳。只在真有「一致性核对」规则时才付这份代价（否则每个 OCR 回调都要
-       * 重跑一遍全量抓取 —— 大表格上那笔开销不能白花）；重画由 `changed()` 的脏检查挡住无变化的情况。 */
-      if (hasCheckRules()) panel.refresh();
     });
-  }
-
-  /** 配置里是否存在任何「一致性核对」规则（决定 OCR 回调要不要顺带重画笔记卡） */
-  function hasCheckRules() {
-    const c = KH.config || {};
-    const any = (list) => (list || []).some((k) => !!(k && String(k.fetchCheck == null ? '' : k.fetchCheck).trim()));
-    return any(c.keywords) || any(c.groups);
   }
 
   KH.ImportantNote = { panel, head, collectEffective, IMG_PROTOCOL_OK };

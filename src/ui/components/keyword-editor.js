@@ -312,8 +312,6 @@
       setDisabled(fetchCtl, !on);
       /* K74：「抓取范围」也跟着模块开关走（抓取模块没启用时它没有意义） */
       setDisabled(byKey('fetchScope'), !on);
-      /* 2.0.2.2 需求 4：「一致性核对」比的就是「字段」取到的值 ⇒ 没字段可比时一并禁用 */
-      setDisabled(byKey('fetchCheck'), !on || !hasLabels);
       setDisabled(ocrCtl, !on || !hasLabels);
       for (const key of ['imgOcrKeyword', 'imgOcrMax']) setDisabled(byKey(key), !on || !hasLabels || !ocrOn);
       if (ocrNote) {

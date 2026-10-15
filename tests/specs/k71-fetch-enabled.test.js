@@ -83,26 +83,6 @@ module.exports = async function run() {
     eq(!!missing.meta.important, true, '缺键时仍照旧进面板');
   });
 
-  await test('★ 一致性核对（2.0.2.2 需求 4）：与抓取同门 —— 关掉抓取就没有核对，普通词与组合词同口径', () => {
-    /* 核对要读抓取字段的值，抓取关了就无从比对 ⇒ 归一成空串（不是"没声明字段所以空"）。 */
-    const off = C.dispatch({ id: 'k', text: '甲', fetchLabels: '包名|软著', fetchCheck: '包名 = 软著', fetchEnabled: false }, CFG);
-    eq(off.meta.fetchCheck, '', '普通词：抓取未启用 ⇒ 核对规则一并归一成空');
-    const on = C.dispatch({ id: 'k', text: '甲', fetchLabels: '包名|软著', fetchCheck: '包名 = 软著', fetchEnabled: true }, CFG);
-    eq(on.meta.fetchCheck, '包名 = 软著', '启用时原样带进 meta');
-    const missing = C.dispatch({ id: 'k', text: '甲', fetchLabels: '包名|软著', fetchCheck: '包名 = 软著' }, CFG);
-    eq(missing.meta.fetchCheck, '包名 = 软著', '缺键照旧核对（与新字段的迁移口吻一致：旧数据零影响）');
-    eq(C.dispatch({ id: 'k', text: '甲', fetchLabels: '包名|软著' }, CFG).meta.fetchCheck, '',
-      '没写核对规则 ⇒ 空串（下游据此不产出结论）');
-    /* 组合词：combo.js 是另一条编译路径，必须同口径 */
-    const cbase = {
-      id: 'K', text: '甲', cellVerifyEnabled: true, cellVerify: '表头', comboAxis: 'lr',
-      cellVerifyMatchMode: 'include', fetchLabels: '包名|软著', fetchCheck: '包名 = 软著'
-    };
-    const coff = C.dispatch(Object.assign({}, cbase, { fetchEnabled: false }), CFG);
-    eq(coff.meta.fetchCheck, '', '组合词未启用 ⇒ 同样归一成空串');
-    eq(C.dispatch(Object.assign({}, cbase, {}), CFG).meta.fetchCheck, '包名 = 软著');
-  });
-
   /* ========================================================== ② 迁移规则 */
 
   suite('K71 · fetchEnabled 的迁移：缺键按 fetchLabels 反推，键存在一律尊重');

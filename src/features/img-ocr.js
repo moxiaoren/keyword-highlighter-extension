@@ -309,13 +309,42 @@
   function ocrPatternOf(rule) {
     const raw = String((rule && rule.meta && rule.meta.imgOcrKeyword) || '').trim();
     if (!raw) return null;
+    return patternOf(raw);
+  }
+
+  /**
+   * 关键词原文 → 编译后的模式（带缓存）。**唯一**的正则构造点仍是 `Compiler.buildPattern`：
+   * 空白容忍那条路要的是"同一个词、剔空白后的字面"，所以它按**剔空白后的字面**再编译一次 ——
+   * 与用户手打「登记号」拿到的模式完全等价，缓存键因此可以直接共用关键词原文。
+   * @param {string} rawKey 关键词（或它的剔空白形态）
+   */
+  function patternOf(rawKey) {
     if (!KH.Compiler || typeof KH.Compiler.buildPattern !== 'function') return null;
-    let re = ocrPatternCache.get(raw);
-    if (!re) {
-      re = KH.Compiler.buildPattern(raw, { caseSensitive: false, wholeWord: false, useRegex: true });
-      ocrPatternCache.set(raw, re || null);
+    if (ocrPatternCache.has(rawKey)) return ocrPatternCache.get(rawKey);
+    const built = KH.Compiler.buildPattern(rawKey, { caseSensitive: false, wholeWord: false, useRegex: true });
+    ocrPatternCache.set(rawKey, built || null);
+    return built || null;
+  }
+
+  const WHITE_CHAR = /\s/;
+  const WHITE_ALL = /\s+/g;
+
+  /**
+   * 把「剔空白文本」里的区间映射回**原文**区间。
+   * 【为什么必须映射】命中片段要喂给 `OcrCopy.sentenceOf(text, needle)`，而它是在**原文**里
+   * `indexOf` —— 给一个剔过空白的版本就定位不到整句，用户点词块复制就复制不到东西。
+   * 映射不到（区间越界）返回 null，调用方丢掉这一条，不许猜。
+   */
+  function unshrinkRange(text, from, to) {
+    let seen = 0;
+    let start = -1;
+    for (let i = 0; i < text.length; i += 1) {
+      if (WHITE_CHAR.test(text.charAt(i))) continue;
+      if (seen === from) start = i;
+      seen += 1;
+      if (seen === to) return (start >= 0) ? { start: start, end: i + 1 } : null;
     }
-    return re || null;
+    return null;
   }
 
   /**
@@ -328,12 +357,46 @@
     const U = (KH.Scanner && KH.Scanner.util) || {};
     const pattern = ocrPatternOf(rule);
     if (!pattern || typeof U.matchIn !== 'function') return [];
-    try {
-      const node = document.createTextNode(text || '');
-      return U.matchIn(pattern, node, { util: U }, { caseSensitive: false, wholeWord: false, useRegex: true }) || [];
-    } catch (e) {
-      return [];
+    const raw = String(text || '');
+    /* 内核唯一匹配入口：造一个**脱离文档**的文本节点，把整段识别文本当成"一个文本节点" */
+    const run = (pat, src) => {
+      try {
+        return U.matchIn(pat, document.createTextNode(src), { util: U },
+          { caseSensitive: false, wholeWord: false, useRegex: true }) || [];
+      } catch (e) {
+        return [];
+      }
+    };
+    const direct = run(pattern, raw);
+    if (direct.length) return direct;
+    /* 【空白容忍 · 2.0.2.4 需求③】OCR 把「登记号」读成「登记 号」是常态（分栏/字距/表格线都会插空白），
+     * 而"图片命中关键词"是人手打的 —— 一字之差就整条不命中，用户看到的是"识别了却说没命中"。
+     * 口径：**原样匹配不中时**，两侧各剔一次空白再试一次（顺序固定，先"文本剔空白"这条最常见）。
+     * 两条纪律：
+     *   ① 只在"直接匹配失败"后才走这条路 —— 不改变既有语义，零额外开销；
+     *   ② 命中片段与区间**映射回原文**（见 `unshrinkRange`），面板上的词块与复制整句照旧可用。 */
+    const rawKeyword = String((rule && rule.meta && rule.meta.imgOcrKeyword) || '').trim();
+    const compactKeyword = rawKeyword.replace(WHITE_ALL, '');
+    const textHasWs = WHITE_CHAR.test(raw);
+    /* 两侧都没有空白 ⇒ 直接匹配已经就是终局，不走第二条路（零额外开销） */
+    if (!textHasWs && compactKeyword === rawKeyword) return direct;
+    const compact = textHasWs ? raw.replace(WHITE_ALL, '') : raw;
+    const tries = [];
+    if (textHasWs) tries.push({ pat: pattern, text: compact });    if (compactKeyword !== rawKeyword) {
+      const pat2 = patternOf(compactKeyword);
+      if (pat2) tries.push({ pat: pat2, text: compact });
     }
+    for (const t of tries) {
+      const hits = run(t.pat, t.text);
+      if (!hits.length) continue;
+      const out = [];
+      for (const m of hits) {
+        const r = unshrinkRange(raw, m.start, m.end);
+        if (r) out.push({ start: r.start, end: r.end, text: raw.slice(r.start, r.end) });
+      }
+      if (out.length) return out;
+    }
+    return direct;
   }
 
   /* ---------------- 提交与回收 ---------------- */

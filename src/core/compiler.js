@@ -240,9 +240,6 @@
           /** 抓取后续字段：允许"普通词 + 抓取"组合（旧版 _extractFetched 的用法）；
            * 模块未启用（`fetchEnabled === false`）→ 归一成空串＝这条规则没有抓取字段 */
           fetchLabels: fetchOn ? (kw.fetchLabels == null ? '' : String(kw.fetchLabels)) : '',
-          /* 「一致性核对」（2.0.2.2 需求 4）——与 `fetchLabels` **同一个总开关、同一处归一**：
-           * 模块没启用 ⇒ 归一成空串（消费侧零改动，也没得比）。 */
-          fetchCheck: fetchOn ? (kw.fetchCheck == null ? '' : String(kw.fetchCheck)) : '',
           display: String(kw.text == null ? '' : kw.text),
           groupId: kw.groupId || null
         }, v.meta, ocrMeta(kw), { important: v.meta.important || wantFetch })

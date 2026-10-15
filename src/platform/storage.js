@@ -219,9 +219,6 @@
       imgOcrMax: f.imgOcrMax || '',
 
       fetchLabels: normalizeLabels(f.fetchLabels),
-      /* 「一致性核对」（2.0.2.2 需求 4）：与 `fetchLabels` 同一模块的**手写白名单**（同一条教训 ——
-       * 字段表加了、这里漏了就是"保存后内容丢失"）。多行规则文本原样存，解析在 fetch.js 里做。 */
-      fetchCheck: str(f.fetchCheck),
       /* 「抓取后续字段」模块总开关（K71）——**写路径**（弹窗 / 批量 / CSV / JSON 导入）的归一。
        * 【同一个函数】读路径 `Config.normalize` 调的也是**它本身**
        * （`KH.Config.normalizeFetchEnabled`），不是第二份拷贝 —— R4 实测过"两处各写一条"

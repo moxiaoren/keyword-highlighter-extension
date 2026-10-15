@@ -1073,6 +1073,30 @@
     return (Number((st || {}).conf) || 0) >= min;
   }
 
+  /**
+   * 关键词在识别行里命中了多少**行**（纯函数）。
+   *
+   * 【为什么要剔空白 · 2.0.2.4 需求③】OCR 把「登记号」读成「登记 号」是常态（分栏、字距、
+   * 表格线都会插空白），而关键词是人手打的。原样 `indexOf` 数出来是 0，后果有两条：
+   *   ① 面板写"已命中 0 处"，而内容脚本按剔空白判却能命中 ⇒ 同一张图两处说法不一致；
+   *   ② **加密档重试的闸门就是这个 0**（`runJob` 里 `hitsOf(base.lines) === 0` ⇒ 从粗到细
+   *      再识别好几轮）—— 假 0 会白白多跑最贵的那几档（真机量级：整图 1 次 vs 9 次）。
+   * 所以这里与内容侧同口径：**两侧都剔掉空白**再比。分隔符（`,`/`，`/`、`/`|`）口径不变。
+   * @param {Array<{t?:string}>} lines 识别行
+   * @param {string} keyword 关键词串（可含多个候选）
+   */
+  function countHits(lines, keyword) {
+    const keys = String(keyword || '').split(/[,，、|]/)
+      .map((s) => s.replace(/\s+/g, '').toLowerCase()).filter(Boolean);
+    if (!keys.length) return 0;
+    let n = 0;
+    for (const l of (lines || [])) {
+      const t = String((l && l.t) || '').replace(/\s+/g, '').toLowerCase();
+      for (const k of keys) { if (t.indexOf(k) >= 0) { n += 1; break; } }
+    }
+    return n;
+  }
+
   /** 首遍之后要不要试转（D-14.3 的三条判据，任一成立即试） */
   function needsRotation(st) {
     const o = st || {};
@@ -1174,7 +1198,7 @@
     ADOPT_MIN_CONF: ADOPT_MIN_CONF, isCredible: isCredible,
     DENSE_RESCALE: DENSE_RESCALE, picksBetter: picksBetter,
     judgeOrientation: judgeOrientation, noticeOf: noticeOf,
-    langsForKeyword: langsForKeyword
+    langsForKeyword: langsForKeyword, countHits: countHits
   };
   self.__khOcrPure = PURE;
 
@@ -1199,6 +1223,42 @@
       return { blob: await res.blob(), origin: 'src' };
     }
     throw Object.assign(new Error('请求里没有图片'), { code: 'decode-failed' });
+  }
+
+  /* ---------------- 同图结果缓存（2.0.2.4 需求②） ----------------
+   * 【问题】同一张图被多个关键词抓到时，内容侧本来按 `src` 串去重（img-ocr.js 的 `inflight` 与
+   * `textCache`）—— 但这条链会断：走 canvas 的跨源图回执里没有 src、`srcset` 换址后字符串变了、
+   * 内容侧 200 条 FIFO 把旧图挤掉，同一张图就会被**再识别一遍**。
+   * 引擎侧按「图片字节 + 引擎 + 语言包 + 关键词」缓存整笔回执后，同一个抓取字段被多少个词调用，
+   * 这张图也只用烧一次识别。
+   *
+   * 【为什么关键词也进键】密排加密档重试按 `hitsOf(job.keyword)` 择优（`picksBetter`）：换一个词，
+   * 选中的档可能不同 ⇒ 结果不能跨词复用。
+   * 【为什么引擎与语言包也进键】语言包决定模型（`pickLangs`）、引擎决定识别路径（PP-OCR /
+   * Tesseract），结果不可互换。vendor 的 `globalImageCache` 只认图像字节、不认语言 ——
+   * **不能**靠它跨档，只能自己按档隔离。
+   * 【上限】FIFO 64 张：一页里同一字段的图通常个位数，且每笔只是一段文本。 */
+  const RESULT_CACHE_MAX = 64;
+  const resultCache = new Map();
+
+  function resultCachePut(key, payload) {
+    if (!key) return;
+    if (resultCache.size >= RESULT_CACHE_MAX) resultCache.delete(resultCache.keys().next().value);
+    resultCache.set(key, payload);
+  }
+
+  /* 采样哈希：与 vendor 的 `ImageCache.generateKey` 同思路（等距采 ≤4096 字节 + 拼字节长）。
+   * 拿不到字节（测试桩 / 读取失败）就回空串 ⇒ 该笔不进出缓存，行为与加缓存前完全一致。 */
+  async function bytesHashOf(blob) {
+    try {
+      if (!blob || typeof blob.arrayBuffer !== 'function') return '';
+      const buf = new Uint8Array(await blob.arrayBuffer());
+      if (!buf.length) return '';
+      const step = Math.max(1, Math.floor(buf.length / 4096));
+      let hash = 0;
+      for (let i = 0; i < buf.length; i += step) hash = ((hash << 5) - hash + buf[i]) | 0;
+      return (hash >>> 0).toString(36) + ':' + buf.length;
+    } catch (e) { return ''; }
   }
 
   /**
@@ -1406,6 +1466,17 @@
         worker = await getEngine(langs);
       }
       const got = await bytesFromRequest(job);
+      /* 【2.0.2.4 需求②】同一张图（同字节）+ 同引擎 + 同语言包 + 同关键词 ⇒ 直接回先前那笔结果，
+       * 解码与识别全跳过。`cached:true` 如实标记，真机与单测都据此核对"这张图只烧了一次"。 */
+      const imgHash = await bytesHashOf(got.blob);
+      const cacheKey = imgHash ? [imgHash, kind, langs.join('+'), job.keyword || ''].join('|') : '';
+      const cachedPayload = cacheKey ? resultCache.get(cacheKey) : null;
+      if (cachedPayload) {
+        reply(Object.assign({}, cachedPayload, {
+          cached: true, queueMs: Math.round(performance.now() - t0), totalMs: Math.round(performance.now() - t0)
+        }));
+        return;
+      }
       /* 【T51】整图只解一次：`openSized` 量完尺寸**把 bitmap 留在打开状态交给本任务**，
        * deg 0 的每一块都借它裁（`chunkFor` → `prepareBlob(..., f.bitmap)`），
        * 本函数在 `finally` 里统一 close。关闭责任链：**谁 open 谁 close** ——
@@ -1427,17 +1498,10 @@
         } catch (e) { /* 个别内核不支持某个参数：忽略，继续按默认跑 */ }
       };
       /* 【关键词在这里只用于**进度提示**】内容脚本那边的匹配可能带正则/大小写口径，
-       * 这里的 `hits` 只服务"识别中 3/6，已命中 2 处"这句面板文案 —— 不是判定真源。 */
-      const keys = String(job.keyword || '').split(/[,，、|]/).map((s) => s.trim().toLowerCase()).filter(Boolean);
-      const hitsOf = (lines) => {
-        if (!keys.length) return 0;
-        let n = 0;
-        for (const l of lines) {
-          const t = l.t.toLowerCase();
-          for (const k of keys) { if (t.indexOf(k) >= 0) { n += 1; break; } }
-        }
-        return n;
-      };
+       * 这里的 `hits` 只服务"识别中 3/6，已命中 2 处"这句面板文案 —— 不是判定真源。
+       * 【但它真的花钱】加密档重试的闸门就是这个数（`=== 0` 才从粗到细再跑）⇒
+       * 判据口径必须与内容侧一致：**两侧都剔空白**（见 `countHits`，2.0.2.4 需求③）。 */
+      const hitsOf = (lines) => countHits(lines, job.keyword);
       /* 【按「行」过滤 + 按位置排序（K66）】整张海报丢给引擎时，照片与装饰图形会产生大量垃圾"行"
        * （用户看到的 `Tory` / `rr i` / `Ve` 就是这些）。tesseract 每条行都带**置信度与坐标**，
        * 于是这里做三件事，把面板里的文本收拾成"人能读的样子"：
@@ -1790,7 +1854,7 @@
         lines: finalLines.length, rawLines: chosen.stat.rawLines,
         conf: chosen.stat.conf, truncated: cov.truncated, suspicious: orientation.suspicious
       });
-      reply({
+      const payload = {
         ok: true,
         /* 【不变量 6】回执必须带**实际**用了哪个引擎 + 回落原因（`engineReason` 空 = 没回落）。
          * 这两个字段是"用户能不能知道自己被降级了"的唯一依据，background 原样透传。 */
@@ -1813,7 +1877,11 @@
         decodes: decodeCount - decBefore,
         queueMs: Math.round(t1 - t0), ocrMs: Math.round(performance.now() - t1),
         totalMs: Math.round(performance.now() - t0)
-      });
+      };
+      /* 【2.0.2.4 需求②】成完之后才进缓存：失败的结果不缓存（否则一次网络抖动会被记住）。
+       * `cached` 字段只在命中那笔加，缓存里的这份保持"原始识别"的样子。 */
+      resultCachePut(cacheKey, payload);
+      reply(payload);
     } catch (err) {
       reply({
         ok: false, code: (err && err.code) || 'ocr-failed',

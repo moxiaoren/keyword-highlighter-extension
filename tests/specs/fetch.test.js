@@ -1213,114 +1213,84 @@ module.exports = async function run() {
     eq(F.extractFor(tn, '简介%2-3')[0].rows[0][0].t, '键词');
   });
 
-  /* ---------------- 一致性核对（2.0.2.2 需求 4） ----------------
-   * 用户场景：表格里「包名」= 2345，「软著」格是图片、图里写着「包名：2345」→ 一致就在重要笔记提示。
-   * 这些用例守四件事：结论正确、**不误报**（左字段没值 / 图还没识别）、`!=` 反向、结论是可信 HTML。 */
-
-  suite('fetch · 一致性核对（2.0.2.2 需求 4）');
-
-  await test('规则行解析：`=` / `!=`；空行与 # 注释跳过；认不出的行整行忽略', () => {
-    const r = F.parseCheckRules('包名 = 软著\n\n# 这是注释\nA != B\n没有运算符\n= 缺左边\n右边缺 =');
-    eq(r.length, 2);
-    eq(r[0].left + r[0].op + r[0].right, '包名=软著');
-    eq(r[1].left + r[1].op + r[1].right, 'A!=B');
-    eq(F.parseCheckRules('').length, 0);
-    eq(F.parseCheckRules(null).length, 0);
-  });
-
-  await test('★ 左字段的值出现在右字段的文字里 → ✅ 一致', () => {
-    const t = table([['关键词', 'x'], ['包名', '2345'], ['软著', '软著登记证：2345']]);
+  /* ---------- 2.0.2.4 需求①：`^锚文本` = 取锚点**之前**的文本 ----------
+   * 场景：抓取格常被塞上「复制」「高价值」这类控件/角标文字，前缀才是要的值，
+   * 而前缀**长度不固定**（`%N` 定长切不动它）⇒ 用「锚点之前」代替「前 N 字」。 */
+  await test('★ `^锚文本`：取锚点之前的文本（长度不定）并 trim', () => {
+    const t = table([['关键词', 'x'], ['名称', 'abc [复制]高价值 [图标]']]);
     const tn = t.rows[0].children[0].childNodes[0];
-    const html = F.checkFor(tn, '包名 = 软著', '包名|软著', null, 'self');
-    truthy(html.indexOf('kh-table-check') >= 0, html);
-    truthy(html.indexOf('kh-check-ok') >= 0, html);
-    truthy(html.indexOf('✅') >= 0, html);
-    falsy(html.indexOf('⚠️') >= 0, html);
+    eq(F.extractFor(tn, '名称^[复制]')[0].rows[0][0].t, 'abc');
+    // 锚点紧贴开头 ⇒ 前面是空串（不是"保留全文"）
+    const t2 = table([['关键词', 'x'], ['名称', '[复制]高价值']]);
+    const n2 = t2.rows[0].children[0].childNodes[0];
+    eq(F.extractFor(n2, '名称^[复制]')[0].rows[0][0].t, '');
   });
 
-  await test('★ 对不上 → ⚠️ 不一致，并报出没找到的那个值', () => {
-    const t = table([['关键词', 'x'], ['包名', '2345'], ['软著', '软著登记证：9999']]);
+  await test('★ `^锚文本`：锚点不存在 ⇒ 保留原文（同 `@`/`%` 的容错哲学，绝不报错变空）', () => {
+    const t = table([['关键词', 'x'], ['名称', 'abc [复制]高价值']]);
     const tn = t.rows[0].children[0].childNodes[0];
-    const html = F.checkFor(tn, '包名 = 软著', '包名|软著', null, 'self');
-    truthy(html.indexOf('kh-check-bad') >= 0, html);
-    truthy(html.indexOf('2345') >= 0, html);
+    eq(F.extractFor(tn, '名称^[不存在]')[0].rows[0][0].t, 'abc [复制]高价值');
   });
 
-  await test('★ 忽略空格与大小写（OCR 在空白上极不稳定）', () => {
-    const t = table([['关键词', 'x'], ['包名', ' 2345 '], ['软著', '包 名 ： 2 3 4 5']]);
+  await test('`^` 从标签末尾剥掉、`anchor` 可读；末尾没有锚文本的 `^` 是标签自己的字符', () => {
+    const a = F.parseLabels('应用名称^[复制]')[0];
+    eq(a.label, '应用名称'); eq(a.anchor, '[复制]');
+    const b = F.parseLabels('应用名称')[0];
+    eq(b.label, '应用名称'); eq(b.anchor, '');
+    eq(F.parseLabels('备注^')[0].label, '备注^', '光秃秃的 ^ 不许吃标签');
+  });
+
+  await test('★ 组合执行顺序固定 `!` → `^` → `%`（与书写顺序无关）', () => {
+    const t = table([['关键词', 'x'], ['名称', 'ab cd [复制]x']]);
     const tn = t.rows[0].children[0].childNodes[0];
-    truthy(F.checkFor(tn, '包名 = 软著', '包名|软著', null, 'self').indexOf('kh-check-ok') >= 0);
-    const t2 = table([['关键词', 'x'], ['包名', 'ABC'], ['软著', '证书编号 abc']]);
-    const tn2 = t2.rows[0].children[0].childNodes[0];
-    truthy(F.checkFor(tn2, '包名 = 软著', '包名|软著', null, 'self').indexOf('kh-check-ok') >= 0);
+    // 先去空白 → 再按锚点切 → 最后按码点截取
+    eq(F.extractFor(tn, '名称!^[复制]%3')[0].rows[0][0].t, 'abc');
+    eq(F.extractFor(tn, '名称%3^[复制]!')[0].rows[0][0].t, 'abc', '书写顺序不影响执行顺序');
+    eq(F.extractFor(tn, '名称^[复制]%9')[0].rows[0][0].t, 'ab cd', '切完只剩 5 字，%9 越界保留');
   });
 
-  await test('★ `!=` 反向：出现即不一致', () => {
-    const bad = table([['关键词', 'x'], ['包名', '2345'], ['备注', '重复项 2345']]);
-    const badHtml = F.checkFor(bad.rows[0].children[0].childNodes[0], '包名 != 备注', '包名|备注', null, 'self');
-    truthy(badHtml.indexOf('kh-check-bad') >= 0, badHtml);
-    const ok = table([['关键词', 'x'], ['包名', '2345'], ['备注', '无关内容']]);
-    const okHtml = F.checkFor(ok.rows[0].children[0].childNodes[0], '包名 != 备注', '包名|备注', null, 'self');
-    truthy(okHtml.indexOf('kh-check-ok') >= 0, okHtml);
-  });
-
-  await test('★ 左字段没取到值 / 没有规则 → 什么都不输出（宁可不报，也不误报）', () => {
-    const t = table([['关键词', 'x'], ['包名', ''], ['软著', '软著登记证：2345']]);
+  await test('★ `^` 可与 `#`/`@` 混写；锚点未命中时 `%` 仍作用在全文上', () => {
+    const t = table([['关键词', 'x'], ['名称', 'abc [复制]高价值'], ['截图', { html: [] }]]);
     const tn = t.rows[0].children[0].childNodes[0];
-    eq(F.checkFor(tn, '包名 = 软著', '包名|软著', null, 'self'), '', '空值不许报不一致');
-    eq(F.checkFor(tn, '包名 = 不存在的字段', '包名|软著', null, 'self'), '', '右字段不存在时取值侧也给空');
-    eq(F.checkFor(tn, '', '包名|软著', null, 'self'), '', '没规则不输出');
-    eq(F.checkFor(tn, '包名 = 软著', '', null, 'self'), '', '没声明字段就没有值可比');
+    eq(F.extractFor(tn, '名称^[复制]#1')[0].rows[0][0].t, 'abc');
+    eq(F.extractFor(tn, '名称^[无]%3')[0].rows[0][0].t, 'abc', '锚点没中 ⇒ 全文，%3 照切');
+    // `@`偏移与锚点顺序无关：值格 = 右边第 2 格
+    const t3 = table([['关键词', 'x'], ['名称', '忽略我', 'abc [复制]高价值']]);
+    const n3 = t3.rows[0].children[0].childNodes[0];
+    eq(F.extractFor(n3, '名称@2^[复制]')[0].rows[0][0].t, 'abc');
+    eq(F.extractFor(n3, '名称^[复制]@2')[0].rows[0][0].t, 'abc');
   });
 
-  await test('★ 右字段的图还没识别完 → ⏳（不许拿"还没 OCR"当"不一致"）', () => {
-    const t = table([['关键词', 'x'], ['包名', '2345'],
-      ['软著', { html: [H.el('img', { src: 'https://cdn.example.com/a.png', alt: '' })] }]]);
-    const tn = t.rows[0].children[0].childNodes[0];
-    const wait = F.checkFor(tn, '包名 = 软著', '包名|软著', null, 'self', () => ({ text: '', done: false, scheduled: true }));
-    truthy(wait.indexOf('kh-check-wait') >= 0, wait);
-    truthy(wait.indexOf('⏳') >= 0, wait);
-    truthy(wait.indexOf('还在识别中') >= 0, '要写清在等什么：' + wait);
-    // 识别完成、图里的字正是左值 → ✅
-    const ok = F.checkFor(tn, '包名 = 软著', '包名|软著', null, 'self', () => ({ text: '包名：2345', done: true, scheduled: true }));
-    truthy(ok.indexOf('kh-check-ok') >= 0, ok);
-    // 识别完成但图里没有这个值 → ⚠️ 才算数
-    const bad = F.checkFor(tn, '包名 = 软著', '包名|软著', null, 'self', () => ({ text: '包名：777', done: true, scheduled: true }));
-    truthy(bad.indexOf('kh-check-bad') >= 0, bad);
-    // 这个字段的图根本没参与识别（没开「识别图片文字」）→ ⏳ 且明说原因，不许装成"不一致"
-    const off = F.checkFor(tn, '包名 = 软著', '包名|软著', null, 'self', () => ({ text: '', done: false, scheduled: false }));
-    truthy(off.indexOf('kh-check-wait') >= 0, off);
-    truthy(off.indexOf('识别图片文字') >= 0, '要指向真正的开关：' + off);
-    // 图跑了、一张都没读出字 → 同样不下"不一致"的断言
-    const blank = F.checkFor(tn, '包名 = 软著', '包名|软著', null, 'self', () => ({ text: '', done: true, scheduled: true }));
-    truthy(blank.indexOf('kh-check-wait') >= 0, blank);
-    truthy(blank.indexOf('没识别出文字') >= 0, blank);
+  /* ---------- 2.0.2.4 需求④：后缀的**展示串**与字段名格徽标 ----------
+   * 后缀（`#图` / `@2` / `!` / `^X` / `%4`）以前只活在解析器里：写进「抓取字段」的那串在笔记表格里
+   * 看不见，用户没法从「这个值为什么长这样」反查到「我给它写了什么后缀」。
+   * `suffixTextOf` 是展示串的**唯一出口**（编辑器胶囊与笔记表格共用），`rowsToTableHtml` 负责渲染。 */
+  await test('★ `suffixTextOf`：与 parseLabelSpec 一一对应（没写后缀 ⇒ 空串，历史 HTML 才不会被改）', () => {
+    const sfx = (tok) => F.suffixTextOf(F.parseLabelSpec(tok));
+    eq(sfx('名称'), '');
+    eq(sfx('名称#图'), '#图');
+    eq(sfx('名称#图3'), '#图3');
+    eq(sfx('名称#3'), '#3');
+    eq(sfx('名称#1'), '#1');
+    eq(sfx('名称@2'), '@2');
+    eq(sfx('名称^[复制]'), '^[复制]');
+    eq(sfx('名称%4'), '%4');
+    eq(sfx('名称%2-3'), '%2-3');
+    eq(sfx('名称!'), '!');
+    eq(sfx('名称!^[复制]%2-3'), '! ^[复制] %2-3', '多后缀连写 ⇒ 固定顺序拼开，一眼看全');
+    /* 非法 @：解析器会**静默回退右邻格**（有 offsetInvalid 标记），展示串必须如实说出来，别装作没事 */
+    eq(sfx('名称@abc'), '@abc（无效）');
   });
 
-  await test('★ 已经能定的就先定：右格文字里已有左值 ⇒ 直接 ✅，不让用户白等 OCR', () => {
-    const t2 = table([['关键词', 'x'], ['包名', '2345'],
-      ['软著', { html: [H.txt('证书号 2345'), H.el('img', { src: 'https://cdn.example.com/b.png', alt: '' })] }]]);
-    const tn2 = t2.rows[0].children[0].childNodes[0];
-    const got = F.checkFor(tn2, '包名 = 软著', '包名|软著', null, 'self', () => ({ text: '', done: false, scheduled: true }));
-    truthy(got.indexOf('kh-check-ok') >= 0, got);
+  await test('★ `rowsToTableHtml`：字段名格带 `.kh-table-suffix` 徽标；不写后缀时输出与历史逐字一致', () => {
+    const withSfx = F.rowsToTableHtml([{ label: '截图', suffix: '#图3', rows: [[{ t: 'abc' }]] }]);
+    truthy(withSfx.indexOf('<span class="kh-table-suffix">#图3</span>') >= 0, '有了后缀就要在字段名格里渲染徽标：' + withSfx);
+    const plain = F.rowsToTableHtml([{ label: '截图', suffix: '', rows: [[{ t: 'abc' }]] }]);
+    eq(plain.indexOf('kh-table-suffix'), -1, '没后缀 ⇒ 连类名都不许出现（老笔记的 HTML 快照不受影响）');
+    truthy(plain.indexOf('>截图</td>') >= 0, '没后缀时字段名格仍是老样子：' + plain);
+    /* 后缀是用户输入 ⇒ 必须转义（它进的是 HTML 正文，不是属性） */
+    const esc = F.rowsToTableHtml([{ label: '名称', suffix: '<b>', rows: [[{ t: 'abc' }]] }]);
+    truthy(esc.indexOf('&lt;b&gt;') >= 0 && esc.indexOf('<b>') < 0, '后缀里的尖括号必须转义：' + esc);
   });
 
-  await test('★ 同一份 cache 复用取值：抓取表格与核对结论同源（不重复走查 DOM）', () => {
-    const t = table([['关键词', 'x'], ['包名', '2345'], ['软著', '软著登记证：2345']]);
-    const tn = t.rows[0].children[0].childNodes[0];
-    const cache = new WeakMap();
-    const html1 = F.blockFor(tn, '包名|软著', cache, 'self');
-    const chk = F.checkFor(tn, '包名 = 软著', '包名|软著', cache, 'self');
-    truthy(String(html1).indexOf('2345') >= 0, html1);
-    truthy(chk.indexOf('kh-check-ok') >= 0, chk);
-    eq(F.blockFor(tn, '包名|软著', cache, 'self'), html1, '两次结果必须逐字相同（缓存不许串味）');
-  });
-
-  await test('★ 值是可信 HTML：字段名里的尖括号被转义（不许当结构注入）', () => {
-    const t = table([['关键词', 'x'], ['<b>包名</b>', '2345'], ['软著', '无']]);
-    const tn = t.rows[0].children[0].childNodes[0];
-    const html = F.checkFor(tn, '<b>包名</b> = 软著', '<b>包名</b>|软著', null, 'self');
-    truthy(html.indexOf('&lt;b&gt;') >= 0, html);
-    falsy(html.indexOf('<b>包名</b>') >= 0, html);
-  });
 };

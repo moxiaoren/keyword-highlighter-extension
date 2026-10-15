@@ -15,7 +15,7 @@
  *
  * spec（字段声明）支持的键：
  *   key/label/type/width(2=整行)/inline/chip/short/hint/placeholder/required
- *   type: text | textarea | richtext | bool | int | select | color
+ *   type: text | textarea | richtext | bool | int | select | color | labels
  *   bool+chip  → 开关胶囊；color+chip → 颜色胶囊（文案用 short，完整名进 tooltip）
  *   select+chip+onValue/offValue → 两态开关胶囊
  * ========================================================================= */
@@ -144,6 +144,50 @@
         });
         return { el: fieldBox(spec.label, inp), read: () => KH.FieldMap.coerce(spec, inp.value), key: spec.key };
       }
+      /* 【2.0.2.4 需求④】「字段」专用控件：文本框 + **实时胶囊预览** + 一行后缀图例。
+       * 为什么要预览：`!`/`%`/`^` 早就实现了却零提示（只出现在更新日志里），用户看不出自己写的那串
+       * 被认成了什么。这里把「原文 → 逐段解析结果」当场摊开：每段一个胶囊（名字 + 后缀徽标），
+       * `✕` 删掉那一段。解析走 `KH.Fetch` 的同一份语法（见 `labelSegs`），不养第二套。
+       * 存储契约一个字没变：`read()` 仍是**整串原文**（CSV 仍第 17 列、分隔符由 storage 归一）。 */
+      case 'labels': {
+        const inp = h('input', { class: 'kh-input', type: 'text', id: id, value: value == null ? '' : String(value), placeholder: spec.placeholder });
+        const prev = h('div', { class: 'kh-lbl-preview' });
+        const legend = h('div', {
+          class: 'kh-lbl-legend',
+          text: '后缀：#图 仅图片 / #3 最多 3 张 / @2 值格 / ! 去空白 / ^锚文本 只取锚点之前 / %4 前 4 字；'
+            + '一次写多个字段用 | 或 ｜（例：名称^[复制]|备注#图）'
+        });
+        const box = h('div', { class: fldCls, title: hintTitle }, [
+          h('label', { class: 'kh-fld-label', text: spec.label + (spec.required ? ' *' : ''), for: id }),
+          inp, prev, legend
+        ]);
+        /** 重画预览（唯一入口：输入时、✕ 删段后都走它）。 */
+        const draw = () => {
+          prev.textContent = '';
+          const toks = labelSegs(inp.value);
+          for (const seg of toks) {
+            const del = h('button', { class: 'kh-lbl-del', type: 'button', text: '✕',
+              title: '删掉这一段：' + seg.raw });
+            del.addEventListener('click', () => {
+              /* 按**原始段序号**删（不按文本删：`备注|备注` 这种重复段删一个才不会两个一起没） */
+              const list = String(inp.value).length ? (KH.Fetch && KH.Fetch.splitLabelTokens ? KH.Fetch.splitLabelTokens(inp.value) : [String(inp.value)]) : [];
+              list.splice(seg.i, 1);
+              inp.value = list.join('|');
+              draw();
+              /* 让外层（弹窗的"改动过"标记等）也收到一次改动通知；调度器不支持就算了 */
+              try { if (typeof inp.dispatchEvent === 'function') inp.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) { /* 无 Event 构造器：上面的 draw() 已经画好了 */ }
+            });
+            prev.appendChild(h('span', { class: 'kh-lbl-chip' }, [
+              h('span', { class: 'kh-lbl-name', text: seg.name }),
+              seg.suffix ? h('span', { class: 'kh-lbl-suffix', text: seg.suffix }) : null,
+              del
+            ]));
+          }
+        };
+        inp.addEventListener('input', draw);
+        draw();
+        return { el: box, read: () => inp.value, key: spec.key };
+      }
       default: {
         /* `placeholder: spec.placeholder`（**不兜 `|| ''`**）：没声明占位的字段就**真的没有**
          * 这个属性 —— `h()` 对 null/undefined 直接跳过（dom.js:25）。写成 `''` 会在 DOM 里
@@ -153,6 +197,33 @@
         return { el: fieldBox(spec.label + (spec.required ? ' *' : ''), inp), read: () => inp.value, key: spec.key };
       }
     }
+  }
+
+  /**
+   * 【2.0.2.4 需求④】「抓取字段」原文 → 逐段解析结果（供胶囊预览用）。
+   *
+   * **语法只有一份**：解析一律走 `KH.Fetch.splitLabelTokens` / `parseLabelSpec`（抓取实现本体），
+   * 这里只负责把结果排成界面要看的样子（名字 + 后缀串）。`KH.Fetch` 缺席时（理论上不会——
+   * options.html 已加载它）退回"整串当一个名字"，宁可少画徽标，也不在这里养第二套后缀语法。
+   *
+   * @returns {Array<{i:number, raw:string, name:string, suffix:string}>} `i` = 原始段序号（删段用）
+   */
+  function labelSegs(raw) {
+    const F = KH.Fetch;
+    const s = raw == null ? '' : String(raw);
+    const toks = (F && typeof F.splitLabelTokens === 'function') ? F.splitLabelTokens(s) : [s];
+    const out = [];
+    for (let i = 0; i < toks.length; i++) {
+      const tok = toks[i];
+      const spec = (F && typeof F.parseLabelSpec === 'function') ? F.parseLabelSpec(tok) : null;
+      if (spec) {
+        if (!spec.label) continue;                     // 空段（结尾多个 `|`、或只写了后缀）不画胶囊
+        out.push({ i: i, raw: tok, name: spec.label, suffix: (typeof F.suffixTextOf === 'function' ? F.suffixTextOf(spec) : '') });
+      } else if (String(tok).trim()) {
+        out.push({ i: i, raw: tok, name: String(tok), suffix: '' });
+      }
+    }
+    return out;
   }
 
   /**

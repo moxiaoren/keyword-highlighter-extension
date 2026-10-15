@@ -100,6 +100,18 @@ function loadOffscreen(script, opts) {
 
   const self = {};
   self.KH = { MSG: MSG };
+  /* 假 blob：尺寸是**真读数**（几何断言全靠它），字节由尺寸推导 —— 同尺寸 ⇒ 同字节（按图去重可测）、
+   * 不同尺寸 ⇒ 不同字节（不许误去重）。真机走的是真实图片字节，这里只为让「同图只识别一次」可复现。 */
+  const fakeBlob = (w, h) => {
+    const bytes = new Uint8Array(64);
+    const ww = w >>> 0;
+    const hh = h >>> 0;
+    for (let i = 0; i < 4; i++) {
+      bytes[i] = (ww >> (8 * i)) & 255;
+      bytes[4 + i] = (hh >> (8 * i)) & 255;
+    }
+    return { __w: w, __h: h, arrayBuffer: async () => bytes.buffer };
+  };
   const chrome = {
     runtime: {
       getURL: (rel) => 'chrome-extension://kh/' + rel,
@@ -115,9 +127,9 @@ function loadOffscreen(script, opts) {
     }
     if (s.indexOf('data:,') === 0) {
       const m = /W=(\d+);H=(\d+)/.exec(s) || [0, 1080, 800];
-      return { ok: true, status: 200, blob: async () => ({ __w: Number(m[1]), __h: Number(m[2]) }) };
+      return { ok: true, status: 200, blob: async () => fakeBlob(Number(m[1]), Number(m[2])) };
     }
-    return { ok: false, status: 404, blob: async () => ({ __w: 1, __h: 1 }) };
+    return { ok: false, status: 404, blob: async () => fakeBlob(1, 1) };
   };
 
   const Tesseract = {
@@ -767,6 +779,99 @@ module.exports = async function run() {
     truthy(/truncated:\s*\{/.test(copy), 'ocr-copy.js 已有 truncated 键（截断告知）');
     truthy(/notice/.test(img), 'img-ocr.js 必须消费回执的 notice（映射成条目 why）');
     truthy(/coverPx/.test(img), 'truncated 的 {px} 占位符必须有值可填（覆盖了多少像素）');
+  });
+
+  /* ==================================================================
+   * 图片命中 · 关键词命中数（2.0.2.4 需求③）
+   *   用户现场：OCR 读成「登记 号」、图片命中词是「登记号」⇒ 面板说没命中。
+   *   引擎侧这个计数有两个消费者，坏起来都不轻：
+   *     ① 面板文案「已命中 N 处」—— 必须与内容脚本（按剔空白判）口径一致；
+   *     ② **加密档重试的闸门**：`hitsOf(base.lines) === 0` 才从粗到细再识别好几轮 ⇒
+   *        空白造成的假 0 会白白多跑最贵的那几档，正是用户说的"浪费资源"。
+   * ================================================================== */
+  suite('图片命中 · 关键词命中数（空白不得挡住命中 · 2.0.2.4 需求③）');
+
+  await test('★ countHits：两侧都剔空白后按「行」计数', () => {
+    const F = loadOffscreen({ lines: () => null }).self.__khOcrPure.countHits;
+    eq(typeof F, 'function', 'countHits 必须挂在纯判决层 self.__khOcrPure 上（它是重试闸门，要能钉）');
+    eq(F([{ t: '登记 号' }], '登记号'), 1, '原样 indexOf 会数成 0 的那种行');
+    eq(F([{ t: '登记号' }], '登记号'), 1, '原样命中不许回归');
+    eq(F([{ t: '登记 号' }], '登 记号'), 1, '关键词自带空白也剔');
+    eq(F([{ t: '登记 号码' }], '登记号'), 1, '剔空白后是子串即算命中（与内容侧同口径）');
+    eq(F([{ t: '登记 号' }, { t: '另一个 登记 号' }], '登记号'), 2, '按行计数：一行最多加一');
+    eq(F([{ t: '无 关' }], '登记号'), 0);
+    eq(F([{ t: '登记 号' }], '美女,登记号'), 1, '多词任一中即算命中（分隔符口径不变）');
+    eq(F([], '登记号'), 0);
+    eq(F([{ t: '登记 号' }], ''), 0, '没配关键词 ⇒ 0（不许把"没配词"说成命中）');
+  });
+
+  await test('★ 端到端：只差一个空白的两种写法 ⇒ 识别次数必须一样（空白不许买来额外重试）', async () => {
+    const run = async (lineText) => {
+      const env = loadOffscreen({ lines: () => ({ conf: 95, lines: [{ t: lineText, conf: 95, y: 20 }] }) });
+      env.job({ type: MSG.OCR_IMAGE, requestId: 'r9', tabId: 7, keyword: '登记号', dataUrl: 'data:,W=900;H=600' });
+      return { res: await env.result('r9'), calls: env.calls.recognize };
+    };
+    const spaced = await run('登记 号 A123');
+    const tight = await run('登记号 A123');
+    eq(spaced.res.ok, true, '两种写法都要正常出结果');
+    /* ★ 这一条就是"浪费资源"的入口：空白导致假 0 命中 ⇒ 加密档（粗/细两轮共 8 次）白跑 */
+    eq(spaced.calls, tight.calls, '空白不许买来额外的加密档重试');
+  });
+
+  /* ==================================================================
+   * 需求②（2.0.2.4）：**同一张图只识别一次**
+   *
+   * 【用户原话】「关键词a，抓取字段：截图，图片命中词，一对一；关键词b，抓取字段：截图，
+   *   图片命中词，美女。这种情况会重复识别，浪费资源。同一个抓取字段，即使被多个词调用
+   *   图片ocr命中，也只需要识别一次就行。」
+   * 【为什么内容侧的去重不够】内容侧按 `src` **串**去重（img-ocr.js 的 `inflight`/`textCache`）：
+   *   跨源 blob: 走 canvas 的回执里没有 src、srcset 换址后字符串变了、200 条 FIFO 挤掉旧图——
+   *   三种情况下同一张图都会被再识别一遍。引擎侧按**图片字节**缓存整笔回执，才兜得住。
+   * 【为什么要按档隔离】语言包决定模型、引擎决定路径；vendor 的 `globalImageCache` 只认字节
+   *   不认语言，直接吃它的缓存会串档 ⇒ 我们自建一层，键里带引擎与语言包。
+   * ================================================================== */
+  suite('图片命中 · 同图只识别一次（2.0.2.4 需求②）');
+
+  const LINES = () => ({ conf: 95, lines: [{ t: '供应商 甲', conf: 95, y: 20 }] });
+
+  await test('★ 同一张图（同字节）换了 src 串 ⇒ 只识别一次，第二笔如实标 cached', async () => {
+    const env = loadOffscreen({ lines: LINES });
+    env.job({ type: MSG.OCR_IMAGE, requestId: 'c1', tabId: 7, keyword: '供应商', src: 'https://a.example/1.png', dataUrl: 'data:,W=300;H=200' });
+    const first = await env.result('c1');
+    env.job({ type: MSG.OCR_IMAGE, requestId: 'c2', tabId: 7, keyword: '供应商', src: 'https://b.example/2.png', dataUrl: 'data:,W=300;H=200' });
+    const second = await env.result('c2');
+    eq(first.ok, true, '第一笔要正常出结果');
+    eq(env.calls.recognize, 1, '同一张图（字节相同）只许烧一次识别 —— src 串不同不是重识别的理由');
+    eq(second.cached, true, '命中缓存要如实标记（真机与单测都靠它核对"只烧了一次"）');
+    eq(second.text, first.text, '缓存命中的文本必须与原识别一致');
+    eq(second.lines, first.lines, '行数等读数一并复用');
+    eq(second.engine, 'tesseract', '引擎字段不许因缓存而缺失');
+  });
+
+  await test('★ 换一个关键词 ⇒ 必须重新识别（关键词进缓存键）', async () => {
+    const env = loadOffscreen({ lines: LINES });
+    env.job({ type: MSG.OCR_IMAGE, requestId: 'c3', tabId: 7, keyword: '供应商', dataUrl: 'data:,W=300;H=200' });
+    await env.result('c3');
+    env.job({ type: MSG.OCR_IMAGE, requestId: 'c4', tabId: 7, keyword: '美女', dataUrl: 'data:,W=300;H=200' });
+    const r4 = await env.result('c4');
+    eq(env.calls.recognize, 2, '密排加密档按关键词择优（picksBetter）⇒ 结果不能跨词复用');
+    eq(r4.cached === true, false, '换词那一笔不许假装命中缓存');
+  });
+
+  await test('★ 不同的图（不同字节）不许互相顶替', async () => {
+    const env = loadOffscreen({ lines: LINES });
+    env.job({ type: MSG.OCR_IMAGE, requestId: 'c5', tabId: 7, keyword: '供应商', dataUrl: 'data:,W=300;H=200' });
+    await env.result('c5');
+    env.job({ type: MSG.OCR_IMAGE, requestId: 'c6', tabId: 7, keyword: '供应商', dataUrl: 'data:,W=300;H=201' });
+    const r6 = await env.result('c6');
+    eq(env.calls.recognize, 2, '字节不同（尺寸不同）⇒ 必须各识别一次');
+    eq(r6.cached === true, false, '不同图不许被当成缓存命中');
+  });
+
+  await test('★ 缓存键必须含引擎与语言包（档隔离靠它，不许退化成只认字节）', () => {
+    const src = read('offscreen/ocr.js');
+    truthy(/const cacheKey = imgHash \? \[imgHash, kind, langs\.join/.test(src),
+      '缓存键必须是 [图片哈希, 引擎, 语言包, 关键词] —— 少了引擎或语言包就会串档');
   });
 };
 

@@ -128,7 +128,10 @@ const specs = [
   /* T57（真机事故）备注卡片的配置刷新：第二次 bind 的新引用必须生效、卡片开着时当场落新配色，
    * 同时钉住"监听只装一次 / 引用没变不碰 UI / 没显示不碰 DOM"三条不许被顺手改掉的契约。
    * 口径见 tests/specs/note-card.test.js 头部（分类那条仍在 config-noop.test.js 的 T36b） */
-  './specs/note-card.test.js'
+  './specs/note-card.test.js',
+  /* 2.0.2.4 需求④：「字段」控件的胶囊预览（名字 + 后缀徽标、✕ 按段删、read() 仍回整串原文、
+   * 后缀图例常显、选项页加载顺序）。口径见 tests/specs/labels-field.test.js 头部 */
+  './specs/labels-field.test.js'
 ];
 
 (async () => {

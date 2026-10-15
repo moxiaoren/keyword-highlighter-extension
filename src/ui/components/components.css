@@ -590,6 +590,29 @@
 .kh-fld-inline .kh-fld-label::after { content: '：'; }
 .kh-fld-inline .kh-input { flex: 1 1 auto; min-width: 44px; }
 .kh-fld-bool { display: flex; align-items: center; gap: 6px; }
+/* ---- 【2.0.2.4 需求④】「字段」控件的胶囊预览（`.kh-lbl-*`）----
+ * 一段一个胶囊：名字 +（有后缀才有的）后缀徽标 + ✕ 删段。淡色小字，和 `.kh-fld-chip` 的
+ * 开关胶囊在观感上区分开（那些是"开关"，这些是"你写了什么"的只读摊开 + 删除入口）。 */
+.kh-lbl-preview { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.kh-lbl-preview:empty { display: none; }
+.kh-lbl-chip {
+  display: inline-flex; align-items: center; gap: 3px;
+  max-width: 100%; padding: 1px 2px 1px 7px;
+  border: 1px solid var(--border-2); border-radius: 999px;
+  background: var(--card); font-size: var(--fs-sm); line-height: 17px;
+}
+.kh-lbl-name { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 12em; }
+.kh-lbl-suffix {
+  padding-left: 4px; border-left: 1px solid var(--border-2);
+  color: var(--text-4); font-size: var(--fs-xs); white-space: nowrap;
+}
+.kh-lbl-del {
+  flex: 0 0 auto; border: 0; background: none; padding: 0 2px; margin: 0;
+  color: var(--text-4); font-size: var(--fs-xs); line-height: 1; cursor: pointer;
+}
+.kh-lbl-del:hover { color: var(--danger); }
+/* 后缀图例：常显一行（`!`/`%`/`^` 历史上零提示，用户看不出自己写的后缀被认成了什么） */
+.kh-lbl-legend { color: var(--text-4); font-size: var(--fs-xs); line-height: 1.5; }
 /* 无抓取字段时「识别图片文字」是**真禁用**（点击无效），但此前没有置灰规则 → 看起来还是能点（K70 补） */
 .kh-fld-bool.is-disabled { opacity: .5; }
 .kh-fld-bool-label { font-size: var(--fs-base); color: var(--text-2); }

@@ -425,14 +425,21 @@
    *     例：`com.example.app lite` → `com.example.applite`，配 `包名!`）
    *   · 字段末尾 `%N`（N≥1）= **取前 N 个字符**；`%a-b` = **取第 a 到 b 个字符**（1-based 闭区间，
    *     例：`%2-3` 取第2、3字）。按 Unicode 码点切（中文/emoji 不拆半）；非法/越界 = **保留全文**
-   *   · 可组合：`包名!`、`包名!%6`、`简介%2-3`（`!` 与 `%` 可与 `#`/`@` 任意顺序混写）
-   *   修饰从**末尾**逐个剥（所以 `#…` / `@…` / `!` / `%…` 可以任意顺序混写），最多剥多轮。
+   *   · 字段末尾 `^锚文本`（2.0.2.4 新增）= **取锚点首次出现之前的文本**（并 trim）：抓取格里常被
+   *     塞上「复制」「高价值」这类控件/角标文字，而**前缀长度不固定**，`%N` 定长切不动它。
+   *     例：格文本 `abc [复制]高价值 [图标]` + `名称^[复制]` → `abc`。
+   *     · 锚点是**字面文本**（不走正则、区分大小写）；**找不到锚点 = 保留全文**（同 `@`/`%` 的容错哲学）
+   *   · 可组合：`包名!`、`包名!%6`、`简介%2-3`、`名称!^[复制]%3`（`!`/`^`/`%` 可与 `#`/`@` 任意顺序混写）
+   *   修饰从**末尾**逐个剥（所以 `#…` / `@…` / `!` / `^…` / `%…` 可以任意顺序混写），最多剥多轮。
+   *   执行顺序固定：`!` 去空白 → `^` 按锚点切 → `%` 按码点截取（与书写顺序无关）。
    */
   const IMG_SUFFIX_RE = /#\s*(图|仅图)?\s*(\d+)?\s*$/;
-  const OFFSET_SUFFIX_RE = /@\s*([^@#]*)$/;
-  /* `!` = 去内部空白；`%` = 字符截取（%N 前N字 / %a-b 第a到b字）—— 从末尾剥，可与 # / @ 任意混写 */
+  const OFFSET_SUFFIX_RE = /@\s*([^@#^]*)$/;
+  /* `!` = 去内部空白；`^` = 取锚点之前的文本；`%` = 字符截取（%N 前N字 / %a-b 第a到b字）
+   * —— 都从末尾剥，可与 # / @ 任意混写。三者的字符类互斥，避免 `名称@2^锚` 这种写法被 `@` 表达式吞掉。 */
   const STRIP_SUFFIX_RE = /\s*!\s*$/;
-  const SLICE_SUFFIX_RE = /%\s*([^%!@#]*)$/;
+  const ANCHOR_SUFFIX_RE = /\^\s*([^\^%!@#]+)$/;
+  const SLICE_SUFFIX_RE = /%\s*([^%!@#^]*)$/;
 
   function parseLabelSpec(t) {
     let s = String(t == null ? '' : t).trim();
@@ -441,6 +448,7 @@
     let imgLimit = 0;
     let simple = false;
     let stripSpace = false;
+    let anchor = '';
     let sliceSpec = '';
     for (let guard = 0; guard < 6; guard++) {
       const mi = IMG_SUFFIX_RE.exec(s);
@@ -478,9 +486,46 @@
         s = s.slice(0, st.index).replace(/^[ \u3000]+|[ \u3000]+$/g, '');
         continue;
       }
+      const ma = ANCHOR_SUFFIX_RE.exec(s);
+      if (ma && ma[1].trim()) {
+        /* `^锚文本` = 取锚点**首次出现之前**的文本（trim）。锚点是字面文本：不走正则、区分大小写。
+         * `^` 后面没有实义字符（如标签就叫 `备注^`）⇒ **不当后缀**，`^` 留作标签自己的字符。 */
+        anchor = ma[1];
+        s = s.slice(0, ma.index).replace(/^[ \u3000]+|[ \u3000]+$/g, '');
+        continue;
+      }
       break;
     }
-    return { label: s, simple: simple, imgOnly: imgOnly, imgLimit: imgLimit, offset: offset, offsetInvalid: isOffsetInvalid(offset), stripSpace: stripSpace, sliceSpec: sliceSpec };
+    return { label: s, simple: simple, imgOnly: imgOnly, imgLimit: imgLimit, offset: offset, offsetInvalid: isOffsetInvalid(offset), stripSpace: stripSpace, anchor: anchor, sliceSpec: sliceSpec };
+  }
+
+  /**
+   * 字段后缀的**展示串**（只给界面看：重要笔记表格的字段名格 + 编辑器里的胶囊徽标）。
+   * 与 `parseLabelSpec` 一一对应 —— 改语法时这里必须同步，单测有一条把两者对照着钉住。
+   * 返回空串 = 这个字段没写任何后缀（界面就不加那个徽标，与历史渲染逐字节一致）。
+   */
+  function suffixTextOf(it) {
+    if (!it) return '';
+    const out = [];
+    if (it.imgOnly) out.push(it.imgLimit ? '#图' + it.imgLimit : '#图');
+    else if (it.imgLimit) out.push('#' + it.imgLimit);
+    else if (it.simple) out.push('#1');
+    if (it.offset) out.push('@' + it.offset + (it.offsetInvalid ? '（无效）' : ''));
+    if (it.stripSpace) out.push('!');
+    if (it.anchor) out.push('^' + it.anchor);
+    if (it.sliceSpec) out.push('%' + it.sliceSpec);
+    return out.join(' ');
+  }
+
+  /* `^` 对**单段文本**做「锚点之前」截取。
+   *  锚点找不到（或本身为空）→ **保留全文**（`@`/`%` 同款容错：绝不报错、绝不变空值）。
+   *  锚点在开头 → 结果是空串（前面确实什么都没有，这是真实结果，不是容错分支）。 */
+  function applyAnchor(t, anchor) {
+    if (anchor == null || anchor === '') return t;
+    const s = String(t);
+    const i = s.indexOf(anchor);
+    if (i < 0) return t;
+    return s.slice(0, i).trim();
   }
 
   /* `%` 表达式对**单段文本**做字符截取。
@@ -504,9 +549,10 @@
     return chars.slice(0, n).join('');
   }
 
-  /* 对一行值格文本应用字段级修饰：`!` 去内部空白 → `%` 字符截取（顺序固定，先空格后截取）。 */
+  /* 对一行值格文本应用字段级修饰：`!` 去内部空白 → `^` 按锚点切 → `%` 字符截取（顺序固定，与书写顺序无关）。 */
   function modText(t, item) {
     if (item.stripSpace) t = String(t).replace(/\s+/g, '');
+    if (item.anchor) t = applyAnchor(t, item.anchor);
     if (item.sliceSpec) t = applySlice(t, item.sliceSpec);
     return t;
   }
@@ -890,7 +936,7 @@
       const found = findFakeLabelInRow(startEl, item.label);
       if (!found) continue;
       const val = fakeRightValue(found.labelEl);
-      if (val) out.push({ label: item.label, rows: [[{ t: val, rs: 1, cs: 1 }]] });
+      if (val) out.push({ label: item.label, suffix: suffixTextOf(item), rows: [[{ t: val, rs: 1, cs: 1 }]] });
     }
     return out;
   }
@@ -1229,8 +1275,8 @@
         rows = collectRightBlock(target, table, { stopAtRepeatedLabel: !!fromRow, memo: memo });
       }
     }
-    /* `!` 去空白 / `%` 截取：无论来自 @偏移、#1 简单模式还是整块，统一在取值出口做修饰 */
-    if (rows && (item.stripSpace || item.sliceSpec)) rows = transformRows(rows, item);
+    /* `!` 去空白 / `^` 锚点截取 / `%` 字符截取：无论来自 @偏移、#1 简单模式还是整块，统一在取值出口做修饰 */
+    if (rows && (item.stripSpace || item.anchor || item.sliceSpec)) rows = transformRows(rows, item);
     return rows;
   }
 
@@ -1271,8 +1317,8 @@
         seen.add(t);
         uniq.push(e);
       }
-      if (uniq.length === 1) out.push({ label: label, rows: uniq[0].rows });
-      else uniq.forEach(e => out.push({ label: label + layerSuffix(e.dir, e.idx), rows: e.rows }));
+      if (uniq.length === 1) out.push({ label: label, suffix: uniq[0].suffix, rows: uniq[0].rows });
+      else uniq.forEach(e => out.push({ label: label + layerSuffix(e.dir, e.idx), suffix: e.suffix, rows: e.rows }));
     }
     return out;
   }
@@ -1300,7 +1346,7 @@
     const entries = [];
     for (const p of picked) {
       const rows = rowsForItem(p.item, p.cell, p.table, p.fromRow, memo);
-      if (rows && rows.length) entries.push({ label: p.label, dir: p.dir, idx: p.idx, rows: rows });
+      if (rows && rows.length) entries.push({ label: p.label, suffix: suffixTextOf(p.item), dir: p.dir, idx: p.idx, rows: rows });
     }
     /* K79：多选（当前层 + 内层 / 外层…）时**一律合并**（同名同值去重、值不同加层级后缀）；
      * 只选一层时合并是**恒等变换**（不加后缀）⇒ 单层行为与 K74 完全一致。 */
@@ -1414,8 +1460,13 @@
           grid = true;
         }
       }
-      return { label: m.label, textLines, grid, rows: m.rows || [], opt: opt, budget: budget };
+      return { label: m.label, suffix: m.suffix, textLines, grid, rows: m.rows || [], opt: opt, budget: budget };
     });
+
+    /* 【2.0.2.4 需求④】字段名格 = 名字 + 后缀徽标（`.kh-table-suffix`，淡化小字）。
+     * 没写后缀 ⇒ `it.suffix` 为空串 ⇒ 输出的 HTML 与历史逐字节一致（既有快照断言不受影响）。 */
+    const labelHtml = (it, attrs) => '<td class="kh-table-label"' + (attrs || '') + '>' + escHtml(it.label)
+      + (it.suffix ? '<span class="kh-table-suffix">' + escHtml(it.suffix) + '</span>' : '') + '</td>';
 
     /* 【v2.0.1.15 需求 2 · 外壳由内容构造】本函数返回 `''` = 有行但**有效值全空**
      * （值 `trim` 后为空即视为空 ⇒ 值不显示、字段名也不显示，整块不渲染）。
@@ -1448,7 +1499,7 @@
             if (String(val).trim()) anyVal = true;
             cells += '<td' + attrs + '>' + escHtml(val) + '</td>';
           }
-          buf += '<tr>' + (firstInBlock && it.label != null ? '<td class="kh-table-label" rowspan="' + total + '">' + escHtml(it.label) + '</td>' : '') + cells + '</tr>';
+          buf += '<tr>' + (firstInBlock && it.label != null ? labelHtml(it, ' rowspan="' + total + '"') : '') + cells + '</tr>';
           firstInBlock = false;
         }
         /* 值格全空 ⇒ 连 label 表头一起不渲染（空卡片形态②） */
@@ -1492,7 +1543,7 @@
         if (labelDone) return '';
         labelDone = true;
         const rs = blockTotal > 1 ? ' rowspan="' + blockTotal + '"' : '';
-        return '<td class="kh-table-label"' + rs + '>' + escHtml(it.label) + '</td>';
+        return labelHtml(it, rs);
       };
 
       let buf = '';
@@ -1545,7 +1596,7 @@
     const optOf = {};
     for (const it of parseLabels(rawLabels)) optOf[it.label] = it;
     return rowsToTableHtml(fetched.map(f => ({
-      label: f.label, rows: f.rows,
+      label: f.label, suffix: f.suffix, rows: f.rows,
       /* `all` 下同名标签会带层级后缀 → 先按原样查，再退回"剥掉后缀"查 */
       opt: optOf[f.label] || optOf[baseLabelOf(f.label)]
     })));
@@ -1563,7 +1614,7 @@
   }
 
   /** `cache`（WeakMap<表格根, 盒>）里取/建**同一只**盒；盒里三张表各管一摊。
-   *  抓取表格（`html`）与一致性核对（`values`，见 `extractCached`）共用它 ⇒ 不重复取值。 */
+   *  抓取表格（`html`）与取值（`values`，见 `extractCached`）共用它 ⇒ 不重复取值。 */
   function cacheBox(cache, textNode) {
     const root = nearestTable(textNode.parentNode) || textNode.parentElement;
     if (!root) return null;
@@ -1578,8 +1629,8 @@
 
   /**
    * `extractFor` 的**带缓存**版本：同一轮重建内，同一 `(表格根, 命中行, labels, scope)` 只算一次。
-   * 存在的理由是**第二个消费者**：一致性核对（`checkFor`）也要取值，而取值是
-   * `collectRightBlock` 级的 DOM 走查 —— 不缓存就等于在大表格上把抓取那笔开销再付一遍。
+   * 取值是 `collectRightBlock` 级的 DOM 走查 ⇒ 不缓存就等于在同一张表格上重复付开销
+   * （`computeBlock` 是它的消费者）。
    * 键与 `blockFor` 的 `html` 键同构（同一个盒、同一套判据），因此两者的"同键必然同值"前提一致。
    */
   function extractCached(textNode, rawLabels, scope, box) {
@@ -1628,135 +1679,18 @@
     return v;
   }
 
-  /* ------------------------------------------------- 一致性核对（2.0.2.2 需求 4） */
-
-  const CHECK_RE = /^(.+?)\s*(!=|=)\s*(.+)$/;
-
-  /**
-   * 「一致性核对」规则文本 → `[{left, op, right}]`。
-   * 一行一条：`包名 = 软著`（左字段的值必须出现在右侧文本里）、`包名 != 备注`（必须不出现）。
-   * 空行与 `#` 开头的注释行跳过；**格式不认识的行整行忽略**（不报错、不抛 —— 用户手写的东西，
-   * 错一行不该让整个面板红）。
-   */
-  function parseCheckRules(raw) {
-    const out = [];
-    const lines = String(raw == null ? '' : raw).split(/[\n\r]+/);
-    for (const line of lines) {
-      const s = line.trim();
-      if (!s || s.charAt(0) === '#') continue;
-      const m = CHECK_RE.exec(s);
-      if (!m) continue;
-      const left = m[1].trim();
-      const right = m[3].trim();
-      if (!left || !right) continue;
-      out.push({ left: left, op: m[2], right: right });
-    }
-    return out;
-  }
-
-  /** 比对用的归一：剥掉图片占位符与标签、**去掉所有空白**、统一小写。
-   *  去空白是关键 —— OCR 结果在空格/全角空格上极不稳定，不去掉就是"明明一样却报不一致"。 */
-  const CHECK_IMG_RE = /\u0001KHIMG\u0001[^\u0001]*\u0001ENDIMG\u0001/g;
-  function checkNorm(s) {
-    return String(s == null ? '' : s)
-      .replace(CHECK_IMG_RE, ' ')
-      .replace(/<[^>]*>/g, ' ')
-      .replace(/\s+/g, '')
-      .toLowerCase();
-  }
-
-  /** 取到的字段值 → `Map<baseLabel, 多行文本>`（同名多份按 `baseLabelOf` 合并，层级后缀不算不同字段） */
-  function valuesByBaseLabel(fetched) {
-    const map = new Map();
-    for (const f of (fetched || [])) {
-      const base = baseLabelOf(f.label);
-      const t = (f.rows || []).map((r) => (r || [])
-        .map((c) => String(c && c.t != null ? c.t : '')).join('\n')).join('\n');
-      map.set(base, map.has(base) ? (map.get(base) + '\n' + t) : t);
-    }
-    return map;
-  }
-
-  /** 结论 → 卡片里的 HTML。用 `.kh-table` 这一条**既有可信 HTML 通道**（见 important-note 的 noteFragment） */
-  function checkRowsHtml(rows) {
-    let body = '';
-    for (const x of rows) {
-      const cls = x.st === 'ok' ? 'kh-check-ok' : (x.st === 'bad' ? 'kh-check-bad' : 'kh-check-wait');
-      const mark = x.st === 'ok' ? '✅' : (x.st === 'bad' ? '⚠️' : '⏳');
-      const head = x.left + ' ' + x.op + ' ' + x.right;
-      let tail = '';
-      if (x.st === 'ok') tail = ' 一致';
-      else if (x.st === 'bad') tail = (x.op === '=') ? (' 不一致：没找到「' + x.evidence + '」') : (' 不一致：出现了「' + x.evidence + '」');
-      /* 认不出时要说清"在等什么"：否则一个永远停着的 ⏳ 等于没说 */
-      else tail = ' 待图片识别' + (x.why ? ('（' + x.why + '）') : '');
-      body += '<tr><td class="' + cls + '">' + mark + ' ' + escHtml(head + tail) + '</td></tr>';
-    }
-    return body ? ('<table class="kh-table kh-table-check">' + body + '</table>') : '';
-  }
-
-  /**
-   * 一致性核对（2.0.2.2 需求 4）：把「左字段的值」与「右字段的值 ＋ 右字段里图片的识别全文」比对。
-   *
-   * 口径（用户 2026 场景：表格左格「包名」右格 `2345`、左格「软著」右格是图片且图里写着「包名：2345」）：
-   *   · `=`  左字段的**每个非空值片段**都必须出现在右侧文本里 → ✅；否则 ⚠️
-   *   · `!=` 左字段的值**不得**出现 → 否则 ⚠️
-   *   · 左字段没取到值（没这字段 / 值是空的）→ **整条静默跳过**：宁可什么都不提示，也不误报不一致
-   *   · 结论**尚未确定**（右字段有图、而图还没识别完 / 没识别出字 / 根本没参与识别）→ ⏳ + 说清在等什么；
-   *     但**已经能定的就先定**：右格文字里已经能找到左值 ⇒ 直接 ✅，不让用户白等 OCR。
-   *
-   * @param {Text} textNode 命中文本节点（定位层级/行）
-   * @param {string} rawRules `fetchCheck` 原文
-   * @param {string} rawLabels `fetchLabels` 原文（左/右字段名字都从这份声明里查值）
-   * @param {object} [cache] `blockFor` 的同一只缓存盒（复用取值，见 `extractCached`）
-   * @param {string} [scope] `fetchScope`
-   * @param {(label:string)=>{text?:string,done?:boolean,scheduled?:boolean}} [ocrOf] 取某字段图片的识别全文
-   * @returns {string} HTML；无规则 / 无结论时返回 `''`
-   */
-  function checkFor(textNode, rawRules, rawLabels, cache, scope, ocrOf) {
-    const rules = parseCheckRules(rawRules);
-    if (!rules.length || !textNode) return '';
-    const useBox = cache ? cacheBox(cache, textNode) : null;
-    const fetched = extractCached(textNode, rawLabels, scope, useBox);
-    const vals = valuesByBaseLabel(fetched);
-    const rows = [];
-    for (const r of rules) {
-      const leftAll = vals.has(r.left) ? vals.get(r.left) : '';
-      const leftTokens = leftAll.split('\n').map(checkNorm).filter(Boolean);
-      if (!leftTokens.length) continue;                      // 左字段没值：静默（见函数注释）
-      const rightAll = vals.has(r.right) ? vals.get(r.right) : '';
-      const ocr = (typeof ocrOf === 'function') ? (ocrOf(r.right) || {}) : {};
-      const hasImg = rightAll.indexOf('\u0001KHIMG\u0001') >= 0;
-      const withOcr = checkNorm(rightAll) + checkNorm(ocr.text || '');
-      /* 图片这条信息路能不能采信：没参与识别 / 还在排队 / 一张都没读出字 ⇒ 都不能 */
-      const waiting = hasImg && !(ocr.scheduled && ocr.done && String(ocr.text || '').trim());
-      const why = (ocr.scheduled === false) ? '未开启「识别图片文字」'
-        : (ocr.done ? '图片没识别出文字' : '图片还在识别中');
-      if (r.op === '=') {
-        const missing = leftTokens.filter((t) => withOcr.indexOf(t) < 0);
-        if (!missing.length) rows.push({ st: 'ok', left: r.left, op: r.op, right: r.right });
-        else if (waiting) rows.push({ st: 'wait', left: r.left, op: r.op, right: r.right, why: why });
-        else rows.push({ st: 'bad', left: r.left, op: r.op, right: r.right, evidence: missing.join('、') });
-      } else {
-        const seen = leftTokens.filter((t) => withOcr.indexOf(t) >= 0);
-        if (seen.length) rows.push({ st: 'bad', left: r.left, op: r.op, right: r.right, evidence: seen.join('、') });
-        else if (waiting) rows.push({ st: 'wait', left: r.left, op: r.op, right: r.right, why: why });
-        else rows.push({ st: 'ok', left: r.left, op: r.op, right: r.right });
-      }
-    }
-    return checkRowsHtml(rows);
-  }
-
   KH.Fetch = {
     GROUP_TITLES, parseLabels, extractFor, extractFromFakeTable, collectRightBlock,
     cellText, cellVisualText, isInteractive, imgPlaceholder, restoreImgs,
     rowsToTableHtml, blockFor, triggerOk, fakeRightValue, nearestTable, isPlaceholderText,
     /* 图片选项（仅图片 / 前 N 张）：单测直接锁 */
     applyImgPolicy,
-    /* 一致性核对（2.0.2.2 需求 4）：规则解析 + 结论 HTML（消费侧在 important-note 的 collectEffective） */
-    parseCheckRules, checkFor,
-    /** 层级后缀剥离（内层/本层/外层）：一致性核对要按它把 label 归一到字段名 */
+    /** 层级后缀剥离（内层/本层/外层）：把 label 归一到字段名（`computeBlock` 的字段选项与单测用） */
     baseLabelOf,
     /* 「抓取字段的值格（含图）」**只读访问口**（img-ocr 取图用；不改抓取内容语义） */
-    cellsForHit, valueCellsOf, splitLabelTokens, findLabelCell
+    cellsForHit, valueCellsOf, splitLabelTokens, findLabelCell,
+    /* 【2.0.2.4 需求④】后缀语法的两个只读口子：编辑器（options 页）用它画「字段胶囊」预览 ——
+     * options 页**不加载**本文件之外任何抓取实现，语法必须只有这一份，所以直接从这儿取。 */
+    parseLabelSpec, suffixTextOf
   };
 })();

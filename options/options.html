@@ -425,8 +425,7 @@
             <li><code>地址|籍贯</code> 可抓多标签；支持多行 / 合并单元格，表格化展示。</li>
             <li><code>#1</code>＝只取右邻一格；三方向<strong>层级</strong>（当前层/内层/外层，下拉 8 档可多选）。</li>
             <li>字段语法：<code>#图</code> 仅图片 / <code>#3</code> 最多 3 张 / <code>@表达式</code> 指定值格。</li>
-            <li><strong>一致性核对</strong>：下面「一致性核对」里一行写一条 <code>包名 = 软著</code>，就拿「包名」的值去「软著」的<strong>文字与图片识别结果</strong>里找 —— 找到标 ✅、找不到标 ⚠️，结论直接附在这条重要笔记里（<code>!=</code> 是反过来要求<strong>不出现</strong>）。用法与口径见「❓ 常见」Q15。</li>
-            <li><strong>新后缀</strong>：末尾 <code>!</code> 去内部空格、<code>%N</code> 截前 N 字 / <code>%a-b</code> 截区间（不拆中文/emoji），如 <code>包名!</code>、<code>简介#1%4</code>。</li>
+            <li><strong>后缀</strong>：末尾 <code>!</code> 去内部空格、<code>%N</code> 截前 N 字 / <code>%a-b</code> 截区间（不拆中文/emoji）、<code>^锚文本</code> 只取<strong>锚点之前</strong>的内容，如 <code>包名!</code>、<code>简介#1%4</code>、<code>名称^[复制]</code>（执行顺序固定 <code>!</code> → <code>^</code> → <code>%</code>）。</li>
             <li>自动剔除按钮文字；图片仅接受 http/https。</li>
             <li>某条字段<strong>取不到内容</strong>（值格空着、或整格什么都没抓到）时，这一项<strong>整张卡片都不出现</strong> —— 不会只剩一个只有字段名的空壳让你点。</li>
           </ul>
@@ -558,8 +557,9 @@
 
         <h4>Q8：图片识别（OCR）怎么用？</h4>
         <p>在「🖼 图片识别」分区确保语言包可用（可下载 / 手动导入 / 自检）；开启后，图片里含「图片命中关键词」的文字会被识别并进面板「🖼 图片命中」分区，<strong>不产生文字高亮</strong>。跨域图片可以两条路走：在「图片识别」里<strong>按站点授权</strong>，或者在网页图片上直接<strong>右键</strong>识别<strong>你点的那一张</strong> —— 右键即这一次同意扩展代读你点的那张，与站点白名单（长期授权）并存不冲突，口径见「🖼 图片识别 → 跨域图片」。</p>
-        <h4>Q9：抓取字段的 <code>!</code> 和 <code>%N</code> 后缀是什么？</h4>
-        <p>加在抓取字段末尾，用于<strong>清洗取值</strong>：<code>!</code> 去掉内容里的内部空格；<code>%N</code> 只取前 N 字、<code>%a-b</code> 取第 a~b 字（按字符截取，不拆开中文/emoji）。例 <code>包名!</code>、<code>简介#1%4</code>。</p>
+        <h4>Q9：抓取字段的 <code>!</code>、<code>%N</code>、<code>^锚文本</code> 后缀是什么？</h4>
+        <p>加在抓取字段末尾，用于<strong>清洗取值</strong>：<code>!</code> 去掉内容里的内部空格；<code>%N</code> 只取前 N 字、<code>%a-b</code> 取第 a~b 字（按字符截取，不拆开中文/emoji）；<code>^锚文本</code> 只取<strong>锚点第一次出现之前</strong>的内容（首尾空白顺带去掉），锚点找不到就<strong>保留原文</strong>。例 <code>包名!</code>、<code>简介#1%4</code>、<code>名称^[复制]</code>。三者可混写，<strong>执行顺序固定</strong> <code>!</code> → <code>^</code> → <code>%</code>，与书写顺序无关。</p>
+        <p>什么时候用 <code>^</code>：抓取格里除了你要的值，还混着「复制」「高价值」这类控件 / 角标文字（多数按钮文字会被自动剔除，没认出来的那类会留在取值里），而<strong>前缀长度不固定</strong>、<code>%N</code> 定长切不动 —— 这时写 <code>名称^[复制]</code>，把锚点那截起全部切掉。</p>
         <h4>Q10：抓取的「层级」当前层 / 内层 / 外层是什么？</h4>
         <p>页面可能表格套表格。<strong>当前层</strong>＝命中格所在的那张表；<strong>内层</strong>＝当前层里嵌着的更小表格；<strong>外层</strong>＝当前层的祖先表。可多选，新建默认「当前层」。</p>
         <h4>Q11：更新日志去哪看？</h4>
@@ -570,10 +570,6 @@
         <p>已移除（图片条目上不再有那个按钮），完整识别文字请到<strong>大图（灯箱）的全文栏</strong>里取：该栏默认就在<strong>大图右侧并排</strong>显示，点<strong>一键复制</strong>，或在栏里<strong>选中后 Ctrl+C</strong>；用灯箱工具条上的<strong>眼睛</strong>开关收起 / 展开，复制按钮跟着它一起显隐（按住栏的<strong>标题</strong>可拖动、<strong>双击标题</strong>回位）。面板里<strong>点命中的词块</strong>，复制的仍是它所在的<strong>整句</strong>。</p>
         <h4>Q14：重要笔记里每个词的<strong>正文字号</strong>能单独设吗？</h4>
         <p>能（2.0.2.2 起）。<strong>全局默认</strong>在「🎨 样式 → 重要笔记 → 正文字号默认值」（10–20px，默认 11）；想只让某个词/分组不一样：打开该关键词（或分组）的编辑弹窗，在「重要笔记」区把<strong>字号</strong>填上 —— 该区要先勾选<strong>重要</strong>才会亮（关掉只是置灰，填过的内容保留）。<strong>留空＝继承全局默认</strong>。词级字号同时管住面板里的<strong>笔记正文</strong>与<strong>抓取字段表格</strong>；图片尺寸（同一区的「尺寸」）不走这条链路，它只管图片。</p>
-        <h4>Q15：怎么核对「表里的字段值」和「图片识别出来的值」对得上？</h4>
-        <p>用<strong>一致性核对</strong>（2.0.2.2 起）。在关键词编辑弹窗的「📎 抓取后续字段」区，先把要比对的字段名填进<strong>「字段」</strong>（例如 <code>包名|软著</code>），再在<strong>「一致性核对」</strong>里一行写一条规则：<code>包名 = 软著</code>。</p>
-        <p>含义是：「包名」取到的值，必须出现在「软著」这一格的<strong>文字</strong>或它<strong>图片的识别结果</strong>里 —— 对得上就在这条重要笔记里标 <strong>✅ 一致</strong>，对不上标 <strong>⚠️ 不一致</strong>并写明<strong>没找到哪个值</strong>。把 <code>=</code> 换成 <code>!=</code> 表示<strong>必须不出现</strong>（例如 <code>包名 != 备注</code>＝备注里不该再出现这个包名）。一行一条，<code>#</code> 开头是注释，留空＝不核对。</p>
-        <p>几个刻意的口径：比对<strong>忽略空格与大小写</strong>（识别结果里的空格常不稳定，不去掉就会"明明一样却报不一致"）；「字段」没取到值、或右字段的值格是<strong>空的</strong>时<strong>不报</strong>不一致（宁可什么都不提示，也不误报）；右字段里有图时，结论会等图片识别完再给，等待中显示 <strong>⏳ 待图片识别</strong>并写明原因（<strong>没开启「识别图片文字」</strong>／图片还在识别中／图片没识别出文字）—— 想让图片参与比对，记得把该字段填进「字段」并开启「识别图片文字」。</p>
       </div>
 
       </div>
@@ -685,6 +681,10 @@
   <script src="../src/core/config.js"></script>
   <script src="../src/platform/storage.js"></script>
   <script src="../src/platform/markdown.js"></script>
+  <!-- 【2.0.2.4 需求④】「字段」控件的胶囊预览按**抓取实现本体**的后缀语法解析
+       （`KH.Fetch.splitLabelTokens` / `parseLabelSpec`）—— 语法只有那一份，设置页也加载它。
+       它在加载期不依赖任何别的模块（只用 `KH` 命名空间），所以放在这里不会影响后面几行。 -->
+  <script src="../src/features/fetch.js"></script>
   <script src="../src/ui/ocr-copy.js"></script>
   <script src="../src/ui/fieldmap.js"></script>
   <script src="../src/ui/components/dom.js"></script>

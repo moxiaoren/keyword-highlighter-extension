@@ -254,7 +254,9 @@ module.exports = async function run() {
 
     const src = read('src/features/important-note.js');
     /* 面板不许自己写中文文案：标题/反馈都从真源取 */
-    truthy(/KH\.OcrCopy\.sentenceOf\(it\.text, w\)/.test(src), '词块点击必须用 KH.OcrCopy.sentenceOf 定位句子');
+    /* 【2.0.2.4 需求②】同图合并后词块按**条目**（`mem`）取原文与稳定键 ——
+     * 定位句子仍必须走真源 `sentenceOf`，只是传的那条不再是循环头部的 `it`。 */
+    truthy(/KH\.OcrCopy\.sentenceOf\(mem\.text, w\)/.test(src), '词块点击必须用 KH.OcrCopy.sentenceOf 定位句子');
     truthy(/KH\.OcrCopy\.VIEW\.copySentence/.test(src), '词块的可访问名/tooltip 必须来自 VIEW.copySentence');
     truthy(src.indexOf('.khin-imgchip') >= 0, '缺少 .khin-imgchip 样式（没有样式就等于看不见）');
     truthy(src.indexOf('.kh-lb-side') >= 0, '灯箱右侧全文栏缺少样式');
