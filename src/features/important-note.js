@@ -1135,6 +1135,40 @@
       const oldKeys = new Set((oldItems || []).map(key));
       for (const it of newItems) if (!oldKeys.has(key(it))) return true;
       return false;
+    },
+
+    /**
+     * 置顶排序表（2.0.2.5 需求④）：`cfg.importantNote.pinOrder` → 关键词数组，最多 `KH.Config.NOTE_PIN_MAX` 个。
+     * 解析口径（分隔符 / trim / 丢空 / 去重 / 截断）的**唯一真源**是 `KH.Config.pinOrderKeys`
+     * —— 设置页保存前调的是同一个函数，别在这里抄第二份。
+     */
+    parsePins(cfg) {
+      const raw = cfg && cfg.importantNote ? cfg.importantNote.pinOrder : '';
+      return KH.Config.pinOrderKeys(raw);
+    },
+
+    /**
+     * 按置顶表**稳定**排序：命中的卡片按 `pins` 里的先后排到最前；未命中的卡片保持原有相对顺序
+     * （`Array.prototype.sort` 自 ES2019 起稳定 ⇒ rank 相同的一律不动）。
+     * 一张卡命中多个置顶项时取**最靠前**的那个下标（卡上挂了两个词时，用户写在前面的那个说了算）。
+     * 匹配：与卡片的关键词（`entries[].kw`，即 `meta.text`）**trim 后不区分大小写精确相等**，不做包含匹配。
+     * 空表 ⇒ 原样返回（调用方据此跳过排序，旧行为一字不变）；始终返回新数组，不动入参。
+     */
+    sortByPins(items, pins) {
+      const list = (items || []).slice();
+      const order = (pins || []).map((p) => tagText(p).toLowerCase());
+      if (!order.length) return list;
+      const rankOf = (it) => {
+        let best = order.length;
+        for (const e of (it && it.entries) || []) {
+          const k = tagText(e && e.kw).toLowerCase();
+          if (!k) continue;
+          const i = order.indexOf(k);
+          if (i >= 0 && i < best) best = i;
+        }
+        return best;
+      };
+      return list.sort((a, b) => rankOf(a) - rankOf(b));
     }
   };
 
@@ -1148,6 +1182,9 @@
     countEl: null,
     minimized: false,
     items: [],
+    /* 上一轮用过的置顶表签名（见 `render`）：卡间顺序不进 `head.changed`，靠它认
+     * "用户改了置顶排序"。空串 = 没配/没排序过（与 `pins.join()` 的空表结果一致 ⇒ 首轮不误判脏）。 */
+    pinSig: '',
     /* 📝 笔记区收起（2026-10-11 用户：笔记与图片两边都很长时互相抢占 ⇒ 两边都能收，收一边让另一边）。
      * 与图片分区的"按批作废"口径**不同**：这里只翻转标记，用户收起就保持收起
      * —— 它是用户对视图的选择，不该被下一批结果自动弹开（图片那边有"命中必须露出来"的硬要求，这没有）。 */
@@ -1346,16 +1383,27 @@
        * 但两者独立：没有重要笔记的关键词，它识别到的图片照样要显示。 */
       this.imgItems = (KH.ImgOcr && typeof KH.ImgOcr.items === 'function') ? KH.ImgOcr.items() : [];
 
-      if (!items.length && !this.imgItems.length) {
-        this.items = items;
+      /* 置顶排序（2.0.2.5 需求④）：配置 → 关键词表 → 命中的卡片稳定地抽到最前。
+       * 必须排在**脏判据之前**算：`head.changed` 比的是"每张卡的内容"（note/底色/字号/词条集合），
+       * 卡间顺序变了它照样返回 false ⇒ 顺序变没变得靠 `pinSig` 自己认，
+       * 否则用户改了「置顶排序」，`render` 会走 else 只刷图片分区，屏上不重排。
+       * 空表时 `sorted` 就是原数组、`pinSig` 为空串 ⇒ 与旧版逐字节一致（不多一次拷贝、不多一次重建）。 */
+      const pins = head.parsePins(cfg);
+      const pinSig = pins.join('\u0001');
+      const pinChanged = this.pinSig !== pinSig;
+      this.pinSig = pinSig;
+      const sorted = pins.length ? head.sortByPins(items, pins) : items;
+
+      if (!sorted.length && !this.imgItems.length) {
+        this.items = sorted;
         this.hide();
         return;
       }
       /* 外壳还没建过也必须走 renderContent：`head.changed([], [])` 是 false，
        * 光看内容新旧会漏掉"整页只有图片命中、面板还没建"这种情况（实测踩过：
        * 面板宿主建出来了、里面却没有 🖼 分区）。 */
-      const dirty = !this.panelEl || this.minimized || head.changed(this.items, items);
-      this.items = items;
+      const dirty = !this.panelEl || this.minimized || pinChanged || head.changed(this.items, sorted);
+      this.items = sorted;
       if (dirty) this.renderContent();
       else this.renderImgSection();
       this.show();
@@ -2138,6 +2186,9 @@
       this.dragState = null;
       this.ignored.clear();
       this.items = [];
+      /* 置顶签名随面板一起清：下次 render 从干净态重建，别拿上一站（另一个页面/另一次启动）的
+       * 置顶表去比"顺序变没变"。 */
+      this.pinSig = '';
     }
   };
 

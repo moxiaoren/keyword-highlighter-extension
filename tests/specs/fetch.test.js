@@ -119,6 +119,24 @@ module.exports = async function run() {
     eq(out.match(/KHIMG/g).length, 2, '两张图都要保留');
   });
 
+  await test('★ 需求①：`#0` = 该字段的图既不识别、也不带进抓取内容（与 `#图` 意图相反）', () => {
+    const p = F.parseLabels('包名#0|截图#图');
+    console.log('        ' + JSON.stringify(p));
+    eq(p[0].label, '包名', '`#0` 是后缀，不许被当成字段名的一部分');
+    eq(p[0].noImg, true, '`#0` 必须解析成 noImg（多字段时"哪个字段要 OCR"的唯一开关）');
+    eq(p[0].imgOnly, false, '`#0` 不是「仅图片」——文字照旧要抓');
+    eq(p[0].imgLimit, 0, '`#0` 不设张数上限');
+    eq(p[1].noImg, false, '别的字段不受影响');
+    eq(F.parseLabels('图标#图#0')[0].noImg, true, '两个后缀意图相反时以 `#0` 为准（取更保守的那个）');
+
+    const txt = '包名说明 ' + PH('logo', 'https://ex.com/logo.png') + ' 结束';
+    const out = F.applyImgPolicy(txt, p[0], { n: 0 });
+    console.log('        `#0` 正文 = ' + JSON.stringify(out));
+    truthy(out.indexOf('KHIMG') < 0, '`#0` 字段正文里的图片占位符必须被摘掉（不带进抓取内容）');
+    truthy(out.indexOf('包名说明') >= 0, '文字照旧留着（`#0` 只管图）');
+    eq(F.suffixTextOf(p[0]), '#0', '徽标照旧显示，用户看得见自己配了什么');
+  });
+
   await test('★ applyImgPolicy：前 N 张按**整字段**累计（跨单元格）', () => {
     const budget = { n: 0 };
     const a = F.applyImgPolicy(PH('1', 'https://ex.com/1.png') + ' ' + PH('2', 'https://ex.com/2.png'), { imgOnly: false, imgLimit: 3 }, budget);

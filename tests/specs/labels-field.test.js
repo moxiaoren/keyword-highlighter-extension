@@ -89,7 +89,7 @@ module.exports = async function run() {
     const legend = ctrl.el.querySelectorAll('.kh-lbl-legend')[0];
     truthy(legend, '要有一行后缀图例');
     const t = legend.textContent;
-    for (const key of ['#图', '@', '!', '^锚文本', '%']) {
+    for (const key of ['#图', '#0', '@', '!', '^锚文本', '%']) {
       truthy(t.indexOf(key) >= 0, '图例里要提到 ' + key + '：' + t);
     }
     /* 反向：图例别把语法写成"仅图片 / 前 N 张"之外的东西 —— 语法真源在 Fetch.parseLabelSpec */

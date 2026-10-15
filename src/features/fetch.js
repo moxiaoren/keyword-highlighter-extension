@@ -446,6 +446,7 @@
     let offset = '';
     let imgOnly = false;
     let imgLimit = 0;
+    let noImg = false;
     let simple = false;
     let stripSpace = false;
     let anchor = '';
@@ -458,6 +459,10 @@
         const only = !!mi[1];
         const n = mi[2] ? parseInt(mi[2], 10) : 0;
         if (only) imgOnly = true;
+        /* `#0`（2.0.2.5 需求①）= 这个字段**不要图**：图既不参与图片识别，也不带进抓取内容。
+         * 多字段里截图、icon、logo 都带图时，用它点名"哪几个字段的图不认"。
+         * 老版本里 `#0` 被剥掉后什么都不设（等于没写）⇒ 这不是改语义，是补上它本来就该有的语义。 */
+        if (mi[2] && n === 0) noImg = true;
         /* `#1`（且没写"图"）= 历史语义：简单模式；`#图1` 才是"仅图片且最多 1 张" */
         if (n > 0) { if (!only && n === 1) simple = true; else imgLimit = n; }
         s = s.slice(0, mi.index).replace(/^[ \u3000]+|[ \u3000]+$/g, '');
@@ -496,7 +501,7 @@
       }
       break;
     }
-    return { label: s, simple: simple, imgOnly: imgOnly, imgLimit: imgLimit, offset: offset, offsetInvalid: isOffsetInvalid(offset), stripSpace: stripSpace, anchor: anchor, sliceSpec: sliceSpec };
+    return { label: s, simple: simple, imgOnly: imgOnly, imgLimit: imgLimit, noImg: noImg, offset: offset, offsetInvalid: isOffsetInvalid(offset), stripSpace: stripSpace, anchor: anchor, sliceSpec: sliceSpec };
   }
 
   /**
@@ -507,7 +512,10 @@
   function suffixTextOf(it) {
     if (!it) return '';
     const out = [];
-    if (it.imgOnly) out.push(it.imgLimit ? '#图' + it.imgLimit : '#图');
+    /* `#0`＝该字段不要图，独占一行：它和 `#图`/`#N` 是相反意图，能同时写出来只说明用户写错了，
+     * 此时以 `#0` 为准（展示串也照实写出来，让用户一眼看见自己写了什么）。 */
+    if (it.noImg) out.push('#0');
+    else if (it.imgOnly) out.push(it.imgLimit ? '#图' + it.imgLimit : '#图');
     else if (it.imgLimit) out.push('#' + it.imgLimit);
     else if (it.simple) out.push('#1');
     if (it.offset) out.push('@' + it.offset + (it.offsetInvalid ? '（无效）' : ''));
@@ -617,11 +625,18 @@
    * 按字段的图片选项处理一段内容（**只动图片占位符与文字，不碰 HTML**，调用方随后仍走 escHtml）：
    *   · `imgOnly`  → 只留图片（丢掉文字）
    *   · `imgLimit` → 该字段全局最多保留 N 张图（`budget.n` 跨单元格累计，保证"前 N 张"是整字段的前 N 张）
+   *   · `noImg`（`#0`）→ 图**全不要**（丢掉图片占位符、文字照留）
    * 用户口径："抓取需要支持仅图片、前几张图片的方式"。
    */
   function applyImgPolicy(text, opt, budget) {
     let s = String(text == null ? '' : text);
     const b = budget || { n: 0 };
+    /* 【`#0` = 该字段不要图（2.0.2.5 需求①）】占位符剔干净、文字原样留下；
+     * 图片识别那一侧由 `img-ocr` 按 `cellsForHit` 返回的 `noImg` 跳过（这里不再管识别）。 */
+    if (opt && opt.noImg) {
+      s = s.replace(IMG_RE, '');
+      return s.replace(/[ \t]{2,}/g, ' ').replace(/^[ \t]+|[ \t]+$/g, '');
+    }
     /* 【刻意**不按 src 去重**】真实页面里同一张图可能在两列/两行里各出现一次
      * （用户给的结构就是这样：最新版本与历史版本都放了「图一图二」），
      * 去重会直接把其中一列吃空 —— 比"偶尔多一张重复图"糟得多。 */
@@ -1202,7 +1217,7 @@
    * @param {Text|Element|object} hitOrCell 命中文本节点 / 格子元素 / 命中记录（带 `textNode`）/ 锚点（带 `anchorCell`）
    * @param {string|object} [cfgOrLabels] labels 原文，或带 `fetchLabels` / `meta.fetchScope` 的配置/编译结果
    * @param {object} [memo] 同一轮重建内复用的缓存盒（见 `blockFor`；不传就逐次计算）
-   * @returns {Array<{label:string, cells:Element[], imgs:Element[], byOffset:boolean, invalid:boolean}>}
+   * @returns {Array<{label:string, cells:Element[], imgs:Element[], byOffset:boolean, invalid:boolean, noImg:boolean}>}（noImg = 该字段写了 `#0`，不要图）
    */
   function cellsForHit(hitOrCell, cfgOrLabels, memo) {
     const items = parseLabels(labelsFromArg(cfgOrLabels));
@@ -1220,7 +1235,8 @@
         const picked = valueCellsOf(target, item);
         out.push({
           label: item.label, cells: picked.cells, imgs: imgsOfCells(picked.cells),
-          byOffset: picked.byOffset, invalid: picked.invalid || !!item.offsetInvalid
+          byOffset: picked.byOffset, invalid: picked.invalid || !!item.offsetInvalid,
+          noImg: !!item.noImg
         });
       }
       return out;
@@ -1233,7 +1249,8 @@
       const v = valueCellsOf(p.cell, p.item);
       out.push({
         label: p.label, cells: v.cells, imgs: imgsOfCells(v.cells),
-        byOffset: v.byOffset, invalid: v.invalid || !!p.item.offsetInvalid
+        byOffset: v.byOffset, invalid: v.invalid || !!p.item.offsetInvalid,
+        noImg: !!p.item.noImg
       });
     }
     return out;

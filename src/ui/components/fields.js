@@ -154,7 +154,7 @@
         const prev = h('div', { class: 'kh-lbl-preview' });
         const legend = h('div', {
           class: 'kh-lbl-legend',
-          text: '后缀：#图 仅图片 / #3 最多 3 张 / @2 值格 / ! 去空白 / ^锚文本 只取锚点之前 / %4 前 4 字；'
+          text: '后缀：#图 仅图片 / #3 最多 3 张 / #0 该字段不要图 / @2 值格 / ! 去空白 / ^锚文本 只取锚点之前 / %4 前 4 字；'
             + '一次写多个字段用 | 或 ｜（例：名称^[复制]|备注#图）'
         });
         const box = h('div', { class: fldCls, title: hintTitle }, [

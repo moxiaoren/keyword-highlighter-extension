@@ -157,6 +157,36 @@
     return Math.min(PANEL_WIDTH_MAX, Math.max(PANEL_WIDTH_MIN, Math.round(n)));
   }
 
+  /* ---- 重要笔记卡片的置顶排序（2.0.2.5 需求④，用户 2026-10-15）----
+   * 用户原话：「配置里面增加一个置顶排序。可以填入关键词，卡片固定置顶（最多支持3个，按顺序排列）」
+   * 上限是**代码判的**（不靠用户自觉）：拆项 → trim → 丢空 → 去重 → 截断到 NOTE_PIN_MAX。
+   * 解析与设置页归一**共用同一处**（`pinOrderKeys`）：设置页保存前归一、面板消费时再归一一次，
+   * 手改 storage / 导入旧备份塞进 5 个词时两条路径口径一致（R1-3③：别把同一口径抄两份）。 */
+  const NOTE_PIN_MAX = 3;
+
+  /** 置顶排序文本 → 关键词数组。分隔符：`,` `，` `、` 与换行；大小写不敏感去重（保留首次写法）。 */
+  function pinOrderKeys(value) {
+    let parts;
+    if (typeof value === 'string') parts = value.split(/[,，、\r\n]+/);
+    else if (Array.isArray(value)) parts = value;
+    else return [];                      // 非字符串/非数组（含 null / 数字 / 对象）→ 不置顶，不抛
+    const out = [];
+    const seen = new Set();
+    for (let i = 0; i < parts.length; i++) {
+      const s = String(parts[i] == null ? '' : parts[i]).trim();
+      if (!s) continue;
+      const low = s.toLowerCase();
+      if (seen.has(low)) continue;
+      seen.add(low);
+      out.push(s);
+      if (out.length >= NOTE_PIN_MAX) break;
+    }
+    return out;
+  }
+
+  /** 置顶排序的**唯一归一函数**（设置页回显/落盘 + 面板消费共用）：归一成 `'甲, 乙'` 这种落盘串。 */
+  function normalizePinOrder(value) { return pinOrderKeys(value).join(', '); }
+
   const Config = {
     /** 默认值 —— 唯一真源（方案 §7.1 定稿形态） */
     defaults: {
@@ -193,7 +223,11 @@
         /* 面板正文字号（px）。2026-10-09 用户裁决：默认比上一版再小一号（12 → 11），
          * 并在设置页开放给用户。面板把它写成 CSS 变量 `--kh-note-fs`，
          * `.khin-item-note` 与面板内表格一起跟随。 */
-        fontSize: 11
+        fontSize: 11,
+        /* 置顶排序（2.0.2.5 需求④）：卡片关键词语（= 命中的词，`head.build` 里的 `kw`）填在这里，
+         * 命中的卡片按填写顺序固定排在最前，最多 NOTE_PIN_MAX 个。空串 = 不置顶（行为与旧版逐字节一致）。
+         * 口径与归一见 `pinOrderKeys`；面板侧的排序在 `important-note.js` 的 `head.sortByPins`。 */
+        pinOrder: ''
       },
 
       /** 重要笔记面板的**默认宽度**（px；T26 / 用户 2026-10-12：200 → 250）。
@@ -276,6 +310,11 @@
     PANEL_WIDTH_MIN,
     PANEL_WIDTH_MAX,
     PANEL_WIDTH_DEFAULT,
+
+    /** 置顶排序的唯一归一 + 上限常量（设置页 / 面板消费共用一份；见 `importantNote.pinOrder`） */
+    normalizePinOrder,
+    pinOrderKeys,
+    NOTE_PIN_MAX,
 
     /**
      * 深度合并：以 defaults 为骨架，用存储值覆盖。

@@ -265,10 +265,24 @@
     const max = Math.max(1, (rule.meta && rule.meta.imgOcrMax) || 1);
     const out = [];
     const seen = new Set();
+    /* 【名额只算"真能识别的图"（2.0.2.5 需求① · 多抓取字段时 OCR 不拉起）】
+     * 老口径 `out.length >= max` 连**根本识别不了**的图（跨域未授权 / 懒加载 / 无 src / 原图太小）
+     * 一起吃名额，而且当场 `return` ⇒ 排在前面的字段里放 logo、图标、懒加载占位图的那些，
+     * 会把额度吃光，真正的「截图」字段连条目都建不出来（探针 B/C 现场：好图连一条都没有）。
+     * 现在：`okCount` 只数能识别并提交的图，名额被它独占；扫描**不再因坏图提前终止**（继续往后找好图）。
+     * 坏图仍留"原因条目"给面板诊断（K62），但另用一个 whyCount 限流，最多 `max` 条 ——
+     * 免得一个格子里几十张懒加载占位图把面板刷满。 */
+    let okCount = 0;
+    let whyCount = 0;
+    const pushWhy = (img, cls) => {
+      if (whyCount >= max) return;
+      whyCount++;
+      out.push({ img: img, cls: cls, idx: out.length });
+    };
     for (const cell of (anchor.valueCells || [])) {
       if (!cell || !cell.querySelectorAll) continue;
       for (const img of cell.querySelectorAll('img')) {
-        if (out.length >= max) return out;
+        if (okCount >= max) return out;
         if (isExtUi(img)) continue;
         const cls = classify(img, cfg);
         const key = cls.src || '';
@@ -279,10 +293,11 @@
          * 表现成"条目=0、面板什么都没有"，用户完全看不出原因。
          * 但**分类失败的原因更具体，要优先保留**：懒加载的图本来就可能还没尺寸，
          * 那时报 'lazy'（等它加载）比报 'invisible' 有用得多。 */
-        if (!cls.ok) { out.push({ img: img, cls: cls, idx: out.length }); continue; }
+        if (!cls.ok) { pushWhy(img, cls); continue; }
         /* 【按原图判"值不值得识别"（K68）】容器把图压得很小不算"不可见" —— 见 pixelVerdict 顶部注释 */
         const pv = pixelVerdict(img);
-        if (pv !== 'ok') { out.push({ img: img, cls: { ok: false, why: pv, src: cls.src }, idx: out.length }); continue; }
+        if (pv !== 'ok') { pushWhy(img, { ok: false, why: pv, src: cls.src }); continue; }
+        okCount++;
         out.push({ img: img, cls: cls, idx: out.length });
       }
     }
@@ -719,6 +734,10 @@
       const valueCells = [];
       const labelOfImg = new Map();
       for (const f of fields) {
+        /* 【字段级抠图开关 `#0`（2.0.2.5 需求①后段）】多个抓取字段里不止一个带图时（截图 + icon + logo），
+         * 用 `icon#0` 点名"这个字段的图不参与图片识别"；它的图同时也被 applyImgPolicy 从抓取内容里剔掉。
+         * 判定在 Fetch 侧（`cellsForHit` 返回的 `noImg`），这里只照办 —— 不在本模块养第二套后缀语法。 */
+        if (f.noImg) continue;
         for (const c of (f.cells || [])) valueCells.push(c);
         for (const im of (f.imgs || [])) if (!labelOfImg.has(im)) labelOfImg.set(im, f.label);
       }

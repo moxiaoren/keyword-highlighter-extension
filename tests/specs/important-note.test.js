@@ -1705,4 +1705,209 @@ module.exports = async function run() {
     eq(p.imgCountEl.textContent, '(2)');
     });
   });
+
+  /* ────────────────────────────────────────────────────────────────────────────
+   * 置顶排序（2026-10-15 / 2.0.2.5 需求④）
+   * 用户口径：「配置里面增加一个置顶排序。可以填入关键词，卡片固定置顶（最多支持3个，按顺序排列）」
+   * 改动前本文件 94 条断言**没有一条**碰过卡片顺序 ⇒ 下面这批全是新判据（先红后绿）。
+   * 顺序的真源：卡头 `kw` = `meta.text`（`head.build` :1086），卡片顺序 = Map 插入序 = 命中原序。
+   * ──────────────────────────────────────────────────────────────────────── */
+  suite('important-note · 置顶排序：解析口径（最多 3 个 / 分隔符 / 去空去重 / 坏值不抛）');
+
+  const cfgPin = (v) => ({ importantNote: { pinOrder: v } });
+
+  await test('★ 三种分隔符 + 逐项 trim：逗号 / 中文逗号 / 顿号', () => {
+    H.deepEq(head.parsePins(cfgPin('甲, 乙，丙')), ['甲', '乙', '丙']);
+    H.deepEq(head.parsePins(cfgPin(' 甲 、乙,丙 ')), ['甲', '乙', '丙']);
+  });
+
+  await test('★ 换行也算分隔符，空项（含纯空白项）直接丢', () => {
+    H.deepEq(head.parsePins(cfgPin('甲\n乙\n\n丙')), ['甲', '乙', '丙']);
+    H.deepEq(head.parsePins(cfgPin(' , 甲 ,, 乙 , ')), ['甲', '乙']);
+    H.deepEq(head.parsePins(cfgPin('甲，,、乙')), ['甲', '乙']);
+  });
+
+  await test('★ 超过 3 项只取前 3（"最多 3 个"由代码判，不靠用户自觉）', () => {
+    H.deepEq(head.parsePins(cfgPin('a,b,c,d,e')), ['a', 'b', 'c']);
+    H.deepEq(head.parsePins(cfgPin(['a', 'b', 'c', 'd'])), ['a', 'b', 'c'], '数组形态同样截断');
+  });
+
+  await test('★ 去重按首次出现（匹配不区分大小写 ⇒ 去重也必须不区分，否则同一个词占两格）', () => {
+    H.deepEq(head.parsePins(cfgPin('甲, 甲, 乙')), ['甲', '乙']);
+    H.deepEq(head.parsePins(cfgPin('Abc, abc, def')), ['Abc', 'def'], '保留用户第一次写的形态');
+  });
+
+  await test('★ 坏值/缺配置 → 空列表（配置是信任边界，不许抛）', () => {
+    H.deepEq(head.parsePins(null), []);
+    H.deepEq(head.parsePins({}), []);
+    H.deepEq(head.parsePins({ importantNote: {} }), []);
+    H.deepEq(head.parsePins(cfgPin('')), []);
+    H.deepEq(head.parsePins(cfgPin('   ')), []);
+    H.deepEq(head.parsePins(cfgPin(123)), [], '非字符串不置顶（也不许把 123 当关键词）');
+    H.deepEq(head.parsePins(cfgPin(null)), []);
+    H.deepEq(head.parsePins(cfgPin(['甲', null, ' 乙 ', ''])), ['甲', '乙'], '数组里的空项照丢');
+  });
+
+  suite('important-note · 置顶排序：排序口径（稳定 / 精确相等 / 取最靠前下标）');
+
+  /* 五张卡：关键词 甲..戊，笔记 N甲..N戊（note 用来对 DOM 顺序取名） */
+  const fiveCards = () => head.build([
+    hit('甲', '', 'N甲'), hit('乙', '', 'N乙'), hit('丙', '', 'N丙'),
+    hit('丁', '', 'N丁'), hit('戊', '', 'N戊')
+  ], new Set());
+  const kwOrder = (arr) => arr.map((it) => it.entries[0].kw).join('');
+  const pin = (v) => head.parsePins(cfgPin(v));
+
+  await test('★ 回归钉：空配置 = 行为与今天逐字节一致（原序、原数组内容）', () => {
+    eq(kwOrder(head.sortByPins(fiveCards(), [])), '甲乙丙丁戊', '空配置不许动顺序');
+    eq(kwOrder(head.sortByPins(fiveCards(), pin(''))), '甲乙丙丁戊');
+    eq(kwOrder(head.sortByPins(fiveCards(), pin('   '))), '甲乙丙丁戊');
+    eq(kwOrder(head.sortByPins(fiveCards(), pin('不存在'))), '甲乙丙丁戊', '匹配不上的关键词静默忽略');
+  });
+
+  await test('★ 单条置顶命中：第 3 位那张跳到第 1 位', () => {
+    eq(kwOrder(head.sortByPins(fiveCards(), pin('丙'))), '丙甲乙丁戊');
+  });
+
+  await test('★ 两条置顶：按填写顺序（后填的排在前填的后面）', () => {
+    eq(kwOrder(head.sortByPins(fiveCards(), pin('丁, 乙'))), '丁乙甲丙戊');
+    eq(kwOrder(head.sortByPins(fiveCards(), pin('乙, 丁'))), '乙丁甲丙戊', '反着填就是反着的顺序');
+  });
+
+  await test('★ 未命中卡片保持原相对顺序（五张钉住：置顶卡只是"抽到前面"，其余不动）', () => {
+    eq(kwOrder(head.sortByPins(fiveCards(), pin('戊'))), '戊甲乙丙丁');
+    eq(kwOrder(head.sortByPins(fiveCards(), pin('丙, 甲'))), '丙甲乙丁戊');
+    eq(kwOrder(head.sortByPins(fiveCards(), pin('乙, 戊'))), '乙戊甲丙丁');
+  });
+
+  await test('★ 一张卡命中两个置顶项 ⇒ 取最靠前的那个下标（不是最后一个）', () => {
+    /* 卡 A：note=N乙（单个关键词 乙）；卡 B：note=N共（两个关键词 乙、甲）。
+     * 原序 [A, B]，置顶表 ['甲','乙']：B 命中下标 1 与 0 ⇒ 取 0 ⇒ B 必须排到 A 前面。
+     * 若实现取"最后一个匹配项"，B 的下标会算成 1、与 A 并列，稳定排序下顺序不变 ⇒ 本断言会红。 */
+    const cards = head.build([hit('乙', '', 'N乙'), hit('乙', '', 'N共'), hit('甲', '', 'N共')], new Set());
+    eq(cards.length, 2, '两张卡：一张单词卡、一张两词卡');
+    eq(cards.map((it) => it.note).join(','), 'N乙,N共', '原序：单词卡在前');
+    eq(head.sortByPins(cards, pin('甲, 乙')).map((it) => it.note).join(','), 'N共,N乙',
+      '两词卡命中更靠前的下标 ⇒ 排在单词卡前面');
+  });
+
+  await test('★ 超过 3 项：第 4 项不生效（前 3 条才置顶）', () => {
+    eq(kwOrder(head.sortByPins(fiveCards(), pin('戊, 丁, 丙, 甲'))), '戊丁丙甲乙');
+  });
+
+  await test('★ 大小写与首尾空白容错（中文无感，英文大小写混写很常见）', () => {
+    const cards = head.build([hit('abcd', '', 'N1'), hit('ABC', '', 'N2')], new Set());
+    eq(head.sortByPins(cards, pin(' abc ')).map((it) => it.note).join(','), 'N2,N1',
+      '" abc " 要命中 "ABC"');
+    eq(head.sortByPins(cards, pin('ABCD')).map((it) => it.note).join(','), 'N1,N2',
+      '"ABCD" 要命中 "abcd"');
+  });
+
+  await test('★ 精确相等，不做包含匹配（"abc" 不许把 "abcd" 也顶上去）', () => {
+    const cards = head.build([hit('abcd', '', 'N1'), hit('x', '', 'N2')], new Set());
+    eq(head.sortByPins(cards, pin('abc')).map((it) => it.note).join(','), 'N1,N2');
+  });
+
+  await test('★ 纯函数：返回新数组，不动入参（render 会反复拿同一批 items 重排）', () => {
+    const src = fiveCards();
+    const out = head.sortByPins(src, pin('戊'));
+    truthy(out !== src, '必须返回新数组');
+    eq(kwOrder(src), '甲乙丙丁戊', '入参顺序原样保留');
+    eq(kwOrder(out), '戊甲乙丙丁', '返回值才是置顶后的顺序');
+  });
+
+  await test('★ 重排真的落到 DOM：renderItems 按 this.items 的顺序铺卡', () => {
+    const p = shadowPanel();
+    p.bodyEl = H.el('div');
+    p.items = head.sortByPins(fiveCards(), pin('戊、丙'));
+    p.renderItems();
+    const notes = p.bodyEl.querySelectorAll('.khin-item-note').map((el) => el.textContent);
+    eq(notes.join(','), 'N戊,N丙,N甲,N乙,N丁', 'DOM 里的卡片顺序 = 置顶后的顺序（未命中的三张保持甲乙丁）');
+  });
+
+  suite('important-note · 置顶排序：改配置立刻重排（脏判据）');
+
+  await test('★ 改 pinOrder 必须重排面板；同配置重复 render 不许重建', () => {
+    /* 【这条是本需求最容易漏的一步】`head.changed(old, new)` 只比"每张卡的内容"
+     * （长度 + 每卡 note/bg/字号/词条集合），**卡间顺序变了它照样返回 false**
+     * ⇒ 不把置顶签名并进脏判据，用户改了「置顶排序」屏上不会重排（render 走 else 只刷图片分区）。
+     * 反向那条同样重要：不许把脏判据写成"永远为真"来糊过去。 */
+    const p = shadowPanel();
+    const cards = fiveCards();
+    let content = 0;        // renderContent 次数（= 列表重建）
+    let imgOnly = 0;        // renderImgSection 次数（= 只刷图片分区，卡片不动）
+    /* 本用例只钉"顺序变没变"这一个判据 ⇒ 把两个渲染出口换成本地探针（分开计数：
+     * 不重建时走的是 renderImgSection，混在一起数就把"没重建"误读成"重建了"）；
+     * `panelEl` 先给个非空桩（真壳由 renderContent 建，这里换掉了，所以得自己摆上），
+     * 否则 `!this.panelEl` 会让每一轮都判脏，"同配置不重建"那条反证就测不出来了。 */
+    p.panelEl = H.el('div');
+    p.renderContent = () => { content += 1; };
+    p.renderImgSection = () => { imgOnly += 1; };
+    p.show = () => {};
+    const ocr = KH.ImgOcr;
+    const savedItems = ocr && ocr.items;
+    if (ocr) ocr.items = () => [];          // 本用例只钉"笔记卡片的重排"，图片分区不参与
+    try {
+      p.render(cards, cfgPin('丙'));
+      eq(kwOrder(p.items), '丙甲乙丁戊', '第一轮：丙置顶');
+      truthy(content > 0, '外壳未建 ⇒ 第一轮必须走 renderContent');
+
+      const n1 = content;
+      p.render(cards, cfgPin('戊'));
+      eq(kwOrder(p.items), '戊甲乙丙丁', '第二轮：换成戊置顶 ⇒ items 顺序跟着变');
+      truthy(content > n1,
+        '★ 只改了置顶项也必须重排（head.changed 对同内容卡返回 false，光靠它这里不会重建）');
+
+      const n2 = content;
+      p.render(cards, cfgPin('戊'));
+      eq(content, n2, '反证：同配置重复 render 不许重建（否则上面那条就成了"永远脏"）');
+      eq(imgOnly, 1, '且必须落到"只刷图片分区"那一支（没重建 ≠ 什么都没做）');
+      eq(kwOrder(p.items), '戊甲乙丙丁');
+      p.render(cards, cfgPin('戊, 戊, 戊'));
+      eq(content, n2, '归一后等价的写法（同一词多写几遍）⇒ 也不该重建');
+      p.render(cards, cfgPin('戊, 甲, 乙'));
+      truthy(content > n2, '换成别的置顶表（前 3 位变了）⇒ 必须重建');
+    } finally {
+      if (ocr) ocr.items = savedItems;
+    }
+  });
+
+  await test('★ 接线契约：排序在 render 里做、脏判据里带置顶签名', () => {
+    const src = read('src/features/important-note.js');
+    const rgx = src.slice(src.indexOf('render(items, cfg) {'), src.indexOf('renderContent() {'));
+    truthy(/head\.sortByPins\(items/.test(rgx), 'render 必须按 pinOrder 排卡片');
+    truthy(/head\.parsePins\(cfg\)/.test(rgx), '置顶表必须从 cfg 现取（不许缓存成常量）');
+    truthy(/this\.pinSig !== pinSig/.test(rgx),
+      '★ 脏判据必须含置顶签名（head.changed 只看每卡内容，卡间顺序变了它返回 false）');
+  });
+
+  suite('important-note · 置顶排序：设置页接线（2.0.2.5 需求④）');
+
+  await test('★ 设置页「样式 → 重要笔记」有 #pf-notePinOrder，不裹 details，提示写清上限与分隔符', () => {
+    const html = read('options/options.html');
+    truthy(html.indexOf('id="pf-notePinOrder"') >= 0, '设置页要有置顶排序输入框（没有它用户没法配）');
+    const sec = (html.match(/<section[^>]*id="sec-style"[\s\S]*?<\/section>/) || [''])[0];
+    truthy(sec.length > 0, '要能定位「样式」分区');
+    truthy(sec.indexOf('id="pf-notePinOrder"') >= 0, '★ 输入框必须在「样式」分区内');
+    falsy(sec.indexOf('<details') >= 0, '★ 「样式」分区里不许出现折叠的 <details>（_e2e/ui.test.js:48-71 的现场缺陷）');
+    truthy(sec.indexOf('置顶排序') >= 0, '标签文案要带「置顶排序」（跟着分区里既有控件的命名习惯）');
+    truthy(sec.indexOf('最多 3 个') >= 0, '提示要写清"最多 3 个"');
+    truthy(sec.indexOf('逗号') >= 0 && sec.indexOf('顿号') >= 0 && sec.indexOf('换行') >= 0,
+      '提示要写清三种分隔符（逗号/顿号/换行）');
+    truthy(sec.indexOf('按填写顺序') >= 0, '提示要写清"按填写顺序"置顶');
+    /* 该分区本来写「三个都只是**默认值**」，现在有四个控件，数量词必须跟着改 */
+    truthy(sec.indexOf('四个都只是') >= 0, '★ 「N 个都只是默认值」的数量词要跟着控件数改（现在四个）');
+    falsy(sec.indexOf('三个都只是') >= 0, '文案不许再停在「三个都只是」');
+  });
+
+  await test('★ 设置页接线：回显与保存都过 config 的同一处归一，落盘走嵌套子键', () => {
+    const js = read('options/options.js');
+    truthy(js.indexOf("$('pf-notePinOrder')") >= 0, '输入框必须在 options.js 里接线');
+    truthy(/KH\.Config\.normalizePinOrder\(\$\('pf-notePinOrder'\)\.value\)/.test(js),
+      '保存前必须过 config 的归一函数（上限 3 / 分隔符 / trim / 去重只在这一处判）');
+    truthy(/saveNested\(\{ importantNote: \{ pinOrder: v \} \}\)/.test(js),
+      '落盘走嵌套子键 importantNote.pinOrder（不新增顶层键 ⇒ STYLE_KEYS / fieldmap / UI_ONLY_KEYS 都不用改）');
+    truthy(/normalizePinOrder\(\(cfg\.importantNote \|\| \{\}\)\.pinOrder\)/.test(js),
+      '回显也必须过同一个归一（框里不许停着没生效的第 4 项）');
+  });
 };

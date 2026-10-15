@@ -629,7 +629,10 @@
    * 【为什么不再"先缩后切"】旧路径把整张长图先降采样到 MAX_EDGE=1600（1080×8000 → 216×1600），
    * 再按**缩后高度**切 4 条 —— 正文小字在降采样那一步就没了，后面的 `keepLine` 把它们全部滤掉，
    * 于是回执是"识别成功、0 行"。**表现成"未命中"，不是报错**。
-   * 现在的口径：**按原图切块、块内 1:1**。块高 1600 时不做任何缩放，20px 的字进去还是 20px。
+   * 现在的口径：**按原图切块、块内 1:1**（两个方向都不许超过上限，见 `layoutChunks`）。
+   * 块高 1600 时不做任何缩放，20px 的字进去还是 20px。
+   * 【2.0.2.5 需求②】旧版只沿长边切 ⇒ 竖图切出的横带长边 = **图宽**（2480），仍要被 `scaleFor`
+   * 缩到 1600、det 再 ×0.75 ⇒ 有效 0.48；"只沿长边切"这个前提本身漏了跨轴。真机证据见 SPEC ② 与台账。
    * 下面这些全是**纯函数**（喂尺寸/统计出结论，不碰引擎、画布、时钟），
    * 通过 `self.__khOcrPure` 暴露给测试：判决逻辑与像素处理分开，才好钉住。
    */
@@ -669,24 +672,42 @@
     return 1;
   }
 
-  /** 沿**长边**切块：竖图切横带、横图切竖带（否则 8000×1080 那种图压根切不动） */
+  /**
+   * 切块几何（纯函数）：**两个方向都切**，每块最多 `max(chunkH, MAX_EDGE)` 见方。
+   *
+   * 【2.0.2.5 需求②：为什么跨轴也要切】旧版只沿**长边**切 ⇒ 竖图（2480×3360）切出的是
+   * "整幅图宽 × 1600"的横带，长边 = 图宽 2480 > MAX_EDGE ⇒ `scaleFor` 只能缩到 0.645，
+   * 厂商 det 再 ×0.75 ⇒ 有效分辨率 0.48，正文整行消失（真机 A1：2480×3360 只读到 8 行、
+   * 软件名称/版本/著作权人 3 行全丢）。同一张图裁成 1600×1600（1:1 + det 0.75）⇒ 10 行、一行不缺。
+   * 所以块在**任一**方向都不许超过上限：竖图切横带、横带再切竖列，横图反之。
+   * 跨轴上限取 `MAX_EDGE` 而不是 `chunkH`：`chunkH` 是可以调的（放宽档 2000、测试里的 800），
+   * 它管的是"沿切块轴多高"，跨轴一列该多宽只跟"会不会被 scaleFor 缩小"有关，那是 MAX_EDGE 的事。
+   */
   function layoutChunks(w, h, chunkH) {
     const overlap = overlapFor(chunkH);
     const step = Math.max(1, chunkH - overlap);
     const vertical = h >= w;
     const span = vertical ? h : w;
+    const cross = vertical ? w : h;
+    const crossCap = Math.max(chunkH, MAX_EDGE);
+    const axis = vertical ? 'y' : 'x';
     const out = [];
     for (let p = 0; p < span; p += step) {
       const len = Math.min(chunkH, span - p);
       if (len <= 0) break;
-      out.push({
-        x: vertical ? 0 : p, y: vertical ? p : 0,
-        w: vertical ? w : len, h: vertical ? len : h,
-        axis: vertical ? 'y' : 'x'
-      });
+      for (let q = 0; q < cross; q += step) {
+        const clen = Math.min(crossCap, cross - q);
+        if (clen <= 0) break;
+        out.push({
+          x: vertical ? q : p, y: vertical ? p : q,
+          w: vertical ? clen : len, h: vertical ? len : clen,
+          axis: axis
+        });
+        if (q + clen >= cross) break;
+      }
       if (p + len >= span) break;
     }
-    if (!out.length) out.push({ x: 0, y: 0, w: w, h: h, axis: vertical ? 'y' : 'x' });
+    if (!out.length) out.push({ x: 0, y: 0, w: w, h: h, axis: axis });
     return out;
   }
 
@@ -861,22 +882,43 @@
   }
 
   /**
-   * **重叠带**（纯函数）：相邻两块在切块轴上的公共区间。
+   * **重叠带**（纯函数）：两块在某个轴上的**真邻接**公共区间。
    * 必须**从 plan 实际几何算** —— `overlapFor` 让重叠随块高变（1600⇒240、放宽 2000⇒仍 240、
    * 密排 `bandPlan`⇒24–128），写死 240 在密排那套上要错到 10 倍。
+   *
+   * 【2.0.2.5 需求②：为什么不再"只配下标相邻"】二维铺块后"相邻"≠"下标相邻"
+   * （同一横带里左右两块下标差 1，上下两带的同列块下标差一整行）⇒ 改成**逐对按几何判**：
+   * 某个轴上区间**部分相交**（互相都不含住对方）才算这个轴上的邻接；整段含住的那个轴不算
+   * （横带的左右邻居在 y 上是同一段，那是"包含"而不是"邻接"）。
+   * 一维切块下与旧口径**逐条等价**：非相邻块本来就不相交，相邻块只有一个轴部分相交。
+   *
+   * 【2.0.2.5 · R4 独立验收 H1 修】**先要两矩形真的相交**再看单轴邻接。旧版只判单轴部分相交，
+   * 于是**对角两块**（如 (0,0) 与最后一列最后一行：x 部分相交、y 完全不相交）也会产出一条 x 带；
+   * 那条带的池子按 x 过滤、**y 完全不设限** ⇒ 相距两三千像素的两条同文本行会被配成"同一物理行"
+   * 互删 —— 静默丢字。40 块计划实测 444 条带里 270 条（61%）矩形根本不相交。
    */
   function overlapBands(chunks) {
     const list = Array.isArray(chunks) ? chunks : [];
     const out = [];
+    /** 一个轴上的**相交区间**（互相含住也算相交 —— 左右邻居在 y 上就是同一段）。 */
+    const inter = (a0, a1, b0, b1) => {
+      const lo = Math.max(a0, b0), hi = Math.min(a1, b1);
+      return hi > lo ? { lo: lo, hi: hi } : null;
+    };
+    /** **部分**相交（互相都不含住对方）才算这个轴上的邻接。 */
+    const partial = (a0, a1, b0, b1) => !(a0 >= b0 && a1 <= b1) && !(b0 >= a0 && b1 <= a1);
     for (let i = 0; i + 1 < list.length; i++) {
-      const a = list[i], b = list[i + 1];
-      if (!a || !b) continue;
-      const axis = (a.axis === 'x' || b.axis === 'x') ? 'x' : 'y';
-      const len = (c) => (axis === 'x' ? (c.w || 0) : (c.h || 0));
-      const pos = (c) => (axis === 'x' ? (c.x || 0) : (c.y || 0));
-      const lo = Math.max(pos(a), pos(b));
-      const hi = Math.min(pos(a) + len(a), pos(b) + len(b));
-      if (hi > lo) out.push({ a: i, b: i + 1, lo: lo, hi: hi, axis: axis });
+      for (let j = i + 1; j < list.length; j++) {
+        const a = list[i], b = list[j];
+        if (!a || !b) continue;
+        const ax = a.x || 0, ay = a.y || 0, aw = a.w || 0, ah = a.h || 0;
+        const bx = b.x || 0, by = b.y || 0, bw = b.w || 0, bh = b.h || 0;
+        const ix = inter(ax, ax + aw, bx, bx + bw);
+        const iy = inter(ay, ay + ah, by, by + bh);
+        if (!ix || !iy) continue;                       // 两矩形必须真的相交（H1）
+        if (partial(ax, ax + aw, bx, bx + bw)) out.push({ a: i, b: j, lo: ix.lo, hi: ix.hi, axis: 'x' });
+        if (partial(ay, ay + ah, by, by + bh)) out.push({ a: i, b: j, lo: iy.lo, hi: iy.hi, axis: 'y' });
+      }
     }
     return out;
   }
@@ -885,6 +927,7 @@
    * 跨块同一行的**唯一去重入口**（纯函数）。一条被丢要四条**同时**成立：
    *   ① 落在同一个重叠带内（两边的坐标都在 `[lo, hi]`）② 来自**不同**块（`ci` 不同）
    *   ③ `keyOf(t)` **非空且逐字相等** ④ `|Δx| ≤ OVERLAP_MATCH_X`
+   *      （x 带另加 `|Δy| ≤ NEAR_MATCH_MAX_DY`，见第一遍配对处的 H1 说明；y 带不加）
    * 外加**一对一**：每行至多当一次伙伴 —— 只有"相邻两块各自多读一次"才配得掉一对，
    * 原图里真的重复两遍的文本（4 行）只能配掉 2 条、**仍留 2 条**。
    * 配对取**就近 |Δy|**（同带里若有真重复值，优先配同一物理行的那条）；保留 y 较小者。
@@ -928,6 +971,11 @@
             if (usedB.has(pb.i)) continue;
             if (Math.abs((pa.l.x || 0) - (pb.l.x || 0)) > OVERLAP_MATCH_X) continue;
             const dy = Math.abs(pa.l.y - pb.l.y);
+            /* 【2.0.2.5 · R4 独立验收 H1 修】x 带的池子**只按 x 过滤**（y 不设限）：二维铺块下
+             * 同一横带里左右两块 y 跨度相同 ⇒ y 差几千像素的两条同文本行也能配上互删。
+             * x 带上再要一条**垂直方向**容差 —— 与第二遍近失配对同口径（同一物理行实测只差 0–5px）。
+             * y 带刻意不动：它的池子本来就按 y 收在重叠带里，加限会动一维竖图那条已验证的路径。 */
+            if (band.axis === 'x' && dy > NEAR_MATCH_MAX_DY) continue;
             if (dy < bestDy) { best = pb; bestDy = dy; }
           }
           if (!best) continue;

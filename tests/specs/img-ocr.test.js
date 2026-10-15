@@ -428,6 +428,91 @@ module.exports = async function run() {
   });
 
   /* ------------------------------------------------------------------
+   * 【2.0.2.5 需求①】配额只管「要识别的图」，识别不了的图不许吃额度
+   * ------------------------------------------------------------------
+   * 用户现场：关键词 `a`；抓取字段 `包名|截图#图|资质类型@1|icon`；图片命中关键词 `一对一`
+   *   ⇒「图片 OCR 不会拉起执行」。多字段时**每个值格都可能有图**，#图 那个字段的图常排在后面。
+   * 根因：`collectImages` 第一句 `if (out.length >= max) return out;` 在 `classify` **之前** ——
+   *   跨域未授权 / 懒加载 / 原图太小这些**根本识别不了**的图也计入配额，
+   *   前面的 logo/icon 把额度吃光，真正的截图**连条目都没建**（自然永不提交）。
+   * 口径：`imgOcrMax` 只数「可识别」的图；识别不了的图仍留原因条目（面板要如实说明），
+   *   但**不再终止扫描**，且自己另受同一个 max 限流（一个格子里几十张懒加载图不许刷屏）。
+   */
+  const mkRow = (label, children) => {
+    const tr = H.el('tr');
+    tr.appendChild(cellOf(label));
+    for (const c of children) tr.appendChild(c);
+    tr.cells = tr.children;
+    tr.cells.forEach((td, i) => { td.cellIndex = i; });
+    tr.rowIndex = 0;
+    return tr;
+  };
+  const td = (child) => { const c = H.el('td'); if (child) c.appendChild(child); return c; };
+  /** 多行真表格：每行 [标签 | 值格…]，最后一行的值格是「命中」所在格（照用户页面的版式） */
+  const wideTable = (rows) => {
+    const tbody = H.el('tbody');
+    const trs = rows.map((r) => { const tr = mkRow(r[0], r[1]); tbody.appendChild(tr); return tr; });
+    const table = H.el('table'); table.appendChild(tbody);
+    trs.forEach((tr, i) => { tr.rowIndex = i; });
+    table.rows = trs;
+    return { table: table, hitCell: trs[trs.length - 1].children[1] };
+  };
+  const okImg = (src) => { const im = fakeImg({ src: src }); im.naturalWidth = 100; im.naturalHeight = 100; return im; };
+  const lazyImg = (src) => fakeImg({ 'data-src': src });
+
+  await test('★ 需求①：前一个字段是跨域图（识别不了）、后一个字段才是截图 ⇒ 截图必须拿到名额并发出去', () => {
+    KH.features.get('img-ocr').clear(null, { reason: 'destroy' });
+    const before = (global.__OCR_SENT__ || []).length;
+    const w = wideTable([
+      ['包名', [td(fakeImg({ src: 'https://cdn.other.test/logo.png' }))]],
+      ['截图', [td(okImg('data:image/png;base64,iVBORw0KGgoNEED1'))]],
+      ['应用名', [td(H.txt('关键词a'))]]
+    ]);
+    const meta = { imgOcr: true, imgOcrMax: 1, fetchLabels: '包名|截图#图', imgOcrKeyword: '一对一', display: '关键词a' };
+    O.build({}, {}, [{ ruleId: 'kQuota1', meta: meta, textNode: w.hitCell.childNodes[0] }]);
+    const items = O.items();
+    eq(items.length, 2, '坏图仍留一条原因条目、好图另有一条（坏图不再吃掉名额）');
+    eq(items[0].state, 'blocked', '第一张跨域未授权 ⇒ blocked（面板要说明原因）');
+    eq(items[0].why, 'cross-origin');
+    const good = items[1];
+    eq(good.src, 'data:image/png;base64,iVBORw0KGgoNEED1', '**排在后面的截图必须进表**（修前它连条目都没有）');
+    truthy(good.state === 'pending' || good.state === 'done', '能被识别的图必须真的提交（用户报的就是"不会拉起执行"）');
+    eq((global.__OCR_SENT__ || []).length - before, 1, '★ 跨域图在前也照样发出 1 次识别请求');
+  });
+
+  await test('★ 需求①：前面三张懒加载图 + 后面一张截图，imgOcrMax=1 ⇒ 两者各自受 1 条限流', () => {
+    KH.features.get('img-ocr').clear(null, { reason: 'destroy' });
+    const w = wideTable([
+      ['包名', [td(lazyImg('https://cdn.test/l1.png')), td(lazyImg('https://cdn.test/l2.png')), td(lazyImg('https://cdn.test/l3.png'))]],
+      ['截图', [td(okImg('data:image/png;base64,iVBORw0KGgoNEED2'))]],
+      ['应用名', [td(H.txt('关键词a'))]]
+    ]);
+    const meta = { imgOcr: true, imgOcrMax: 1, fetchLabels: '包名@1-3|截图#图', imgOcrKeyword: '一对一', display: '关键词a' };
+    O.build({}, {}, [{ ruleId: 'kQuota2', meta: meta, textNode: w.hitCell.childNodes[0] }]);
+    const items = O.items();
+    eq(items.filter((it) => it.state === 'blocked').length, 1,
+      '识别不了的图自己也最多留 `max` 条原因条目（否则一个格子几十张懒加载图会把面板刷满）');
+    eq(items.filter((it) => it.src === 'data:image/png;base64,iVBORw0KGgoNEED2').length, 1, '截图照旧拿到名额');
+  });
+
+  await test('★ 需求①（字段级开关）：`字段#0` 的值格图既不识别、也不带进抓取内容', () => {
+    KH.features.get('img-ocr').clear(null, { reason: 'destroy' });
+    const w = wideTable([
+      ['包名', [td(lazyImg('https://cdn.test/icon.png'))]],
+      ['截图', [td(okImg('data:image/png;base64,iVBORw0KGgoNEED3'))]],
+      ['应用名', [td(H.txt('关键词a'))]]
+    ]);
+    const meta = { imgOcr: true, imgOcrMax: 4, fetchLabels: '包名#0|截图', imgOcrKeyword: '一对一', display: '关键词a' };
+    const fields = KH.Fetch.cellsForHit(w.hitCell, meta);
+    eq(fields.map((f) => f.label).join(','), '包名,截图');
+    eq(!!fields[0].noImg, true, '`#0` 必须解析成 noImg（字段级开关的唯一真源）');
+    eq(fields[1].noImg, false, '没写 `#0` 的字段照旧参与图片识别');
+    O.build({}, {}, [{ ruleId: 'kQuota3', meta: meta, textNode: w.hitCell.childNodes[0] }]);
+    eq(O.items().length, 1, '`#0` 字段的图根本不进表');
+    eq(O.items()[0].src, 'data:image/png;base64,iVBORw0KGgoNEED3', '只剩截图那张（用户要的就是这个）');
+  });
+
+  /* ------------------------------------------------------------------
    * 同页图超过并发上限：额度一归还就必须**补发**队列里剩下的
    * ------------------------------------------------------------------
    * 现场（用户手动测试套件里撞到的）：一页 9 张图（每行一张）⇒ 只有前几张出结果，

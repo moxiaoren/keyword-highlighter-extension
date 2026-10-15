@@ -169,4 +169,158 @@ module.exports = async function run() {
       eq(JSON.stringify(vals), JSON.stringify(['丙']), '实际 ' + JSON.stringify(vals));
     });
   });
+
+  /* ============================================================================
+   * 2.0.2.5 需求③：**零宽断言只定位、不消耗**（用户拍板口径 A）
+   * ----------------------------------------------------------------------------
+   * 用户实测：左右格词核心写 `^(?=.*夜)(?=.*播放).*`、页面内容是「清享夜私播放器」时，
+   * 高亮的是**整段**「清享夜私播放器」——因为 `.*` 是消耗字符的，两条断言只做了门控。
+   * 新口径：**当且仅当**（① 源码含正向零宽断言 `(?=…)`/`(?<=…)`）**且**
+   * （② 整体匹配恰好吃光整段文本：`m.index===0 && m[0].length===文本长度`）时，
+   * 才把上报区间收窄为"正向断言圈定的区间"（各参与区间的最小 start / 最大 end）。
+   * 其余一切情况必须**逐字节不变**（这里是"不许误伤"的反向锁）。
+   *
+   * 两条路径（单节点 `matchIn` / 跨节点 `matchInlineRuns`）走**同一份**收窄实现 ——
+   * 跨节点那条的"整段文本"＝ run 的拼接文本。
+   * ========================================================================== */
+  suite('zero-width · 零宽断言只定位不消耗（2.0.2.5 需求③ 口径 A）');
+
+  const quiet = { util: { crossNodeBoundaryIsWord: () => false } };
+  const hitOf = (pat, node) => U.matchIn(pat, node, quiet, {});
+  const USER_RE = /^(?=.*夜)(?=.*播放).*/;
+
+  await test('★ 用户原例：「清享夜私播放器」→ 只亮「夜私播放」（不是整段）', () => {
+    const hits = hitOf(USER_RE, H.txt('清享夜私播放器'));
+    eq(hits.length, 1, '应命中一条');
+    eq(hits[0].start, 2, 'start 应收窄到「夜」的位置 2');
+    eq(hits[0].end, 6, 'end 应收窄到「播放」之后 6');
+    eq(hits[0].text, '夜私播放', 'text 必须同步切成收窄后的子串（面板/表格拿它当命中文本）');
+  });
+
+  await test('★ 同一模式于「夜私播放器」→ start=0,end=4', () => {
+    const hits = hitOf(USER_RE, H.txt('夜私播放器'));
+    eq(hits.length, 1);
+    eq(hits[0].start, 0);
+    eq(hits[0].end, 4);
+    eq(hits[0].text, '夜私播放');
+  });
+
+  await test('★ 无断言的正则逐字节不变（不吃光 / 吃光两种都不许动）', () => {
+    const hits = hitOf(/夜.*播放/, H.txt('清享夜私播放器'));
+    eq(hits.length, 1);
+    eq(hits[0].start, 2, '没有断言 → 区间必须是正则自己给的 [2,6)');
+    eq(hits[0].end, 6);
+    eq(hits[0].text, '夜私播放', '不得因为文本里含「夜/播放」被二次收窄');
+    const whole = hitOf(/.*/, H.txt('清享夜私播放器'));
+    eq(whole.length, 1);
+    eq(whole[0].start, 0); eq(whole[0].end, 7); eq(whole[0].text, '清享夜私播放器',
+      '整体匹配吃光整段、但源码无断言 → 仍不许动');
+  });
+
+  await test('★ 断言存在但整体匹配没吃光整段文本 → 不收窄', () => {
+    const a = hitOf(/夜(?=私)/, H.txt('清享夜私播放器'));
+    eq(a.length, 1);
+    eq(a[0].start, 2, 'm.index!==0 → 保持原区间（断言圈定的 [3,4) 不得夺权）');
+    eq(a[0].end, 3); eq(a[0].text, '夜');
+    const b = hitOf(/播放(?=器)/, H.txt('清享夜私播放器'));
+    eq(b.length, 1);
+    eq(b[0].start, 4, '整体匹配没到文本末尾（长度 2 ≠ 7）→ 保持原区间');
+    eq(b[0].end, 6); eq(b[0].text, '播放');
+  });
+
+  await test('★ 负向断言只做门控、不参与区间（命中的「夜」也不许圈定）', () => {
+    const hits = hitOf(/^(?!夜)(?=.*播放).*/, H.txt('清享夜私播放器'));
+    eq(hits.length, 1);
+    eq(hits[0].start, 4, '只有正向 (?=.*播放) 参与 → [4,6)');
+    eq(hits[0].end, 6);
+    eq(hits[0].text, '播放', '负向断言 (?!夜) 的内容「夜」命中第 2 位，也不得把 start 拉到 2');
+  });
+
+  await test('★ 正向后顾断言 (?<=…) 同样参与圈定', () => {
+    /* 整体匹配吃光整段（`^清享夜私播放器`），结尾的 (?<=播放器) 在位置 7 成立 → 圈定 [4,7) */
+    const hits = hitOf(/^清享夜私播放器(?<=播放器)/, H.txt('清享夜私播放器'));
+    eq(hits.length, 1);
+    eq(hits[0].start, 4); eq(hits[0].end, 7);
+    eq(hits[0].text, '播放器', '后顾断言的内容也是"定位"，必须参与区间');
+  });
+
+  await test('★ 断言内容非法 → 不抛异常且保持原区间', () => {
+    /* 这类源码**整体编译不过**（`/(?=[)/ ` = Unterminated character class），真机上根本到不了
+     * 收窄这一步；这里直接喂给共用原语，锁"收窄自身绝不抛、算不出就原区间"这条底线。 */
+    eq(U.assertionRange({ source: '^(?=[).*', flags: 'g' }, '清享夜私播放器', 0, 7), null,
+      '字符类没闭合（`(?=[`）→ 该断言不参与');
+    eq(U.assertionRange({ source: '(?=*)', flags: 'g' }, 'abc', 0, 3), null,
+      '编译抛错的断言内容（`*`）→ 捕获后不参与，绝不抛');
+    eq(U.assertionRange({ source: '(?=^)', flags: 'g' }, 'abc', 0, 3), null,
+      '剥完锚点后为空的断言 → 不参与');
+    eq(U.assertionRange({ source: '(?=b)', flags: 'g' }, 'abc', 0, 2), null,
+      '断言命中但整体匹配没吃光文本（mEnd 2 ≠ 3）→ 原区间');
+  });
+
+  await test('★ 全词守卫按「收窄前」的整体匹配区间判定（收窄只影响上报区间）', () => {
+    const seen = [];
+    const ctx = { util: { crossNodeBoundaryIsWord: (n, s, e) => { seen.push([s, e]); return true; } } };
+    const hits = U.matchIn(USER_RE, H.txt('清享夜私播放器'), ctx, { wholeWord: true });
+    eq(hits.length, 0, '守卫拒绝 → 该命中不得上报');
+    eq(JSON.stringify(seen[0]), JSON.stringify([0, 7]), '守卫拿到的必须是收窄前的整体匹配区间 [0,7)');
+  });
+
+  await test('★ 跨节点（matchInlineRuns）走同一份收窄：收窄后仍跨两段', () => {
+    const p = H.el('p', null, ['清享夜', H.el('span', null, ['私播放器'])]);
+    const root = H.el('div', null, [p]);
+    const hits = U.matchInlineRuns(nodesOf(root), re('^(?=.*夜)(?=.*播放).*'));
+    eq(hits.length, 1, '应命中一条跨节点命中');
+    const h = hits[0];
+    eq(h.text, '夜私播放', 'text 应是收窄后的子串（"整段文本"＝ run 的拼接文本）');
+    eq(h.node.nodeValue, '清享夜'); eq(h.start, 2); eq(h.end, 3);
+    eq(h.endNode.nodeValue, '私播放器'); eq(h.endOffset, 3);
+    eq(h.segments.length, 2, '收窄后的区间仍跨两段 → 两段都要建索引');
+  });
+
+  await test('★ 跨节点无断言 → 逐字节不变（整段拼接文本）', () => {
+    const p = H.el('p', null, ['清享', H.el('span', null, ['夜私播放器'])]);
+    const root = H.el('div', null, [p]);
+    const hits = U.matchInlineRuns(nodesOf(root), re('.*播放器'));   // 吃光整个 run 文本
+    eq(hits.length, 1);
+    eq(hits[0].text, '清享夜私播放器', '没有断言 → 不许收窄');
+    eq(hits[0].segments.length, 2);
+  });
+
+  await test('收窄后只覆盖单段 → 跨节点这条路不产出（交给逐节点路径，避免双计数）', () => {
+    const p = H.el('p', null, ['清享', H.el('span', null, ['夜私播放器'])]);
+    const root = H.el('div', null, [p]);
+    eq(U.matchInlineRuns(nodesOf(root), re('^(?=.*夜)(?=.*播放).*')).length, 0,
+      '收窄后落在第二段内 → 按原样跳过（segs<2），由逐节点路径给同一条命中');
+    const one = hitOf(USER_RE, nodesOf(root)[1]);
+    eq(one.length, 1);
+    eq(one[0].text, '夜私播放', '逐节点路径对同一模式也收窄，两条路径口径一致');
+  });
+
+  await test('★ 2.0.2.5 · 独立验收 H2：收窄后落回单节点、而逐节点路径给不出 ⇒ 命中不许消失', () => {
+    /* 运行语境里的 `^清享` + 断言：run 上匹配吃光整段、收窄成 `播放`（只落在第二段），
+     * 而逐节点路在第二段上缺 `清享`、在第一段上缺 `播放` ⇒ 两条路都给不出，
+     * 旧实现（`segs<2 → continue`）下这条命中**整条消失**。 */
+    const p = H.el('p', null, ['清享', H.el('span', null, ['夜私播放器'])]);
+    const root = H.el('div', null, [p]);
+    const pat = re('^清享(?=.*播放).*');
+    const ns = nodesOf(root);
+    eq(U.matchInlineRuns(ns, pat).length, 0, '跨节点清单里仍不放单节点命中（函数契约不变）');
+    const got = KH.Scanner.util.matchKeyword(ns, pat, { util: { crossNodeBoundaryIsWord: () => false } }, {});
+    eq(got.cross.length, 0);
+    eq(got.single.length, 1, '回收进单节点命中，实际 ' + JSON.stringify(got.single.map((s) => s.text)));
+    eq(got.single[0].node.nodeValue, '夜私播放器');
+    eq(got.single[0].start + ':' + got.single[0].end, '2:4',
+      '段内偏移：run 里 [4,6)（"播放"）换算到第二段（run 偏移 2 起）= [2,4)');
+    eq(got.single[0].text, '播放', '范围 = 断言圈定的区间');
+  });
+
+  await test('★ H2 不双计数：逐节点路径已给出同一条 ⇒ 回收的命中必须被丢掉', () => {
+    const p = H.el('p', null, ['清享', H.el('span', null, ['夜私播放器'])]);
+    const root = H.el('div', null, [p]);
+    const got = KH.Scanner.util.matchKeyword(
+      nodesOf(root), re('^(?=.*夜)(?=.*播放).*'),
+      { util: { crossNodeBoundaryIsWord: () => false } }, {});
+    eq(got.single.length, 1, '用户原例：只许有一条（逐节点给 [0,4) 的"夜私播放"，回收的同区间被去重）');
+    eq(got.single[0].text, '夜私播放');
+  });
 };

@@ -397,6 +397,73 @@ module.exports = async function run() {
     eq(bz[0].hi - bz[0].lo, hz.overlap);
   });
 
+  await test('★ 2.0.2.5 需求②：块在**任一**方向都不许超过上限（竖图的横带也要切竖列）', () => {
+    const P = loadOffscreen({ lines: () => null }).self.__khOcrPure;
+    /* 用户案例 1：2480×3360。旧版只沿长边切 ⇒ 横带 2480×1600，长边 = **图宽 2480** > MAX_EDGE(1600)
+     * ⇒ `scaleFor` 缩到 0.645、厂商 det 再 ×0.75 ⇒ 有效 0.48，正文整行消失（真机只读到 8 行、
+     * 软件名称/版本/著作权人 全丢；同一张图裁 1600×1600 能读到 10 行）。 */
+    const p = P.planChunks(2480, 3360);
+    eq(p.chunks.length, 6, '2480×3360 ⇒ 3 行 × 2 列 = 6 块（块高/列宽 1600，重叠 240、步长 1360）');
+    truthy(p.chunks.every((c) => c.w <= 1600 && c.h <= 1600), '每一边都不许超过 1600（否则块内就得缩、小字丢在那一刀上）');
+    const c0 = p.chunks[0], c1 = p.chunks[1];
+    eq(c0.x + ':' + c0.y + ':' + c0.w + ':' + c0.h, '0:0:1600:1600', '首块 = 左上 1600×1600');
+    eq(c1.x + ':' + c1.y + ':' + c1.w + ':' + c1.h, '1360:0:1120:1600', '同带右块起点 1360、末列贴边截断到 1120');
+    truthy(p.chunks.every((c) => P.scaleFor(c.w, c.h) === 1), '★ 6 块全部落回"1:1 不缩"——任何一块被缩都会把它那一块的小字抹掉');
+    eq(p.coverage.totalChunks, 6);
+    eq(p.coverage.coveredTo, 3360, '覆盖率照旧覆盖到图底');
+
+    /* 二维下"相邻"≠"下标相邻"：跨列、跨行都要算重叠带 */
+    const b = P.overlapBands(p.chunks);
+    truthy(b.length > 0 && b.every((x) => x.hi > x.lo), '每条带都非空');
+    truthy(b.some((x) => x.a === 0 && x.b === 1 && x.axis === 'x' && x.lo === 1360 && x.hi === 1600),
+      '★ 同一横带里左右两块算 x 轴邻接');
+    truthy(b.some((x) => x.a === 0 && x.b === 2 && x.axis === 'y' && x.lo === 1360 && x.hi === 1600),
+      '★ 上下两带的同列两块算 y 轴邻接（下标差 2，旧口径"只配下标相邻"直接漏掉它）');
+
+    /* 一维切块与旧口径逐条等价：窄长图跨轴 1080 < 1600 ⇒ 一根横带都不多切 */
+    const p1 = P.planChunks(1080, 8000);
+    eq(p1.chunks.length, 6, '窄长图仍是 6 块（不许把今天的单列路径弄坏）');
+    eq(P.overlapBands(p1.chunks).length, 5, '窄长图仍是 5 条带');
+    truthy(p1.chunks.every((c) => c.x === 0 && c.w === 1080), '窄长图仍然整幅宽（跨轴没超上限就不切）');
+  });
+
+  await test('★ 2.0.2.5 · 独立验收 H1：矩形不相交的两块绝不许产出重叠带', () => {
+    const P = loadOffscreen({ lines: () => null }).self.__khOcrPure;
+    /* 2480×3360 的 6 块里，c0(0,0,1600,1600) 与 c5(1360,2720,1120,640)：x 部分相交、y 完全不相交。
+     * 旧版只判单轴 ⇒ 产出 x 带 [1360,1600]；那条带的池子只按 x 过滤、**y 不设限**
+     * ⇒ 相距两三千像素的两条同文本行会被配成"同一物理行"互删（静默丢字）。 */
+    const c0 = { x: 0, y: 0, w: 1600, h: 1600 };
+    const c5 = { x: 1360, y: 2720, w: 1120, h: 640 };
+    eq(P.overlapBands([c0, c5]).length, 0, 'y 完全不相交 ⇒ 一条带都不许有（哪怕 x 部分相交）');
+    /* 真交叠的接缝仍要在：对角相邻的 c0/c3 共享 [1360,1600]×[1360,1600] ⇒ x、y 各一条 */
+    const c3 = { x: 1360, y: 1360, w: 1120, h: 1600 };
+    const b3 = P.overlapBands([c0, c3]);
+    eq(b3.length, 2, '对角真交叠 ⇒ x、y 各一条带');
+    truthy(b3.every((x) => x.lo === 1360 && x.hi === 1600), '两条带都收在共享矩形 [1360,1600] 上');
+    /* 整张计划：每条带的两块都必须真的相交（旧版 444 条带里 270 条不相交 = 61%） */
+    const p = P.planChunks(2480, 3360);
+    const bs = P.overlapBands(p.chunks);
+    const hit = (b) => {
+      const a = p.chunks[b.a], c = p.chunks[b.b];
+      return !(a.x + a.w <= c.x || c.x + c.w <= a.x || a.y + a.h <= c.y || c.y + c.h <= a.y);
+    };
+    eq(bs.filter((b) => !hit(b)).length, 0, '不相交的带必须是 0 条，实际 ' + bs.length + ' 条里 ' + bs.filter((b) => !hit(b)).length);
+    /* 一维路径逐条不变 */
+    eq(P.overlapBands(P.planChunks(1080, 8000).chunks).length, 5, '窄长图仍是 5 条带');
+  });
+
+  await test('★ H1 第二道：x 带的池子不设 y 限 ⇒ 配对必须再要一条垂直容差', () => {
+    const P = loadOffscreen({ lines: () => null }).self.__khOcrPure;
+    /* 横带里左右相邻两列：y 跨度相同 ⇒ 只有 x 带；池子按 x 过滤后 y 完全不设限 */
+    const pair = [{ x: 0, y: 0, w: 1600, h: 1600 }, { x: 1360, y: 0, w: 1120, h: 1600 }];
+    eq(P.overlapBands(pair).length, 1, '左右邻居：只有 x 轴邻接（y 上互相含住 ⇒ 不算邻接）');
+    eq(P.overlapBands(pair)[0].axis, 'x');
+    const L = (t, y, ci, x) => ({ t: t, conf: 95, y: y, x: x == null ? 1400 : x, ci: ci });
+    eq(P.mergeOverlap([L('备注', 200, 0), L('备注', 2800, 1)], pair).merged, 0,
+      '★ 同文本但 y 差 2600 ⇒ 不是同一物理行，绝不许互删');
+    eq(P.mergeOverlap([L('备注', 200, 0), L('备注', 203, 1)], pair).merged, 1, 'y 差 3 ⇒ 同一物理行，照旧去重');
+  });
+
   await test('★ 第 4 项：mergeOverlap 四条同时成立才丢 + 一对一（含反向守卫）', () => {
     const P = loadOffscreen({ lines: () => null }).self.__khOcrPure;
     /* 两块：块 0 = y∈[0,400]、块 1 = y∈[264,664] ⇒ 重叠带 = [264, 400] */

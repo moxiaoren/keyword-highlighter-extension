@@ -1067,6 +1067,9 @@
     pwInput.min = KH.Config.PANEL_WIDTH_MIN;
     pwInput.max = KH.Config.PANEL_WIDTH_MAX;
     pwInput.value = cfg.notePanelWidth;
+    /* 置顶排序（2.0.2.5 需求④）：回显的是**归一后**的值 —— 手改 storage / 导入旧备份塞了 5 个词时，
+     * 框里显示 3 个，用户一眼就看出第 4 项没生效（别让框里停着一个没生效的数）。 */
+    $('pf-notePinOrder').value = KH.Config.normalizePinOrder((cfg.importantNote || {}).pinOrder);
   }
 
   for (const k of ['defaultCaseSensitive', 'defaultWholeWord', 'defaultUseRegex']) {
@@ -1119,6 +1122,15 @@
     const w = KH.Config.normalizePanelWidth($('pf-notePanelWidth').value);
     $('pf-notePanelWidth').value = w;
     await mutate(() => KH.Store.patch({ notePanelWidth: w }));
+  });
+  /* 置顶排序（2.0.2.5 需求④）：口径（分隔符 / trim / 丢空 / 去重 / 最多 3 个）**只由
+   * `KH.Config.normalizePinOrder` 一处判**，保存前把归一后的值回显回去 ——
+   * 用户填了 5 个词或 "甲,,乙" 时，框里立刻变成生效的那 3 个。
+   * 落盘走嵌套子键 `importantNote.pinOrder`（不新增顶层键 ⇒ 导出/导入、字段单源、UI_ONLY_KEYS 都不用动）。 */
+  $('pf-notePinOrder').addEventListener('change', async () => {
+    const v = KH.Config.normalizePinOrder($('pf-notePinOrder').value);
+    $('pf-notePinOrder').value = v;
+    await saveNested({ importantNote: { pinOrder: v } });
   });
 
   /* ==================================================================== ⑧ 更新日志（单源） */

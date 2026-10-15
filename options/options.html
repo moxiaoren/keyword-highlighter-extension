@@ -173,7 +173,15 @@
           <input class="kh-input" id="pf-notePanelWidth" type="number" step="10">
         </div>
       </div>
-      <p class="kh-muted">三个都只是<strong>默认值</strong>：单个关键词或分组<strong>留空即继承</strong>这里。「图片尺寸」管抓取字段值格里的缩略图/识别图；「字号」管面板里的<strong>笔记正文与表格</strong>（10–20px，默认 11）；「面板宽度」是长期值、拖面板右下角只算当前这一次 —— 两条口径的完整解释见「帮助与隐私 → ❓ 常见」Q12 / Q13。</p>
+      <!-- 置顶排序（2.0.2.5 需求④）：填卡片的关键词，命中的卡片按填写顺序固定排在最前。
+           上限 / 分隔符 / 去重由 options.js 调 KH.Config.normalizePinOrder 一处判（这里不写死在文案外的地方）。 -->
+      <div class="kh-form-row">
+        <div class="kh-form-fld" style="flex:1 1 320px">
+          <label class="kh-fld-label">置顶排序（最多 3 个关键词）</label>
+          <input class="kh-input" id="pf-notePinOrder" type="text" placeholder="例如：价格，报名截止，联系方式">
+        </div>
+      </div>
+      <p class="kh-muted">四个都只是<strong>默认值</strong>：单个关键词或分组<strong>留空即继承</strong>这里。「图片尺寸」管抓取字段值格里的缩略图/识别图；「字号」管面板里的<strong>笔记正文与表格</strong>（10–20px，默认 11）；「面板宽度」是长期值、拖面板右下角只算当前这一次 —— 两条口径的完整解释见「帮助与隐私 → ❓ 常见」Q12 / Q13。「置顶排序」填<strong>最多 3 个</strong>关键词（逗号 / 顿号 / 换行分隔，按填写顺序置顶），命中的卡片固定排在面板最前，其余卡片保持原顺序。</p>
     </section>
 
     <!-- ============================================================ 图片识别（OCR） -->

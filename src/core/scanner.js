@@ -698,6 +698,12 @@
     /* `opts.runs` = 调用方已经算好的 run 列表（**按规则复用**：run 归并与规则无关，
      * 每次 scan 只该建一次；见 `inline-run-regex` 探针的 `ctx._runs`）。 */
     const runs = (opts && opts.runs) || buildInlineRuns(nodes, opts);
+    /* 【2.0.2.5 · R4 独立验收 H2 修】收窄后命中可能只落在**一个**节点里，而"逐节点路径会给同一条
+     * 命中"的前提**不成立**：`^清享(?=.*播放).*` 跨 [清享|夜私播放器] 时，run 上匹配吃光整段、
+     * 收窄成 `播放`（落在第二段），可逐节点路在第二段上**根本不中**（缺 `清享`）⇒ 命中整条消失。
+     * 落回单节点的命中丢进 `opts.extra` 交回 `matchKeyword`（那里与 `single` 按区间去重后并入）。
+     * 为什么不直接塞进本函数返回值：这个函数的契约是"**只**给真跨节点命中"（有单测钉住）。 */
+    const extra = (opts && opts.extra) || null;
     /* 【性能·K77 补】跨节点这条路也要做**字面前缀预筛**（单节点那条 `matchIn:643` 早就有）：
      * 不含字面前缀的 run 直接跳过 ⇒ 一次 `indexOf` 换掉一次整段正则扫描。
      * 为什么 K77 才暴露：新的"视觉行内级"判据会把更多包装算成可穿透 ⇒ **run 变长**，
@@ -716,25 +722,39 @@
       while ((m = re.exec(r.text)) !== null) {
         if (m[0].length === 0) { re.lastIndex++; continue; }   // 防空匹配死循环
         const start = m.index, end = m.index + m[0].length;
-        /* 把 [start,end) 映射成**每一段 (node, 段区间)** —— 段由这里算准，
+        /* 需求③：跨文本节点这条也走**同一份**收窄实现（"整段文本"＝ run 的拼接文本） */
+        const nar = assertionRange(pattern, r.text, start, end);
+        const hitStart = nar ? nar.start : start, hitEnd = nar ? nar.end : end;
+        /* 把 [hitStart,hitEnd) 映射成**每一段 (node, 段区间)** —— 段由这里算准，
          * 下游（index/registry/renderer）直接照用，不再靠 carrier 反推节点
          * （carrier 可能返回行内**元素**，反推会踩到 nodeValue 为 null）。 */
         const segs = [];
         let acc = 0;
         for (const n of r.nodes) {
           const len = n.nodeValue.length;
-          const s0 = Math.max(start, acc), e0 = Math.min(end, acc + len);
+          const s0 = Math.max(hitStart, acc), e0 = Math.min(hitEnd, acc + len);
           if (e0 > s0) segs.push({ node: n, start: s0 - acc, end: e0 - acc });
           acc += len;
-          if (acc >= end) break;
+          if (acc >= hitEnd) break;
         }
-        if (segs.length < 2) continue;                         // 实际没跨节点 → 交给逐节点路径
+        /* 实际没跨节点（只有一段）的命中：**本函数照旧不返回**它 —— 返回值只含真正跨节点的命中，
+         * meta-check 有静态红线、`tests/specs/inline-runs.test.js` 有判据钉着这一点。
+         * 但逐节点路径只保证"能匹配到同一个词"、不保证命中不丢（见函数头 H2 说明），
+         * 所以只在这一段存在的场合把它回收给调用方，由它与逐节点命中按区间去重后再决定用不用。 */
+        if (segs.length === 1 && extra) {
+          extra.push({
+            node: segs[0].node, start: segs[0].start, end: segs[0].end,
+            text: r.text.slice(hitStart, hitEnd)
+          });
+        }
+        if (segs.length < 2) continue;                         // 实际没跨节点 → 让路给逐节点路径
         const first = segs[0], last = segs[segs.length - 1];
         /* `start/end` 的口径与命中模型一致：**都指起始节点内的偏移**
          * （于是 `end` ＝ 起始节点里从 start 到该段末尾），真正的终点在 endNode/endOffset。 */
         out.push({
           node: first.node, start: first.start, end: first.end,
-          endNode: last.node, endOffset: last.end, segments: segs, crossNode: true, text: m[0]
+          endNode: last.node, endOffset: last.end, segments: segs, crossNode: true,
+          text: r.text.slice(hitStart, hitEnd)
         });
       }
     }
@@ -802,6 +822,110 @@
     return out;
   }
 
+  /* ================= 2.0.2.5 需求③：零宽断言只定位、不消耗 =================
+   * 用户实测：左右格词核心写 `^(?=.*夜)(?=.*播放).*`、页面内容「清享夜私播放器」时，
+   * 高亮的是**整段** `清享夜私播放器` —— 因为 `.*` 是**消耗**字符的，两条断言只做了门控。
+   *
+   * 新口径（用户拍板 A）：**当且仅当**下列两条同时成立时，把上报区间从"整体匹配"收窄为
+   * "正向零宽断言圈定的区间"：
+   *   ① 该模式源码里含**正向**零宽断言（`(?=…)` / `(?<=…)`）；
+   *   ② 整体匹配恰好吃光**整段文本**（`m.index === 0 && m[0].length === 文本长度`）。
+   * 不满足任一条件 → 行为**逐字节不变**（无断言的正则、断言没吃光文本的正则，一律不动）。
+   * 负向断言（`(?!…)`/`(?<!…)`）只做门控、不"圈定"任何东西 → 不参与区间。
+   */
+
+  /** 顶层扫描源码，取出 `(?=…)` / `(?<=…)` 的**内容**（跳过 `\` 转义与字符类 `[…]` 内部的括号，
+   *  嵌套括号按层配平）。负向断言与命名组**故意不取**。 */
+  function positiveAssertions(source) {
+    const out = [];
+    /* 字符类跳过：`[)]` 里的 `)` 不是分组括号（不跳会误判括号配平）；
+     * 反之 `\(` 也不是分组起点。两处都要跳，否则断言边界算错。 */
+    const skipClass = (k) => {
+      for (k++; k < source.length; k++) {
+        if (source[k] === '\\') { k++; continue; }
+        if (source[k] === ']') break;
+      }
+      return k;
+    };
+    for (let i = 0; i < source.length; i++) {
+      const ch = source[i];
+      if (ch === '\\') { i++; continue; }
+      if (ch === '[') { i = skipClass(i); continue; }
+      if (ch !== '(' || source[i + 1] !== '?') continue;
+      let j;
+      if (source[i + 2] === '=') j = i + 3;                                  // (?=
+      else if (source[i + 2] === '<' && source[i + 3] === '=') j = i + 4;    // (?<=
+      else continue;                              // (?: / (?! / (?<! / (?<name> …
+      let depth = 1, k = j;
+      for (; k < source.length; k++) {
+        const c = source[k];
+        if (c === '\\') { k++; continue; }
+        if (c === '[') { k = skipClass(k); continue; }
+        if (c === '(') depth++;
+        else if (c === ')' && --depth === 0) break;
+      }
+      if (depth !== 0) continue;                  // 括号不平衡 → 这条不参与
+      out.push(source.slice(j, k));
+      i = k;                                      // 跳过整条断言（外层 i++ 越过 `)`）
+    }
+    return out;
+  }
+
+  /** 剥掉断言内容首尾的锚点与通配：先去 `^`/`$`，再去 `.*`/`.+`（按口径可重复一轮） */
+  function stripAnchors(s) {
+    let t = s;
+    if (t[0] === '^') t = t.slice(1);
+    if (t[t.length - 1] === '$') t = t.slice(0, -1);
+    if (t.startsWith('.*')) t = t.slice(2);
+    else if (t.startsWith('.+')) t = t.slice(2);
+    if (t.endsWith('.*') || t.endsWith('.+')) t = t.slice(0, -2);
+    return t;
+  }
+
+  const assertReCache = new Map();
+
+  /**
+   * 零宽断言收窄（**唯一实现**：单节点 `matchIn` 与跨节点 `matchInlineRuns` 共用）。
+   *
+   * @param {RegExp} pattern 主模式（只读它的 `source`/`flags`）
+   * @param {string} text 主模式实际跑的那段文本（跨节点路径＝ run 的拼接文本）
+   * @param {number} mStart 整体匹配起点（`m.index`）
+   * @param {number} mEnd 整体匹配终点（`m.index + m[0].length`）
+   * @returns {{start:number,end:number}|null} 收窄区间；`null` ＝ 不改（保持原区间）
+   */
+  function assertionRange(pattern, text, mStart, mEnd) {
+    if (!pattern || !text) return null;
+    if (mStart !== 0 || mEnd !== text.length) return null;    // 门控②：没吃光整段文本 → 不动
+    const source = pattern.source;
+    if (source.indexOf('(?') < 0) return null;                // 快路径：源码里没有零宽断言语法
+    /* 与主模式同 flags，但去掉 `g`/`y` —— 这里只做"单次定位"，不能带迭代状态。 */
+    const flags = pattern.flags.replace(/[gy]/g, '');
+    const key = source + '\u0000' + flags;
+    let list = assertReCache.get(key);
+    if (!list) {
+      list = [];
+      for (const raw of positiveAssertions(source)) {
+        const body = stripAnchors(stripAnchors(raw));
+        if (!body) continue;                                  // `(?=^)` / `(?=.*)` 之类剥完为空 → 不参与
+        /* 编译抛错 → 这条断言不参与，**绝不向外抛**（见 2.0.2.5 需求③ 的非法内容用例） */
+        try { list.push(new RegExp(body, flags)); } catch (err) { /* 不参与 */ }
+      }
+      assertReCache.set(key, list);                           // 空数组也缓存（`![]` 为 false，不会重算）
+    }
+    if (!list.length) return null;
+    let start = Infinity, end = -1;
+    for (const rx of list) {
+      const x = rx.exec(text);
+      if (!x) continue;                                       // 没命中 → 不参与
+      if (x.index < start) start = x.index;
+      if (x.index + x[0].length > end) end = x.index + x[0].length;
+    }
+    /* 一条都没算出来 / 非法区间（end<=start）/ 越出整体匹配 → 一律保持原区间 */
+    if (end <= start) return null;
+    if (start < mStart || end > mEnd) return null;
+    return { start: start, end: end };
+  }
+
   /**
    * 在**一个文本节点**内跑一个模式，产出命中片段。
    * 大小写 / 全词 / 正则的语义由 `pattern`（编译期）与 `flags` 决定；
@@ -831,8 +955,11 @@
     while ((m = re.exec(text)) !== null) {
       if (m[0].length === 0) { re.lastIndex++; continue; }   // 防空匹配死循环
       const start = m.index, end = m.index + m[0].length;
+      /* 全词守卫仍按**收窄前**的整体匹配区间判定（收窄只影响上报的 start/end/text） */
       if (needGuard && guard(node, start, end)) continue;
-      out.push({ start: start, end: end, text: m[0] });
+      const nar = assertionRange(pattern, text, start, end);  // 需求③：零宽断言只定位、不消耗
+      const hs = nar ? nar.start : start, he = nar ? nar.end : end;
+      out.push({ start: hs, end: he, text: text.slice(hs, he) });
     }
     return out;
   }
@@ -865,7 +992,20 @@
       for (const m of got) single.push({ node: node, start: m.start, end: m.end, text: m.text });
     }
     /* 跨节点部分只补"真跨节点"的命中（单节点能匹配到的已在上面产出）→ 不重复计数 */
-    const cross = pattern ? matchInlineRuns(list, pattern, { within: o.within }) : [];
+    const extra = [];          // 【2.0.2.5 · R4 H2】收窄后落回单节点、而逐节点路径给不出的命中
+    const cross = pattern ? matchInlineRuns(list, pattern, { within: o.within, extra: extra }) : [];
+    if (extra.length) {
+      const order = new Map();
+      for (let i = 0; i < list.length; i++) order.set(list[i], i);
+      for (const e of extra) {
+        /* 去重按**区间重叠**（不是相等）：逐节点路径若已给出同一条命中就不补，
+         * 区间不同才是"那条路没产出"的情形 —— 补进单节点命中，语义与 matchIn 完全一致。 */
+        const dup = single.some((s) => s.node === e.node && s.start < e.end && e.start < s.end);
+        if (!dup) single.push(e);
+      }
+      /* 回收的命中可能落在比已有 single 更靠前的节点上（single 是按节点顺序攒的）→ 复位文档序 */
+      single.sort((x, y) => ((order.get(x.node) || 0) - (order.get(y.node) || 0)) || (x.start - y.start));
+    }
     return { single: single, cross: cross };
   }
 
@@ -983,6 +1123,8 @@
       matchInlineRuns,
       /** 单文本节点匹配（含全词跨节点守卫 / `g` 兜底 / 空匹配保护） */
       matchIn,
+      /** 零宽断言收窄（**唯一实现**：`matchIn` 与 `matchInlineRuns` 共用；2.0.2.5 需求③） */
+      assertionRange,
       /** 字面前缀（"不含这个前缀就一定不可能命中"）—— 扫描内部与**变更预筛**共用同一份判据 */
       literalOf,
       /** **唯一的关键词匹配入口**：普通词=整页、组合词=某个格子，其余语义完全一致 */
