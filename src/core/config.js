@@ -187,6 +187,44 @@
   /** 置顶排序的**唯一归一函数**（设置页回显/落盘 + 面板消费共用）：归一成 `'甲, 乙'` 这种落盘串。 */
   function normalizePinOrder(value) { return pinOrderKeys(value).join(', '); }
 
+  /* ---- 重要笔记的两个外观数字的边界（2.0.2.6 需求③）----
+   * 与 PANEL_WIDTH_* 同一口径：设置页数字输入的 min/max、保存时的校验、面板侧的夹紧**都从这里取**，
+   * HTML 里一律不写死。整理前的实况是三份各自为政：`imgSize` 的 40/600 只写在 options.html 的属性里
+   * （而属性只是提示，浏览器不禁手填），`fontSize` 的 10/20 在 options.html、options.js、面板里各抄一份。
+   * 抄一份就是"能填进非法值 / 填了不生效"的种子 —— 见 PANEL_WIDTH_MIN 上面那段同样的理由。 */
+  const IMG_SIZE_DEFAULT = 70;
+  const IMG_SIZE_MIN = 40;
+  const IMG_SIZE_MAX = 600;
+  const NOTE_FONT_DEFAULT = 11;
+  const NOTE_FONT_MIN = 10;
+  const NOTE_FONT_MAX = 20;
+
+  /**
+   * 面板图片尺寸 / 正文字号的**唯一归一函数**（读路径 `important-note.js` 与设置页共用）。
+   * 取数口径两条一致：
+   *   · 非数字 / 空 / `null` / `NaN` / `0` / 负值 → 回各自默认值（这些不是"填小了"而是坏值，
+   *     面板尺寸是布局承重值，坏值不许把它变成 0 宽）；
+   *   · `'320'` 这类字符串数字照收（storage 里躺过字符串，来源是手改 / 导入的旧备份）。
+   * **越界（填了超出区间的数）两者刻意不同**，各自锁住本版之前就存在的对外行为：
+   *   · `imgSize` 越界 → 夹到边界。此前它**根本没有**越界口径（HTML 的 40/600 只是提示、浏览器
+   *     不禁手填、面板侧也不夹 ⇒ 填 9999 就真存 9999），夹紧是把那个洞补上；
+   *   · `fontSize` 越界 → 回默认值。这是 2.0.2.2 起就钉在真机 e2e 里的行为
+   *     （`_e2e/ui.test.js`「越界值（25 > max 20）要回落到默认 11」），归纳整理不翻这个案。
+   * @param {*} value 存储里的原始值
+   */
+  function normalizeImgSize(value) {
+    const n = (typeof value === 'number') ? value : parseInt(String(value == null ? '' : value).trim(), 10);
+    if (!isFinite(n) || n <= 0) return IMG_SIZE_DEFAULT;
+    return Math.min(IMG_SIZE_MAX, Math.max(IMG_SIZE_MIN, Math.round(n)));
+  }
+
+  /** 见 `normalizeImgSize`（取数口径相同；越界口径不同，理由写在上面那段注释里） */
+  function normalizeNoteFontSize(value) {
+    const n = (typeof value === 'number') ? value : parseInt(String(value == null ? '' : value).trim(), 10);
+    if (!isFinite(n) || n < NOTE_FONT_MIN || n > NOTE_FONT_MAX) return NOTE_FONT_DEFAULT;
+    return Math.round(n);
+  }
+
   const Config = {
     /** 默认值 —— 唯一真源（方案 §7.1 定稿形态） */
     defaults: {
@@ -219,14 +257,16 @@
       },
 
       importantNote: {
-        imgSize: 70,
+        imgSize: IMG_SIZE_DEFAULT,
         /* 面板正文字号（px）。2026-10-09 用户裁决：默认比上一版再小一号（12 → 11），
          * 并在设置页开放给用户。面板把它写成 CSS 变量 `--kh-note-fs`，
          * `.khin-item-note` 与面板内表格一起跟随。 */
-        fontSize: 11,
-        /* 置顶排序（2.0.2.5 需求④）：卡片关键词语（= 命中的词，`head.build` 里的 `kw`）填在这里，
-         * 命中的卡片按填写顺序固定排在最前，最多 NOTE_PIN_MAX 个。空串 = 不置顶（行为与旧版逐字节一致）。
-         * 口径与归一见 `pinOrderKeys`；面板侧的排序在 `important-note.js` 的 `head.sortByPins`。 */
+        fontSize: NOTE_FONT_DEFAULT,
+        /* 置顶排序（2.0.2.5 需求④，2.0.2.6 需求② 换了取值口径）：命中的卡片按填写顺序固定排在最前，
+         * 最多 NOTE_PIN_MAX 个。空串 = 不置顶（行为与旧版逐字节一致）。
+         * 值现在是**关键词 id**（设置页下拉框给的），面板按 `meta.pinId`（= 规则 ruleId）匹配；
+         * 2.0.2.5 的手写卡片文本照旧生效（`head.sortByPins` 两路都认）。
+         * 口径与归一见 `pinOrderKeys`；匹配与排序在 `important-note.js` 的 `head.sortByPins`。 */
         pinOrder: ''
       },
 
@@ -288,7 +328,9 @@
       changeHandling: 'smart',
       /** 静默窗口：距最后一次页面变动 ≥ 此值才重建，避开高频动态页竞态 */
       pageRebuildSilentMs: 1000,
-      /** 全局重建最小间隔：三条翻页通道（click / URL / 指纹轮询）共用此唯一口径（R14） */
+      /** 全局重建最小间隔：**四条**信号通道（MutationObserver / URL 变化 / 指纹轮询 / 分页点击捕获）
+       *  共用此唯一口径（R14）。这里原写"三条"并漏了 MutationObserver —— 通道清单一处定在
+       *  `scheduler.js` 文件头（④ 默认关，但通道存在时同样吃这个限频）。 */
       pageRebuildGapMs: 2000,
 
       /** 内容指纹采样间隔（R13）—— 仅在无 CSS.highlights 环境或极端翻页兜底时消耗 */
@@ -315,6 +357,16 @@
     normalizePinOrder,
     pinOrderKeys,
     NOTE_PIN_MAX,
+
+    /** 重要笔记两个外观数字的唯一归一 + 边界常量（设置页 / 面板 / 读路径共用一份；见文件上部） */
+    normalizeImgSize,
+    IMG_SIZE_MIN,
+    IMG_SIZE_MAX,
+    IMG_SIZE_DEFAULT,
+    normalizeNoteFontSize,
+    NOTE_FONT_MIN,
+    NOTE_FONT_MAX,
+    NOTE_FONT_DEFAULT,
 
     /**
      * 深度合并：以 defaults 为骨架，用存储值覆盖。

@@ -543,7 +543,9 @@ module.exports = async function run() {
     truthy(src.indexOf("this.host.style.setProperty('--kh-note-fs'") >= 0,
       '变量必须由 render() 从 config 写上去 —— 否则设置页改了字号面板不理');
     const cfg = read('src/core/config.js');
-    truthy(/importantNote: \{[\s\S]*?fontSize: 11/.test(cfg), 'config 里默认字号必须是 11');
+    /* 2.0.2.6 需求③：11 收进 NOTE_FONT_DEFAULT 常量（设置页数字输入的 min/max 取同一对常量） */
+    truthy(/const NOTE_FONT_DEFAULT = 11;/.test(cfg), 'config 里默认字号必须是 11');
+    truthy(/fontSize: NOTE_FONT_DEFAULT/.test(cfg), '★ 默认字号要引用那个常量，不许再抄一份字面量 11');
     const thumb = (src.match(/\.khin-imgthumb \{[\s\S]*?\n    \}/) || [''])[0];
     const side = thumb.match(/width:\s*(\d+)px/);
     truthy(side && Number(side[1]) <= 48, 'OCR 缩略图不超过 48px —— 9 张图的场景里它是主要高度来源');
@@ -621,15 +623,24 @@ module.exports = async function run() {
     truthy(/panel\.render\([\s\S]*?, cfg\)/.test(cons), 'consume 必须把 cfg 传给 render：' + cons);
   });
 
-  await test('★ 设置页宽度输入框接线（min/max 取自 config 常量，不许另抄 160/600）', () => {
+  await test('★ 设置页三个数字输入的 min/max 都取自 config 常量（imgSize / 字号 / 面板宽度）', () => {
     const html = read('options/options.html');
-    truthy(html.indexOf('id="pf-notePanelWidth"') >= 0, '设置页要有面板宽度输入框');
-    falsy(/id="pf-notePanelWidth"[^>]*min=/.test(html), 'min 不许写死在 HTML 里（那会和 config 的下界漂移）');
+    const pairs = [
+      ['pf-imgSize', 'IMG_SIZE_MIN', 'IMG_SIZE_MAX'],
+      ['pf-noteFontSize', 'NOTE_FONT_MIN', 'NOTE_FONT_MAX'],
+      ['pf-notePanelWidth', 'PANEL_WIDTH_MIN', 'PANEL_WIDTH_MAX']
+    ];
+    for (const [id] of pairs) {
+      truthy(html.indexOf('id="' + id + '"') >= 0, '设置页要有 #' + id);
+      falsy(new RegExp('id="' + id + '"[^>]*min=').test(html),
+        '#' + id + ' 的 min 不许写死在 HTML 里（那会和 config 的下界漂移）');
+      falsy(new RegExp('id="' + id + '"[^>]*max=').test(html), '#' + id + ' 的 max 也不许写死');
+    }
     const js = read('options/options.js');
-    truthy(js.indexOf("$('pf-notePanelWidth')") >= 0, '输入框必须在 options.js 里接线');
-    truthy(/pwInput\.min = KH\.Config\.PANEL_WIDTH_MIN/.test(js)
-      && /pwInput\.max = KH\.Config\.PANEL_WIDTH_MAX/.test(js),
-      'min/max 必须从 config 的边界常量写进去');
+    for (const [id, lo, hi] of pairs) {
+      truthy(new RegExp("limitInput\\(\\$\\('" + id + "'\\), KH\\.Config\\." + lo + ", KH\\.Config\\." + hi + "\\)").test(js),
+        '#' + id + ' 的 min/max 必须从 config 的边界常量写进去（2.0.2.6 起三个数字输入统一走 limitInput）');
+    }
     truthy(/KH\.Config\.normalizePanelWidth\(\$\('pf-notePanelWidth'\)\.value\)/.test(js),
       '保存前必须过 config 的归一函数（坏值不许落盘）');
     truthy(/patch\(\{ notePanelWidth: w \}\)/.test(js), '归一后的值才落盘（顶层键，不走 saveNested）');
@@ -1881,33 +1892,40 @@ module.exports = async function run() {
       '★ 脏判据必须含置顶签名（head.changed 只看每卡内容，卡间顺序变了它返回 false）');
   });
 
-  suite('important-note · 置顶排序：设置页接线（2.0.2.5 需求④）');
+  suite('important-note · 置顶排序：设置页接线（2.0.2.6 需求②：下拉框 + 胶囊）');
 
-  await test('★ 设置页「样式 → 重要笔记」有 #pf-notePinOrder，不裹 details，提示写清上限与分隔符', () => {
+  await test('★ 设置页「样式 → 重要笔记」用下拉框选、胶囊展示，不裹 details', () => {
     const html = read('options/options.html');
-    truthy(html.indexOf('id="pf-notePinOrder"') >= 0, '设置页要有置顶排序输入框（没有它用户没法配）');
     const sec = (html.match(/<section[^>]*id="sec-style"[\s\S]*?<\/section>/) || [''])[0];
     truthy(sec.length > 0, '要能定位「样式」分区');
-    truthy(sec.indexOf('id="pf-notePinOrder"') >= 0, '★ 输入框必须在「样式」分区内');
+    truthy(sec.indexOf('<select class="kh-input" id="pf-notePinOrder"></select>') >= 0,
+      '★ 置顶排序必须是**空的下拉框**（候选由 JS 按当前关键词表填 —— 写死选项等于把词库抄进 HTML）');
+    falsy(/<input[^>]*id="pf-notePinOrder"/.test(sec),
+      '★ 不再是手填文本框（手填＝要用户自己敲分隔符、还得自己记住上限）');
+    truthy(/class="kh-lbl-preview" id="pin-caps"/.test(sec),
+      '★ 已置顶的项要用胶囊展示（复用「抓取字段」那套 `.kh-lbl-*` 控件语言，不新造一套）');
     falsy(sec.indexOf('<details') >= 0, '★ 「样式」分区里不许出现折叠的 <details>（_e2e/ui.test.js:48-71 的现场缺陷）');
     truthy(sec.indexOf('置顶排序') >= 0, '标签文案要带「置顶排序」（跟着分区里既有控件的命名习惯）');
-    truthy(sec.indexOf('最多 3 个') >= 0, '提示要写清"最多 3 个"');
-    truthy(sec.indexOf('逗号') >= 0 && sec.indexOf('顿号') >= 0 && sec.indexOf('换行') >= 0,
-      '提示要写清三种分隔符（逗号/顿号/换行）');
-    truthy(sec.indexOf('按填写顺序') >= 0, '提示要写清"按填写顺序"置顶');
-    /* 该分区本来写「三个都只是**默认值**」，现在有四个控件，数量词必须跟着改 */
-    truthy(sec.indexOf('四个都只是') >= 0, '★ 「N 个都只是默认值」的数量词要跟着控件数改（现在四个）');
+    truthy(sec.indexOf('id="pin-max"') >= 0, '「最多 N 个」的 N 要有可注入的锚点（数字不写死在文案里）');
+    /* 该分区原来写「三个都只是**默认值**」，现在有四个控件，数量词必须跟着改 */
+    truthy(sec.indexOf('四项都只是') >= 0, '★ 「N 项都只是默认值」的数量词要跟着控件数改（现在四项）');
     falsy(sec.indexOf('三个都只是') >= 0, '文案不许再停在「三个都只是」');
+    falsy(sec.indexOf('四个都只是') >= 0, '文案不许再停在「四个都只是」');
   });
 
-  await test('★ 设置页接线：回显与保存都过 config 的同一处归一，落盘走嵌套子键', () => {
+  await test('★ 设置页接线：候选来自关键词表、选中追加到末位、落盘过同一处归一', () => {
     const js = read('options/options.js');
-    truthy(js.indexOf("$('pf-notePinOrder')") >= 0, '输入框必须在 options.js 里接线');
-    truthy(/KH\.Config\.normalizePinOrder\(\$\('pf-notePinOrder'\)\.value\)/.test(js),
-      '保存前必须过 config 的归一函数（上限 3 / 分隔符 / trim / 去重只在这一处判）');
-    truthy(/saveNested\(\{ importantNote: \{ pinOrder: v \} \}\)/.test(js),
-      '落盘走嵌套子键 importantNote.pinOrder（不新增顶层键 ⇒ STYLE_KEYS / fieldmap / UI_ONLY_KEYS 都不用改）');
-    truthy(/normalizePinOrder\(\(cfg\.importantNote \|\| \{\}\)\.pinOrder\)/.test(js),
-      '回显也必须过同一个归一（框里不许停着没生效的第 4 项）');
+    truthy(js.indexOf("$('pf-notePinOrder')") >= 0, '下拉框必须在 options.js 里接线');
+    truthy(/KH\.Config\.pinOrderKeys\(\(cfg\.importantNote \|\| \{\}\)\.pinOrder\)/.test(js),
+      '★ 回显与"再加一个"都要从 pinOrderKeys 现取（上限 / 拆项 / 去重只在这一处判）');
+    truthy(/saveNested\(\{ importantNote: \{ pinOrder: KH\.Config\.normalizePinOrder\(cur\.concat\(\[id\]\)\) \} \}\)/.test(js),
+      '新增走 normalizePinOrder（上限 3 / 去重一处判），落盘走嵌套子键 importantNote.pinOrder');
+    truthy(/saveNested\(\{ importantNote: \{ pinOrder: KH\.Config\.normalizePinOrder\(cur\.filter/.test(js),
+      '胶囊上的 ✕ 也要走同一个归一函数回来');
+    truthy(/renderPinOrder\(\)/.test(js), '候选与胶囊必须在 renderAll 里重建（关键词增删改后要跟着变）');
+    truthy(/disabled: taken/.test(js) && /const taken = cur\.some\(/.test(js),
+      '★ 已置顶的不再出现在候选里（同一个词只能占一个位次；要换位置先 ✕ 掉再选）');
+    truthy(js.indexOf("$('pin-max').textContent = KH.Config.NOTE_PIN_MAX") >= 0,
+      '标签里的「最多 N 个」必须从 NOTE_PIN_MAX 注入（不许有第二份 3）');
   });
 };

@@ -104,6 +104,9 @@ body {
 .kh-tab.is-active { background: var(--brand-soft); color: var(--brand-deep); font-weight: 600; border-left-color: var(--brand); }
 .kh-sidebar-foot { padding: 12px 16px; border-top: 1px solid var(--border); }
 .kh-sidebar-version { color: var(--text-5); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
+/* 侧栏底部的「项目主页 ↗」：与版本号同尺寸，弱一档、可点、自己占一行（原来这些是 HTML 内联样式） */
+.kh-sidebar-link { display: block; margin-top: 6px; opacity: .75; text-decoration: none; }
+.kh-sidebar-link:hover { opacity: 1; text-decoration: underline; }
 
 /* ---------------------------------------------------------------- 卡片 */
 .kh-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
@@ -238,6 +241,8 @@ body {
 /* ---------------------------------------------------------------- 表单行 */
 .kh-form-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 14px; margin: 8px 0; }
 .kh-form-fld { display: flex; flex-direction: column; gap: 3px; min-width: 150px; }
+/* 置顶排序的下拉框独占一行（候选名字带分组前缀 + 组合词的 × 标题，150px 放不下） */
+.kh-pin-fld { flex: 1 1 320px; }
 .kh-checks { display: flex; flex-wrap: wrap; gap: 10px 20px; margin: 6px 0; }
 .kh-checks-col { flex-direction: column; gap: 6px; }
 .kh-checks-col.is-disabled { opacity: .5; }

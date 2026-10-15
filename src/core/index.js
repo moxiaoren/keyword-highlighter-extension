@@ -452,7 +452,12 @@
             // 走兜底分支说明用的就是**全局默认文字色** → 标 textIsDefault，
             // 渲染层据此保留原网页文字色（除非与原色分不开，见 renderer 的感知判据）
             style: r.rule.style || { bgColor: hl.defaultBgColor, textColor: hl.defaultTextColor, textIsDefault: true },
-            meta: Object.assign({ text: r.text }, r.rule.meta || {}),
+            /* `pinId` = 规则的稳定身份（ruleId），供「重要笔记 → 置顶排序」匹配（2.0.2.6）。
+             * 为什么不能拿卡片上的 `text` 当置顶键：它是**运行时页面文本** —— 正则词的卡片文本
+             * 每页都不同、罕见字的卡片文本就是那个生僻字，配置侧根本枚举不出来。
+             * 三条编译路径（compiler.js:230 / combo.js:172 / rare-char.js:118）都写了 `ruleId: kw.id`，
+             * 于是「配置里的关键词」与「面板上的卡片」之间只有 ruleId 这一条恒定通路。 */
+            meta: Object.assign({ text: r.text, pinId: r.rule.ruleId }, r.rule.meta || {}),
             contentKey: r.rule.ruleId + '|' + (r.node ? r.node.nodeValue.slice(0, 32) : '') + '|' + r.start + '-' + r.end
           });
         }
@@ -462,7 +467,7 @@
             kind: r.rule.kind,
             visual: false,
             style: null,
-            meta: Object.assign({ text: r.text, shadowed: true }, r.rule.meta || {}),
+            meta: Object.assign({ text: r.text, pinId: r.rule.ruleId, shadowed: true }, r.rule.meta || {}),
             contentKey: r.rule.ruleId + '|shadowed|' + r.start + '-' + r.end
           });
         }

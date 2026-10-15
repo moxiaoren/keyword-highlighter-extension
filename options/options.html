@@ -29,7 +29,7 @@
     <div class="kh-sidebar-foot">
       <!-- 版本徽标必须动态读 manifest（单一真源铁律），不写死字面量 -->
       <span class="kh-sidebar-version" id="sidebar-version">v—</span>
-      <a class="kh-sidebar-version" id="project-link" href="https://github.com/moxiaoren/keyword-highlighter-extension" target="_blank" rel="noopener" style="display:block;margin-top:6px;opacity:.75;text-decoration:none" title="项目主页：说明文档、自动更新脚本、更新日志">项目主页 ↗</a>
+      <a class="kh-sidebar-version kh-sidebar-link" id="project-link" href="https://github.com/moxiaoren/keyword-highlighter-extension" target="_blank" rel="noopener" title="项目主页：说明文档、自动更新脚本、更新日志">项目主页 ↗</a>
     </div>
   </aside>
 
@@ -79,7 +79,7 @@
             <option value="text-asc">名称 A→Z</option>
             <option value="text-desc">名称 Z→A</option>
           </select>
-          <button class="kh-mini-btn" id="btn-filter-reset" type="button">重置筛选</button>
+          <button class="kh-mini-btn" id="btn-filter-reset" type="button">清空筛选</button>
         </div>
         <div class="kh-filter-row kh-filter-acts">
           <button class="kh-btn kh-btn-primary" id="btn-kw-add" type="button">＋ 添加</button>
@@ -157,41 +157,43 @@
       </div>
 
       <h3 class="kh-sub">重要笔记</h3>
-      <p class="kh-muted">页面左上角「<strong>重要笔记</strong>」悬浮面板的默认外观：面板里的<strong>图片分区</strong>与<strong>笔记正文</strong>各自有下界和自己的滚动条，收起一边就把空间全让给另一边。</p>
+      <p class="kh-muted">页面左上角「<strong>重要笔记</strong>」悬浮面板的默认外观：面板里的<strong>图片分区</strong>与<strong>笔记正文</strong>各自有下界和自己的滚动条，收起一边就把空间全让给另一边。<br>
+        下面四项都只是<strong>默认值</strong>：单个关键词或分组<strong>留空即继承</strong>这里。「图片尺寸」管抓取字段值格里的缩略图/识别图；「字号」管面板里的<strong>笔记正文与表格</strong>；「面板宽度」是长期值，拖面板右下角只算当前这一次 —— 两条口径的完整解释见「帮助与隐私 → ❓ 常见」Q12 / Q13。</p>
       <div class="kh-form-row">
         <div class="kh-form-fld">
-          <label class="kh-fld-label">重要笔记图片「尺寸」默认值</label>
-          <input class="kh-input" id="pf-imgSize" type="number" min="40" max="600" step="10">
+          <label class="kh-fld-label" for="pf-imgSize">重要笔记图片「尺寸」默认值</label>
+          <input class="kh-input" id="pf-imgSize" type="number" step="10">
         </div>
         <div class="kh-form-fld">
-          <label class="kh-fld-label">正文字号默认值 (px)</label>
-          <input class="kh-input" id="pf-noteFontSize" type="number" min="10" max="20" step="1">
+          <label class="kh-fld-label" for="pf-noteFontSize">正文字号默认值 (px)</label>
+          <input class="kh-input" id="pf-noteFontSize" type="number" step="1">
         </div>
-        <!-- 面板默认宽度：min/max 由 options.js 从 KH.Config 的边界常量写进去（不在这里抄 200/600） -->
+        <!-- 三个数字输入框的 min/max 都由 options.js 从 KH.Config 的边界常量注入（不在这里抄一份） -->
         <div class="kh-form-fld">
-          <label class="kh-fld-label">面板默认宽度 (px)</label>
+          <label class="kh-fld-label" for="pf-notePanelWidth">面板默认宽度 (px)</label>
           <input class="kh-input" id="pf-notePanelWidth" type="number" step="10">
         </div>
       </div>
-      <!-- 置顶排序（2.0.2.5 需求④）：填卡片的关键词，命中的卡片按填写顺序固定排在最前。
-           上限 / 分隔符 / 去重由 options.js 调 KH.Config.normalizePinOrder 一处判（这里不写死在文案外的地方）。 -->
+      <!-- 置顶排序（2.0.2.6 需求②）：下拉框选关键词、胶囊显示已选。落盘的是**关键词 id**
+           （面板按 `meta.pinId` 匹配），上限 / 去重由 options.js 调 KH.Config.normalizePinOrder 一处判。 -->
       <div class="kh-form-row">
-        <div class="kh-form-fld" style="flex:1 1 320px">
-          <label class="kh-fld-label">置顶排序（最多 3 个关键词）</label>
-          <input class="kh-input" id="pf-notePinOrder" type="text" placeholder="例如：价格，报名截止，联系方式">
+        <div class="kh-form-fld kh-pin-fld">
+          <label class="kh-fld-label" for="pf-notePinOrder">置顶排序（最多 <span id="pin-max">3</span> 个）</label>
+          <select class="kh-input" id="pf-notePinOrder"></select>
         </div>
       </div>
-      <p class="kh-muted">四个都只是<strong>默认值</strong>：单个关键词或分组<strong>留空即继承</strong>这里。「图片尺寸」管抓取字段值格里的缩略图/识别图；「字号」管面板里的<strong>笔记正文与表格</strong>（10–20px，默认 11）；「面板宽度」是长期值、拖面板右下角只算当前这一次 —— 两条口径的完整解释见「帮助与隐私 → ❓ 常见」Q12 / Q13。「置顶排序」填<strong>最多 3 个</strong>关键词（逗号 / 顿号 / 换行分隔，按填写顺序置顶），命中的卡片固定排在面板最前，其余卡片保持原顺序。</p>
+      <div class="kh-lbl-preview" id="pin-caps"></div>
+      <p class="kh-muted">命中的卡片按上面胶囊里的先后固定排在面板最前，其余卡片保持原顺序；同一个词只能置顶一次，按选择的先后排序（要换位置先取消、再重选）。</p>
     </section>
 
     <!-- ============================================================ 图片识别（OCR） -->
     <section class="kh-card" id="sec-ocr" hidden>
-      <h2>图片文字识别</h2>
+      <h2>图片识别</h2>
       <p class="kh-muted">
-        关键词勾上<strong>「抓取后续字段」的「启用」</strong>、把要抓的「字段」填好后，再开启「识别图片文字」——
-        <strong>这些字段的值格里的图片</strong>会被识别一次（普通词也能用，不再限组合词）；
-        识别出的文字里出现「图片命中关键词」，就算一次<strong>图片命中</strong>（显示在页面的「重要笔记」面板里，独立分区，不产生文字高亮）。<br>
-        文字识别<strong>完全在本机</strong>运行：图片不上传，唯一的联网动作是下面这一次语言包下载（也可手动导入，做到完全离线）。
+        关键词勾上<strong>「抓取后续字段」的「启用」</strong>并把「字段」填好，再开启「识别图片文字」——
+        这些字段的值格里的图片就会被识别一次；识别出的文字里出现「图片命中关键词」就算一次<strong>图片命中</strong>
+        （落在「重要笔记」面板的独立分区里，不产生文字高亮）。
+        识别<strong>完全在本机</strong>运行：图片不上传，唯一的联网动作是下面这一次语言包下载（也可手动导入，做到完全离线）。
       </p>
 
       <p class="kh-muted" id="ocr-style-hint">
@@ -254,7 +256,7 @@
         选了「只用主引擎」也可以不下载。
       </p>
       <div id="ocr-lang-list"></div>
-      <div class="kh-form-row" style="margin-top:8px">
+      <div class="kh-form-row">
         <button class="kh-btn" id="btn-ocr-selftest" type="button">识别自检</button>
         <span class="kh-muted" id="ocr-selftest-result"></span>
       </div>
@@ -623,29 +625,30 @@
               </div>
 
               <h4 class="kh-mini-head">调参</h4>
+              <p class="kh-muted">「重建最小间隔」是翻页四条通道共用的<strong>唯一</strong>限频口径，调小更灵敏、调大更省资源。<br>
+                「变更处理方式」选<strong>保守</strong>时，页面上任何改动都会触发整页重建（不做相关性预筛、也不走"仅抓取字段变化"的快通道）——
+                更费资源，但遇到"页面变了却不亮"时可以先切到它，用来排除预筛的嫌疑。</p>
               <div class="kh-form-row">
                 <div class="kh-form-fld">
-                  <label class="kh-fld-label">变更处理方式</label>
+                  <label class="kh-fld-label" for="pf-changeHandling">变更处理方式</label>
                   <select class="kh-input" id="pf-changeHandling">
                     <option value="smart">智能（只在与命中相关时重建，省资源）</option>
                     <option value="always">保守（任何变动都整页重建，最不容易漏）</option>
                   </select>
+                  <div class="kh-muted" id="pf-changeHandling-hint"></div>
                 </div>
               </div>
               <div class="kh-form-row">
                 <div class="kh-form-fld">
-                  <label class="kh-fld-label">静默窗口 (ms)</label>
+                  <label class="kh-fld-label" for="pf-silent">静默窗口 (ms)</label>
                   <input class="kh-input" id="pf-silent" type="number" min="0" step="100">
                 </div>
                 <div class="kh-form-fld">
-                  <label class="kh-fld-label">重建最小间隔 (ms)</label>
+                  <label class="kh-fld-label" for="pf-gap">重建最小间隔 (ms)</label>
                   <input class="kh-input" id="pf-gap" type="number" min="0" step="100">
                 </div>
               </div>
-              <p class="kh-muted">「重建最小间隔」是翻页四条通道共用的<strong>唯一</strong>限频口径，调小更灵敏、调大更省资源。
-                「变更处理方式」选<strong>保守</strong>时，页面上任何改动都会触发整页重建（不做相关性预筛、也不走"仅抓取字段变化"的快通道）——
-                更费资源，但遇到"页面变了却不亮"时可以先切到它，用来排除预筛的嫌疑。
-                面板的<strong>图片尺寸</strong>与<strong>笔记字号</strong>已挪到「样式」分区 —— 它们是外观默认值，不是性能开关（用户 2026-10-11 现场：埋在折叠的高级设置里没人找得到）。</p>
+              <p class="kh-muted">面板的<strong>图片尺寸</strong>与<strong>笔记字号</strong>是外观默认值、不是性能开关，已挪到「样式 → 重要笔记」。</p>
             </div>
           </details>
 

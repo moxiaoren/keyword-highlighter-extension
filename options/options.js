@@ -1049,6 +1049,91 @@
 
   const PF_KEYS = ['shadowDOMEnabled', 'suspendInactiveTab', 'pageResidualClean', 'pageRebuildOnChange', 'scanCollapsedCustom'];
 
+  /** 数字输入框的 min/max 注入（唯一入口）。HTML 里一个数字边界都不写死 —— 属性只是提示，
+   *  浏览器不禁手填，真值只认 config 的边界常量（T26 立的样板，2.0.2.6 需求③ 补齐其余字段）。 */
+  function limitInput(el, min, max) { el.min = min; el.max = max; }
+
+  /* ---- 置顶排序（2.0.2.6 需求②）：下拉框选择 + 胶囊展示 ---- */
+
+  /** 候选分组：label 与筛选栏「全部类型」逐字一致（类型判定只认 `typeOf` 一处，别养第二套说法）。 */
+  const PIN_GROUPS = [
+    ['plain', '普通词'],
+    ['lr', '组合词（左右格）'],
+    ['tb', '组合词（上下格）'],
+    ['fetch', '仅抓取'],
+    ['rare', '罕见字']
+  ];
+
+  /** 一个候选关键词在下拉里的名字 */
+  function pinLabel(kw, t) {
+    if (t === 'rare') return '罕见字';
+    const core = String(kw.text || '').trim();
+    if (t === 'fetch') return String(kw.cellVerify || '').trim() || core || '（未命名）';
+    const base = core || '（未命名）';
+    /* 组合词带上标题词才分得清「价格（左右格）」与「价格（上下格）」——这个 × 与关键词表格同形 */
+    if (t === 'lr' || t === 'tb') return base + ' × ' + (String(kw.cellVerify || '').trim() || '（未设标题词）');
+    return base;
+  }
+
+  /**
+   * 置顶排序的**回显 + 候选重建**（每次 renderAll 都跑：关键词增删改后候选要跟着变）。
+   *
+   * 落盘的是**关键词 id**，不是卡片文本（2.0.2.6 换的口径）。原因两条，都绕不过去：
+   *   ① 正则词的卡片文本是**运行时命中的页面文本**、罕见字的卡片文本是那个生僻字 ——
+   *      配置侧枚举不出来，做成候选就是永远匹配不上的死选项；
+   *   ② 「普通词 价格」与「组合词 价格×单价」的卡片文本都是「价格」（`head.build` 里 `kw` 取
+   *      `meta.text`，组合词只有命中时才带上片段），只有 id 分得开。
+   * 面板按 `meta.pinId`（= 规则 `ruleId`）匹配：id 是配置侧与卡片侧**唯一都有的**稳定键。
+   * 2.0.2.5 存下来的手写文本仍然生效（`head.sortByPins` 两路都认），所以这里对认不出 id 的旧值
+   * 就**原样显示**、不做"未生效"的判定 —— 它很可能正是靠文本匹配生效的那个。
+   */
+  function renderPinOrder() {
+    const sel = $('pf-notePinOrder');
+    const caps = $('pin-caps');
+    $('pin-max').textContent = KH.Config.NOTE_PIN_MAX;    // 上限只有 NOTE_PIN_MAX 一处，标签里的数字也从它来
+    const cur = KH.Config.pinOrderKeys((cfg.importantNote || {}).pinOrder);
+    const live = (cfg.keywords || []).filter((kw) => kw && kw.enabled !== false);
+    const byId = new Map();
+    for (const kw of live) if (kw.id) byId.set(String(kw.id).toLowerCase(), kw);
+
+    clear(sel);
+    sel.appendChild(h('option', { value: '', text: '选择要置顶的关键词…' }));
+    for (const [t, glabel] of PIN_GROUPS) {
+      const list = live.filter((kw) => typeOf(kw) === t);
+      if (!list.length) continue;
+      const og = h('optgroup', { label: glabel });
+      for (const kw of list) {
+        const id = String(kw.id);
+        /* 已置顶的不再出现在候选里：同一个词只能占一个位次，要换位置先 ✕ 掉再选。 */
+        const taken = cur.some((v) => String(v).toLowerCase() === id.toLowerCase());
+        og.appendChild(h('option', { value: id, disabled: taken, text: pinLabel(kw, t) + (taken ? '（已置顶）' : '') }));
+      }
+      sel.appendChild(og);
+    }
+    sel.value = '';
+
+    clear(caps);
+    cur.forEach((v, i) => {
+      const kw = byId.get(String(v).toLowerCase());
+      const t = kw ? typeOf(kw) : '';
+      const name = kw ? ((PIN_GROUPS.find((g) => g[0] === t) || ['', ''])[1] + ' · ' + pinLabel(kw, t)) : v;
+      const del = h('button', {
+        class: 'kh-lbl-del', type: 'button', text: '✕',
+        title: kw ? ('取消置顶：' + name) : ('取消这一项（按文字匹配的旧写法）')
+      });
+      del.addEventListener('click', async () => {
+        await saveNested({ importantNote: { pinOrder: KH.Config.normalizePinOrder(cur.filter((x) => x !== v)) } });
+      });
+      caps.appendChild(h('span', {
+        class: 'kh-lbl-chip',
+        title: kw ? ('置顶第 ' + (i + 1) + ' 位 · ' + name) : ('按关键词文字匹配（旧写法）· ' + v)
+      }, [
+        h('span', { class: 'kh-lbl-name', text: (i + 1) + '. ' + name }),
+        del
+      ]));
+    });
+  }
+
   function renderPerf() {
     const ms = cfg.matchSettings || {};
     $('ms-defaultCaseSensitive').checked = !!ms.defaultCaseSensitive;
@@ -1057,19 +1142,28 @@
 
     for (const k of PF_KEYS) $('pf-' + k).checked = !!cfg[k];
     $('pf-changeHandling').value = (cfg.changeHandling === 'always') ? 'always' : 'smart';
+    /* 变更处理方式只在「页面内容变化时自动重建」开着时才生效：那一条关掉后 `scheduler.setupObserver`
+     * 连 MutationObserver 都不建（scheduler.js:291-294），这个下拉怎么切都不会有任何作用。
+     * 禁用 + 一行说明，好过让用户对着一个不生效的值反复切。`mutate()` 走 `renderAll()`，
+     * 所以勾选状态一变这里会自己刷新，不需要额外接线。 */
+    const chOn = cfg.pageRebuildOnChange !== false;
+    $('pf-changeHandling').disabled = !chOn;
+    $('pf-changeHandling-hint').textContent = chOn
+      ? ''
+      : '上面「页面内容变化时自动重建」关着 ⇒ 这一项无论选哪个都不生效';
     $('pf-silent').value = cfg.pageRebuildSilentMs;
     $('pf-gap').value = cfg.pageRebuildGapMs;
+    /* 有区间的三个数字输入，min/max 一律从 config 的边界常量注入（HTML 里不写死）：属性、JS 校验、
+     * 面板夹紧各抄一份就是"能填进非法值 / 填了不生效"的种子。（`pf-silent`/`pf-gap` 只有下界 0、
+     * 没有上界，两侧写的是同一个 0、没有可漂的余地，就不为这个恒等常量再建一层常量了。） */
+    limitInput($('pf-imgSize'), KH.Config.IMG_SIZE_MIN, KH.Config.IMG_SIZE_MAX);
     $('pf-imgSize').value = (cfg.importantNote || {}).imgSize || '';
+    limitInput($('pf-noteFontSize'), KH.Config.NOTE_FONT_MIN, KH.Config.NOTE_FONT_MAX);
     $('pf-noteFontSize').value = (cfg.importantNote || {}).fontSize || '';
-    /* T26：面板默认宽度（顶层键）。数字输入框的 min/max 也从 config 的边界常量写进去 ——
-     * 设置页不再抄一份 200/600（抄一份就是"改了不生效 / 能填进非法值"的种子）。 */
-    const pwInput = $('pf-notePanelWidth');
-    pwInput.min = KH.Config.PANEL_WIDTH_MIN;
-    pwInput.max = KH.Config.PANEL_WIDTH_MAX;
-    pwInput.value = cfg.notePanelWidth;
-    /* 置顶排序（2.0.2.5 需求④）：回显的是**归一后**的值 —— 手改 storage / 导入旧备份塞了 5 个词时，
-     * 框里显示 3 个，用户一眼就看出第 4 项没生效（别让框里停着一个没生效的数）。 */
-    $('pf-notePinOrder').value = KH.Config.normalizePinOrder((cfg.importantNote || {}).pinOrder);
+    limitInput($('pf-notePanelWidth'), KH.Config.PANEL_WIDTH_MIN, KH.Config.PANEL_WIDTH_MAX);
+    $('pf-notePanelWidth').value = cfg.notePanelWidth;
+    /* 置顶排序（2.0.2.6 需求②）：候选与回显都要重建（关键词表变了候选就得跟着变）。 */
+    renderPinOrder();
   }
 
   for (const k of ['defaultCaseSensitive', 'defaultWholeWord', 'defaultUseRegex']) {
@@ -1104,16 +1198,16 @@
     await mutate(() => KH.Store.patch({ pageRebuildGapMs: v }));
   });
   $('pf-imgSize').addEventListener('change', async () => {
-    const v = parseInt($('pf-imgSize').value, 10);
-    await saveNested({ importantNote: { imgSize: (isNaN(v) || v <= 0) ? KH.Config.defaults.importantNote.imgSize : v } });
+    const v = KH.Config.normalizeImgSize($('pf-imgSize').value);
+    $('pf-imgSize').value = v;
+    await saveNested({ importantNote: { imgSize: v } });
   });
   /* 面板字号（2026-10-09 用户裁决：默认比上一版小一号，且可配）。
-   * 夹在 10–20px：面板自己也夹一次（见 `important-note.js` 的 render），两头都不许被极端值搞坏。 */
+   * 边界与归一**只调 config 的唯一函数**（面板侧那一处也调它），设置页不再抄 10/20。 */
   $('pf-noteFontSize').addEventListener('change', async () => {
-    const v = parseInt($('pf-noteFontSize').value, 10);
-    const ok = !isNaN(v) && v >= 10 && v <= 20;
-    if (!ok) $('pf-noteFontSize').value = KH.Config.defaults.importantNote.fontSize;
-    await saveNested({ importantNote: { fontSize: ok ? v : KH.Config.defaults.importantNote.fontSize } });
+    const v = KH.Config.normalizeNoteFontSize($('pf-noteFontSize').value);
+    $('pf-noteFontSize').value = v;
+    await saveNested({ importantNote: { fontSize: v } });
   });
   /* 面板默认宽度（T26 / 用户 2026-10-12：200 → 250，且可配）。
    * 归一**只调 config 的唯一函数**（越界夹到边界、坏值回默认 250）；然后把归一后的值回显进框里，
@@ -1123,14 +1217,20 @@
     $('pf-notePanelWidth').value = w;
     await mutate(() => KH.Store.patch({ notePanelWidth: w }));
   });
-  /* 置顶排序（2.0.2.5 需求④）：口径（分隔符 / trim / 丢空 / 去重 / 最多 3 个）**只由
-   * `KH.Config.normalizePinOrder` 一处判**，保存前把归一后的值回显回去 ——
-   * 用户填了 5 个词或 "甲,,乙" 时，框里立刻变成生效的那 3 个。
+  /* 置顶排序（2.0.2.6 需求②）：**选中即追加到末位**（顺序 = 选择先后），要换位置先 ✕ 掉再选。
+   * 口径（trim / 丢空 / 去重 / 最多 3 个）只由 `KH.Config.normalizePinOrder` 一处判，这里不抄。
    * 落盘走嵌套子键 `importantNote.pinOrder`（不新增顶层键 ⇒ 导出/导入、字段单源、UI_ONLY_KEYS 都不用动）。 */
   $('pf-notePinOrder').addEventListener('change', async () => {
-    const v = KH.Config.normalizePinOrder($('pf-notePinOrder').value);
-    $('pf-notePinOrder').value = v;
-    await saveNested({ importantNote: { pinOrder: v } });
+    const sel = $('pf-notePinOrder');
+    const id = String(sel.value || '').trim();
+    sel.value = '';                                  // 选完立刻回到占位项（它是个"添加"动作，不是"当前值"）
+    if (!id) return;
+    const cur = KH.Config.pinOrderKeys((cfg.importantNote || {}).pinOrder);
+    if (cur.length >= KH.Config.NOTE_PIN_MAX) {
+      D.toast('最多置顶 ' + KH.Config.NOTE_PIN_MAX + ' 个，先取消一个再选', 'error');
+      return;
+    }
+    await saveNested({ importantNote: { pinOrder: KH.Config.normalizePinOrder(cur.concat([id])) } });
   });
 
   /* ==================================================================== ⑧ 更新日志（单源） */
@@ -1221,7 +1321,8 @@
    *   · 原「匹配与性能」不再单独成区 —— 控件已并入「帮助与隐私」；
    *   · 原「高亮样式」+「备注卡片样式」两个分区**合并为「样式」**（用户 2026-09 要求：
    *     "两个菜单合并成样式，里面内容也合并起来"）—— 它们都是"全局默认外观"，分开只是多一次点击。
-   *     ⚠️ 策划案里的 7 分区已被用户覆盖为 6 分区，改导航前先看 e2e 的"侧边栏分区"断言。
+   *     ⚠️ 原写「策划案 7 分区被覆盖为 6 分区」是笔误：实际就是 7 个（见下面的 SECTIONS，
+   *     与导航里 7 个 `.kh-tab`、e2e 的"侧边栏分区"断言一致）。改导航前先看那条断言。
    */
   const SECTIONS = ['keywords', 'groups', 'style', 'ocr', 'sites', 'data', 'help'];
 

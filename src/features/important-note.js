@@ -1070,11 +1070,12 @@
      * 命中集 → 卡片列表。
      * 两级聚合：先按**内容(note)** 分卡（内容不一致绝不进同一卡），
      * 卡内 entries 去重后交给 tagHtml 做形态聚合。
+     * 每条卡片还带 `pinIds`（来源规则的 `ruleId` 集合），只服务「置顶排序」的匹配（见 sortByPins）。
      * @param {object[]} hits  registry 命中
      * @param {Set<string>} ignored 本次会话被用户关掉的笔记内容
      */
     build(hits, ignored) {
-      const rawMap = new Map();     // note\0kw\0adj -> { note, kw, adj, imgSize, bg }
+      const rawMap = new Map();     // note\0kw\0adj -> { note, kw, adj, pinIds, imgSize, bg }
       for (const h of hits || []) {
         if (!h || !h.meta) continue;
         let note = String(h.meta.importantNote || '').trim();
@@ -1086,24 +1087,31 @@
         const kw = String(h.meta.text || h.meta.display || '').trim();
         if (!kw) continue;
         const adj = String(h.meta.label || '').trim();
+        /* 置顶排序的匹配键（2.0.2.6）：规则身份 `ruleId`（命中登记时由 core/index.js 写进 `meta.pinId`）。
+         * **它只并入集合、不参与去重键** —— 普通词「价格」与组合词「价格×单价」的卡片文本都是「价格」，
+         * 两张卡本来就该合成一条记录（去重键是 note\0kw\0adj），拆开会让同一张卡上的词显示两遍。 */
+        const pinId = String(h.meta.pinId || '').trim().toLowerCase();
         const key = note + '\u0000' + kw + '\u0000' + adj;
-        if (rawMap.has(key)) continue;                         // 去重
+        const prev = rawMap.get(key);
+        if (prev) { if (pinId) prev.pinIds.add(pinId); continue; }   // 去重（但把 pinId 收进来）
         rawMap.set(key, {
           note, kw, adj,
+          pinIds: new Set(pinId ? [pinId] : []),
           imgSize: h.meta.imgSize || '',
           noteFontSize: h.meta.noteFontSize || '',
           bg: h.meta.impNoteBg || ''
         });
       }
 
-      const noteMap = new Map();    // note -> { note, imgSize, noteFontSize, bg, entrySet }
+      const noteMap = new Map();    // note -> { note, imgSize, noteFontSize, bg, entrySet, pinIds }
       rawMap.forEach((r) => {
         let g = noteMap.get(r.note);
-        if (!g) { g = { note: r.note, imgSize: r.imgSize, noteFontSize: r.noteFontSize, bg: r.bg, entrySet: new Set() }; noteMap.set(r.note, g); }
+        if (!g) { g = { note: r.note, imgSize: r.imgSize, noteFontSize: r.noteFontSize, bg: r.bg, entrySet: new Set(), pinIds: new Set() }; noteMap.set(r.note, g); }
         if (!g.imgSize && r.imgSize) g.imgSize = r.imgSize;
         if (!g.noteFontSize && r.noteFontSize) g.noteFontSize = r.noteFontSize;
         if (!g.bg && r.bg) g.bg = r.bg;
         g.entrySet.add(r.kw + '\u0000' + (r.adj || ''));
+        r.pinIds.forEach((p) => g.pinIds.add(p));
       });
 
       const items = [];
@@ -1113,7 +1121,7 @@
           const i = k.indexOf('\u0000');
           entries.push({ kw: k.slice(0, i), adj: k.slice(i + 1) });
         });
-        items.push({ note: g.note, entries, imgSize: g.imgSize || '', noteFontSize: g.noteFontSize || '', bg: g.bg || '' });
+        items.push({ note: g.note, entries, pinIds: Array.from(g.pinIds), imgSize: g.imgSize || '', noteFontSize: g.noteFontSize || '', bg: g.bg || '' });
       });
       return items;
     },
@@ -1141,6 +1149,8 @@
      * 置顶排序表（2.0.2.5 需求④）：`cfg.importantNote.pinOrder` → 关键词数组，最多 `KH.Config.NOTE_PIN_MAX` 个。
      * 解析口径（分隔符 / trim / 丢空 / 去重 / 截断）的**唯一真源**是 `KH.Config.pinOrderKeys`
      * —— 设置页保存前调的是同一个函数，别在这里抄第二份。
+     * 【2.0.2.6】表里的值现在是**关键词 id**（设置页下拉框给的），不再是手写的卡片文本；
+     * 旧的文本值照旧生效（见 `sortByPins` 的两路匹配）。
      */
     parsePins(cfg) {
       const raw = cfg && cfg.importantNote ? cfg.importantNote.pinOrder : '';
@@ -1151,7 +1161,13 @@
      * 按置顶表**稳定**排序：命中的卡片按 `pins` 里的先后排到最前；未命中的卡片保持原有相对顺序
      * （`Array.prototype.sort` 自 ES2019 起稳定 ⇒ rank 相同的一律不动）。
      * 一张卡命中多个置顶项时取**最靠前**的那个下标（卡上挂了两个词时，用户写在前面的那个说了算）。
-     * 匹配：与卡片的关键词（`entries[].kw`，即 `meta.text`）**trim 后不区分大小写精确相等**，不做包含匹配。
+     *
+     * 匹配两路，都 trim 后不区分大小写**精确相等**（不做包含匹配）：
+     *   · 卡片关键词 `entries[].kw`（= `meta.text`）—— 2.0.2.5 的手写文本口径，保留兼容；
+     *   · 卡片来源规则的 id `pinIds`（= `meta.pinId` = `ruleId`）—— 2.0.2.6 起设置页下拉框的口径。
+     * 第二路是必需的：正则词的卡片文本是**运行时命中的页面文本**、罕见字的卡片文本是那个生僻字，
+     * 两者都无法从配置侧枚举出来；而且它还能区分「普通词『价格』」与「组合词『价格×单价』」
+     * （两张卡的 `kw` 都是「价格」，只有 ruleId 不同）。
      * 空表 ⇒ 原样返回（调用方据此跳过排序，旧行为一字不变）；始终返回新数组，不动入参。
      */
     sortByPins(items, pins) {
@@ -1160,12 +1176,14 @@
       if (!order.length) return list;
       const rankOf = (it) => {
         let best = order.length;
-        for (const e of (it && it.entries) || []) {
-          const k = tagText(e && e.kw).toLowerCase();
-          if (!k) continue;
+        const consider = (v) => {
+          const k = tagText(v).toLowerCase();
+          if (!k) return;
           const i = order.indexOf(k);
           if (i >= 0 && i < best) best = i;
-        }
+        };
+        for (const e of (it && it.entries) || []) consider(e && e.kw);
+        for (const p of (it && it.pinIds) || []) consider(p);
         return best;
       };
       return list.sort((a, b) => rankOf(a) - rankOf(b));
@@ -1361,13 +1379,12 @@
     render(items, cfg) {
       const doc = document;
       this.ensure(doc);
-      const imgSize = (cfg && cfg.importantNote && cfg.importantNote.imgSize) || 70;
+      /* 图片尺寸与正文字号都走 `KH.Config` 的**唯一归一函数**（2.0.2.6 需求③ 收口）：
+       * 边界常量与设置页数字输入的 min/max 是同一对，越界夹紧、坏值回默认 —— 手改 storage /
+       * 导入旧备份塞进 0 / 负数 / 9999 时，面板不许变成一行一个字或一张图占满整屏（配置是信任边界）。 */
+      const imgSize = KH.Config.normalizeImgSize(cfg && cfg.importantNote && cfg.importantNote.imgSize);
       this.host.style.setProperty('--kh-img-size', imgSize + 'px');
-      /* 面板正文字号（2026-10-09 可配）：同 imgSize 手法写成 CSS 变量。
-       * 合法区间夹在 10–20px —— 手改 storage / 导入旧备份塞进极端值时，
-       * 面板不许变成一行一个字或糊成一团（配置是信任边界）。 */
-      const rawFs = parseInt((cfg && cfg.importantNote && cfg.importantNote.fontSize), 10);
-      const noteFs = (isFinite(rawFs) && rawFs >= 10 && rawFs <= 20) ? rawFs : 11;
+      const noteFs = KH.Config.normalizeNoteFontSize(cfg && cfg.importantNote && cfg.importantNote.fontSize);
       this.host.style.setProperty('--kh-note-fs', noteFs + 'px');
 
       /* 面板默认宽度（T26 / 用户 2026-10-12：200 → 250，且设置页可调）：同 imgSize 手法写成 CSS
