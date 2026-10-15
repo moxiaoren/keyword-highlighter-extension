@@ -1384,6 +1384,35 @@ module.exports = async function run() {
     });
   });
 
+  await test('★ T63-7 重建发生在剪贴板 resolve **之前**：屏上那颗也必须点亮（真机 2.0.2.2 首跑那条红）', async () => {
+    await copyRig(async () => {
+      const p = imgPanel();
+      clickChip(chipsOf(p)[0]);
+      /* 【本用例的全部意义】**不** flush —— 就是在 promise 落定之前重建。旧写法此刻标记还不存在
+       * ⇒ 新 chip 拿不到绿框，而标记随后被写到那颗已游离的旧节点上，屏上再也看不到任何反馈。 */
+      p.renderImgSection();
+      eq(chipsOf(p)[0].classList.contains('copied'), true, '★ 点击当帧就得点亮（不许等 promise）');
+      await flush();
+      eq(chipsOf(p)[0].classList.contains('copied'), true, '★ resolve 之后重建的这颗仍要在绿框里');
+      p.renderImgSection();
+      eq(chipsOf(p)[0].classList.contains('copied'), true, '再重建一次也得来自标记（反馈窗口内不许丢）');
+    });
+  });
+
+  await test('★ T63-8 重建发生在 resolve 之前且复制**失败**：就地改判成红，不许停在假的绿上', async () => {
+    await copyRig(async ({ clip }) => {
+      clip.has = false;
+      const p = imgPanel();
+      clickChip(chipsOf(p)[0]);
+      p.renderImgSection();                      // promise 落定之前重建
+      await flush();                             // 失败结果回来
+      const live = chipsOf(p)[0];
+      eq(live.classList.contains('copied'), false, '★ 失败不许停在绿框上（乐观点亮必须被改判）');
+      eq(live.classList.contains('failed'), true, '★ 改判要打在**活着**的这颗上（旧写法只会写到游离节点）');
+      eq(live.title, copyView.copyFailed, 'title 一起改判（否则悬停还是「已复制」）');
+    });
+  });
+
   await test('★ T63-4 窗口之外（at 已过期）重建不许带上类；恰好 1200ms 也算窗口外', async () => {
     await copyRig(async () => {
       const p = imgPanel();
@@ -1435,9 +1464,20 @@ module.exports = async function run() {
     const clrAt = src.indexOf('imgClearCopyMark(key, at) {');
     truthy(clrAt >= 0, '到点复位要有一个专门的 imgClearCopyMark(key, at)');
     const clr = src.slice(clrAt, src.indexOf('\n    },', clrAt));
-    truthy(clr.indexOf("querySelectorAll('.khin-imgchip')") >= 0,
-      '复位要在**活着的**列表里找 chip（只复位闭包里那颗 = 真机上早就游离了）');
-    truthy(/chip\.dataset\.k !== key/.test(clr), '按稳定键认 chip');
+    /* 「在活着的列表里按稳定键找回」这段 2.0.2.3 起抽成 eachLiveChip(key, fn)（到点复位与
+     * 「失败改判」两条通路共用）—— 契约跟着钉到它身上，并要求两个调用方都走它，
+     * 不许哪条通路图省事直接往闭包里那颗写类（真机上那颗早就游离了）。 */
+    const helperAt = src.indexOf('eachLiveChip(key, fn) {');
+    truthy(helperAt >= 0, '要有共用的 eachLiveChip(key, fn)：按 dataset.k 找回活着的 chip');
+    const helper = src.slice(helperAt, src.indexOf('\n    },', helperAt));
+    truthy(helper.indexOf("querySelectorAll('.khin-imgchip')") >= 0,
+      '找回要在**活着的**列表里找 chip（只看闭包里那颗 = 真机上早就游离了）');
+    truthy(/chip\.dataset\.k !== key/.test(helper), '按稳定键认 chip');
+    truthy(/this\.eachLiveChip\(/.test(clr), '到点复位必须走共用找回，不许自带一套');
+    const byKeyAt = src.indexOf('imgApplyCopyMarkByKey(key, ok) {');
+    truthy(byKeyAt >= 0, '失败改判要有专门的 imgApplyCopyMarkByKey(key, ok)（打进活着的 chip）');
+    truthy(/this\.eachLiveChip\(/.test(src.slice(byKeyAt, byKeyAt + 160)),
+      '失败改判也必须走共用找回（否则红框只会打在游离节点上，屏幕上还是绿的）');
     truthy(/mark\.key === key && mark\.at === at/.test(clr),
       '只清「还是这一笔」的标记（晚到的旧定时器不许清掉刚点的那一笔）');
     falsy(/querySelectorAll\([^)]*\+/.test(clr),

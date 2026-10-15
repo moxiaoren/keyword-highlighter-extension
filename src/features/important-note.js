@@ -1805,15 +1805,23 @@
             chip.setAttribute('role', 'button');
             chip.setAttribute('tabindex', '0');
             const copySentence = () => {
-              /* 定位不到整句（原文里没这个词 / 没有任何句末标点）就退回命中词本身 —— 不猜 */
+              /* 【为什么标记与点亮都挪到 resolve 之前】2.0.2.2 全量真机首跑 1 红（读数
+               * `{"onNode":"copied","inShadowRoot":"none","connected":false}`）：点击后、剪贴板写入
+               * resolve 之前若刚好发生一次面板重建，旧写法把标记与类都写到**闭包里那颗已经游离的**
+               * chip 上 —— 屏上那颗既没被重放（重建发生时尚无标记）也再没人点亮，绿框整段丢失。
+               * 现在当帧先乐观点亮 + 落标记：此后任何一次重建都能靠标记重放回来；真结果回来若失败，
+               * 再按稳定键把**活着**的那颗就地改红（at 不变 ⇒ 复位定时器仍只排一个，到点照旧全清）。
+               * 定位不到整句（原文里没这个词 / 没有任何句末标点）就退回命中词本身 —— 不猜。 */
+              const at = Date.now();
+              this.imgCopyMark = { key: copyKey, ok: true, at: at };
+              this.imgApplyCopyMark(chip, true);
+              setTimeout(() => this.imgClearCopyMark(copyKey, at), IMG_COPY_MS);
               copyToClipboard(KH.OcrCopy.sentenceOf(it.text, w) || w, this.root).then((ok) => {
-                /* 反馈提升为面板级状态（T63），重建后照旧重放。at 也要一起记 ——
-                 * 到点复位只认「还是这一笔」（key 与 at 都对得上才清标记），
-                 * 晚到的旧定时器不许把刚点的那一笔清掉。 */
-                const at = Date.now();
-                this.imgCopyMark = { key: copyKey, ok: ok, at: at };
-                this.imgApplyCopyMark(chip, ok);
-                setTimeout(() => this.imgClearCopyMark(copyKey, at), IMG_COPY_MS);
+                if (ok) return;
+                /* 还是这一笔才改判（晚到的旧 promise 不许把刚点的那一笔改成红的） */
+                const m = this.imgCopyMark;
+                if (m && m.key === copyKey && m.at === at) this.imgCopyMark = { key: copyKey, ok: false, at: at };
+                this.imgApplyCopyMarkByKey(copyKey, false);
               });
             };
             chip.addEventListener('click', (e) => {
@@ -1851,6 +1859,23 @@
     },
 
     /**
+     * 按稳定键把反馈打到**当前活着**的那颗 chip 上。
+     * 为什么需要它：列表每次重建都整批换新，闭包/参数里那颗可能早就游离了 —— 直接往上写类，
+     * 屏幕上什么都不会发生（2.0.2.2 真机那条缺陷就是这个形状）。所以一律按 `dataset.k` 重找。
+     */
+    eachLiveChip(key, fn) {
+      const live = this.imgListEl ? this.imgListEl.querySelectorAll('.khin-imgchip') : [];
+      for (const chip of live) {
+        if (chip.dataset.k !== key) continue;
+        fn(chip);
+      }
+    },
+
+    imgApplyCopyMarkByKey(key, ok) {
+      this.eachLiveChip(key, (chip) => this.imgApplyCopyMark(chip, ok));
+    },
+
+    /**
      * 复制反馈窗口到点复位（T63）。两步分开做：
      *  ① 标记：只清「还是这一笔」（key 与 at 都对得上）—— 晚到的旧定时器不许清掉刚点的那一笔；
      *  ② 屏幕：在**活着的**列表里按稳定键把当前那颗 chip 找回来复位。闭包里那颗早就游离了
@@ -1860,13 +1885,11 @@
     imgClearCopyMark(key, at) {
       const mark = this.imgCopyMark;
       if (mark && mark.key === key && mark.at === at) this.imgCopyMark = { key: '', ok: false, at: 0 };
-      const live = this.imgListEl ? this.imgListEl.querySelectorAll('.khin-imgchip') : [];
-      for (const chip of live) {
-        if (chip.dataset.k !== key) continue;
+      this.eachLiveChip(key, (chip) => {
         chip.classList.remove('copied');
         chip.classList.remove('failed');
         chip.title = KH.OcrCopy.VIEW.copySentence;
-      }
+      });
     },
 
     /* 折叠标签 / 展开说明一律从**唯一真源** `KH.OcrCopy` 取（票 #17 D-17.1）。
