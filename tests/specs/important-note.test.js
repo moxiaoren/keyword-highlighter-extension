@@ -355,8 +355,14 @@ module.exports = async function run() {
 
   await test('★ 接线契约：换代先作废记忆；收起时连同当时的键一起记（不许退回布尔长期记忆）', () => {
     const src = read('src/features/important-note.js');
-    truthy(src.indexOf('if (!this.imgSameBatch(list)) { this.imgUserCollapsed = false; this.imgCollapsedKeys = []; }') >= 0,
-      '分区渲染必须先问 imgSameBatch 并作废记忆');
+    /* 2.0.2.7（用户 m00292 的图片折进卡片）：分区本轮到画的条目从 `this.imgItems` 里滤掉
+     * "卡片已经有的图"（`unfoldedImgItems()`），但**这批记忆必须按全量条目算** —— 收起动作记的
+     * 就是全量键（`toggleImgs`），拿过滤后的 `list` 去比就会每次都判成换代、把用户的收起动作
+     * 顶开。所以这里钉的是 `imgSameBatch(all)`，`all` 是 `this.imgItems` 的全量。 */
+    truthy(src.indexOf('if (!this.imgSameBatch(all)) { this.imgUserCollapsed = false; this.imgCollapsedKeys = []; }') >= 0,
+      '分区渲染必须先问 imgSameBatch（全量条目）并作废记忆');
+    truthy(src.indexOf('const all = this.imgItems || [];') >= 0,
+      '上面那一问比的是全量条目（与 toggleImgs 记键的口径一致）');
     truthy(src.indexOf('if (this.imgUserCollapsed !== true && list.some(') >= 0,
       '自动展开仍只看"用户有没有对这一批收起过"');
     truthy(/this\.imgCollapsedKeys = this\.imgCollapsed\s*\r?\n\s*\?/.test(src),
@@ -603,14 +609,14 @@ module.exports = async function run() {
     eq(C.normalize({}).config.notePanelWidth, 250, '缺键 ⇒ 回默认');
     eq(C.normalize({ notePanelWidth: 320 }).config.notePanelWidth, 320, '合法值原样保留');
     eq(C.normalize({ notePanelWidth: 100 }).config.notePanelWidth, 200, '小于下界 ⇒ 夹到 200（不丢用户的数）');
-    eq(C.normalize({ notePanelWidth: 9999 }).config.notePanelWidth, 600, '超过上界 ⇒ 夹到 600');
+    eq(C.normalize({ notePanelWidth: 9999 }).config.notePanelWidth, 1200, '超过上界 ⇒ 夹到 1200');
     for (const bad of [0, -5, '', null, undefined, 'abc', NaN]) {
       eq(C.normalize({ notePanelWidth: bad }).config.notePanelWidth, 250, '坏值 ⇒ 回默认 250：' + String(bad));
     }
     eq(C.normalizePanelWidth('320'), 320, '字符串数字要认（导入的旧备份里存过字符串）');
     eq(C.normalizePanelWidth(250.6), 251, '面板宽度只收整数');
     eq(C.PANEL_WIDTH_MIN, 200, '下界常量（用户 2026-10-13 拍板 160 → 200）');
-    eq(C.PANEL_WIDTH_MAX, 600, '上界常量');
+    eq(C.PANEL_WIDTH_MAX, 1200, '上界常量（2.0.2.7 用户 2026-10-15：600 → 1200）');
     /* 配置 → 面板的接线：写入口只有 render() 一处，且用的是 config 的归一函数（不许复制一份边界） */
     const src = read('src/features/important-note.js');
     truthy(/KH\.Config\.normalizePanelWidth\(/.test(src), '面板必须调 config 的唯一归一函数');
@@ -621,6 +627,28 @@ module.exports = async function run() {
     /* consume(hits, cfg) 必须把 cfg 交给 render —— 否则上面那行永远拿不到用户选的值 */
     const cons = (src.match(/consume\(hits, cfg\) \{[\s\S]*?\n      \},/) || [''])[0];
     truthy(/panel\.render\([\s\S]*?, cfg\)/.test(cons), 'consume 必须把 cfg 传给 render：' + cons);
+  });
+
+  await test('★ 三个外观数字的范围：字号 8 必须能用，越界值仍按各自口径处理（2.0.2.7 放宽）', () => {
+    const C = KH.Config;
+    /* 用户 2026-10-15 原话：「我有的字号设置为 8，而范围最小是 10，这不符合预期」⇒ 8 必须原样保留 */
+    eq(C.normalizeNoteFontSize(8), 8, '★ 8 号字必须原样保留（以前被判越界、回落成 11）');
+    eq(C.normalizeNoteFontSize('8'), 8, '字符串数字照收（导入的旧备份里存过字符串）');
+    truthy(C.NOTE_FONT_MIN <= 8, '★ 下限必须 ≤ 8（用户真在用的设置），实际 ' + C.NOTE_FONT_MIN);
+    eq(C.normalizeNoteFontSize(C.NOTE_FONT_MIN), C.NOTE_FONT_MIN, '下界本身是合法值');
+    eq(C.normalizeNoteFontSize(C.NOTE_FONT_MAX), C.NOTE_FONT_MAX, '上界本身是合法值');
+    /* 「放宽」不等于「不设界」：明显不合理的值仍按各自口径处理（用户口径：只有 999 这种才拦） */
+    eq(C.normalizeNoteFontSize(999), 11, '字号越界 ⇒ 回落默认 11（2.0.2.2 起的老口径，本轮不翻案）');
+    eq(C.normalizeImgSize(9999), C.IMG_SIZE_MAX, '图片尺寸越界 ⇒ 夹到边界');
+    eq(C.normalizeImgSize(0), C.IMG_SIZE_DEFAULT, '图片尺寸坏值 ⇒ 回默认');
+    /* 范围次序：任一对边界写反（lo > default 或 default > hi）都会让"填了不生效"，这里当场红 */
+    for (const [lo, def, hi, what] of [
+      [C.NOTE_FONT_MIN, C.NOTE_FONT_DEFAULT, C.NOTE_FONT_MAX, '字号'],
+      [C.IMG_SIZE_MIN, C.IMG_SIZE_DEFAULT, C.IMG_SIZE_MAX, '图片尺寸'],
+      [C.PANEL_WIDTH_MIN, C.PANEL_WIDTH_DEFAULT, C.PANEL_WIDTH_MAX, '面板宽度']
+    ]) {
+      truthy(lo <= def && def <= hi, what + ' 的区间必须含默认值：' + lo + ' ≤ ' + def + ' ≤ ' + hi);
+    }
   });
 
   await test('★ 设置页三个数字输入的 min/max 都取自 config 常量（imgSize / 字号 / 面板宽度）', () => {
@@ -1927,5 +1955,9 @@ module.exports = async function run() {
       '★ 已置顶的不再出现在候选里（同一个词只能占一个位次；要换位置先 ✕ 掉再选）');
     truthy(js.indexOf("$('pin-max').textContent = KH.Config.NOTE_PIN_MAX") >= 0,
       '标签里的「最多 N 个」必须从 NOTE_PIN_MAX 注入（不许有第二份 3）');
+    /* 【2.0.2.7】胶囊骨架**只有一份**（fields.js 的 labelChip）—— 这里曾照抄过一份，
+     * 于是改结构要改两处、漏一处的表现是"设置页的胶囊长得不一样" */
+    truthy(/ui\.Fields\.labelChip\(\{/.test(js), '★ 胶囊骨架必须走共享工厂 ui.Fields.labelChip（不许在这里手抄第二份）');
+    falsy(js.indexOf("class: 'kh-lbl-chip'") >= 0, '★ 设置页里不许再出现手写的胶囊结构（`class: \'kh-lbl-chip\'`）');
   });
 };

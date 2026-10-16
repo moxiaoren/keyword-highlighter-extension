@@ -166,7 +166,7 @@ module.exports = async function run() {
   await test('★ keyword-editor.js 不再有 mode 分叉（size 固定 lg）', () => {
     const src = code(read('src/ui/components/keyword-editor.js'));
     eq(src.indexOf('o.mode'), -1, 'o.mode 已无调用者，必须删干净');
-    truthy(/size: 'lg',/.test(src), 'size 要写成固定 lg（三列 860px，与选项页/独立窗口/页面委派同源）');
+    truthy(/size: 'lg',/.test(src), 'size 要写成固定 lg（三列 1040px，与选项页/独立窗口/页面委派同源）');
   });
 
   await test('★ 四个调用点都不再传 mode', () => {

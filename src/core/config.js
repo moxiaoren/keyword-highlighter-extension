@@ -140,19 +140,30 @@
    * 三个常量是**唯一真源**：设置页数字输入的 min/max、面板侧的夹紧、读路径的归一全从这取。
    * 散成三份就是 R1-3③「两处逐字同一条」要防的东西（改一处忘一处 → 设置页能填、面板不认）。 */
   const PANEL_WIDTH_MIN = 200;
-  const PANEL_WIDTH_MAX = 600;
+  const PANEL_WIDTH_MAX = 1200;   /* 【2.0.2.7】600 → 1200：用户 2026-10-15「范围给的宽一点」 */
   const PANEL_WIDTH_DEFAULT = 250;
 
   /**
    * 面板默认宽度的**唯一归一函数**（读路径 `normalize` 与消费侧 `important-note.js` 共用）。
    * 口径（用户 2026-10-12）：
-   *   · 整数、范围 200–600：**越界夹到边界**（用户真填了 100 或 9999，意图明确，收进合法区即可）；
+   *   · 整数、范围 200–1200：**越界夹到边界**（用户真填了 100 或 9999，意图明确，收进合法区即可）；
    *   · 非数字 / 空 / `null` / `NaN` / `0` / 负值 → **回默认 250**：这些不是"填小了"而是坏值，
    *     面板宽度是布局承重值，坏值不许把它变成 0 宽或负宽；
    *   · `'320'` 这类**字符串数字**照收（storage 里躺过字符串，来源是手改 / 导入的旧备份）。
    */
+  /**
+   * 存储里的值 → 整数（取不到就是 `NaN`）。
+   * 三个归一函数（面板宽 / 图片尺寸 / 正文字号）的**共用取数**：数字照收（`NaN` 交给调用者判），
+   * 字符串按 `parseInt` 解（storage 里躺过 `'320'` 这种字符串数字，来源是手改 / 导入的旧备份），
+   * 其余（`null` / `undefined` / 对象 / 空串）一律 `NaN` ⇒ 各函数按自己的口径回默认。
+   * 抽成一处只因为同一段取数逻辑原本在三个函数里逐字抄了三遍（R1-3③：抄一份就是漂移的种子）。
+   */
+  function intOrNaN(value) {
+    return (typeof value === 'number') ? value : parseInt(String(value == null ? '' : value).trim(), 10);
+  }
+
   function normalizePanelWidth(value) {
-    const n = (typeof value === 'number') ? value : parseInt(String(value == null ? '' : value).trim(), 10);
+    const n = intOrNaN(value);
     if (!isFinite(n) || n <= 0) return PANEL_WIDTH_DEFAULT;
     return Math.min(PANEL_WIDTH_MAX, Math.max(PANEL_WIDTH_MIN, Math.round(n)));
   }
@@ -192,12 +203,15 @@
    * HTML 里一律不写死。整理前的实况是三份各自为政：`imgSize` 的 40/600 只写在 options.html 的属性里
    * （而属性只是提示，浏览器不禁手填），`fontSize` 的 10/20 在 options.html、options.js、面板里各抄一份。
    * 抄一份就是"能填进非法值 / 填了不生效"的种子 —— 见 PANEL_WIDTH_MIN 上面那段同样的理由。 */
+  /* 【2.0.2.7】三对边界一律放宽（用户 2026-10-15：「上下限太窄了，我有的字号设置为 8、最小却是 10，
+   * 不符合预期。范围给宽一点，只要不是不合理（比如字号 999）就按手动填的设置」）。放宽后历史值
+   * 自然落进区间、不再被归一函数改写。放宽≠不设界：明显不合理的值（字号 999）仍按各自口径处理。 */
   const IMG_SIZE_DEFAULT = 70;
-  const IMG_SIZE_MIN = 40;
-  const IMG_SIZE_MAX = 600;
+  const IMG_SIZE_MIN = 10;        /* 40 → 10 */
+  const IMG_SIZE_MAX = 1000;      /* 600 → 1000 */
   const NOTE_FONT_DEFAULT = 11;
-  const NOTE_FONT_MIN = 10;
-  const NOTE_FONT_MAX = 20;
+  const NOTE_FONT_MIN = 6;        /* 10 → 6：8 号字是用户真在用的设置 */
+  const NOTE_FONT_MAX = 72;       /* 20 → 72 */
 
   /**
    * 面板图片尺寸 / 正文字号的**唯一归一函数**（读路径 `important-note.js` 与设置页共用）。
@@ -209,18 +223,18 @@
    *   · `imgSize` 越界 → 夹到边界。此前它**根本没有**越界口径（HTML 的 40/600 只是提示、浏览器
    *     不禁手填、面板侧也不夹 ⇒ 填 9999 就真存 9999），夹紧是把那个洞补上；
    *   · `fontSize` 越界 → 回默认值。这是 2.0.2.2 起就钉在真机 e2e 里的行为
-   *     （`_e2e/ui.test.js`「越界值（25 > max 20）要回落到默认 11」），归纳整理不翻这个案。
+   *     （`_e2e/ui.test.js`「越界值（999 > max 72）要回落到默认 11」），归纳整理不翻这个案。
    * @param {*} value 存储里的原始值
    */
   function normalizeImgSize(value) {
-    const n = (typeof value === 'number') ? value : parseInt(String(value == null ? '' : value).trim(), 10);
+    const n = intOrNaN(value);
     if (!isFinite(n) || n <= 0) return IMG_SIZE_DEFAULT;
     return Math.min(IMG_SIZE_MAX, Math.max(IMG_SIZE_MIN, Math.round(n)));
   }
 
   /** 见 `normalizeImgSize`（取数口径相同；越界口径不同，理由写在上面那段注释里） */
   function normalizeNoteFontSize(value) {
-    const n = (typeof value === 'number') ? value : parseInt(String(value == null ? '' : value).trim(), 10);
+    const n = intOrNaN(value);
     if (!isFinite(n) || n < NOTE_FONT_MIN || n > NOTE_FONT_MAX) return NOTE_FONT_DEFAULT;
     return Math.round(n);
   }
@@ -272,7 +286,7 @@
 
       /** 重要笔记面板的**默认宽度**（px；T26 / 用户 2026-10-12：200 → 250）。
        *  单一真源：面板侧把它写成 CSS 变量 `--khin-panel-w`（`panel.render`），面板右下角仍可临时
-       *  拖动调整（拖动改的是内联宽度，不改这里）。范围 200–600、坏值回默认的口径见
+       *  拖动调整（拖动改的是内联宽度，不改这里）。范围 200–1200、坏值回默认的口径见
        *  `normalizePanelWidth`；设置页数字输入的 min/max 也从这个常量取。 */
       notePanelWidth: PANEL_WIDTH_DEFAULT,
 

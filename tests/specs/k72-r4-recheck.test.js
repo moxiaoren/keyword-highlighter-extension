@@ -570,7 +570,7 @@ module.exports = async function run() {
     truthy(/侧边栏是 \*\*7 项\*\*/.test(md), 'A22 应写成 7 项');
   });
 
-  await test('★ B8 11 条：逐条旧串消失 / 新串存在（含 popup 920×500、welcome 全局、checklist 三项）', () => {
+  await test('★ B8 11 条：逐条旧串消失 / 新串存在（含 popup 1100×500、welcome 全局、checklist 三项）', () => {
     const optHtml = readSrc('options/options.html');
     const optJs = readSrc('options/options.js');
     const popupJs = readSrc('popup/popup.js');
@@ -618,13 +618,16 @@ module.exports = async function run() {
     /* 10 窗口尺寸 */
     falsy(popupJs.indexOf('920×660') >= 0, 'B8-10 popup.js 旧尺寸必须消失');
     falsy(editorHtml.indexOf('920×660') >= 0, 'B8-10 editor.html 旧尺寸必须消失');
-    truthy(popupJs.indexOf('920×500') >= 0 && editorHtml.indexOf('920×500') >= 0, 'B8-10 两处都应是 920×500');
+    /* 【2.0.2.7】编辑器 1040 + 遮罩两侧各 20px 留白 ⇒ 独立窗口加宽到 1100×500 */
+    falsy(popupJs.indexOf('920×500') >= 0 && editorHtml.indexOf('920×500') >= 0,
+      '2.0.2.7 起 920×500 也是旧尺寸（会把 1040 的编辑器钳成 880）');
+    truthy(popupJs.indexOf('1100×500') >= 0 && editorHtml.indexOf('1100×500') >= 0, '2.0.2.7 两处都应是 1100×500');
     /* 11 检查清单三项 */
     truthy(checklist.indexOf('**有命中自动展开**') >= 0, 'B8-11 图片命中分区＝有命中自动展开');
     truthy(/侧边栏是 \*\*7 项\*\*/.test(checklist), 'B8-11 侧边栏＝7 项');
     truthy(checklist.indexOf('CSV 不含「抓取后续字段」的模块开关') >= 0, 'B8-11 CSV 节要补开关说明');
     /* R0 冻结后自己动的两处，也一并钉住 */
-    truthy(checklist.indexOf('920×500') >= 0, 'R0 修的那处独立窗口尺寸＝920×500');
+    truthy(checklist.indexOf('1100×500') >= 0, 'R0 修的那处独立窗口尺寸（2.0.2.7 起 1100×500）');
     truthy(checklist.indexOf('共 **11** 个按钮') >= 0, 'R0 修的那处＝11 个按钮（分区折叠头那颗要保持可用）');
   });
 };

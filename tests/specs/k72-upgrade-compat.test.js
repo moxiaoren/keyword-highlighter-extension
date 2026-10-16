@@ -369,8 +369,10 @@ module.exports = async function run() {
 
     falsy(popup.indexOf('920×660') >= 0, '★ B8-10 popup.js 旧尺寸必须消失');
     falsy(editor.indexOf('920×660') >= 0, '★ B8-10 editor.html 旧尺寸必须消失');
-    truthy(popup.indexOf('920×500') >= 0, 'B8-10 popup.js 新尺寸应在');
-    truthy(editor.indexOf('920×500') >= 0, 'B8-10 editor.html 新尺寸应在');
+    /* 【2.0.2.7】窗口 920×500 → 1100×500：编辑器本体加宽到 1040，窗口窄了会被遮罩（左右各 20px）钳住 */
+    falsy(popup.indexOf('920×500') >= 0, '★ 2.0.2.7 起 920×500 也是旧尺寸（编辑器 1040 + 两侧留白）');
+    truthy(popup.indexOf('1100×500') >= 0, '2.0.2.7 popup.js 新尺寸应在');
+    truthy(editor.indexOf('1100×500') >= 0, '2.0.2.7 editor.html 新尺寸应在');
     truthy(popup.indexOf('height: 500') >= 0, '新尺寸与真实 open 参数一致（height: 500）');
   });
 

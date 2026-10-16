@@ -701,7 +701,7 @@
    * 与关键词编辑弹窗同一套控件语言（开关胶囊 / 颜色胶囊 / 行内字段 / id+for 契约）。
    *
    * 与关键词弹窗**刻意不同**的两处（原版 1.52.0 就是如此，不是偷懒）：
-   *   · 宽度 `md` 而不是 `lg` —— 原版分组弹窗是 `modal-sm`，本来就更小；6 个字段撑 860px 会大片留白；
+   *   · 宽度 `md` 而不是 `lg` —— 原版分组弹窗是 `modal-sm`，本来就更小；6 个字段撑 1040px 会大片留白；
    *   · **没有分区卡片** —— 原版分组弹窗是 `.form-group` 平铺；只有一张卡还带折叠标题没有意义。
    * 这两条如果用户要求统一，改这里即可（字段本身不用动）。
    */
@@ -1095,6 +1095,8 @@
     const live = (cfg.keywords || []).filter((kw) => kw && kw.enabled !== false);
     const byId = new Map();
     for (const kw of live) if (kw.id) byId.set(String(kw.id).toLowerCase(), kw);
+    /** 种类 → 分组标题（`PIN_GROUPS` 是唯一真源；下面两处都要用它，别各查一遍） */
+    const groupLabel = new Map(PIN_GROUPS);
 
     clear(sel);
     sel.appendChild(h('option', { value: '', text: '选择要置顶的关键词…' }));
@@ -1116,21 +1118,17 @@
     cur.forEach((v, i) => {
       const kw = byId.get(String(v).toLowerCase());
       const t = kw ? typeOf(kw) : '';
-      const name = kw ? ((PIN_GROUPS.find((g) => g[0] === t) || ['', ''])[1] + ' · ' + pinLabel(kw, t)) : v;
-      const del = h('button', {
-        class: 'kh-lbl-del', type: 'button', text: '✕',
-        title: kw ? ('取消置顶：' + name) : ('取消这一项（按文字匹配的旧写法）')
-      });
-      del.addEventListener('click', async () => {
-        await saveNested({ importantNote: { pinOrder: KH.Config.normalizePinOrder(cur.filter((x) => x !== v)) } });
-      });
-      caps.appendChild(h('span', {
-        class: 'kh-lbl-chip',
-        title: kw ? ('置顶第 ' + (i + 1) + ' 位 · ' + name) : ('按关键词文字匹配（旧写法）· ' + v)
-      }, [
-        h('span', { class: 'kh-lbl-name', text: (i + 1) + '. ' + name }),
-        del
-      ]));
+      const name = kw ? ((groupLabel.get(t) || '') + ' · ' + pinLabel(kw, t)) : v;
+      /* 胶囊骨架走共享工厂（与「抓取字段」那排胶囊同一份结构，见 fields.js labelChip）。
+       * 这里**不传 onClick** —— 置顶位次不可原地改，要换先 ✕ 再选。 */
+      caps.appendChild(ui.Fields.labelChip({
+        name: (i + 1) + '. ' + name,
+        chipTitle: kw ? ('置顶第 ' + (i + 1) + ' 位 · ' + name) : ('按关键词文字匹配（旧写法）· ' + v),
+        delTitle: kw ? ('取消置顶：' + name) : ('取消这一项（按文字匹配的旧写法）'),
+        onDelete: async () => {
+          await saveNested({ importantNote: { pinOrder: KH.Config.normalizePinOrder(cur.filter((x) => x !== v)) } });
+        }
+      }));
     });
   }
 

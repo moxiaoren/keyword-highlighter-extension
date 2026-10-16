@@ -86,8 +86,11 @@ module.exports = async function run() {
     }
     const ident = ['imgOcr', 'imgOcrKeyword', 'imgOcrMax']
       .map((k) => { const f = FM.byKey(k); return k + ':' + f.type + ':' + f.csv; }).join('/');
-    eq(ident, 'imgOcr:bool:0/imgOcrKeyword:text:0/imgOcrMax:int:0',
-      '三个控件的类型与 CSV 列号（0＝不参与 CSV）必须未动，实际 ' + ident);
+    /* 【2.0.2.7 需求①】`imgOcrKeyword` 的**控件类型**由 `text` 升级成 `cands`（常态只显胶囊、
+     * 点 `+` 才出输入框）；存储契约不变（仍是整串原文，`csv:0` 不参与 CSV）—— 所以这里跟着改
+     * 类型，**csv 列号必须仍未动**。 */
+    eq(ident, 'imgOcr:bool:0/imgOcrKeyword:cands:0/imgOcrMax:int:0',
+      '三个控件的类型与 CSV 列号（0＝不参与 CSV）必须未动（imgOcrKeyword 的类型 2.0.2.7 起是 cands），实际 ' + ident);
   });
 
   await test('★ R4-4：往返 + **取消勾选不清空**（映射层与清洗层，不是只看弹窗 DOM）', () => {

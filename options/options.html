@@ -174,15 +174,19 @@
           <input class="kh-input" id="pf-notePanelWidth" type="number" step="10">
         </div>
       </div>
-      <!-- 置顶排序（2.0.2.6 需求②）：下拉框选关键词、胶囊显示已选。落盘的是**关键词 id**
-           （面板按 `meta.pinId` 匹配），上限 / 去重由 options.js 调 KH.Config.normalizePinOrder 一处判。 -->
+      <!-- 置顶排序（2.0.2.6 需求② → 2.0.2.7 需求④ 改成"下拉框内部展示胶囊"）：胶囊与下拉框
+           装在**同一个框**里 —— 常态就是"一行胶囊 + 末尾那个下拉"，比原来"下拉框一行、胶囊另起
+           一行"两截更省地方，点下拉直接接着加。落盘的是**关键词 id**（面板按 `meta.pinId` 匹配），
+           上限 / 去重由 options.js 调 KH.Config.normalizePinOrder 一处判。 -->
       <div class="kh-form-row">
         <div class="kh-form-fld kh-pin-fld">
           <label class="kh-fld-label" for="pf-notePinOrder">置顶排序（最多 <span id="pin-max">3</span> 个）</label>
-          <select class="kh-input" id="pf-notePinOrder"></select>
+          <div class="kh-pin-box">
+            <div class="kh-lbl-preview" id="pin-caps"></div>
+            <select class="kh-input" id="pf-notePinOrder"></select>
+          </div>
         </div>
       </div>
-      <div class="kh-lbl-preview" id="pin-caps"></div>
       <p class="kh-muted">命中的卡片按上面胶囊里的先后固定排在面板最前，其余卡片保持原顺序；同一个词只能置顶一次，按选择的先后排序（要换位置先取消、再重选）。</p>
     </section>
 
@@ -434,7 +438,7 @@
           <ul>
             <li><code>地址|籍贯</code> 可抓多标签；支持多行 / 合并单元格，表格化展示。</li>
             <li><code>#1</code>＝只取右邻一格；三方向<strong>层级</strong>（当前层/内层/外层，下拉 8 档可多选）。</li>
-            <li>字段语法：<code>#图</code> 仅图片 / <code>#3</code> 最多 3 张 / <code>@表达式</code> 指定值格。</li>
+            <li>字段语法：<code>#图</code> 仅图片 / <code>#3</code> 最多 3 张图 / <code>#图3</code> 仅图片且最多 3 张 / <code>#0</code> 该字段<strong>不要图</strong> / <code>@表达式</code> 指定值格。</li>
             <li><strong>后缀</strong>：末尾 <code>!</code> 去内部空格、<code>%N</code> 截前 N 字 / <code>%a-b</code> 截区间（不拆中文/emoji）、<code>^锚文本</code> 只取<strong>锚点之前</strong>的内容，如 <code>包名!</code>、<code>简介#1%4</code>、<code>名称^[复制]</code>（执行顺序固定 <code>!</code> → <code>^</code> → <code>%</code>）。</li>
             <li>自动剔除按钮文字；图片仅接受 http/https。</li>
             <li>某条字段<strong>取不到内容</strong>（值格空着、或整格什么都没抓到）时，这一项<strong>整张卡片都不出现</strong> —— 不会只剩一个只有字段名的空壳让你点。</li>
@@ -451,7 +455,7 @@
             <li>同一处命中<strong>多个词</strong>时，条目上默认只显示<strong>最短</strong>的那一条；右边带一枚<strong>命中计数</strong>小标（如 <code>×3</code>），点开条目上的下拉箭头就能看到<strong>全部命中</strong>（多个词分多行列出），点其中一项可切换主显示。</li>
             <li>同一条命中不会为了多值就铺开成好几条 —— 多出来的词都在那枚小标的下拉里，面板更省地方。</li>
             <li>点缩略图＝看大图（灯箱）。该图的<strong>全部识别文字</strong>在<strong>全文栏</strong>（浮层）里，默认就在<strong>大图右侧并排</strong>显示；不想看就点灯箱工具条上的<strong>眼睛</strong>开关收起（再点一次弹回来），按住栏的<strong>标题</strong>可把它拖到别处、<strong>双击标题</strong>回到大图右侧。栏里文字<strong>可选中</strong>，也可点栏里的<strong>一键复制</strong>，关掉大图即复位。<strong>图片条目上原来的 📋 复制按钮已移除</strong>，要整段文字请到这里取。</li>
-            <li>面板宽度：默认 <strong>250px</strong>；「重要笔记 → 面板默认宽度」里可调 <strong>200–600px</strong>（长期值），面板<strong>右下角</strong>随时能拖（临时值）—— 两者的区别见「📖 功能 → 注意事项」。</li>
+            <li>面板宽度：默认 <strong>250px</strong>；「重要笔记 → 面板默认宽度」里可调 <strong>200–1200px</strong>（长期值），面板<strong>右下角</strong>随时能拖（临时值）—— 两者的区别见「📖 功能 → 注意事项」。</li>
           </ul>
         </div>
 
@@ -518,7 +522,7 @@
       <div class="kh-help">
         <h4>⚠️ 注意事项与已知局限</h4>
         <ul>
-          <li><strong>「面板宽度」有两个值，别弄混</strong>：设置页「重要笔记 → 面板默认宽度」调的是<strong>默认值（长期值）</strong>，200–600px、默认 250px，面板每次打开都按它来；面板<strong>右下角</strong>直接拖出来的是<strong>临时值</strong>，只对当前这一次显示有效、<strong>不写回设置</strong>，刷新页面就回到默认值。要「以后都这么宽」就在设置页改；只是这会儿嫌窄/嫌宽，拖右下角即可。两处数值不一样是正常的，不是没生效。</li>
+          <li><strong>「面板宽度」有两个值，别弄混</strong>：设置页「重要笔记 → 面板默认宽度」调的是<strong>默认值（长期值）</strong>，200–1200px、默认 250px，面板每次打开都按它来；面板<strong>右下角</strong>直接拖出来的是<strong>临时值</strong>，只对当前这一次显示有效、<strong>不写回设置</strong>，刷新页面就回到默认值。要「以后都这么宽」就在设置页改；只是这会儿嫌窄/嫌宽，拖右下角即可。两处数值不一样是正常的，不是没生效。</li>
           <li><strong>命中词后面那个小数字是什么</strong>：面板每条笔记的命中词后面跟的<strong>裸数字</strong>（如 <code>3</code>）不是次数单位，而是<strong>该词在本页命中的处数</strong>（命中 1 处时不显示小标，2 处起才出现）；点开可看全部命中。</li>
           <li><strong>「右键读图＝一次性同意」与「站点授权＝长期授权」</strong>：在网页图片上点右键 → 「用高亮词识别这张图」，<strong>右键即代表你同意本次代为读取这张图</strong>，只读你点的那一张、<strong>不</strong>写进白名单。而跨域图床的图，扩展默认读不到，必须在「图片识别 → 跨域图片」里<strong>按站点显式授权</strong>后，自动扫描时才会代读 —— 那是长期授权，登记一次以后都算数。两者不冲突：<strong>一次性的用右键，常去的站点进名单</strong>。</li>
           <li><strong>跨域图未授权时的表现</strong>：这类图片在面板里<strong>照常显示</strong>，状态标成「<strong>跨域（未授权 域名）</strong>」（一个可动手的提示，不是故障）；把它那个域名加进本页「跨域图片」白名单，或直接在网页图片上<strong>右键识别</strong>这一张，就能读它。</li>
@@ -575,11 +579,11 @@
         <h4>Q11：更新日志去哪看？</h4>
         <p>设置页「ℹ️ 关于 → 版本信息」，可用<strong>右侧目录</strong>按版本号跳转；完整历史在<strong>欢迎页</strong>。</p>
         <h4>Q12：设置页改了「面板默认宽度」，为什么面板没跟着变？</h4>
-        <p>「面板默认宽度」调的是<strong>默认值</strong>（以后每次打开的面板宽度，<strong>各站点共用这一份设置</strong>）；没拖过<strong>右下角</strong>的面板，这会儿正开着也会<strong>立刻</strong>跟着变。一旦拖过<strong>右下角</strong>，面板就按你拖出来的宽度显示 —— 那是<strong>临时值</strong>，只作用在页面上、不写进设置，此时再改设置页也不会顶掉它，<strong>刷新页面就回到默认值</strong>。填 200–600 之外会自动夹到边界，填了非数字则回到 250。</p>
+        <p>「面板默认宽度」调的是<strong>默认值</strong>（以后每次打开的面板宽度，<strong>各站点共用这一份设置</strong>）；没拖过<strong>右下角</strong>的面板，这会儿正开着也会<strong>立刻</strong>跟着变。一旦拖过<strong>右下角</strong>，面板就按你拖出来的宽度显示 —— 那是<strong>临时值</strong>，只作用在页面上、不写进设置，此时再改设置页也不会顶掉它，<strong>刷新页面就回到默认值</strong>。填 200–1200 之外会自动夹到边界，填了非数字则回到 250。</p>
         <h4>Q13：图片条目上的「📋 一键复制」去哪了？</h4>
         <p>已移除（图片条目上不再有那个按钮），完整识别文字请到<strong>大图（灯箱）的全文栏</strong>里取：该栏默认就在<strong>大图右侧并排</strong>显示，点<strong>一键复制</strong>，或在栏里<strong>选中后 Ctrl+C</strong>；用灯箱工具条上的<strong>眼睛</strong>开关收起 / 展开，复制按钮跟着它一起显隐（按住栏的<strong>标题</strong>可拖动、<strong>双击标题</strong>回位）。面板里<strong>点命中的词块</strong>，复制的仍是它所在的<strong>整句</strong>。</p>
         <h4>Q14：重要笔记里每个词的<strong>正文字号</strong>能单独设吗？</h4>
-        <p>能（2.0.2.2 起）。<strong>全局默认</strong>在「🎨 样式 → 重要笔记 → 正文字号默认值」（10–20px，默认 11）；想只让某个词/分组不一样：打开该关键词（或分组）的编辑弹窗，在「重要笔记」区把<strong>字号</strong>填上 —— 该区要先勾选<strong>重要</strong>才会亮（关掉只是置灰，填过的内容保留）。<strong>留空＝继承全局默认</strong>。词级字号同时管住面板里的<strong>笔记正文</strong>与<strong>抓取字段表格</strong>；图片尺寸（同一区的「尺寸」）不走这条链路，它只管图片。</p>
+        <p>能（2.0.2.2 起）。<strong>全局默认</strong>在「🎨 样式 → 重要笔记 → 正文字号默认值」（6–72px，默认 11）；想只让某个词/分组不一样：打开该关键词（或分组）的编辑弹窗，在「重要笔记」区把<strong>字号</strong>填上 —— 该区要先勾选<strong>重要</strong>才会亮（关掉只是置灰，填过的内容保留）。<strong>留空＝继承全局默认</strong>。词级字号同时管住面板里的<strong>笔记正文</strong>与<strong>抓取字段表格</strong>；图片尺寸（同一区的「尺寸」）不走这条链路，它只管图片。</p>
       </div>
 
       </div>

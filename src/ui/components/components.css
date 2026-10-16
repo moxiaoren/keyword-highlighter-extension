@@ -162,7 +162,9 @@
 }
 .kh-input:focus { outline: none; border-color: var(--brand); box-shadow: var(--sh-brand-inset); }
 .kh-input:disabled { background: var(--bg-2); color: var(--text-4); }
-.kh-textarea { height: auto; min-height: 52px; padding: 6px 9px; line-height: 1.55; resize: vertical; }
+/* 【2.0.2.7】两向可拖（原 `vertical`）—— 富文本编辑框同一轮放开宽度，文本域跟着一致；
+ * `position+z-index` 与 `.kh-rte` 同理：拉宽时盖在右列之上。 */
+.kh-textarea { position: relative; z-index: 2; height: auto; min-height: 52px; padding: 6px 9px; line-height: 1.55; resize: both; }
 
 /* ---------------------------------------------------------------- 弹窗 */
 .kh-modal-mask {
@@ -193,7 +195,12 @@
 }
 .kh-modal-sm { max-width: 380px; }
 .kh-modal-md { max-width: 560px; }
-.kh-modal-lg { max-width: 860px; }
+/* 【2.0.2.7】编辑器弹窗默认宽 860 → 1040：860 时三列各 267px，`.kh-rte` 正文宽约 232px+
+ *   边距，4 列表格必然横向滚动（用户实测痛点）。1040 时三列各约 326px，默认不再滚。
+ *   写成 `width: min(1040px, 100%)` 而不是 `max-width: 1040px`，是为了**让右下角能往外拖**：
+ *   `max-width` 会把拖拽上限也钉在 1040，而用户要的是"临时拉伸"（窄窗口下 min() 自动退成 100%，
+ *   独立编辑窗口等比缩小也一样成立）。`.kh-modal` 自带 `overflow: hidden`，resize 把手才出得来。 */
+.kh-modal-lg { width: min(1040px, 100%); max-width: 100%; min-width: 320px; resize: horizontal; }
 .kh-modal-head {
   flex: 0 0 auto;                       /* 头不滚 */
   display: flex;
@@ -465,12 +472,15 @@
 }
 .kh-tbl-float[hidden] { display: none; }
 .kh-tbl-float .kh-mini-btn { min-width: 24px; padding: 1px 6px; font-size: var(--fs-xs); }
-/* 所见即所得编辑框：**可拖动加高**（`resize: vertical`）。
- * 宽度不可拖（用户明确"宽度不支持"），内容超高就在框内滚动。
- * `max-height` 从 320px 放宽到 560px —— 否则拖到 320 就顶住了，"拖动加高"等于没有。
+/* 所见即所得编辑框：**两向可拖**（`resize: both`）。
+ * 【2.0.2.7】宽度从"不支持"放开（用户改口：要跟纵向一样能临时拉宽）—— 拉宽后会给到正文更多
+ * 列宽，4 列表格不必横向滚动；握柄由 `.kh-modal` 的整窗拖宽也能达到同样效果（且三列等比）。
+ * `position+z-index` 是为了拉宽时**盖在右列之上**而不是钻到它的输入框底下（临时状态，
+ * 拖回来即复原）。`max-height` 从 320px 放宽到 560px —— 否则拖到 320 就顶住了，"拖动加高"等于没有。
  * 高度变化只推它自己那一列（列式布局），不影响另外两列。 */
 .kh-rte {
-  min-height: 96px; max-height: 560px; overflow: auto; resize: vertical;
+  min-height: 96px; max-height: 560px; overflow: auto; resize: both;
+  position: relative; z-index: 2;
   padding: 6px 9px; line-height: 1.6; white-space: pre-wrap; word-break: break-word;
   background: var(--card); cursor: text;
 }
@@ -613,6 +623,51 @@
 .kh-lbl-del:hover { color: var(--danger); }
 /* 后缀图例：常显一行（`!`/`%`/`^` 历史上零提示，用户看不出自己写的后缀被认成了什么） */
 .kh-lbl-legend { color: var(--text-4); font-size: var(--fs-xs); line-height: 1.5; }
+/* ---- 【2.0.2.7 需求④】设置页「置顶排序」：胶囊与下拉框**同一个框**----
+ * 原来下拉框一行、胶囊另起一行，两截各占地方、看着也不像"一个控件"。现在合成一个
+ * `.kh-pin-box`：`.kh-lbl-preview:empty{display:none}` 让空闲时它就是一个普通输入框，
+ * 有胶囊后下拉框退成框内末尾那个"接着加"的入口（去自己的边框/底色，不再双边框）。 */
+.kh-pin-box {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px;
+  min-height: 30px; padding: 2px 4px 2px 6px;
+  border: 1px solid var(--border-2); border-radius: var(--r-sm); background: var(--card);
+}
+.kh-pin-box:focus-within { border-color: var(--brand); box-shadow: var(--sh-brand-inset); }
+.kh-pin-box > .kh-input {
+  flex: 1 1 150px; width: auto; max-width: 260px; height: 26px; padding: 0 2px;
+  border: 0; background: transparent; color: var(--text-3); text-overflow: ellipsis;
+}
+.kh-pin-box > .kh-input:focus { box-shadow: none; }
+.kh-pin-box .kh-lbl-preview { margin: 0; }
+.kh-pin-box .kh-lbl-chip { background: var(--bg-2); }
+/* ---- 【2.0.2.7 需求①②】「常态只显胶囊，点一下才出输入框」----
+ * 两类控件共用同一套做法（输入框空闲时藏在自己的容器里，点开才被搬进 `.kh-pop-edit` 浮层）：
+ *   · `.kh-num-box`  —— 数值字段（尺寸 / 字号 / 张数）的**值胶囊**；
+ *   · `.kh-cand-box` —— 候选词字段（核心词 / 标题词 / 图片命中词）的胶囊行 + `+`。
+ * 为什么不直接把输入框 `display:none` 了事：`getElementById('fld-imgSize')` 这类节点必须**随时
+ * 取得到**（保存往返、自动化装置都直接取它），所以框只是"搬走"，不是"没有"。 */
+.kh-num-box { display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
+.kh-num-box > .kh-input, .kh-cand-box > .kh-input { display: none; }
+/* 候选胶囊**仍按普通字段的竖排**（标签一行 + 控件行一行），只是控件行里放的是「胶囊…＋」
+ * 而不是输入框：`min-height: 30px` = 普通输入框高 ⇒ 字段盒总高与相邻字段一致，
+ * `align-items: flex-end` 下顶边才齐（这正是"行对齐"那条验收的机制）。 */
+.kh-cand-row { flex: 1 1 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 3px 6px; min-height: 30px; }
+.kh-cand-box .kh-fld-label { flex: 0 0 auto; }
+.kh-cand-box .kh-lbl-preview { flex: 0 1 auto; }
+.kh-cand-add {
+  flex: 0 0 auto; width: 20px; height: 20px; padding: 0; margin: 0;
+  border: 1px dashed var(--border-2); border-radius: 999px; background: none;
+  color: var(--text-4); font-size: var(--fs-sm); line-height: 1; cursor: pointer;
+}
+.kh-cand-add:hover { border-style: solid; border-color: var(--brand); color: var(--brand-deep); }
+/* 字段盒是**列**容器 ⇒ 这里不能用 `flex: 1 1 100%`（basis 会被当**高度**用，撑爆一行）；
+ * 要的是"自己占满一行宽"，所以固定宽 100%。 */
+.kh-cand-tip { flex: 0 0 auto; width: 100%; color: var(--warning); font-size: var(--fs-xs); line-height: 1.5; }
+.kh-cand-tip[hidden] { display: none; }
+/* 单行编辑浮层：数值 / 候选都往这里摆**真输入框**（`.kh-input` 自带 width:100%，按用途收窄） */
+.kh-pop-edit { min-width: 0; padding: 8px; }
+.kh-pop-edit .kh-input { width: 96px; }
+.kh-pop-edit .kh-input[type="text"] { width: 200px; }
 /* 无抓取字段时「识别图片文字」是**真禁用**（点击无效），但此前没有置灰规则 → 看起来还是能点（K70 补） */
 .kh-fld-bool.is-disabled { opacity: .5; }
 .kh-fld-bool-label { font-size: var(--fs-base); color: var(--text-2); }

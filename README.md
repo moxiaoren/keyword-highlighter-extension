@@ -5,7 +5,7 @@
 
 - 🌐 项目主页（安装包 + 自动更新源）：<https://moxiaoren.github.io/keyword-highlighter-extension/>
 - 📦 历史版本 / 每个版本的改动：<https://github.com/moxiaoren/keyword-highlighter-extension/releases>
-- 🧩 当前测试版：见主页或 `latest-beta.json`；稳定通道目前为 `1.51.0`
+- 🧩 当前测试版：见主页或 `latest-beta.json`（当前 `2.0.2.6`）；稳定通道目前为 `2.0.2`
 
 ---
 
@@ -13,8 +13,8 @@
 
 | 通道 | 当前版本 | 直接下载 | 更新清单 |
 |---|---|---|---|
-| **稳定版**（日常用） | 见 `update.xml`（当前 `1.51.0`） | [.crx](https://moxiaoren.github.io/keyword-highlighter-extension/release/keyword-highlighter-extension-1.51.0.crx) | [`update.xml`](https://moxiaoren.github.io/keyword-highlighter-extension/update.xml) |
-| **测试版**（先试新功能） | 见 `latest-beta.json` | [.crx](https://moxiaoren.github.io/keyword-highlighter-extension/keyword-highlighter-beta-v1.99.99.30.crx) · [.zip](https://moxiaoren.github.io/keyword-highlighter-extension/keyword-highlighter-beta-v1.99.99.30.zip) | [`update-beta.xml`](https://moxiaoren.github.io/keyword-highlighter-extension/update-beta.xml) |
+| **稳定版**（日常用） | 见 `update.xml`（当前 `2.0.2`） | [.crx](https://moxiaoren.github.io/keyword-highlighter-extension/release/keyword-highlighter-extension-2.0.2.crx) | [`update.xml`](https://moxiaoren.github.io/keyword-highlighter-extension/update.xml) |
+| **测试版**（先试新功能） | 见 `latest-beta.json`（当前 `2.0.2.6`） | [.crx](https://moxiaoren.github.io/keyword-highlighter-extension/keyword-highlighter-beta-v2.0.2.6.crx) · [.zip](https://moxiaoren.github.io/keyword-highlighter-extension/keyword-highlighter-beta-v2.0.2.6.zip) | [`update-beta.xml`](https://moxiaoren.github.io/keyword-highlighter-extension/update-beta.xml) |
 
 - 项目主页每次打开都会用清单里的**实际版本号**把上面的链接刷新一遍：<https://moxiaoren.github.io/keyword-highlighter-extension/>
 - **一键安装脚本（两个通道通用）**：**[`kh-autoupdate.bat`](https://moxiaoren.github.io/keyword-highlighter-extension/kh-autoupdate.bat)** —— 运行后菜单里选 `Edge / Chrome` × `稳定版 / 测试版`，装完自动静默更新。
@@ -79,10 +79,10 @@
 ## 自检与开发
 
 ```bash
-node tests/run.js                 # 单元测试（401 项，始终全跑）
-node scripts/meta-check.js        # 机械红线（46 项：纯视觉不改 DOM / 单源字段 / 私钥不入包 …）
+node tests/run.js                 # 单元测试（共 952 项：951 通过 + 1 跳过，始终全跑）
+node scripts/meta-check.js        # 机械红线（47 项：纯视觉不改 DOM / 单源字段 / 私钥不入包 …）
 node tests/integrity.js           # 资源引用 / id 双向 / CSS 变量 / manifest
-cd _e2e && node run.js            # 真浏览器回归（playwright-core + 系统 Edge；内容层 70 + UI 层 52）
+cd _e2e && node run.js            # 真浏览器回归（playwright-core + 系统 Edge；内容层 / UI 层分组全跑）
 cd _e2e && node run.js --aspects=hit,interact   # 按「方面」裁剪；--only=<组名> 定点验证
 cd _e2e && node probe-perf-mem.js 2000          # 性能体检（阶段耗时 / 空闲重建 / 堆增长）
 cd _e2e && node probe-ocr12.js                  # 图片识别：从线上真实地址下载语言包 → 校验 → 识别的生产路径验收

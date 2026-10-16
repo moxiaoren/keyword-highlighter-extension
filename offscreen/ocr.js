@@ -1273,18 +1273,21 @@
     throw Object.assign(new Error('请求里没有图片'), { code: 'decode-failed' });
   }
 
-  /* ---------------- 同图结果缓存（2.0.2.4 需求②） ----------------
+  /* ---------------- 同图结果缓存（2.0.2.4 需求② / 票 #33） ----------------
    * 【问题】同一张图被多个关键词抓到时，内容侧本来按 `src` 串去重（img-ocr.js 的 `inflight` 与
    * `textCache`）—— 但这条链会断：走 canvas 的跨源图回执里没有 src、`srcset` 换址后字符串变了、
    * 内容侧 200 条 FIFO 把旧图挤掉，同一张图就会被**再识别一遍**。
-   * 引擎侧按「图片字节 + 引擎 + 语言包 + 关键词」缓存整笔回执后，同一个抓取字段被多少个词调用，
+   * 引擎侧按「图片字节 + 引擎 + 语言包」缓存整笔回执后，同一个抓取字段被多少个词调用，
    * 这张图也只用烧一次识别。
    *
-   * 【为什么关键词也进键】密排加密档重试按 `hitsOf(job.keyword)` 择优（`picksBetter`）：换一个词，
-   * 选中的档可能不同 ⇒ 结果不能跨词复用。
-   * 【为什么引擎与语言包也进键】语言包决定模型（`pickLangs`）、引擎决定识别路径（PP-OCR /
-   * Tesseract），结果不可互换。vendor 的 `globalImageCache` 只认图像字节、不认语言 ——
-   * **不能**靠它跨档，只能自己按档隔离。
+   * 【为什么关键词**不**进键】票 #33 口径：关键词只允许影响进度提示与"要不要加密档重试"。
+   * 于是命中之后还要过一道**本词的**闸：新关键词在既有文本里命中 ⇒ 直接复用（引擎零调用）；
+   * 一个字都没命中、而上一笔**本来就没跑过**关键词驱动的加密档（`denseTried` 为假 —— 说明那一笔
+   * 的 base 文本里含着别的词、加密档压根没触发）⇒ 让这一笔正常跑完整条判决链。否则就是拿
+   * "为别的词选的档"当本词的结论，把密排图上的本词漏掉（那才是真的识别不出）。
+   * 【为什么引擎与语言包还进键】语言包决定模型（`pickLangs`，同一脚本的词取同一组包）、
+   * 引擎决定识别路径（PP-OCR / Tesseract），结果不可互换。vendor 的 `globalImageCache`
+   * 只认图像字节、不认语言 —— **不能**靠它跨档，只能自己按档隔离。
    * 【上限】FIFO 64 张：一页里同一字段的图通常个位数，且每笔只是一段文本。 */
   const RESULT_CACHE_MAX = 64;
   const resultCache = new Map();
@@ -1517,10 +1520,11 @@
       /* 【2.0.2.4 需求②】同一张图（同字节）+ 同引擎 + 同语言包 + 同关键词 ⇒ 直接回先前那笔结果，
        * 解码与识别全跳过。`cached:true` 如实标记，真机与单测都据此核对"这张图只烧了一次"。 */
       const imgHash = await bytesHashOf(got.blob);
-      const cacheKey = imgHash ? [imgHash, kind, langs.join('+'), job.keyword || ''].join('|') : '';
-      const cachedPayload = cacheKey ? resultCache.get(cacheKey) : null;
-      if (cachedPayload) {
-        reply(Object.assign({}, cachedPayload, {
+      /* 键 = 字节 + 引擎 + 语言包（**不含关键词**，票 #33） */
+      const cacheKey = imgHash ? [imgHash, kind, langs.join('+')].join('|') : '';
+      const cachedEntry = cacheKey ? resultCache.get(cacheKey) : null;
+      if (cachedEntry && (cachedEntry.denseTried || countHits(cachedEntry.lines, job.keyword) > 0)) {
+        reply(Object.assign({}, cachedEntry.payload, {
           cached: true, queueMs: Math.round(performance.now() - t0), totalMs: Math.round(performance.now() - t0)
         }));
         return;
@@ -1802,7 +1806,9 @@
        * 【S3-⑤】倍数由 2 提到 3：109 上 2× 救不回密排页（`probe-s3-dense-diag.js`：1× 0 框、
        * 2× 重采仍 0 行、清晰 2× 重画 9/24 行且关键词那行靠运气丢了）。3 是"顶到 det 1920 上限"的
        * 最小倍数（详见 `DENSE_RESCALE` 处推导）。 */
+      let denseTried = false;
       if (base.stat.lines === 0) {
+        denseTried = true;
         try {
           const s2 = await scanFrame(0, false, DENSE_RESCALE);
           if (picksBetter(s2.stat, base.stat, hitsOf(s2.lines), hitsOf(base.lines))) { base = s2; chosen = s2; }
@@ -1820,6 +1826,7 @@
        * 109 那张常规字重图要第 2 档（5 条）才命中，粗体那张第 1 档（3 条）就成）。 */
       if (orig.h >= 400 && base.stat.lines > 0 && hitsOf(base.lines) === 0
           && base.plan.coverage.usedChunks === 1 && !base.plan.coverage.truncated) {
+        denseTried = true;
         for (const plan of denseBandPlans(orig.w, orig.h)) {
           if (hitsOf(base.lines) > 0) break;              // 上一档已经命中 ⇒ 不再加密
           try {
@@ -1927,8 +1934,10 @@
         totalMs: Math.round(performance.now() - t0)
       };
       /* 【2.0.2.4 需求②】成完之后才进缓存：失败的结果不缓存（否则一次网络抖动会被记住）。
-       * `cached` 字段只在命中那笔加，缓存里的这份保持"原始识别"的样子。 */
-      resultCachePut(cacheKey, payload);
+       * `cached` 字段只在命中那笔加，缓存里的这份保持"原始识别"的样子。
+       * 连同 `lines`/`denseTried` 一起存，只服务上面那道"换词"闸：前者判本词命中不命中，
+       * 后者判关键词驱动的加密档是不是已经跑过了。 */
+      resultCachePut(cacheKey, { payload: payload, lines: finalLines, denseTried: denseTried });
       reply(payload);
     } catch (err) {
       reply({

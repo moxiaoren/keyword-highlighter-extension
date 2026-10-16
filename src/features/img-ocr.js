@@ -341,8 +341,12 @@
     return built || null;
   }
 
-  const WHITE_CHAR = /\s/;
-  const WHITE_ALL = /\s+/g;
+  /* 【票 #34：只剔**行内**空白】`\r`/`\n` 是版面换行，不是"同一个词被 OCR 读散"。
+   * 剔掉它会把上下两行拼成一个词（识别结果「登记」/「号」⇒ 假命中「登记号」），而票面明说
+   * "跨行的词不在本口径内"。两个常量必须**同时**只认行内空白：`unshrinkRange` 靠"跳过被剔掉的
+   * 字符"做下标映射，若 `WHITE_ALL` 剔行内、`WHITE_CHAR` 还认 `\n`，映射会逐行错位。 */
+  const WHITE_CHAR = /[^\S\r\n]/;
+  const WHITE_ALL = /[^\S\r\n]+/g;
 
   /**
    * 把「剔空白文本」里的区间映射回**原文**区间。
@@ -389,7 +393,8 @@
      * 口径：**原样匹配不中时**，两侧各剔一次空白再试一次（顺序固定，先"文本剔空白"这条最常见）。
      * 两条纪律：
      *   ① 只在"直接匹配失败"后才走这条路 —— 不改变既有语义，零额外开销；
-     *   ② 命中片段与区间**映射回原文**（见 `unshrinkRange`），面板上的词块与复制整句照旧可用。 */
+     *   ② 命中片段与区间**映射回原文**（见 `unshrinkRange`），面板上的词块与复制整句照旧可用；
+     *   ③ 剔的只是**行内空白**（`WHITE_ALL` 不含 `\r`/`\n`）—— 跨行的词不算命中（票 #34 口径）。 */
     const rawKeyword = String((rule && rule.meta && rule.meta.imgOcrKeyword) || '').trim();
     const compactKeyword = rawKeyword.replace(WHITE_ALL, '');
     const textHasWs = WHITE_CHAR.test(raw);
@@ -397,7 +402,8 @@
     if (!textHasWs && compactKeyword === rawKeyword) return direct;
     const compact = textHasWs ? raw.replace(WHITE_ALL, '') : raw;
     const tries = [];
-    if (textHasWs) tries.push({ pat: pattern, text: compact });    if (compactKeyword !== rawKeyword) {
+    if (textHasWs) tries.push({ pat: pattern, text: compact });
+    if (compactKeyword !== rawKeyword) {
       const pat2 = patternOf(compactKeyword);
       if (pat2) tries.push({ pat: pat2, text: compact });
     }

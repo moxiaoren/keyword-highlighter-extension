@@ -1,5 +1,7 @@
 /* tests/run.js — 单测入口：node tests/run.js */
 'use strict';
+const fs = require('fs');
+const path = require('path');
 const H = require('./harness');
 
 const specs = [
@@ -131,7 +133,17 @@ const specs = [
   './specs/note-card.test.js',
   /* 2.0.2.4 需求④：「字段」控件的胶囊预览（名字 + 后缀徽标、✕ 按段删、read() 仍回整串原文、
    * 后缀图例常显、选项页加载顺序）。口径见 tests/specs/labels-field.test.js 头部 */
-  './specs/labels-field.test.js'
+  './specs/labels-field.test.js',
+  /* 2.0.2.7 需求①②：候选词字段（核心词/标题词/图片命中词）常态只显胶囊、末尾 `+` 展开输入框，
+   * 切分口径跟「正则」开关走；数值字段（尺寸/字号/张数）常态只显值胶囊，数字框仍活在同一 id 上。
+   * 口径见 tests/specs/cands-int-field.test.js 头部 */
+  './specs/cands-int-field.test.js',
+  /* 编辑器弹窗 860 → 1040 + 可横向拖宽（独立窗口同步加宽）/ 设置页置顶排序「胶囊与下拉框同一个框」。
+   * 口径见 tests/specs/modal-width-resize.test.js 头部（2.0.2.7 · 用户 m01629 需求③④） */
+  './specs/modal-width-resize.test.js',
+  /* 命中的图折进卡片（卡片已有的图不再重复画）/ 命中图红框与命中词 title / 灯箱「识别原文」
+   * 标出命中词。口径见 tests/specs/note-img-fold.test.js 头部（2.0.2.7 · 用户 m00292） */
+  './specs/note-img-fold.test.js'
 ];
 
 (async () => {
@@ -145,4 +157,22 @@ const specs = [
     }
   }
   H.report();
+
+  /* ------------------------------------------------------ README 里的「当前数字」核对
+   * 为什么放在这里：README 那几个数字（单测条数）**只有跑完这一轮的人知道**，
+   * 手写在文档里就一定会烂（2.0.2.6 体检抓到它还写着 401/46/1.51.0，票 #42）。
+   * 加了用例却忘了同步 README ⇒ 这里当场红，并直接给出该写什么。 */
+  const S = H.stats();
+  const README = path.join(__dirname, '..', 'README.md');
+  const m = /单元测试（共 (\d+) 项：(\d+) 通过 \+ (\d+) 跳过/.exec(fs.readFileSync(README, 'utf8'));
+  if (!m) {
+    console.error('\n✗ README 里找不到「单元测试（共 N 项：P 通过 + S 跳过）」这一行 —— 文档数字没人核对');
+    process.exitCode = 1;
+  } else if (Number(m[1]) !== S.pass + S.fail + S.skip || Number(m[2]) !== S.pass || Number(m[3]) !== S.skip) {
+    console.error('\n✗ README 写「共 ' + m[1] + ' 项：' + m[2] + ' 通过 + ' + m[3] + ' 跳过」，实测「共 ' +
+      (S.pass + S.fail + S.skip) + ' 项：' + S.pass + ' 通过 + ' + S.fail + ' 失败 + ' + S.skip + ' 跳过」—— 请同步 README.md');
+    process.exitCode = 1;
+  } else {
+    console.log('\n✓ README 的单测数字与实测一致（共 ' + m[1] + ' 项：' + m[2] + ' 通过 + ' + m[3] + ' 跳过）');
+  }
 })();

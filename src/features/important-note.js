@@ -207,6 +207,10 @@
       display: inline-block; vertical-align: middle; cursor: pointer;
     }
     .khin-item-note img:hover { opacity: .92; }
+    /* 【2.0.2.7 用户 m00292】卡片里被 OCR 命中的图铺一层红框（用户原话："命中的话给命中的图片
+     * 加一层红色边框"）—— 这是"这张图里有你要的词"的唯一视觉提示，因为分区那一行已经不重复画了。
+     * 用 outline 而不是 border：outline 不参与布局，图不会被挤动一格（点开大图还能看原文里标出来的词）。 */
+    .khin-item-note img.khin-imghit { outline: 2px solid #ef4444; outline-offset: 1px; }
     /* 抓取后续字段渲染的多行表格：**所有**单元格保留换行（v1.8.3）
      * 宽度（v1.99.99.11 用户实测要求）：**按内容收缩**，不再无条件 width:100%。
      *   用户原话："表格总宽度总是等于重要笔记宽度…避免明明就一列，结果宽度上还是填满了重要笔记"。
@@ -424,6 +428,60 @@
   }
 
   /**
+   * 图片地址绝对化（只为了**比较**）：卡片里的 `<img src>` 由 `KH.Fetch.imgPlaceholder()` 归一成
+   * 绝对地址，而 OCR 条目的 `src` 是引擎侧给的（可能是相对值）—— 两边放进同一个坐标系才能认出
+   * "这张图卡片里已经有了"。没有 `location`（单测垫片）或解析失败时原样返回，绝不抛。
+   */
+  function absSrc(src) {
+    const s = String(src == null ? '' : src);
+    if (!s) return '';
+    const base = (typeof location !== 'undefined' && location && location.href) ? location.href : '';
+    if (!base) return s;
+    try { return new URL(s, base).href; } catch (e) { return s; }
+  }
+
+  /**
+   * 把识别原文里的命中词标出来（灯箱右侧「识别原文」栏）—— **只建文本节点**，不拼 HTML：
+   * OCR 原文来自被识别的页面，`innerHTML` 拼进去等于把页面文本当代码。
+   * 同一位置命中多个词时取最长的（`一对一` 不该被短词 `一` 切碎）；非命中段落整段复制，
+   * 所以代理对（emoji）不会被从中间切开。
+   * @param {Element} el 目标容器（先清空）
+   * @param {string} text 识别原文
+   * @param {string[]} words 命中词
+   */
+  function paintHits(el, text, words) {
+    if (!el) return;
+    const doc = el.ownerDocument || (typeof document !== 'undefined' ? document : null);
+    if (!doc) return;
+    /* 清空走 textContent = ''（垫片与真 DOM 同形）；下面一律用 appendChild 建**节点**，
+     * 全程不碰 innerHTML —— OCR 原文是这个页面里的文本，不是可以当代码拼的东西。 */
+    el.textContent = '';
+    const full = String(text == null ? '' : text);
+    if (!full) return;
+    const list = (words || []).map((w) => String(w == null ? '' : w)).filter((w) => w)
+      .sort((a, b) => b.length - a.length);
+    if (!list.length) { el.appendChild(doc.createTextNode(full)); return; }
+    let at = 0;
+    while (at < full.length) {
+      let best = -1;
+      let hit = '';
+      for (const w of list) {
+        const i = full.indexOf(w, at);
+        if (i >= 0 && (best < 0 || i < best)) { best = i; hit = w; }
+      }
+      if (best < 0) break;
+      if (best > at) el.appendChild(doc.createTextNode(full.slice(at, best)));
+      const mk = doc.createElement('mark');
+      mk.className = 'kh-lb-hit';
+      mk.textContent = hit;
+      mk.title = KH.OcrCopy.VIEW.copySentence;
+      el.appendChild(mk);
+      at = best + hit.length;
+    }
+    if (at < full.length) el.appendChild(doc.createTextNode(full.slice(at)));
+  }
+
+  /**
    * 复制到剪贴板，返回 `Promise<boolean>`（false = 两条路都不通）。
    *
    * `navigator.clipboard` 在没有焦点/无权限时会 **reject**（不是抛异常），所以两条路都要接。
@@ -601,6 +659,18 @@
     .kh-lb-side-t::-webkit-scrollbar { width: 9px; }
     .kh-lb-side-t::-webkit-scrollbar-thumb { background: rgba(255,255,255,.26); border-radius: 999px; }
     .kh-lb-side-t::-webkit-scrollbar-track { background: transparent; }
+    /* 【2.0.2.7 用户 m00292】识别原文里命中词的高亮（用户原话："点击大图显示 ocr 原文时，
+     * 标红或高亮命中的词在哪里"）—— 底色高亮 + 深红字，两种都能看见；paintHits 只建
+     * mark.kh-lb-hit，这里负责它长什么样。 */
+    .kh-lb-hit {
+      background: #fde047; color: #991b1b; font-weight: 600;
+      border-radius: 3px; padding: 0 2px; cursor: pointer;
+    }
+    /* 点一下就复制整句（反馈与面板词块同一套视觉语言：绿=复制上了，红=两条路都不通）。
+     * 【为什么高亮词可点】原来"点词复制整句"的入口长在面板那一行的词块上，图折进卡片之后那一行
+     * 不再重复画 ⇒ 能力搬到这里，不丢：命中词在原文里，点它复制的就是它所在的那句话。 */
+    .kh-lb-hit.copied { background: #bbf7d0; }
+    .kh-lb-hit.failed { background: #fecaca; color: #7f1d1d; }
     /* 【已删】原来这里有一条 has-side 后代选择器（"全文栏出现就把图片收窄"）：
      *   · 它本来就是**死规则** —— 类挂在 .kh-lb 自身、不在它的祖先链上，选择器要求的后代关系
      *     永远不成立（真机实测匹配数为 0），真实生效的一直只有上面 .kh-lb img 的 84vw；
@@ -716,7 +786,10 @@
         /* 默认停靠（需求 4）只对"还没被拖过"的这一档生效：拖动过之后位置由 host._sidePos 说了算。
          * apply() 也会被翻页/缩放/换图回调触发，不能每次都把用户摆好的位置推回默认位。 */
         if (!side.hidden && !host._sideMoved) dockSide();
-        sideText.textContent = full;
+        /* 【2.0.2.7 用户 m00292】原文里把命中词标出来（`paintHits` 只建文本节点，原文一字不动，
+         * 命中的那几段套上 `<mark class="kh-lb-hit">`）—— 命中词在 OCR 条目上（`hitWords`），
+         * 由开灯箱那一处随相册条目一起带进来。 */
+        paintHits(sideText, full, (cur && cur.hits) || []);
         sideLines.textContent = full ? KH.OcrCopy.render(KH.OcrCopy.VIEW.paneLines, { n: full.split(/\r?\n/).length }) : '';
         sideCopy.hidden = !full;            /* 没有 OCR 文本 ⇒ 按钮不出现（不是置灰） */
         box.classList.toggle('kh-lb-has-side', !!full);
@@ -870,7 +943,30 @@
       /* 「×」= 隐藏全文栏：与眼睛按钮共用同一个状态变量、共用一次 apply()，文案也取自同一对 VIEW 键，
        * 所以两者永远不会不同步。它在浮层内 ⇒ 浮层隐藏时它一起隐藏（用户口径）。 */
       on(sideClose, () => { sideHidden = true; apply(); });
-
+      /* 点原文里的高亮词 = 复制它所在的一整句：原来这个入口长在面板那一行的词块（.khin-imgchip）上，
+       * 图折进卡片之后那一行不再重复画 ⇒ 能力搬到这里，不丢（命中词就在原文里，点它有话可说）。
+       * 反馈与词块同一套视觉语言：绿=复制上了，红=两条路都不通；1.2s 后各自复原。
+       * 【为什么不用上面那个 on()】它只转发无参回调，这里要 e.target 才知道点的是哪个词。
+       * 【为什么每个 mark 各自 setTimeout】共享一个 timer 时，1.2s 内连点两处会把先点的那处永久留绿。 */
+      sideText.addEventListener('click', (e) => {
+        if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
+        /* 命中词是叶子节点（mark 里只有文字）⇒ 点的就是它，不必反查祖先：全仓红线禁止
+         * closest('.kh-*') 反查（那条红线是给"页面命中"定的：命中只存在于注册表、必须走坐标定位）。
+         * 这里认的是本文件自己画出来的 mark，不是页面命中，所以按标签 + 类名直接认。 */
+        const t = e && e.target;
+        const mk = (t && t.tagName === 'MARK' && t.classList &&
+          t.classList.contains('kh-lb-hit')) ? t : null;
+        if (!mk) return;
+        const w = String(mk.textContent || '');
+        copyToClipboard(KH.OcrCopy.sentenceOf(curText, w) || w, sr).then((ok) => {
+          mk.classList.toggle('copied', !!ok);
+          mk.classList.toggle('failed', !ok);
+          setTimeout(() => {
+            mk.classList.remove('copied');
+            mk.classList.remove('failed');
+          }, 1200);
+        });
+      });
       /* 图片：**拖动平移**（不再"点一下就退出"）。pointer 捕获 → 拖出图片范围也不丢指针。
        * 双击 = 复位（放大后想一步回到原始视图时的出口）。 */
       let drag = null;
@@ -1279,10 +1375,17 @@
         const scope = (t.closest && (t.closest('td, th') || t.closest('table'))) || null;
         const all = scope ? Array.prototype.slice.call(scope.querySelectorAll('img')) : [t];
         /* OCR 结果按 `src` 建索引：相册条目带上识别全文，灯箱右侧才能显示（用户 m00631 口径）。
-         * `imgItems` 就是本面板当前的 OCR 条目（`src` 与 `im.src` 同为解析后的绝对地址）。 */
+         * `imgItems` 就是本面板当前的 OCR 条目；两边都过 `absSrc` 归一，防"相对 vs 绝对"对不上。
+         * 【2.0.2.7 用户 m00292】命中词另建一份同键索引：灯箱「识别原文」栏要把它们标出来
+         * （`paintHits`）。同一张图多条条目（不同关键词命中）时取**并集**，别丢词。 */
         const textBySrc = new Map();
+        const hitsBySrc = new Map();
         for (const it of (this.imgItems || [])) {
-          if (it && it.src && it.text) textBySrc.set(it.src, String(it.text));
+          const k = absSrc(it && it.src);
+          if (!k) continue;
+          if (it.text) textBySrc.set(k, String(it.text));
+          const ws = hitWords(it);
+          if (ws.length) hitsBySrc.set(k, (hitsBySrc.get(k) || []).concat(ws));
         }
         const list = [];
         let index = 0;
@@ -1291,7 +1394,9 @@
           const s = im.src || '';                            // 用**解析后**的绝对地址，和 t.src 同一口径
           if (!s || !LIGHTBOX_SRC_OK.test(s)) continue;       // 占位/非法协议不进相册
           if (im === t) index = list.length;
-          list.push({ src: s, alt: im.getAttribute('alt') || '', text: textBySrc.get(s) || '' });
+          const k = absSrc(s);
+          list.push({ src: s, alt: im.getAttribute('alt') || '',
+            text: textBySrc.get(k) || '', hits: hitsBySrc.get(k) || [] });
         }
         if (!list.length) return;
         openLightbox(list[index].src, list[index].alt, list, index);
@@ -1391,7 +1496,7 @@
        * 变量。写在 this.root（= .khin-wrap，变量定义处也在那条规则里 ⇒ 内联压过规则里的默认值），
        * 面板宽度与命中词块的上限共用这一个变量。
        * 归一只有 config 的 normalizePanelWidth 一处（读路径 normalize 调的是同一个函数）：手改
-       * storage / 导入旧备份塞进 0 / 负值 / 非数字时回默认 250，越界夹到 200–600 ——
+       * storage / 导入旧备份塞进 0 / 负值 / 非数字时回默认 250，越界夹到 200–1200 ——
        * 面板宽度是布局承重值，坏值绝不许把它变成 0 宽。 */
       this.root.style.setProperty('--khin-panel-w',
         KH.Config.normalizePanelWidth(cfg && cfg.notePanelWidth) + 'px');
@@ -1727,6 +1832,66 @@
       return (list || []).filter((it) => KH.OcrCopy.stateClass(it) === 'wait').length;
     },
 
+    /** 卡片正文里已经画出来的图片地址（绝对化）—— 用来回答"这张图卡片里有没有"。
+     *  取 src 的口径与相册扫描（`.khin-imghit` 上面那处 `im.src`）一致：img.src 是解析后的绝对地址。 */
+    cardedSrcs() {
+      const out = new Set();
+      if (!this.bodyEl || typeof this.bodyEl.querySelectorAll !== 'function') return out;
+      for (const im of this.bodyEl.querySelectorAll('img')) {
+        const s = absSrc(im.currentSrc || im.getAttribute('src') || im.src);
+        if (s) out.add(s);
+      }
+      return out;
+    },
+
+    /**
+     * 分区本轮到画哪些条目（2.0.2.7 用户 m00292：**卡片里已经有的图不重复画**）。
+     * 纯过滤，不改状态、不碰 DOM（好单测）：卡片里找不到这张图的条目（右键识别、字段没抓到图、
+     * 卡片还没渲染出来…）一律留着 —— 静默消失是这张面板明令禁止的失败模式。
+     */
+    unfoldedImgItems() {
+      const all = this.imgItems || [];
+      if (!all.length) return all;
+      const carded = this.cardedSrcs();
+      if (!carded.size) return all;
+      return all.filter((it) => {
+        const s = absSrc(it && it.src);
+        return !s || !carded.has(s);
+      });
+    },
+
+    /**
+     * 把 OCR 结果标到卡片里那些图上（2.0.2.7 用户 m00292：命中的图加红框）。
+     *
+     * 命中 ⇒ `.khin-imghit`（红框）+ title 说出命中的词；只是识别过没命中的图把原分区那一行的
+     * 状态原因挂成 title（`imgWhyText`）—— 那一行现在不重复画了，原因得以 title 存活，不丢信息。
+     * 同一张图多条条目（不同关键词）时优先取**有命中**的那条；卡片里没有对应条目的图（面板装饰图、
+     * 行内图标）不碰。只在 `renderImgSection()` 首行调用：卡片是整体重建的，标记必须跟着重建走。
+     */
+    applyImgMarks() {
+      if (!this.bodyEl || typeof this.bodyEl.querySelectorAll !== 'function') return;
+      const at = new Map();
+      for (const it of (this.imgItems || [])) {
+        const s = absSrc(it && it.src);
+        if (!s) continue;
+        const prev = at.get(s);
+        if (!prev || (!hitWords(prev).length && hitWords(it).length)) at.set(s, it);
+      }
+      for (const im of this.bodyEl.querySelectorAll('img')) {
+        const s = absSrc(im.currentSrc || im.getAttribute('src') || im.src);
+        const it = s ? at.get(s) : null;
+        if (im.classList) im.classList.remove('khin-imghit');
+        if (!it) continue;
+        const words = hitWords(it);
+        if (words.length) {
+          if (im.classList) im.classList.add('khin-imghit');
+          im.title = KH.OcrCopy.render(KH.OcrCopy.VIEW.imgHitTip, { matched: words.join('、') });
+        } else {
+          im.title = this.imgWhyText(it);
+        }
+      }
+    },
+
     /**
      * 同一张图的多条条目并成一组（2.0.2.4 需求② · 纯函数，不碰 DOM —— 好单测）。
      *
@@ -1752,13 +1917,22 @@
 
     renderImgSection() {
       if (!this.imgSecEl) return;
-      const list = this.imgItems || [];
+      /* 【2.0.2.7 用户 m00292】先把命中标记落到卡片上（红框 + 命中词 title），再画这张分区。
+       * 写在这里是**唯一一处**：renderContent / renderImg / 「显示全部」点击 / 题头折叠四条路
+       * 最后都汇到本方法，卡片整体重建时标记跟着重算（旧框也在这一趟里被摘掉）。 */
+      this.applyImgMarks();
+      const all = this.imgItems || [];
+      /* 【2.0.2.7 用户 m00292】卡片里已经画出来的图不在分区里重复一行（用户原话："图片识别模块和
+       * 卡片字段抓取展示的图片有些重复…可不可以删掉图片识别模块，复用卡片"）；卡片里没有的图仍然
+       * 留在这里、不静默 —— 右键识别那条路**只有**这张显示面（img-ocr.js 的 manual 表不进卡片）。
+       * 「收起过」这份记忆按**全量**条目算（`all`）：折叠不该被"这张图恰好也在卡片里"打断。 */
+      const list = this.unfoldedImgItems();
       /* 【命中就自动展开（K69）】用户报的：图里识别出关键词了，分区却还是收着的，得手动点开才看得到。
        * 规则：**只要有命中的条目就默认展开**；用户手动收起来过就尊重他 —— 但这份"尊重"只对
        * **当时那批条目**有效（`imgSameBatch`）：换代了就作废，新场景里照样自动展开。 */
-      if (!this.imgSameBatch(list)) { this.imgUserCollapsed = false; this.imgCollapsedKeys = []; }
+      if (!this.imgSameBatch(all)) { this.imgUserCollapsed = false; this.imgCollapsedKeys = []; }
       /* 「显示全部」这份视图记忆同理按批作废（用户 2026-10-06：不做整页范围的长期记忆） */
-      if (this.imgShowAll === true && !this.imgShowAllSameBatch(list)) {
+      if (this.imgShowAll === true && !this.imgShowAllSameBatch(all)) {
         this.imgShowAll = false;
         this.imgShowAllKeys = [];
       }
@@ -2272,5 +2446,7 @@
     });
   }
 
-  KH.ImportantNote = { panel, head, collectEffective, IMG_PROTOCOL_OK };
+  /* `paintHits` 直接导出给单测：灯箱要在垫片里走完 openLightbox 那条路成本太高（宿主/影子根/
+   * 相册/停靠都在里面），而这个函数是纯 DOM 构造，喂文本就能验。 */
+  KH.ImportantNote = { panel, head, collectEffective, IMG_PROTOCOL_OK, paintHits };
 })();

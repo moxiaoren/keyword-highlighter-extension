@@ -687,9 +687,9 @@
   /* ---------------------------------------------------------- 合并块抓取 */
 
   /** 表内 rowspan 概况（`{hasSpan, maxSpan}`）—— 供 `collectRightBlock` 决定"回放哪几行"。
-   *  按 (表, 本轮重建) 记忆（`memo.span`），所以每张表每轮只扫一遍。 */
-  function tableSpanInfo(table, memo) {
-    const store = memo && memo.span;
+   *  按 (表, 本轮重建) 记忆（`box.span`），所以每张表每轮只扫一遍。 */
+  function tableSpanInfo(table, box) {
+    const store = box && box.span;
     if (store && store.has(table)) return store.get(table);
     let maxSpan = 1;
     let hasSpan = false;
@@ -760,7 +760,7 @@
      * 而 s ≤ 表内最大 rowSpan（记 K）⇒ 只有 r > R - K 的行才可能有悬挂行span
      * ⇒ 从 `max(0, R-K)` 开始回放的结果与从 0 开始**逐位相同**。
      * 表里根本没有 rowspan（绝大多数表）时 K 不起作用，直接跳过整段回放。 */
-    const info = tableSpanInfo(table, opts && opts.memo);
+    const info = tableSpanInfo(table, opts && opts.box);
     const replayFrom = info.hasSpan ? Math.max(0, rowIdx - info.maxSpan) : rowIdx;
     for (let r = replayFrom; r < rowIdx && r < nRows; r++) step(table.rows[r].cells);
 
@@ -1032,10 +1032,10 @@
    * 分层找标签格（§四.2）：**该层表格里包含命中的那一行优先**，该行没有才退回"整表找第一个"。
    * 为什么必须留整表兜底：标签写在表头行 / 单独一行是**常见形状**
    * （`_e2e/fixtures/deep.html` 的 Z 组：标签在 1~2 行、命中在第 3 行），只认命中行会把这类用法砸掉。
-   * 整表兜底的结果与"命中的是哪一行"**无关** ⇒ 可按 (层表格, scope, label) 在 memo 里缓存，
+   * 整表兜底的结果与"命中的是哪一行"**无关** ⇒ 可按 (层表格, scope, label) 在 box 里缓存，
    * 于是"行级优先"带来的额外开销只是每行一次**行内**扫描（小常数），不是每行一次全表扫描。
    */
-  function findLabelCellLayered(table, cell, label, scope, memo) {
+  function findLabelCellLayered(table, cell, label, scope, box) {
     const row = hitRowIn(table, cell);
     if (row) {
       const own = ownCellsIn(row, table);
@@ -1044,7 +1044,7 @@
       }
     }
     const k = String(scope) + '\u0001' + label;
-    const store = memo && memo.cells;
+    const store = box && box.cells;
     if (store) {
       let per = store.get(table);
       if (!per) { per = new Map(); store.set(table, per); }
@@ -1095,7 +1095,7 @@
    * 旧值 `auto` 由 `fetchScopeSpec().nearestOnly` 表达：**就近优先、只取第一层命中的**。
    * 返回 `null` ＝没有真表格（调用方走假表格路径）。
    */
-  function resolveLayerCells(cell, items, scope, memo) {
+  function resolveLayerCells(cell, items, scope, box) {
     const spec = (KH.Config && typeof KH.Config.fetchScopeSpec === 'function')
       ? KH.Config.fetchScopeSpec(scope)
       : { dirs: ['self'], nearestOnly: false };
@@ -1108,7 +1108,7 @@
     const picked = [];
     for (const item of items) {
       for (const L of use) {
-        const hit = findLabelCellLayered(L.table, cell, item.label, scope, memo);
+        const hit = findLabelCellLayered(L.table, cell, item.label, scope, box);
         if (!hit.cell) continue;
         picked.push({ item, label: item.label, table: L.table, cell: hit.cell, dir: L.dir, idx: L.idx, fromRow: hit.fromRow });
         if (spec.nearestOnly) break;               // 旧 auto：就近命中一层就停
@@ -1216,10 +1216,10 @@
    *
    * @param {Text|Element|object} hitOrCell 命中文本节点 / 格子元素 / 命中记录（带 `textNode`）/ 锚点（带 `anchorCell`）
    * @param {string|object} [cfgOrLabels] labels 原文，或带 `fetchLabels` / `meta.fetchScope` 的配置/编译结果
-   * @param {object} [memo] 同一轮重建内复用的缓存盒（见 `blockFor`；不传就逐次计算）
+   * @param {object} [box] 同一轮重建内复用的缓存盒（见 `blockFor`；不传就逐次计算）
    * @returns {Array<{label:string, cells:Element[], imgs:Element[], byOffset:boolean, invalid:boolean, noImg:boolean}>}（noImg = 该字段写了 `#0`，不要图）
    */
-  function cellsForHit(hitOrCell, cfgOrLabels, memo) {
+  function cellsForHit(hitOrCell, cfgOrLabels, box) {
     const items = parseLabels(labelsFromArg(cfgOrLabels));
     const out = [];
     if (!items.length) return out;
@@ -1244,7 +1244,7 @@
     /* 分层口径与 `extractFor` **同一份实现**（`resolveLayerCells`）——
      * 图片识别因此自动与"你选的抓取层级"同源（§四.5）；`all` 下各层值格的图都进来，
      * 去重交给下游（img-ocr 按 URL / 元素去重）。 */
-    const picked = resolveLayerCells(cell, items, sc, memo) || [];
+    const picked = resolveLayerCells(cell, items, sc, box) || [];
     for (const p of picked) {
       const v = valueCellsOf(p.cell, p.item);
       out.push({
@@ -1265,7 +1265,7 @@
 
   /** 逐项取「值」（`@表达式` / `#1` 简单模式 / 右邻整块）—— `extractFor` 的唯一实现。
    *  `fromRow`：标签格是否取自"命中所在那一行"（决定要不要在重复标签处收尾，见 `collectRightBlock`）。 */
-  function rowsForItem(item, target, table, fromRow, memo) {
+  function rowsForItem(item, target, table, fromRow, box) {
     let rows = null;
     let usedOffset = false;
     /* 值格指向（`@表达式`）：合法且取到格 → 按视觉列序取那些格；
@@ -1289,7 +1289,7 @@
           if (val) rows = [[{ t: val, rs: 1, cs: 1 }]];
         }
       } else {
-        rows = collectRightBlock(target, table, { stopAtRepeatedLabel: !!fromRow, memo: memo });
+        rows = collectRightBlock(target, table, { stopAtRepeatedLabel: !!fromRow, box: box });
       }
     }
     /* `!` 去空白 / `^` 锚点截取 / `%` 字符截取：无论来自 @偏移、#1 简单模式还是整块，统一在取值出口做修饰 */
@@ -1345,10 +1345,10 @@
    * @param {Text} textNode 命中文本节点（定位层级 / 行）
    * @param {string} rawLabels fetchLabels 原文
    * @param {string} [scope] fetchScope（缺省 `'auto'`）
-   * @param {object} [memo] 同一轮重建内复用的缓存盒（`{html, cells}`，见 `blockFor`）
+   * @param {object} [box] 同一轮重建内复用的缓存盒（`{html, cells}`，见 `blockFor`）
    * @returns {Array<{label:string, rows:Array<Array<{t:string,rs:number,cs:number}>>}>}
    */
-  function extractFor(textNode, rawLabels, scope, memo) {
+  function extractFor(textNode, rawLabels, scope, box) {
     const items = parseLabels(rawLabels);
     if (!items.length || !textNode) return [];
     const sc = scopeOf(scope);
@@ -1357,12 +1357,12 @@
       return extractFromFakeTable(textNode.parentElement, items);
     }
     const cell = anchorCellOf(textNode) || textNode.parentElement;
-    const picked = cell ? resolveLayerCells(cell, items, sc, memo) : null;
+    const picked = cell ? resolveLayerCells(cell, items, sc, box) : null;
     if (!picked || !picked.length) return [];
 
     const entries = [];
     for (const p of picked) {
-      const rows = rowsForItem(p.item, p.cell, p.table, p.fromRow, memo);
+      const rows = rowsForItem(p.item, p.cell, p.table, p.fromRow, box);
       if (rows && rows.length) entries.push({ label: p.label, suffix: suffixTextOf(p.item), dir: p.dir, idx: p.idx, rows: rows });
     }
     /* K79：多选（当前层 + 内层 / 外层…）时**一律合并**（同名同值去重、值不同加层级后缀）；
@@ -1607,8 +1607,8 @@
   }
 
   /** 真正算一次（不缓存时走这条）。字段级的图片选项（仅图片 / 前 N 张）按 label 带进渲染。 */
-  function computeBlock(textNode, rawLabels, scope, memo) {
-    const fetched = extractCached(textNode, rawLabels, scope, memo);
+  function computeBlock(textNode, rawLabels, scope, box) {
+    const fetched = extractCached(textNode, rawLabels, scope, box);
     if (!fetched.length) return null;
     const optOf = {};
     for (const it of parseLabels(rawLabels)) optOf[it.label] = it;
@@ -1630,10 +1630,19 @@
     return i >= 0 ? String(i) : '-';
   }
 
+  /**
+   * 命中文本节点所在的**取值根**：最近的表格；假表格 / 裸 div 布局下退到它的父元素。
+   * 抽出来只因为同一个取法在 `cacheBox` / `extractCached` / `blockFor` 里逐字抄了三遍（R1-3③）
+   * —— 三处的后续判断（拿不到根 ⇒ 退化到无缓存路径）也必须一致，抄一份就差一份。
+   */
+  function fetchRoot(textNode) {
+    return textNode && (nearestTable(textNode.parentNode) || textNode.parentElement);
+  }
+
   /** `cache`（WeakMap<表格根, 盒>）里取/建**同一只**盒；盒里三张表各管一摊。
    *  抓取表格（`html`）与取值（`values`，见 `extractCached`）共用它 ⇒ 不重复取值。 */
   function cacheBox(cache, textNode) {
-    const root = nearestTable(textNode.parentNode) || textNode.parentElement;
+    const root = fetchRoot(textNode);
     if (!root) return null;
     let box = cache.get(root);
     if (!box || typeof box !== 'object' || !box.html) {
@@ -1652,7 +1661,7 @@
    */
   function extractCached(textNode, rawLabels, scope, box) {
     if (!box || !textNode) return extractFor(textNode, rawLabels, scope, box);
-    const root = nearestTable(textNode.parentNode) || textNode.parentElement;
+    const root = fetchRoot(textNode);
     if (!root) return extractFor(textNode, rawLabels, scope, box);
     const k = String(rawLabels == null ? '' : rawLabels) + '\u0001' + scopeOf(scope) + '\u0001' + rowKeyOf(root, textNode);
     if (box.values.has(k)) return box.values.get(k);
@@ -1685,7 +1694,7 @@
   function blockFor(textNode, rawLabels, cache, scope) {
     const sc = scopeOf(scope);
     if (!cache || !textNode) return computeBlock(textNode, rawLabels, sc, null);
-    const root = nearestTable(textNode.parentNode) || textNode.parentElement;
+    const root = fetchRoot(textNode);
     if (!root) return computeBlock(textNode, rawLabels, sc, null);
     const box = cacheBox(cache, textNode);
     if (!box) return computeBlock(textNode, rawLabels, sc, null);

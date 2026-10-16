@@ -915,14 +915,28 @@ module.exports = async function run() {
     eq(second.engine, 'tesseract', '引擎字段不许因缓存而缺失');
   });
 
-  await test('★ 换一个关键词 ⇒ 必须重新识别（关键词进缓存键）', async () => {
-    const env = loadOffscreen({ lines: LINES });
+  await test('★ 换一个关键词、本词在既有文本里命中 ⇒ 复用那一笔（票 #33 判据：调用数 = 1）', async () => {
+    const env = loadOffscreen({ lines: () => ({ conf: 95, lines: [{ t: '供应商 甲 美女 乙', conf: 95, y: 20 }] }) });
     env.job({ type: MSG.OCR_IMAGE, requestId: 'c3', tabId: 7, keyword: '供应商', dataUrl: 'data:,W=300;H=200' });
     await env.result('c3');
     env.job({ type: MSG.OCR_IMAGE, requestId: 'c4', tabId: 7, keyword: '美女', dataUrl: 'data:,W=300;H=200' });
     const r4 = await env.result('c4');
-    eq(env.calls.recognize, 2, '密排加密档按关键词择优（picksBetter）⇒ 结果不能跨词复用');
-    eq(r4.cached === true, false, '换词那一笔不许假装命中缓存');
+    eq(env.calls.recognize, 1, '同一张图两个关键词 ⇒ 引擎只许烧一次（关键词不进缓存键）');
+    eq(r4.cached, true, '复用那一笔要如实标 cached');
+    eq(r4.text, '供应商 甲 美女 乙', '复用的文本与首笔一致');
+  });
+
+  await test('★ 换一个关键词且本词一个字都没配上、上一笔又没跑过加密档 ⇒ 不许拿"为别的词选的档"当结论', async () => {
+    /* 保守方向：这一笔按自己的关键词跑完整条判决链（与加缓存前的行为一致 —— 缓存只会少烧钱，
+     * 不许把"旧路径本来能改好的结果"吃掉）。LINES 里没有「美女」，且 base 有行、图高 200 < 400
+     * ⇒ 上一笔压根没触发关键词驱动的加密档，那就不放行。 */
+    const env = loadOffscreen({ lines: LINES });
+    env.job({ type: MSG.OCR_IMAGE, requestId: 'c7', tabId: 7, keyword: '供应商', dataUrl: 'data:,W=300;H=200' });
+    await env.result('c7');
+    env.job({ type: MSG.OCR_IMAGE, requestId: 'c8', tabId: 7, keyword: '美女', dataUrl: 'data:,W=300;H=200' });
+    const r8 = await env.result('c8');
+    eq(env.calls.recognize, 2, '没配上的词必须自己重跑一遍判决链');
+    eq(r8.cached === true, false, '没复用缓存就不许假装命中缓存');
   });
 
   await test('★ 不同的图（不同字节）不许互相顶替', async () => {
@@ -935,10 +949,12 @@ module.exports = async function run() {
     eq(r6.cached === true, false, '不同图不许被当成缓存命中');
   });
 
-  await test('★ 缓存键必须含引擎与语言包（档隔离靠它，不许退化成只认字节）', () => {
+  await test('★ 缓存键必须含引擎与语言包、且**不得**含关键词（票 #33）', () => {
     const src = read('offscreen/ocr.js');
-    truthy(/const cacheKey = imgHash \? \[imgHash, kind, langs\.join/.test(src),
-      '缓存键必须是 [图片哈希, 引擎, 语言包, 关键词] —— 少了引擎或语言包就会串档');
+    const m = src.match(/const cacheKey = imgHash[^;]*;/);
+    truthy(m, '缓存键必须按图片字节建（`const cacheKey = imgHash ? …`）');
+    truthy(/kind/.test(m[0]) && /langs\.join/.test(m[0]), '引擎与语言包必须进键 —— 少了它们就会跨档串结果');
+    eq(/keyword/i.test(m[0]), false, '关键词不许进缓存键：它只允许影响进度提示与要不要加密档重试');
   });
 };
 

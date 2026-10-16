@@ -1,12 +1,16 @@
-/* tests/specs/labels-field.test.js — 「字段」控件的**胶囊预览**（2.0.2.4 需求④）
+/* tests/specs/labels-field.test.js — 「字段」控件的**可编辑胶囊**（2.0.2.4 需求④ → 2.0.2.6 升级）
  * ----------------------------------------------------------------------------
  * 用户原话（2.0.2.4 需求 4）："整体梳理字段填入方式和展示形式，还有 #、@、！、% 等字段后缀补充功能，
  * 思考能否以更好的方式实现（比如，多字段逐个填入，填入后拆分为多个胶囊。这些补充限制作为后缀展示。）"
+ * 用户原话（2.0.2.6 升级）："字段配置输入显示胶囊之后，输入框可以不保留内容。点击胶囊之后可以修改。"
  *
- * 用户已明确录入方式**不变**（还是单框 `|` 批量，如 `关键词a@1|关键词b#图`），所以这里锁的是
- * 「写进去的那串**当场解析给你看**」这一层：
+ * 【2.0.2.6 改了什么】输入框从"整串的唯一真源"变成**只承载正在录/正在改的那一段** —— 回车把这
+ * 一段收成胶囊（框随之为空，接着录下一段），点胶囊把那一段原文载回框里改。已确定的段存在控件内部。
+ * 没有待定内容时 `read()` **逐字返回原文**（下面的空段/原文保真断言就是为了钉住这一点）；有待定
+ * 内容时（写了没回车就保存）也要一并带上，不许丢数据。这里锁的是：
  *   · 每段一个胶囊 = 名字 + 后缀徽标，`✕` 删**那一段**（按序号删，重复段只少一个）；
  *   · `read()` 必须仍回**整串原文** —— 值/分隔符/CSV 第 17 列的存储契约一个字都不许被控件改掉；
+ *   · 回车收胶囊 + 清空输入框；点胶囊载回那一段改（位置不动）；
  *   · 后缀图例常显（`!` / `%` / `^` 历史上零提示，只活在更新日志里）；
  *   · 选项页必须**先**加载抓取实现（语法只有一份：`KH.Fetch`）。
  *
@@ -26,19 +30,21 @@ module.exports = async function run() {
 
   /**
    * 造一个「字段」控件并驱动到指定值。
-   * 垫片里 `h('input', {value})` 只落在**属性**上（property 不反射），要自己赋 `inp.value` 再派发
-   * `input` 才会走 `draw()` —— 真浏览器里初值天然可读，这里补的是垫片的差。
+   * 【2.0.2.6】初值由 `create()` 直接吃进控件状态（已确定的段），所以这里**不再**往输入框里塞一遍
+   * —— 输入框现在只承载"正在录的那一段"，塞进去等于把同一串当待定内容再加一次（胶囊会翻倍）。
    */
-  const mk = (val) => {
-    const ctrl = KH.ui.Fields.create(FM.byKey('fetchLabels'), val, {});
-    const inp = ctrl.el.querySelector('input');
-    inp.value = val;
-    inp.dispatchEvent({ type: 'input' });
-    return ctrl;
-  };
+  const mk = (val) => KH.ui.Fields.create(FM.byKey('fetchLabels'), val, {});
   const textOf = (ctrl, sel) => ctrl.el.querySelectorAll(sel).map((el) => el.textContent);
+  const inpOf = (ctrl) => ctrl.el.querySelector('input');
+  /** 模拟"往输入框里打字"（垫片里 property 不反射，得自己赋值再派发 input）。 */
+  const type = (ctrl, text) => {
+    const inp = inpOf(ctrl);
+    inp.value = text;
+    inp.dispatchEvent({ type: 'input' });
+  };
+  const enter = (ctrl) => inpOf(ctrl).dispatchEvent({ type: 'keydown', key: 'Enter' });
 
-  suite('字段控件 · 胶囊预览（2.0.2.4 需求④）');
+  suite('字段控件 · 可编辑胶囊（2.0.2.4 需求④ + 2.0.2.6 升级）');
 
   await test('★ 接线：字段控件是 labels 类型；选项页先加载抓取实现（语法只有一份）', () => {
     eq(FM.byKey('fetchLabels').type, 'labels', '抓取字段要用能画胶囊的控件');
@@ -67,6 +73,8 @@ module.exports = async function run() {
     ctrl.el.querySelectorAll('.kh-lbl-del')[0].dispatchEvent({ type: 'click' });
     eq(ctrl.read(), '美女#图', '删掉第一段');
     eq(textOf(ctrl, '.kh-lbl-name').join('/'), '美女', '预览要跟着重画');
+    /* `✕` 是胶囊里的一颗按钮，点它**不该**顺带触发"点胶囊 = 改这一段"（否则删完会有一段被载进输入框） */
+    eq(inpOf(ctrl).value, '', '✕ 不许被"点胶囊改这一段"接管');
 
     const dup = mk('备注|备注');
     dup.el.querySelectorAll('.kh-lbl-del')[0].dispatchEvent({ type: 'click' });
@@ -94,5 +102,46 @@ module.exports = async function run() {
     }
     /* 反向：图例别把语法写成"仅图片 / 前 N 张"之外的东西 —— 语法真源在 Fetch.parseLabelSpec */
     falsy(/\bundefined\b/.test(t), '图例文案不许出现 undefined');
+    truthy(t.indexOf('回车') >= 0, '图例要说清"回车收成胶囊"（否则用户不知道框为什么空着）');
+  });
+
+  await test('★ 回车把这一段收成胶囊，输入框不留内容（2.0.2.6 升级：接着录下一段）', () => {
+    const ctrl = mk('名称');
+    type(ctrl, '备注#图');
+    eq(textOf(ctrl, '.kh-lbl-chip').length, 2, '还没回车也要先按解析结果显示（边打边看，老行为不变）');
+    eq(ctrl.read(), '名称|备注#图', '★ 没回车就直接保存 ⇒ 待定内容也要一并带上（不许丢数据）');
+
+    enter(ctrl);
+    eq(inpOf(ctrl).value, '', '★ 回车后输入框不留内容');
+    eq(ctrl.read(), '名称|备注#图', '收成胶囊后值一个字都没变');
+    eq(textOf(ctrl, '.kh-lbl-chip').length, 2, '胶囊还是一个不多一个不少');
+    eq(textOf(ctrl, '.kh-lbl-name').join('/'), '名称/备注', '顺序仍是录入顺序');
+  });
+
+  await test('★ 点胶囊把那一段的原文载回输入框改，改完位置不动（2.0.2.6 升级）', () => {
+    const ctrl = mk('名称^[复制]|备注#图');
+    ctrl.el.querySelectorAll('.kh-lbl-chip')[0].dispatchEvent({ type: 'click' });
+    eq(inpOf(ctrl).value, '名称^[复制]', '★ 点胶囊 ⇒ 这一段原文进了输入框');
+    eq(ctrl.read(), '名称^[复制]|备注#图', '只是载回来，值一个字节都不许变');
+    truthy(inpOf(ctrl).classList.contains('is-editing'), '输入框要标出"正在改这一段"');
+
+    type(ctrl, '标题^[复制]');
+    enter(ctrl);
+    eq(ctrl.read(), '标题^[复制]|备注#图', '★ 只改那一段，位置也不动');
+    eq(textOf(ctrl, '.kh-lbl-name').join('/'), '标题/备注', '预览跟着重画');
+    falsy(inpOf(ctrl).classList.contains('is-editing'), '改完退出编辑态');
+
+    /* 点第二段改：下标必须按**原始段序号**，别被上一轮编辑串位 */
+    ctrl.el.querySelectorAll('.kh-lbl-chip')[1].dispatchEvent({ type: 'click' });
+    eq(inpOf(ctrl).value, '备注#图', '点第二段载回的是第二段');
+  });
+
+  await test('★ 编辑中把输入框清空再回车 = 删掉那一段（不是留个空段）', () => {
+    const ctrl = mk('名称|备注');
+    ctrl.el.querySelectorAll('.kh-lbl-chip')[0].dispatchEvent({ type: 'click' });
+    type(ctrl, '');
+    enter(ctrl);
+    eq(ctrl.read(), '备注', '清空那一段就是把它删掉');
+    eq(textOf(ctrl, '.kh-lbl-name').join('/'), '备注', '预览里也不留空胶囊');
   });
 };

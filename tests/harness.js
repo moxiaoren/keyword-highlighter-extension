@@ -476,6 +476,10 @@ function deepEq(actual, expected, msg) {
 function truthy(v, msg) { assert.ok(v, msg || 'expected truthy, got ' + JSON.stringify(v)); }
 function falsy(v, msg) { assert.ok(!v, msg || 'expected falsy, got ' + JSON.stringify(v)); }
 
+/** 本次跑完的实测计数。run.js 拿它核对 README 里写死的「当前数字」——
+ *  文档里的数字必须由脚本产出（票 #42：2.0.2.6 体检抓到 README 还写着 401/46/1.51.0）。 */
+function stats() { return { pass: results.pass, fail: results.fail, skip: skips.length }; }
+
 function report() {
   console.log('\n' + '─'.repeat(60));
   console.log('通过 ' + results.pass + ' · 失败 ' + results.fail + (skips.length ? ' · 跳过 ' + skips.length : ''));
@@ -523,7 +527,7 @@ function loadKernel(extraFiles) {
 }
 
 module.exports = {
-  suite, test, eq, deepEq, truthy, falsy, report, settle, skip, skipIf,
+  suite, test, eq, deepEq, truthy, falsy, report, settle, skip, skipIf, stats,
   installDOM, makeDocument, loadKernel, el, txt,
   ShimElement, ShimText
 };

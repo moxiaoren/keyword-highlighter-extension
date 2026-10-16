@@ -857,6 +857,16 @@ if (manifest && manifest.version) {
 
 /* ------------------------------------------------------------------ 输出 */
 
+/* README 里的「机械红线（N 项）」必须就是本次实测条数 —— 手写数字一定会烂（票 #42）。
+ * 这条**不计入 passes**（否则自指、数字还会跟着变），红的时候照样进 errors ⇒ 退出码 1。 */
+{
+  const m = /机械红线（(\d+) 项/.exec(read('README.md'));
+  if (!m) bad('README 里找不到「机械红线（N 项）」—— 文档数字没人核对（票 #42）');
+  else if (Number(m[1]) !== passes.length) {
+    bad('README 写机械红线「' + m[1] + ' 项」，本次实测 ' + passes.length + ' 项（加了红线就要同步 README.md）');
+  }
+}
+
 console.log('\n=== meta-check · 关键词高亮 v2 ===\n');
 passes.forEach(p => console.log('  ✓ ' + p));
 if (warnings.length) console.log('');

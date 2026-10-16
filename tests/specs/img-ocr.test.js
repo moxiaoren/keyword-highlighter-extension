@@ -288,6 +288,13 @@ module.exports = async function run() {
     eq(m[0].text, '登记 号', '只认到「登记 号」，不许把「码」也吞进来');
   });
 
+  await test('★ 跨行不算命中（票 #34）：剔的只是**行内**空白，换行不许被拼成一个词', () => {
+    eq(O.matchedInText({ meta: { imgOcrKeyword: '登记号' } }, '前缀\n登记\n号 后缀').length, 0,
+      '版面换行不是"被 OCR 读散的空格"：上下两行拼出来的词不算命中');
+    truthy(O.matchedInText({ meta: { imgOcrKeyword: '登记号' } }, '前缀\n登记 号 后缀').length,
+      '同一行里的空格仍要容忍（回归）');
+  });
+
   suite('图片命中 · 准入条件（无抓取字段 / 未勾选 / 无命中 → 不产生条目）');
 
   await test('★ 没配「抓取后续字段」→ 不产生任何条目（即使勾了识别）', () => {

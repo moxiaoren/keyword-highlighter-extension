@@ -121,7 +121,11 @@
     /* ---- 基本信息 ---- */
     /* 关键词与**分组**并排（分组"跟在关键词后面"，与「标题关键词 | 组合方向」同一手法），
      * 两个都是半行 → 自动成一行。 */
-    { key: 'text', label: '关键词', type: 'text', sec: 'basic', csv: 1, required: true,
+    /* 【2.0.2.7 需求①】`cands` = 常态只显胶囊、点末尾的 `+` 才出输入框（2.0.2.6 的交互下沉成控件）。
+     * `regexKey` 指**兄弟开关**：只有正则模式下 `|` 才是"或"（普通模式整串转义，写 `A|B` 匹配的是
+     * 字面量 `A|B`）—— 所以普通模式整串一个胶囊，勾了「正则」才按 `|` 摊开。 */
+    { key: 'text', label: '关键词', type: 'cands', sec: 'basic', csv: 1, required: true,
+      regexKey: 'useRegex',
       def: () => '' },
     { key: 'groupId', label: '分组', type: 'select', sec: 'basic', csv: 3, groupSource: true, def: () => null },
     /* 核心词的三个匹配开关：**紧跟关键词那一行**（与标题词那边同一套胶囊、同一套文案）。
@@ -154,7 +158,9 @@
      * 用户实测要求："图中两个胶囊按钮改为参考放在模块右上角，名称统一为启用"。
      * ⚠️ **只改显示文案与挂载位置**：key / csv 列序 / 判定逻辑 / id 一律不动。 */
     { key: 'cellVerifyEnabled', label: '启用', type: 'bool', sec: 'combo', csv: 12, chip: true, head: true, def: () => false },
-    { key: 'cellVerify', label: '标题关键词(左格)', type: 'text', sec: 'combo', csv: 13, def: () => '' },
+    /* 同上（`cands`）：标题词也有自己的「正则」开关，切分口径跟着它走。 */
+    { key: 'cellVerify', label: '标题关键词(左格)', type: 'cands', sec: 'combo', csv: 13,
+      regexKey: 'cellVerifyUseRegex', def: () => '' },
     { key: 'comboAxis', label: '组合方向', type: 'select', sec: 'combo', csv: 0,
       options: [{ v: 'lr', t: '左右格' }, { v: 'tb', t: '上下格' }], def: () => 'lr' },
     /* 标题词的三个开关：与核心词**同一套胶囊、同一套文案**（含「全词」——
@@ -241,8 +247,10 @@
       hint: '图片里的字也算命中：识别各字段值格里的图片（需先在上面填好字段；'
         + '且**这条规则真的命中**时才会识别 —— 没命中就不看图片）',
       def: () => false },
-    { key: 'imgOcrKeyword', label: '图片命中关键词', type: 'text', sec: 'fetch', csv: 0,
-      placeholder: '如：一对一',
+    /* 同上（`cands`）。`regexAlways: true`：图片命中词**恒为正则**（`img-ocr.js` 固定
+     * `useRegex: true`，没有开关），所以它按 `|` 切分永远是对的。 */
+    { key: 'imgOcrKeyword', label: '图片命中关键词', type: 'cands', sec: 'fetch', csv: 0,
+      regexAlways: true, placeholder: '如：一对一',
       hint: '按**正则**匹配识别出的图片文字（不区分大小写、不要求整词）。'
         + '如 `一对一` / `A.C`；留空则不该勾选「识别图片文字」。',
       def: () => '' },
@@ -263,13 +271,16 @@
     /* 标签从「图片尺寸(px)」缩到「尺寸」：原标题占 78px，把这个窄容器里的输入框挤得只剩一点点
      * （用户实测："图片大小前面的文本不用这么长，挤压太多输入框位置"）。冒号由 inline 模式的 CSS 补。 */
     { key: 'imgSize', label: '尺寸', type: 'int', sec: 'imp', csv: 0, inline: true,
+      /* 【2.0.2.7】范围从 config 的常量取（唯一真源）——**惰性函数**，因为这张表在脚本加载期就构造，
+       * 那时 KH.Config 未必已经就位（同文件里 `def: () => ...` 全是闭包，就是这个理由）。
+       * 此前这里的 noteFontSize 与分组级那份把 10/20 各抄了一份，改 config 时必然漂移。 */
+      min: () => KH.Config.IMG_SIZE_MIN, max: () => KH.Config.IMG_SIZE_MAX, step: 1,
       hint: '图片的显示尺寸（留空＝用全局默认）', def: () => '' },
     /* 2.0.2.2 需求 2：笔记正文字号的**词级覆盖**（留空＝继承「样式」里的全局正文字号）。
-     * 与 imgSize 完全同一套手法：渲染时给该卡写内联 `--kh-note-fs`，盖掉宿主级那个值。
-     * min/max/step 与设置页那颗 `<input id="pf-noteFontSize">`（10–20px、步长 1）对齐。 */
+     * 与 imgSize 完全同一套手法：渲染时给该卡写内联 `--kh-note-fs`，盖掉宿主级那个值。 */
     { key: 'noteFontSize', label: '字号', type: 'int', sec: 'imp', csv: 0, inline: true,
-      min: 10, max: 20, step: 1,
-      hint: '笔记正文字号（10–20px，留空＝用「样式」里的全局字号）', def: () => '' },
+      min: () => KH.Config.NOTE_FONT_MIN, max: () => KH.Config.NOTE_FONT_MAX, step: 1,
+      hint: '笔记正文字号（留空＝用「样式」里的全局字号）', def: () => '' },
     // richtext = 所见即所得（图片/链接/加粗/斜体/表格）；存储仍是干净 Markdown（与旧版一致）
     /* C2：模块标题已经叫「重要笔记」，正文 label 再写一遍就是冗余 → 改「笔记内容」。
      * key / type / csv 列序 / 往返一律不动（纯显示文案）。 */
@@ -377,9 +388,11 @@
       hint: '复用高亮底色（组内关键词的笔记卡片背景）；留空则用卡片自身的底色' },
     { key: 'importantNote', label: '分组重要笔记', type: 'richtext', width: 2,
       placeholder: '分组统一的重要笔记（分组标记为重要时生效）；图片、加粗、表格、链接直接在框内显示' },
-    { key: 'imgSize', label: '尺寸', type: 'int', inline: true },
+    { key: 'imgSize', label: '尺寸', type: 'int', inline: true,
+      min: () => KH.Config.IMG_SIZE_MIN, max: () => KH.Config.IMG_SIZE_MAX, step: 1 },
     /* 分组级：组内关键词未单独设字号时用它（与上面 imgSize 同一套继承顺序） */
-    { key: 'noteFontSize', label: '字号', type: 'int', inline: true, min: 10, max: 20, step: 1 }
+    { key: 'noteFontSize', label: '字号', type: 'int', inline: true,
+      min: () => KH.Config.NOTE_FONT_MIN, max: () => KH.Config.NOTE_FONT_MAX, step: 1 }
   ];
 
   /**

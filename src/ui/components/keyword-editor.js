@@ -281,6 +281,22 @@
       if (inp) { inp.addEventListener('input', syncCombo); inp.addEventListener('change', syncCombo); }
     }
 
+    /* 【2.0.2.7 需求①】候选胶囊的**分法**取决于同排的「正则」开关：普通模式下 `|` 不是"或"，
+     * 整串只画一个胶囊（`compiler.js` 会把整串转义 —— 画成多个候选就是骗人）。所以：
+     *   · 建完字段就把开关真值**告诉**控件（控件的兄弟 DOM 此时还没挂上去，它自己查不到）；
+     *   · 开关一翻就重画 —— 否则"勾了正则，胶囊还是老样子"，看起来像没生效。 */
+    {
+      const wire = (candKey, boolKey) => {
+        const cc = byKey(candKey), bc = byKey(boolKey);
+        if (!cc || typeof cc._repaint !== 'function' || !bc || typeof bc.read !== 'function') return;
+        cc._repaint(!!bc.read());
+        const cb = bc.el && bc.el.querySelector('input');
+        if (cb) cb.addEventListener('change', () => cc._repaint(!!bc.read()));
+      };
+      wire('text', 'useRegex');
+      wire('cellVerify', 'cellVerifyUseRegex');
+    }
+
     /**
      * 「抓取后续字段」联动（K71 起含模块总开关 `fetchEnabled`；用户口径：**各管各的**）：
      *   · 模块没启用（`!on`）→ 本模块字段全部禁用（字段输入框 / 识别图片文字 / 关键词 / 每处最多），
@@ -386,7 +402,7 @@
     const modal = ui.Modal.open({
       title: editing ? '编辑关键词' : '添加关键词',
       body: wrap,
-      /* 尺寸固定 lg（860px 三列）：三个调用点——options、独立编辑窗口 popup/editor.html、
+      /* 尺寸固定 lg（1040px 三列）：三个调用点——options、独立编辑窗口 popup/editor.html、
        * 页面委派（src/features/page-editor.js 挂 ShadowRoot）——都要"选项页那个观感"。
        * C7 O-6：旧的 `mode === 'popup' ? 'sm' : 'lg'` 已删 —— popup 里内联编辑器那条路
        * 早退役了（用户否掉了 348px 塞 860px 弹窗的观感），没有调用者再传 'popup'。 */

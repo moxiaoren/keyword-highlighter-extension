@@ -53,14 +53,14 @@
     <li><b>命中词块</b>（图下面的蓝色小方块）：点它复制<b>含这个词的整句</b>；也可以用 Tab 聚焦后按 Enter/空格。剪贴板里拿到的应该是一整句，不是光秃秃一个词。</li>
     <li><b>点缩略图</b>：开灯箱看大图，该图的识别全文在<b>全文栏（浮层）</b>里（<code>识别出的文字</code>）—— 该浮层<b>默认就在大图右侧并排</b>显示，点灯箱工具条上的<b>开关（眼睛）</b>可收起 / 展开，按住标题可拖动、双击标题回位，关掉大图即复位；多张图时可以 ← → 翻页、Esc 关闭。大图还能用<b>鼠标滚轮缩放</b>（以图片为中心，0.25×–8×）。</li>
     <li><b>重要笔记卡片</b>（面板上半部分）：夹具里有两张 —— 一张是 markdown + 抓取字段表格（多行、带 rowspan），一张是「同标题多值 → 聚合标签」的形态。点卡片右上角 <b>✕</b> 会真的把这张卡从面板移除（真实口径：记进 ignored 后 refresh）。</li>
-    <li><b>字号输入框</b>（下面工具栏，10–20）：改一下立刻能看到卡片正文与表格文字变大变小；面板正文字号来自 CSS 变量 <code>--kh-note-fs</code>，由 <code>panel.render()</code> 写到宿主上。</li>
+    <li><b>字号输入框</b>（下面工具栏）：改一下立刻能看到卡片正文与表格文字变大变小；面板正文字号来自 CSS 变量 <code>--kh-note-fs</code>，由 <code>panel.render()</code> 写到宿主上。合法区间与回落值都从 <code>KH.Config</code> 的常量读（不再写死在夹具里）。</li>
     <li><b>面板实测宽度</b>：下面实时显示 <code>getBoundingClientRect().width</code> —— 这是宽度真源 <code>.khin-panel { width }</code> 的实测值（面板右下角还能手动 <code>resize</code>，拖一下数字会变）。</li>
   </ol>
 </div>
 
 <div class="ctl">
-  <label>面板正文字号：<input id="fs" type="number" min="10" max="20" step="1" value="11"></label>
-  <span id="fs-state">合法区间 10–20，越界会回落 11</span>
+  <label>面板正文字号：<input id="fs" type="number" step="1" value="11"></label>
+  <span id="fs-state"></span>
   <button id="toggle-all">切换「全部 N / 只命中」</button>
   <button id="rerender">重渲染（同数据）</button>
 </div>
@@ -236,11 +236,15 @@
   /* ---------------- 7. 工具栏：字号 / 视图 / 重渲染 + 实测宽度读数 ---------------- */
   const fsInput = document.getElementById('fs');
   const fsState = document.getElementById('fs-state');
+  /* 区间与回落值只有一处真源（`src/core/config.js` 的常量）——夹具以前把 10/20/11 又抄了一份 */
+  const F_LO = KH.Config.NOTE_FONT_MIN, F_HI = KH.Config.NOTE_FONT_MAX, F_DEF = KH.Config.NOTE_FONT_DEFAULT;
+  fsInput.min = F_LO; fsInput.max = F_HI;
+  fsState.textContent = '合法区间 ' + F_LO + '–' + F_HI + '，越界会回落 ' + F_DEF;
   fsInput.addEventListener('input', () => {
     const n = parseInt(fsInput.value, 10);
-    const ok = isFinite(n) && n >= 10 && n <= 20;
-    cfg.importantNote.fontSize = n;                     // 夹取在模块里（render:844-846），这里照实透传
-    fsState.textContent = ok ? '面板正文应为 ' + n + 'px' : '越界，面板会回落 11px';
+    const ok = isFinite(n) && n >= F_LO && n <= F_HI;
+    cfg.importantNote.fontSize = n;                     // 夹取在模块里（render 的归一函数），这里照实透传
+    fsState.textContent = ok ? '面板正文应为 ' + n + 'px' : '越界，面板会回落 ' + F_DEF + 'px';
     boot();
     tick();
   });
