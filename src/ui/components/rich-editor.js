@@ -24,6 +24,55 @@
   const D = () => ui.dom;
   const MD = () => KH.Markdown;
 
+  /**
+   * 【2.0.2.7 需求③·二改】拖宽编辑区（`.kh-rte` / `.kh-textarea`）时**把外层容器一起长出去**。
+   * 用户口径（m02566）："拖动修改宽度了，但是超出了容器；我的意思应该是整个容器也相应的临时增加宽度"。
+   * 原生 `resize` 只写自己的 inline width，父列与弹窗一动不动 ⇒ 宽度窜出所在列，弹窗里出现横向滚动条。
+   *
+   * 规则：容器宽 = **自然宽 + (编辑区宽 − 自然编辑区宽)**（`pad` 就是那个自然差值，接线时量一次）。
+   * 拖宽、拖窄都跟着走；`inline width` 被清掉（从没拖过 / 收尾还原）时把容器还原成自然宽。
+   * **两根竖线不许碰**：用户自己拖弹窗（`.kh-modal` 也有 `resize: horizontal`）时弹窗不能被我擦掉，
+   * 所以只在"确实是我们写过宽度"（`mine`）时才回写弹窗。
+   */
+  function growHost(ed) {
+    if (!ed || typeof ResizeObserver !== 'function') return;
+    const up = (n, cls) => {
+      for (let p = n && n.parentElement; p; p = p.parentElement) if (p.classList && p.classList.contains(cls)) return p;
+      return null;
+    };
+    let pad = null;      // 自然状态「列宽 − 编辑区宽」（`.kh-fld` 与列之间有 gap/边距）
+    let mine = false;    // 弹窗宽度是我们写的（用户自己拖弹窗时不许擦掉）
+    let natModal = 0;    // 我们动手之前弹窗的自然宽（瘦回去的下限）
+    const fit = () => {
+      const col = up(ed, 'kh-editor-col');
+      if (!col) return;
+      const modal = up(col, 'kh-modal');
+      const want = parseFloat(ed.style.width) || 0;      // 原生 resize 写的就是 inline width
+      if (!want) {
+        if (pad == null) pad = col.clientWidth - ed.clientWidth;   // 首次回调：此时两边都还是自然宽
+        else {                                                    // 清掉 inline width ⇒ 容器回自然（自愈）
+          col.style.width = ''; col.style.flex = '';
+          if (mine && modal) { modal.style.width = ''; mine = false; }
+        }
+        return;
+      }
+      if (pad == null) pad = col.clientWidth - ed.clientWidth;
+      const nextCol = Math.max(120, Math.round(want + pad));
+      const grow = nextCol - Math.round(col.clientWidth);
+      if (grow !== 0) { col.style.flex = '0 0 auto'; col.style.width = nextCol + 'px'; }
+      if (!modal) return;
+      if (grow > 0) {
+        if (!mine) { natModal = Math.round(modal.getBoundingClientRect().width); mine = true; }
+        modal.style.width = Math.round(modal.getBoundingClientRect().width + grow) + 'px';
+      } else if (grow < 0 && mine) {
+        const target = Math.max(natModal, Math.round(modal.getBoundingClientRect().width) + grow);
+        modal.style.width = target > natModal ? target + 'px' : '';
+        if (target <= natModal) mine = false;
+      }
+    };
+    new ResizeObserver(fit).observe(ed);
+  }
+
   /** 只读渲染：与页面侧同契约（走 Markdown 单源，页面看到什么这里就是什么） */
   function render(text, cls) {
     const h = D().h;
@@ -62,6 +111,7 @@
       contenteditable: 'true',
       'data-placeholder': o.placeholder || '与页面显示一致：图片、加粗、表格、链接直接在框内显示；点图片或链接可修改、删除。'
     });
+    growHost(ed);                                  // 拖宽时把父列与弹窗一起撑开（见函数注释）
     // 图片在编辑器里的默认展示大小 = 命中时的缩略尺寸（旧版 v1.8.17 行为：所见即所得）
     const px = parseInt(o.imgSize, 10);
     if (px > 0) ed.style.setProperty('--kh-note-img-size', px + 'px');
@@ -398,6 +448,7 @@
       placeholder: o.placeholder || '支持 Markdown：**加粗**、*斜体*、[文字](网址)、![说明](图片网址)、| a | b | 表格；多行换行原样保留'
     });
     ta.value = o.value == null ? '' : String(o.value);
+    growHost(ta);                                  // 与 `.kh-rte` 同一套拖宽规则
 
     const preview = render('', 'kh-rt-preview');
     const box = h('div', { class: 'kh-rt-preview-box' }, [

@@ -200,17 +200,21 @@
           title: spec.hint || '留空＝用全局默认', value: value === '' || value == null ? '' : String(value),
           placeholder: spec.inline ? '默认' : '留空＝默认'
         });
-        /* 【2.0.2.7 需求②】常态只显**值胶囊**（当前设成几＝一眼可见），点它才在浮层里出数字框：
-         * "标签一行 + 输入框一行"是弹窗里最占地方的一类字段，而它多数时候只是被看一眼。
+        /* 【2.0.2.7 需求②·二改】常态＝**一颗小按钮**（内容＝当前值，留空写「默认」），点它才在
+         * 浮层里出数字框。样式直接复用「重要笔记」工具栏那一排（`.kh-mini-btn`：24px 高、细边框、
+         * 悬停变品牌色、`title` 提示）—— 用户口径（m02566）"参考重要笔记的表格、图片、加粗之类的
+         * 按钮，点击之后才能修改"。原来那枚胶囊是"标签"长相，跟工具栏按钮不像，也占地方。
          * 输入框本体（`#fld-imgSize` 这类 id / `type=number` / `coerce` 口径）一个字不改 ——
          * 装置与保存路径都直接取它，它只是**搬了家**：空闲时回到 `host` 里藏着。 */
         const shown = () => (String(inp.value) === '' ? '默认' : String(inp.value));
-        const chip = labelChip({ name: shown(), chipTitle: '点一下改「' + spec.label + '」' });
-        const nameEl = chip.querySelector('.kh-lbl-name');   // 复用唯一那份胶囊实现，只换它的文案
-        const host = h('div', { class: 'kh-num-box' }, [chip]);
+        const btn = h('button', {
+          class: 'kh-mini-btn kh-num-btn', type: 'button',
+          title: '点一下改「' + spec.label + '」', text: shown()
+        });
+        const host = h('div', { class: 'kh-num-box' }, [btn]);
         const box = fieldBox(spec.label, host);
         host.appendChild(inp);
-        attachPop(chip, inp, host, () => { if (nameEl) nameEl.textContent = shown(); });
+        attachPop(btn, inp, host, () => { btn.textContent = shown(); });
         return { el: box, read: () => KH.FieldMap.coerce(spec, inp.value), key: spec.key };
       }
       /* 【2.0.2.4 需求④ + 2.0.2.6 升级】「字段」专用控件：**可编辑的胶囊列表** + 一行后缀图例。
@@ -315,13 +319,17 @@
         });
         const tip = h('div', { class: 'kh-cand-tip' });
         /* `data-for` 给自动化当稳定钩子：输入框藏在浮层里，e2e 要先点 `+` 才能往真框里打字 */
-        /* 胶囊与 `+` 同一个「控件行」：行高对齐普通输入框（30px），字段盒高度才与相邻字段一致。
-         * `.kh-editor-sec-body` 是 `align-items: flex-end`（components.css）——靠**底边**对齐，
-         * 盒高不等就会让「标题词」比旁边的「组合方向」低一截（真机回归量盒顶就是这个）。 */
-        const row = h('div', { class: 'kh-cand-row' }, [prev, addBtn]);
+        /* 【2.0.2.7 需求①·二改】胶囊装在**一个输入框样子的框**里（用户口径 m02566：一个输入框，
+         * 里面展示胶囊内容；点 `+` 才弹出小输入框编辑，回车回到展示模式）。空态把 placeholder
+         * 画在框里 —— 否则"没内容"看起来不像一个空输入框。
+         * `min-height: 30px` ＝普通输入框高 ⇒ 字段盒总高与相邻字段一致，`.kh-editor-sec-body`
+         * 是 `align-items: flex-end`（components.css，靠**底边**对齐），盒高不等就会让「标题词」
+         * 比旁边的「组合方向」低一截（真机回归量盒顶就是这个）。 */
+        const ph = h('span', { class: 'kh-cand-ph', text: spec.placeholder || '' });
+        const frame = h('div', { class: 'kh-cand-field' }, [prev, ph, addBtn]);
         const box = h('div', { class: fldCls + ' kh-cand-box', 'data-for': id, title: hintTitle }, [
           h('label', { class: 'kh-fld-label', text: spec.label + (spec.required ? ' *' : ''), for: id }),
-          inp, row, tip
+          inp, frame, tip
         ]);
         let raw = value == null ? '' : String(value);   // 已确定的整串（初值即存量值）
         let editIdx = -1;                               // ≥0 = 正在改第几个候选（下标按 `parts()`）
@@ -393,14 +401,28 @@
             }));
           }
           /* 普通模式下 `|` 不是"或"：值里真出现 `|` 时当场说清楚（否则用户以为配了好几个词） */
+          ph.hidden = list.length > 0;      // 框里有胶囊就不必再摆占位文字
           const warn = !regexOn() && String(raw).indexOf('|') >= 0;
           tip.hidden = !warn;
           tip.textContent = warn ? '普通匹配下 | 不表示"或"（整串按字面匹配）；要写多个候选请勾上「正则」' : '';
         };
-        const openPop = attachPop(addBtn, inp, box, () => draw(), () => {
-          commit();                 // 点 `+` = 新录一个：先把上一段的待定文本收起来
+        /** 点 `+` / 点框面空白处 ＝ **新录一个候选**：先把上一段的待定文本收起来 */
+        const startNew = () => {
+          commit();                 // 先把上一段的待定文本收起来
           editIdx = -1; inp.value = '';
           draw();
+        };
+        const openPop = attachPop(addBtn, inp, box, () => draw(), startNew);
+        /* 框面本身也可点（像真输入框那样"点哪儿都能开始录入"）；胶囊与 `+` 各自有主，别抢它们的活。
+         * `closest('...[kh-]...')` 在本仓库是机械红线（meta-check），这里手写祖先查找。 */
+        const inNode = (t, cls) => {
+          for (let n = t; n && n !== frame; n = n.parentNode) if (n.classList && n.classList.contains(cls)) return true;
+          return false;
+        };
+        frame.addEventListener('click', (ev) => {
+          if (inNode(ev.target, 'kh-lbl-chip') || inNode(ev.target, 'kh-cand-add')) return;
+          startNew();
+          openPop(true);            // `+` 已经开着时只聚焦，不重开浮层（免得输入框被搬走）
         });
         /* 回车 = "这一段录完了"：收进 `raw` 并清空输入框（与「字段」控件同一手感）。
          * 浮层由 `attachPop` 那颗 keydown 监听顺手关掉，这里只管把值收好。 */

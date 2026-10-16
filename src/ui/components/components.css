@@ -640,26 +640,40 @@
 .kh-pin-box > .kh-input:focus { box-shadow: none; }
 .kh-pin-box .kh-lbl-preview { margin: 0; }
 .kh-pin-box .kh-lbl-chip { background: var(--bg-2); }
-/* ---- 【2.0.2.7 需求①②】「常态只显胶囊，点一下才出输入框」----
+/* ---- 【2.0.2.7 需求①②·二改】「常态只显控件，点一下才出输入框」----
  * 两类控件共用同一套做法（输入框空闲时藏在自己的容器里，点开才被搬进 `.kh-pop-edit` 浮层）：
- *   · `.kh-num-box`  —— 数值字段（尺寸 / 字号 / 张数）的**值胶囊**；
- *   · `.kh-cand-box` —— 候选词字段（核心词 / 标题词 / 图片命中词）的胶囊行 + `+`。
+ *   · `.kh-num-box`  —— 数值字段（尺寸 / 字号 / 张数）的**小按钮**（内容＝当前值，空写「默认」）；
+ *   · `.kh-cand-box` —— 候选词字段（核心词 / 标题词 / 图片命中词）的**一个输入框样子的框**，里装胶囊 + `+`。
  * 为什么不直接把输入框 `display:none` 了事：`getElementById('fld-imgSize')` 这类节点必须**随时
  * 取得到**（保存往返、自动化装置都直接取它），所以框只是"搬走"，不是"没有"。 */
 .kh-num-box { display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
+/* 数值字段的常态＝**一颗小按钮**（内容＝当前值，留空写「默认」），样式就是「重要笔记」工具栏
+ * 那一排（`.kh-mini-btn` 的底色/边框/悬停）—— 用户口径 m02566："参考重要笔记的表格、图片、
+ * 加粗之类的按钮，点击之后才能修改"。这里只按"数字按钮"收窄内边距。 */
+.kh-num-btn { min-width: 24px; padding: 0 6px; text-align: center; font-variant-numeric: tabular-nums; }
 .kh-num-box > .kh-input, .kh-cand-box > .kh-input { display: none; }
-/* 候选胶囊**仍按普通字段的竖排**（标签一行 + 控件行一行），只是控件行里放的是「胶囊…＋」
- * 而不是输入框：`min-height: 30px` = 普通输入框高 ⇒ 字段盒总高与相邻字段一致，
- * `align-items: flex-end` 下顶边才齐（这正是"行对齐"那条验收的机制）。 */
-.kh-cand-row { flex: 1 1 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 3px 6px; min-height: 30px; }
+/* 候选词字段 ＝ **一个输入框样子的框**，里装「胶囊…＋」（用户口径 m02566：一个输入框，里面
+ * 展示胶囊内容；点 `+` 才弹出小输入框编辑，回车回到展示模式）。边框/圆角/内边距照搬 `.kh-input`，
+ * `min-height: 30px` ＝普通输入框高 ⇒ 字段盒总高与相邻字段一致（`.kh-editor-sec-body` 是
+ * `align-items: flex-end`，靠底对齐；盒高不等就会让「标题词」比「组合方向」低一截）。 */
+.kh-cand-field {
+  flex: 1 1 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 3px 4px;
+  min-height: 30px; padding: 2px 5px; box-sizing: border-box;
+  border: 1px solid var(--border-2); border-radius: var(--r-sm); background: var(--card);
+  cursor: text;
+}
+.kh-cand-field > .kh-lbl-preview { flex: 0 1 auto; }
 .kh-cand-box .kh-fld-label { flex: 0 0 auto; }
-.kh-cand-box .kh-lbl-preview { flex: 0 1 auto; }
+/* 空框里的占位文字（`.kh-lbl-preview:empty{display:none}` 让空框只剩占位 + `+`） */
+.kh-cand-ph { flex: 0 0 auto; color: var(--text-4); font-size: var(--fs-base); line-height: 1; }
+.kh-cand-ph[hidden] { display: none; }
+/* 框里的「＋」：无边框小按钮，靠右收边（`margin-left:auto`），悬停才显色 */
 .kh-cand-add {
-  flex: 0 0 auto; width: 20px; height: 20px; padding: 0; margin: 0;
-  border: 1px dashed var(--border-2); border-radius: 999px; background: none;
+  flex: 0 0 auto; width: 18px; height: 18px; padding: 0; margin: 0 0 0 auto;
+  border: 0; border-radius: var(--r-sm); background: none;
   color: var(--text-4); font-size: var(--fs-sm); line-height: 1; cursor: pointer;
 }
-.kh-cand-add:hover { border-style: solid; border-color: var(--brand); color: var(--brand-deep); }
+.kh-cand-add:hover { background: var(--brand-softer); color: var(--brand-deep); }
 /* 字段盒是**列**容器 ⇒ 这里不能用 `flex: 1 1 100%`（basis 会被当**高度**用，撑爆一行）；
  * 要的是"自己占满一行宽"，所以固定宽 100%。 */
 .kh-cand-tip { flex: 0 0 auto; width: 100%; color: var(--warning); font-size: var(--fs-xs); line-height: 1.5; }

@@ -133,31 +133,34 @@ module.exports = async function run() {
     /* 垫片里 `h('input',{value})` 只落**属性**、property 不反射（真机上 `<input value=70>` 的
      * `input.value` 就是 '70'）—— 这里按真机口径把值喂进去，再派发一次 input 让胶囊刷新。 */
     inp.value = '70'; inp.dispatchEvent({ type: 'input' });
-    eq(textOf(c, '.kh-lbl-name').join('/'), '70', '常态就把当前值写在胶囊上');
+    eq(textOf(c, '.kh-num-btn').join('/'), '70', '常态就把当前值写在按钮上');
     eq(c.read(), 70, 'read() 仍走 FieldMap.coerce（存储契约不变）');
 
     const empty = mk('noteFontSize', '');
     const inp2 = empty.el.querySelector('input');
     inp2.value = ''; inp2.dispatchEvent({ type: 'input' });
-    eq(textOf(empty, '.kh-lbl-name').join('/'), '默认', '留空 ⇒ 胶囊写「默认」');
+    eq(textOf(empty, '.kh-num-btn').join('/'), '默认', '留空 ⇒ 按钮写「默认」');
     eq(empty.read(), '', '留空仍是留空（不许被控件写成默认值）');
   });
 
-  await test('★ 候选盒仍是"标签一行 + 控件行一行"（盒高＝相邻字段 ⇒ 才可能行对齐）', () => {
-    /* 首轮真机回归第 1 条就是这里：`.kh-fld.kh-cand-box` 曾被改成 `flex-direction: row`，
-     * 整个盒被压成 20px 高；而 `.kh-editor-sec-body` 是 `align-items: flex-end`（**靠底对齐**），
-     * 盒高比「组合方向」少 29px ⇒ 顶边差 29px ⇒ `titlePair.verify.t !== axis.t` 报红。
-     * 控件层锁住"胶囊与＋装在一个 30px 高的候选行里"，别再退回横向盒。 */
+  await test('★ 候选框是"输入框样子"的框：胶囊装在框里、空态显占位、末尾一个 +', () => {
+    /* 用户口径 m02566（"好丑"第一条）：一个输入框，里面展示胶囊内容；点 `+` 弹出小输入框编辑、
+     * 回车回到展示模式。旧实现是"标签一行 + 旁边几颗胶囊 + ＋"（`＋` 还会被挤到第二行），
+     * 既不像输入框，也和旁边的真输入框不成一族。 */
     const ctrl = mk('text', '华为');
-    const row = ctrl.el.querySelector('.kh-cand-row');
-    truthy(row, '胶囊与「+」要装在一个候选行里（`.kh-cand-row`）');
-    truthy(row.querySelector('.kh-lbl-preview') && row.querySelector('.kh-cand-add'),
-      '候选行里装的是"胶囊 + ＋"');
+    const frame = ctrl.el.querySelector('.kh-cand-field');
+    truthy(frame, '要有候选框（`.kh-cand-field`）');
+    truthy(frame.querySelector('.kh-lbl-preview') && frame.querySelector('.kh-cand-add'),
+      '框里装的是"胶囊 + ＋"');
+    eq(frame.querySelector('.kh-lbl-name').textContent, '华为', '胶囊在框**里面**');
+    const empty = mk('text', '');
+    const ph = empty.el.querySelector('.kh-cand-field .kh-cand-ph');
+    truthy(ph && !ph.hidden, '空框要显占位文字（否则看不出这是个空输入框）');
     const css = read('src/ui/components/components.css');
-    truthy(/\.kh-cand-row\s*\{[^}]*min-height:\s*30px/.test(css),
-      '候选行要有 30px 行高（＝普通输入框高）—— 盒高才与相邻字段一致');
-    falsy(/\.kh-fld\.kh-cand-box\s*\{[^}]*flex-direction:\s*row/.test(css),
-      '候选盒不许再改成横向（那是把盒高压成 20px、顶边不齐的根因）');
+    truthy(/\.kh-cand-field\s*\{[^}]*min-height:\s*30px/.test(css),
+      '框要有 30px 高（＝普通输入框高 ⇒ 字段盒高与相邻字段一致、才可能行对齐）');
+    truthy(/\.kh-cand-field\s*\{[^}]*border:\s*1px solid/.test(css), '框要有输入框那样的边框');
+    falsy(/\.kh-cand-row\s*\{/.test(css), '旧的"胶囊行"已作废（胶囊要装进框里）');
     truthy(/\.kh-cand-tip\s*\{[^}]*flex:\s*0 0 auto/.test(css),
       '提示行在**列**容器里不能写 `flex: 1 1 100%`（basis 会被当成高度用）');
   });
