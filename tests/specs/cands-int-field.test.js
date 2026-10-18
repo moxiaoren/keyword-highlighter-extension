@@ -161,7 +161,43 @@ module.exports = async function run() {
       '框要有 30px 高（＝普通输入框高 ⇒ 字段盒高与相邻字段一致、才可能行对齐）');
     truthy(/\.kh-cand-field\s*\{[^}]*border:\s*1px solid/.test(css), '框要有输入框那样的边框');
     falsy(/\.kh-cand-row\s*\{/.test(css), '旧的"胶囊行"已作废（胶囊要装进框里）');
-    truthy(/\.kh-cand-tip\s*\{[^}]*flex:\s*0 0 auto/.test(css),
+    truthy(/\.kh-cand-tip\s*\{[^}]*flex:\s*0\s+0\s+auto/.test(css),
       '提示行在**列**容器里不能写 `flex: 1 1 100%`（basis 会被当成高度用）');
+  });
+
+  await test('★ 2.0.2.10：图片 OCR 三件排进同一子块；备注/笔记内容标了 grow；备注占位只留一行', () => {
+    /* 用户口径（2026-10-18）："因为加了图片ocr相关功能，导致整个添加关键词界面布局有点怪"。
+     * 实测抓取卡的子元素是「候选框 h49 → 抓取范围 h49 → 裸勾选框 h17 → 候选框 h49 → 内联数字 h24」，
+     * 三种高度在 `align-items: flex-end` 下各自换行成阶梯 ⇒ 看着像三件不相干的东西。
+     * 这里锁**排布契约**：三件落进同一个 `.kh-fld-sub`，勾选行独占一行（宽度 2）。 */
+    const h = KH.ui.dom.h;
+    const body = h('div', { class: 'kh-editor-sec-body' });
+    document.body.appendChild(body);
+    const items = ['fetchLabels', 'fetchScope', 'imgOcr', 'imgOcrKeyword', 'imgOcrMax']
+      .map((k) => ({ spec: FM.byKey(k), ctrl: mk(k, '') }));
+    KH.ui.Fields.layout(items, body);
+
+    const subs = body.querySelectorAll('.kh-fld-sub');
+    eq(subs.length, 1, '抓取卡只该有一个字段子块（图片 OCR 三件）');
+    const sub = subs[0];
+    const cls = Array.from(sub.childNodes).map((k) => String(k.className));
+    eq(cls.length, 3, '子块里正好三件（勾选行 + 图片命中关键词 + 张数）：' + cls.join(' / '));
+    truthy(cls.some((c) => /kh-fld-bool/.test(c)), '「识别图片文字」在子块里');
+    truthy(cls.some((c) => /kh-cand-box/.test(c)), '「图片命中关键词」在子块里');
+    truthy(cls.some((c) => /kh-fld-inline/.test(c)), '「张数」在子块里');
+    eq(body.childNodes.length, 3, '正文三个直接子元素：字段 / 抓取范围 / 子块（勾选行不再跟抓取范围挤一行）');
+    truthy(/kh-fld-bool-wide/.test(String(mk('imgOcr', '').el.className)),
+      '「识别图片文字」是子块的开关行，要独占一行（否则 17px 高的勾选行会底对齐浮在上一行右端）');
+    eq(FM.byKey('imgOcr').width, 2, 'imgOcr 声明为整行（width: 2）');
+
+    /* 票 #56：两处可写区标 grow（列高撑满后由 CSS 把余高交给它们，别再留成卡内死白） */
+    eq(FM.byKey('note').grow, true, '备注是 grow 字段');
+    eq(FM.byKey('importantNote').grow, true, '笔记内容是 grow 字段');
+
+    /* 票 #55：占位文字只留一行；完整语法搬进 hint（title），信息不丢 */
+    const note = FM.byKey('note');
+    truthy(String(note.placeholder || '').length <= 24,
+      '备注占位要短（现 ' + String(note.placeholder || '').length + ' 字；原来 66 字把 4 行框填满）');
+    truthy(/表格/.test(String(note.hint || '')), '完整语法（含表格）要留在 tooltip 里');
   });
 };

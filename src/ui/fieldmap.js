@@ -145,8 +145,13 @@
      * 双字标签 5 个放不下（实测 262px），单字才留得出放分隔线的余量。 */
     { key: 'bgColor', label: '底色', short: '底', type: 'color', sec: 'basic', csv: 8, chip: true, sepBefore: true, def: () => '' },
     { key: 'textColor', label: '文字颜色', short: '文', type: 'color', sec: 'basic', csv: 9, chip: true, def: () => '' },
+    /* 【2.0.2.10 票 #55】原来空态把一整段 Markdown 语法当占位文字塞进 4 行框里（66 字）——
+     * 输入框里不该出现一页文档。常驻只留一行，完整语法搬进 `hint`（走 `title`，K71 口径 B）。
+     * 【票 #56】`grow: true`：卡片被列高拉满后，多出来的高度交给这块可写区（而不是留成死白）。 */
     { key: 'note', label: '备注', type: 'textarea', sec: 'basic', csv: 2, rows: 4, width: 2,
-      def: () => '' },
+      placeholder: '支持 Markdown（加粗、表格）；多行保留',
+      hint: '支持 Markdown：**加粗**、*斜体*、[文字](网址)、|a|b| 表格；多行换行会保留',
+      grow: true, def: () => '' },
     /* 启用：`head: true` = 渲染到**分区标题行右侧**，不占正文一行
      * （用户实测："放右上角避免占空间，或者干脆删掉 —— 反正关键词管理的表格处可以改"；
      *  这里选前者：既省空间又保留入口。关键词表格的「状态」列同样可以切换。） */
@@ -239,7 +244,9 @@
     /* ⚠️ 这三个字段**刻意不用 chip**：它们是「抓取字段」这一类的前置条件说明，不是匹配开关；
      * 渲染成普通勾选行 / 输入行的语义更清楚（核心词与标题词的匹配规则那两排胶囊也必须保持
      * "只有正则/Aa/全词"，真浏览器回归里有一条断言专门盯"同一套说法"）。 */
-    { key: 'imgOcr', label: '识别图片文字', type: 'bool', sec: 'fetch', csv: 0,
+    /* 【2.0.2.10 票 #57】`sub: 'ocr'` = 这三件在卡片里收进同一个虚线子块（`layout()` 认这个键）；
+     * `width: 2` = 它是子块的开关行，独占一行，别跟「抓取范围」挤到同一行右端。 */
+    { key: 'imgOcr', label: '识别图片文字', type: 'bool', sec: 'fetch', csv: 0, sub: 'ocr', width: 2,
       /* C6/C8：控件行已经有「识别图片文字」这五个字，tooltip 不再复述它、也不复述模块名
        * （用户点名的原则：模块标题写了模块名，正文不得再写一遍；tooltip 口径保持一致）。
        * 【K75 · 口径补一句】前提是**这条规则真的命中**（用户原话："判断命中了普通词/组合词没有…
@@ -249,12 +256,12 @@
       def: () => false },
     /* 同上（`cands`）。`regexAlways: true`：图片命中词**恒为正则**（`img-ocr.js` 固定
      * `useRegex: true`，没有开关），所以它按 `|` 切分永远是对的。 */
-    { key: 'imgOcrKeyword', label: '图片命中关键词', type: 'cands', sec: 'fetch', csv: 0,
+    { key: 'imgOcrKeyword', label: '图片命中关键词', type: 'cands', sec: 'fetch', csv: 0, sub: 'ocr',
       regexAlways: true, placeholder: '如：一对一',
       hint: '按**正则**匹配识别出的图片文字（不区分大小写、不要求整词）。'
         + '如 `一对一` / `A.C`；留空则不该勾选「识别图片文字」。',
       def: () => '' },
-    { key: 'imgOcrMax', label: '张数', type: 'int', sec: 'fetch', csv: 0, inline: true,
+    { key: 'imgOcrMax', label: '张数', type: 'int', sec: 'fetch', csv: 0, sub: 'ocr', inline: true,
       placeholder: '默认',
       /* C5：这是**张数**，原来吃的是 int 分支硬编码的"默认尺寸"提示，写错了对象。
        * T56（用户 2026-10-13）：label 由「每处最多」收成「张数」—— 与 C1/C2 同口径（分区标题与
@@ -284,7 +291,8 @@
     // richtext = 所见即所得（图片/链接/加粗/斜体/表格）；存储仍是干净 Markdown（与旧版一致）
     /* C2：模块标题已经叫「重要笔记」，正文 label 再写一遍就是冗余 → 改「笔记内容」。
      * key / type / csv 列序 / 往返一律不动（纯显示文案）。 */
-    { key: 'importantNote', label: '笔记内容', type: 'richtext', sec: 'imp', csv: 11, rows: 4, width: 2, def: () => '' }
+    /* 【票 #56】`grow: true`：列高把它拉满后，多出来的高度给这块编辑区，不再留成卡内死白。 */
+    { key: 'importantNote', label: '笔记内容', type: 'richtext', sec: 'imp', csv: 11, rows: 4, width: 2, grow: true, def: () => '' }
   ];
 
   /** 不属于"用户可编辑字段"但必须原样保留的元数据（往返校验要校验它们不变形） */
@@ -386,7 +394,7 @@
       hint: '整组标记为「重要」：组内命中都进重要笔记面板' },
     { key: 'impNoteUseHlColor', label: '底色', type: 'bool', chip: true,
       hint: '复用高亮底色（组内关键词的笔记卡片背景）；留空则用卡片自身的底色' },
-    { key: 'importantNote', label: '分组重要笔记', type: 'richtext', width: 2,
+    { key: 'importantNote', label: '分组重要笔记', type: 'richtext', width: 2, grow: true,
       placeholder: '分组统一的重要笔记（分组标记为重要时生效）；图片、加粗、表格、链接直接在框内显示' },
     { key: 'imgSize', label: '尺寸', type: 'int', inline: true,
       min: () => KH.Config.IMG_SIZE_MIN, max: () => KH.Config.IMG_SIZE_MAX, step: 1 },

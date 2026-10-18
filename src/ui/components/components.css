@@ -734,3 +734,60 @@
   color: var(--danger-strong);
   font-size: var(--fs-base);
 }
+
+/* ==== 【2.0.2.10 · 票 #54「添加关键词」弹窗整体梳理】====
+ * 只动观感与排布；字段 key / id / 存储往返 / 匹配逻辑一个字不改。
+ * 改动依据是实测几何（\`.kh-editor-cols\` 488 高、抓取卡子元素 6 个阶梯错位、后缀图例 83px/5 行），
+ * 不是"看着不舒服"。 */
+
+/* 票 #58：后缀图例默认收起（\`<details>\`），只占一行；想查后缀的人点一下。
+ * 之前它是 151 字常驻灰字，实测 83px / 5 行，把「字段」控件撑到 135px。 */
+.kh-lbl-legend > summary {
+  cursor: pointer; color: var(--text-3);
+  font-size: var(--fs-xs); line-height: 1.5; list-style-position: inside;
+}
+.kh-lbl-legend > summary:hover { color: var(--brand-deep); }
+.kh-lbl-legend[open] > summary { margin-bottom: 2px; }
+.kh-lbl-legend > div { color: var(--text-4); font-size: var(--fs-xs); line-height: 1.5; }
+
+/* 票 #57：字段子块（图片 OCR 三件）。虚线小方块 = 「这是抓取的一个分支」，
+ * 而不是三件各自换行、底对齐成阶梯的独立控件。 */
+.kh-fld-sub {
+  flex: 1 1 100%;
+  display: flex; flex-wrap: wrap; align-items: flex-end; gap: 4px 10px;
+  padding: 4px 8px 8px;
+  border: 1px dashed var(--border-2); border-radius: var(--r-md);
+  background: var(--bg-2);
+}
+.kh-fld-bool-wide { flex: 1 1 100%; }
+
+/* 票 #56：卡片被列高撑满（\`.kh-editor-col > .kh-editor-sec:last-child\`）后，多出来的高度
+ * 交给标了 \`grow\` 的可写区（备注 / 笔记内容）—— 否则实测列1 留 240px、列3 留 250px 死白。
+ * 用 \`:has()\` 把\"进入纵向 flex\"限定在**真的带可写区**的那两张卡上：其余卡片的
+ * \`align-items: flex-end\` 底对齐语义逐字不变。浏览器不认 \`:has()\` 时整块不生效，退化成 2.0.2.9 的样子。 */
+.kh-editor-sec:has(.kh-fld-grow) { display: flex; flex-direction: column; }
+.kh-editor-sec:has(.kh-fld-grow) > .kh-editor-sec-body { flex: 1 1 auto; min-height: 0; }
+/* body 转纵向：上半排（`.kh-fld-rows`，老规则 wrap）在上，grow 字段吃掉余下高度。
+ * 这样多出来的高度只会落进可写区，不会把上半排的行距撑开。 */
+.kh-editor-sec-body-grow { display: flex; flex-direction: column; gap: 6px; }
+.kh-fld-rows { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 6px 10px; }
+.kh-editor-sec-body-grow > .kh-fld-grow { flex: 1 1 auto; min-height: 0; }
+.kh-fld-grow .kh-rt-editor { flex: 1 1 auto; min-height: 0; }
+.kh-fld-grow .kh-rt-editor > textarea { flex: 1 1 auto; min-height: 96px; }
+.kh-fld-grow .kh-rte-wrap { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.kh-fld-grow .kh-rte { flex: 1 1 auto; min-height: 120px; }
+
+/* 票 #59：候选框里的胶囊＝**token**（填充底色、无描边），加号＝**有边框的按钮**。
+ * 之前胶囊与外壳都是 \`background: var(--card)\` + 同色描边 ⇒ 框中框；\`+\` 无边框吊在右端，不像按钮。
+ * 每条都限定 \`.kh-cand-field\` 作用域：「字段」控件与设置页「置顶排序」的胶囊不受影响。 */
+.kh-cand-field { align-content: center; }
+.kh-cand-field .kh-lbl-chip { background: var(--brand-softer); border-color: transparent; }
+.kh-cand-field .kh-lbl-chip:hover { border-color: var(--brand); }
+.kh-cand-field .kh-cand-add {
+  width: 20px; height: 20px;
+  border: 1px solid var(--border-2); border-radius: var(--r-sm);
+  background: var(--card); color: var(--text-3); font-weight: 600;
+}
+.kh-cand-field .kh-cand-add:hover {
+  border-color: var(--brand); background: var(--brand-softer); color: var(--brand-deep);
+}

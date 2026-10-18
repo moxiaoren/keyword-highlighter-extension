@@ -92,10 +92,16 @@ module.exports = async function run() {
     }
   });
 
-  await test('★ 后缀图例常显（`!` / `%` / `^` 不许再是"只有更新日志里才知道"的功能）', () => {
+  await test('★ 后缀图例默认收起、点开能查到（`!` / `%` / `^` 不许再是"只有更新日志里才知道"的功能）', () => {
     const ctrl = mk('名称');
     const legend = ctrl.el.querySelectorAll('.kh-lbl-legend')[0];
-    truthy(legend, '要有一行后缀图例');
+    truthy(legend, '要有一处后缀图例');
+    /* 【2.0.2.10 票 #58】改 `<details>` 默认收起：常驻时这段 151 字的说明实测 83px / 5 行，
+     * 把「字段」控件撑到 135px。信息不删，只是折叠 —— 所以下面仍逐字核对内容。
+     * 判据用 DOM 形状（首个子元素是 `summary` + 没有 `open` 属性），不依赖 shim 是否实现了 `.open`。 */
+    eq(String(legend.firstElementChild && legend.firstElementChild.tagName).toLowerCase(), 'summary',
+      '收起态要为 `<details><summary>后缀怎么写…`（点 summary 展开，原生行为）');
+    falsy(legend.getAttribute && legend.getAttribute('open'), '默认收起（没有 open 属性）');
     const t = legend.textContent;
     for (const key of ['#图', '#0', '@', '!', '^锚文本', '%']) {
       truthy(t.indexOf(key) >= 0, '图例里要提到 ' + key + '：' + t);

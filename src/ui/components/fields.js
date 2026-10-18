@@ -124,7 +124,10 @@
         const cb = h('input', { type: 'checkbox', checked: value ? true : null, id: id });
         cb.addEventListener('change', () => { if (c.onChange) c.onChange(spec.key, cb.checked); });
         if (spec.chip) return { el: chipEl(cb, spec.label, spec.hint, () => cb.checked), read: () => cb.checked, key: spec.key };
-        return { el: h('div', { class: 'kh-fld-bool', title: hintTitle }, [cb, h('span', { class: 'kh-fld-bool-label', text: spec.label })]), read: () => cb.checked, key: spec.key };
+        /* 【2.0.2.10 票 #57】`width: 2` 的勾选行独占一行（图片 OCR 子块的开关行用它，
+         * 否则它会以 17px 的高度底对齐浮在上一行右端，看着像挂错了地方）。 */
+        const boolCls = 'kh-fld-bool' + (spec.width === 2 ? ' kh-fld-bool-wide' : '');
+        return { el: h('div', { class: boolCls, title: hintTitle }, [cb, h('span', { class: 'kh-fld-bool-label', text: spec.label })]), read: () => cb.checked, key: spec.key };
       }
       case 'textarea': {
         const ed = ui.RichEditor.create({
@@ -139,7 +142,8 @@
           h('label', { class: 'kh-fld-label', text: spec.label, for: id }),
           ed.toolsRow || null
         ]);
-        return { el: h('div', { class: fldCls }, [labelRow, ed]), read: () => ed.getValue(), key: spec.key };
+        /* 【票 #56】`spec.grow`：这一块吃掉卡片多出来的高度（CSS 见 `.kh-fld-grow`）。 */
+        return { el: h('div', { class: fldCls + (spec.grow ? ' kh-fld-grow' : '') }, [labelRow, ed]), read: () => ed.getValue(), key: spec.key };
       }
       case 'richtext': {
         // 所见即所得（图片/链接/加粗/斜体/表格）；编辑框里的图片大小跟随"图片缩略尺寸"（旧版 v1.8.17 口径）
@@ -150,7 +154,7 @@
           placeholder: spec.placeholder || '与页面显示一致：图片、加粗、表格、链接直接在框内显示',
           id: id
         });
-        return { el: h('div', { class: fldCls }, [
+        return { el: h('div', { class: fldCls + (spec.grow ? ' kh-fld-grow' : '') }, [
           h('label', { class: 'kh-fld-label', text: spec.label, for: id }), ed
         ]), read: () => ed.getValue(), key: spec.key };
       }
@@ -231,11 +235,16 @@
       case 'labels': {
         const inp = h('input', { class: 'kh-input', type: 'text', id: id, value: '', placeholder: spec.placeholder });
         const prev = h('div', { class: 'kh-lbl-preview' });
-        const legend = h('div', {
-          class: 'kh-lbl-legend',
-          text: '后缀：#1 右邻一格 / #图 仅图片 / #3 最多 3 张 / #图3 仅图片且最多 3 张 / #0 该字段不要图 / @2 值格 / ! 去空白 / ^锚文本 只取锚点之前 / %4 前 4 字；'
-            + '一次写多个字段用 | 或 ｜（例：名称^[复制]|备注#图）；回车把这一段收成胶囊，点胶囊改那一段'
-        });
+        /* 【2.0.2.10 票 #58】图例改**默认收起**：这段 151 字的语法说明常驻时实测 83px / 5 行，
+         * 把「字段」控件撑到 135px，是这张卡里最显眼的一块灰字。信息一个字不删，只是搬到
+         * `<details>` 里 —— 想知道后缀怎么写的人点一下，不想知道的人不必每眼都读一遍。 */
+        const legend = h('details', { class: 'kh-lbl-legend' }, [
+          h('summary', { text: '后缀怎么写（点开看全部）' }),
+          h('div', {
+            text: '后缀：#1 右邻一格 / #图 仅图片 / #3 最多 3 张 / #图3 仅图片且最多 3 张 / #0 该字段不要图 / @2 值格 / ! 去空白 / ^锚文本 只取锚点之前 / %4 前 4 字；'
+              + '一次写多个字段用 | 或 ｜（例：名称^[复制]|备注#图）；回车把这一段收成胶囊，点胶囊改那一段'
+          })
+        ]);
         const box = h('div', { class: fldCls, title: hintTitle }, [
           h('label', { class: 'kh-fld-label', text: spec.label + (spec.required ? ' *' : ''), for: id }),
           inp, prev, legend
@@ -528,15 +537,39 @@
   function layout(items, bodyEl) {
     const h = D().h;
     let chipRow = null;
+    let subBox = null;
+    let subKey = null;
+    /* 【2.0.2.10 票 #56】本卡若有 `grow` 字段（备注 / 笔记内容——列高撑满后要多出来的高度）：
+     * 其余字段先排进一个「上半排」容器（照老规则 wrap），body 本身转成**纵向** flex，
+     * `grow` 字段独占余下高度。为什么不能纯靠 CSS：body 是 wrap 容器，`align-content: stretch`
+     * 会把多出来的高度**平均分给每一行** —— 实测「基本信息」里胶囊行被推离 77px，比原来的死白更难看。 */
+    const useGrow = items.some((it) => it.spec.grow);
+    const host = useGrow ? h('div', { class: 'kh-fld-rows' }) : bodyEl;
+    if (useGrow) bodyEl.classList.add('kh-editor-sec-body-grow');
     for (const it of items) {
       const f = it.spec, c = it.ctrl;
+      if (f.grow) { chipRow = null; bodyEl.appendChild(c.el); continue; }
+      /* 【2.0.2.10 票 #57】`sub` = **子块**：连续的、`sub` 相同的字段收进一个 `.kh-fld-sub`（整行占位）。
+       * 图片 OCR 那三件原本是「勾选框 17px / 候选框 49px / 内联数字 24px」三种高度，在
+       * `.kh-editor-sec-body{align-items:flex-end}` 下各自换行、底对齐成阶梯，看着像三件不相干的东西。 */
+      const sk = f.sub || null;
+      if (sk !== subKey) { subKey = sk; subBox = null; }
+      if (sk) {
+        if (!subBox) {
+          subBox = h('div', { class: 'kh-fld-sub', 'data-sub': sk });
+          host.appendChild(subBox);
+        }
+        subBox.appendChild(c.el);
+        chipRow = null;
+        continue;
+      }
       if (f.chip) {
         if (!chipRow) {
           /* 若该行**第一个**字段带 `width:2`，说明它要独占整行
            * （历史上「启用组合」用过它来保证后面「标题关键词 | 组合方向」能并排；
            *  K70 起该开关改挂分区标题行，这条分支留作通用能力） */
           chipRow = h('div', { class: 'kh-fld-chips' + (f.width === 2 ? ' kh-fld-chips-wide' : '') });
-          bodyEl.appendChild(chipRow);
+          host.appendChild(chipRow);
         }
         if (f.sepBefore && chipRow.childNodes.length) {
           chipRow.appendChild(h('span', { class: 'kh-chip-sep' }));
@@ -544,9 +577,11 @@
         chipRow.appendChild(c.el);
       } else {
         chipRow = null;
-        bodyEl.appendChild(c.el);
+        host.appendChild(c.el);
       }
     }
+    /* 上半排插到最前：`grow` 字段按字段表顺序总在最后（备注 / 笔记内容都是本卡末位） */
+    if (useGrow && host !== bodyEl) bodyEl.insertBefore(host, bodyEl.firstChild);
     return bodyEl;
   }
 
