@@ -769,7 +769,7 @@
 .kh-editor-sec:has(.kh-fld-grow) > .kh-editor-sec-body { flex: 1 1 auto; min-height: 0; }
 /* body 转纵向：上半排（`.kh-fld-rows`，老规则 wrap）在上，grow 字段吃掉余下高度。
  * 这样多出来的高度只会落进可写区，不会把上半排的行距撑开。 */
-.kh-editor-sec-body-grow { display: flex; flex-direction: column; gap: 6px; }
+.kh-editor-sec-body-grow { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
 .kh-fld-rows { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 6px 10px; }
 .kh-editor-sec-body-grow > .kh-fld-grow { flex: 1 1 auto; min-height: 0; }
 .kh-fld-grow .kh-rt-editor { flex: 1 1 auto; min-height: 0; }
@@ -791,3 +791,27 @@
 .kh-cand-field .kh-cand-add:hover {
   border-color: var(--brand); background: var(--brand-softer); color: var(--brand-deep);
 }
+
+/* ==== 【2.0.2.11 · 票 #60「添加关键词」弹窗布局与交互升级】==== */
+
+/* 票 #64：住进富文本工具栏的三颗控件（底色开关 / 图片尺寸 / 正文字号）。
+ * 与 B / I / 链接同一排、同一形态；真值载体（checkbox / number input）藏在这一格里，
+ * 排版上不占位置，读写路径一个字没变。 */
+.kh-tool-field { display: inline-flex; align-items: center; gap: 0; }
+.kh-tool-field > input { display: none; }
+.kh-tool-field.kh-num-box { margin: 0; gap: 0; }
+.kh-rt-toolbar .kh-tool-toggle { min-width: 24px; }
+/* 字号/尺寸按钮带前缀（A / ▭），值最长 3 位 ⇒ 给一点内距，别在 24px 里挤成一团 */
+.kh-rt-toolbar .kh-tool-field .kh-num-btn { min-width: 28px; padding: 0 6px; }
+
+/* 票 #63：「抓取后续字段」默认单行裁切（宽度高度都不变），词多点「展开」看全。
+ * 裁切只作用在胶囊行上（不碰外壳宽度：这个字段本身已经是整行 `width: 2`）。
+ * 展开态用 `is-open`，**不借 `.kh-fld-wide`** —— 后者是"字段占整行"的既有语义，这里两件事不是一回事。 */
+.kh-clamp-btn { height: 18px; min-width: 0; padding: 0 6px; font-size: var(--fs-xs); }
+.kh-cand-clamp .kh-cand-field { overflow: hidden; }
+.kh-cand-clamp .kh-cand-field > .kh-lbl-preview { flex-wrap: nowrap; min-width: 0; }
+/* 展开态：胶囊行恢复换行 —— 词多时一次看全 */
+.kh-cand-clamp.is-open .kh-cand-field { overflow: visible; }
+.kh-cand-clamp.is-open .kh-cand-field > .kh-lbl-preview { flex-wrap: wrap; }
+/* 抓取字段的胶囊带后缀徽标（`#图3` / `%4`）：胶囊本身不参与压缩，否则徽标会被裁掉 */
+.kh-cand-token .kh-lbl-chip { flex: 0 0 auto; }

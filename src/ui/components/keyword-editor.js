@@ -452,6 +452,17 @@
       }
     });
 
+    /* 【2.0.2.11 票 #62】三列各锁一个 `min-width` ＝ **打开时的实测列宽**（用户口径 m01713：
+     * 「都锁。但是整体宽度还是和现在一样，支持随着输入框手动拖宽一起变宽」）。
+     * 拖窄时列不再被压到 60px 那种程度；拖宽时照旧整列一起长（`rich-editor.js` 的 `growHost`
+     * 同时拉列与弹窗）。只能**挂载后**量：构造期这些节点还没进文档，`clientWidth` 恒 0。 */
+    try {
+      for (const c of cols.values()) {
+        const w = Math.round(c.getBoundingClientRect().width);
+        if (w > 0) c.style.minWidth = w + 'px';
+      }
+    } catch (e) { /* 垫片 / 无布局环境：跳过。视觉退化，功能不受影响 */ }
+
     return modal;
   }
 

@@ -189,10 +189,17 @@
         + '超出本行列数＝不命中。',
       def: () => '' },
     /* ---- 抓取后续字段（独立分区：普通词也能抓取，不再只服务组合词）---- */
-    /* 【2.0.2.4 需求④】`type: 'labels'` = 「字段」专用控件（文本框 + 实时胶囊预览 + 后缀图例，
+    /* 【2.0.2.4 需求④】「字段」专用控件（文本框 + 实时胶囊预览 + 后缀图例，
      * 见 `fields.js` 的 `case 'labels'`）。**只换控件形态**：值仍是整串原文，
-     * 分隔符/后缀语法/CSV 第 17 列/存储归一全部照旧。 */
-    { key: 'fetchLabels', label: '字段', type: 'labels', sec: 'fetch', csv: 17, width: 2,
+     * 分隔符/后缀语法/CSV 第 17 列/存储归一全部照旧。
+     * 【2.0.2.11 票 #63】控件从 `labels` 换成 `cands`：与「关键词 / 标题词」同一套手感
+     * （胶囊 + 浮层输入 + `+`），再加两件抓取字段特有的东西 ——
+     *   · `token: true`：每段解析后缀并画徽标（`#图3`、`%4` 一眼看得出，图例也一并带上）；
+     *   · `clamp: true`：默认**尺寸不变、单行裁切**，词多了点「展开」占整行（用户口径 m01713：
+     *     「宽度高度都默认不变，超出隐藏超出部分，但支持手动展开/收起」）。
+     * 存储契约一个字没变（仍是整串原文）。 */
+    { key: 'fetchLabels', label: '字段', type: 'cands', sec: 'fetch', csv: 17, width: 2,
+      token: true, clamp: true,
       placeholder: '如：名称｜备注',
       /* C1：模块标题已经叫「抓取后续字段」，正文里的 label 再写一遍就是冗余 → 缩成「字段」。
        * `@表达式` 的语义写准：它是**按标签格所在行**从右数第几格（与组合方向零耦合），
@@ -273,26 +280,34 @@
      * 于是正文只剩 `[底色] 尺寸：[__]` 一行（原来三件事挤一行）。 */
     { key: 'important', label: '启用', type: 'bool', sec: 'imp', csv: 10, chip: true, head: true, def: () => false },
     { key: 'impNoteUseHlColor', label: '底色', type: 'bool', sec: 'imp', csv: 0, chip: true,
-      hint: '复用关键词高亮底色（重要笔记卡片背景）；留空则用卡片自身的底色',
+      /* 【2.0.2.11 票 #64】搬进富文本工具栏，和加粗 / 斜体 / 链接同排（用户口径：「底色 ui 改成和加粗、
+       * 插入超链接一样」）。`chip` 保留：万一某处没有富文本工具栏（`layout()` 会退回正文），它仍是胶囊。 */
+      tool: true, toolOf: 'importantNote', short: '底',
+      hint: '复用关键词高亮底色（重要笔记卡片背景）；关着则用卡片自身的底色',
       def: () => false },
     /* 标签从「图片尺寸(px)」缩到「尺寸」：原标题占 78px，把这个窄容器里的输入框挤得只剩一点点
      * （用户实测："图片大小前面的文本不用这么长，挤压太多输入框位置"）。冒号由 inline 模式的 CSS 补。 */
     { key: 'imgSize', label: '尺寸', type: 'int', sec: 'imp', csv: 0, inline: true,
-      /* 【2.0.2.7】范围从 config 的常量取（唯一真源）——**惰性函数**，因为这张表在脚本加载期就构造，
+      /* 【2.0.2.11 票 #64】搬进富文本工具栏：文案带 `▭` 前缀与「字号」那颗 `A` 区分。
+       * 【2.0.2.7】范围从 config 的常量取（唯一真源）——**惰性函数**，因为这张表在脚本加载期就构造，
        * 那时 KH.Config 未必已经就位（同文件里 `def: () => ...` 全是闭包，就是这个理由）。
        * 此前这里的 noteFontSize 与分组级那份把 10/20 各抄了一份，改 config 时必然漂移。 */
+      tool: true, toolOf: 'importantNote', toolPrefix: '▭',
       min: () => KH.Config.IMG_SIZE_MIN, max: () => KH.Config.IMG_SIZE_MAX, step: 1,
       hint: '图片的显示尺寸（留空＝用全局默认）', def: () => '' },
     /* 2.0.2.2 需求 2：笔记正文字号的**词级覆盖**（留空＝继承「样式」里的全局正文字号）。
      * 与 imgSize 完全同一套手法：渲染时给该卡写内联 `--kh-note-fs`，盖掉宿主级那个值。 */
     { key: 'noteFontSize', label: '字号', type: 'int', sec: 'imp', csv: 0, inline: true,
+      tool: true, toolOf: 'importantNote', toolPrefix: 'A',
       min: () => KH.Config.NOTE_FONT_MIN, max: () => KH.Config.NOTE_FONT_MAX, step: 1,
       hint: '笔记正文字号（留空＝用「样式」里的全局字号）', def: () => '' },
     // richtext = 所见即所得（图片/链接/加粗/斜体/表格）；存储仍是干净 Markdown（与旧版一致）
     /* C2：模块标题已经叫「重要笔记」，正文 label 再写一遍就是冗余 → 改「笔记内容」。
      * key / type / csv 列序 / 往返一律不动（纯显示文案）。 */
-    /* 【票 #56】`grow: true`：列高把它拉满后，多出来的高度给这块编辑区，不再留成卡内死白。 */
-    { key: 'importantNote', label: '笔记内容', type: 'richtext', sec: 'imp', csv: 11, rows: 4, width: 2, grow: true, def: () => '' }
+    /* 【票 #56】`grow: true`：列高把它拉满后，多出来的高度给这块编辑区，不再留成卡内死白。
+     * 【2.0.2.11 票 #64】`noLabel: true`：删掉可见的「笔记内容」标题（用户口径：这行文案没用），
+     * 字段名改挂编辑器的 `aria-label`（读屏与自动化仍认得出）。底色 / 尺寸 / 字号已进它的工具栏。 */
+    { key: 'importantNote', label: '笔记内容', type: 'richtext', sec: 'imp', csv: 11, rows: 4, width: 2, grow: true, noLabel: true, def: () => '' }
   ];
 
   /** 不属于"用户可编辑字段"但必须原样保留的元数据（往返校验要校验它们不变形） */
@@ -393,13 +408,16 @@
     { key: 'important', label: '重要', type: 'bool', chip: true, sepBefore: true,
       hint: '整组标记为「重要」：组内命中都进重要笔记面板' },
     { key: 'impNoteUseHlColor', label: '底色', type: 'bool', chip: true,
-      hint: '复用高亮底色（组内关键词的笔记卡片背景）；留空则用卡片自身的底色' },
+      tool: true, toolOf: 'importantNote', short: '底',
+      hint: '复用高亮底色（组内关键词的笔记卡片背景）；关着则用卡片自身的底色' },
     { key: 'importantNote', label: '分组重要笔记', type: 'richtext', width: 2, grow: true,
       placeholder: '分组统一的重要笔记（分组标记为重要时生效）；图片、加粗、表格、链接直接在框内显示' },
     { key: 'imgSize', label: '尺寸', type: 'int', inline: true,
+      tool: true, toolOf: 'importantNote', toolPrefix: '▭',
       min: () => KH.Config.IMG_SIZE_MIN, max: () => KH.Config.IMG_SIZE_MAX, step: 1 },
     /* 分组级：组内关键词未单独设字号时用它（与上面 imgSize 同一套继承顺序） */
     { key: 'noteFontSize', label: '字号', type: 'int', inline: true,
+      tool: true, toolOf: 'importantNote', toolPrefix: 'A',
       min: () => KH.Config.NOTE_FONT_MIN, max: () => KH.Config.NOTE_FONT_MAX, step: 1 }
   ];
 

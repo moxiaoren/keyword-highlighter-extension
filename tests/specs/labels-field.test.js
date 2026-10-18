@@ -35,7 +35,14 @@ module.exports = async function run() {
    */
   const mk = (val) => KH.ui.Fields.create(FM.byKey('fetchLabels'), val, {});
   const textOf = (ctrl, sel) => ctrl.el.querySelectorAll(sel).map((el) => el.textContent);
-  const inpOf = (ctrl) => ctrl.el.querySelector('input');
+  /* 【2.0.2.11 票 #63】控件换成 `cands` ⇒ 输入框常态在框里、**点胶囊编辑时会被搬进浮层**，
+   * 所以要两步找：先在控件里找，找不到就到浮层里找（与 `cands-int-field.test.js` 同一手法）。 */
+  const inpOf = (ctrl) => {
+    const own = ctrl.el.querySelector('input');
+    if (own) return own;
+    const pop = document.body.querySelector('.kh-pop-edit');
+    return pop && pop.querySelector('input');
+  };
   /** 模拟"往输入框里打字"（垫片里 property 不反射，得自己赋值再派发 input）。 */
   const type = (ctrl, text) => {
     const inp = inpOf(ctrl);
@@ -46,8 +53,13 @@ module.exports = async function run() {
 
   suite('字段控件 · 可编辑胶囊（2.0.2.4 需求④ + 2.0.2.6 升级）');
 
-  await test('★ 接线：字段控件是 labels 类型；选项页先加载抓取实现（语法只有一份）', () => {
-    eq(FM.byKey('fetchLabels').type, 'labels', '抓取字段要用能画胶囊的控件');
+  await test('★ 接线：字段控件与关键词同一族（2.0.2.11 起是 cands）；选项页先加载抓取实现（语法只有一份）', () => {
+    /* 【2.0.2.11 票 #63】从 `labels` 换成 `cands`：用户要求「抓取后续字段输入框统一成关键词和
+     * 标题词的 ui 和交互模式」⇒ 同一套胶囊 + 浮层录入 + `+`。抓取字段特有的一律靠
+     * `token`（解析后缀画徽标）与 `clamp`（单行裁切 + 展开/收起）两件开关，不另造控件形态。 */
+    eq(FM.byKey('fetchLabels').type, 'cands', '抓取字段要用能画胶囊的候选控件');
+    eq(FM.byKey('fetchLabels').token, true, '抓取字段要解析后缀（否则 `#图3` 看不出是指什么）');
+    eq(FM.byKey('fetchLabels').clamp, true, '抓取字段默认单行裁切（用户口径 m01713：尺寸不变、超出隐藏）');
     eq(FM.byKey('fetchLabels').csv, 17, 'CSV 还是第 17 列（只换控件形态，不动落盘位置）');
     const html = read('options/options.html');
     const iFetch = html.indexOf('../src/features/fetch.js');

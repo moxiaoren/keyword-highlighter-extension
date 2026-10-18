@@ -78,8 +78,21 @@
     const wholeWord = !!flags.wholeWord;
     const useRegex = !!flags.useRegex;
 
-    let pattern = String(raw == null ? '' : raw);
-    if (!useRegex) pattern = escapeRegex(pattern);
+    /* 【2.0.2.11 票 #65】`|` 一律是「多个词的分隔符」，**两种模式都按它切**；切完**每段怎么编译**不同：
+     *   · 普通模式：每段 `escapeRegex` ⇒ 段里就算写了正则元字符，也只是字面字符（`a|b` = a 或 b）；
+     *   · 正则模式：每段原样当表达式，段与段**互不影响**（各自独立编译，不跨段拼接分组）。
+     * 多段时用 `(?:…)` 包起来再拼 —— 这正是全词边界那条注释要求的形态
+     * （「`A|B|C` 不能变成 `A|B|C\b`，必须先把分支包住再加边界」），现在只是把
+     * 「用户自己写 `|`」正式定义成「分段」，让普通模式也能一次配多个词。
+     * 【上限】正则模式下段落里**不能再出现 `|`**（分组里的 `(a|b)`、字符组里的 `[a|b]`、转义的 `\|`
+     * 都会被当成段分隔符切碎）—— 要写这种式子请用 `[]`/非捕获组的等价写法，或拆成多个胶囊。 */
+    const altOf = (src) => {
+      const segs = String(src == null ? '' : src).split('|').map((s) => s.trim()).filter((s) => s.length);
+      if (!segs.length) return useRegex ? String(src == null ? '' : src) : escapeRegex(String(src == null ? '' : src));
+      const parts = segs.map((s) => (useRegex ? s : escapeRegex(s)));
+      return parts.length === 1 ? parts[0] : '(?:' + parts.join('|') + ')';
+    };
+    let pattern = altOf(raw);
 
     let jsFlags = 'g';                      // ★ 多命中遍历的前提：不带 g 就只会拿到第一个匹配
     if (!caseSensitive) jsFlags += 'i';

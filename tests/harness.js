@@ -97,6 +97,17 @@ class ShimElement {
   }
   appendChild(n) { if (n && n.parentNode) n.parentNode.removeChild(n); this.childNodes.push(n); if (n) { n.parentNode = this; } return n; }
   removeChild(n) { const i = this.childNodes.indexOf(n); if (i >= 0) this.childNodes.splice(i, 1); if (n) n.parentNode = null; return n; }
+  /** 真 DOM 有、垫片一直缺的一个：往里插到某个子节点之前。缺它时排布层（把工具栏控件插到
+   *  清空键前面）在单测里直接 `TypeError: insertBefore is not a function` —— 是垫片缺口，不是产品 bug。 */
+  insertBefore(n, ref) {
+    if (!ref) return this.appendChild(n);
+    if (n && n.parentNode) n.parentNode.removeChild(n);
+    const i = this.childNodes.indexOf(ref);
+    if (i < 0) return this.appendChild(n);
+    this.childNodes.splice(i, 0, n);
+    if (n) n.parentNode = this;
+    return n;
+  }
   replaceChild(n, old) { const i = this.childNodes.indexOf(old); if (i >= 0) { this.childNodes[i] = n; n.parentNode = this; old.parentNode = null; } return old; }
   setAttribute(k, v) { this.attributes[k] = String(v); }
   getAttribute(k) { return (k in this.attributes) ? this.attributes[k] : null; }

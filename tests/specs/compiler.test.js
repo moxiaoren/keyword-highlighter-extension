@@ -9,6 +9,33 @@ module.exports = async function run() {
 
   suite('compiler · buildPattern');
 
+  await test('★ 普通模式也认 `|` 做多词分隔（2.0.2.11 票 #65：一次配两个词，两个都生效）', () => {
+    /* 用户口径（m01713）：「都拆。但是不开正则，每个胶囊内即使有符合正则表达式的也视为普通内容。」
+     * ⇒ 普通模式按 | 切成多个**字面量**分支；正则模式每段原样当表达式。 */
+    const mk = () => new RegExp(C.buildPattern('2024年|2025年',
+      { caseSensitive: false, wholeWord: false, useRegex: false }).source, 'u');
+    truthy(mk().test('表头是 2024年 的收入'), '第一段要命中');
+    truthy(mk().test('表头是 2025年 的收入'), '第二段也要命中');
+    falsy(mk().test('表头是 2023年 的收入'), '没配的年份不许命中');
+  });
+
+  await test('★ 普通模式的每段仍按字面量转义（`a.b|c*` 不许变成通配）', () => {
+    const mk = () => new RegExp(C.buildPattern('a.b|c*',
+      { caseSensitive: false, wholeWord: false, useRegex: false }).source, 'u');
+    truthy(mk().test('xx a.b yy'), '`.` 是字面点：a.b 应命中');
+    falsy(mk().test('xx axb yy'), '`.` 不许吞字符');
+    truthy(mk().test('xx c* yy'), '`*` 是字面星号：c* 应命中');
+    falsy(mk().test('xx cccc yy'), '`*` 不许当量词');
+  });
+
+  await test('★ 正则模式：每段独立表达式，段内 `|` 不再二次拆分（票 #65 口径）', () => {
+    const mk = () => new RegExp(C.buildPattern('\\d{4}年|第[一二]章',
+      { caseSensitive: false, wholeWord: false, useRegex: true }).source, 'u');
+    truthy(mk().test('2024年'), '第一段当表达式：\\d{4}年');
+    truthy(mk().test('第二章'), '第二段当表达式：第[一二]章');
+    falsy(mk().test('第三章'), '字符类里没有「三」');
+  });
+
   await test('普通词：转义正则元字符（含 . 与 * 不算元字符）', () => {
     const re = C.buildPattern('a.b*c', { caseSensitive: false, wholeWord: false, useRegex: false });
     truthy(re.test('xa.b*cy'), '字面量模式应能匹配自身');

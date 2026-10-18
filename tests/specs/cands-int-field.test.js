@@ -58,20 +58,26 @@ module.exports = async function run() {
     }
   });
 
-  await test('★ 普通模式：`|` 是普通字符 ⇒ **整串一个胶囊** + 一行提示（切了就是骗人）', () => {
-    /* 垫片里 `document.getElementById` 恒为 null ⇒ 兄弟开关取不到 ⇒ 走普通模式这条保守路径 */
+  await test('★ 普通模式：`|` 也是「多个词」的分隔符（2.0.2.11 票 #65）', () => {
+    /* 垫片里 `document.getElementById` 恒为 null ⇒ 兄弟开关取不到 ⇒ 走普通模式这条路径。
+     * 2.0.2.11 起**两种模式都按 | 切**，差别只在"每段怎么编译"（`compiler.js` 普通模式逐段 escape）。 */
     const ctrl = mk('text', 'A|B');
-    eq(textOf(ctrl, '.kh-lbl-chip').length, 1, '普通模式不许按 | 摊成两个候选');
-    eq(textOf(ctrl, '.kh-lbl-name').join('/'), 'A|B', '整串当**一个**词展示');
+    eq(textOf(ctrl, '.kh-lbl-name').join('/'), 'A/B', '★ 普通模式也按 | 摊开（一次配两个词，两个都生效）');
     eq(ctrl.read(), 'A|B', '★ 没动过 ⇒ read() 逐字回原串');
     const tip = ctrl.el.querySelector('.kh-cand-tip');
     truthy(tip, '要有提示位');
-    truthy(tip.textContent.indexOf('正则') >= 0,
-      '要说清"要多个候选请勾正则"：' + tip.textContent);
-    eq(tip.hidden, false, '值里真有 | 时提示要露出来');
+    eq(tip.hidden, true, '`|` 已是分隔符，不再需要"| 不是或"的警告');
   });
 
-  await test('★ 普通模式且值里没有 `|` ⇒ 提示不露（别天天挂着一条警告）', () => {
+  await test('★ 普通模式下写了正则式子 ⇒ 提示"按字面匹配"（别以为生效了）', () => {
+    const ctrl = mk('text', 'A.C');
+    const tip = ctrl.el.querySelector('.kh-cand-tip');
+    eq(tip.hidden, false, '段里出现正则元字符时要露出来');
+    truthy(tip.textContent.indexOf('正则') >= 0, '要说清"要当正则用请勾上正则"：' + tip.textContent);
+    eq(textOf(ctrl, '.kh-lbl-name').join('/'), 'A.C', '胶囊仍按字面显示');
+  });
+
+  await test('★ 普通模式且值里没有正则元字符 ⇒ 提示不露（别天天挂着一条警告）', () => {
     const ctrl = mk('text', '华为');
     eq(ctrl.el.querySelector('.kh-cand-tip').hidden, true, '没有歧义就不提示');
     eq(textOf(ctrl, '.kh-lbl-name').join('/'), '华为', '一个词一个胶囊');
@@ -125,7 +131,10 @@ module.exports = async function run() {
 
   await test('★ 数值字段：常态只显值胶囊（留空＝「默认」），数字框仍在同一 id 上', () => {
     const c = mk('imgSize', 70);
-    truthy(c.el.querySelector('.kh-num-box'), '要有值胶囊容器');
+    /* 【2.0.2.11 票 #64】imgSize / noteFontSize 搬进富文本工具栏 ⇒ 控件本身就是那颗按钮，
+     * 不再套一层 `.kh-fld` 外壳。判据放成"自己就是容器，或里面有容器"，两者都算。 */
+    truthy(c.el.classList.contains('kh-num-box') || c.el.querySelector('.kh-num-box'),
+      '要有值胶囊容器');
     const inp = c.el.querySelector('input');
     truthy(inp, '★ 数字框仍在控件里（只是常态藏着）');
     eq(inp.getAttribute('id'), 'fld-imgSize', 'id 必须还是 `fld-imgSize`');
@@ -133,13 +142,14 @@ module.exports = async function run() {
     /* 垫片里 `h('input',{value})` 只落**属性**、property 不反射（真机上 `<input value=70>` 的
      * `input.value` 就是 '70'）—— 这里按真机口径把值喂进去，再派发一次 input 让胶囊刷新。 */
     inp.value = '70'; inp.dispatchEvent({ type: 'input' });
-    eq(textOf(c, '.kh-num-btn').join('/'), '70', '常态就把当前值写在按钮上');
+    eq(textOf(c, '.kh-num-btn').join('/'), '▭70', '常态就把当前值写在按钮上（`▭` 前缀区分尺寸/字号）');
     eq(c.read(), 70, 'read() 仍走 FieldMap.coerce（存储契约不变）');
 
     const empty = mk('noteFontSize', '');
     const inp2 = empty.el.querySelector('input');
     inp2.value = ''; inp2.dispatchEvent({ type: 'input' });
-    eq(textOf(empty, '.kh-num-btn').join('/'), '默认', '留空 ⇒ 按钮写「默认」');
+    /* 【2.0.2.11 票 #64】工具栏里「字号」那颗带 `A` 前缀（与「尺寸」`▭` 区分），留空就只显前缀字 */
+    eq(textOf(empty, '.kh-num-btn').join('/'), 'A', '留空 ⇒ 按钮只显示前缀字（默认）');
     eq(empty.read(), '', '留空仍是留空（不许被控件写成默认值）');
   });
 
@@ -199,5 +209,56 @@ module.exports = async function run() {
     truthy(String(note.placeholder || '').length <= 24,
       '备注占位要短（现 ' + String(note.placeholder || '').length + ' 字；原来 66 字把 4 行框填满）');
     truthy(/表格/.test(String(note.hint || '')), '完整语法（含表格）要留在 tooltip 里');
+  });
+
+  await test('★ 2.0.2.11 票 #63：抓取字段＝关键词同款胶囊 + 后缀徽标 + 默认裁切/可展开', () => {
+    /* 用户要求 2（m01695）：「抓取后续字段输入框统一成关键词和标题词的 ui 和交互模式
+     * （词的数量过多时，可以增加输入框宽度）」；口径（m01713）：「宽度高度都默认不变，
+     * 超出隐藏超出部分。但支持手动展开/收起」。 */
+    const ctrl = mk('fetchLabels', '名称#图|备注');
+    eq(ctrl.el.querySelectorAll('.kh-lbl-chip').length, 2, '两个字段各一颗胶囊（与关键词同一套胶囊）');
+    const badges = ctrl.el.querySelectorAll('.kh-lbl-suffix');
+    eq(badges.length, 1, '带后缀的那颗要画徽标（`#图` 要看得出来是指什么）');
+    truthy(ctrl.el.querySelector('.kh-lbl-legend'), '后缀图例还要在（折在 details 里）');
+
+    const box = ctrl.el.classList.contains('kh-cand-clamp') ? ctrl.el : ctrl.el.querySelector('.kh-cand-clamp');
+    truthy(box, '抓取字段的框要带 `kh-cand-clamp`（默认单行裁切）');
+    falsy(box.classList.contains('is-open'), '默认不展开（尺寸和普通输入框一样高）');
+    const toggle = ctrl.el.querySelector('.kh-clamp-btn');
+    truthy(toggle, '要有「展开/收起」钮');
+    toggle.dispatchEvent({ type: 'click' });
+    truthy(box.classList.contains('is-open'), '点一下展开（词多时能一次看全）');
+    toggle.dispatchEvent({ type: 'click' });
+    falsy(box.classList.contains('is-open'), '再点收回单行');
+    eq(ctrl.read(), '名称#图|备注', '展开收起不许动值');
+    /* 抓取字段的切法必须与落盘口径一致（`｜` 与 `@表达式` 里的逗号都算分隔符）：
+     * 控件切得比落盘粗，就会出现「界面一个胶囊、保存后两个字段」。 */
+    const half = mk('fetchLabels', '名称｜备注');
+    eq(half.el.querySelectorAll('.kh-lbl-chip').length, 2, '全角 ｜ 也要当分隔符');
+  });
+
+  await test('★ 2.0.2.11 票 #64：底色/尺寸/字号搬进笔记工具栏，与加粗/表格同一行；「笔记内容」标题删除', () => {
+    /* 用户要求 4（m01695）：三者放进 B/I/U/链接/图片/表格那一行，并删掉「笔记内容」标题。 */
+    const h = KH.ui.dom.h;
+    const body = h('div', { class: 'kh-editor-sec-body' });
+    document.body.appendChild(body);
+    const items = ['impNoteUseHlColor', 'imgSize', 'noteFontSize', 'importantNote']
+      .map((k) => ({ spec: FM.byKey(k), ctrl: mk(k, '') }));
+    KH.ui.Fields.layout(items, body);
+
+    const bar = body.querySelector('.kh-rt-toolbar');
+    truthy(bar, '笔记编辑器要有工具栏');
+    const barCls = Array.from(bar.childNodes).map((k) => String(k.className));
+    eq(barCls.filter((c) => /kh-tool-field/.test(c)).length, 3,
+      '三件都要在工具栏行里：' + barCls.join(' / '));
+    const iTool = barCls.findIndex((c) => /kh-tool-field/.test(c));
+    const iClear = barCls.findIndex((c) => /kh-rt-clear/.test(c));
+    truthy(iTool >= 0 && iClear > iTool, '三件要排在「清空」之前（清空是行尾那颗）');
+    truthy(!!bar.querySelector('.kh-tool-toggle'), '底色渲染成一个图标开关（与加粗同级的小钮，不是下拉框）');
+    eq(Array.from(body.childNodes).filter((k) => /kh-tool-field/.test(String(k.className))).length, 0,
+      '三件不该再单独占正文行');
+
+    eq(FM.byKey('importantNote').noLabel, true, '关键词弹窗里的「笔记内容」标题要删掉');
+    eq(String(body.textContent || '').indexOf('笔记内容'), -1, '正文里不许再出现「笔记内容」这行字');
   });
 };

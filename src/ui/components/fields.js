@@ -123,6 +123,27 @@
       case 'bool': {
         const cb = h('input', { type: 'checkbox', checked: value ? true : null, id: id });
         cb.addEventListener('change', () => { if (c.onChange) c.onChange(spec.key, cb.checked); });
+        /* 【2.0.2.11 票 #64】`tool: true` = 这颗开关要住进富文本工具栏（和 B / I / 链接同一排）。
+         * 长相照抄工具栏按钮（`.kh-mini-btn` + `.is-on` 表示亮着），真值仍是这个勾选框：
+         * `id` / `.checked` / `change` 一字不变，装置与保存路径都直接取它，它只是**搬了家**。
+         * ⚠️ 必须排在 `chip` **之前**判断：这两颗字段本来也是胶囊（`chip: true`），
+         * 不给它优先权就永远走不到工具栏那条分支。 */
+        if (spec.tool) {
+          const b = h('button', {
+            class: 'kh-mini-btn kh-tool-toggle', type: 'button',
+            text: spec.short || spec.label, title: spec.hint || spec.label,
+            /* 工具栏的按钮都是纯文字，读屏与真机回归都靠 aria-label 认它 */
+            'aria-label': spec.label
+          });
+          const paint = () => b.classList.toggle('is-on', !!cb.checked);
+          b.addEventListener('click', () => {
+            cb.checked = !cb.checked;
+            paint();
+            if (c.onChange) c.onChange(spec.key, cb.checked);
+          });
+          paint();
+          return { el: h('span', { class: 'kh-tool-field', title: spec.hint || spec.label }, [b, cb]), read: () => cb.checked, key: spec.key };
+        }
         if (spec.chip) return { el: chipEl(cb, spec.label, spec.hint, () => cb.checked), read: () => cb.checked, key: spec.key };
         /* 【2.0.2.10 票 #57】`width: 2` 的勾选行独占一行（图片 OCR 子块的开关行用它，
          * 否则它会以 17px 的高度底对齐浮在上一行右端，看着像挂错了地方）。 */
@@ -154,6 +175,16 @@
           placeholder: spec.placeholder || '与页面显示一致：图片、加粗、表格、链接直接在框内显示',
           id: id
         });
+        /* 【2.0.2.11 票 #64】`noLabel` = 不画可见标题（用户口径：删掉「笔记内容」这行文案，
+         * 它和工具栏重复、白占一行）。字段名不能只剩一个视觉标签 —— 给编辑器上 `aria-label`，
+         * 读屏与自动化仍认得出这块是什么。 */
+        if (spec.noLabel) {
+          try { if (ed.setAttribute) ed.setAttribute('aria-label', spec.label || '重要笔记内容'); } catch (e) { /* 垫片可能没有 setAttribute：纯视觉退化，不影响存取 */ }
+          return {
+            el: h('div', { class: fldCls + (spec.grow ? ' kh-fld-grow' : '') }, [ed]),
+            read: () => ed.getValue(), key: spec.key
+          };
+        }
         return { el: h('div', { class: fldCls + (spec.grow ? ' kh-fld-grow' : '') }, [
           h('label', { class: 'kh-fld-label', text: spec.label, for: id }), ed
         ]), read: () => ed.getValue(), key: spec.key };
@@ -211,15 +242,28 @@
          * 按钮，点击之后才能修改"。原来那枚胶囊是"标签"长相，跟工具栏按钮不像，也占地方。
          * 输入框本体（`#fld-imgSize` 这类 id / `type=number` / `coerce` 口径）一个字不改 ——
          * 装置与保存路径都直接取它，它只是**搬了家**：空闲时回到 `host` 里藏着。 */
-        const shown = () => (String(inp.value) === '' ? '默认' : String(inp.value));
+        /* 【2.0.2.11 票 #64】`tool: true` 时这颗按钮要进富文本工具栏：文案带一个前缀字
+         * （`A` 字号 / `▭` 图片尺寸），否则两颗都写「默认」时分不清谁是谁；完整字段名在 title 里。
+         * 不带前缀的老字段文案不变（「默认 / 数值」）。 */
+        const prefix = (spec.tool && spec.toolPrefix) ? String(spec.toolPrefix) : '';
+        const shown = () => {
+          const v = String(inp.value);
+          if (!v) return prefix || '默认';
+          return prefix + v;
+        };
         const btn = h('button', {
           class: 'kh-mini-btn kh-num-btn', type: 'button',
-          title: '点一下改「' + spec.label + '」', text: shown()
+          title: '点一下改「' + spec.label + '」', text: shown(),
+          'aria-label': spec.label
         });
-        const host = h('div', { class: 'kh-num-box' }, [btn]);
-        const box = fieldBox(spec.label, host);
+        const host = h('div', { class: 'kh-num-box' + (spec.tool ? ' kh-tool-field' : '') }, [btn]);
+        /* 住进工具栏时容器不再有「标签」，字段名的解释只能靠 title 带（真机回归按容器读 tooltip） */
+        if (spec.tool) host.title = spec.hint || spec.label;
         host.appendChild(inp);
         attachPop(btn, inp, host, () => { btn.textContent = shown(); });
+        /* 工具栏里只要这颗按钮，不要再套一层「标签 + 控件」（那块标签没人看，宽度还翻倍） */
+        if (spec.tool) return { el: host, read: () => KH.FieldMap.coerce(spec, inp.value), key: spec.key };
+        const box = fieldBox(spec.label, host);
         return { el: box, read: () => KH.FieldMap.coerce(spec, inp.value), key: spec.key };
       }
       /* 【2.0.2.4 需求④ + 2.0.2.6 升级】「字段」专用控件：**可编辑的胶囊列表** + 一行后缀图例。
@@ -238,13 +282,7 @@
         /* 【2.0.2.10 票 #58】图例改**默认收起**：这段 151 字的语法说明常驻时实测 83px / 5 行，
          * 把「字段」控件撑到 135px，是这张卡里最显眼的一块灰字。信息一个字不删，只是搬到
          * `<details>` 里 —— 想知道后缀怎么写的人点一下，不想知道的人不必每眼都读一遍。 */
-        const legend = h('details', { class: 'kh-lbl-legend' }, [
-          h('summary', { text: '后缀怎么写（点开看全部）' }),
-          h('div', {
-            text: '后缀：#1 右邻一格 / #图 仅图片 / #3 最多 3 张 / #图3 仅图片且最多 3 张 / #0 该字段不要图 / @2 值格 / ! 去空白 / ^锚文本 只取锚点之前 / %4 前 4 字；'
-              + '一次写多个字段用 | 或 ｜（例：名称^[复制]|备注#图）；回车把这一段收成胶囊，点胶囊改那一段'
-          })
-        ]);
+        const legend = legendEl();
         const box = h('div', { class: fldCls, title: hintTitle }, [
           h('label', { class: 'kh-fld-label', text: spec.label + (spec.required ? ' *' : ''), for: id }),
           inp, prev, legend
@@ -292,12 +330,13 @@
       /* 【2.0.2.7 需求①】候选词控件（核心词 / 标题词 / 图片命中词共用）：常态只显**胶囊**，
        * 输入框藏在浮层里（点末尾的 `+` 打开），回车把这一段收成胶囊，点胶囊载回框里改。
        *
-       * **怎么切**：只有**正则模式**下 `|` 才是"或"（`compiler.js:82` 普通模式会把整串转义 ⇒
-       * 写 `A|B` 匹配的是字面量 `A|B`，一个词都不会亮）。所以
-       *   · 正则模式（`spec.regexAlways` 恒真；否则看兄弟开关 `spec.regexKey` 勾没勾）→ 按 `|` 切；
-       *   · 普通模式 → **整串一个胶囊**（切了就是骗人）；值里真出现 `|` 时补一行提示教去勾「正则」。
-       * 也正因此这里**不解析后缀**（`#`/`%`/`^`）——在图片命中词与正则候选里那些是正文字符，
-       * 照 `labels` 那套解析会把用户的正则吃掉。
+       * **怎么切**（2.0.2.11 票 #65 起：`|` 在**两种模式**下都是「多个词」的分隔符）：
+       *   · 普通模式：每段按**字面量**编译（`compiler.js` 对每段 `escapeRegex`）——段里就算写了正则
+       *     元字符，也只是普通字符；
+       *   · 正则模式：每段**各自**当表达式编译（`compiler.js` 把多段拼成 `(?:a|b)`），胶囊之间互不影响。
+       * 差别只在"每段怎么编译"，不再体现在"要不要切开"。
+       * 这里默认**不解析后缀**（`#`/`%`/`^`）——在图片命中词与正则候选里那些是正文字符，照 `labels`
+       * 那套解析会把用户的正则吃掉；只有 `spec.token`（抓取后续字段）才解析后缀并画徽标。
        *
        * 不变式与 `labels` 完全一致：没动过 ⇒ `read()` 逐字返回原串；有待定文本 ⇒ 也带上
        * （没回车直接保存不丢数据）。存储契约不变（仍是整串原文，分隔符由 storage 归一）。 */
@@ -306,7 +345,7 @@
         const prev = h('div', { class: 'kh-lbl-preview' });
         const addBtn = h('button', {
           class: 'kh-cand-add', type: 'button',
-          title: '加一个候选' + ((spec.regexAlways || spec.regexKey) ? '（正则模式下也可以用 | 写"或"）' : ''),
+          title: '加一个候选（也可以用 | 一次写多个）',
           text: '+'
         });
         const tip = h('div', { class: 'kh-cand-tip' });
@@ -319,10 +358,33 @@
          * 比旁边的「组合方向」低一截（真机回归量盒顶就是这个）。 */
         const ph = h('span', { class: 'kh-cand-ph', text: spec.placeholder || '' });
         const frame = h('div', { class: 'kh-cand-field' }, [prev, ph, addBtn]);
-        const box = h('div', { class: fldCls + ' kh-cand-box', 'data-for': id, title: hintTitle }, [
-          h('label', { class: 'kh-fld-label', text: spec.label + (spec.required ? ' *' : ''), for: id }),
-          inp, frame, tip
-        ]);
+        const labelEl = h('label', { class: 'kh-fld-label', text: spec.label + (spec.required ? ' *' : ''), for: id });
+        const kids = [inp, frame, tip];
+        /* 【2.0.2.11 票 #63】「抓取后续字段」沿用候选词的手感，但**默认不长大**：单行裁切，
+         * 词多到看不全时点「展开」占整行（用户口径 m01713：「宽度高度都默认不变，超出隐藏超出部分，
+         * 但支持手动展开/收起」）。展开态只是给盒子加 `.kh-fld-wide`，不另造一套渲染。
+         * 后缀徽标同样只在 `spec.token` 时画（解析走 `labelSegs`，与「字段」控件同一份语法）。 */
+        let headEl = labelEl;
+        let clampBtn = null;
+        if (spec.clamp) {
+          clampBtn = h('button', {
+            class: 'kh-mini-btn kh-clamp-btn', type: 'button', text: '展开',
+            title: '词多了看不全：展开占整行 / 再点收起'
+          });
+          clampBtn.addEventListener('click', (ev) => {
+            if (ev && typeof ev.stopPropagation === 'function') ev.stopPropagation();
+            /* 展开态用 `is-open`：`.kh-fld-wide` 是"字段占整行"的既有语义（这个字段本来就是 width:2），
+             * 借用它会让"展开"在这个字段上完全没有视觉变化。 */
+            const on = box.classList.toggle('is-open');
+            clampBtn.textContent = on ? '收起' : '展开';
+          });
+          headEl = h('div', { class: 'kh-fld-labelrow' }, [labelEl, clampBtn]);
+        }
+        if (spec.token) kids.push(legendEl());
+        const boxCls = fldCls + ' kh-cand-box'
+          + (spec.clamp ? ' kh-cand-clamp' : '')
+          + (spec.token ? ' kh-cand-token' : '');
+        const box = h('div', { class: boxCls, 'data-for': id, title: hintTitle }, [headEl].concat(kids));
         /* 已确定整串 / 待定段 / 段号这一族交给 `segEditor`（与标签控件同一份实现，票 #52）；`modeOn` 是本字段自己的。 */
         /* `modeOn`：外层（关键词弹窗）**明确告知**的正则状态。控件构造时兄弟开关还没进 DOM
          * （`create()` 只造节点，挂载由调用方做），这时 `getElementById` 只能猜错；所以弹窗建完
@@ -338,13 +400,22 @@
             return !!(el && el.checked);
           } catch (e) { return false; }   // 取不到兄弟开关（如单测垫片）⇒ 按普通模式算，最保守
         };
-        const split = (s) => {
+        /* 2.0.2.11 票 #65：两种模式**都按 `|` 切**，差别只在 `compiler.js` 对每段怎么编译
+         * （普通模式 escape 成字面量、正则模式原样当表达式）⇒ 这里不再看 `regexOn()`。
+         * `spec.token`（抓取字段）另有更严的切法：`KH.Fetch.splitLabelTokens` 认 `|` `｜`
+         * 以及「不属于 `@表达式` 的逗号」—— 那是落盘口径，控件不许比它切得粗，否则
+         * `应用截图@1,3` 会被显示成一个胶囊、保存后又变成两个字段（看着一个、存成两个）。 */
+        const plainSplit = (s) => {
           const str = String(s == null ? '' : s);
           if (!str.length) return [];
-          if (!regexOn()) return [str];                 // 普通模式：整串就是一个词
           const out = [];
           for (const one of str.split('|')) { const t = one.trim(); if (t.length) out.push(t); }
           return out.length ? out : [str];
+        };
+        const tokenSplitter = spec.token && KH.Fetch && KH.Fetch.splitLabelTokens;
+        const split = !tokenSplitter ? plainSplit : (s) => {
+          const arr = KH.Fetch.splitLabelTokens(String(s == null ? '' : s));
+          return (arr && arr.length) ? arr : plainSplit(s);
         };
         const st = segEditor(inp, split, value);
         /** 重画胶囊（唯一入口：输入时、增删改后、正则开关翻动后都走它）。 */
@@ -352,8 +423,15 @@
           prev.textContent = '';
           const list = split(st.displayRaw());
           for (let i = 0; i < list.length; i++) {
+            /* `spec.token`（抓取后续字段）：每段本来就带 `#`/`%`/`^` 后缀 ⇒ 胶囊名取解析后的 label、
+             * 后缀画成徽标（用户口径 m01713：词的数量多也能看清各自的后缀）。解析走 `labelSegs`，
+             * 与「字段」控件同一份语法；没写后缀时它就是原串。 */
+            const tok = spec.token
+              ? (labelSegs(list[i])[0] || { name: list[i], suffix: '' })
+              : { name: list[i], suffix: '' };
             prev.appendChild(labelChip({
-              name: list[i],
+              name: tok.name,
+              suffix: tok.suffix,
               chipTitle: '点一下改这一个候选',
               delTitle: '删掉这个候选：' + list[i],
               onDelete: () => {
@@ -377,9 +455,13 @@
           }
           /* 普通模式下 `|` 不是"或"：值里真出现 `|` 时当场说清楚（否则用户以为配了好几个词） */
           ph.hidden = list.length > 0;      // 框里有胶囊就不必再摆占位文字
-          const warn = !regexOn() && String(st.raw).indexOf('|') >= 0;
+          /* 与 `labels` 同一约定：正在改某一段时输入框带 `is-editing`（浮层里也认得出"在改哪一段"） */
+          inp.classList.toggle('is-editing', st.editIdx >= 0);
+          /* 普通模式下每段都是**字面量**：段里写了正则式子（`\d+`、`.*`、`(a|b)`）时提醒一句，
+           * 否则用户会以为已经生效。2.0.2.11 票 #65 起 `|` 已经是分隔符，不再需要提醒"| 不是或"。 */
+          const warn = !spec.token && !regexOn() && /[\\^$.*+?()[\]{}]/.test(String(st.raw));
           tip.hidden = !warn;
-          tip.textContent = warn ? '普通匹配下 | 不表示"或"（整串按字面匹配）；要写多个候选请勾上「正则」' : '';
+          tip.textContent = warn ? '普通匹配按字面找词：这里写的 . * + ? ( ) [ ] { } \\ ^ $ 都只是普通字符；要当正则用请勾上「正则」' : '';
         };
         /** 点 `+` / 点框面空白处 ＝ **新录一个候选**：先把上一段的待定文本收起来 */
         const startNew = () => {
@@ -522,6 +604,26 @@
   }
 
   /**
+   * 【2.0.2.10 票 #58 / 2.0.2.11 票 #63】「后缀怎么写」图例的**唯一实现**：默认收起、点开看全部。
+   *
+   * 这段 151 字的语法说明常驻时实测 83px / 5 行，会把控件撑高一倍且每眼都要重读一遍；
+   * 搬进 `<details>` 后信息一个字不少，默认只占一行。2.0.2.11 起「抓取后续字段」也用它
+   * （抓取字段改成了候选词控件，同一套 `#`/`%`/`^` 语法，图例必须同源）。
+   *
+   * @returns {HTMLElement}
+   */
+  function legendEl() {
+    const h = D().h;
+    return h('details', { class: 'kh-lbl-legend' }, [
+      h('summary', { text: '后缀怎么写（点开看全部）' }),
+      h('div', {
+        text: '后缀：#1 右邻一格 / #图 仅图片 / #3 最多 3 张 / #图3 仅图片且最多 3 张 / #0 该字段不要图 / @2 值格 / ! 去空白 / ^锚文本 只取锚点之前 / %4 前 4 字；'
+          + '一次写多个字段用 | 或 ｜（例：名称^[复制]|备注#图）；回车把这一段收成胶囊，点胶囊改那一段'
+      })
+    ]);
+  }
+
+  /**
    * 把一组**已生成**的控件排进正文容器（唯一的排布实现，关键词弹窗与分组弹窗共用）。
    *
    * 规则（都是实测踩出来的，见 设计偏好.md）：
@@ -539,15 +641,30 @@
     let chipRow = null;
     let subBox = null;
     let subKey = null;
+    /* 【2.0.2.11 票 #64】`toolOf` 的字段**不进正文**：它们要搬进某个富文本的工具栏（B / I / 链接那一排）。
+     * 目标找不到（没有富文本，或那棵树里没渲染工具栏）就退回正文 —— 绝不能"消失"。 */
+    const toolsOf = new Map();
+    for (const it of items) {
+      if (!it || !it.spec || !it.spec.toolOf) continue;
+      if (!toolsOf.has(it.spec.toolOf)) toolsOf.set(it.spec.toolOf, []);
+      toolsOf.get(it.spec.toolOf).push(it);
+    }
     /* 【2.0.2.10 票 #56】本卡若有 `grow` 字段（备注 / 笔记内容——列高撑满后要多出来的高度）：
      * 其余字段先排进一个「上半排」容器（照老规则 wrap），body 本身转成**纵向** flex，
      * `grow` 字段独占余下高度。为什么不能纯靠 CSS：body 是 wrap 容器，`align-content: stretch`
      * 会把多出来的高度**平均分给每一行** —— 实测「基本信息」里胶囊行被推离 77px，比原来的死白更难看。 */
     const useGrow = items.some((it) => it.spec.grow);
-    const host = useGrow ? h('div', { class: 'kh-fld-rows' }) : bodyEl;
+    let host = null;
     if (useGrow) bodyEl.classList.add('kh-editor-sec-body-grow');
+    /* 上半排**按需创建**：整卡只有 grow 字段时（如「重要笔记」只剩笔记正文 + 工具栏三件）
+     * 再建一个空容器就成了 0×0 的死节点。 */
+    const hostOf = () => {
+      if (!host) host = useGrow ? h('div', { class: 'kh-fld-rows' }) : bodyEl;
+      return host;
+    };
     for (const it of items) {
       const f = it.spec, c = it.ctrl;
+      if (f.toolOf) continue;                 // 票 #64：住工具栏的字段，正文里不占位置
       if (f.grow) { chipRow = null; bodyEl.appendChild(c.el); continue; }
       /* 【2.0.2.10 票 #57】`sub` = **子块**：连续的、`sub` 相同的字段收进一个 `.kh-fld-sub`（整行占位）。
        * 图片 OCR 那三件原本是「勾选框 17px / 候选框 49px / 内联数字 24px」三种高度，在
@@ -557,7 +674,7 @@
       if (sk) {
         if (!subBox) {
           subBox = h('div', { class: 'kh-fld-sub', 'data-sub': sk });
-          host.appendChild(subBox);
+          hostOf().appendChild(subBox);
         }
         subBox.appendChild(c.el);
         chipRow = null;
@@ -569,7 +686,7 @@
            * （历史上「启用组合」用过它来保证后面「标题关键词 | 组合方向」能并排；
            *  K70 起该开关改挂分区标题行，这条分支留作通用能力） */
           chipRow = h('div', { class: 'kh-fld-chips' + (f.width === 2 ? ' kh-fld-chips-wide' : '') });
-          host.appendChild(chipRow);
+          hostOf().appendChild(chipRow);
         }
         if (f.sepBefore && chipRow.childNodes.length) {
           chipRow.appendChild(h('span', { class: 'kh-chip-sep' }));
@@ -577,11 +694,22 @@
         chipRow.appendChild(c.el);
       } else {
         chipRow = null;
-        host.appendChild(c.el);
+        hostOf().appendChild(c.el);
       }
     }
+    /* 【2.0.2.11 票 #64】把工具栏字段搬进目标富文本的 `.kh-rt-toolbar`：插在「清空」之前，
+     * 清空永远压最右（`.kh-rt-clear{margin-left:auto}`）。前面加一条竖线，与编辑器自带的那排分开。 */
+    for (const [targetKey, list] of toolsOf) {
+      const target = items.find((x) => x && x.spec && x.spec.key === targetKey);
+      const holder = target && target.ctrl && target.ctrl.el;
+      const toolbar = (holder && typeof holder.querySelector === 'function') ? holder.querySelector('.kh-rt-toolbar') : null;
+      if (!toolbar) { for (const it of list) bodyEl.appendChild(it.ctrl.el); continue; }
+      const tail = toolbar.querySelector('.kh-rt-clear');
+      toolbar.insertBefore(h('span', { class: 'kh-rt-sep' }), tail || null);
+      for (const it of list) toolbar.insertBefore(it.ctrl.el, tail || null);
+    }
     /* 上半排插到最前：`grow` 字段按字段表顺序总在最后（备注 / 笔记内容都是本卡末位） */
-    if (useGrow && host !== bodyEl) bodyEl.insertBefore(host, bodyEl.firstChild);
+    if (host && host !== bodyEl) bodyEl.insertBefore(host, bodyEl.firstChild);
     return bodyEl;
   }
 
