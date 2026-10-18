@@ -1098,7 +1098,7 @@ module.exports = async function run() {
     const src = read('src/features/important-note.js');
     truthy(/\.khin-body\[hidden\] \{ display: none; \}/.test(src),
       '要补一条 [hidden] 规则（它是唯一没吃到 [hidden] 的 flex 子项）');
-    truthy(src.indexOf('if (this.bodyEl) this.bodyEl.hidden = !this.items.length;') >= 0,
+    truthy(src.indexOf('this.bodyEl.hidden = !(this.items.length || ctxN);') >= 0,
       '整页只有图片命中时要真的把正文整块藏起来，而不是留一条空高');
     const body = RULE(src, '.khin-body');
     truthy(/min-height:\s*60px/.test(body), 'min-height 仍要留给"有笔记"的正常态（不许为了这块白带去删它）');

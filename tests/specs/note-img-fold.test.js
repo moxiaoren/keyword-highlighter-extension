@@ -168,4 +168,76 @@ module.exports = async function run() {
     truthy(src.indexOf('.kh-lb-hit.copied') >= 0 && src.indexOf('.kh-lb-hit.failed') >= 0,
       '复制成功/失败都要有反馈样式（不许静默）');
   });
+
+  /* ==========================================================================
+   * ④ 右键识别的图 → 主模块一张卡片表格（2.0.2.13 · 用户 m03971）
+   * ==========================================================================
+   * 用户原话（m03971）："右键ocr图片的功能顺便优化一下（也展示在重要笔记主模块里，作为一个卡片
+   * 的表格展示，表头（左格内容）固定是截图，不管右键ocr了多少个图片，都放在表头右侧一个单元格内）"。
+   * 钉住四件事：① 一张都没有 ⇒ 不多出一条空卡；② 永远一行两格，左格是「截图」；
+   * ③ 不管几张图都塞进**同一个**右格（不是一张图一格）；④ 文案取真源，不在面板里写死。
+   */
+
+  await test('★ 没有右键识别的图 ⇒ 不出空卡（主模块不多一条白块）', () => {
+    const p = shadowPanel();
+    p.imgItems = [{ key: 'r|a', src: 'https://ex.com/a.png', state: 'done' }];   // 规则抓到的图，不是右键
+    eq(p.ctxItems().length, 0, '只认 via = contextMenu');
+    eq(p.ctxCard(document), null, '没有就返回 null');
+  });
+
+  await test('★ 一行两格，左格固定「截图」，所有图都在右边同一格', () => {
+    const p = shadowPanel();
+    p.imgItems = [
+      { key: 'ctxmenu|a', src: 'https://ex.com/a.png', state: 'done', via: 'contextMenu' },
+      { key: 'ctxmenu|b', src: 'https://ex.com/b.png', state: 'done', via: 'contextMenu' },
+      { key: 'ctxmenu|c', src: 'https://ex.com/c.png', state: 'done', via: 'contextMenu' }
+    ];
+    const card = p.ctxCard(document);
+    truthy(card, '有右键结果就该出卡');
+    const rows = card.querySelectorAll('tr');
+    eq(rows.length, 1, '永远只有一行（不是一张图一行）');
+    const cells = rows[0].querySelectorAll('td');
+    eq(cells.length, 2, '左格 + 右格');
+    eq(cells[0].textContent, KH.OcrCopy.VIEW.ctxShotLabel, '左格（表头）固定是「截图」');
+    eq(cells[0].querySelectorAll('img').length, 0, '左格只放标题，不放图');
+    const right = cells[1];
+    eq(right.className.indexOf('khin-ctx-cell') >= 0, true, '右格带排布类（flex-wrap，图多也只在这格里折行）');
+    eq(right.querySelectorAll('img').length, 3, '三张图全在同一个单元格里');
+  });
+
+  await test('★ 同一张图多条条目只画一次（不重复占格）', () => {
+    const p = shadowPanel();
+    p.imgItems = [
+      { key: 'ctxmenu|a', src: 'https://ex.com/a.png', state: 'done', via: 'contextMenu' },
+      { key: 'ctxmenu|a2', src: 'https://ex.com/a.png', state: 'fail', via: 'contextMenu' }
+    ];
+    const card = p.ctxCard(document);
+    eq(card.querySelectorAll('img').length, 1, '按 src 去重');
+  });
+
+  await test('★ 只有右键图、没有任何笔记时，主模块也得露出来', () => {
+    /* 旧实现 bodyEl.hidden = !items.length ⇒ 只点了右键的用户看到主模块整块消失 */
+    const src = read('src/features/important-note.js');
+    truthy(src.indexOf('const ctxN = this.ctxItems().length;') >= 0, '渲染时要算上右键那张卡');
+    truthy(src.indexOf('this.bodyEl.hidden = !(this.items.length || ctxN);') >= 0,
+      '有右键图时笔记区不许藏');
+    truthy(src.indexOf('ctxShotLabel') >= 0 && read('src/ui/ocr-copy.js').indexOf("ctxShotLabel: '截图'") >= 0,
+      '表头文案取真源（面板里不许写死中文）');
+  });
+
+  await test('★ 右键 OCR 结果异步回来时，那张卡要跟着重建（真机抓到：只刷图片分区）', () => {
+    /* 现场：右键公网图 ⇒ 提交成功、图片分区计数变成 (1)，但主模块那张「截图」卡一直是 0 格。
+     * 根因：KH.ImgOcr.onChange 只调了 panel.renderImg()，它只重建「🖼 图片」分区；
+     * 卡片是 renderItems() 里 append 的，不跟着重建就永远等下一次页面变动。
+     * 这里钉：① onChange 里两个重建都调；② 重建只换那张卡、别把整块卡片区推倒。 */
+    const src = read('src/features/important-note.js');
+    /* 注释里也写着这串（:1311/:1329 解释 T63 时提到），取最后一次出现才是真调用点 */
+    const at = src.lastIndexOf('KH.ImgOcr.onChange(');
+    const cb = src.slice(at, at + 700);
+    truthy(cb.indexOf('panel.renderImg()') >= 0, '原来那条刷新留着');
+    truthy(cb.indexOf('panel.renderCtxCard()') >= 0, '右键那张卡也要刷新');
+    truthy(/renderCtxCard\(\)\s*\{[\s\S]{0,400}?removeChild/.test(src), '重建前先摘掉旧节点（不叠卡）');
+    truthy(/renderItems\(\)\s*\{[\s\S]{0,260}?this\.ctxEl = this\.ctxCard\(doc\)/.test(src),
+      '整块重建时也要把新卡记到 ctxEl（否则下次 renderCtxCard 摘不到它）');
+  });
 };

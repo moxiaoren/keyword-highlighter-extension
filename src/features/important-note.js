@@ -207,6 +207,12 @@
       display: inline-block; vertical-align: middle; cursor: pointer;
     }
     .khin-item-note img:hover { opacity: .92; }
+    /* 右键识别的图都挤在**同一个单元格**里（用户 m03971）：横向排、图多了自动折行仍不换格。
+     * 图本身的尺寸/圆角沿用上面 .khin-item-note img，这里只负责排布。 */
+    .khin-ctx-cell { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 2px 0; }
+    /* 解码前 img 是 0×0，flex 行里会被挤成一条细缝（真机截图抓到过：缩略图只剩 10px 宽）。
+     * 宽度先按 --kh-img-size 占位，高度等图解码后自己长 —— 仍然等比、不裁剪。 */
+    .khin-ctx-cell img { width: var(--kh-img-size, 70px); height: auto; min-height: 20px; }
     /* 【2.0.2.7 用户 m00292】卡片里被 OCR 命中的图铺一层红框（用户原话："命中的话给命中的图片
      * 加一层红色边框"）—— 这是"这张图里有你要的词"的唯一视觉提示，因为分区那一行已经不重复画了。
      * 用 outline 而不是 border：outline 不参与布局，图不会被挤动一格（点开大图还能看原文里标出来的词）。 */
@@ -1732,8 +1738,11 @@
         if (this.noteCountEl) this.noteCountEl.textContent = this.items.length + ' 条';
       }
       /* 笔记列表整块没有时也要藏（T29 / F6.1）：它带 min-height:60px，空着就是面板顶部
-       * 一条 60px 白带（整页只有图片命中时最明显）。[hidden] 的规则与收起态并列写在 CSS 里。 */
-      if (this.bodyEl) this.bodyEl.hidden = !this.items.length;
+       * 一条 60px 白带（整页只有图片命中时最明显）。[hidden] 的规则与收起态并列写在 CSS 里。
+       * 【2.0.2.13】右键识别的那张「截图」卡也住在这一块里 ⇒ 只有它时不能藏（否则点了右键，
+       * 主模块整块消失，图只留在底部附属区）。 */
+      const ctxN = this.ctxItems().length;
+      if (this.bodyEl) this.bodyEl.hidden = !(this.items.length || ctxN);
       this.applyNoteCollapsed();
       this.renderItems();
       this.renderImgSection();
@@ -2251,10 +2260,89 @@
       }
     },
 
+    /**
+     * 右键识别的那些图（2.0.2.13 · 用户 m03971）。
+     *
+     * 为什么单列一张卡：右键识别**不属于任何规则**（`ruleId` 是 `@ctxmenu`），它没有命中词、
+     * 没有抓取字段，所以永远进不了笔记卡片。以前只活在「🖼 图片」分区里 —— 用户点了右键，
+     * 结果掉到面板底部一个附属区，看着像"没发生"。现在把这几张图当成一张卡片表格放回主模块。
+     * 只认有 `src` 的条目（读不到地址的图放不进 <img>，留在图片分区里带原因，不静默丢）。
+     */
+    ctxItems() {
+      return (this.imgItems || []).filter((it) => it && it.via === 'contextMenu' && absSrc(it && it.src));
+    },
+
+    /**
+     * 右键识别 → 一张卡片表格（用户 m03971 原话：*「作为一个卡片的表格展示，表头（左格内容）
+     * 固定是截图，不管右键 ocr 了多少个图片，都放在表头右侧一个单元格内」*）。
+     *
+     * 于是不管几张图，永远是**一行两格**：左格写死「截图」（文案真源 `KH.OcrCopy.VIEW.ctxShotLabel`），
+     * 右格把所有图并排塞进去（`.khin-ctx-cell` 是 flex-wrap，图多了往下折行 —— 但仍是同一个单元格）。
+     * 一张都没有 ⇒ 返回 `null`，主模块不多出一条空卡。
+     *
+     * 图直接用 `<img>`：点击走宿主上那条**现有**的 IMG 委托（`root.addEventListener('click')`），
+     * 灯箱会把同一个 `td` 里的图拼成相册、并带上各自的 OCR 全文与命中词 —— 不必另写一套。
+     */
+    ctxCard(doc) {
+      const list = this.ctxItems();
+      if (!list.length) return null;
+      const el = doc.createElement('div');
+      el.className = 'khin-item khin-item-ctx';
+      const noteEl = doc.createElement('div');
+      noteEl.className = 'khin-item-note';
+
+      const table = doc.createElement('table');
+      table.className = 'kh-table kh-table-fetch';
+      const tr = doc.createElement('tr');
+      const th = doc.createElement('td');
+      th.className = 'kh-table-label';
+      const label = KH.OcrCopy.VIEW.ctxShotLabel;
+      const lbt = doc.createElement('span');
+      lbt.className = 'kh-lbt';
+      lbt.textContent = label;
+      lbt.title = label;
+      th.appendChild(lbt);
+      const td = doc.createElement('td');
+      td.className = 'khin-ctx-cell';
+
+      const seen = new Set();
+      let drawn = 0;
+      for (const it of list) {
+        const src = absSrc(it.src);
+        if (!src || seen.has(src)) continue;      // 同一张图多条条目只画一次（相册里同理）
+        seen.add(src);
+        const im = doc.createElement('img');
+        im.setAttribute('src', it.src);           // 原串进 DOM：相对地址交给浏览器解析，与抓取表格一致
+        im.setAttribute('alt', String(it.label || ''));
+        im.setAttribute('loading', 'lazy');
+        td.appendChild(im);
+        drawn++;
+      }
+      if (!drawn) return null;
+      tr.appendChild(th);
+      tr.appendChild(td);
+      table.appendChild(tr);
+      noteEl.appendChild(table);
+      el.appendChild(noteEl);
+      return el;
+    },
+
+    /* 只重建右键那张「截图」卡：OCR 结果异步回来时用它补一块，标签区与已有卡片原地不动
+     * （整块 `renderItems()` 重跑会把用户正在看的标签/滚动位置一起丢掉）。 */
+    renderCtxCard() {
+      if (!this.bodyEl) return;
+      if (this.ctxEl && this.ctxEl.parentNode) this.ctxEl.parentNode.removeChild(this.ctxEl);
+      this.ctxEl = this.ctxCard(document);
+      if (this.ctxEl) this.bodyEl.insertBefore(this.ctxEl, this.bodyEl.firstChild || null);
+      this.bodyEl.hidden = !(this.items.length || this.ctxEl);
+    },
+
     renderItems() {
       if (!this.bodyEl) return;
       const doc = document;
       this.bodyEl.textContent = '';
+      this.ctxEl = this.ctxCard(doc);
+      if (this.ctxEl) this.bodyEl.appendChild(this.ctxEl);
       for (const item of this.items) {
         const el = doc.createElement('div');
         el.className = 'khin-item';
@@ -2453,6 +2541,9 @@
   if (KH.ImgOcr && typeof KH.ImgOcr.onChange === 'function') {
     KH.ImgOcr.onChange(() => {
       panel.renderImg();
+      /* 右键识别的结果同样走这条路回来，而那张「截图」卡是卡片区的一部分 —— 不跟着重建
+       * 就永远只在下次页面变动时才出现（2.0.2.13 真机验证抓到）。只重建这一张，不动整块。 */
+      panel.renderCtxCard();
     });
   }
 
