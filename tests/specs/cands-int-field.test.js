@@ -237,6 +237,32 @@ module.exports = async function run() {
     eq(half.el.querySelectorAll('.kh-lbl-chip').length, 2, '全角 ｜ 也要当分隔符');
   });
 
+  await test('★ 票 #66：每个候选框都单行裁切（关键词/标题关键词/图片命中关键词），展开钮只在真溢出时出现', () => {
+    /* 用户口径 m02382：「胶囊过多，过长时没有按要求维持原来的输入框，一行展示（冗余的不展示）。
+     * 展开后才完整展示」。2.0.2.11 只给抓取字段开了 `clamp`，关键词与标题关键词仍会被胶囊撑成
+     * 2–3 行 —— 字段盒高度跟着长，旁边的字段就被顶歪。 */
+    for (const k of ['text', 'cellVerify', 'imgOcrKeyword', 'fetchLabels']) {
+      const c = mk(k, '');
+      truthy(c.el.classList.contains('kh-cand-clamp'), k + ' 要带 `kh-cand-clamp`（默认单行裁切）');
+      const btn = c.el.querySelector('.kh-clamp-btn');
+      truthy(btn, k + ' 要有「展开/收起」钮（占位存在，溢出才显示）');
+      /* 垫片没有布局引擎（`scrollWidth` 恒 undefined ⇒ 判"没溢出"）⇒ 这里锁的是"无溢出时藏起来" */
+      eq(btn.hidden, true, k + ' 空框时展开钮要藏着（没东西可展开）');
+    }
+    const c = mk('text', '2018年|2024年|百度知道|阿里巴巴');
+    const btn = c.el.querySelector('.kh-clamp-btn');
+    btn.dispatchEvent({ type: 'click' });
+    truthy(c.el.classList.contains('is-open'), '点开 ＝ 展开（换行全显）');
+    eq(btn.hidden, false, '展开态按钮必须看得见（否则没法收起）');
+    eq(c.read(), '2018年|2024年|百度知道|阿里巴巴', '展开收起不许动值');
+    const css = read('src/ui/components/components.css');
+    truthy(/\.kh-cand-clamp \.kh-cand-field\s*\{[^}]*flex-wrap:\s*nowrap/.test(css),
+      '裁切态框内不许换行（否则胶囊多了照样把框撑高）');
+    truthy(/\.kh-cand-clamp \.kh-cand-field > \.kh-lbl-preview\s*\{[^}]*overflow:\s*hidden/.test(css),
+      '胶囊行自己要 overflow:hidden（不然会把框撑宽、把 + 顶出去）');
+    truthy(/\.kh-cand-clamp\.is-open \.kh-cand-field\s*\{[^}]*flex-wrap:\s*wrap/.test(css), '展开态才换行');
+  });
+
   await test('★ 2.0.2.11 票 #64：底色/尺寸/字号搬进笔记工具栏，与加粗/表格同一行；「笔记内容」标题删除', () => {
     /* 用户要求 4（m01695）：三者放进 B/I/U/链接/图片/表格那一行，并删掉「笔记内容」标题。 */
     const h = KH.ui.dom.h;

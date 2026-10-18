@@ -371,12 +371,15 @@
             class: 'kh-mini-btn kh-clamp-btn', type: 'button', text: '展开',
             title: '词多了看不全：展开占整行 / 再点收起'
           });
+          /* 默认先藏：只有**真的**看不全才需要这颗按钮（每个候选框都挂一颗「展开」很吵） */
+          clampBtn.hidden = true;
           clampBtn.addEventListener('click', (ev) => {
             if (ev && typeof ev.stopPropagation === 'function') ev.stopPropagation();
             /* 展开态用 `is-open`：`.kh-fld-wide` 是"字段占整行"的既有语义（这个字段本来就是 width:2），
              * 借用它会让"展开"在这个字段上完全没有视觉变化。 */
             const on = box.classList.toggle('is-open');
             clampBtn.textContent = on ? '收起' : '展开';
+            clampBtn.hidden = false;
           });
           headEl = h('div', { class: 'kh-fld-labelrow' }, [labelEl, clampBtn]);
         }
@@ -462,6 +465,21 @@
           const warn = !spec.token && !regexOn() && /[\\^$.*+?()[\]{}]/.test(String(st.raw));
           tip.hidden = !warn;
           tip.textContent = warn ? '普通匹配按字面找词：这里写的 . * + ? ( ) [ ] { } \\ ^ $ 都只是普通字符；要当正则用请勾上「正则」' : '';
+          refreshClamp();
+        };
+        /* 展开按钮只在**真的看不全**时出现（用户口径 m02382：胶囊多了、长了也要维持一个输入框的样子，
+         * 冗余的不展示；展开后才全显）。判据是胶囊行有没有溢出。
+         * ⚠️ 必须等一次布局：刚 append 的胶囊这一刻还没排版，直接量 `scrollWidth` 会永远得 0 ⇒ 判成
+         * "没溢出"、按钮永不出现。所以量测放在 rAF 里（垫片没有 rAF 就同步量）。 */
+        const refreshClamp = () => {
+          if (!clampBtn) return;
+          const measure = () => {
+            if (box.classList.contains('is-open')) { clampBtn.hidden = false; return; }
+            const over = (prev.scrollWidth > prev.clientWidth + 1) || (frame.scrollWidth > frame.clientWidth + 1);
+            clampBtn.hidden = !over;
+          };
+          if (typeof requestAnimationFrame === 'function') requestAnimationFrame(measure);
+          else measure();
         };
         /** 点 `+` / 点框面空白处 ＝ **新录一个候选**：先把上一段的待定文本收起来 */
         const startNew = () => {

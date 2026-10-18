@@ -447,7 +447,7 @@
 .kh-rt-count { font-size: var(--fs-xs); color: var(--text-4); }
 /* 字段标题行：标题 + 右侧工具（如备注的「预览」）。
  * 工具行原本自己占一行（正文里多出一行只有一颗按钮），现在并进标题行右侧。 */
-.kh-fld-labelrow { display: flex; align-items: center; gap: 6px; min-height: 18px; }
+.kh-fld-labelrow { display: flex; align-items: center; gap: 6px; min-height: 0; }
 .kh-fld-labelrow .kh-fld-label { flex: 0 1 auto; }
 .kh-rt-preview-box { margin-top: 4px; padding: 8px; border: 1px dashed var(--border-2); border-radius: var(--r-sm); background: var(--card-2); }
 
@@ -771,7 +771,11 @@
  * 这样多出来的高度只会落进可写区，不会把上半排的行距撑开。 */
 .kh-editor-sec-body-grow { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
 .kh-fld-rows { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 6px 10px; }
-.kh-editor-sec-body-grow > .kh-fld-grow { flex: 1 1 auto; min-height: 0; }
+.kh-editor-sec-body-grow > .kh-fld-grow { flex: 1 1 auto; min-height: 0; width: 100%; }
+/* 纵向 body 的直接子项（上半排 `.kh-fld-rows` 与 grow 字段）都要**钉满父宽**。
+ * `width: 100%` 不是冗余：只靠 `align-items: stretch` 时，实测「列容器 + 子项 flex-basis 为
+ * 百分比」的组合会把子项按 **max-content** 摊开（305px 的卡里长到 708px，直接压到旁边两列上）。 */
+.kh-editor-sec-body-grow > * { width: 100%; }
 .kh-fld-grow .kh-rt-editor { flex: 1 1 auto; min-height: 0; }
 .kh-fld-grow .kh-rt-editor > textarea { flex: 1 1 auto; min-height: 96px; }
 .kh-fld-grow .kh-rte-wrap { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
@@ -807,11 +811,25 @@
 /* 票 #63：「抓取后续字段」默认单行裁切（宽度高度都不变），词多点「展开」看全。
  * 裁切只作用在胶囊行上（不碰外壳宽度：这个字段本身已经是整行 `width: 2`）。
  * 展开态用 `is-open`，**不借 `.kh-fld-wide`** —— 后者是"字段占整行"的既有语义，这里两件事不是一回事。 */
-.kh-clamp-btn { height: 18px; min-width: 0; padding: 0 6px; font-size: var(--fs-xs); }
-.kh-cand-clamp .kh-cand-field { overflow: hidden; }
-.kh-cand-clamp .kh-cand-field > .kh-lbl-preview { flex-wrap: nowrap; min-width: 0; }
-/* 展开态：胶囊行恢复换行 —— 词多时一次看全 */
-.kh-cand-clamp.is-open .kh-cand-field { overflow: visible; }
-.kh-cand-clamp.is-open .kh-cand-field > .kh-lbl-preview { flex-wrap: wrap; }
+/* 「展开/收起」是标签行里的**小字按钮**：高度必须不超过普通标签（16px），
+ * 否则带裁切钮的字段比同排字段高 2px，`_e2e/ui.test.js` 的「行对齐」断言会红（2.0.2.12 实测）。 */
+.kh-clamp-btn { height: 16px; line-height: 1; min-width: 0; padding: 0 5px; font-size: var(--fs-xs); }
+.kh-clamp-btn[hidden] { display: none; }
+/* 2.0.2.11 票 #63/#66：候选框默认**就一个输入框高**（胶囊多了、长了也不许把框撑高），
+ * 冗余部分裁掉，点「展开」才换行全显。
+ * 关键三点：① 胶囊行自己 `overflow:hidden` 且能被压到 0 宽（`flex:1 1 auto` + `min-width:0`），
+ * 否则它会把框撑宽、把 `+` 顶出去；② 框本身不许换行；③ `+` 不参与压缩（永远看得见）。 */
+.kh-cand-clamp .kh-cand-field { flex-wrap: nowrap; overflow: hidden; }
+.kh-cand-clamp .kh-cand-field > .kh-lbl-preview {
+  flex: 1 1 auto; min-width: 0; overflow: hidden; flex-wrap: nowrap;
+}
+.kh-cand-clamp .kh-cand-field > .kh-cand-add { flex: 0 0 auto; }
+/* 展开态：胶囊行恢复换行 —— 词多时一次看全（框高此时允许长） */
+.kh-cand-clamp.is-open .kh-cand-field { flex-wrap: wrap; overflow: visible; }
+.kh-cand-clamp.is-open .kh-cand-field > .kh-lbl-preview { flex-wrap: wrap; overflow: visible; }
+/* 「展开」＝**完整展示**（用户 m02382）：① 字段从半行让到整行，长词不再挤在 148px 里；
+ * ② 胶囊名字取消 12em 上限与省略号，允许在胶囊内换行 —— 否则长词永远是「2018年第一季度华…」。 */
+.kh-cand-clamp.is-open { flex: 1 1 100%; }
+.kh-cand-clamp.is-open .kh-lbl-name { max-width: none; white-space: normal; overflow-wrap: anywhere; }
 /* 抓取字段的胶囊带后缀徽标（`#图3` / `%4`）：胶囊本身不参与压缩，否则徽标会被裁掉 */
 .kh-cand-token .kh-lbl-chip { flex: 0 0 auto; }

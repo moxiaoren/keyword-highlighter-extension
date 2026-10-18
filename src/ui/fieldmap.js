@@ -124,7 +124,7 @@
     /* 【2.0.2.7 需求①】`cands` = 常态只显胶囊、点末尾的 `+` 才出输入框（2.0.2.6 的交互下沉成控件）。
      * `regexKey` 指**兄弟开关**：只有正则模式下 `|` 才是"或"（普通模式整串转义，写 `A|B` 匹配的是
      * 字面量 `A|B`）—— 所以普通模式整串一个胶囊，勾了「正则」才按 `|` 摊开。 */
-    { key: 'text', label: '关键词', type: 'cands', sec: 'basic', csv: 1, required: true,
+    { key: 'text', label: '关键词', type: 'cands', sec: 'basic', csv: 1, required: true, clamp: true,
       regexKey: 'useRegex',
       def: () => '' },
     { key: 'groupId', label: '分组', type: 'select', sec: 'basic', csv: 3, groupSource: true, def: () => null },
@@ -164,7 +164,7 @@
      * ⚠️ **只改显示文案与挂载位置**：key / csv 列序 / 判定逻辑 / id 一律不动。 */
     { key: 'cellVerifyEnabled', label: '启用', type: 'bool', sec: 'combo', csv: 12, chip: true, head: true, def: () => false },
     /* 同上（`cands`）：标题词也有自己的「正则」开关，切分口径跟着它走。 */
-    { key: 'cellVerify', label: '标题关键词(左格)', type: 'cands', sec: 'combo', csv: 13,
+    { key: 'cellVerify', label: '标题关键词(左格)', type: 'cands', sec: 'combo', csv: 13, clamp: true,
       regexKey: 'cellVerifyUseRegex', def: () => '' },
     { key: 'comboAxis', label: '组合方向', type: 'select', sec: 'combo', csv: 0,
       options: [{ v: 'lr', t: '左右格' }, { v: 'tb', t: '上下格' }], def: () => 'lr' },
@@ -263,7 +263,7 @@
       def: () => false },
     /* 同上（`cands`）。`regexAlways: true`：图片命中词**恒为正则**（`img-ocr.js` 固定
      * `useRegex: true`，没有开关），所以它按 `|` 切分永远是对的。 */
-    { key: 'imgOcrKeyword', label: '图片命中关键词', type: 'cands', sec: 'fetch', csv: 0, sub: 'ocr',
+    { key: 'imgOcrKeyword', label: '图片命中关键词', type: 'cands', sec: 'fetch', csv: 0, sub: 'ocr', clamp: true,
       regexAlways: true, placeholder: '如：一对一',
       hint: '按**正则**匹配识别出的图片文字（不区分大小写、不要求整词）。'
         + '如 `一对一` / `A.C`；留空则不该勾选「识别图片文字」。',
