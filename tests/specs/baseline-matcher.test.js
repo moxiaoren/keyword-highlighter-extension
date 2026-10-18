@@ -11,13 +11,13 @@
  *   所以这里把**老语义**（B1..B8 用到的全部形态）和**新语义**（段内 `*`）都钉死。
  *
  * 位置：_tools/ 在工作区里、不在扩展仓库内（同 e2e-selfcontained.test.js 的做法），
- * 找不到就 skip —— 单克隆扩展仓库时这套断言不适用，但也不能假红。
+ * 找不到就**明红**（票 #47：单克隆扩展仓库时这套断言确实不适用，但"绿 + 跳过"会被读成通过）。
  */
 'use strict';
 const fs = require('fs');
 const path = require('path');
 const H = require('../harness');
-const { suite, test, eq, deepEq, truthy, falsy, skip } = H;
+const { suite, test, eq, deepEq, truthy, falsy } = H;
 
 /** __dirname = <工作区>/work/keyword-highlighter/tests/specs → 向上 4 级 = 工作区 */
 const TOOL = path.resolve(__dirname, '..', '..', '..', '..', '_tools', 'baseline-make.js');
@@ -25,7 +25,9 @@ const TOOL = path.resolve(__dirname, '..', '..', '..', '..', '_tools', 'baseline
 module.exports = async function run() {
   suite('baseline-matcher · 基线 glob 匹配器（老语义不回归 + 段内 * 生效）');
 
-  if (!fs.existsSync(TOOL)) { skip('★ baseline-make.js 匹配器', '找不到 ' + TOOL); return; }
+  /* 【票 #47】匹配器在**工作区私有仓**的 `_tools/baseline-make.js`；单仓检出时明红，不 skip。 */
+  if (!H.needWorkspaceFile('★ baseline-make.js 匹配器', TOOL,
+    '先在工作区根（F:\\harness\\高亮词插件）检出整个工作区（`_tools/baseline-make.js` 属工作区仓）。')) return;
   const { matchPattern, splitPattern, DEFAULT_DOT_GIT_RULE } = require(TOOL);
   const DOT_GIT = DEFAULT_DOT_GIT_RULE.rule;
 

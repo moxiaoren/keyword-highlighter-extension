@@ -79,7 +79,9 @@ module.exports = async function run() {
 
   for (const f of FILES) {
     const p = path.join(E2E, f.name);
-    if (!fs.existsSync(p)) { H.skip('★ ' + f.name + '：' + f.mode, '找不到 ' + p); continue; }
+    /* 【票 #47】`_e2e/` 在**工作区私有仓**里，不在公开扩展仓。缺文件 ⇒ 明红（原因+修法），不跳过。 */
+    if (!H.needWorkspaceFile('★ ' + f.name + '：' + f.mode, p,
+      '先在工作区根（F:\\harness\\高亮词插件）检出整个工作区（`_e2e/` 属工作区仓）。')) continue;
     await test('★ ' + f.name + '（' + f.mode + '）：起页规约成立（共 ' + lint(f.name, f.mode).total + ' 个分组）', () => {
       const r = lint(f.name, f.mode);
       eq(r.bad.length, 0,

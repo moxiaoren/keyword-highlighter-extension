@@ -197,6 +197,9 @@
 .kh-modal-md { max-width: 560px; }
 /* 【2.0.2.7】编辑器弹窗默认宽 860 → 1040：860 时三列各 267px，`.kh-rte` 正文宽约 232px+
  *   边距，4 列表格必然横向滚动（用户实测痛点）。1040 时三列各约 326px，默认不再滚。
+ *   【票 #48】真值在 `src/core/config.js` 的 `EDITOR_W`；CSS 是静态文件、取不到 JS 常量，
+ *   所以这里只能把数字写死 —— 由 `tests/specs/modal-width-resize.test.js` 读 config 核对两者一致，
+ *   改常量不改这里就红（不再靠"记得六处一起改"）。
  *   写成 `width: min(1040px, 100%)` 而不是 `max-width: 1040px`，是为了**让右下角能往外拖**：
  *   `max-width` 会把拖拽上限也钉在 1040，而用户要的是"临时拉伸"（窄窗口下 min() 自动退成 100%，
  *   独立编辑窗口等比缩小也一样成立）。`.kh-modal` 自带 `overflow: hidden`，resize 把手才出得来。 */

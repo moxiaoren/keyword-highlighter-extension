@@ -5,7 +5,9 @@
 
 - 🌐 项目主页（安装包 + 自动更新源）：<https://moxiaoren.github.io/keyword-highlighter-extension/>
 - 📦 历史版本 / 每个版本的改动：<https://github.com/moxiaoren/keyword-highlighter-extension/releases>
-- 🧩 当前测试版：见主页或 `latest-beta.json`（当前 `2.0.2.6`）；稳定通道目前为 `2.0.2`
+- 🧩 版本号一律以**清单**为准（`manifest.json` 是唯一真源，下载链接由主页按清单现算）：
+  测试版看 [`latest-beta.json`](https://moxiaoren.github.io/keyword-highlighter-extension/latest-beta.json) / [`update-beta.xml`](https://moxiaoren.github.io/keyword-highlighter-extension/update-beta.xml)；
+  稳定版看 [`latest.json`](https://moxiaoren.github.io/keyword-highlighter-extension/latest.json) / [`update.xml`](https://moxiaoren.github.io/keyword-highlighter-extension/update.xml)
 
 ---
 
@@ -13,10 +15,10 @@
 
 | 通道 | 当前版本 | 直接下载 | 更新清单 |
 |---|---|---|---|
-| **稳定版**（日常用） | 见 `update.xml`（当前 `2.0.2`） | [.crx](https://moxiaoren.github.io/keyword-highlighter-extension/release/keyword-highlighter-extension-2.0.2.crx) | [`update.xml`](https://moxiaoren.github.io/keyword-highlighter-extension/update.xml) |
-| **测试版**（先试新功能） | 见 `latest-beta.json`（当前 `2.0.2.6`） | [.crx](https://moxiaoren.github.io/keyword-highlighter-extension/keyword-highlighter-beta-v2.0.2.6.crx) · [.zip](https://moxiaoren.github.io/keyword-highlighter-extension/keyword-highlighter-beta-v2.0.2.6.zip) | [`update-beta.xml`](https://moxiaoren.github.io/keyword-highlighter-extension/update-beta.xml) |
+| **稳定版**（日常用） | 以清单为准 | [主页下载按钮](https://moxiaoren.github.io/keyword-highlighter-extension/) | [`update.xml`](https://moxiaoren.github.io/keyword-highlighter-extension/update.xml) · [`latest.json`](https://moxiaoren.github.io/keyword-highlighter-extension/latest.json) |
+| **测试版**（先试新功能） | 以清单为准 | [主页下载按钮](https://moxiaoren.github.io/keyword-highlighter-extension/) | [`update-beta.xml`](https://moxiaoren.github.io/keyword-highlighter-extension/update-beta.xml) · [`latest-beta.json`](https://moxiaoren.github.io/keyword-highlighter-extension/latest-beta.json) |
 
-- 项目主页每次打开都会用清单里的**实际版本号**把上面的链接刷新一遍：<https://moxiaoren.github.io/keyword-highlighter-extension/>
+- 项目主页上的下载按钮**每次打开都用清单里的实际版本号现算链接**，所以这里一个版本号都不写死（手抄的版本号每次发版后都会变成谎）：<https://moxiaoren.github.io/keyword-highlighter-extension/>
 - **一键安装脚本（两个通道通用）**：**[`kh-autoupdate.bat`](https://moxiaoren.github.io/keyword-highlighter-extension/kh-autoupdate.bat)** —— 运行后菜单里选 `Edge / Chrome` × `稳定版 / 测试版`，装完自动静默更新。
 - 两个通道是**两个扩展**（ID 不同），可以同时安装；测试版晋级稳定版后需要换装一次。
 - 稳定版历史安装包：<https://github.com/moxiaoren/keyword-highlighter-extension/releases>（测试版不进 Releases，只在上面两个通道分发）。
@@ -80,6 +82,8 @@
 
 ```bash
 node tests/run.js                 # 单元测试（共 952 项：951 通过 + 1 跳过，始终全跑）
+                                  #   注：`_tools/`、`_MIGRATION_CHECKLIST.md`、`_e2e/` 属**工作区仓**；
+                                  #   只 clone 公开扩展仓时这几条检查会**明红并说出修法**（票 #47，不静默跳过）
 node scripts/meta-check.js        # 机械红线（47 项：纯视觉不改 DOM / 单源字段 / 私钥不入包 …）
 node tests/integrity.js           # 资源引用 / id 双向 / CSS 变量 / manifest
 cd _e2e && node run.js            # 真浏览器回归（playwright-core + 系统 Edge；内容层 / UI 层分组全跑）

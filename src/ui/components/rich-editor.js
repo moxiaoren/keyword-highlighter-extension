@@ -36,30 +36,36 @@
    */
   function growHost(ed) {
     if (!ed || typeof ResizeObserver !== 'function') return;
-    const up = (n, cls) => {
-      for (let p = n && n.parentElement; p; p = p.parentElement) if (p.classList && p.classList.contains(cls)) return p;
-      return null;
-    };
+    /* 祖先查找统一走 `dom.js` 的 `upClass`（票 #52：这一圈原先与 `fields.js` 各手写了一份）。
+     * 从**父节点**起找 —— 编辑区自己不可能带 `.kh-editor-col` / `.kh-modal`。 */
+    const up = (n, cls) => D().upClass(n && n.parentElement, cls);
     let pad = null;      // 自然状态「列宽 − 编辑区宽」（`.kh-fld` 与列之间有 gap/边距）
     let mine = false;    // 弹窗宽度是我们写的（用户自己拖弹窗时不许擦掉）
     let natModal = 0;    // 我们动手之前弹窗的自然宽（瘦回去的下限）
     const fit = () => {
-      const col = up(ed, 'kh-editor-col');
-      if (!col) return;
-      const modal = up(col, 'kh-modal');
+      const modal = up(ed, 'kh-modal');
+      /* 【票 #51】没有 `.kh-editor-col` 祖先的宿主（例：选项页「批量备注 / 重要笔记」弹窗里那个
+       * richtext 直接躺在 `.kh-editor-sec-body` 里）也要能拖宽 —— 这时把**弹窗本身**当宿主。
+       * 公式不变：`pad` 是"首次回调时宿主宽 − 编辑区自然宽"，于是 nextHost = want + pad 正好
+       * 让编辑区拿到 want 的宽度，弹窗的留白与兄弟元素一起跟着长（不会再把弹窗压出横向滚动条）。 */
+      const host = up(ed, 'kh-editor-col') || modal;
+      if (!host) return;
+      const isCol = host !== modal;
       const want = parseFloat(ed.style.width) || 0;      // 原生 resize 写的就是 inline width
       if (!want) {
-        if (pad == null) pad = col.clientWidth - ed.clientWidth;   // 首次回调：此时两边都还是自然宽
-        else {                                                    // 清掉 inline width ⇒ 容器回自然（自愈）
-          col.style.width = ''; col.style.flex = '';
+        if (pad == null) pad = host.clientWidth - ed.clientWidth;   // 首次回调：此时两边都还是自然宽
+        else if (isCol) {                                           // 清掉 inline width ⇒ 容器回自然（自愈）
+          host.style.width = ''; host.style.flex = '';
           if (mine && modal) { modal.style.width = ''; mine = false; }
+        } else if (mine) {                                          // 宿主就是弹窗：只擦我们自己写过的那笔
+          modal.style.width = ''; mine = false;
         }
         return;
       }
-      if (pad == null) pad = col.clientWidth - ed.clientWidth;
-      const nextCol = Math.max(120, Math.round(want + pad));
-      const grow = nextCol - Math.round(col.clientWidth);
-      if (grow !== 0) { col.style.flex = '0 0 auto'; col.style.width = nextCol + 'px'; }
+      if (pad == null) pad = host.clientWidth - ed.clientWidth;
+      const nextHost = Math.max(120, Math.round(want + pad));
+      const grow = nextHost - Math.round(host.clientWidth);
+      if (isCol && grow !== 0) { host.style.flex = '0 0 auto'; host.style.width = nextHost + 'px'; }
       if (!modal) return;
       if (grow > 0) {
         if (!mine) { natModal = Math.round(modal.getBoundingClientRect().width); mine = true; }

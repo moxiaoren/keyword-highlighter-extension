@@ -213,6 +213,19 @@
   const NOTE_FONT_MIN = 6;        /* 10 → 6：8 号字是用户真在用的设置 */
   const NOTE_FONT_MAX = 72;       /* 20 → 72 */
 
+  /* 【票 #48】编辑器几何的**唯一声明处**。以前 1040 写在 `.kh-modal-lg` 的 CSS 里、1100 手抄在
+   * `popup.js` 的开窗参数里，文档与单测里又各抄一遍 —— 改一个数字要记得六处。
+   * 现在真值只有 `EDITOR_W`，其余全是派生：
+   *   · CSS `.kh-modal-lg` 的 `min(<EDITOR_W>px, 100%)` 是**静态 CSS，到不了这里** ⇒ 由
+   *     `tests/specs/modal-width-resize.test.js` 读本文件核对：改这里不改 CSS，单测当场红；
+   *   · 独立编辑窗口 = `EDITOR_WIN_W`（编辑器宽 + 遮罩左右各 `EDITOR_WIN_PAD`）。
+   * 为什么不做成运行时 CSS 变量：页面内委托的编辑器跑在 Shadow DOM 里，变量在那儿不继承，
+   * 三条打开路径的几何就会各走一路 —— 比重复一处数字更糟（changelog 承诺"三条路径几何一致"）。 */
+  const EDITOR_W = 1040;          // `.kh-modal-lg` 的默认宽（1040 时三列各约 326px，4 列表格刚好放下）
+  const EDITOR_WIN_PAD = 30;      // 独立窗口里编辑器两侧的遮罩留白
+  const EDITOR_WIN_W = EDITOR_W + EDITOR_WIN_PAD * 2;   // = 1100
+  const EDITOR_WIN_H = 500;
+
   /**
    * 面板图片尺寸 / 正文字号的**唯一归一函数**（读路径 `important-note.js` 与设置页共用）。
    * 取数口径两条一致：
@@ -381,6 +394,12 @@
     NOTE_FONT_MIN,
     NOTE_FONT_MAX,
     NOTE_FONT_DEFAULT,
+
+    /* 【票 #48】编辑器几何（真值 + 派生），与 `.kh-modal-lg` 的 CSS 由单测对齐。 */
+    EDITOR_W,
+    EDITOR_WIN_PAD,
+    EDITOR_WIN_W,
+    EDITOR_WIN_H,
 
     /**
      * 深度合并：以 defaults 为骨架，用存储值覆盖。

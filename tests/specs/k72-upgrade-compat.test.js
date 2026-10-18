@@ -373,7 +373,12 @@ module.exports = async function run() {
     falsy(popup.indexOf('920×500') >= 0, '★ 2.0.2.7 起 920×500 也是旧尺寸（编辑器 1040 + 两侧留白）');
     truthy(popup.indexOf('1100×500') >= 0, '2.0.2.7 popup.js 新尺寸应在');
     truthy(editor.indexOf('1100×500') >= 0, '2.0.2.7 editor.html 新尺寸应在');
-    truthy(popup.indexOf('height: 500') >= 0, '新尺寸与真实 open 参数一致（height: 500）');
+    /* 【票 #48】开窗参数不再手抄数字：宽高取自 `KH.Config.EDITOR_WIN_W/H`（当前 = 1100×500）。
+     * 判"文档串在 + 真实参数确实来自常量 + 常量值就是 500"，三条缺一不可。 */
+    truthy(popup.indexOf('KH.Config.EDITOR_WIN_W') >= 0 && popup.indexOf('KH.Config.EDITOR_WIN_H') >= 0,
+      '开窗宽高必须取自 KH.Config.EDITOR_WIN_W/H（票 #48：不许再手抄 1100 / 500）');
+    truthy(/const EDITOR_WIN_H = 500;/.test(readSrc('src/core/config.js')),
+      '新尺寸与真实 open 参数一致（EDITOR_WIN_H = 500）');
   });
 
   await test('B7/B8-11：人工检查清单的期望已改（A9 折叠口径 + 图片命中展开 + 侧边栏 7 项 + CSV 说明）', () => {

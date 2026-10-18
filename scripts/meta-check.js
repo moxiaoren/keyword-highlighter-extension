@@ -108,8 +108,19 @@ if (manifest) {
       }
     });
   }
+  /* README 里**不许手抄「当前版本」**（票 #49）：当前版本唯一真源是 manifest 与四份清单，
+   * 主页上的下载链接也是按清单现算的。手抄一份的下场就是 2.0.2.6 那次 —— 发到 2.0.2.8 之后
+   * README 还写着「当前 2.0.2.6」，下载链接指向旧包。历史条目里「（v1.99.99.22）」这种**带 v
+   * 前缀的回顾**不算声明当前版本，所以只盯「当前 + 版本号」这个组合。 */
+  const curClaims = [];
+  read('README.md').split(/\r?\n/).forEach((line, i) => {
+    const re = /当前[^。\n]{0,12}?(\d+\.\d+\.\d+(?:\.\d+)?)/g;
+    let cm;
+    while ((cm = re.exec(line)) !== null) curClaims.push('README.md:' + (i + 1) + '  ' + line.trim().slice(0, 120));
+  });
   if (offenders.length) bad('出现版本号字面量（版本唯一真源是 manifest.json）', offenders.join('\n      '));
-  else ok('除 manifest / changelog 外无版本号字面量（0.0.0 降级占位已放行）');
+  if (curClaims.length) bad('README 手抄了「当前版本」（当前版本只认清单：update-beta.xml / latest-beta.json）', curClaims.join('\n      '));
+  if (!offenders.length && !curClaims.length) ok('除 manifest / changelog 外无版本号字面量（0.0.0 降级占位已放行），README 也没手抄当前版本');
 
   // changelog 最新版本必须等于 manifest.version（changelog 里写作 'v2.x.y'，manifest 不带 v）
   try {
@@ -848,10 +859,37 @@ if (manifest && manifest.version) {
         if (cmp(m[0], manifest.version) > 0) ahead.push('STATUS.md:' + (i + 1) + '  声称 ' + m[0] + '（manifest 是 ' + manifest.version + '）');
       }
     });
+    // ② 同一条规则顺手核工作区根 `CONTEXT.md` 的「已发布」速览行（票 #50 收口）：它以前手抄
+    //    2.0.0.7 / `storage, alarms, offscreen`，别的机器一同步就看到旧口径。手抄数字必然漂，
+    //    所以这里拿 manifest（测试版）与 release/latest.json（稳定版）当真源比对。
+    //    **故意并入本条、不新增 ok()**：红线数必须还是 47（README「机械红线（47 项）」与
+    //    changelog 各版自检行都钉着这个数，加一条就要连带改两处历史记录）。
+    const ctxAbs = path.join(root, '..', '..', 'CONTEXT.md');
+    const ctxProblems = [];
+    let ctxSrc = null;
+    let ctxNote = 'CONTEXT.md 不存在（脱离工作区，跳过）';
+    try { ctxSrc = fs.readFileSync(ctxAbs, 'utf8'); }
+    catch (err) { if (err.code !== 'ENOENT') ctxProblems.push('CONTEXT.md 读取失败：' + err.message); }
+    if (ctxSrc !== null) {
+      const ctxLine = ctxSrc.split(/\r?\n/).find(l => /^\|\s*已发布\s*\|/.test(l)) || '';
+      const beta = (/测试版 \*\*(\d+\.\d+\.\d+(?:\.\d+)?)\*\*/.exec(ctxLine) || [])[1];
+      const stable = (/稳定版 \*\*(\d+\.\d+\.\d+(?:\.\d+)?)\*\*/.exec(ctxLine) || [])[1];
+      let stableExpect = null;
+      try { stableExpect = JSON.parse(read('release/latest.json')).version; } catch (err) { /* 没有稳定清单就不核这一半 */ }
+      if (!ctxLine) ctxNote = 'CONTEXT.md 里没找到「已发布」速览行（跳过）';
+      else {
+        if (!beta) ctxProblems.push('CONTEXT.md 的「已发布」行没写测试版版本号（应写 `测试版 **' + manifest.version + '**`）');
+        else if (beta !== manifest.version) ctxProblems.push('CONTEXT.md 写测试版 ' + beta + '，manifest 是 ' + manifest.version);
+        if (stable && stableExpect && stable !== stableExpect) ctxProblems.push('CONTEXT.md 写稳定版 ' + stable + '，release/latest.json 是 ' + stableExpect);
+        if (!ctxProblems.length) ctxNote = 'CONTEXT.md 速览行与真源一致（测试版 ' + (beta || '—') + ' · 稳定版 ' + (stable || '—') + '）';
+      }
+    }
+
     if (!rows) warn('记忆页里没找到「已发布 / 线上核对」行，版本一致性核对跳过');
     else if (ahead.length) bad('记忆页的当前版本声明比 manifest 更新（manifest = ' + manifest.version + '）', ahead.join('\n      '));
     else if (!seen.has(manifest.version)) bad('记忆页没有出现当前版本 ' + manifest.version + '（已发布版本还没记进 STATUS.md？）');
-    else ok('记忆页版本一致：manifest ' + manifest.version + ' 未被超前，且已记载（' + rows + ' 行声明）');
+    else if (ctxProblems.length) bad('工作区速览页 CONTEXT.md 与真源不一致（手抄的版本号会漂，票 #50）', ctxProblems.join('\n      '));
+    else ok('记忆页版本一致：manifest ' + manifest.version + ' 未被超前，且已记载（' + rows + ' 行声明）；' + ctxNote);
   }
 }
 

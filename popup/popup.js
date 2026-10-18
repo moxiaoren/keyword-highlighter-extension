@@ -542,7 +542,11 @@
     try {
       await chrome.windows.create({
         url: chrome.runtime.getURL('popup/editor.html'),
-        type: 'popup', width: 1100, height: 500
+        /* 尺寸不手抄（票 #48）：编辑器宽 + 两侧留白，当前 = 1100×500。
+         * 真值在 `KH.Config.EDITOR_W` / `EDITOR_WIN_W`，这里只做取用。 */
+        type: 'popup',
+        width: (KH.Config && KH.Config.EDITOR_WIN_W) || 1100,
+        height: (KH.Config && KH.Config.EDITOR_WIN_H) || 500
       });
     } catch (err) {
       toast('无法打开编辑窗口，请重试或到设置页添加', 'error');

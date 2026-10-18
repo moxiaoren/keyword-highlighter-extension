@@ -210,7 +210,7 @@
     /* 【2.0.2.7 用户 m00292】卡片里被 OCR 命中的图铺一层红框（用户原话："命中的话给命中的图片
      * 加一层红色边框"）—— 这是"这张图里有你要的词"的唯一视觉提示，因为分区那一行已经不重复画了。
      * 用 outline 而不是 border：outline 不参与布局，图不会被挤动一格（点开大图还能看原文里标出来的词）。 */
-    .khin-item-note img.khin-imghit { outline: 2px solid #ef4444; outline-offset: 1px; }
+    .khin-item-note img.khin-imghit, .khin-imgthumb.khin-imghit { outline: 2px solid #ef4444; outline-offset: 1px; }
     /* 抓取后续字段渲染的多行表格：**所有**单元格保留换行（v1.8.3）
      * 宽度（v1.99.99.11 用户实测要求）：**按内容收缩**，不再无条件 width:100%。
      *   用户原话："表格总宽度总是等于重要笔记宽度…避免明明就一列，结果宽度上还是填满了重要笔记"。
@@ -2005,7 +2005,17 @@
         thumb.className = 'khin-imgthumb';
         if (LIGHTBOX_SRC_OK.test(it.src || '')) thumb.src = it.src;
         thumb.alt = it.keyword || '';
-        thumb.title = KH.OcrCopy.VIEW.openLarge;
+        /* 【票 #45】分区缩略图自己也要有「命中了什么」的提示（红框 + title）：不能指望
+         * `applyImgMarks()` —— 它只扫 `.khin-body` 里的图，而缩略图在 `.khin-imgsec`（与 body 是
+         * 兄弟，见上面的 DOM 骨架），何况它是在本函数**首行**跑的，那时这张缩略图还没被建出来。
+         * title 与卡片里那层红框同一口径（`imgHitTip`）；没命中就说清为什么（`imgWhyText`）。 */
+        const thumbWords = hitWords(it);
+        if (thumbWords.length) {
+          thumb.className += ' khin-imghit';
+          thumb.title = KH.OcrCopy.render(KH.OcrCopy.VIEW.imgHitTip, { matched: thumbWords.join('、') });
+        } else {
+          thumb.title = this.imgWhyText(it);
+        }
         thumbWrap.appendChild(thumb);
         row.appendChild(thumbWrap);
 

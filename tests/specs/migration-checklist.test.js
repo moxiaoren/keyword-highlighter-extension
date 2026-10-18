@@ -10,14 +10,14 @@
  *     · PS1 文件必须**UTF-8 带 BOM**，否则 Windows PowerShell 5.1 把中文注释读成乱码
  *       （实测：编辑工具重写该文件会把 BOM 吃掉，脚本自己只在开头软告警，不改回来没人知道）。
  *
- * 位置：_tools/ 在工作区里、不在扩展仓库内（同 baseline-matcher.test.js 的做法），找不到就 skip ——
+ * 位置：_tools/ 在工作区里、不在扩展仓库内（同 baseline-matcher.test.js 的做法），**找不到就明红**（票 #47）——
  * 单克隆扩展仓库时这套断言不适用，但也不能假红。
  */
 'use strict';
 const fs = require('fs');
 const path = require('path');
 const H = require('../harness');
-const { suite, test, eq, truthy, falsy, skip } = H;
+const { suite, test, eq, truthy, falsy } = H;
 
 /** __dirname = <工作区>/work/keyword-highlighter/tests/specs → 向上 4 级 = 工作区 */
 const ROOT = path.resolve(__dirname, '..', '..', '..', '..');
@@ -31,10 +31,12 @@ const readText = (p) => fs.readFileSync(p, 'utf8');
 module.exports = async function run() {
   suite('migration-checklist · 交接清单单源（两条打包入口打同一份）');
 
-  if (!fs.existsSync(NODE_TOOL) || !fs.existsSync(CHECKLIST)) {
-    skip('★ 交接清单单源', '找不到 ' + NODE_TOOL + ' 或 ' + CHECKLIST);
-    return;
-  }
+  /* 【票 #47】`_tools/` 与 `_MIGRATION_CHECKLIST.md` 在**工作区私有仓**里，不在公开扩展仓。
+   * 单仓检出时这里是**明红**（原因 + 修法），不再 skip —— 绿+跳过会被读成"已经通过了"。 */
+  const WS_HINT = '先在工作区根（F:\\harness\\高亮词插件）检出整个工作区；清单本身由 '
+    + '`node _tools/migration-make.js --write-checklist` 生成。';
+  if (!H.needWorkspaceFile('★ 交接清单单源（工具）', NODE_TOOL, WS_HINT)) return;
+  if (!H.needWorkspaceFile('★ 交接清单单源（清单）', CHECKLIST, WS_HINT)) return;
 
   const md = readText(CHECKLIST);
 

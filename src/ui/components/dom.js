@@ -54,6 +54,19 @@
   /** 稳定 id（key 用；不用于 DOM id） */
   function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 
+  /**
+   * 往上找最近的带某 class 的祖先（含起点自己；`stop` 给了就在它**之前**收手）。
+   * 为什么要有它：`closest('...[kh-]...')` 在本仓库是机械红线（meta-check 禁"从页面 DOM 反查组件"），
+   * 组件层自己找祖先只能沿 `parentNode` 手走一圈 —— 这一圈原先在 `fields.js`（判点击目标是谁）
+   * 与 `rich-editor.js`（找列/弹窗）各写了一份（票 #52）。
+   */
+  function upClass(n, cls, stop) {
+    for (let el = n; el && el !== stop; el = el.parentNode) {
+      if (el.classList && el.classList.contains(cls)) return el;
+    }
+    return null;
+  }
+
   /** 表单控件取值：统一从这里拿，避免各处 typeof 判断 */
   function valueOf(el) {
     if (!el) return '';
@@ -102,5 +115,5 @@
     });
   }
 
-  ui.dom = { h, clear, sel, selAll, uid, valueOf, toast, setToastMount, confirmBox };
+  ui.dom = { h, clear, sel, selAll, uid, valueOf, toast, setToastMount, confirmBox, upClass };
 })();

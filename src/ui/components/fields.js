@@ -189,12 +189,13 @@
          * 不声明就沿用老值，既有字段渲染出的 DOM 一字不变。
          * 【2.0.2.7】值可以是**函数**（`fieldmap.js` 里的尺寸/字号就是这么写的）：范围只有一处真源
          * （`KH.Config` 的常量），而那张字段表在脚本加载期就构造、那时 Config 未必就位 ⇒ 惰性取。 */
-        const bound = (v, fallback) => { const n = typeof v === 'function' ? v() : v; return n == null ? fallback : String(n); };
+        /* 名字按**它做的事**起（票 #52）：取值 + 空兜底 + 转字符串，不是夹边界（夹边界是 `input` 的 min/max）。 */
+        const numOf = (v, fallback) => { const n = typeof v === 'function' ? v() : v; return n == null ? fallback : String(n); };
         const inp = h('input', {
           class: 'kh-input', type: 'number', id: id,
-          min: bound(spec.min, '40'),
-          max: bound(spec.max, '600'),
-          step: bound(spec.step, '1'),
+          min: numOf(spec.min, '40'),
+          max: numOf(spec.max, '600'),
+          step: numOf(spec.step, '1'),
           /* C5：原来硬编码「留空＝用全局默认尺寸」—— 但 `#fld-imgOcrMax`（每处最多＝**张数**）
            * 走的是同一条分支，提示写错了对象。改为优先用字段自己的 hint。 */
           title: spec.hint || '留空＝用全局默认', value: value === '' || value == null ? '' : String(value),
@@ -239,63 +240,45 @@
           h('label', { class: 'kh-fld-label', text: spec.label + (spec.required ? ' *' : ''), for: id }),
           inp, prev, legend
         ]);
-        let raw = value == null ? '' : String(value);   // 已确定的整串（初值即存量值）
-        let editIdx = -1;                               // ≥0 = 正在改第几段（下标按 `parts()`）
-        const split = (s) => ((KH.Fetch && typeof KH.Fetch.splitLabelTokens === 'function') ? KH.Fetch.splitLabelTokens(s) : [String(s)]);
-        const parts = () => (String(raw).length ? split(raw) : []);
-        const pending = () => (String(inp.value).length ? split(inp.value) : []);
-        /** 当前"会存下去"的整串：没有待定/编辑 ⇒ 原样返回 `raw`（一个字都不动）。 */
-        const displayRaw = () => {
-          const t = pending();
-          if (editIdx < 0 && !t.length) return raw;
-          const list = parts();
-          if (editIdx >= 0) list.splice(editIdx, 1, ...t);
-          else for (const one of t) list.push(one);
-          return list.join('|');
-        };
-        /** 把待定内容收进 `raw` 并清空输入框（回车、点胶囊、✕ 之前都先落一下，段序号才稳定）。 */
-        const commit = () => { raw = displayRaw(); editIdx = -1; inp.value = ''; };
-        const notify = () => {
-          /* 让外层（弹窗的"改动过"标记等）也收到一次改动通知；调度器不支持就算了 */
-          try { if (typeof inp.dispatchEvent === 'function') inp.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) { /* 无 Event 构造器：上面的 draw() 已经画好了 */ }
-        };
+        /* 状态机（待定段 / 段号 / 提交 / 改动通知）与候选词共用一份，见 `segEditor`；切段口径是标签自己的。 */
+        const st = segEditor(inp, (s) => ((KH.Fetch && typeof KH.Fetch.splitLabelTokens === 'function') ? KH.Fetch.splitLabelTokens(s) : [String(s)]), value);
         /** 重画预览（唯一入口：输入时、编辑/删除后都走它）。 */
         const draw = () => {
           prev.textContent = '';
-          for (const seg of labelSegs(displayRaw())) {
+          for (const seg of labelSegs(st.displayRaw())) {
             prev.appendChild(labelChip({
               name: seg.name, suffix: seg.suffix,
               chipTitle: '点一下改这一段',
               delTitle: '删掉这一段：' + seg.raw,
               onDelete: () => {
                 /* 按**原始段序号**删（不按文本删：`备注|备注` 这种重复段删一个才不会两个一起没） */
-                commit();
-                const list = parts();
+                st.commit();
+                const list = st.parts();
                 list.splice(seg.i, 1);
-                raw = list.join('|');
+                st.raw = list.join('|');
                 draw();
-                notify();
+                st.notify();
               },
               onClick: () => {
-                commit();
-                const list = parts();
+                st.commit();
+                const list = st.parts();
                 if (seg.i >= list.length) return;   // 上面那次 commit 把段并掉了：没得改
-                editIdx = seg.i;                    // 载回框里改；此时 read() 与改之前同值
+                st.editIdx = seg.i;                 // 载回框里改；此时 read() 与改之前同值
                 inp.value = list[seg.i];
                 draw();
               }
             }));
           }
-          inp.classList.toggle('is-editing', editIdx >= 0);
+          inp.classList.toggle('is-editing', st.editIdx >= 0);
         };
         inp.addEventListener('input', draw);
         inp.addEventListener('keydown', (ev) => {
           if (!ev || ev.key !== 'Enter') return;
           if (typeof ev.preventDefault === 'function') ev.preventDefault();
-          commit(); draw(); notify();
+          st.commit(); draw(); st.notify();
         });
         draw();
-        return { el: box, read: () => displayRaw(), key: spec.key };
+        return { el: box, read: () => st.displayRaw(), key: spec.key };
       }
       /* 【2.0.2.7 需求①】候选词控件（核心词 / 标题词 / 图片命中词共用）：常态只显**胶囊**，
        * 输入框藏在浮层里（点末尾的 `+` 打开），回车把这一段收成胶囊，点胶囊载回框里改。
@@ -331,8 +314,7 @@
           h('label', { class: 'kh-fld-label', text: spec.label + (spec.required ? ' *' : ''), for: id }),
           inp, frame, tip
         ]);
-        let raw = value == null ? '' : String(value);   // 已确定的整串（初值即存量值）
-        let editIdx = -1;                               // ≥0 = 正在改第几个候选（下标按 `parts()`）
+        /* 已确定整串 / 待定段 / 段号这一族交给 `segEditor`（与标签控件同一份实现，票 #52）；`modeOn` 是本字段自己的。 */
         /* `modeOn`：外层（关键词弹窗）**明确告知**的正则状态。控件构造时兄弟开关还没进 DOM
          * （`create()` 只造节点，挂载由调用方做），这时 `getElementById` 只能猜错；所以弹窗建完
          * 字段后会用 `_repaint(!!正则控件的值)` 把真值送进来 —— 没人送才自己查 DOM。 */
@@ -355,27 +337,11 @@
           for (const one of str.split('|')) { const t = one.trim(); if (t.length) out.push(t); }
           return out.length ? out : [str];
         };
-        const parts = () => split(raw);
-        const pending = () => split(inp.value);
-        /** 当前"会存下去"的整串：没有待定/编辑 ⇒ 原样返回 `raw`（一个字都不动）。 */
-        const displayRaw = () => {
-          const t = pending();
-          if (editIdx < 0 && !t.length) return raw;
-          const list = parts();
-          if (editIdx >= 0) list.splice(editIdx, 1, ...t);
-          else for (const one of t) list.push(one);
-          return list.join('|');
-        };
-        /** 把待定内容收进 `raw` 并清空输入框（回车、点胶囊、✕ 之前都先落一下，段序号才稳定）。 */
-        const commit = () => { raw = displayRaw(); editIdx = -1; inp.value = ''; };
-        const notify = () => {
-          /* 让外层（弹窗的"改动过"标记等）也收到一次改动通知；调度器不支持就算了 */
-          try { if (typeof inp.dispatchEvent === 'function') inp.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) { /* 无 Event 构造器：draw() 已经画好了 */ }
-        };
+        const st = segEditor(inp, split, value);
         /** 重画胶囊（唯一入口：输入时、增删改后、正则开关翻动后都走它）。 */
         const draw = () => {
           prev.textContent = '';
-          const list = split(displayRaw());
+          const list = split(st.displayRaw());
           for (let i = 0; i < list.length; i++) {
             prev.appendChild(labelChip({
               name: list[i],
@@ -383,17 +349,17 @@
               delTitle: '删掉这个候选：' + list[i],
               onDelete: () => {
                 /* 先 commit（把待定文本并进 `raw`）再按序号删：段序号才是稳的 */
-                commit();
-                const arr = parts();
+                st.commit();
+                const arr = st.parts();
                 arr.splice(i, 1);
-                raw = arr.join('|');
-                draw(); notify();
+                st.raw = arr.join('|');
+                draw(); st.notify();
               },
               onClick: () => {
-                commit();
-                const arr = parts();
+                st.commit();
+                const arr = st.parts();
                 if (i >= arr.length) return;   // 上面那次 commit 把候选并掉了：没得改
-                editIdx = i;
+                st.editIdx = i;
                 inp.value = arr[i];
                 draw();
                 openPop(true);                 // 浮层锚在稳定的 `+` 上（胶囊刚被这次 draw 重建过）
@@ -402,23 +368,22 @@
           }
           /* 普通模式下 `|` 不是"或"：值里真出现 `|` 时当场说清楚（否则用户以为配了好几个词） */
           ph.hidden = list.length > 0;      // 框里有胶囊就不必再摆占位文字
-          const warn = !regexOn() && String(raw).indexOf('|') >= 0;
+          const warn = !regexOn() && String(st.raw).indexOf('|') >= 0;
           tip.hidden = !warn;
           tip.textContent = warn ? '普通匹配下 | 不表示"或"（整串按字面匹配）；要写多个候选请勾上「正则」' : '';
         };
         /** 点 `+` / 点框面空白处 ＝ **新录一个候选**：先把上一段的待定文本收起来 */
         const startNew = () => {
-          commit();                 // 先把上一段的待定文本收起来
-          editIdx = -1; inp.value = '';
+          st.commit();              // 先把上一段的待定文本收起来
+          st.editIdx = -1; inp.value = '';
           draw();
         };
         const openPop = attachPop(addBtn, inp, box, () => draw(), startNew);
         /* 框面本身也可点（像真输入框那样"点哪儿都能开始录入"）；胶囊与 `+` 各自有主，别抢它们的活。
-         * `closest('...[kh-]...')` 在本仓库是机械红线（meta-check），这里手写祖先查找。 */
-        const inNode = (t, cls) => {
-          for (let n = t; n && n !== frame; n = n.parentNode) if (n.classList && n.classList.contains(cls)) return true;
-          return false;
-        };
+         * `closest('...[kh-]...')` 在本仓库是机械红线（meta-check），祖先查找统一走 `dom.js` 的 `upClass`
+         * （票 #52：这一圈原先与 `rich-editor.js` 各手写了一份）。`frame` 是边界 —— 框里的胶囊算"点了框"，
+         * 框外的同 class 一律不算。 */
+        const inNode = (t, cls) => !!D().upClass(t, cls, frame);
         frame.addEventListener('click', (ev) => {
           if (inNode(ev.target, 'kh-lbl-chip') || inNode(ev.target, 'kh-cand-add')) return;
           startNew();
@@ -428,11 +393,11 @@
          * 浮层由 `attachPop` 那颗 keydown 监听顺手关掉，这里只管把值收好。 */
         inp.addEventListener('keydown', (ev) => {
           if (!ev || ev.key !== 'Enter') return;
-          commit(); draw(); notify();
+          st.commit(); draw(); st.notify();
         });
         draw();
         return {
-          el: box, read: () => displayRaw(), key: spec.key,
+          el: box, read: () => st.displayRaw(), key: spec.key,
           /* 供外层（关键词弹窗）把「正则」开关的真值告诉它，并在开关翻动时重画 */
           _repaint: (on) => { if (typeof on === 'boolean') modeOn = on; draw(); }
         };
@@ -446,6 +411,36 @@
         return { el: fieldBox(spec.label + (spec.required ? ' *' : ''), inp), read: () => inp.value, key: spec.key };
       }
     }
+  }
+
+  /**
+   * 「已确定整串 + 一段待定文本」的状态机（票 #52：`labels` 与 `cands` 曾各写一份逐字相同的实现，
+   * 改一处必忘另一处）。两分支**唯一**的差别是**怎么切段** —— `split` 由调用方注入：
+   * 标签按分隔符 + 后缀解析、候选按正则模式的 `|`；其余（编辑中段号、预览整串、提交、改动通知）
+   * 必须一模一样，否则两个控件手感各走一路。
+   * 为什么返回对象而不是闭包变量：`draw()` 里要改段号、要换整串（`st.editIdx = i` / `st.raw = …`）。
+   */
+  function segEditor(inp, split, initial) {
+    const st = { raw: initial == null ? '' : String(initial), editIdx: -1 };   // ≥0 = 正在改第几段
+    const parts = () => (String(st.raw).length ? split(st.raw) : []);
+    const pending = () => (String(inp.value).length ? split(inp.value) : []);
+    st.parts = parts;
+    /** 当前"会存下去"的整串：没有待定/编辑 ⇒ 原样返回 `raw`（一个字都不动）。 */
+    st.displayRaw = () => {
+      const t = pending();
+      if (st.editIdx < 0 && !t.length) return st.raw;
+      const list = parts();
+      if (st.editIdx >= 0) list.splice(st.editIdx, 1, ...t);
+      else for (const one of t) list.push(one);
+      return list.join('|');
+    };
+    /** 把待定内容收进 `raw` 并清空输入框（回车、点胶囊、✕ 之前都先落一下，段序号才稳定）。 */
+    st.commit = () => { st.raw = st.displayRaw(); st.editIdx = -1; inp.value = ''; };
+    /** 让外层（弹窗的"改动过"标记等）也收到一次改动通知；调度器不支持就算了。 */
+    st.notify = () => {
+      try { if (typeof inp.dispatchEvent === 'function') inp.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) { /* 无 Event 构造器：上面的 draw() 已经画好了 */ }
+    };
+    return st;
   }
 
   /**

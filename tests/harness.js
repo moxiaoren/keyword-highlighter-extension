@@ -526,8 +526,32 @@ function loadKernel(extraFiles) {
   return global.window.KH;
 }
 
+/**
+ * 【票 #47】工作区私有文件（`_tools/`、`_MIGRATION_CHECKLIST.md`、`_e2e/`）不在公开扩展仓里。
+ * 以前这几条检查找不到文件就 `skip` —— 只 clone 扩展仓的人看到的是"绿 + 跳过"，
+ * 读起来像"这条检查通过了"，实际一条都没跑。
+ *
+ * 现在：文件在 ⇒ 返回 true（照常断言）；不在 ⇒ **登记一条可读的失败用例**并返回 false。
+ * 判据就是票面那句：单仓检出时要么明红（原因可读），要么根本不跑 —— 不许绿 + 静默跳过。
+ *
+ * @param {string} name 用例名（会带上一句"工作区私有文件缺失 ⇒ 红，不跳过"）
+ * @param {string} file 期望存在的绝对路径
+ * @param {string} hint 修法（一句话，进失败详情）
+ */
+function needWorkspaceFile(name, file, hint) {
+  const fs = require('fs');
+  let ok = false;
+  try { ok = fs.existsSync(file); } catch (e) { ok = false; }   // 权限/非法路径一律按"缺失"处理
+  if (ok) return true;
+  test(name + '（工作区私有文件缺失 ⇒ 红，不跳过）', () => {
+    throw new Error('找不到 ' + file + '\n      ' + hint +
+      '\n      票 #47 口径：这类检查**不许静默 skip**（绿+跳过会被读成"已经通过了"）。');
+  });
+  return false;
+}
+
 module.exports = {
-  suite, test, eq, deepEq, truthy, falsy, report, settle, skip, skipIf, stats,
+  suite, test, eq, deepEq, truthy, falsy, report, settle, skip, skipIf, stats, needWorkspaceFile,
   installDOM, makeDocument, loadKernel, el, txt,
   ShimElement, ShimText
 };

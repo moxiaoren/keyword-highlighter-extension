@@ -30,13 +30,21 @@ function block(css, sel) {
 module.exports = async function run() {
   const css = read('src/ui/components/components.css');
   const modalLg = block(css, '.kh-modal-lg');
+  /* 【票 #48】几何真值只在 `src/core/config.js` 声明一次（`EDITOR_W` / `EDITOR_WIN_PAD`），
+   * 这里**读它**来核对 CSS 与开窗参数 —— 单测里再抄一个 1040 就是又一处漂移源。
+   * 于是"改常量"只有两种结果：CSS 跟着改（绿）或没跟着改（这里红）。 */
+  const CFG = read('src/core/config.js');
+  const editorW = Number((/const EDITOR_W = (\d+);/.exec(CFG) || [])[1]);
+  const winPad = Number((/const EDITOR_WIN_PAD = (\d+);/.exec(CFG) || [])[1]);
+  const POPUP = read('popup/popup.js');
 
   suite('编辑器弹窗宽度与可拖宽（2.0.2.7 需求③）');
 
-  await test('★ `.kh-modal-lg` 默认宽 1040（860 时三列各 267px，4 列表格必横向滚）', () => {
+  await test('★ `.kh-modal-lg` 默认宽 = `KH.Config.EDITOR_W`（860 时三列各 267px，4 列表格必横向滚）', () => {
     truthy(modalLg, 'components.css 里应有 `.kh-modal-lg { … }` 规则');
-    truthy(/min\(1040px,\s*100%\)/.test(modalLg),
-      '★ 默认宽必须写成 `min(1040px, 100%)`（窄窗口自动退成 100%），实际 ' + JSON.stringify(modalLg));
+    truthy(editorW > 0, 'src/core/config.js 里应有 `const EDITOR_W = <数字>;`（几何唯一真值）');
+    truthy(new RegExp('min\\(' + editorW + 'px,\\s*100%\\)').test(modalLg),
+      '★ 默认宽必须写成 `min(' + editorW + 'px, 100%)`（窄窗口自动退成 100%），实际 ' + JSON.stringify(modalLg));
     falsy(/max-width:\s*860px/.test(css),
       '★ 不许再有 `max-width: 860px` —— 写成 max-width 会把拖拽上限也钉在 860，"临时拉宽"就只剩变窄');
   });
@@ -47,11 +55,12 @@ module.exports = async function run() {
     const modal = block(css, '.kh-modal');
     truthy(modal && /overflow:\s*hidden/.test(modal),
       '★ `.kh-modal` 必须 `overflow: hidden`，否则部分浏览器不出拖拽把手，实际 ' + JSON.stringify(modal));
-    /* 兜底路径（独立编辑窗口）里遮罩左右各留 20px：窗口窄了弹窗就被钳住，"三条路径一模一样"破功 */
-    const editorW = Number((/min\((\d+)px,\s*100%\)/.exec(modalLg) || [])[1]);
-    const winW = Number((/width:\s*(\d+),\s*height/.exec(read('popup/popup.js')) || [])[1]);
-    truthy(winW && editorW && winW >= editorW + 40,
-      '★ 独立编辑窗口要 ≥ 编辑器宽 + 遮罩留白（2×20px），否则兜底路径被钳成 ' + (winW - 40) + 'px：window=' + winW + ' editor=' + editorW);
+    /* 兜底路径（独立编辑窗口）里遮罩两侧留白：窗口窄了弹窗就被钳住，"三条路径一模一样"破功。
+     * 窗口宽不再手抄 1100，而是从 `EDITOR_WIN_W`（= EDITOR_W + 2×PAD）派生 ⇒ 只判关系与取用方式。 */
+    truthy(winPad >= 20,
+      '★ 遮罩两侧留白（`EDITOR_WIN_PAD`）至少 20px，现在 ' + winPad + ' —— 窗口窄了编辑器会被钳成 ' + (editorW - winPad * 2) + 'px');
+    truthy(/width:\s*\(KH\.Config && KH\.Config\.EDITOR_WIN_W\)/.test(POPUP),
+      '★ `popup.js` 开独立窗口的宽必须取自 `KH.Config.EDITOR_WIN_W`（不许再手抄 1100）');
   });
 
   await test('★ 富文本编辑框 / 文本域放开宽度（旧口径 `resize: vertical` 已随用户改口作废）', () => {

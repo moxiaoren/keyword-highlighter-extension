@@ -1715,6 +1715,12 @@ module.exports = async function run() {
     eq(owners[1].textContent, '相亲（截图）');
     eq(p.imgCountEl.textContent, '(1)', '计数按**行**数（屏上就一行，写 (2) 会让人以为漏渲染了）');
     eq(rows[0].querySelectorAll('.khin-imgthumb').length, 1, '缩略图只有一张（图只铺一遍）');
+    /* 【票 #45】规格要求「卡片与分区统一铺红框」，但分区缩略图在 `.khin-imgsec`（`.khin-body` 的兄弟），
+     * 而 applyImgMarks() 只扫 `.khin-body` 且在 renderImgSection 首行就跑（那时缩略图还没建）
+     * ⇒ 缩略图必须在**创建处**自己打标记。这两条断言钉死它，别让红框又静默消失。 */
+    const thumb = rows[0].querySelector('.khin-imgthumb');
+    eq(thumb.classList.contains('khin-imghit'), true, '★ 分区缩略图命中也要铺红框（票 #45）');
+    eq(String(thumb.title).indexOf('一对一') >= 0, true, '★ 缩略图 title 要说清命中了哪个词（票 #45）');
     const tag = rows[0].querySelector('.khin-imgtag');
     eq(tag.textContent, '命中', '合并行的状态取"先命中的那条"（真源文案一字不改）');
     });

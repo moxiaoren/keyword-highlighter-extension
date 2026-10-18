@@ -1282,13 +1282,15 @@
    *
    * 【为什么关键词**不**进键】票 #33 口径：关键词只允许影响进度提示与"要不要加密档重试"。
    * 于是命中之后还要过一道**本词的**闸：新关键词在既有文本里命中 ⇒ 直接复用（引擎零调用）；
-   * 一个字都没命中、而上一笔**本来就没跑过**关键词驱动的加密档（`denseTried` 为假 —— 说明那一笔
+   * 一个字都没命中、而上一笔**本来就没跑过**关键词驱动的加密档（`denseBanded` 为假 —— 说明那一笔
    * 的 base 文本里含着别的词、加密档压根没触发）⇒ 让这一笔正常跑完整条判决链。否则就是拿
    * "为别的词选的档"当本词的结论，把密排图上的本词漏掉（那才是真的识别不出）。
    * 【为什么引擎与语言包还进键】语言包决定模型（`pickLangs`，同一脚本的词取同一组包）、
    * 引擎决定识别路径（PP-OCR / Tesseract），结果不可互换。vendor 的 `globalImageCache`
    * 只认图像字节、不认语言 —— **不能**靠它跨档，只能自己按档隔离。
-   * 【上限】FIFO 64 张：一页里同一字段的图通常个位数，且每笔只是一段文本。 */
+   * 【上限】FIFO 64 张：一页里同一字段的图通常个位数，且每笔只是一段文本。
+   * 【票 #53】放行只认 `denseRescaled`（空帧整帧放大重采，与关键词无关，换任何词都受益）；
+   * `denseBanded` 是给**当时那个词**挑的档，只作诊断记录，不给别的词当放行证。 */
   const RESULT_CACHE_MAX = 64;
   const resultCache = new Map();
 
@@ -1517,13 +1519,15 @@
         worker = await getEngine(langs);
       }
       const got = await bytesFromRequest(job);
-      /* 【2.0.2.4 需求②】同一张图（同字节）+ 同引擎 + 同语言包 + 同关键词 ⇒ 直接回先前那笔结果，
-       * 解码与识别全跳过。`cached:true` 如实标记，真机与单测都据此核对"这张图只烧了一次"。 */
+      /* 【2.0.2.4 需求②】同一张图（同字节）+ 同引擎 + 同语言包 ⇒ 直接回先前那笔结果，
+       * 解码与识别全跳过。`cached:true` 如实标记，真机与单测都据此核对"这张图只烧了一次"。
+       * 【票 #53】放行条件只认**关键词无关**的那一档：整帧放大重采（空帧时跑的，换任何词都受益）。
+       * 密排切带是"当前关键词零命中"才触发的，换一个词不能白拿那一档挑出来的结果。 */
       const imgHash = await bytesHashOf(got.blob);
       /* 键 = 字节 + 引擎 + 语言包（**不含关键词**，票 #33） */
       const cacheKey = imgHash ? [imgHash, kind, langs.join('+')].join('|') : '';
       const cachedEntry = cacheKey ? resultCache.get(cacheKey) : null;
-      if (cachedEntry && (cachedEntry.denseTried || countHits(cachedEntry.lines, job.keyword) > 0)) {
+      if (cachedEntry && (cachedEntry.denseRescaled || countHits(cachedEntry.lines, job.keyword) > 0)) {
         reply(Object.assign({}, cachedEntry.payload, {
           cached: true, queueMs: Math.round(performance.now() - t0), totalMs: Math.round(performance.now() - t0)
         }));
@@ -1806,9 +1810,13 @@
        * 【S3-⑤】倍数由 2 提到 3：109 上 2× 救不回密排页（`probe-s3-dense-diag.js`：1× 0 框、
        * 2× 重采仍 0 行、清晰 2× 重画 9/24 行且关键词那行靠运气丢了）。3 是"顶到 det 1920 上限"的
        * 最小倍数（详见 `DENSE_RESCALE` 处推导）。 */
-      let denseTried = false;
+      /* 【票 #53】两件事别混用一个名字：
+       *   ① `denseRescaled` = 空帧整帧放大重采 —— **与关键词无关**，换任何词都受益 ⇒ 可以给缓存放行；
+       *   ② `denseBanded`   = 密排切带 —— 触发条件是"**当前关键词**零命中"，是给这个词挑的档 ⇒ 不给别的词放行。 */
+      let denseRescaled = false;
+      let denseBanded = false;
       if (base.stat.lines === 0) {
-        denseTried = true;
+        denseRescaled = true;
         try {
           const s2 = await scanFrame(0, false, DENSE_RESCALE);
           if (picksBetter(s2.stat, base.stat, hitsOf(s2.lines), hitsOf(base.lines))) { base = s2; chosen = s2; }
@@ -1826,7 +1834,7 @@
        * 109 那张常规字重图要第 2 档（5 条）才命中，粗体那张第 1 档（3 条）就成）。 */
       if (orig.h >= 400 && base.stat.lines > 0 && hitsOf(base.lines) === 0
           && base.plan.coverage.usedChunks === 1 && !base.plan.coverage.truncated) {
-        denseTried = true;
+        denseBanded = true;
         for (const plan of denseBandPlans(orig.w, orig.h)) {
           if (hitsOf(base.lines) > 0) break;              // 上一档已经命中 ⇒ 不再加密
           try {
@@ -1935,9 +1943,11 @@
       };
       /* 【2.0.2.4 需求②】成完之后才进缓存：失败的结果不缓存（否则一次网络抖动会被记住）。
        * `cached` 字段只在命中那笔加，缓存里的这份保持"原始识别"的样子。
-       * 连同 `lines`/`denseTried` 一起存，只服务上面那道"换词"闸：前者判本词命中不命中，
-       * 后者判关键词驱动的加密档是不是已经跑过了。 */
-      resultCachePut(cacheKey, { payload: payload, lines: finalLines, denseTried: denseTried });
+       * 连同 `lines`/`denseRescaled`/`denseBanded` 一起存：`lines` 判"本词命中不命中"，
+       * 后两个分别记"整帧放大重采跑过"（可给换词放行）与"密排切带跑过"（只作诊断，票据 #53）。 */
+      resultCachePut(cacheKey, {
+        payload: payload, lines: finalLines, denseRescaled: denseRescaled, denseBanded: denseBanded
+      });
       reply(payload);
     } catch (err) {
       reply({
