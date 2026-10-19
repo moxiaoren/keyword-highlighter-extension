@@ -11,6 +11,9 @@ module.exports = async function run() {
   const { KH } = require('../bootstrap');
   const head = KH.ImportantNote.head;
 
+  /** 面板是单例字面量：用原型继承造"影子面板"，只改自己的字段，不污染真面板 */
+  const shadowPanel = () => Object.create(KH.ImportantNote.panel);
+
   /** 造一条命中（只看面板消费用到的 meta 字段） */
   function hit(display, label, note, extra) {
     return { id: display + '|' + label, textNode: {}, kind: 'normal',
@@ -322,249 +325,6 @@ module.exports = async function run() {
    * 而再也不自动展开了。要的是：同一批条目内尊重收起；换代即作废、有命中照常展开。
    * ========================================================================== */
 
-  suite('important-note · 🖼 图片分区：「用户收起过」只在同一批条目内有效（K80）');
-
-  /** 面板是单例字面量：用原型继承造"影子面板"，只改自己的字段，不污染真面板 */
-  const shadowPanel = () => Object.create(KH.ImportantNote.panel);
-
-  await test('★ 同一批（异步结果陆续回来）→ 记忆保留，不被自动展开打断', () => {
-    const p = shadowPanel();
-    p.imgUserCollapsed = true;
-    p.imgCollapsedKeys = ['r|a', 'r|b'];
-    eq(p.imgSameBatch([{ key: 'r|a' }, { key: 'r|b' }, { key: 'r|c' }]), true, '旧键都在、只多不少 = 同一批');
-    eq(p.imgSameBatch([]), true, '重建清底的瞬间（列表暂空）不算换代，记忆要留着');
-  });
-
-  await test('★ 条目换代（提交后翻页 / 重新扫描）→ 记忆作废，有命中要重新自动展开', () => {
-    const p = shadowPanel();
-    p.imgUserCollapsed = true;
-    p.imgCollapsedKeys = ['r|a', 'r|b'];
-    eq(p.imgSameBatch([{ key: 'r|a' }, { key: 'r|x' }]), false, '有旧键消失 ⇒ 换代');
-    eq(p.imgSameBatch([{ key: 'r|x' }, { key: 'r|y' }]), false, '整批换新 ⇒ 换代');
-  });
-
-  await test('没收起过 / 没有记忆键 → 都不构成"记住收起"', () => {
-    const p = shadowPanel();
-    p.imgUserCollapsed = false;
-    p.imgCollapsedKeys = ['r|a'];
-    eq(p.imgSameBatch([{ key: 'r|a' }]), false, '用户没收起过');
-    p.imgUserCollapsed = true;
-    p.imgCollapsedKeys = [];
-    eq(p.imgSameBatch([{ key: 'r|a' }]), false, '没有记忆键');
-  });
-
-  await test('★ 接线契约：换代先作废记忆；收起时连同当时的键一起记（不许退回布尔长期记忆）', () => {
-    const src = read('src/features/important-note.js');
-    /* 2.0.2.7（用户 m00292 的图片折进卡片）：分区本轮到画的条目从 `this.imgItems` 里滤掉
-     * "卡片已经有的图"（`unfoldedImgItems()`），但**这批记忆必须按全量条目算** —— 收起动作记的
-     * 就是全量键（`toggleImgs`），拿过滤后的 `list` 去比就会每次都判成换代、把用户的收起动作
-     * 顶开。所以这里钉的是 `imgSameBatch(all)`，`all` 是 `this.imgItems` 的全量。 */
-    truthy(src.indexOf('if (!this.imgSameBatch(all)) { this.imgUserCollapsed = false; this.imgCollapsedKeys = []; }') >= 0,
-      '分区渲染必须先问 imgSameBatch（全量条目）并作废记忆');
-    truthy(src.indexOf('const all = this.imgItems || [];') >= 0,
-      '上面那一问比的是全量条目（与 toggleImgs 记键的口径一致）');
-    truthy(src.indexOf('if (this.imgUserCollapsed !== true && list.some(') >= 0,
-      '自动展开仍只看"用户有没有对这一批收起过"');
-    truthy(/this\.imgCollapsedKeys = this\.imgCollapsed\s*\r?\n\s*\?/.test(src),
-      '收起动作要把当时的条目键记下来');
-  });
-
-  /* ==========================================================================
-   * 【默认只显示命中】（用户 2026-10-06）
-   *   用户原话："这个功能的主要目的是命中，未命中的图片其实不需要展示出来
-   *   （可以留个渠道，后面人工打开复核）"。
-   *   口径：命中常显；**真失败（bad 类）也必须常显**（否则就是 D-14.5 禁止的静默 ——
-   *   用户看到空面板以为功能坏了）；**要用户动手的告知（action 类 = 跨域未授权）也常显**
-   *   （T21 / 用户 2026-10-13 拍板：这条藏起来同样等于静默，而它一句话就能解决）；
-   *   其余（未命中 / 排队中 / 没认出文字 / 读不到图的其它原因…）
-   *   进题头上的「显示全部」人工复核视图。状态类只从 KH.OcrCopy.stateClass 取。
-   * ========================================================================== */
-
-  suite('important-note · 🖼 图片分区：默认只显示命中，「显示全部」是人工复核入口');
-
-  await test('命中 / "真失败" / 跨域未授权常显；未命中 / 排队中 / 没认出文字 / 其它读不到图默认不显示', () => {
-    const p = shadowPanel();
-    const hit = { state: 'done', text: '一对一', matched: [{ text: '一对一' }] };
-    const miss = { state: 'done', text: '别的话' };
-    const noText = { state: 'done', why: 'no-text' };
-    const running = { state: 'pending' };
-    const queued = { state: 'idle' };
-    const bad = { state: 'fail', error: 'boom' };
-    const timeout = { state: 'fail', errorCode: 'timeout' };
-    const crossOrigin = { state: 'blocked', why: 'cross-origin', host: 'cdn.example.com' };
-    const lazy = { state: 'blocked', why: 'lazy' };
-    eq(p.imgRowVisible(hit), true, '命中常显（这就是这个功能的目的）');
-    eq(p.imgRowVisible(bad), true, '★ 真失败必须露出来：藏起来就是"静默"（D-14.5）');
-    eq(p.imgRowVisible(timeout), true, '超时也是真失败（bad 类）');
-    eq(p.imgRowVisible(crossOrigin), true,
-      '★ T21：跨域未授权（action 类）必须常显 —— 藏起来就是静默，而这句"去设置页填域名"用户照做就行');
-    eq(p.imgRowVisible(miss), false, '未命中默认不展示（用户明确要求）');
-    eq(p.imgRowVisible(noText), false, '「没认出文字」也不占默认版面（进复核视图）');
-    eq(p.imgRowVisible(running), false, '识别中/排队中不占默认版面');
-    eq(p.imgRowVisible(queued), false, '排队中同样进复核视图');
-    eq(p.imgRowVisible(lazy), false, '其余读不到图（note 类：懒加载等）仍进复核视图 —— action 只管"要你动手"那一类');
-  });
-
-  await test('★ 真失败要"表明出来"：默认视图里当场渲染那一行，标签 / 图标 / 悬停理由齐（F6.3 口径：不做重试，但失败必须看得见）', () => {
-    const p = shadowPanel();
-    p.imgSecEl = H.el('div');
-    p.imgListEl = H.el('div');
-    p.imgAllEl = H.el('span');
-    p.imgCollapsed = false;
-    p.imgUserCollapsed = false;
-    p.imgShowAll = false;
-    /* 条目形状照 `img-ocr.js` 的真实产物写：引擎/看门狗失败 = `state:'fail'` + `errorCode`
-       （img-ocr.js:405/414/490-492、看门狗 :351-353），引擎被释放 = `why/errorCode:'engine-lost'`。 */
-    const fail = { key: 'r1|https://ex.com/a.png', state: 'fail', error: 'boom', src: 'https://ex.com/a.png' };
-    const engineGone = { key: 'r2|https://ex.com/b.png', state: 'fail', errorCode: 'engine-unavailable', src: 'https://ex.com/b.png' };
-    const timeout = { key: 'r3|https://ex.com/c.png', state: 'fail', errorCode: 'timeout', src: 'https://ex.com/c.png' };
-    const lost = { key: 'r4|https://ex.com/d.png', state: 'fail', errorCode: 'engine-lost', src: 'https://ex.com/d.png' };
-    const miss = { key: 'r5|https://ex.com/e.png', state: 'done', text: '别的话', src: 'https://ex.com/e.png' };
-    p.imgItems = [fail, engineGone, timeout, lost, miss];
-    p.renderImgSection();
-
-    const rows = p.imgListEl.querySelectorAll('.khin-imgitem');
-    eq(rows.length, 3, '★ 默认视图里必须当场有这三条真失败（识别失败 / 引擎不可用 / 识别超时）' +
-      ' —— 失败要得点开「显示全部」才看得见，就是 D-14.5 禁止的静默');
-    const tagOf = (r) => r.querySelector('.khin-imgtag');
-    eq(tagOf(rows[0]).textContent, '识别失败', '第一行就要明说"识别失败" —— 这就是用户要的"表明那个失败"');
-    eq(tagOf(rows[0]).className, 'khin-imgtag bad', '失败标签走 bad 类（红底，和"未命中/排队中"区分开）');
-    eq(rows[0].querySelector('.khin-imgico').textContent, '⚠', '图标也从真源取：⚠ = 真失败');
-    eq(rows[0].querySelectorAll('button').length, 0, '（口径）不做重试按钮：失败行里没有可点的重试入口');
-    truthy(tagOf(rows[0]).title.indexOf('boom') >= 0,
-      '悬停要能看到引擎报的原文（只说一句"失败了"等于没说）');
-    eq(tagOf(rows[1]).textContent, '引擎不可用', '不支持离线识别时要当场说清楚（这条最容易让用户以为功能坏了）');
-    eq(tagOf(rows[2]).textContent, '识别超时', '看门狗中止的也要明说是超时');
-    truthy(tagOf(rows[2]).title.indexOf('秒') >= 0, '超时的悬停理由要报出秒数（默认 120 秒没进展）');
-    eq(p.imgRowVisible(lost), false,
-      '引擎被释放不算这张图的失败（下一轮会重扫，note 类不红）⇒ 按设计进复核视图');
-    eq(p.imgAllEl.textContent, '显示全部 2', '「显示全部」入口留着，条数说的是被收起的 2 条（复核渠道不能消失）');
-    eq(p.imgAllEl.hidden, false, '有被收起的条目时该入口必须露出来');
-  });
-
-  await test('打开「显示全部」后什么条目都显示；关掉又回到只看命中', () => {
-    const p = shadowPanel();
-    const miss = { state: 'done', text: '别的话' };
-    p.imgShowAll = true;
-    eq(p.imgRowVisible(miss), true, '复核视图里未命中也要能看到（否则这个渠道是假的）');
-    p.imgShowAll = false;
-    eq(p.imgRowVisible(miss), false, '关掉后回到只看命中');
-  });
-
-  await test('★ 「显示全部」的条数按默认口径数：切到复核视图后按钮还在，点得回去', () => {
-    const p = shadowPanel();
-    const hit = { state: 'done', text: '一对一', matched: [{ text: '一对一' }] };
-    const miss = { state: 'done', text: '别的话' };
-    const noText = { state: 'done', why: 'no-text' };
-    const bad = { state: 'fail', error: 'boom' };
-    const queued = { state: 'idle' };
-    const list = [hit, miss, noText, bad, queued];
-    eq(p.imgRowHiddenCount(list), 3, '要复核的＝未命中 + 没认出文字 + 排队中（命中 / 真失败不算）');
-    p.imgShowAll = true;
-    eq(p.imgRowVisible(miss), true, '此刻视图确实是全量（未命中都看得到）');
-    eq(p.imgRowHiddenCount(list), 3,
-      '★ 切到「显示全部」后条数不变 —— 若拿 list.length - 可见行数 数，这里会变 0，按钮当场消失、只进不出');
-    eq(p.imgRowHiddenCount([]), 0, '空列表安全');
-  });
-
-  await test('★ 「显示全部」也按批有效：条目换代就回到"只看命中"（不做整页长期记忆）', () => {
-    const p = shadowPanel();
-    p.imgShowAll = true;
-    p.imgShowAllKeys = ['r|a', 'r|b'];
-    eq(p.imgShowAllSameBatch([{ key: 'r|a' }, { key: 'r|b' }, { key: 'r|c' }]), true, '旧键都在 = 同一批');
-    eq(p.imgShowAllSameBatch([]), true, '重建清底的瞬间不算换代');
-    eq(p.imgShowAllSameBatch([{ key: 'r|a' }, { key: 'r|x' }]), false, '有旧键消失 ⇒ 换代');
-    p.imgShowAll = false;
-    p.imgShowAllKeys = ['r|a'];
-    eq(p.imgShowAllSameBatch([{ key: 'r|a' }]), false, '本来就没开"显示全部"');
-  });
-
-  await test('★ 还没跑完的条目要"说出来"：计数与空视图都不许在结果回来之前说"没有命中"', () => {
-    const p = shadowPanel();
-    const running = { state: 'pending' };
-    const queued = { state: 'idle' };
-    const hit = { state: 'done', text: '一对一', matched: [{ text: '一对一' }] };
-    const miss = { state: 'done', text: '别的话' };
-    const bad = { state: 'fail', error: 'boom' };
-    eq(p.imgBusyCount([running, queued, hit, miss, bad]), 2, '识别中 + 排队中都算"还没跑完"');
-    eq(p.imgBusyCount([hit, miss, bad]), 0, '终态不算');
-    eq(p.imgBusyCount([]), 0, '空列表安全');
-  });
-
-  await test('★ 接线契约：渲染按 imgRowVisible 过滤；题头有「显示全部」；空视图留一行说明', () => {
-    const src = read('src/features/important-note.js');
-    truthy(src.indexOf('const shown = list.filter((it) => this.imgRowVisible(it));') >= 0,
-      '渲染必须按 imgRowVisible 过滤（不能另写一套条件）');
-    truthy(src.indexOf("'<span class=\"khin-imgall\" data-act=\"all\" hidden></span>'") >= 0,
-      '题头要有「显示全部」这个复核入口（否则默认视图把条目藏了就没地方看）');
-    truthy(src.indexOf('this.imgShowAll = !this.imgShowAll;') >= 0, '「显示全部」要能切换');
-    truthy(src.indexOf('const hiddenN = this.imgRowHiddenCount(list);') >= 0,
-      '★ 「显示全部」的条数要按默认口径数：用 `list.length - shown.length` 在切到复核视图后会变 0 ⇒ 按钮消失、点不回去');
-    truthy(src.indexOf("none.className = 'khin-imgnone';") >= 0,
-      '默认视图一条都没有时要留说明行，不能悄悄空白');
-    truthy(src.indexOf('KH.OcrCopy.render(\n          busyN ? KH.OcrCopy.VIEW.noneHitBusy : KH.OcrCopy.VIEW.noneHit') >= 0 ||
-      src.indexOf('busyN ? KH.OcrCopy.VIEW.noneHitBusy : KH.OcrCopy.VIEW.noneHit') >= 0,
-      '说明文案走唯一真源 KH.OcrCopy（面板不许自己写中文），且还有在跑的条目时不许说"没有命中"');
-    truthy(src.indexOf('const busyN = this.imgBusyCount(list);') >= 0 &&
-      src.indexOf('KH.OcrCopy.render(KH.OcrCopy.VIEW.busy, { n: busyN })') >= 0,
-      '计数要把"识别中 N"说出来（默认视图把在跑的行藏起来了，不说就等于骗人）');
-    const copy = read('src/ui/ocr-copy.js');
-    truthy(copy.indexOf('VIEW: VIEW,') >= 0, '展示筛选文案要挂在 KH.OcrCopy.VIEW 上导出');
-    truthy(copy.indexOf('showAll:') >= 0 && copy.indexOf('onlyHits:') >= 0 && copy.indexOf('noneHit:') >= 0,
-      '三个视图文案都要在真源里（显示全部 / 只看命中 / 没有命中）');
-    truthy(copy.indexOf('noneHitBusy:') >= 0 && copy.indexOf('busy:') >= 0,
-      '"还在识别中"的两处文案（空视图 / 计数后缀）也要在真源里');
-    truthy(copy.indexOf('const VIEW = {') >= 0 && copy.indexOf('const COPY = {') >= 0,
-      'VIEW 与 COPY 必须分开：COPY 的键集合要与 img-ocr.js 终态集合完全相等（枚举对账）');
-  });
-
-  suite('important-note · 面板紧凑化 + 双滚动（用户 2026-10-07：条目多太占地方、超屏看不到全部）');
-
-  await test('★ 接线契约：OCR 分区不许把笔记列表挤没，自己封顶后交给列表滚', () => {
-    const src = read('src/features/important-note.js');
-    const imgsec = (src.match(/\.khin-imgsec \{[\s\S]*?\n    \}/) || [''])[0];
-    truthy(imgsec.length > 0, '要能定位到 .khin-imgsec 的样式块（否则下面的断言是在空串上跑，等于没测）');
-    truthy(/flex: 0 0 auto/.test(imgsec),
-      '分区不参与收缩 —— 否则它会把 .khin-body 挤到近零，就是用户说的"两者互相抢占展示"');
-    truthy(/min-height: 0/.test(imgsec), 'min-height:0 是 flex 子项能收缩的前提');
-    const cap = imgsec.match(/max-height:\s*(\d+)vh/);
-    truthy(cap, '分区要封顶（vh）：不然它顶破面板后会被 .khin-panel 的 overflow:hidden 裁掉，连滚动条都看不见');
-    truthy(cap && Number(cap[1]) <= 60, '封顶不超过 60vh，笔记列表至少留 40vh');
-    const list = (src.match(/\.khin-imglist \{[\s\S]*?\n    \}/) || [''])[0];
-    truthy(/flex: 1 1 auto/.test(list) && /min-height: 0/.test(list),
-      '列表要能在分区内收缩（flex:1 1 auto + min-height:0），否则出不了滚动条');
-    truthy(/overflow-y: auto/.test(list), '列表自己要能滚 —— 这是"超过浏览器高度看不到全部"的解药');
-    const body = (src.match(/\.khin-body \{[^}]*\}/) || [''])[0];
-    truthy(/overflow-y: auto/.test(body), '笔记列表也要能滚（上下两个滚动区各管自己）');
-    const panel = (src.match(/\.khin-panel \{[\s\S]*?\n    \}/) || [''])[0];
-    truthy(/max-height:\s*calc\(100vh/.test(panel), '面板总高仍受视口限制（这是滚动能成立的前提）');
-    truthy(/flex-direction: column/.test(panel), '面板仍是纵向 flex：header / 列表 / 分区三段');
-  });
-
-  await test('★ 接线契约：字号走变量（缺省 11px / 行距 1.45 / 缩略图 ≤ 48px）且配置能覆盖它', () => {
-    const src = read('src/features/important-note.js');
-    const note = (src.match(/\.khin-item-note \{[\s\S]*?\n    \}/) || [''])[0];
-    truthy(/font-size: var\(--kh-note-fs, 11px\)/.test(note) && /line-height: 1\.45/.test(note),
-      '正文走 --kh-note-fs 变量、缺省 11px（用户 2026-10-09：比上一版再小一号，且要可配）');
-    truthy(src.indexOf("this.host.style.setProperty('--kh-note-fs'") >= 0,
-      '变量必须由 render() 从 config 写上去 —— 否则设置页改了字号面板不理');
-    const cfg = read('src/core/config.js');
-    /* 2.0.2.6 需求③：11 收进 NOTE_FONT_DEFAULT 常量（设置页数字输入的 min/max 取同一对常量） */
-    truthy(/const NOTE_FONT_DEFAULT = 11;/.test(cfg), 'config 里默认字号必须是 11');
-    truthy(/fontSize: NOTE_FONT_DEFAULT/.test(cfg), '★ 默认字号要引用那个常量，不许再抄一份字面量 11');
-    const thumb = (src.match(/\.khin-imgthumb \{[\s\S]*?\n    \}/) || [''])[0];
-    const side = thumb.match(/width:\s*(\d+)px/);
-    truthy(side && Number(side[1]) <= 48, 'OCR 缩略图不超过 48px —— 9 张图的场景里它是主要高度来源');
-    /* 2.0.2.2 需求 2：**词级字号** = 卡级内联 `--kh-note-fs`（与 --kh-img-size 同一层），
-     * 盖住上面那个宿主级全局值；它是在 renderItems 里写的，所以必须配判脏用例一起钉住。 */
-    truthy(/if \(item\.noteFontSize\) el\.style\.setProperty\('--kh-note-fs', item\.noteFontSize \+ 'px'\)/.test(src),
-      '词级字号必须在 renderItems 里写成卡级内联 --kh-note-fs（否则"每词单独设字号"无处生效）');
-    truthy(src.indexOf("noteFontSize: h.meta.noteFontSize || ''") >= 0,
-      'meta.noteFontSize 必须从 compiler 一路接到面板（链路断了字段就白填）');
-    truthy(read('src/core/compiler.js').indexOf('noteFontSize: (kw.important && kw.noteFontSize)') >= 0,
-      'compiler 必须按 K71 裁定 2 乘 kw.important（否则"重要笔记"关掉的词也会吃字号）');
-  });
-
   suite('important-note · 默认宽度 250px 可经设置页调整（T26 / 用户 2026-10-12：200 → 250）');
 
   await test('★ 宽度只有一处真源（--khin-panel-w 变量），默认值跟 config 对表', () => {
@@ -683,123 +443,6 @@ module.exports = async function run() {
       '复制通路要连「去哪复制」一起说清：全文栏 + 它自带的一键复制');
   });
 
-  suite('important-note · 200px 适配：题头图标+短标签 / 笔记区可收起（用户 2026-10-11）');
-
-  const CSS_OF = (src, sel) => (src.match(new RegExp(sel.replace(/\./g, '\\.') + ' \\{[\\s\\S]*?\\n    \\}')) || [''])[0];
-
-  await test('★ 题头与行内都是「图标 + 短标签」：图标走真源、短标签不折行', () => {
-    const src = read('src/features/important-note.js');
-    const copy = read('src/ui/ocr-copy.js');
-    /* 用户现场截图：200px 下题头折成两行（「图片命中」被拆、「收起全部/只看命中」挤成两行）。
-     * 所以题头一行必须 nowrap + 让计数先让位；标题缩短成「🖼 图片」（完整语义挂 title）。 */
-    const head = CSS_OF(src, '.khin-imghead');
-    truthy(head.length > 0, '要能定位 .khin-imghead 样式块');
-    truthy(/flex-wrap:\s*nowrap/.test(head) && /overflow:\s*hidden/.test(head),
-      '题头必须 nowrap + overflow:hidden —— 否则 200px 下就是现场截图里的折行');
-    truthy(src.indexOf('class="khin-imgtitle"') >= 0 &&
-      src.indexOf('this.imgTitleEl.title = KH.OcrCopy.VIEW.imgSectionTip;') >= 0 &&
-      copy.indexOf('imgSectionTip:') >= 0,
-      '分区标题改短标签「🖼 图片」，完整名「图片命中」挂 title，且文案真源在 ocr-copy.js（T29 / F1.2）');
-    /* 行内：关键词可被 ellipsis，状态标签与耗时**不许**被挤掉 */
-    const kw = CSS_OF(src, '.khin-imgkw');
-    const tag = CSS_OF(src, '.khin-imgtag');
-    truthy(/flex:\s*1 1 auto/.test(kw) && /text-overflow:\s*ellipsis/.test(kw),
-      '关键词这一格要能让位（flex:1 1 auto + ellipsis）');
-    /* T29 / F2.2：标签原来是 flex:0 0 auto 且没有上限 ⇒ 长标签先吃满自己要的宽度、把关键词
-     * 压到 0，再把行尾耗时连同省略号一起裁掉（同一列表里别的行有耗时、这几行没有）。
-     * 现在标签自己也让位（0 1 auto），但缩到 2em 就停 —— 「标签才是这一行的信息」仍然成立。 */
-    truthy(/flex:\s*0 1 auto/.test(tag) && /min-width:\s*2em/.test(tag) &&
-      /text-overflow:\s*ellipsis/.test(tag),
-      '状态标签可以让位，但必须有下界（0 1 auto + min-width:2em + ellipsis）');
-    truthy(/white-space:\s*nowrap/.test(tag), '状态标签不许折行（它才是这一行的信息）');
-    const cost = CSS_OF(src, '.khin-imgcost');
-    truthy(/flex:\s*0 0 auto/.test(cost),
-      '耗时绝不参与让位（T29 / F2.2：被整条裁掉会看着像这几张图没耗时）');
-    /* 行内也吃图标：图标由唯一真源给出，面板不自己挑字符；
-     * 但它要挂在**独立 span** 上 —— `tag.textContent` 必须保持"只说结论"
-     * （2026-10-11 实测：把图标拼进 tag 文本会打红真机里三条拿 tag 当状态措辞的用例）。 */
-    truthy(src.indexOf('ico.textContent = KH.OcrCopy.icon(it);') >= 0 &&
-      src.indexOf('tag.textContent = this.imgTagText(it);') >= 0,
-      '状态图标来自 KH.OcrCopy，且与标签分开挂（tag 文本仍只说结论）');
-    truthy(src.indexOf("ico.className = 'khin-imgico ' + KH.OcrCopy.stateClass(it);") >= 0 &&
-      /\.khin-imgico\s*\{/.test(src) && /\.khin-imgico\.hit\s*\{/.test(src),
-      '图标 span 要挂状态类并各有配色（类名仍由 KH.OcrCopy.stateClass 给）');
-    truthy(src.indexOf('tag.textContent = KH.OcrCopy.icon(it)') < 0,
-      '禁止把图标拼进 tag 文本 —— 会打红真机里拿 tag 当状态措辞的那批用例');
-    truthy(/const ICON = \{/.test(copy) && copy.indexOf('icon: icon,') >= 0,
-      '图标表与 icon() 必须在唯一真源 ocr-copy.js 里导出（面板写死字符就等于各写一套）');
-    /* F2.1：默认宽已回 250px ⇒ 文案必须自解释（有动词、有筛选含义），不再要求先悬停 */
-    truthy(/showAll: '显示全部 \{n\}'/.test(copy) && /onlyHits: '只看命中'/.test(copy),
-      '「显示全部 N / 只看命中」要自解释（200px 时代的短标签「全部 N / 只命中」已按 F2.1 恢复）');
-    truthy(copy.indexOf('showAllTip:') >= 0 && copy.indexOf('onlyHitsTip:') >= 0 &&
-      src.indexOf('this.imgAllEl.title = this.imgShowAll ?') >= 0,
-      'title 的完整句仍要兜底（范围口径写在悬停里）');
-  });
-
-  await test('★ 题头「显示全部 ↔ 箭头」的邻接耦合：DOM 顺序 + [hidden] + 双 auto，动一处就红（F3.3）', () => {
-    const src = read('src/features/important-note.js');
-    /* 两个元素各自都写 margin-left: auto 抢同一份剩余空间，只有那条**相邻兄弟 + :not([hidden])**
-     * 规则保证"同时只有一个在吃"。它把三件事绑死：DOM 顺序（.khin-imgall 必须紧挨着箭头前面）、
-     * hidden 属性语义、双方的 margin-left: auto —— 往模板串里插一个元素（包裹层/分隔符）、
-     * 或把隐藏手法换成 class，箭头与「显示全部 N」之间就会撕出一个大空隙。
-     * 不改布局（改布局要重跑真机），只把这个脆弱点变成红灯。 */
-    const all = CSS_OF(src, '.khin-imgall');
-    const arrow = (src.match(/\.khin-imghead \.khin-imgarrow \{[^}]*\}/) || [''])[0];
-    truthy(/margin-left:\s*auto/.test(all) && /margin-left:\s*auto/.test(arrow),
-      '两侧各自都写 margin-left:auto —— 这正是耦合的来源（少一个，这条邻接规则就没意义了）');
-    const adj = (src.match(/\.khin-imghead \.khin-imgall:not\(\[hidden\]\) \+ \.khin-imgarrow \{[^}]*\}/) || [''])[0];
-    truthy(/margin-left:\s*0/.test(adj),
-      '必须保留 `.khin-imgall:not([hidden]) + .khin-imgarrow { margin-left: 0 }` —— 少了它两个 auto 会各吃一半，箭头被推到中间');
-    truthy(src.indexOf('.khin-imghead .khin-imgall[hidden] { display: none; }') >= 0,
-      '隐藏手法必须是 `[hidden] { display: none }` —— 那条邻接规则的选择器认的就是这个属性');
-    truthy(src.indexOf('this.imgAllEl.hidden = !hiddenN;') >= 0,
-      'JS 侧要照旧用 `.hidden` 同步（改成 class 开关，CSS 的 :not([hidden]) 立刻失效）');
-    truthy(/<span class="khin-imgall"[^>]*><\/span>'\s*\+\s*'<span class="khin-imgarrow">/.test(src),
-      '模板串里 .khin-imgall 必须紧邻 .khin-imgarrow（两者之间插任何元素都会撕出空隙）');
-  });
-
-  await test('★ 笔记区可收起：标记 + 类名一处生效，收一边让另一边（用户 2026-10-11）', () => {
-    const src = read('src/features/important-note.js');
-    truthy(/noteCollapsed: false/.test(src), '收起标记要有默认值（未收起）');
-    truthy(src.indexOf("this.noteBarEl.addEventListener('click'") >= 0, '笔记区题头要能点');
-    truthy(src.indexOf('this.noteCollapsed = !this.noteCollapsed;') >= 0, '点击就是翻转标记');
-    truthy(src.indexOf('applyNoteCollapsed()') >= 0, '收起态要落到 DOM（标记改了界面不动等于没做）');
-    const body = CSS_OF(src, '.khin-body');
-    truthy(/\.khin-body\.khin-collapsed \{ display: none; \}/.test(src),
-      '收起态要有对应样式（只有类名没有规则 = 点了没反应）');
-    /* 用户 2026-10-07 的"被挤没"：正文缩到 0 就是消失。给个下界，让两个分区都能看得见内容。 */
-    truthy(/min-height:\s*60px/.test(body),
-      '正文要留得住一行（min-height:60px）—— 图片分区封顶时它不许被压成 0');
-    truthy(/overflow-y:\s*auto/.test(body), '正文自己仍要能滚');
-  });
-
-  await test('★ 封顶收到 40vh + 行内不再重复图标（用户 2026-10-11：矮屏图区吃掉笔记区、200px 下关键词格只剩 84px）', () => {
-    const src = read('src/features/important-note.js');
-    const imgsec = (src.match(/\.khin-imgsec \{[\s\S]*?\n    \}/) || [''])[0];
-    truthy(imgsec.length > 0, '要能定位到 .khin-imgsec 的样式块（否则下面是在空串上跑）');
-    truthy(/max-height:\s*40vh/.test(imgsec),
-      '分区封顶必须收到 40vh —— 实测 50vh 时矮屏（视口 520）笔记区只剩 165px 且上下双滚动条（_stage/ui-review-2026-10-11）');
-    falsy(/max-height:\s*50vh/.test(src), '不许再出现 50vh（改回去就是拿笔记区换图区）');
-    /* 行内不再重复「🖼 」：整块都在「🖼 图片」分区标题底下，省下的宽度全给关键词 */
-    falsy(src.indexOf("'🖼 ' + (it.keyword") >= 0, '行内关键词前不许再拼图标（200px 下关键词格只有 84px）');
-    /* 【2.0.2.4 需求②】同图合并行要把组内每个关键词都列全（`g.items` 循环）——
-     * 这里钉的是同一件事：文本仍然必须是「词（标签）」，不许为了合并把标签丢掉。 */
-    truthy(src.indexOf("const n = (x.keyword || '') + (x.label ? '（' + x.label + '）' : '');") >= 0,
-      '关键词文本仍要说全「词（标签）」—— 省宽度不等于把标签一起删掉');
-    truthy(src.indexOf('kw.textContent = names.join') >= 0,
-      '合并行的关键词必须是组内各条的「词（标签）」并起来（只取第一条会让合并后的行说不清是谁抓的）');
-    /* 矮屏（视口 ≤520px）再收一档：40vh 在 520px 高处仍吃 208px，正文只赢 9px（实测，见
-     * _e2e/probe-manual-ocr-note.js 第 [14] 节）。走 **@media 视口高**，不引 JS 量高 —— 纯声明式、
-     * 改窗口大小自动跟、也不给 render() 加第二个真源。 */
-    const mq = (src.match(/@media \(max-height: 520px\) \{[\s\S]*?\n    \}/) || [''])[0];
-    truthy(mq.length > 0, '矮屏要有一条 @media (max-height: 520px) 规则（否则 520 高处图区与正文只差 9px）');
-    const mqCap = mq.match(/max-height:\s*(\d+)vh/);
-    truthy(mqCap && Number(mqCap[1]) < 40,
-      '矮屏封顶要比常屏的 40vh 更小（收得不够就白收），实际 ' + (mqCap && mqCap[1]));
-    truthy(/\.khin-imgsec\s*\{/.test(mq), '矮屏规则必须落在 .khin-imgsec 上（别改到别的分区）');
-    falsy(/flex/.test(mq), '矮屏只许改封顶 —— 在 @media 里动 flex 就是绕过"分区不参与收缩"的契约');
-  });
-
   suite('important-note · 抓取字段标题可截断、内容必须完整（用户 2026-10-11：标题省宽度）');
 
   await test('★ 标题格里的文本单行裁切 + 宽度封顶；规则只落在标题格', () => {
@@ -867,23 +510,6 @@ module.exports = async function run() {
   /** 单行规则（`{ … }` 不换行的那种）—— CSS_OF 用的是"到下一个 4 空格缩进的 }"，单行规则会多吞。 */
   const RULE = (src, sel) => (src.match(new RegExp(sel.replace(/\./g, '\\.').replace(/\s+/g, '\\s+') + ' \\{[^}]*\\}')) || [''])[0];
 
-  await test('★ 死样式删净 + STYLE 模板串的注释成对（T29 / F1.1）', () => {
-    const src = read('src/features/important-note.js');
-    /* 守卫按"规则形状"写，不按裸类名：注释里还会提到它们（那是解释，不是样式）。 */
-    falsy(/\.khin-item-body\s*[,{]/.test(src), '.khin-item-body 规则必须删掉（全仓零引用）');
-    falsy(/\.khin-item-body\s+img/.test(src), '并排的那条 .khin-item-body img 选择器也要删');
-    falsy(/\.khin-empty\s*\{/.test(src), '.khin-empty 规则必须删掉');
-    falsy(/\.khin-imgempty\s*\{/.test(src), '.khin-imgempty 规则必须删掉');
-    truthy(src.indexOf("none.className = 'khin-imgnone';") >= 0,
-      '活着的那条（.khin-imgnone）不许被误伤 —— 一条都没有时要留说明行');
-    /* 注释配平：删样式时掉一个收尾符，就会把后面整条规则吃掉（浏览器静默丢弃候选规则，
-     * node --check 查不出，只有这么守）。T25 删「复制全文」按钮时就掉过一个尾巴。 */
-    const style = (src.match(/const STYLE = `([\s\S]*?)`;/) || ['', ''])[1];
-    truthy(style.length > 0, '要能抠出 STYLE 模板串');
-    eq((style.match(/\/\*/g) || []).length, (style.match(/\*\//g) || []).length,
-      'STYLE 里 /* 与 */ 必须成对 —— 掉一个会让后面整条规则被静默丢弃');
-  });
-
   await test('★ 键盘焦点环由面板自己给：只认 :focus-visible（F4.7，用户 2026-10-13 拍板做）', () => {
     const src = read('src/features/important-note.js');
     /* 原来全靠浏览器默认环（配色由浏览器定、与主题无关）。守卫按"规则形状"写：
@@ -894,32 +520,6 @@ module.exports = async function run() {
     truthy(/var\(--brand-deep,\s*#3579c2\)/.test(rule),
       '颜色走 tokens 的 --brand-deep 并带字面兜底（面板模板串是 meta-check 的扫描盲区，兜底是它唯一的护栏）');
     falsy(/:focus\s*\{/.test(src), '禁止 `:focus` 规则 —— 鼠标点击也会留环');
-  });
-
-  await test('★ 面板四条标题文案归真源（T29 / F1.2）', () => {
-    const src = read('src/features/important-note.js');
-    const copy = read('src/ui/ocr-copy.js');
-    eq(src.indexOf('收起为小按钮') >= 0, false, '「收起为小按钮」不许再写死在面板里');
-    eq(src.indexOf('本次页面不再显示') >= 0, false, '「本次页面不再显示」同上');
-    eq(src.indexOf('title="图片命中"') >= 0, false, '「图片命中」同上（改由 JS 从 VIEW 赋 title）');
-    for (const k of ['fabLabel', 'minTip', 'imgSectionTip', 'removeTip']) {
-      truthy(copy.indexOf(k + ':') >= 0, '真源 VIEW 表要有 ' + k);
-      truthy(src.indexOf('KH.OcrCopy.VIEW.' + k) >= 0, '面板要真的去读 ' + k + '（键加了没人用等于没加）');
-    }
-    truthy(/fabLabel: '重要笔记（\{n\} 条）'/.test(copy), '小按钮的完整语义（含计数占位符）');
-    truthy(src.indexOf('fab.setAttribute(\'aria-label\', fabLabel);') >= 0,
-      '计数不能只靠徽标里那个数字 —— 读屏要靠 aria-label 读出「N 条」');
-    truthy(src.indexOf('fab.title = fabLabel;') >= 0, '悬停说明也取自同一处');
-  });
-
-  await test('★ 复制失败就地红一下（T29 / F3.1）', () => {
-    const src = read('src/features/important-note.js');
-    const rule = RULE(src, '.khin-imgchip.failed');
-    truthy(rule.length > 0, '要有 .khin-imgchip.failed 这条规则');
-    truthy(/#991b1b/.test(rule) && /#fee2e2/.test(rule), '复用 .khin-imgtag.bad 那对现成的红（不新增色值）');
-    truthy(/chip\.classList\.toggle\('failed', !ok\);/.test(src), '失败态由同一次 ok 决定（不许另起一套判定）');
-    truthy(/chip\.classList\.remove\('failed'\);/.test(src), '1200ms 复位要把它一起清掉');
-    truthy(src.indexOf('KH.OcrCopy.VIEW.copyFailed') >= 0, '失败文案仍走真源（面板不写这句话）');
   });
 
   await test('★ 小按钮是真按钮：点得开、双击照旧、还能拖（T29 / F4.1 + F4.4）', () => {
@@ -1020,46 +620,6 @@ module.exports = async function run() {
       'FAB 的 click 只认 dragMoved ⇒ ≤3px 松手时该分支不成立，照常 openPanel（反向用例的另一半）');
   });
 
-  await test('★ 两个题头键盘可达、状态可播报（T29 / F4.2）', () => {
-    const src = read('src/features/important-note.js');
-    truthy(src.indexOf('<div class="khin-notebar" role="button" tabindex="0" aria-expanded="true" aria-controls="khin-note-body" hidden>') >= 0,
-      '笔记区题头要 role/tabindex/aria-expanded/aria-controls');
-    truthy(src.indexOf('<div class="khin-imghead" role="button" tabindex="0" aria-expanded="false" aria-controls="khin-img-list">') >= 0,
-      '图片区题头同上');
-    truthy(/e\.key === 'Enter' \|\| e\.key === ' '/.test(src), '键盘激活要认 Enter 与空格（照抄词块那段）');
-    truthy(src.indexOf('onActivate(this.noteBarEl, toggleNotes);') >= 0,
-      '笔记区题头要真的挂上键盘 —— 只加属性不绑键盘等于没修');
-    truthy(src.indexOf('onActivate(this.imgHeadEl, toggleImgs);') >= 0, '图片区题头同上');
-    truthy(src.indexOf("this.noteBarEl.setAttribute('aria-expanded'") >= 0 &&
-      src.indexOf("this.imgHeadEl.setAttribute('aria-expanded'") >= 0,
-      '收起/展开都要同步 aria-expanded（视觉上只有箭头字符在变，读屏读的是这一位）');
-  });
-
-  await test('★ 题头措辞按分区命名 + aria-controls 指到受控区（F3.4）', () => {
-    const src = read('src/features/important-note.js');
-    const copy = read('src/ui/ocr-copy.js');
-    /* 原来两个题头写死同一对「展开 ▾ / 收起 ▴」⇒ 目视与读屏都分不清展开的是哪一块。 */
-    const key = (k) => (copy.match(new RegExp(k + ": '([^']+)'")) || [])[1];
-    const note = [key('noteExpand'), key('noteCollapse')];
-    const img = [key('imgExpand'), key('imgCollapse')];
-    truthy(note[0] && note[1] && img[0] && img[1],
-      '四个箭头文案都必须在 ocr-copy.js 的真源里（面板不许自己写这两句）');
-    truthy(note[0] !== img[0] && note[1] !== img[1],
-      '笔记区与图片区的措辞不许逐字相同 —— 这正是 F3.4 要修的那条');
-    truthy(/笔记/.test(note[0]) && /图片/.test(img[0]), '措辞要说出展开的是哪一块（笔记 / 图片）');
-    for (const k of ['noteExpand', 'noteCollapse', 'imgExpand', 'imgCollapse']) {
-      truthy(src.indexOf('KH.OcrCopy.VIEW.' + k) >= 0, k + ' 要在面板里真的被取用（只加真源不取用 = 没修）');
-    }
-    falsy(src.indexOf("'展开 ▾'") >= 0 || src.indexOf("'收起 ▴'") >= 0,
-      '面板里不许再留写死的箭头文案（两处模板 + 两处动态刷新共四个取用点）');
-    truthy(src.indexOf('aria-controls="khin-note-body"') >= 0 &&
-      src.indexOf('<div class="khin-body" id="khin-note-body"></div>') >= 0,
-      '笔记区：题头 aria-controls 指的 id 必须真挂在受控的正文容器上');
-    truthy(src.indexOf('aria-controls="khin-img-list"') >= 0 &&
-      src.indexOf('<div class="khin-imglist" id="khin-img-list"></div>') >= 0,
-      '图片区同上');
-  });
-
   await test('★ 多命中的下拉条目键盘选得了（T29 / F4.3）', () => {
     const src = read('src/features/important-note.js');
     const list = (src.match(/tagListHtml\(entries, max\) \{[\s\S]*?\n    \},/) || [''])[0];
@@ -1072,26 +632,6 @@ module.exports = async function run() {
     truthy(/items\[i\]\.addEventListener\('click', pickOne\)/.test(rt),
       '点击与键盘共用同一处选择逻辑（两套写法迟早走岔）');
     falsy(/closest\s*\(/.test(rt), '交互定位不许用 closest 反查（meta-check 红线）');
-  });
-
-  await test('★ 计数是异步改的 ⇒ 用 aria-live 播报（T29 / F4.6）', () => {
-    const src = read('src/features/important-note.js');
-    truthy(src.indexOf('<span class="khin-imgcount" role="status" aria-live="polite"></span>') >= 0,
-      '计数在渲染后才被写上，只有 role=status + aria-live 播报得到');
-    truthy(/this\.imgCountEl\.textContent =/.test(src), '播报的就是那个真在写的元素');
-  });
-
-  await test('★ 次要灰字统一 #64748b，状态图标不跟着换（T29 / F4.5）', () => {
-    const src = read('src/features/important-note.js');
-    for (const sel of ['.khin-notebar .khin-notearrow', '.khin-imghead .khin-imgarrow', '.khin-imgnone', '.khin-imgcost']) {
-      const rule = RULE(src, sel);
-      truthy(rule.length > 0, '要能定位 ' + sel);
-      truthy(/#64748b/.test(rule), sel + ' 的灰字要用 #64748b（白底 ≈4.76:1，过 WCAG AA）');
-      falsy(/#94a3b8/.test(rule), sel + ' 不许再用 #94a3b8（2.57:1，不达标）');
-    }
-    const miss = RULE(src, '.khin-imgico.miss');
-    truthy(/#94a3b8/.test(miss),
-      '状态图标 miss 仍用 #94a3b8 —— F4.5 只点名四处文字，图标不在内（改它要与 wait/note 的 #64748b 撞色）');
   });
 
   await test('★ 笔记列表整块没有时不许留 60px 白带（T29 / F6.1）', () => {
@@ -1287,253 +827,6 @@ module.exports = async function run() {
    * 失败态因此是**真实**走出来的，不是硬塞的）。面板实例照本文件既有手法：原型继承造影子面板。
    * ========================================================================== */
 
-  suite('important-note · T63 命中词块的复制反馈必须活过列表重建（真机 e2e 缺陷）');
-
-  const copyView = KH.OcrCopy.VIEW;
-
-  /** 面板是单例字面量：用原型继承造"影子面板"（同上面 K80 那套），只改自己的字段 */
-  const imgPanel = () => {
-    const p = shadowPanel();
-    p.imgSecEl = H.el('div');
-    p.imgListEl = H.el('div');
-    p.imgItems = [{ key: 'r1|https://ex.com/a.png', state: 'done', text: '甲。一对一乙。',
-      matched: [{ text: '一对一' }] }];
-    p.renderImgSection();
-    return p;
-  };
-  const chipsOf = (p) => p.imgListEl.querySelectorAll('.khin-imgchip');
-  const chipKey = (p) => p.imgItems[0].key + '|一对一';
-
-  /** 点这颗 chip —— 走垫片自己的事件通道（T38 之后 ShimElement 有 addEventListener/dispatchEvent） */
-  const clickChip = (chip) => {
-    const h = (chip && chip._ev || {}).click;
-    truthy(h && h.length, '这颗 chip 上没有 click 处理器（装置没接上，下面的断言会全落空）');
-    chip.dispatchEvent({ type: 'click' });
-  };
-  /** 等 promise 链落定：**不用**真定时器（rig 里 setTimeout 已被收走） */
-  const flush = () => new Promise((r) => setImmediate(r));
-
-  /**
-   * 装一套最小装置跑 fn，随后一律还原：
-   *  · ShimElement.prototype.dataset —— data-* ↔ 驼峰的最小代理（产品用 chip.dataset.k 记稳定键）；
-   *  · global.setTimeout —— 收进 jobs 队列，由用例手动触发（**不真等 1200ms**）；
-   *  · global.navigator.clipboard —— 复制成败的唯一开关（`clip.has` 可中途改，故用 getter）。
-   * 事件通道**不用再补**：ShimElement 自己有了（T38）。
-   */
-  async function copyRig(fn) {
-    const proto = H.ShimElement.prototype;
-    const saved = {
-      dataset: Object.getOwnPropertyDescriptor(proto, 'dataset'),
-      nav: Object.getOwnPropertyDescriptor(global, 'navigator')
-    };
-    const prevTimer = global.setTimeout;
-    const jobs = [];
-    const clip = { has: true };
-    Object.defineProperty(proto, 'dataset', {
-      configurable: true,
-      get() {
-        const el = this;
-        if (!el.__ds) {
-          el.__ds = new Proxy({}, {
-            get: (_, k) => el.getAttribute('data-' + String(k).replace(/[A-Z]/g, (c) => '-' + c.toLowerCase())),
-            set: (_, k, v) => { el.setAttribute('data-' + String(k).replace(/[A-Z]/g, (c) => '-' + c.toLowerCase()), v); return true; }
-          });
-        }
-        return el.__ds;
-      }
-    });
-    global.setTimeout = (cb, ms) => { jobs.push({ cb: cb, ms: ms }); return jobs.length; };
-    /* Node 18+ 的 navigator 在 globalThis 上是只读的 ⇒ 照 harness.js:335 defineGlobal 的手法覆盖 */
-    const nav = { userAgent: 'node' };
-    Object.defineProperty(nav, 'clipboard', {
-      configurable: true,
-      get: () => (clip.has ? { writeText: () => Promise.resolve() } : undefined)
-    });
-    try {
-      Object.defineProperty(global, 'navigator', { value: nav, writable: true, configurable: true, enumerable: true });
-    } catch (e) { /* 覆盖不了就沿用既有 navigator（下面的成功用例会当场失败，不静默） */ }
-    const restore = (k, d) => { if (d) Object.defineProperty(proto, k, d); else delete proto[k]; };
-    try { return await fn({ jobs: jobs, clip: clip }); }
-    finally {
-      restore('dataset', saved.dataset);
-      global.setTimeout = prevTimer;
-      if (saved.nav) Object.defineProperty(global, 'navigator', saved.nav);
-      else delete global.navigator;
-    }
-  }
-
-  await test('★ T63-1 复制成功后重建列表：新的那颗 chip 必须还在绿框里（修前：类名留在游离节点上）', async () => {
-    await copyRig(async ({ jobs }) => {
-      const p = imgPanel();
-      const chip = chipsOf(p)[0];
-      truthy(chip, '装置没渲染出命中词 chip，下面的断言会全部落空');
-      clickChip(chip);
-      await flush();
-      eq(chip.classList.contains('copied'), true, '点完当场点亮（既有行为不许回退）');
-      eq(chip.title, copyView.copySentDone, '点完当场换成完成文案');
-      eq(jobs.length, 1, '反馈窗口只许排一个定时器');
-
-      p.renderImgSection();                       // 真机上 OCR 状态一变（结果回来/进行中）就重建
-      const after = chipsOf(p)[0];
-      truthy(after && after !== chip, '重建必须换节点（否则这条用例测的不是重建）');
-      eq(after.classList.contains('copied'), true,
-        '★ 重建后新 chip 必须带 copied —— 修前这里是 false，绿框被重建吃掉，就是真机那个缺陷');
-      eq(after.classList.contains('failed'), false, '成功不许同时带失败态');
-      eq(after.title, copyView.copySentDone, 'title 要跟着一起重放');
-    });
-  });
-
-  await test('★ T63-2 复制失败后重建列表：新 chip 必须还在红框里（红框同理不许丢）', async () => {
-    await copyRig(async ({ clip }) => {
-      clip.has = false;                           // 剪贴板不可用（非 https / 无焦点那类）
-      const p = imgPanel();
-      clickChip(chipsOf(p)[0]);
-      await flush();
-      eq(chipsOf(p)[0].classList.contains('failed'), true, '点完当场转红（T29 / F3.1 的既有行为）');
-      eq(chipsOf(p)[0].title, copyView.copyFailed, '失败文案仍走真源');
-      p.renderImgSection();
-      eq(chipsOf(p)[0].classList.contains('failed'), true, '★ 重建后新 chip 必须还是红的');
-      eq(chipsOf(p)[0].classList.contains('copied'), false, '失败不许带成功态');
-      eq(chipsOf(p)[0].title, copyView.copyFailed, 'title 一起重放');
-    });
-  });
-
-  await test('★ T63-3 窗口内重建后过 1200ms：类与 title 复位 —— 复位的是**活着的**那颗', async () => {
-    await copyRig(async ({ jobs }) => {
-      const p = imgPanel();
-      clickChip(chipsOf(p)[0]);
-      await flush();
-      p.renderImgSection();                       // 窗口内重建一次
-      const live = chipsOf(p)[0];
-      eq(live.classList.contains('copied'), true, '前置：重建后是点亮的（否则下面三条都在空节点上跑）');
-      eq(jobs.length, 1, '重建只重放、不重新计时 —— 不许因此再排一个定时器');
-      eq(jobs[0].ms, 1200, '窗口仍是 1200ms（IMG_COPY_MS）');
-      jobs[0].cb();                               // 到点复位
-      eq(live.classList.contains('copied'), false, '活着的 chip 必须被清掉');
-      eq(live.classList.contains('failed'), false, '两个类一起清');
-      eq(live.title, copyView.copySentence, 'title 复位成点击前的样子');
-      p.renderImgSection();
-      eq(chipsOf(p)[0].classList.contains('copied'), false,
-        '窗口过了再重建**不许**把绿框放回来（标记已清）');
-    });
-  });
-
-  await test('★ T63-7 重建发生在剪贴板 resolve **之前**：屏上那颗也必须点亮（真机 2.0.2.2 首跑那条红）', async () => {
-    await copyRig(async () => {
-      const p = imgPanel();
-      clickChip(chipsOf(p)[0]);
-      /* 【本用例的全部意义】**不** flush —— 就是在 promise 落定之前重建。旧写法此刻标记还不存在
-       * ⇒ 新 chip 拿不到绿框，而标记随后被写到那颗已游离的旧节点上，屏上再也看不到任何反馈。 */
-      p.renderImgSection();
-      eq(chipsOf(p)[0].classList.contains('copied'), true, '★ 点击当帧就得点亮（不许等 promise）');
-      await flush();
-      eq(chipsOf(p)[0].classList.contains('copied'), true, '★ resolve 之后重建的这颗仍要在绿框里');
-      p.renderImgSection();
-      eq(chipsOf(p)[0].classList.contains('copied'), true, '再重建一次也得来自标记（反馈窗口内不许丢）');
-    });
-  });
-
-  await test('★ T63-8 重建发生在 resolve 之前且复制**失败**：就地改判成红，不许停在假的绿上', async () => {
-    await copyRig(async ({ clip }) => {
-      clip.has = false;
-      const p = imgPanel();
-      clickChip(chipsOf(p)[0]);
-      p.renderImgSection();                      // promise 落定之前重建
-      await flush();                             // 失败结果回来
-      const live = chipsOf(p)[0];
-      eq(live.classList.contains('copied'), false, '★ 失败不许停在绿框上（乐观点亮必须被改判）');
-      eq(live.classList.contains('failed'), true, '★ 改判要打在**活着**的这颗上（旧写法只会写到游离节点）');
-      eq(live.title, copyView.copyFailed, 'title 一起改判（否则悬停还是「已复制」）');
-    });
-  });
-
-  await test('★ T63-4 窗口之外（at 已过期）重建不许带上类；恰好 1200ms 也算窗口外', async () => {
-    await copyRig(async () => {
-      const p = imgPanel();
-      const key = chipKey(p);
-      const now = Date.now();
-      p.imgCopyMark = { key: key, ok: true, at: now - 1201 };
-      p.renderImgSection();
-      eq(chipsOf(p)[0].classList.contains('copied'), false, '过期 1ms 就不许重放');
-      eq(chipsOf(p)[0].title, copyView.copySentence, 'title 也不许带完成文案');
-      p.imgCopyMark = { key: key, ok: true, at: now - 1200 };
-      p.renderImgSection();
-      eq(chipsOf(p)[0].classList.contains('copied'), false, '恰好 1200ms 是边界外（窗口判的是"不足"）');
-      p.imgCopyMark = { key: key, ok: true, at: now };
-      p.renderImgSection();
-      eq(chipsOf(p)[0].classList.contains('copied'), true, '反向：窗口内必须重放（否则上面两条是空断言）');
-    });
-  });
-
-  await test('★ T63-5 反向：没点过的 chip 不许带任何反馈类；别的条目的同一个词不许互相点亮', async () => {
-    await copyRig(async () => {
-      const p = imgPanel();
-      eq(chipsOf(p)[0].classList.contains('copied'), false, '没点过就不许是成功的');
-      eq(chipsOf(p)[0].classList.contains('failed'), false, '也不许是失败的');
-      eq(chipsOf(p)[0].title, copyView.copySentence, '默认 title 是「复制这句话」');
-      p.imgCopyMark = { key: 'r2|other.png|一对一', ok: true, at: Date.now() };
-      p.renderImgSection();
-      eq(chipsOf(p)[0].classList.contains('copied'), false,
-        '别的条目里的同一个词不许被点亮 —— 稳定键必须含条目（it.key），不能只用命中词');
-    });
-  });
-
-  await test('★ T63-6 接线契约：窗口单源常量 / 键走 dataset / 复位按 dataset.k 找回 / 不许拿词拼选择器', () => {
-    const src = read('src/features/important-note.js');
-    truthy(src.indexOf('const IMG_COPY_MS = 1200;') >= 0,
-      '反馈窗口要抽成具名常量（重放与复位必须读同一个数；原来是裸 1200 写在 setTimeout 里）');
-
-    const buildAt = src.indexOf('for (const w of words) {');
-    const clickAt = src.indexOf("chip.addEventListener('click'", buildAt);
-    truthy(buildAt >= 0 && clickAt > buildAt, '要能定位命中词块的构建段（words 循环 → click 注册）');
-    const build = src.slice(buildAt, clickAt);
-    truthy(/chip\.dataset\.k = /.test(build), 'chip 要写稳定键（重建后靠它认回来）');
-    truthy(/imgCopyMark/.test(build), '建 chip 时要查面板级的待显示状态（重建重放就靠这一步）');
-    truthy(/Date\.now\(\) - mark\.at < IMG_COPY_MS/.test(build), '窗口判定必须读 IMG_COPY_MS');
-    falsy(/1200/.test(build), '★ 这个块里不许再出现裸 1200（常量之外一处都不留）');
-    falsy(/it\.idx/.test(src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')),
-      'OCR 条目上没有 idx —— 稳定键必须用条目已有的 it.key（img-ocr.js 的 ruleId|src）；'
-      + '按**代码**判（注释里解释这个坑不算违规，同文件先剥注释再数的手法见 T60 那条）');
-
-    const clrAt = src.indexOf('imgClearCopyMark(key, at) {');
-    truthy(clrAt >= 0, '到点复位要有一个专门的 imgClearCopyMark(key, at)');
-    const clr = src.slice(clrAt, src.indexOf('\n    },', clrAt));
-    /* 「在活着的列表里按稳定键找回」这段 2.0.2.3 起抽成 eachLiveChip(key, fn)（到点复位与
-     * 「失败改判」两条通路共用）—— 契约跟着钉到它身上，并要求两个调用方都走它，
-     * 不许哪条通路图省事直接往闭包里那颗写类（真机上那颗早就游离了）。 */
-    const helperAt = src.indexOf('eachLiveChip(key, fn) {');
-    truthy(helperAt >= 0, '要有共用的 eachLiveChip(key, fn)：按 dataset.k 找回活着的 chip');
-    const helper = src.slice(helperAt, src.indexOf('\n    },', helperAt));
-    truthy(helper.indexOf("querySelectorAll('.khin-imgchip')") >= 0,
-      '找回要在**活着的**列表里找 chip（只看闭包里那颗 = 真机上早就游离了）');
-    truthy(/chip\.dataset\.k !== key/.test(helper), '按稳定键认 chip');
-    truthy(/this\.eachLiveChip\(/.test(clr), '到点复位必须走共用找回，不许自带一套');
-    const byKeyAt = src.indexOf('imgApplyCopyMarkByKey(key, ok) {');
-    truthy(byKeyAt >= 0, '失败改判要有专门的 imgApplyCopyMarkByKey(key, ok)（打进活着的 chip）');
-    truthy(/this\.eachLiveChip\(/.test(src.slice(byKeyAt, byKeyAt + 160)),
-      '失败改判也必须走共用找回（否则红框只会打在游离节点上，屏幕上还是绿的）');
-    truthy(/mark\.key === key && mark\.at === at/.test(clr),
-      '只清「还是这一笔」的标记（晚到的旧定时器不许清掉刚点的那一笔）');
-    falsy(/querySelectorAll\([^)]*\+/.test(clr),
-      '★ 不许拿命中词拼 CSS 选择器：关键词是用户输入，含引号/方括号会当场抛错');
-    truthy(/chip\.classList\.remove\('copied'\)/.test(clr) && /chip\.classList\.remove\('failed'\)/.test(clr),
-      '两个类都要复位');
-    truthy(/chip\.title = KH\.OcrCopy\.VIEW\.copySentence/.test(clr), 'title 也要复位');
-    falsy(/clearTimeout|setInterval/.test(clr), '到点复位不该另造一套定时器管线：at 对得上就清');
-  });
-
-  /* ==========================================================================
-   * T38 —— 面板 DOM 交互的单测通路（原来一条都没有）
-   * 病根：tests/harness.js 的 ShimElement 长期**没有 addEventListener** ⇒
-   *   `panel.ensure(document)` 装到 :1100 的 click 委托就当场抛，于是全仓单测
-   *   **一次都没调用过** `ensure()`（`grep ".ensure()"` 零命中）：面板"装进页面 +
-   *   事件委托"这段在单测里没有回归网，只有真机 e2e 兜着（改坏了要等到 e2e 才知道）。
-   * 修法：垫片自带最小事件通道（T38 起：ShimElement 的 addEventListener /
-   *   removeEventListener / dispatchEvent —— 同类型多监听器按注册序、冒泡沿 parentNode、
-   *   出影子根接 host、stopPropagation 生效）。
-   * 本组用例第一次真的把面板装进垫片 DOM，再从影子根里派发**冒泡** click。
-   * ========================================================================== */
-
   suite('important-note · T38 垫片事件通道：面板装进页面 + click 委托（原来完全没跑过）');
 
   /** 往给定容器里放一张缩略图（真实 DOM 里 :1602 就是这么写 thumb.src 的） */
@@ -1663,100 +956,6 @@ module.exports = async function run() {
    *   那条端到端钉住；这里钉面板侧：同一张图（同 `src`）的多条命中并成一行，**每个关键词
    *   各占一行命中词块**，不许把命中词丢掉、也不许把两个词的关键词头糊成一个。
    * ================================================================== */
-  suite('important-note · 同图合并成一行（2.0.2.4 需求②）');
-
-  const IMG_A = 'https://ex.com/a.png';
-
-  await test('★ groupImgItems：按 src 归并，无 src 的条目各自成组（纯函数）', () => {
-    const p = shadowPanel();
-    const g = p.groupImgItems([
-      { key: 'r1|' + IMG_A, src: IMG_A },
-      { key: 'r2|' + IMG_A, src: IMG_A },
-      { key: 'r3|https://ex.com/b.png', src: 'https://ex.com/b.png' },
-      { key: 'r4|', src: '' },
-      { key: 'r5|', src: '' }
-    ]);
-    eq(g.length, 4, '同一张图的 2 条并成 1 组；另一张图 1 组；两条没有 src 的各成 1 组');
-    eq(g[0].items.length, 2, '并入第一条的是同 src 的那条');
-    eq(g[1].items.length, 1, '不同 src 不许并');
-    eq(g[2].items[0].key, 'r4|', '无 src 的条目按自己的 key 单独成组（空 src 不能当成"同一张图"）');
-    eq(g[3].items[0].key, 'r5|', '另一条无 src 的也必须单独成组');
-    eq(p.groupImgItems(null).length, 0, '空列表 ⇒ 空组（不许抛）');
-  });
-
-  await test('★ 同一张图、两个关键词各命中一个词 ⇒ 一行缩略图 + 每个关键词一行词块', async () => {
-    await copyRig(async () => {
-    const p = shadowPanel();
-    p.imgSecEl = H.el('div');
-    p.imgListEl = H.el('div');
-    p.imgAllEl = H.el('span');
-    p.imgCountEl = H.el('span');
-    p.imgCollapsed = false;
-    p.imgUserCollapsed = false;
-    p.imgShowAll = false;
-    p.imgItems = [
-      { key: 'r1|' + IMG_A, src: IMG_A, state: 'done', keyword: '交友', label: '截图',
-        text: '甲。一对一乙。', matched: [{ text: '一对一' }] },
-      { key: 'r2|' + IMG_A, src: IMG_A, state: 'done', keyword: '相亲', label: '截图',
-        text: '丙。美女丁。', matched: [{ text: '美女' }] }
-    ];
-    p.renderImgSection();
-
-    const rows = p.imgListEl.querySelectorAll('.khin-imgitem');
-    eq(rows.length, 1, '★ 同一张图只许占一行（这就是用户要的"别重复"）');
-    eq(p.imgListEl.querySelectorAll('.khin-imgchips').length, 2, '两个关键词各占一行命中词块（命中词一条都不能丢）');
-    const chips = p.imgListEl.querySelectorAll('.khin-imgchip');
-    eq(chips.length, 2, '两颗词块：一对一 + 美女');
-    eq(chips[0].textContent, '一对一');
-    eq(chips[1].textContent, '美女');
-    const owners = p.imgListEl.querySelectorAll('.khin-imgchipkw');
-    eq(owners.length, 2, '合并行里每行词块要标出是哪个关键词命中的');
-    eq(owners[0].textContent, '交友（截图）', '归属小标要说全「词（标签）」');
-    eq(owners[1].textContent, '相亲（截图）');
-    eq(p.imgCountEl.textContent, '(1)', '计数按**行**数（屏上就一行，写 (2) 会让人以为漏渲染了）');
-    eq(rows[0].querySelectorAll('.khin-imgthumb').length, 1, '缩略图只有一张（图只铺一遍）');
-    /* 【票 #45】规格要求「卡片与分区统一铺红框」，但分区缩略图在 `.khin-imgsec`（`.khin-body` 的兄弟），
-     * 而 applyImgMarks() 只扫 `.khin-body` 且在 renderImgSection 首行就跑（那时缩略图还没建）
-     * ⇒ 缩略图必须在**创建处**自己打标记。这两条断言钉死它，别让红框又静默消失。 */
-    const thumb = rows[0].querySelector('.khin-imgthumb');
-    eq(thumb.classList.contains('khin-imghit'), true, '★ 分区缩略图命中也要铺红框（票 #45）');
-    eq(String(thumb.title).indexOf('一对一') >= 0, true, '★ 缩略图 title 要说清命中了哪个词（票 #45）');
-    const tag = rows[0].querySelector('.khin-imgtag');
-    eq(tag.textContent, '命中', '合并行的状态取"先命中的那条"（真源文案一字不改）');
-    });
-  });
-
-  await test('★ 反向：不同图的两条命中仍是两行，且单条行不加归属小标（不回归单图观感）', async () => {
-    await copyRig(async () => {
-    const p = shadowPanel();
-    p.imgSecEl = H.el('div');
-    p.imgListEl = H.el('div');
-    p.imgAllEl = H.el('span');
-    p.imgCountEl = H.el('span');
-    p.imgCollapsed = false;
-    p.imgUserCollapsed = false;
-    p.imgShowAll = false;
-    p.imgItems = [
-      { key: 'r1|' + IMG_A, src: IMG_A, state: 'done', keyword: '交友', label: '截图',
-        text: '甲。一对一乙。', matched: [{ text: '一对一' }] },
-      { key: 'r3|https://ex.com/b.png', src: 'https://ex.com/b.png', state: 'done', keyword: '相亲',
-        label: '截图', text: '丙。美女丁。', matched: [{ text: '美女' }] }
-    ];
-    p.renderImgSection();
-    eq(p.imgListEl.querySelectorAll('.khin-imgitem').length, 2, '不同图不许并');
-    eq(p.imgListEl.querySelectorAll('.khin-imgchips').length, 2, '各一行词块');
-    eq(p.imgListEl.querySelectorAll('.khin-imgchipkw').length, 0,
-      '单条行不加归属小标（同一个关键词重复写在词块前面只是噪声 —— 关键词头已经写了）');
-    eq(p.imgCountEl.textContent, '(2)');
-    });
-  });
-
-  /* ────────────────────────────────────────────────────────────────────────────
-   * 置顶排序（2026-10-15 / 2.0.2.5 需求④）
-   * 用户口径：「配置里面增加一个置顶排序。可以填入关键词，卡片固定置顶（最多支持3个，按顺序排列）」
-   * 改动前本文件 94 条断言**没有一条**碰过卡片顺序 ⇒ 下面这批全是新判据（先红后绿）。
-   * 顺序的真源：卡头 `kw` = `meta.text`（`head.build` :1086），卡片顺序 = Map 插入序 = 命中原序。
-   * ──────────────────────────────────────────────────────────────────────── */
   suite('important-note · 置顶排序：解析口径（最多 3 个 / 分隔符 / 去空去重 / 坏值不抛）');
 
   const cfgPin = (v) => ({ importantNote: { pinOrder: v } });
@@ -1880,14 +1079,15 @@ module.exports = async function run() {
     const p = shadowPanel();
     const cards = fiveCards();
     let content = 0;        // renderContent 次数（= 列表重建）
-    let imgOnly = 0;        // renderImgSection 次数（= 只刷图片分区，卡片不动）
+    let imgOnly = 0;        // 局部刷新次数（= 只补命中标记 + 截图卡，笔记卡片不动）
     /* 本用例只钉"顺序变没变"这一个判据 ⇒ 把两个渲染出口换成本地探针（分开计数：
      * 不重建时走的是 renderImgSection，混在一起数就把"没重建"误读成"重建了"）；
      * `panelEl` 先给个非空桩（真壳由 renderContent 建，这里换掉了，所以得自己摆上），
      * 否则 `!this.panelEl` 会让每一轮都判脏，"同配置不重建"那条反证就测不出来了。 */
     p.panelEl = H.el('div');
     p.renderContent = () => { content += 1; };
-    p.renderImgSection = () => { imgOnly += 1; };
+    p.applyImgMarks = () => {};
+    p.renderCtxCard = () => { imgOnly += 1; };
     p.show = () => {};
     const ocr = KH.ImgOcr;
     const savedItems = ocr && ocr.items;
@@ -1906,7 +1106,7 @@ module.exports = async function run() {
       const n2 = content;
       p.render(cards, cfgPin('戊'));
       eq(content, n2, '反证：同配置重复 render 不许重建（否则上面那条就成了"永远脏"）');
-      eq(imgOnly, 1, '且必须落到"只刷图片分区"那一支（没重建 ≠ 什么都没做）');
+      eq(imgOnly, 1, '且必须落到"只补命中标记 + 截图卡"那一支（没重建 ≠ 什么都没做）');
       eq(kwOrder(p.items), '戊甲乙丙丁');
       p.render(cards, cfgPin('戊, 戊, 戊'));
       eq(content, n2, '归一后等价的写法（同一词多写几遍）⇒ 也不该重建');

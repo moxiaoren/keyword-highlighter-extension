@@ -25,7 +25,7 @@ const VERSION = MANIFEST.version;
 const PREFIX = 'keyword-highlighter-extension';
 
 /** 不进入交付包的目录（相对仓库根，正斜杠） */
-const EXCLUDE_DIRS = ['tests', 'scripts', 'dist', 'release', 'node_modules', '.git', '.github'];   // release/ 含签名私钥，绝不能进交付包
+const EXCLUDE_DIRS = ['tests', 'scripts', 'dist', 'release', 'node_modules', '.git', '.github', '.tmp'];   // release/ 含签名私钥，绝不能进交付包；.tmp/ 是施工临时脚本（2026-10-19 实测：漏排这件事，zip 从 104 涨到 113 个文件）
 const EXCLUDE_FILE_RE = /\.(md|log|map)$/i;
 /** 私钥 / 证书 / 已签名包**一律不进交付包**。
  *  实测踩到过一次：发布脚本在仓库根建了 release/ 并在里面放了 key.pem，

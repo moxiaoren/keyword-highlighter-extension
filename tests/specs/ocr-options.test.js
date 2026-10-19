@@ -127,31 +127,7 @@ module.exports = async function run() {
     truthy(/msg\.engine/.test(js), '自检结果必须回显**实际**用的引擎（否则用户以为在测主引擎）');
   });
 
-  /* ==================================================================
-   * ④ 面板：降级告知（唯一让用户知道"被降级了"的地方）
-   * ================================================================== */
-
-  await test('★ 面板展开说明：engineReason 非空 ⇒ 明说"已从 PP-OCR 回落到兼容引擎"；空 ⇒ 不加废话', () => {
-    const C = KH.OcrCopy;
-    const base = { state: 'done', text: '供应商甲', keyword: '一对一' };
-    const miss = Object.assign({}, base, { engineReason: 'asset-missing' });
-    const w = C.why(miss);
-    truthy(w.indexOf('回落') >= 0, '降级了必须在展开说明里写出来：' + w);
-    truthy(w.indexOf('模型文件没准备好') >= 0, '原因要翻成人话（`asset-missing` 这种机器码印给用户等于没说）：' + w);
-    /* 折叠标签**故意不动**：标签是"发生了什么"，引擎是"怎么发生的"，塞进去只会让标签变长 */
-    eq(C.tag(miss), C.tag(base), '折叠标签不该因为引擎回落而改变');
-    /* 没回落 ⇒ 一个字的废话都不加 */
-    eq(C.why(base).indexOf('回落'), -1, '没回落就不许提引擎');
-    /* 每个原因码都要有"人话"，且不许留未替换的占位符 */
-    const reasons = C.dump().engineReason || {};
-    const codes = Object.keys(reasons);
-    truthy(codes.length >= 5, '引擎回落原因的"人话"表太小：' + codes.join('、'));
-    for (const code of ['asset-missing', 'init-failed', 'module-load-failed', 'engine-unavailable', 'missing-engine']) {
-      truthy(codes.indexOf(code) >= 0, '缺少原因码 ' + code + ' 的"人话"（它真会出现在回执里）');
-    }
-    for (const code of codes) {
-      const t = C.why(Object.assign({}, base, { engineReason: code }));
-      truthy(t.indexOf('回落') >= 0 && t.indexOf('{') < 0, code + ' 的人话渲染不对：' + t);
-    }
-  });
+  /* 2.0.2.15：「图片命中」分区删掉之后，条目展开说明（why()）与引擎回落的人话（ENGINE_REASON）
+   * 在面板上再没有渲染面 —— 引擎实际用的是哪一档，改由设置页的「自检」与只读「高级信息」如实回显,
+   * 那两条已在上面 ⓵/③ 用例里钉住，这里不再重复断言一个不存在的面板文案。 */
 };

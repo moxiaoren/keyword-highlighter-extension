@@ -350,7 +350,7 @@
        * ⇒ 不重挂任何通道、不 `compileAll`、不整页重建（重页面实测一轮 4.3s × 每个打开的标签页），
        * 只重跑 ⑦Consume 让 `panel.render` 把新值写到 CSS 变量上。
        * **站点当前不启用时不走这条路**：那条路的终点是 `destroy()` 下线，别让 Consume 把面板叫回来
-       * （面板有图片命中分区，`show()` 不只看笔记卡片）。
+       * （面板还挂着右键识别出的图，`show()` 不只看笔记卡片）。
        * 比较必须在 `state.config` / 签名被覆盖**之前**取值（下面先比、再记）。 */
       const core = configSigCore(normalized);
       const coreChanged = core !== state.configSigCore;

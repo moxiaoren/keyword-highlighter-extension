@@ -49,6 +49,15 @@ body {
   font-size: var(--fs-xs); font-weight: 600; letter-spacing: .3px;
 }
 .kh-hero-tag { margin-top: 6px; color: var(--text-3); font-size: var(--fs-lg); line-height: 1.75; }
+/* 头部三枚承诺胶囊（2.0.2.15）：都写"边界"而不是"功能"——
+ * 用户对这类工具的第一疑问是"它会不会动我的网页 / 会不会联网 / 数据去哪了"，先答这三个。 */
+.kh-hero-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.kh-chip {
+  padding: 2px 9px; border-radius: var(--r-pill);
+  border: 1px solid var(--brand-soft); background: var(--brand-softer);
+  color: var(--brand-deep); font-size: var(--fs-xs); font-weight: 500;
+  white-space: nowrap;
+}
 
 /* ---------------------------------------------------------------- 状态条 */
 .kh-status {

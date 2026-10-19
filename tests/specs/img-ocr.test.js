@@ -576,8 +576,7 @@ module.exports = async function run() {
     eq(O.items().length, 1);
     eq(O.items()[0].state, 'done', '缓存命中 ⇒ 重建后直接是完成态，不重新排队');
     eq((global.__OCR_SENT__ || []).length, sentAfterFirst, '缓存命中不该再发一次请求（验的是缓存，不是重跑）');
-    eq(O.items()[0].ocrMs, 812, '★ 重建后耗时徽标必须还在（丢了面板上「本次识别耗时」整列空掉）');
-    eq(KH.OcrCopy.costLabel(O.items()[0]), '0.8s', '面板文案照旧出真实数字（0.8s）');
+    eq(O.items()[0].ocrMs, 812, '★ 重建后耗时徽标必须还在（丢了就说明缓存没带上 ocrMs）');
   });
 
   /* ------------------------------------------------------------------
@@ -654,11 +653,10 @@ module.exports = async function run() {
     eq(it.state, 'done');
     eq(it.text, '华为技术有限公司', '识别全文要落进条目（灯箱/悬停读的就是它）');
     eq(it.ocrMs, 1200, '耗时徽标照旧');
-    eq(KH.OcrCopy.stateClass(it), 'note', '状态类走文案真源：note（不是 hit、更不是 bad）');
-    eq(KH.OcrCopy.tag(it), '已识别', '标签文字走文案真源');
-    truthy(KH.OcrCopy.why(it).indexOf('华为技术有限公司') >= 0, '悬停理由要能读到识别全文');
-    eq(KH.ImportantNote.panel.imgRowVisibleByDefault(it), true,
-      '★ 用户手动右键要的那一行不许被"默认只显示命中"藏起来');
+    /* 2.0.2.15：条目不再有「图片命中」分区那一行，唯一可见面是主模块那张「截图」卡 */
+    const shown = KH.ImportantNote.panel.ctxItems().filter((x) => x.via === 'contextMenu');
+    eq(shown.length, 1, '右键识别的条目必须进「截图」卡（否则用户什么都看不到）');
+    eq(shown[0].text, '华为技术有限公司', '卡片上挂的就是这条识别全文');
     /* 用例隔离：右键条目按设计会**跨 build 存活**（下一个用例正是钉这件事），
      * 所以在用例末尾按真实销毁路径清掉，免得影响别的 spec。 */
     KH.features.get('img-ocr').clear(null, { reason: 'destroy' });
@@ -676,7 +674,7 @@ module.exports = async function run() {
     const bad = O.items().filter((it) => it.src.indexOf('/bad.png') > 0)[0];
     truthy(bad, '失败也要建行（SPEC 需求 6：识别服务不可用时必须如实告知，不得静默）');
     eq(bad.state, 'fail');
-    eq(KH.OcrCopy.stateClass(bad), 'bad', '★ 失败落成 bad 类（默认视图常显，用户能看见）');
+    eq(bad.errorCode, 'engine-unavailable', '失败原因要留在条目上（卡片据此显示「识别失败」）');
     KH.features.get('img-ocr').clear(null, { reason: 'destroy' });
   });
 

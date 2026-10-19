@@ -141,6 +141,18 @@ body {
 .kh-right { justify-content: flex-end; }
 .kh-count { color: var(--text-3); font-size: var(--fs-sm); font-weight: 400; }
 .kh-muted { color: var(--text-3); line-height: 1.7; }
+/* 分区导语（2.0.2.15）：每个分区开头一句「这一页是干什么的」。
+ * 比正文细则亮一档（--text-2 而非 --text-3），左侧一道品牌色细边 + 极浅品牌底 ——
+ * 扫读时先撞上它，再往下看细则；inline 元素保持可嵌 <strong>/<code>。 */
+.kh-sec-lead {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border-left: 3px solid var(--brand);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  background: var(--brand-softer);
+  color: var(--text-2);
+  line-height: 1.75;
+}
 .kh-dim { color: var(--text-5); }
 .kh-empty { padding: 18px; border: 1px dashed var(--border-2); border-radius: var(--r-md); color: var(--text-4); text-align: center; }
 
@@ -338,6 +350,10 @@ body {
   transform: translateY(-2px);
 }
 .kh-hcard h4 { margin: 0 0 8px; font-size: 14px; color: var(--text); }
+.kh-hcard-tight { padding: 10px 12px; }
+.kh-hcard-tight h4 { margin-bottom: 6px; }
+.kh-hcard-tight li { margin: 2px 0; }
+
 .kh-hcard ul { margin: 0; padding-left: 16px; }
 .kh-hcard li { margin: 4px 0; font-size: 12.5px; line-height: 1.6; color: var(--text-2); }
 

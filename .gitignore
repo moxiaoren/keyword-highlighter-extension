@@ -24,6 +24,7 @@ node_modules/
 dist/
 build/
 .pkgtest/
-.pkgtest-*/
+.pkgtest-*/.tmp/
+.tmp/
 .DS_Store
 Thumbs.db

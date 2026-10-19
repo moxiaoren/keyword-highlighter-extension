@@ -838,14 +838,16 @@ module.exports = async function run() {
     eq(env.calls.recognize, 0, '未就绪时一次识别都不许发起');
   });
 
-  await test('★ 不变量 1/2 的"有人接"：回执字段必须真的接到用户可见文案上', () => {
-    const copy = read('src/ui/ocr-copy.js');
+  await test('★ 不变量 1/2 的"有人接"：回执字段必须真的接到用户可见的地方', () => {
     const img = read('src/features/img-ocr.js');
-    truthy(/'no-text':\s*\{/.test(copy), 'ocr-copy.js 必须有 no-text 键（全部行被丢时的"没认出文字"）');
-    truthy(/tilted:\s*\{/.test(copy), 'ocr-copy.js 必须有 tilted 键（方向不可靠）');
-    truthy(/truncated:\s*\{/.test(copy), 'ocr-copy.js 已有 truncated 键（截断告知）');
+    const note = read('src/features/important-note.js');
+    /* 2.0.2.15：条目状态词表（COPY）随「图片命中」分区删除，`notice` 三态不再翻译成短标签 ——
+     * 现在它只落成条目的 `why`（灯箱/卡片都用得着"这图里没认出字"这条事实）。 */
     truthy(/notice/.test(img), 'img-ocr.js 必须消费回执的 notice（映射成条目 why）');
-    truthy(/coverPx/.test(img), 'truncated 的 {px} 占位符必须有值可填（覆盖了多少像素）');
+    truthy(/coverPx/.test(img), 'truncated 的覆盖像素必须有值可填（引擎侧要报实数）');
+    truthy(/no-text|tilted|truncated/.test(img), 'notice 的三种取值至少要被条目接住');
+    /* 灯箱把识别全文交到用户眼前 —— 回执里的 text 不能断在半路 */
+    truthy(/text:\s*textBySrc/.test(note) || /cur && cur\.text/.test(note), '灯箱必须读条目上的识别全文');
   });
 
   /* ==================================================================

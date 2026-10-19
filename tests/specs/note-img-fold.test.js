@@ -1,21 +1,17 @@
-/* tests/specs/note-img-fold.test.js — 命中的图折进卡片（2.0.2.7 · 用户 m00292）
+/* tests/specs/note-img-fold.test.js — 图在面板里的落点（2.0.2.7 m00292 → 2.0.2.15 m00001）
  * ----------------------------------------------------------------------------
- * 用户原话（m00292）："目前重要笔记图片识别模块和卡片字段抓取展示的图片有些重复，可不可以删掉
- * 图片识别模块，复用卡片，命中的话给命中的图片加一层红色边框。点击大图显示 ocr 原文时，标红或
- * 高亮命中的词在哪里。"
+ * 2.0.2.15 用户原话（m00001 ② + m00168）："既然右键 ocr 也出现在重要笔记版主模块，而且右键 ocr
+ * 后立刻展示了。那图片 ocr 分区可以彻底删除了。"
  *
- * 口径（为什么不是把那块分区整个删掉）：右键任意图识别（`via === 'contextMenu'`）的结果只进
- * `img-ocr.js` 的 `manual` 表、**不进任何卡片**（它的 `rule` 是 null，`head.build` 眼里没有它），
- * 图片分区是它唯一的显示面。所以做的是「卡片里已经画出来的图不再重复画一行」——重复消失；卡片里
- * 没有的图（右键识别、字段没抓到图…）照旧留着，**不静默**。
- *
- * 本文件只钉 2.0.2.7 新增的三件事：① 折进卡片的过滤；② 命中图的红框与命中词 title；③ 灯箱
- * 「识别原文」栏把命中词标出来。既有分区行为（默认只显示命中 / 收起记忆 / 复制反馈 / 显示全部）
- * 在 `important-note.test.js` 里，一条都不动。
+ * 于是这里钉的不再是"折进卡片、别的照旧画一行"，而是**只有两个图片显示面**：
+ *   ① 卡片里抓到的图 —— 命中时铺红框 + title 说出命中的词（`applyImgMarks`）；
+ *   ② 右键识别的图 —— 主模块顶部那张一行两格的「截图」卡（`ctxCard`，受理即出现）；
+ * 外加灯箱「识别出的文字」栏的命中高亮（`paintHits`）。
+ * 底部那个「🖼 图片」分区连同它的方法/状态/样式/CSS 一起删了 —— 下面第一条就是"它真的没了"的契约。
  */
 'use strict';
 const H = require('../harness');
-const { suite, test, eq, truthy } = H;
+const { suite, test, eq, truthy, falsy } = H;
 const fs = require('fs');
 const path = require('path');
 const ROOT = path.join(__dirname, '..', '..');
@@ -23,7 +19,7 @@ const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 
 module.exports = async function run() {
   const { KH } = require('../bootstrap');
-  suite('important-note · 命中的图折进卡片（2.0.2.7 用户 m00292）');
+  suite('important-note · 图只有两个显示面（2.0.2.15 删掉图片分区）');
 
   /** 面板是单例字面量：原型继承造"影子面板"，只改自己的字段（同 important-note.test.js 手法） */
   const shadowPanel = () => Object.create(KH.ImportantNote.panel);
@@ -40,48 +36,36 @@ module.exports = async function run() {
     }
     return body;
   }
-  const expand = (p) => { p.imgSecEl = H.el('div'); p.imgListEl = H.el('div'); p.imgCollapsed = false; };
 
   /* ==========================================================================
-   * ① 折进卡片：卡片里已经有的图，分区不再重复画
+   * ⓪ 契约：图片分区真的删净了（不是只藏起来）
    * ========================================================================== */
 
-  await test('★ 卡片里已经画出来的图，分区不再重复画一行', () => {
-    const p = shadowPanel();
-    expand(p);
-    p.bodyEl = bodyWithImgs(['https://ex.com/a.png']);
-    p.imgItems = [{ key: 'r|https://ex.com/a.png', src: 'https://ex.com/a.png', state: 'done',
-      text: '一对一乙', matched: [{ text: '一对一' }] }];
-    eq(p.unfoldedImgItems().length, 0, '卡片里有这张图 ⇒ 分区不再画它');
-    p.renderImgSection();
-    eq(p.imgListEl.querySelectorAll('.khin-imgitem').length, 0, '一行都不画（重复的缩略图没了）');
-    eq(p.imgSecEl.hidden, true, '没东西可画就整块藏起来（这就是"删掉图片识别模块"的观感）');
-  });
-
-  await test('★ 卡片里没有那张图 ⇒ 照旧画（右键识别只有这个显示面）', () => {
-    const p = shadowPanel();
-    expand(p);
-    p.bodyEl = bodyWithImgs(['https://ex.com/other.png']);
-    p.imgItems = [{ key: 'ctxmenu|https://ex.com/a.png', src: 'https://ex.com/a.png', state: 'done',
-      text: 'x', matched: [], via: 'contextMenu' }];
-    eq(p.unfoldedImgItems().length, 1, '卡片里没有 ⇒ 留着（静默消失是这张面板明令禁止的失败模式）');
-    p.renderImgSection();
-    eq(p.imgListEl.querySelectorAll('.khin-imgitem').length, 1, '右键那一行仍然画出来');
-  });
-
-  await test('没有 bodyEl（面板还没造壳）/ 没有卡片图 ⇒ 一条都不折', () => {
-    const p = shadowPanel();
-    p.imgItems = [{ src: 'https://ex.com/a.png', key: 'r|a' }];
-    eq(p.unfoldedImgItems().length, 1, '没有卡片 ⇒ 全留着');
-    p.bodyEl = bodyWithImgs([]);
-    eq(p.unfoldedImgItems().length, 1, '卡片里一张图都没有 ⇒ 全留着');
+  await test('★ 分区的方法 / 状态 / 样式 / 文案都没了（删净，不留半口气）', () => {
+    const src = read('src/features/important-note.js');
+    const copy = read('src/ui/ocr-copy.js');
+    for (const dead of ['renderImgSection', 'unfoldedImgItems', 'imgRowVisible', 'groupImgItems',
+      'imgUserCollapsed', 'imgCollapsed', 'imgSameBatch', 'stillSameBatch', 'cardedSrcs',
+      'imgSectionTip', 'imgShowAll', 'imgExpand', 'imgNone', 'imgUserHidden']) {
+      falsy(src.indexOf(dead) >= 0, 'important-note.js 里不该再有 ' + dead);
+    }
+    for (const cls of ['khin-imgsec', 'khin-imghead', 'khin-imgitem', 'khin-imgrow', 'khin-imgnone']) {
+      falsy(src.indexOf(cls) >= 0, '样式类也不该再有 ' + cls);
+    }
+    /* 面板级真源：只服务那个分区的键随它一起删（留着就是没人读的死字符串） */
+    for (const key of ['imgSectionTip', 'imgShowAll', 'imgExpand', 'imgNone', 'noneHit', 'noneHitBusy']) {
+      falsy(copy.indexOf(key + ':') >= 0, 'ocr-copy.js 里不该再有无人读的 ' + key);
+    }
+    /* 面板只剩一个题头：笔记区那个。图片区题头连键盘可达性一起没了 */
+    eq((src.match(/khin-notebar/g) || []).length > 0, true, '笔记区题头还在');
+    falsy(src.indexOf('khin-imgbar') >= 0, '图片区题头没了');
   });
 
   /* ==========================================================================
-   * ② 命中图的红框与命中词 title
+   * ① 卡片里的图：命中铺红框、title 说出命中的词
    * ========================================================================== */
 
-  await test('★ 命中的图铺红框并说出命中了哪个词；没命中的不铺', () => {
+  await test('★ 命中的图铺红框并说出命中了哪个词；没命中的不铺也不挂说明', () => {
     const p = shadowPanel();
     p.bodyEl = bodyWithImgs(['https://ex.com/a.png', 'https://ex.com/b.png']);
     p.imgItems = [
@@ -96,6 +80,7 @@ module.exports = async function run() {
     truthy(String(ims[0].title).indexOf('交友') >= 0 && String(ims[0].title).indexOf('供应商') >= 0,
       'title 把命中的词说全');
     eq(ims[1].classList.contains('khin-imghit'), false, '没命中的图不铺红框');
+    eq(String(ims[1].title || ''), '', '2.0.2.15：没命中的图不挂任何说明（面板不再替它解释）');
 
     /* 标记是每轮重建的，不是叠上去的：这一轮没命中了，红框要摘掉 */
     p.imgItems = [{ key: 'r|a', src: 'https://ex.com/a.png', state: 'miss', text: 't', matched: [] }];
@@ -116,8 +101,15 @@ module.exports = async function run() {
     truthy(String(im.title).indexOf('厂商') >= 0, 'title 说的是命中那条的词');
   });
 
+  await test('没有 bodyEl（面板还没造壳）⇒ 不抛也不画', () => {
+    const p = shadowPanel();
+    p.imgItems = [{ src: 'https://ex.com/a.png', key: 'r|a', matched: [{ text: 'x' }] }];
+    p.applyImgMarks();          // 不该抛
+    eq(1, 1);
+  });
+
   /* ==========================================================================
-   * ③ 灯箱「识别原文」栏：把命中词标出来
+   * ② 灯箱「识别出的文字」栏：把命中词标出来
    * ========================================================================== */
 
   const paint = KH.ImportantNote.paintHits;
@@ -158,24 +150,20 @@ module.exports = async function run() {
     truthy(src.indexOf('hits: hitsBySrc.get(k) || []') >= 0, '相册条目要带上命中词');
     truthy(src.indexOf('.kh-lb-hit') >= 0, '高亮样式存在');
     truthy(src.indexOf('.khin-item-note img.khin-imghit') >= 0, '红框样式存在');
-    /* 点原文里的高亮词 = 复制整句：原来这个入口长在面板行的词块上，图折进卡片后那一行不再画
-     * ⇒ 能力搬进灯箱（用户 m00292 的"标出命中的词在哪里"顺带把它变成可点的）。 */
+    /* 点原文里的高亮词 = 复制整句：面板行上的词块随图片分区一起删了 ⇒ 这条能力只在灯箱里有 */
     truthy(src.indexOf("classList.contains('kh-lb-hit')") >= 0, '灯箱原文栏要认得出被点的高亮词');
     truthy(src.indexOf(".tagName === 'MARK'") >= 0, '认的是自己画的 mark（命中词是叶子节点）');
-    /* 「认高亮词不许走 closest('.kh-*') 反查」由 scripts/meta-check.js 第 4 节那条红线守着（它先剥注
-     * 释再扫，比在这边写正则稳）；此处不重复。 */
     truthy(src.indexOf('sentenceOf(curText, w)') >= 0, '点词复制的是它在原文里那一整句');
     truthy(src.indexOf('.kh-lb-hit.copied') >= 0 && src.indexOf('.kh-lb-hit.failed') >= 0,
       '复制成功/失败都要有反馈样式（不许静默）');
   });
 
   /* ==========================================================================
-   * ④ 右键识别的图 → 主模块一张卡片表格（2.0.2.13 · 用户 m03971）
+   * ③ 右键识别的图 → 主模块一张卡片表格（2.0.2.13 · m03971；2.0.2.15 起是唯一显示面）
    * ==========================================================================
    * 用户原话（m03971）："右键ocr图片的功能顺便优化一下（也展示在重要笔记主模块里，作为一个卡片
    * 的表格展示，表头（左格内容）固定是截图，不管右键ocr了多少个图片，都放在表头右侧一个单元格内）"。
-   * 钉住四件事：① 一张都没有 ⇒ 不多出一条空卡；② 永远一行两格，左格是「截图」；
-   * ③ 不管几张图都塞进**同一个**右格（不是一张图一格）；④ 文案取真源，不在面板里写死。
+   * 2.0.2.15（m00001 ②）再补一条：**受理那一刻就要出现**，不许等识别跑完。
    */
 
   await test('★ 没有右键识别的图 ⇒ 不出空卡（主模块不多一条白块）', () => {
@@ -198,7 +186,7 @@ module.exports = async function run() {
     eq(rows.length, 1, '永远只有一行（不是一张图一行）');
     const cells = rows[0].querySelectorAll('td');
     eq(cells.length, 2, '左格 + 右格');
-    eq(cells[0].textContent, KH.OcrCopy.VIEW.ctxShotLabel, '左格（表头）固定是「截图」');
+    eq(cells[0].textContent.trim(), KH.OcrCopy.VIEW.ctxShotLabel, '左格（表头）固定是「截图」');
     eq(cells[0].querySelectorAll('img').length, 0, '左格只放标题，不放图');
     const right = cells[1];
     eq(right.className.indexOf('khin-ctx-cell') >= 0, true, '右格带排布类（flex-wrap，图多也只在这格里折行）');
@@ -215,27 +203,43 @@ module.exports = async function run() {
     eq(card.querySelectorAll('img').length, 1, '按 src 去重');
   });
 
+  await test('★ 受理即出现：图还在识别时也有卡，并在标题格旁说「识别中…」', () => {
+    const p = shadowPanel();
+    p.imgItems = [{ key: 'ctxmenu|a', src: 'https://ex.com/a.png', state: 'pending', via: 'contextMenu' }];
+    const card = p.ctxCard(document);
+    truthy(card, '识别没跑完也得先出卡（用户 m00001 ②：右键那一刻就要看见）');
+    eq(card.querySelectorAll('img').length, 1, '图本身立刻画出来');
+    truthy(card.textContent.indexOf(KH.OcrCopy.VIEW.ctxBusy) >= 0, '并且说清"文字还在路上"');
+  });
+
+  await test('★ 识别失败也要说出来（不许静默留一张图）', () => {
+    const p = shadowPanel();
+    p.imgItems = [{ key: 'ctxmenu|a', src: 'https://ex.com/a.png', state: 'fail', via: 'contextMenu' }];
+    const card = p.ctxCard(document);
+    truthy(card.textContent.indexOf(KH.OcrCopy.VIEW.ctxFail) >= 0, '失败原因（无文字）要挂在卡上');
+  });
+
   await test('★ 只有右键图、没有任何笔记时，主模块也得露出来', () => {
     /* 旧实现 bodyEl.hidden = !items.length ⇒ 只点了右键的用户看到主模块整块消失 */
     const src = read('src/features/important-note.js');
     truthy(src.indexOf('const ctxN = this.ctxItems().length;') >= 0, '渲染时要算上右键那张卡');
     truthy(src.indexOf('this.bodyEl.hidden = !(this.items.length || ctxN);') >= 0,
       '有右键图时笔记区不许藏');
+    truthy(src.indexOf('if (!sorted.length && !this.ctxItems().length)') >= 0,
+      '整页既没笔记也没有右键图才允许整块不显示');
     truthy(src.indexOf('ctxShotLabel') >= 0 && read('src/ui/ocr-copy.js').indexOf("ctxShotLabel: '截图'") >= 0,
       '表头文案取真源（面板里不许写死中文）');
   });
 
-  await test('★ 右键 OCR 结果异步回来时，那张卡要跟着重建（真机抓到：只刷图片分区）', () => {
-    /* 现场：右键公网图 ⇒ 提交成功、图片分区计数变成 (1)，但主模块那张「截图」卡一直是 0 格。
-     * 根因：KH.ImgOcr.onChange 只调了 panel.renderImg()，它只重建「🖼 图片」分区；
-     * 卡片是 renderItems() 里 append 的，不跟着重建就永远等下一次页面变动。
-     * 这里钉：① onChange 里两个重建都调；② 重建只换那张卡、别把整块卡片区推倒。 */
+  await test('★ 右键 OCR 状态变了 ⇒ 那张卡跟着重建（受理 / 结果 / 失败三条路）', () => {
+    /* 现场（2.0.2.13）：右键公网图 ⇒ 提交成功，但主模块那张「截图」卡一直是 0 格。
+     * 根因：KH.ImgOcr.onChange 只调了 panel.renderImg()，卡是 renderItems() 里 append 的，
+     * 不跟着重建就永远等下一次页面变动。2.0.2.15 把刷新统一落在 renderImg() 里。 */
     const src = read('src/features/important-note.js');
-    /* 注释里也写着这串（:1311/:1329 解释 T63 时提到），取最后一次出现才是真调用点 */
     const at = src.lastIndexOf('KH.ImgOcr.onChange(');
-    const cb = src.slice(at, at + 700);
-    truthy(cb.indexOf('panel.renderImg()') >= 0, '原来那条刷新留着');
-    truthy(cb.indexOf('panel.renderCtxCard()') >= 0, '右键那张卡也要刷新');
+    const cb = src.slice(at, at + 300);
+    truthy(cb.indexOf('panel.renderImg()') >= 0, '识别状态变化要刷新面板');
+    truthy(/renderImg\(\)\s*\{[\s\S]{0,900}?renderCtxCard\(\)/.test(src), 'renderImg 里要重建那张卡');
     truthy(/renderCtxCard\(\)\s*\{[\s\S]{0,400}?removeChild/.test(src), '重建前先摘掉旧节点（不叠卡）');
     truthy(/renderItems\(\)\s*\{[\s\S]{0,260}?this\.ctxEl = this\.ctxCard\(doc\)/.test(src),
       '整块重建时也要把新卡记到 ctxEl（否则下次 renderCtxCard 摘不到它）');

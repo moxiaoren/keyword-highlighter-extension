@@ -248,7 +248,10 @@
   /** 内容脚本的识别请求：不等待结果（结果另外送回该标签页），只登记路由 */
   async function submitImage(msg, sender) {
     /* 闸门必须在**入口**：`via` 不向下转发（`toOffscreen` 只带 src/dataUrl/keyword/engine），
-     * 推到 offscreen 就没得判了。拒的时候一个字都不发出去、也不给任何回执（静默）。 */
+     * 推到 offscreen 就没得判了。拒的时候一个字都不发出去、也不给任何回执（静默）。
+     * 【只对 `via:'contextMenu'` 生效】右键菜单是**唯一**能指向任意地址（含内网）的入口，必须拦；
+     * 大图里点「OCR 识别」拿的是面板里已经在展示的那张图 —— 与扫描链同一批 src（那条路本来就不
+     * 过这道门，data: / 内网图都在里面），再套一遍只会让"图能看却识别不了"，口径反倒不一致。 */
     if (msg && msg.via === 'contextMenu' && !isContextMenuSrcAllowed(msg.src)) {
       return { ok: false, code: 'src-rejected' };
     }
@@ -264,12 +267,18 @@
       requestId: requestId, tabId: tabId,
       /* frameId 必须记住：同源 iframe 也会跑内容脚本，结果要投回**发起那一帧** */
       frameId: sender ? sender.frameId : undefined,
-      /* 右键入口的路由标记：内容脚本靠回执上的 `via` 认领成「右键识别」（见 deliver） */
-      via: (msg && msg.via === 'contextMenu') ? 'contextMenu' : '',
+      /* 用户点名入口的路由标记：内容脚本靠回执上的 `via` 认领（右键 →「截图」卡；大图 → 灯箱等待者） */
+      via: (msg && msg.via) ? String(msg.via) : '',
       engine: engine, isExtPage: isExtPage, at: now, lastProgressAt: 0, sawProgress: false, timer: null
     };
     imageJobs.set(requestId, job);
     armWatchdog(job);
+    /* 【2.0.2.15 需求②】受理即回执：用户点了右键，面板必须**立刻**出现那张「截图」卡（带"识别中…"），
+     * 不能等 offscreen 跑完 —— 真机上 OCR 要几百毫秒到几秒，旧行为是"点完右键像什么都没发生"。
+     * 只发给发起的那一帧（内容脚本据此建 pending 条目）；结果仍走 OCR_RESULT。 */
+    if (job.via === 'contextMenu') {
+      route(job, { type: MSG.OCR_QUEUED, requestId: requestId, src: msg.src, via: 'contextMenu' });
+    }
     await toOffscreen({
       to: 'offscreen', type: MSG.OCR_IMAGE, requestId: requestId, tabId: tabId,
       src: msg.src, dataUrl: msg.dataUrl, keyword: msg.keyword, engine: engine
@@ -286,13 +295,12 @@
    * 约定：内容脚本认 `to:'content'`，扩展页（设置页自检）认 `to:'ui'`。
    * 【认领不到就不投】`job == null` 时**什么都不做**（见文件头"认领不到就不投"）。
    */
-  function deliver(job, payload) {
+  /**
+   * 按发起方路由投一条消息（内容脚本 vs 扩展页）。
+   * `deliver`（识别结果）与「受理即回执」共用这一处，免得两条通路各写一套 to 规则。
+   */
+  function route(job, out) {
     if (!job) return;
-    const base = { type: MSG.OCR_RESULT, requestId: payload.requestId, ok: payload.ok };
-    const out = Object.assign({}, payload, base);
-    /* 右键入口：把路由标记带回给发起方那一帧（内容脚本据此认领成「右键识别」）。
-     * 只加在**回执**上 —— offscreen 侧一个字都不许知道（见 submitImage 的 toOffscreen）。 */
-    if (job.via) out.via = job.via;
     if (job.tabId == null || job.isExtPage) {
       try { chrome.runtime.sendMessage(Object.assign({}, out, { to: 'ui' })); } catch (e) { /* ignore */ }
       return;
@@ -305,6 +313,16 @@
         : chrome.tabs.sendMessage(job.tabId, out);
       if (p && typeof p.catch === 'function') p.catch(() => {});
     } catch (e) { /* 标签页已经关了：额度由内容脚本自己的 sweep 收口 */ }
+  }
+
+  function deliver(job, payload) {
+    if (!job) return;
+    const base = { type: MSG.OCR_RESULT, requestId: payload.requestId, ok: payload.ok };
+    const out = Object.assign({}, payload, base);
+    /* 用户点名入口：把路由标记带回给发起方那一帧（内容脚本据此认领）。
+     * 只加在**回执**上 —— offscreen 侧一个字都不许知道（见 submitImage 的 toOffscreen）。 */
+    if (job.via) out.via = job.via;
+    route(job, out);
   }
 
   /** 出终态的统一出口：注销路由 + 停止看门狗 + 投出去 */

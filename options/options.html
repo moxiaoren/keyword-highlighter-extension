@@ -53,6 +53,7 @@
       <div class="kh-card-head">
         <h2>关键词管理 <span class="kh-count" id="kw-count"></span></h2>
       </div>
+      <p class="kh-sec-lead">这里列出的词，会在你打开任意网页时被标出来。匹配方式、颜色、备注、重要笔记都是<strong>逐条</strong>配的 —— 点表格里的词就能改。</p>
 
       <!-- 筛选栏：上行是筛选条件，下行是「＋ 添加 / 📥 批量导入」——
            拆两行是刻意的：并成一行时中窄屏会把按钮挤成第二行、留下半行空白，看着像没对齐 -->
@@ -114,14 +115,14 @@
           <button class="kh-btn kh-btn-primary" id="btn-group-add" type="button">＋ 新建分组</button>
         </div>
       </div>
-      <p class="kh-muted">分组可统一高亮颜色、整组标记「重要」并共用一条重要笔记；组内关键词自动跟随，改分组色后组内同步生效。</p>
+      <p class="kh-sec-lead">分组可统一高亮颜色、整组标记「重要」并共用一条重要笔记；组内关键词自动跟随，改分组色后组内同步生效。</p>
       <div id="group-list" class="kh-group-list"></div>
     </section>
 
     <!-- ============================================================ 样式（高亮 + 备注卡片合并） -->
     <section class="kh-card" id="sec-style" hidden>
       <h2>样式配置</h2>
-      <p class="kh-muted">这里配的都是<strong>全局默认值</strong>：单个关键词或分组没设时才会用到。
+      <p class="kh-sec-lead">这里配的都是<strong>全局默认值</strong>：单个关键词或分组没设时才会用到。
         优先级固定为「分组色 &gt; 关键词色 &gt; 全局默认色」，在关键词编辑弹窗里留空即表示「继承」。</p>
 
       <h3 class="kh-sub">高亮颜色</h3>
@@ -157,7 +158,7 @@
       </div>
 
       <h3 class="kh-sub">重要笔记</h3>
-      <p class="kh-muted">页面左上角「<strong>重要笔记</strong>」悬浮面板的默认外观：面板里的<strong>图片分区</strong>与<strong>笔记正文</strong>各自有下界和自己的滚动条，收起一边就把空间全让给另一边。<br>
+      <p class="kh-sec-lead">页面左上角「<strong>重要笔记</strong>」悬浮面板的默认外观：上方是右键识别进来的「<strong>截图</strong>」表，下方是笔记正文，两边各自带滚动条，收起笔记就把空间全让给截图。<br>
         下面四项都只是<strong>默认值</strong>：单个关键词或分组<strong>留空即继承</strong>这里。「图片尺寸」管抓取字段值格里的缩略图/识别图；「字号」管面板里的<strong>笔记正文与表格</strong>；「面板宽度」是长期值，拖面板右下角只算当前这一次 —— 两条口径的完整解释见「帮助与隐私 → ❓ 常见」Q12 / Q13。</p>
       <div class="kh-form-row">
         <div class="kh-form-fld">
@@ -193,12 +194,31 @@
     <!-- ============================================================ 图片识别（OCR） -->
     <section class="kh-card" id="sec-ocr" hidden>
       <h2>图片识别</h2>
-      <p class="kh-muted">
-        关键词勾上<strong>「抓取后续字段」的「启用」</strong>并把「字段」填好，再开启「识别图片文字」——
-        这些字段的值格里的图片就会被识别一次；识别出的文字里出现「图片命中关键词」就算一次<strong>图片命中</strong>
-        （落在「重要笔记」面板的独立分区里，不产生文字高亮）。
-        识别<strong>完全在本机</strong>运行：图片不上传，唯一的联网动作是下面这一次语言包下载（也可手动导入，做到完全离线）。
-      </p>
+      <p class="kh-sec-lead">图里的字也算命中 —— <strong>识别完全在本机</strong>：图片不上传，唯一的联网动作是下面这次语言包下载（也可手动导入，做到完全离线）。结果一律进页面左上角「重要笔记」面板最上面那张「<strong>截图</strong>」表，不产生文字高亮。</p>
+
+      <div class="kh-fn-grid">
+        <div class="kh-hcard kh-hcard-tight">
+          <h4>🔍 自动扫描</h4>
+          <ul>
+            <li>词开「重要笔记」+ 勾「抓取后续字段」，再开「识别图片文字」+「图片命中关键词」；字段值格里的图会被读一次。</li>
+            <li>图里出现关键词 ⇒ 笔记卡里那张图<strong>带红框</strong>。</li>
+          </ul>
+        </div>
+        <div class="kh-hcard kh-hcard-tight">
+          <h4>🖱 右键单张</h4>
+          <ul>
+            <li>网页任意一张图右键 →「用高亮词识别这张图」，<strong>点下去立刻</strong>进「截图」表（标「识别中」），结果回来原地替换。</li>
+            <li>只读你点的那一张，不写进白名单。</li>
+          </ul>
+        </div>
+        <div class="kh-hcard kh-hcard-tight">
+          <h4>🖼 大图一键识别</h4>
+          <ul>
+            <li>点开大图，工具条按钮<strong>没文字时是「OCR 识别」</strong>，点一下只认当前这一张。</li>
+            <li>识别成功后同一位置<strong>就地变成</strong>「隐藏全文 / 显示全文」；有缓存的图直接看全文，不重复识别。</li>
+          </ul>
+        </div>
+      </div>
 
       <p class="kh-muted" id="ocr-style-hint">
         显示相关设置（缩略图尺寸、笔记字号）在侧栏的<strong>「样式 → 重要笔记」</strong>。
@@ -305,7 +325,7 @@
     <!-- ============================================================ 站点规则 -->
     <section class="kh-card" id="sec-sites" hidden>
       <h2>站点规则</h2>
-      <p class="kh-muted">
+      <p class="kh-sec-lead">
         ✅ <strong>白名单</strong>＝只有这些站点高亮；🚫 <strong>黑名单</strong>＝这些站点不高亮，其余照常。<br>
         只要存在白名单，白名单以外的站点一律不高亮；没有白名单则默认全部高亮。生效与否由<strong>每条规则自身类型</strong>决定。
       </p>
@@ -321,7 +341,7 @@
     <!-- ============================================================ 导入导出 -->
     <section class="kh-card" id="sec-data" hidden>
       <h2>导入导出</h2>
-      <p class="kh-muted">所有数据仅保存在浏览器本地（<code>chrome.storage</code>），不上传任何服务器。建议导入前先导出备份。</p>
+      <p class="kh-sec-lead">所有数据仅保存在浏览器本地（<code>chrome.storage</code>），不上传任何服务器。建议导入前先导出备份。</p>
 
       <h3 class="kh-sub">导出数据</h3>
       <div class="kh-checks">
@@ -368,6 +388,7 @@
     <!-- ============================================================ 帮助 -->
     <section class="kh-card" id="sec-help" hidden>
       <h2>帮助与隐私</h2>
+      <p class="kh-sec-lead">先看下面这一句就够：<strong>所有数据只在你本机</strong>，不上传、不埋点；其余是分主题的详细说明，按需点标签页查。</p>
 
       <div class="kh-htabs" id="help-tabs">
         <button type="button" class="kh-htab active" data-hpan="pri">🔒 隐私</button>
@@ -490,11 +511,11 @@
           <h4>🖼 图片识别（OCR）</h4>
           <ul>
             <li>本地识别图片文字，匹配「图片命中关键词」。</li>
-            <li>结果进面板「🖼 图片命中」分区，<strong>不产生文字高亮</strong>。</li>
+            <li>结果进面板最上面那张「截图」表，<strong>不产生文字高亮</strong>。</li>
             <li>识别全在本机；语言包按需下载 / 手动导入 / 自检；跨域图片按站点授权。</li>
             <li>长截图会<strong>分段识别</strong>，跨分块的重叠区里，<strong>同一条物理行自动去重合并</strong>，不会因为切块把同一行文字算两遍（原图里本来就重复的内容不会被吃掉）。</li>
             <li>大图（灯箱）里那张图的<strong>识别全文</strong>在<strong>全文栏</strong>（浮层）里与大图<strong>并排</strong>展示，默认就在右侧：可用工具条上的<strong>眼睛</strong>开关<strong>隐藏 / 显示</strong>，栏内文字<strong>可选中</strong>，还有<strong>一键复制</strong>（浮层隐藏时复制按钮一起隐藏）。按住栏的<strong>标题</strong>可把它拖到别处、<strong>双击标题</strong>回到大图右侧；关掉大图即复位。图片条目上原来的 <strong>📋 一键复制按钮已移除</strong>，要复制完整识别文字请到这个浮层里取。</li>
-            <li><strong>右键网页上任意一张图，可以直接识别那一张</strong>：在图片上点右键 → 「用高亮词识别这张图」，只读你点的那一张、<strong>不写进白名单</strong>（右键即同意本次代读）。结果落进面板的「🖼 图片命中」分区，标签是「已识别」、ℹ 图标，悬停看识别全文。安全边界：新入口<strong>只放行公网 http/https</strong> —— 本机回环、内网段、<code>localhost</code> 与 <code>*.local</code> / <code>*.internal</code> / <code>*.home.arpa</code>、IPv6 字面量一律拒绝且不发请求。</li>
+            <li><strong>右键网页上任意一张图，可以直接识别那一张</strong>：在图片上点右键 → 「用高亮词识别这张图」，只读你点的那一张、<strong>不写进白名单</strong>（右键即同意本次代读）。点下去<strong>立刻</strong>在面板「截图」表里出现这张图（标「识别中」），结果回来原地替换成缩略图 + 标签，点开就是大图与右侧栏全文。安全边界：新入口<strong>只放行公网 http/https</strong> —— 本机回环、内网段、<code>localhost</code> 与 <code>*.local</code> / <code>*.internal</code> / <code>*.home.arpa</code>、IPv6 字面量一律拒绝且不发请求。</li>
           </ul>
         </div>
 
@@ -570,7 +591,7 @@
         </ul>
 
         <h4>Q8：图片识别（OCR）怎么用？</h4>
-        <p>在「🖼 图片识别」分区确保语言包可用（可下载 / 手动导入 / 自检）；开启后，图片里含「图片命中关键词」的文字会被识别并进面板「🖼 图片命中」分区，<strong>不产生文字高亮</strong>。跨域图片可以两条路走：在「图片识别」里<strong>按站点授权</strong>，或者在网页图片上直接<strong>右键</strong>识别<strong>你点的那一张</strong> —— 右键即这一次同意扩展代读你点的那张，与站点白名单（长期授权）并存不冲突，口径见「🖼 图片识别 → 跨域图片」。</p>
+        <p>在「🖼 图片识别」分区确保语言包可用（可下载 / 手动导入 / 自检）；开启后，图片里含「图片命中关键词」的文字会被识别，结果进页面左上角「重要笔记」面板最上面那张「<strong>截图</strong>」表，<strong>不产生文字高亮</strong>。跨域图片可以两条路走：在「图片识别」里<strong>按站点授权</strong>，或者在网页图片上直接<strong>右键</strong>识别<strong>你点的那一张</strong> —— 右键即这一次同意扩展代读你点的那张，与站点白名单（长期授权）并存不冲突，口径见「🖼 图片识别 → 跨域图片」。另外，任何进了面板的图，点开大图后工具条上都有一键 OCR（没识别过就是「OCR 识别」，识别过就是隐藏/显示全文）。</p>
         <h4>Q9：抓取字段的 <code>!</code>、<code>%N</code>、<code>^锚文本</code> 后缀是什么？</h4>
         <p>加在抓取字段末尾，用于<strong>清洗取值</strong>：<code>!</code> 去掉内容里的内部空格；<code>%N</code> 只取前 N 字、<code>%a-b</code> 取第 a~b 字（按字符截取，不拆开中文/emoji）；<code>^锚文本</code> 只取<strong>锚点第一次出现之前</strong>的内容（首尾空白顺带去掉），锚点找不到就<strong>保留原文</strong>。例 <code>包名!</code>、<code>简介#1%4</code>、<code>名称^[复制]</code>。三者可混写，<strong>执行顺序固定</strong> <code>!</code> → <code>^</code> → <code>%</code>，与书写顺序无关。</p>
         <p>什么时候用 <code>^</code>：抓取格里除了你要的值，还混着「复制」「高价值」这类控件 / 角标文字（多数按钮文字会被自动剔除，没认出来的那类会留在取值里），而<strong>前缀长度不固定</strong>、<code>%N</code> 定长切不动 —— 这时写 <code>名称^[复制]</code>，把锚点那截起全部切掉。</p>

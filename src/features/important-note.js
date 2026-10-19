@@ -214,9 +214,10 @@
      * 宽度先按 --kh-img-size 占位，高度等图解码后自己长 —— 仍然等比、不裁剪。 */
     .khin-ctx-cell img { width: var(--kh-img-size, 70px); height: auto; min-height: 20px; }
     /* 【2.0.2.7 用户 m00292】卡片里被 OCR 命中的图铺一层红框（用户原话："命中的话给命中的图片
-     * 加一层红色边框"）—— 这是"这张图里有你要的词"的唯一视觉提示，因为分区那一行已经不重复画了。
+     * 加一层红色边框"）—— 这是"这张图里有你要的词"的唯一视觉提示（2.0.2.15 起也是**唯一**的图片
+     * 命中显示面：底部那个「🖼 图片」分区已随右键识别折进主模块一并删除）。
      * 用 outline 而不是 border：outline 不参与布局，图不会被挤动一格（点开大图还能看原文里标出来的词）。 */
-    .khin-item-note img.khin-imghit, .khin-imgthumb.khin-imghit { outline: 2px solid #ef4444; outline-offset: 1px; }
+    .khin-item-note img.khin-imghit { outline: 2px solid #ef4444; outline-offset: 1px; }
     /* 抓取后续字段渲染的多行表格：**所有**单元格保留换行（v1.8.3）
      * 宽度（v1.99.99.11 用户实测要求）：**按内容收缩**，不再无条件 width:100%。
      *   用户原话："表格总宽度总是等于重要笔记宽度…避免明明就一列，结果宽度上还是填满了重要笔记"。
@@ -258,152 +259,6 @@
       margin-left: 4px; font-weight: 400; font-size: 9px; line-height: 1.5;
       color: var(--kh-text-3, #94a3b8); white-space: nowrap;
     }
-    /* ---- 🖼 图片命中分区（面板下半部分，独立成块；默认折叠） ---- */
-    /* 两个滚动区各自管自己（用户 2026-10-07）：面板总高受视口限制，OCR 分区若允许被压缩，
-     * 它就会把上面的笔记列表挤到近零（"互相抢占展示"）；若不许压缩又会被 .khin-panel 的
-     * overflow:hidden 直接裁掉（"超过浏览器高度就看不到全部、也没有滚动条"）。所以：分区不参与
-     * 收缩（flex:0 0 auto）但封顶半屏，超出部分交给 .khin-imglist 自己滚 —— 上下各一条滚动条。 */
-    .khin-imgsec {
-      border-top: 1px solid rgba(148,163,184,.35); margin-top: 2px;
-      /* 封顶收紧到 40vh（用户 2026-10-11：矮屏下 50vh 让图区吃到 260px，笔记区只剩 165px
-       * 且上下双滚动条）。实测（_stage/ui-review-2026-10-11，**当时面板宽 200px**）：200×900 图区
-       * 实高 312px 由内容决定、不受此上限影响；200×520 下 40vh = 208px，笔记区 165 → ≈217px。
-       * 别再往上加 —— 加回去就是拿笔记区换图区。 */
-      flex: 0 0 auto; min-height: 0; max-height: 40vh;
-      display: flex; flex-direction: column;
-    }
-    .khin-imgsec[hidden] { display: none; }
-    /* 矮屏（视口 ≤520px）再收一档（用户 2026-10-11 现场：矮屏下正文被压成半截）。
-     * 40vh 在 520px 高处仍吃掉 208px，正文只剩 ≈217px —— 只赢 9px，一次微调就翻盘；
-     * 30vh ⇒ 图区 ≈156px / 正文 ≈269px，正文**明显**比图区高，才符合"打开面板是为了看正文"。
-     * 只改封顶，**不碰 flex: 0 0 auto**（改了就是破 2026-10-07 的"两个分区互相抢占"契约）。 */
-    @media (max-height: 520px) {
-      .khin-imgsec { max-height: 30vh; }
-    }
-    /* 题头一行要放下：图标+短标题 / 计数 / 「全部 N」复核入口 / 折叠箭头。
-     * 面板窄时**不许折行**（2026-10-11 用户现场截图：折成两行把标题挤碎）——
-     * nowrap + overflow:hidden，让计数这一格先让位（它最短、含义最不依赖宽度）。 */
-    .khin-imghead {
-      display: flex; align-items: center; gap: 4px; cursor: pointer; user-select: none;
-      /* 左右 6px：与笔记卡片的左缘对齐（.khin-item 的 margin 是 0 6px）——
-       * 两个分区共用同一道竖线，面板里不会一个贴边、一个缩进 */
-      padding: 4px 6px 3px; font-size: 12px; font-weight: 600; color: var(--kh-text, #1f2937);
-      flex: 0 0 auto; flex-wrap: nowrap; overflow: hidden; white-space: nowrap;
-    }
-    .khin-imghead .khin-imgtitle { flex: 0 0 auto; }
-    .khin-imghead .khin-imgcount {
-      color: #64748b; font-weight: 500; min-width: 0; overflow: hidden;
-      text-overflow: ellipsis; white-space: nowrap;
-    }
-    /* 「显示全部 / 只看命中」= 人工复核入口（用户 2026-10-06：面板以命中为目的，
-       没命中的图默认不展示，但必须留一条能打开的渠道）。放在题头右侧、箭头左边。
-       2026-10-11 曾为 200px 收窄改短标签「全部 N / 只命中」；F2.1（2.0.1.16）默认宽已回
-       250px，文案恢复成自解释的「显示全部 N / 只看命中」，title 仍挂完整句兜底。 */
-    .khin-imghead .khin-imgall {
-      margin-left: auto; color: #2563eb; font-size: 11px; font-weight: 500;
-      cursor: pointer; text-decoration: underline; flex: 0 0 auto; white-space: nowrap;
-    }
-    .khin-imghead .khin-imgall[hidden] { display: none; }
-    .khin-imghead .khin-imgarrow { margin-left: auto; color: #64748b; font-size: 11px; flex: 0 0 auto; white-space: nowrap; }
-    /* 没有「全部 N」时箭头才吃 margin-left:auto；两者都有时只有前者吃（否则中间撕出一个大空隙） */
-    .khin-imghead .khin-imgall:not([hidden]) + .khin-imgarrow { margin-left: 0; }
-    /* 默认视图里一条都没有时的说明行（不能悄悄空白：那看起来就是坏了） */
-    .khin-imgnone { color: #64748b; font-size: 12px; padding: 2px 6px 4px; }
-    /* 分区封顶后由这份列表自己滚（min-height:0 是关键：否则 flex 子项不肯缩到内容高度以下，
-     * 出不了滚动条，还是会顶破面板） */
-    .khin-imglist {
-      /* 左右 6px：与笔记卡片的左缘对齐（.khin-item 的 margin 是 0 6px），两个分区共用一道竖线 */
-      display: flex; flex-direction: column; gap: 6px; padding: 2px 6px 4px;
-      flex: 1 1 auto; min-height: 0; overflow-y: auto;
-    }
-    .khin-imglist::-webkit-scrollbar { width: 5px; }
-    .khin-imglist::-webkit-scrollbar-thumb { background: #d8d8d8; border-radius: 3px; }
-    .khin-imglist::-webkit-scrollbar-track { background: transparent; }
-    .khin-imgitem { display: flex; gap: 6px; align-items: flex-start; }
-    /* 缩略图列（44px，在行里不参与压缩）。2.0.1.15 需求 7：用户裁决删掉它下面那条「复制全文」
-     * 按钮，容器保留 flex column + gap（缩略图本身仍按列排，宽度 44px 不变）。 */
-    .khin-imgthumbwrap { flex: 0 0 44px; display: flex; flex-direction: column; align-items: stretch; gap: 2px; }
-    .khin-imgthumb {
-      width: 44px; height: 44px; flex: 0 0 44px; object-fit: cover; border-radius: 8px;
-      border: 1px solid rgba(148,163,184,.45); background: #f1f5f9; cursor: zoom-in;
-    }
-    .khin-imgmeta { min-width: 0; flex: 1; font-size: 11px; line-height: 1.4; color: #334155; }
-    /* 一行里 = 关键词（可省） + 状态图标+短标签（必看） + 耗时（可省）。
-     * 让位顺序（T29 / F2.2 修正）：关键词先 ellipsis → 还不够时状态标签自己缩到 2em 后再 ellipsis
-     * （完整措辞在 tag.title 里读得回）→ 耗时绝不参与让位。
-     * 原来标签是 flex: 0 0 auto 且没有上限 ⇒ 长标签（最多 16 字）先吃满自己需要的宽度、把关键词压到 0，
-     * 再把行尾的耗时连同省略号一起裁掉 —— 同一列表里别的行有耗时、这几行没有，看着就像没识别。 */
-    .khin-imgrow { display: flex; align-items: baseline; gap: 3px; min-width: 0; flex-wrap: nowrap; overflow: hidden; }
-    .khin-imgkw {
-      font-weight: 600; color: #0f172a; flex: 1 1 auto; min-width: 0;
-      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    }
-    .khin-imgtag {
-      font-size: 11px; border-radius: 4px; padding: 0 4px; white-space: nowrap;
-      flex: 0 1 auto; min-width: 2em; overflow: hidden; text-overflow: ellipsis;
-    }
-    /* 状态图标（2026-10-11 用户裁决：面板窄时放不下「未命中/识别中…」这类长标签，
-     * 图标让同类状态一眼可分）。它是**装饰**，单独一个 span —— 不许拼进
-     * .khin-imgtag 的文本里：那是状态标签的唯一措辞（_e2e/content.test.js 多处
-     * 用 tag.indexOf('命中') === 0、eq(tag,'命中') 钉着「标签只说结论」）。
-     * aria-hidden：语义已在标签里，读屏不必把图标再念一遍。 */
-    .khin-imgico {
-      flex: 0 0 auto; font-size: 11px; font-weight: 700; white-space: nowrap;
-    }
-    /* 本次识别的真实耗时（S3-④）：只在有值时挂载，字号比标签再小一档、不抢主信息 */
-    .khin-imgcost {
-      font-size: 10px; color: #64748b; flex: 0 0 auto; white-space: nowrap;
-      font-variant-numeric: tabular-nums;
-    }
-    /* 「命中」这一族改用语义 token（T29 / F5.2）：面板原来写的是 #dcfce7 / #166534
-     * （Tailwind green-100/800），与 tokens 的 --success-soft (#e9f7ef) / --success-strong (#15803d)
-     * 是同一个概念的两套值 ⇒ 面板里的绿与设置页、弹窗对不上。四处同批改完（标签/.图标/词块）；
-     * 都带 fallback，而 fallback 给的就是 token 的值，不是旧绿 —— 取不到变量也不许退回旧值。 */
-    .khin-imgtag.hit { background: var(--success-soft, #e9f7ef); color: var(--success-strong, #15803d); }
-    .khin-imgtag.miss { background: #f1f5f9; color: #64748b; }
-    .khin-imgtag.bad { background: #fee2e2; color: #991b1b; }
-    /* 进行中（wait 类）与「读不到图 / 缺资产」（note 类）**都不是故障，不许染红** ——
-     * 票 #17 新登记的 P0：修复前所有非 done 状态都套 bad 类，于是 OCR 正常工作时
-     * 面板上显示的是**红底的「识别中…」**，用户第一反应就是「出错了」。
-     * 状态类由唯一真源 KH.OcrCopy.stateClass() 给出（见 src/ui/ocr-copy.js 文件头）。
-     * ⚠️ 这段样式在模板字符串里，注释里**不能出现反引号**（会把模板提前闭合）。 */
-    .khin-imgtag.wait { background: #e2e8f0; color: #475569; }
-    .khin-imgtag.note { background: #f1f5f9; color: #475569; }
-    /* T21（用户 2026-10-13 拍板）：跨域未授权既不是故障（不许红）也不是普通告知（用户没事可做）——
-     * 它是"去设置页把这个域名填进去就行" ⇒ 用 info 那一族语义色（与上面的 hit 一样走 token + fallback，
-     * 不新造色值）。它同时是唯一的 action 类，默认视图常显，见 imgRowVisibleByDefault()。 */
-    .khin-imgtag.action { background: var(--info-soft, #e7f0fc); color: var(--info, #1565c0); }
-    /* 图标跟着同一个状态类走色（类名仍由 KH.OcrCopy.stateClass 给，面板不自己挑字符） */
-    .khin-imgico.hit { color: var(--success-strong, #15803d); }
-    .khin-imgico.miss { color: #94a3b8; }
-    .khin-imgico.bad { color: #b91c1c; }
-    .khin-imgico.wait { color: #64748b; }
-    .khin-imgico.note { color: #64748b; }
-    .khin-imgico.action { color: var(--info, #1565c0); }
-    /* 命中词块（2026-10-09 用户裁决）：面板上只留命中的词，点它复制**它所在的整句**，
-     * 整段识别文本改到光箱右侧与悬停说明里 —— 面板不再被一张图的长文本撑开。
-     * 缩略图下那条「复制全文」按钮已按用户 2026-10-12 裁决删除，样式与类名一并删净；
-     * 复制全文改走「进大图 → 在 OCR 全文栏里选中 → Ctrl+C」，大图工具栏也不许新增
-     * 复制按钮 —— 那条通路的承重件是下方 .kh-lb-side 的 user-select: text。 */
-    .khin-imgchips { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 3px; }
-    .khin-imgchip {
-      max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-      padding: 0 6px; font-size: 11px; line-height: 17px; border-radius: 9px; cursor: copy;
-      background: var(--success-soft, #e9f7ef); color: var(--success-strong, #15803d);
-      border: 1px solid rgba(22,101,52,.25);
-    }
-    .khin-imgchip:hover { background: #bbf7d0; }
-    /* 同图合并行里"这一行词块是哪个关键词命中的"小标（2.0.2.4 需求②）：只做归属区分，
-     * 不抢缩略图与词块的分量 —— 用中性灰，**不用**命中绿（它不是命中内容本身）。 */
-    .khin-imgchipkw {
-      align-self: center; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-      font-size: 10px; line-height: 15px; color: #64748b;
-    }
-    .khin-imgchip.copied { background: var(--success-strong, #15803d); color: #fff; }
-    /* 复制失败：就地红一下（T29 / F3.1）。原来只有 title 换了一句话 —— 那要悬停才看得见，
-     * 用户点完鼠标早已移开；剪贴板不可用是最常见的失败，必须一眼看出没复制上。
-     * 复用 .khin-imgtag.bad 那对现成的红（不新增色值），与 .copied 在同一次 1200ms 复位里清掉。 */
-    .khin-imgchip.failed { background: #fee2e2; color: #991b1b; border-color: rgba(153,27,27,.35); }
   `;
 
   /** 图片协议白名单（与内容脚本 sanitize 同口径：仅 http(s)） */
@@ -786,7 +641,11 @@
         /* 全文栏：有识别文本才谈得上显示（没识别出文字的图不摆空栏），且**默认可见** —— 用户口径
          * "默认在大图容器右侧并排展示"（收起入口 = 工具条眼睛按钮 / 浮层自带的 ×）。
          * 本栏是浮层，它的显隐**不影响图片宽度**（T41 验收项，不许回退）。 */
-        const full = (cur && cur.text) ? String(cur.text) : '';
+        /* 全文优先取**实时**那份（`KH.ImgOcr.textOf` 会读缓存/条目），相册条目自带的 `cur.text`
+         * 只是打开灯箱那一刻的快照 —— 右键识别的那张图，结果常常是灯箱已经开着才回来。 */
+        const cachedText = (KH.ImgOcr && typeof KH.ImgOcr.textOf === 'function')
+          ? KH.ImgOcr.textOf(cur && cur.src) : '';
+        const full = String(cachedText || (cur && cur.text) || '');
         curText = full;                     /* 一键复制的唯一数据源（服务端 OCR 原文，不读屏幕文字） */
         side.hidden = !full || sideHidden;
         /* 默认停靠（需求 4）只对"还没被拖过"的这一档生效：拖动过之后位置由 host._sidePos 说了算。
@@ -799,11 +658,20 @@
         sideLines.textContent = full ? KH.OcrCopy.render(KH.OcrCopy.VIEW.paneLines, { n: full.split(/\r?\n/).length }) : '';
         sideCopy.hidden = !full;            /* 没有 OCR 文本 ⇒ 按钮不出现（不是置灰） */
         box.classList.toggle('kh-lb-has-side', !!full);
-        /* 眼睛按钮：没识别出文字就没有可切的东西 ⇒ **不出现**（与 prev/next 单张时 hidden 同一手法；
-         * 置灰不可点会留下一个点了没反应的按钮，那才是噪声）。
-         * 文案取自真源 KH.OcrCopy.VIEW，灯箱不许自己写这两句。 */
-        sideBtn.hidden = !full;
-        sideBtn.textContent = sideHidden ? KH.OcrCopy.VIEW.paneShow : KH.OcrCopy.VIEW.paneHide;
+        /* 【2.0.2.15 需求①】这枚按钮**常驻**（位置就是原来「隐藏/显示全文」那一个）：
+         *   · 有识别文本 ⇒ 「隐藏全文 / 显示全文」（老行为，一字不变）；
+         *   · 还没识别 ⇒ 「OCR 识别」，点了就地认这张图；认完 apply() 自然把它换成「隐藏全文」，
+         *     右侧全文栏随之出现 —— 不用另开一条 UI 通路。
+         * 识别中置灰并显示"识别中…"；失败退回「OCR 识别」可再点，错误原因挂 title。
+         * 文案一律取自真源 KH.OcrCopy.VIEW（灯箱不许自己写中文）。 */
+        sideBtn.hidden = false;
+        sideBtn.disabled = !!(cur && cur.busy);
+        sideBtn.textContent = full
+          ? (sideHidden ? KH.OcrCopy.VIEW.paneShow : KH.OcrCopy.VIEW.paneHide)
+          : ((cur && cur.busy) ? KH.OcrCopy.VIEW.paneOcrBusy : KH.OcrCopy.VIEW.paneOcr);
+        sideBtn.title = full
+          ? (sideHidden ? KH.OcrCopy.VIEW.paneShow : KH.OcrCopy.VIEW.paneHide)
+          : ((cur && cur.ocrError) || KH.OcrCopy.VIEW.paneOcrTip);
         idxEl.textContent = multi ? ((i + 1) + ' / ' + g.length) : '';
         idxEl.setAttribute('title', multi ? ('第 ' + (i + 1) + ' 张 / 共 ' + g.length + ' 张') : '');
         /* 平移：**先把本次缩放/旋转写进 transform，再夹紧**（T43 追加）。clampPan 读的是活的
@@ -926,9 +794,31 @@
       on(sr.querySelector('.kh-lb-out'), () => zoom(1 / LIGHTBOX_ZOOM_STEP));
       on(sr.querySelector('.kh-lb-rot'), rotate);
       on(sr.querySelector('.kh-lb-reset'), resetView);
-      /* 隐藏/显示右侧全文栏（需求 5）：用 on() 包装 —— 它做 preventDefault + stopPropagation，
-       * 否则这次点击会继续冒泡给 box 的关闭判定（按钮在 stage 内，虽然也不会关，但别留这个口子）。 */
-      on(sideBtn, () => { sideHidden = !sideHidden; apply(); });
+      /* 同一枚按钮两种活（2.0.2.15 需求①）：有文本 ⇒ 隐藏/显示全文；没文本 ⇒ 就地 OCR 这张图。
+       * 用 on() 包装 —— 它做 preventDefault + stopPropagation，否则这次点击会继续冒泡给 box 的关闭判定。 */
+      on(sideBtn, () => {
+        const g = host._gallery || [];
+        const cur = g[host._idx || 0];
+        /* 判据用 `curText`（apply() 刚算出来的**实时**全文），不是 `cur.text`：
+         * 右键识别的那张图，文本是灯箱开着时由缓存补进来的，条目自带的 `cur.text` 还是空快照 ——
+         * 拿 `cur.text` 判会把它当成"还没识别"，于是点眼睛按钮又去识别一遍，收起/展开就失灵了。 */
+        if (curText) { sideHidden = !sideHidden; apply(); return; }
+        if (!cur || cur.busy) return;
+        if (!KH.ImgOcr || typeof KH.ImgOcr.ocrOne !== 'function') return;
+        cur.busy = true;
+        cur.ocrError = '';
+        sideHidden = false;                  // 认出来就直接看全文（用户点这枚按钮要的就是这个结果）
+        apply();
+        KH.ImgOcr.ocrOne(cur.src).then((text) => {
+          cur.busy = false;
+          cur.text = String(text || '');
+          apply();
+        }, (err) => {
+          cur.busy = false;
+          cur.ocrError = String((err && err.message) || KH.OcrCopy.VIEW.paneOcrFail);
+          apply();
+        });
+      });
       /* 一键复制（T41 / 用户本次新增要求）：复制的是 curText —— 服务端 OCR 原文，不是屏幕文字，
        * 也不是面板里的词。无文本时按钮已被 apply() 隐藏，所以这里不必判空（空串会被 copyToClipboard 拒掉）。
        * 失败不静默：按钮就地转红并换成失败文案，1.2s 后复原（与面板词块的失败反馈同一套视觉语言）。 */
@@ -1073,12 +963,6 @@
    * 不用定时器：按下记时间戳、click 里比时长即可（键盘 Enter/空格不派发 pointerdown，
    * 时间戳缺席 ⇒ heldMs 为 0 ⇒ 放行，键盘可达性不受影响）。 */
   const FAB_LONG_PRESS_MS = 600;
-
-  /* 命中词块的复制反馈窗口（T63 · 真机 e2e 抓到的真产品缺陷）：
-   * 点 chip 后点亮 `.copied` / `.failed` 并换 title，这段反馈持续 IMG_COPY_MS 后复位。
-   * 原来是裸字面量写死在 setTimeout 里，现在**重建重放与到点复位读的是同一个数**（两处口径
-   * 必须一致），所以抽成常量 —— 顺带把窗口长度变成可查的契约。 */
-  const IMG_COPY_MS = 1200;
 
   /* 命中文本的规范形：去首尾空白。**比较与显示都用它** ——
      口径是"去首尾空白后按码点数比"，所以先归一再比。 */
@@ -1305,9 +1189,8 @@
     /* 上一轮用过的置顶表签名（见 `render`）：卡间顺序不进 `head.changed`，靠它认
      * "用户改了置顶排序"。空串 = 没配/没排序过（与 `pins.join()` 的空表结果一致 ⇒ 首轮不误判脏）。 */
     pinSig: '',
-    /* 📝 笔记区收起（2026-10-11 用户：笔记与图片两边都很长时互相抢占 ⇒ 两边都能收，收一边让另一边）。
-     * 与图片分区的"按批作废"口径**不同**：这里只翻转标记，用户收起就保持收起
-     * —— 它是用户对视图的选择，不该被下一批结果自动弹开（图片那边有"命中必须露出来"的硬要求，这没有）。 */
+    /* 📝 笔记区收起（2026-10-11 用户：笔记很长时把空间让给别的部分）。
+     * 只翻转标记，用户收起就保持收起 —— 它是用户对视图的选择，不该被下一批结果自动弹开。 */
     noteCollapsed: false,
     ignored: new Set(),  // 本次页面会话内已被用户关闭的笔记（按 note 文本）
     /* 标签下拉的展开态 / 选中的命中序号（均按 note 文本挂**面板侧**）。
@@ -1315,31 +1198,11 @@
      * 挂在 head 上会被重置，展开中的下拉会自己合上。 */
     expandedTags: new Set(),
     pickedTags: new Map(),
-    /* ---- 🖼 图片命中（KH.ImgOcr 的结果；**独立分区**，与重要笔记卡片互不影响） ---- */
+    /* ---- 图片识别结果（KH.ImgOcr）----
+     * 2.0.2.15 起只服务两件事：右键识别的图进主模块那张「截图」卡；命中的图在卡片上加红框。
+     * 底部那个「🖼 图片」分区（折叠/显示全部/命中词块/复制反馈）已整体删除 —— 用户口径：
+     * 右键结果已经立刻出现在主模块里，图片分区就是同一个东西的第二份展示面。 */
     imgItems: [],
-    imgCollapsed: true,  // 默认折叠（图片识别是异步来的，先折叠不抢视线）
-    /* 「用户手动收起过」**只对当时那批条目有效**（见 `imgSameBatch`）：连同收起那一刻的
-     * 条目键一起记，条目换代（提交后翻页 / 重新扫描）即作废 —— 不做整页范围的长期记忆。 */
-    imgUserCollapsed: false,
-    imgCollapsedKeys: [],
-    /* 「显示全部」这个人工复核视图（用户 2026-10-06：面板以命中为目的，没命中的图默认不展示）。
-     * 和上面的收起记忆同一套口径：**按批**有效，条目换代（提交后翻页 / 重新扫描）就回到"只看命中"。 */
-    imgShowAll: false,
-    imgShowAllKeys: [],
-    /* 复制反馈的**面板级待显示状态**（T63 真机缺陷）：这份瞬时反馈原来只活在 chip 节点的
-     * classList 上，而 `renderImgSection()` 每次都把列表整体重建
-     * （`this.imgListEl.textContent = ''`，:1554 那一行）—— 只要 OCR 状态变一变
-     * （`KH.ImgOcr.onChange(() => panel.renderImg())`）就重建一次 ⇒ 被点的那颗 chip 当场游离，
-     * 类名留在死节点上，屏幕上的绿框约 1/4 秒就没了（qa 的真机读数：ms≈94–330 整段 childList 删+加）。
-     * 现在记在面板上：建 chip 时命中同一 key 且仍在窗口内就补上类与 title（重建自动重放），
-     * 窗口一到由 imgClearCopyMark 复位。key = 条目稳定键 + '|' + 命中词 —— 同一个词在**别的条目**
-     * 里是另一块，不许互相点亮。 */
-    imgCopyMark: { key: '', ok: false, at: 0 },
-    imgSecEl: null,
-    imgListEl: null,
-    imgCountEl: null,
-    imgAllEl: null,
-    imgArrowEl: null,
     pos: { left: 20, top: 20 },
     dragState: null,
     /* FAB 本次按下的时间戳（T40）：pointerdown 记；**pointerup 结算**成 fabHeldMs（T41）。
@@ -1401,8 +1264,10 @@
           if (!s || !LIGHTBOX_SRC_OK.test(s)) continue;       // 占位/非法协议不进相册
           if (im === t) index = list.length;
           const k = absSrc(s);
+          /* 条目没有文本时再问一次缓存（2.0.2.15 需求①：在大图里认过的图，下次打开还得看得见全文） */
+          const cachedText = (KH.ImgOcr && typeof KH.ImgOcr.textOf === 'function') ? KH.ImgOcr.textOf(s) : '';
           list.push({ src: s, alt: im.getAttribute('alt') || '',
-            text: textBySrc.get(k) || '', hits: hitsBySrc.get(k) || [] });
+            text: textBySrc.get(k) || cachedText || '', hits: hitsBySrc.get(k) || [] });
         }
         if (!list.length) return;
         openLightbox(list[index].src, list[index].alt, list, index);
@@ -1507,14 +1372,14 @@
       this.root.style.setProperty('--khin-panel-w',
         KH.Config.normalizePanelWidth(cfg && cfg.notePanelWidth) + 'px');
 
-      /* 图片命中与重要笔记**共用这块面板**（用户口径：图片命中要有地方看，且不占页面）；
-       * 但两者独立：没有重要笔记的关键词，它识别到的图片照样要显示。 */
+      /* 右键识别的图与重要笔记**共用这块面板**（用户 m03971：右键结果作为一张「截图」卡放进主模块）；
+       * 但两者独立：一个笔记都没有、只有右键识别的图时，面板照样要出现。 */
       this.imgItems = (KH.ImgOcr && typeof KH.ImgOcr.items === 'function') ? KH.ImgOcr.items() : [];
 
       /* 置顶排序（2.0.2.5 需求④）：配置 → 关键词表 → 命中的卡片稳定地抽到最前。
        * 必须排在**脏判据之前**算：`head.changed` 比的是"每张卡的内容"（note/底色/字号/词条集合），
        * 卡间顺序变了它照样返回 false ⇒ 顺序变没变得靠 `pinSig` 自己认，
-       * 否则用户改了「置顶排序」，`render` 会走 else 只刷图片分区，屏上不重排。
+       * 否则用户改了「置顶排序」，`render` 会走 else 只刷卡片上的红框与「截图」卡，屏上不重排。
        * 空表时 `sorted` 就是原数组、`pinSig` 为空串 ⇒ 与旧版逐字节一致（不多一次拷贝、不多一次重建）。 */
       const pins = head.parsePins(cfg);
       const pinSig = pins.join('\u0001');
@@ -1522,44 +1387,51 @@
       this.pinSig = pinSig;
       const sorted = pins.length ? head.sortByPins(items, pins) : items;
 
-      if (!sorted.length && !this.imgItems.length) {
+      if (!sorted.length && !this.ctxItems().length) {
         this.items = sorted;
         this.hide();
         return;
       }
       /* 外壳还没建过也必须走 renderContent：`head.changed([], [])` 是 false，
-       * 光看内容新旧会漏掉"整页只有图片命中、面板还没建"这种情况（实测踩过：
-       * 面板宿主建出来了、里面却没有 🖼 分区）。 */
+       * 光看内容新旧会漏掉"整页只有右键识别的图、面板还没建"这种情况（实测踩过：
+       * 面板宿主建出来了、里面却没有那张「截图」卡）。 */
       const dirty = !this.panelEl || this.minimized || pinChanged || head.changed(this.items, sorted);
       this.items = sorted;
       if (dirty) this.renderContent();
-      else this.renderImgSection();
+      else {
+        /* 卡片没变 ⇒ 只补两块会变的东西：图上的命中红框、右键那张「截图」卡 */
+        this.applyImgMarks();
+        this.renderCtxCard();
+      }
       this.show();
     },
 
-    /** 图片命中变化时（异步结果回来）只刷图片分区，不重建笔记卡片 */
+    /**
+     * 图片识别状态变了（异步结果回来 / 右键受理 / 识别失败）时的**局部**刷新：只重画图上的命中标记
+     * 与那张「截图」卡，不重建笔记卡片（整块重跑会把用户正在看的标签与滚动位置一起丢掉）。
+     */
     renderImg() {
       this.imgItems = (KH.ImgOcr && typeof KH.ImgOcr.items === 'function') ? KH.ImgOcr.items() : [];
-      /* 【2.0.1.17 右键任意图 OCR】整页既没有笔记、也没有图片命中时，外壳从未被造过
-       * （见本文件底部 `consume` 的 `if (!list.length && !imgCount && !panel.host) return;`），
-       * 而右键识别是用户**主动**要的一次动作 —— 结果必须能显示。
-       * 旧实现首行是 `if (!this.root) return;` ⇒ 这种情况下面板永远不出现（用户以为功能坏了）。
+      /* 【2.0.1.17 右键任意图 OCR】整页既没有笔记、也没有右键识别的图时，外壳从未被造过
+       * （见本文件底部 `consume` 的早退），而右键识别是用户**主动**要的一次动作 —— 结果必须能显示。
        * 但**不能无条件**走完整渲染：`render()` 一进来就 `ensure()` 造壳 ⇒ 整页明明没东西也会
        * 多出一个空宿主（K71 的「两者都关 ⇒ 面板不存在」就是这么红的）。所以只在真有右键条目时补渲染。 */
-      if (!this.root && !this.imgItems.some((it) => it && it.via === 'contextMenu')) return;
+      if (!this.root && !this.ctxItems().length) return;
       if (!this.panelEl) {
         this.render(this.items, KH.config);
         return;
       }
-      this.renderImgSection();
-      if (!this.items.length && !this.imgItems.length) this.hide();
+      this.applyImgMarks();
+      this.renderCtxCard();
+      if (!this.items.length && !this.ctxItems().length) this.hide();
       else this.show();
     },
 
     renderContent() {
       if (!this.root) return;
-      /* 计数 = 笔记卡片 + 图片命中（图片命中也在这块面板里，用户看不到的地方不该有"隐藏条目"） */
-      const count = this.items.length + ((this.imgItems && this.imgItems.length) || 0);
+      /* 计数 = 笔记卡片 + 右键识别的图（那张「截图」卡也是用户眼里的内容，
+       * 只有它的时候计数不许是 0 —— 那会让人以为面板里是空的） */
+      const count = this.items.length + this.ctxItems().length;
 
       // 收起态：整块换成圆形 FAB（单击/双击/回车都能展开 —— 拖动收尾不算，见 startDrag）
       if (this.minimized) {
@@ -1619,7 +1491,9 @@
       // 展开态：外壳只创建一次（避免每次命中变化重播入场动画 → 闪烁）
       if (!this.panelEl) {
         /* 题头措辞（含箭头字符）一律取自 KH.OcrCopy.VIEW（F3.4：原来两个题头逐字相同，
-         * 读屏听不出展开的是哪一块）；aria-controls 各自指向受控区（笔记正文 / 图片列表）。 */
+         * 读屏听不出展开的是哪一块）；aria-controls 指向受控区。
+         * 【2.0.2.15】底部「🖼 图片」分区已删除（右键识别折进主模块那张「截图」卡之后，
+         * 它是同一批结果的第二份展示面）。 */
         this.root.innerHTML =
           '<div class="khin-panel">' +
             '<div class="khin-header">' +
@@ -1634,15 +1508,6 @@
               '<span class="khin-notearrow">' + KH.OcrCopy.VIEW.noteCollapse + '</span>' +
             '</div>' +
             '<div class="khin-body" id="khin-note-body"></div>' +
-            '<div class="khin-imgsec" hidden>' +
-              '<div class="khin-imghead" role="button" tabindex="0" aria-expanded="false" aria-controls="khin-img-list">' +
-                '<span class="khin-imgtitle">🖼 图片</span>' +
-                '<span class="khin-imgcount" role="status" aria-live="polite"></span>' +
-                '<span class="khin-imgall" data-act="all" hidden></span>' +
-                '<span class="khin-imgarrow">' + KH.OcrCopy.VIEW.imgExpand + '</span>' +
-              '</div>' +
-              '<div class="khin-imglist" id="khin-img-list"></div>' +
-            '</div>' +
           '</div>';
         this.panelEl = this.root.querySelector('.khin-panel');
         this.bodyEl = this.root.querySelector('.khin-body');
@@ -1650,19 +1515,8 @@
         this.noteBarEl = this.root.querySelector('.khin-notebar');
         this.noteCountEl = this.root.querySelector('.khin-notecount');
         this.noteArrowEl = this.root.querySelector('.khin-notearrow');
-        this.imgSecEl = this.root.querySelector('.khin-imgsec');
-        this.imgListEl = this.root.querySelector('.khin-imglist');
-        this.imgCountEl = this.root.querySelector('.khin-imgcount');
-        this.imgAllEl = this.root.querySelector('.khin-imgall');
-        this.imgArrowEl = this.root.querySelector('.khin-imgarrow');
-        this.imgHeadEl = this.root.querySelector('.khin-imghead');
-        this.imgTitleEl = this.root.querySelector('.khin-imgtitle');
-        /* 分区标题的完整语义挂 title（可见短标签「🖼 图片」只是缩写）—— 四条面板标题文案
-         * 一律取自 KH.OcrCopy.VIEW（T29 / F1.2：原来写死在面板里，改文案的人改不动）。 */
-        if (this.imgTitleEl) this.imgTitleEl.title = KH.OcrCopy.VIEW.imgSectionTip;
-        /* 两个题头都是"整行可点的 div"，键盘完全够不着（T29 / F4.2）：补 role/tabindex/
-         * aria-expanded 之后，回车与空格要跟点击做同一件事。范式照抄命中词块那段
-         * （给元素各自直接绑 —— 不用 closest 反查父节点，那是 meta-check 的红线）。 */
+        /* 笔记题头是"整行可点的 div"，键盘完全够不着（T29 / F4.2）：补 role/tabindex/
+         * aria-expanded 之后，回车与空格要跟点击做同一件事（给元素直接绑，不用 closest 反查）。 */
         const onActivate = (el, fn) => el.addEventListener('keydown', (e) => {
           if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); fn(); }
         });
@@ -1677,34 +1531,6 @@
           toggleNotes();
         });
         onActivate(this.noteBarEl, toggleNotes);
-        /* 「显示全部」= 人工复核入口（用户 2026-10-06）：切视图**不**收起/展开分区
-         * （那是题头的活），并且要连同当时的条目键记下来 —— 换代即作废。 */
-        this.imgAllEl.addEventListener('click', (e) => {
-          e.stopPropagation();
-          this.imgShowAll = !this.imgShowAll;
-          this.imgShowAllKeys = this.imgShowAll
-            ? (this.imgItems || []).map((it) => String(it.key || ''))
-            : [];
-          this.imgCollapsed = false;   // 点了"显示全部"就是想看，不能还收着
-          this.renderImgSection();
-        });
-        const toggleImgs = () => {
-          this.imgCollapsed = !this.imgCollapsed;
-          /* 记住"用户手动收起来过"：**只记到这批条目为止** —— 连同当时的条目键一起记，
-           * 条目换代就作废（用户 2026-10-06 口径：提交后翻到下一页是全新场景，不该被上一页
-           * 的收起动作长期压住；那时只要有命中就要照常自动展开）。 */
-          this.imgUserCollapsed = this.imgCollapsed;
-          this.imgCollapsedKeys = this.imgCollapsed
-            ? (this.imgItems || []).map((it) => String(it.key || ''))
-            : [];
-          this.renderImgSection();
-          this.applyPosition();
-        };
-        this.imgHeadEl.addEventListener('click', (e) => {
-          e.stopPropagation();
-          toggleImgs();
-        });
-        onActivate(this.imgHeadEl, toggleImgs);
 
         const header = this.panelEl.querySelector('.khin-header');
         header.addEventListener('pointerdown', (e) => this.startDrag(e));
@@ -1745,10 +1571,11 @@
       if (this.bodyEl) this.bodyEl.hidden = !(this.items.length || ctxN);
       this.applyNoteCollapsed();
       this.renderItems();
-      this.renderImgSection();
+      /* 命中红框跟着卡片一起重建：卡片是整体换新的，标记必须在这一趟重算（旧框也在这趟摘掉） */
+      this.applyImgMarks();
     },
 
-    /** 笔记区的收起态落到 DOM（收起时正文整块藏起来，空间让给图片分区；两边都能收，对称） */
+    /** 笔记区的收起态落到 DOM（收起时正文整块藏起来，只留题头一行） */
     applyNoteCollapsed() {
       if (!this.bodyEl) return;
       const collapsed = this.noteCollapsed === true;
@@ -1762,129 +1589,21 @@
     },
 
     /**
-     * 图片命中分区。
-     * 展示口径（用户 2026-10-06 确认）：缩略图 + 命中词 + 「是否真在图里出现」标记 + 可展开的识别文本；
-     * 点缩略图走**现有灯箱**看大图。
-     * **默认只显示命中**（外加"真失败"这类必须露出来的）—— 其余条目（未命中 / 排队中 /
-     * 没认出文字 / 读不到图…）进题头上的「显示全部」人工复核视图，见 `imgRowVisible`。
-     * 一条都没有时留一行说明（`.khin-imgnone`），不许悄悄空白 —— 空白看起来就是"坏了"。
-     */
-    /**
-     * 记下的那批键**全都还在**吗（纯函数，不碰 DOM —— 好单测；两个"按批"的记忆共用一套判据）。
-     *
-     * 判据：记下那一刻的键**全都还在** ⇒ 仍是同一批。于是：
-     *   · 同一页里异步结果陆续回来（旧键都还在）→ 记忆有效，不被自动展开打断；
-     *   · 提交后翻页 / 重新扫描（有键消失）→ 记忆作废，新场景里有命中照常自动展开。
-     *
-     * 为什么必须有这一层：只记一个布尔值就等于**整页范围的长期记忆** —— 用户提交后翻到
-     * 下一页，那是全新场景，却再也不自动展开了（用户 2026-10-06 明确否决这种长期记忆）。
-     *
-     * 空列表 = "重建清底的瞬间"（ImgOcr 的条目会被清掉再重建，见 img-ocr.js 的 clear），
-     * 不是换代：这一轮分区本来就没东西可显示，记忆留着，等条目回来再用键判断。
-     * 判成换代的话，用户一收起、页面稍有变动就作废 ⇒ 又变回"每轮都被弹开"。
-     */
-    stillSameBatch(keys, list) {
-      const ks = keys || [];
-      if (!ks.length) return false;
-      const now = (list || []).map((it) => String(it.key || ''));
-      if (!now.length) return true;
-      return ks.every((k) => now.indexOf(k) >= 0);
-    },
-
-    imgSameBatch(list) {
-      if (this.imgUserCollapsed !== true) return false;
-      return this.stillSameBatch(this.imgCollapsedKeys, list);
-    },
-
-    /** 「显示全部」这份视图记忆还属于这批条目吗（口径同 `imgSameBatch`：换代就回到"只看命中"） */
-    imgShowAllSameBatch(list) {
-      if (this.imgShowAll !== true) return false;
-      return this.stillSameBatch(this.imgShowAllKeys, list);
-    },
-
-    /**
-     * 一条图片条目在**当前视图**下要不要显示（纯函数，不碰 DOM —— 好单测）。
-     *
-     * 口径（用户 2026-10-06）：这个功能的主要目的是**命中**，没命中的图不必展示，
-     * 另留「显示全部」做人工复核入口。但**真失败必须露出来**（`bad` 类：识别失败 /
-     * 超时 / 引擎不可用）—— 否则就退回 D-14.5 明令禁止的"静默"：用户看到空面板以为功能坏了。
-     * **要用户动手的告知（`action` 类：跨域未授权）同样常显**（T21，用户 2026-10-13 拍板）——
-     * 藏进复核视图等于把答案锁在用户找不到的地方，而这条恰恰一句话就能解决。
-     * 状态类只从唯一真源 `KH.OcrCopy.stateClass()` 取，这里**不另立一套枚举**。
-     */
-    imgRowVisible(it) {
-      if (this.imgShowAll === true) return true;
-      return this.imgRowVisibleByDefault(it);
-    },
-
-    /** 默认视图本身会不会显示它（与当前视图无关）—— 「显示全部」的**条目数**要用它数：
-     *  若拿 `list.length - shown.length` 数，切到复核视图后 shown 就成全量、hiddenN 变 0，
-     *  按钮当场消失 ⇒ 只进不出（`VIEW.onlyHits` 永远渲染不出来）。 */
-    imgRowVisibleByDefault(it) {
-      const cls = KH.OcrCopy.stateClass(it);
-      /* T21：`action`（跨域未授权）与命中和真失败一样常显 —— 它不是"没命中"，
-       * 是"把这个域名授权一次就能读"，用户照折叠标签里的域名去设置页填一行就解决。 */
-      if (cls === 'hit' || cls === 'bad' || cls === 'action') return true;
-      /* 【2.0.1.17 右键任意图 OCR】用户**自己点名**的那张图（右键识别）必须常显：
-       * 状态类是中性 `note`（"已识别"不是命中也不是故障），但它是用户主动要的一次动作 ——
-       * 默认视图把它折进复核视图就等于"右键之后什么都没发生"。 */
-      return !!(it && it.via === 'contextMenu');
-    },
-
-    imgRowHiddenCount(list) {
-      return (list || []).filter((it) => !this.imgRowVisibleByDefault(it)).length;
-    },
-
-    /** 还没跑完的条目数（纯函数）：默认视图把它们藏起来了，但计数与空视图必须说出来 ——
-     *  否则"藏起来 + 结果没回来"看起来就是"这次没有命中"（在结果出来之前下结论）。 */
-    imgBusyCount(list) {
-      return (list || []).filter((it) => KH.OcrCopy.stateClass(it) === 'wait').length;
-    },
-
-    /** 卡片正文里已经画出来的图片地址（绝对化）—— 用来回答"这张图卡片里有没有"。
-     *  取 src 的口径与相册扫描（`.khin-imghit` 上面那处 `im.src`）一致：img.src 是解析后的绝对地址。 */
-    cardedSrcs() {
-      const out = new Set();
-      if (!this.bodyEl || typeof this.bodyEl.querySelectorAll !== 'function') return out;
-      for (const im of this.bodyEl.querySelectorAll('img')) {
-        const s = absSrc(im.currentSrc || im.getAttribute('src') || im.src);
-        if (s) out.add(s);
-      }
-      return out;
-    },
-
-    /**
-     * 分区本轮到画哪些条目（2.0.2.7 用户 m00292：**卡片里已经有的图不重复画**）。
-     * 纯过滤，不改状态、不碰 DOM（好单测）：卡片里找不到这张图的条目（右键识别、字段没抓到图、
-     * 卡片还没渲染出来…）一律留着 —— 静默消失是这张面板明令禁止的失败模式。
-     */
-    unfoldedImgItems() {
-      const all = this.imgItems || [];
-      if (!all.length) return all;
-      const carded = this.cardedSrcs();
-      if (!carded.size) return all;
-      return all.filter((it) => {
-        const s = absSrc(it && it.src);
-        return !s || !carded.has(s);
-      });
-    },
-
-    /**
      * 把 OCR 结果标到卡片里那些图上（2.0.2.7 用户 m00292：命中的图加红框）。
      *
-     * 命中 ⇒ `.khin-imghit`（红框）+ title 说出命中的词；只是识别过没命中的图把原分区那一行的
-     * 状态原因挂成 title（`imgWhyText`）—— 那一行现在不重复画了，原因得以 title 存活，不丢信息。
-     * 同一张图多条条目（不同关键词）时优先取**有命中**的那条；卡片里没有对应条目的图（面板装饰图、
-     * 行内图标）不碰。只在 `renderImgSection()` 首行调用：卡片是整体重建的，标记必须跟着重建走。
+     * 命中 ⇒ `.khin-imghit`（红框）+ title 说出命中的词。2.0.2.15 起这是**唯一**的图片命中显示面
+     * （底部「🖼 图片」分区已删），所以只对真有命中的图动手：没命中的图不挂 title，
+     * 免得在用户自己的图上多一句与它无关的说明。
+     * 同一张图多条条目（不同关键词）时优先取**有命中**的那条；卡片里没有对应条目的图
+     * （面板装饰图、行内图标）不碰。只在卡片重建与识别结果回来时调用。
      */
     applyImgMarks() {
       if (!this.bodyEl || typeof this.bodyEl.querySelectorAll !== 'function') return;
       const at = new Map();
       for (const it of (this.imgItems || [])) {
         const s = absSrc(it && it.src);
-        if (!s) continue;
-        const prev = at.get(s);
-        if (!prev || (!hitWords(prev).length && hitWords(it).length)) at.set(s, it);
+        if (!s || !hitWords(it).length) continue;
+        at.set(s, it);
       }
       for (const im of this.bodyEl.querySelectorAll('img')) {
         const s = absSrc(im.currentSrc || im.getAttribute('src') || im.src);
@@ -1892,325 +1611,9 @@
         if (im.classList) im.classList.remove('khin-imghit');
         if (!it) continue;
         const words = hitWords(it);
-        if (words.length) {
-          if (im.classList) im.classList.add('khin-imghit');
-          im.title = KH.OcrCopy.render(KH.OcrCopy.VIEW.imgHitTip, { matched: words.join('、') });
-        } else {
-          im.title = this.imgWhyText(it);
-        }
+        if (im.classList) im.classList.add('khin-imghit');
+        im.title = KH.OcrCopy.render(KH.OcrCopy.VIEW.imgHitTip, { matched: words.join('、') });
       }
-    },
-
-    /**
-     * 同一张图的多条条目并成一组（2.0.2.4 需求② · 纯函数，不碰 DOM —— 好单测）。
-     *
-     * 【为什么】不同关键词抓同一个字段 = 同一张图被识别一次、各自命中不同的词：
-     * 面板上就该是**一行**缩略图 + 每个关键词一行命中词块，而不是同一张缩略图铺两遍。
-     * 【归并键】`src` 串（同一张图在条目里就是同一个 src）。**没有 src 的条目一律各自成组**
-     * （跨域读不到 / 被拦下的条目 `src` 可能为空，按空值归并会把不相干的图并成一行）。
-     * 组内保持原顺序、组间保持首次出现顺序。
-     */
-    groupImgItems(list) {
-      const groups = [];
-      const at = new Map();
-      let seq = 0;
-      for (const it of (list || [])) {
-        const src = String((it && it.src) || '');
-        const g = src || ('#' + (seq++) + String((it && it.key) || ''));
-        let i = src ? at.get(src) : undefined;
-        if (i === undefined) { i = groups.length; if (src) at.set(src, i); groups.push({ items: [] }); }
-        groups[i].items.push(it);
-      }
-      return groups;
-    },
-
-    renderImgSection() {
-      if (!this.imgSecEl) return;
-      /* 【2.0.2.7 用户 m00292】先把命中标记落到卡片上（红框 + 命中词 title），再画这张分区。
-       * 写在这里是**唯一一处**：renderContent / renderImg / 「显示全部」点击 / 题头折叠四条路
-       * 最后都汇到本方法，卡片整体重建时标记跟着重算（旧框也在这一趟里被摘掉）。 */
-      this.applyImgMarks();
-      const all = this.imgItems || [];
-      /* 【2.0.2.7 用户 m00292】卡片里已经画出来的图不在分区里重复一行（用户原话："图片识别模块和
-       * 卡片字段抓取展示的图片有些重复…可不可以删掉图片识别模块，复用卡片"）；卡片里没有的图仍然
-       * 留在这里、不静默 —— 右键识别那条路**只有**这张显示面（img-ocr.js 的 manual 表不进卡片）。
-       * 「收起过」这份记忆按**全量**条目算（`all`）：折叠不该被"这张图恰好也在卡片里"打断。 */
-      const list = this.unfoldedImgItems();
-      /* 【命中就自动展开（K69）】用户报的：图里识别出关键词了，分区却还是收着的，得手动点开才看得到。
-       * 规则：**只要有命中的条目就默认展开**；用户手动收起来过就尊重他 —— 但这份"尊重"只对
-       * **当时那批条目**有效（`imgSameBatch`）：换代了就作废，新场景里照样自动展开。 */
-      if (!this.imgSameBatch(all)) { this.imgUserCollapsed = false; this.imgCollapsedKeys = []; }
-      /* 「显示全部」这份视图记忆同理按批作废（用户 2026-10-06：不做整页范围的长期记忆） */
-      if (this.imgShowAll === true && !this.imgShowAllSameBatch(all)) {
-        this.imgShowAll = false;
-        this.imgShowAllKeys = [];
-      }
-      /* 【默认只显示命中】（用户 2026-10-06）：这个功能的主要目的是命中，没命中的图不必占版面；
-       * 「显示全部」把其余条目（未命中 / 排队中 / 没认出文字 / 读不到图…）留给人工复核。
-       * 哪条算"都要显示"由 `imgRowVisible` 一处决定（命中 + 真失败 + 要你动手的 action），这里不再各判一次。 */
-      const shown = list.filter((it) => this.imgRowVisible(it));
-      /* 【2.0.2.4 需求②】同一张图的多条命中并成一行：行数按**组**数，条目数口径不变
-       * （「显示全部」的收起点数仍按条目数数，那是复核入口的语义）。 */
-      const groups = this.groupImgItems(shown);
-      /* 要复核的条数按**默认口径**数（与当前视图无关）：切到「显示全部」后按钮要变成
-       * 「只看命中」留着，点得回去 —— 否则这个复核入口只进不出。 */
-      const hiddenN = this.imgRowHiddenCount(list);
-      /* 【还没跑完就不许说"没有命中"】默认视图把"识别中"的行也藏起来了，于是"藏起来 + 还没回来"
-       * 会显示成"这次没有命中" —— 那是在结果出来之前下结论。所以计数与空视图都要把在跑的数量说出来。 */
-      const busyN = this.imgBusyCount(list);
-      if (this.imgCountEl) {
-        this.imgCountEl.textContent = (groups.length ? '(' + groups.length + ')' : '') +
-          (busyN ? KH.OcrCopy.render(KH.OcrCopy.VIEW.busy, { n: busyN }) : '');
-      }
-      if (this.imgAllEl) {
-        this.imgAllEl.hidden = !hiddenN;
-        this.imgAllEl.textContent = hiddenN
-          ? KH.OcrCopy.render(this.imgShowAll ? KH.OcrCopy.VIEW.onlyHits : KH.OcrCopy.VIEW.showAll, { n: hiddenN })
-          : '';
-        /* 文案本身已自解释（F2.1）；title 仍挂完整句，范围口径写清楚 */
-        this.imgAllEl.title = this.imgShowAll ? KH.OcrCopy.VIEW.onlyHitsTip : KH.OcrCopy.VIEW.showAllTip;
-      }
-      if (this.imgUserCollapsed !== true && list.some((it) => it.state === 'done' && it.matched && it.matched.length)) {
-        this.imgCollapsed = false;
-      }
-      if (this.imgArrowEl) {
-        this.imgArrowEl.textContent = this.imgCollapsed ? KH.OcrCopy.VIEW.imgExpand : KH.OcrCopy.VIEW.imgCollapse;
-      }
-      /* 题头的 role/tabindex/aria-expanded 让它成为可操作控件（T29 / F4.2）：视觉上只是
-       * 箭头字符在变，读屏读的是这一位。放在早退之前 —— 空列表时状态也得是对的。 */
-      if (this.imgHeadEl) this.imgHeadEl.setAttribute('aria-expanded', this.imgCollapsed ? 'false' : 'true');
-      if (!list.length) { this.imgSecEl.hidden = true; this.imgListEl.textContent = ''; return; }
-      this.imgSecEl.hidden = false;
-      if (this.imgCollapsed) { this.imgListEl.textContent = ''; return; }
-
-      const doc = document;
-      this.imgListEl.textContent = '';
-      /* 默认视图一条都没有（全是未命中/排队中…）⇒ 留一行说明：复核入口就在题头上，
-       * 但**不许悄悄空白** —— 空白看起来就是"坏了"（D-14.5 的如实告知）。 */
-      if (!shown.length) {
-        const none = doc.createElement('div');
-        none.className = 'khin-imgnone';
-        none.textContent = KH.OcrCopy.render(
-          busyN ? KH.OcrCopy.VIEW.noneHitBusy : KH.OcrCopy.VIEW.noneHit,
-          { n: busyN || hiddenN }
-        );
-        this.imgListEl.appendChild(none);
-        return;
-      }
-      for (const g of groups) {
-        /* 【2.0.2.4 需求②】组内第一条管缩略图与状态（状态取"先命中的那条"，真源文案一字不改），
-         * 组内每条的关键词命中词各占一行词块（下面那个 `g.items` 循环）——
-         * 同一张图只铺一遍，命中词一个不少。 */
-        const it = g.items.find((x) => KH.OcrCopy.stateClass(x) === 'hit') || g.items[0];
-        const row = doc.createElement('div');
-        row.className = 'khin-imgitem';
-        row.setAttribute('data-kh-ocr-key', g.items.map((x) => String((x && x.key) || '')).join(' '));
-
-        /* 缩略图。它下面原来挂一条固定的「📋 复制全文」按钮（2026-10-09 用户裁决加的），
-         * 2.0.1.15 需求 7 用户又裁定删掉 —— 复制全文改走大图里的选中复制。 */
-        const thumbWrap = doc.createElement('div');
-        thumbWrap.className = 'khin-imgthumbwrap';
-        const thumb = doc.createElement('img');
-        thumb.className = 'khin-imgthumb';
-        if (LIGHTBOX_SRC_OK.test(it.src || '')) thumb.src = it.src;
-        thumb.alt = it.keyword || '';
-        /* 【票 #45】分区缩略图自己也要有「命中了什么」的提示（红框 + title）：不能指望
-         * `applyImgMarks()` —— 它只扫 `.khin-body` 里的图，而缩略图在 `.khin-imgsec`（与 body 是
-         * 兄弟，见上面的 DOM 骨架），何况它是在本函数**首行**跑的，那时这张缩略图还没被建出来。
-         * title 与卡片里那层红框同一口径（`imgHitTip`）；没命中就说清为什么（`imgWhyText`）。 */
-        const thumbWords = hitWords(it);
-        if (thumbWords.length) {
-          thumb.className += ' khin-imghit';
-          thumb.title = KH.OcrCopy.render(KH.OcrCopy.VIEW.imgHitTip, { matched: thumbWords.join('、') });
-        } else {
-          thumb.title = this.imgWhyText(it);
-        }
-        thumbWrap.appendChild(thumb);
-        row.appendChild(thumbWrap);
-
-        const meta = doc.createElement('div');
-        meta.className = 'khin-imgmeta';
-        const head = doc.createElement('div');
-        head.className = 'khin-imgrow';
-        const kw = doc.createElement('span');
-        kw.className = 'khin-imgkw';
-        /* 行内不再重复「🖼 」（用户 2026-10-11：面板刚收到 200px 那会儿关键词格只剩 84px）——
-         * 整块都在「🖼 图片」分区标题底下，行内再挂一个图标是冗余的，省下的宽度全给关键词。
-         * 【2.0.2.4 需求②】同图合并行里有几个关键词就都列出来（去重、保持原顺序）——
-         * 否则合并之后"You看不出这行是哪几个词抓的"。 */
-        const names = [];
-        for (const x of g.items) {
-          const n = (x.keyword || '') + (x.label ? '（' + x.label + '）' : '');
-          if (n && names.indexOf(n) < 0) names.push(n);
-        }
-        kw.textContent = names.join('、');
-        /* 面板窄时关键词要能被 ellipsis 截断 ⇒ 全称挂 title，别让信息真的丢 */
-        kw.title = kw.textContent;
-        head.appendChild(kw);
-        /* 图标 + 短标签（2026-10-11 用户裁决：面板窄时放不下「未命中/识别中…」这类长标签，
-         * 图标让同类状态一眼可分）。图标同样只从真源取，面板不自己挑字符；
-         * 但它是**独立 span**：`tag.textContent` 必须保持"只说结论"（'命中'/'未命中'…）
-         * —— 真机与单测都拿它当状态措辞比对（`content.test.js:3127/3132/3176/3230/3289`）。 */
-        const ico = doc.createElement('span');
-        ico.className = 'khin-imgico ' + KH.OcrCopy.stateClass(it);
-        ico.textContent = KH.OcrCopy.icon(it);
-        ico.setAttribute('aria-hidden', 'true');
-        head.appendChild(ico);
-        const tag = doc.createElement('span');
-        /* 状态类只从唯一真源取（`hit`/`miss`/`wait`/`note`/`bad`）：进行中不再是红的 */
-        tag.className = 'khin-imgtag ' + KH.OcrCopy.stateClass(it);
-        tag.textContent = this.imgTagText(it);
-        /* 悬停看完整理由（未命中时里面就有识别文本）：面板上不铺长文本，
-         * 但"这个结论是怎么来的"必须查得到 —— 文案一律走真源，面板不写中文。 */
-        tag.title = this.imgWhyText(it);
-        head.appendChild(tag);
-        /* 本次识别的**真实**耗时（S3-④ 用户裁决）：数字来自回执（`img-ocr.js:445` 存在条目上），
-         * 文案与格式一律走真源 `KH.OcrCopy.costLabel/costTip` —— 面板不许自己拼数字或写中文。
-         * 没有值（排队中 / 还没跑到）时 `costLabel` 返回空串 ⇒ 连 span 都不挂，不留空标签。
-         * 【位置】必须在 appendChild(tag) 之后 —— appendChild 对已存在的子节点是"移动"，
-         * 插在 tag 之前会被后一次 append 挪到 tag 前面去（实测踩过）。 */
-        const cost = doc.createElement('span');
-        cost.className = 'khin-imgcost';
-        cost.textContent = KH.OcrCopy.costLabel(it);
-        cost.title = KH.OcrCopy.costTip(it);
-        if (cost.textContent) head.appendChild(cost);
-        meta.appendChild(head);
-
-        /* 命中词块（2026-10-09 用户裁决）：面板上只留**命中的词**，点它复制它所在的整句；
-         * 一段里同一个词命中多次只给一块（同一句，复制出来一样）。
-         * 整段识别文本搬去灯箱右侧（点缩略图放大）与上面的悬停说明。
-         * 【2.0.2.4 需求②】合并行里**每个关键词一行词块**：图只铺一遍，但"哪个词命中了什么"
-         * 一条都不能丢。单条组（绝大多数）行为与合并前完全一致（不加归属小标）。 */
-        for (const mem of g.items) {
-        const words = hitWords(mem);
-        if (!words.length) continue;
-          const chips = doc.createElement('div');
-          chips.className = 'khin-imgchips';
-          if (g.items.length > 1) {
-            const owner = doc.createElement('span');
-            owner.className = 'khin-imgchipkw';
-            owner.textContent = (mem.keyword || '') + (mem.label ? '（' + mem.label + '）' : '');
-            owner.title = owner.textContent;
-            chips.appendChild(owner);
-          }
-          for (const w of words) {
-            const chip = doc.createElement('span');
-            chip.className = 'khin-imgchip';
-            chip.textContent = w;
-            chip.title = KH.OcrCopy.VIEW.copySentence;
-            /* 稳定键（T63）：列表每次重建都把 chip 整批换新，靠它把这颗认回来、把反馈重放上去。
-             * 用条目已有的 key（img-ocr.js 的 `ruleId|src`，面板别处也用它）+ 命中词 ——
-             * **不许**用条目下标（条目对象上没有 idx，写 `it.idx` 恒为 undefined，两张图里的同一个词
-             * 会互相点亮），也不许只用命中词（两个条目里的同一个词会串台）。 */
-            const copyKey = String(mem.key || '') + '|' + w;
-            chip.dataset.k = copyKey;
-            /* 重建重放（T63）：命中同一键且这笔反馈还在窗口内 ⇒ 当场补上 —— 否则整段重建会把屏幕上
-             * 的绿框吃掉（真机 ms≈94–330 就重建，绿框约 1/4 秒就没了）。 */
-            const mark = this.imgCopyMark;
-            if (mark && mark.key === copyKey && Date.now() - mark.at < IMG_COPY_MS) {
-              this.imgApplyCopyMark(chip, mark.ok);
-            }
-            /* 可用键盘操作（Tab 进来、Enter/空格触发）——它是个按钮，不是装饰 */
-            chip.setAttribute('role', 'button');
-            chip.setAttribute('tabindex', '0');
-            const copySentence = () => {
-              /* 【为什么标记与点亮都挪到 resolve 之前】2.0.2.2 全量真机首跑 1 红（读数
-               * `{"onNode":"copied","inShadowRoot":"none","connected":false}`）：点击后、剪贴板写入
-               * resolve 之前若刚好发生一次面板重建，旧写法把标记与类都写到**闭包里那颗已经游离的**
-               * chip 上 —— 屏上那颗既没被重放（重建发生时尚无标记）也再没人点亮，绿框整段丢失。
-               * 现在当帧先乐观点亮 + 落标记：此后任何一次重建都能靠标记重放回来；真结果回来若失败，
-               * 再按稳定键把**活着**的那颗就地改红（at 不变 ⇒ 复位定时器仍只排一个，到点照旧全清）。
-               * 定位不到整句（原文里没这个词 / 没有任何句末标点）就退回命中词本身 —— 不猜。 */
-              const at = Date.now();
-              this.imgCopyMark = { key: copyKey, ok: true, at: at };
-              this.imgApplyCopyMark(chip, true);
-              setTimeout(() => this.imgClearCopyMark(copyKey, at), IMG_COPY_MS);
-              copyToClipboard(KH.OcrCopy.sentenceOf(mem.text, w) || w, this.root).then((ok) => {
-                if (ok) return;
-                /* 还是这一笔才改判（晚到的旧 promise 不许把刚点的那一笔改成红的） */
-                const m = this.imgCopyMark;
-                if (m && m.key === copyKey && m.at === at) this.imgCopyMark = { key: copyKey, ok: false, at: at };
-                this.imgApplyCopyMarkByKey(copyKey, false);
-              });
-            };
-            chip.addEventListener('click', (e) => {
-              e.stopPropagation();
-              copySentence();
-            });
-            chip.addEventListener('keydown', (e) => {
-              if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); copySentence(); }
-            });
-            chips.appendChild(chip);
-          }
-          meta.appendChild(chips);
-        }
-
-        /* ★ 别漏这一行：一张卡片行 = 缩略图 + 文本块（文本块里才有 tag/耗时/命中词块）。
-         * 实测踩过：加「📋 复制识别文本」时把这一行弄丢了 → 行里没有 tag →
-         * 「图片文字识别」那条 e2e 的等待条件（两个 tag 都不是"识别中"）永远不成立 → 91s 超时。 */
-        row.appendChild(meta);
-        this.imgListEl.appendChild(row);
-      }
-    },
-
-    /**
-     * 给 chip 点亮 / 熄灭这一次复制反馈（T63）：**只有这一处**写这两个类与 title ——
-     * 建 chip 时的重放与点击当场都走它，两条通路的口径不会各自漂移。
-     *
-     * 复制失败要就地红一下（T29 / F3.1）：原来只有 title 换了句字，那得悬停才看得见，而用户点完
-     * 鼠标早移开了。剪贴板不可用（非 https / 无焦点）是最常见的失败，必须一眼看出没复制上；
-     * 与 copied 共用同一次 IMG_COPY_MS 复位，文案仍是真源里的 VIEW.copyFailed。
-     */
-    imgApplyCopyMark(chip, ok) {
-      chip.classList.toggle('copied', ok);
-      chip.classList.toggle('failed', !ok);
-      chip.title = ok ? KH.OcrCopy.VIEW.copySentDone : KH.OcrCopy.VIEW.copyFailed;
-    },
-
-    /**
-     * 按稳定键把反馈打到**当前活着**的那颗 chip 上。
-     * 为什么需要它：列表每次重建都整批换新，闭包/参数里那颗可能早就游离了 —— 直接往上写类，
-     * 屏幕上什么都不会发生（2.0.2.2 真机那条缺陷就是这个形状）。所以一律按 `dataset.k` 重找。
-     */
-    eachLiveChip(key, fn) {
-      const live = this.imgListEl ? this.imgListEl.querySelectorAll('.khin-imgchip') : [];
-      for (const chip of live) {
-        if (chip.dataset.k !== key) continue;
-        fn(chip);
-      }
-    },
-
-    imgApplyCopyMarkByKey(key, ok) {
-      this.eachLiveChip(key, (chip) => this.imgApplyCopyMark(chip, ok));
-    },
-
-    /**
-     * 复制反馈窗口到点复位（T63）。两步分开做：
-     *  ① 标记：只清「还是这一笔」（key 与 at 都对得上）—— 晚到的旧定时器不许清掉刚点的那一笔；
-     *  ② 屏幕：在**活着的**列表里按稳定键把当前那颗 chip 找回来复位。闭包里那颗早就游离了
-     *     （列表每次重建都整批换新），所以必须重找。
-     * **不**用命中词拼 CSS 选择器：关键词是用户输入，含引号/方括号会当场抛错。
-     */
-    imgClearCopyMark(key, at) {
-      const mark = this.imgCopyMark;
-      if (mark && mark.key === key && mark.at === at) this.imgCopyMark = { key: '', ok: false, at: 0 };
-      this.eachLiveChip(key, (chip) => {
-        chip.classList.remove('copied');
-        chip.classList.remove('failed');
-        chip.title = KH.OcrCopy.VIEW.copySentence;
-      });
-    },
-
-    /* 折叠标签 / 展开说明一律从**唯一真源** `KH.OcrCopy` 取（票 #17 D-17.1）。
-     * 措辞上的任何改动都应该去改 `src/ui/ocr-copy.js` —— 不要在这里写死中文：
-     * 之前正是"同一个原因在面板 / 设置页 / 弹窗各写一套"，改一处漏两处。
-     * （原 K63 的「把图片所在域名直接写出来」口径已搬进 ocr-copy.js 的 `cross-origin` 条目。） */
-    imgTagText(it) {
-      return KH.OcrCopy.tag(it);
-    },
-
-    imgWhyText(it) {
-      return KH.OcrCopy.why(it);
     },
 
     /**
@@ -2261,12 +1664,13 @@
     },
 
     /**
-     * 右键识别的那些图（2.0.2.13 · 用户 m03971）。
+     * 右键识别的那些图（2.0.2.13 · 用户 m03971；2.0.2.15 用户 m00001 ②）。
      *
      * 为什么单列一张卡：右键识别**不属于任何规则**（`ruleId` 是 `@ctxmenu`），它没有命中词、
-     * 没有抓取字段，所以永远进不了笔记卡片。以前只活在「🖼 图片」分区里 —— 用户点了右键，
-     * 结果掉到面板底部一个附属区，看着像"没发生"。现在把这几张图当成一张卡片表格放回主模块。
-     * 只认有 `src` 的条目（读不到地址的图放不进 <img>，留在图片分区里带原因，不静默丢）。
+     * 没有抓取字段，所以永远进不了笔记卡片。2.0.2.15 起底部那个「🖼 图片」分区已经删除，
+     * 这张卡就是右键结果**唯一**的展示面。
+     * 只认有 `src` 的条目（读不到地址的图放不进 <img>）—— 但**受理那一刻**背景侧就给回执、
+     * 内容侧已建好 `state:'pending'` 的行，所以图会立刻出现，不必等识别跑完。
      */
     ctxItems() {
       return (this.imgItems || []).filter((it) => it && it.via === 'contextMenu' && absSrc(it && it.src));
@@ -2302,6 +1706,16 @@
       lbt.textContent = label;
       lbt.title = label;
       th.appendChild(lbt);
+      /* 还有图在识别（或刚失败）就写在标题格旁边：用户右键完立刻看到图，
+       * 得知道"文字还在路上" —— 否则会以为识别压根没跑。 */
+      const busy = list.some((it) => it.state === 'pending' || it.state === 'idle');
+      const failed = !busy && list.some((it) => it.state === 'fail');
+      if (busy || failed) {
+        const st = doc.createElement('span');
+        st.className = 'kh-table-suffix khin-ctxstate';
+        st.textContent = busy ? KH.OcrCopy.VIEW.ctxBusy : KH.OcrCopy.VIEW.ctxFail;
+        th.appendChild(st);
+      }
       const td = doc.createElement('td');
       td.className = 'khin-ctx-cell';
 
@@ -2517,10 +1931,11 @@
     KH.features.register('important-note', {      /** @param {object[]} hits 注册表全量命中 @param {object} cfg 当前配置 */
       consume(hits, cfg) {
         const list = (hits || []).filter(h => h && h.meta && h.meta.important);
-        /* 图片命中与重要笔记**共用这块面板**：只要还有图片条目，panel.host 不存在时也得建出来，
-         * 否则"这个词没开重要笔记、只有图片命中"就永远看不到东西（用户明确要求这种也要显示）。 */
-        const imgCount = (KH.ImgOcr && typeof KH.ImgOcr.items === 'function') ? KH.ImgOcr.items().length : 0;
-        if (!list.length && !imgCount && !panel.host) return;    // 从没出现过：连外壳都不造
+        /* 右键识别的图与重要笔记**共用这块面板**：只要还有右键识别的图，panel.host 不存在时也得建出来，
+         * 否则"这个词没开重要笔记、只有右键结果"就永远看不到东西（用户 m00001 ②）。 */
+        const ctxCount = (KH.ImgOcr && typeof KH.ImgOcr.items === 'function')
+          ? KH.ImgOcr.items().filter((it) => it && it.via === 'contextMenu').length : 0;
+        if (!list.length && !ctxCount && !panel.host) return;    // 从没出现过：连外壳都不造
         panel.render(head.build(collectEffective(hits), panel.ignored), cfg);
       },
 
@@ -2537,13 +1952,14 @@
   }
 
   /* 图片识别的结果是**异步**回来的（OCR 在 offscreen 文档里跑），面板得自己刷新，
-   * 不能等下一次页面重建 —— 否则用户要等页面变动才看见识别结果。 */
+   * 不能等下一次页面重建 —— 否则用户要等页面变动才看见识别结果。
+   * 右键识别同样走这条路：受理即展示（pending 行）与结果回来都在 `renderImg` 里落地。
+   * 灯箱还开着时也要跟着刷（全文栏与「OCR 识别/隐藏全文」按钮的换脸都靠它）。 */
   if (KH.ImgOcr && typeof KH.ImgOcr.onChange === 'function') {
     KH.ImgOcr.onChange(() => {
       panel.renderImg();
-      /* 右键识别的结果同样走这条路回来，而那张「截图」卡是卡片区的一部分 —— 不跟着重建
-       * 就永远只在下次页面变动时才出现（2.0.2.13 真机验证抓到）。只重建这一张，不动整块。 */
-      panel.renderCtxCard();
+      const h = document.getElementById(LIGHTBOX_ID);
+      if (h && typeof h._apply === 'function') h._apply();
     });
   }
 

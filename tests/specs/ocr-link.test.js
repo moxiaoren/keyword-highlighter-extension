@@ -512,11 +512,18 @@ module.exports = async function run() {
       { tab: { id: 9 }, frameId: 4 }
     );
     const id = m.host._debug().jobs[0].requestId;
+    /* 2.0.2.15 需求②：受理那一刻先回一条「已排队」（`OCR_QUEUED`），回执再回一条结果。
+     * 这里按类型取那一条**结果**，别把排队回执也算成结果。 */
+    eq(m.toTab.length, 1, '受理时要先给发起帧回一条「已排队」');
+    const queued = m.toTab[0].payload;
+    eq(queued.type, MSG.OCR_QUEUED, '第一条是排队回执');
+    eq(queued.via, 'contextMenu', '排队回执也要带 via（内容侧据此立刻建条目）');
     m.host.onOffscreenMessage({ to: 'background', type: MSG.OCR_RESULT, requestId: id, ok: true, text: '华为', src: 'https://cdn.example.com/a.png' });
-    eq(m.toTab.length, 1, '结果要投回发起方');
-    eq(m.toTab[0].tabId, 9, '要投给被右键那个标签页');
-    eq(m.toTab[0].frameId, 4, '★ 多 frame 页面：必须投回被右键那一帧');
-    eq(m.toTab[0].payload.via, 'contextMenu', '★ 内容脚本靠它认领成「右键识别」而不是当成扫描链的结果');
+    const res = m.toTab.filter((x) => x.payload.type === MSG.OCR_RESULT);
+    eq(res.length, 1, '结果要投回发起方');
+    eq(res[0].tabId, 9, '要投给被右键那个标签页');
+    eq(res[0].frameId, 4, '★ 多 frame 页面：必须投回被右键那一帧');
+    eq(res[0].payload.via, 'contextMenu', '★ 内容脚本靠它认领成「右键识别」而不是当成扫描链的结果');
 
     /* 老路径不许凭空多出这个字段 —— 内容脚本的判据就是"有没有它" */
     const m2 = loadHost(MSG, null, { storage: {} });

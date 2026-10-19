@@ -8,7 +8,7 @@
  *   · 本文件（内容脚本）：**只做采集与结果聚合** —— 从"命中所在表里各个抓取字段的值格"取图，
  *     分类（能不能读）、排队、把识别结果按"图上是否真的出现这个词"标出来。
  *   · offscreen/ocr.js：真正跑 OCR（引擎/语言包都在那边，见该文件顶部注释）。
- *   · important-note.js：只负责把 `KH.ImgOcr.items()` 画进面板的「🖼 图片命中」分区。
+ *   · important-note.js：只负责把 `KH.ImgOcr.items()` 画进面板最上面那张「截图」表。
  *
  * ============================ 图片命中 = 「抓取后续字段」的一个分支 ============================
  * 【用户确认的口径】取图范围**以抓取字段为准**：
@@ -182,6 +182,16 @@
   /** 图片地址所在的域名（拿不到就空串） */
   function hostOfSrc(src) {
     try { return normHost(new URL(src, location.href).hostname); } catch (e) { return ''; }
+  }
+
+  /** 绝对化图片地址（缓存/等待者的键必须统一：相对地址在不同上下文里指的不是同一张图） */
+  function absOf(raw) {
+    const s = String(raw || '').trim();
+    if (!s) return '';
+    try {
+      const base = (typeof document !== 'undefined' && document.baseURI) || location.href;
+      return new URL(s, base).href;
+    } catch (e) { return s; }
   }
 
   /**
@@ -590,6 +600,11 @@
       };
       manual.set(key, it);
     }
+    /* 【2.0.2.15 需求②】**受理即回执**（background 的 OCR_QUEUED）：用户点完右键那一刻就把行建出来，
+     * 面板因此立刻画出「截图」卡（带"识别中…"）。旧行为只在结果/失败回来时才建行 ——
+     * 用户点完右键，屏幕上什么都不会发生，像功能坏了。这里不改状态（仍是 pending），
+     * 结果/失败交给下面的分支在原地改。 */
+    if (msg.accepted) { notify(); return; }
     it.engine = msg.engine || '';
     it.engineReason = msg.engineReason || '';
     if (msg.ok) {
@@ -600,6 +615,11 @@
       it.why = msg.notice || '';
       it.coverPx = (msg.coverage && msg.coverage.coveredTo) || 0;
       it.coverage = msg.coverage || null;
+      /* 顺手进缓存（2.0.2.15）：大图里点「OCR 识别」、以及灯箱拿全文都走 `textOf(src)`，
+       * 右键识别的那张图必须和扫描链一样能被 `textOf` 读到 —— 否则同一张图会再识别一次，
+       * 且灯箱开着时结果回来也刷不出全文。 */
+      const ck = absOf(it.src);
+      if (ck) cachePut(ck, { text: it.text, conf: it.conf, at: Date.now(), ocrMs: it.ocrMs });
     } else {
       it.state = 'fail';
       it.error = msg.error || '识别失败';
@@ -611,10 +631,97 @@
     notify();
   }
 
+  /* ---------------- 大图里点「OCR 识别」（2.0.2.15 需求①） ---------------- */
+
+  /** 灯箱那边等着的识别：requestId → 结算器 */
+  const oneWaits = new Map();
+
+  /** 灯箱文案（真源 `KH.OcrCopy.VIEW`；这里只在没加载到真源时给 ASCII 兜底） */
+  function lightboxText(key, fallback) {
+    const V = (KH.OcrCopy && KH.OcrCopy.VIEW) || {};
+    return V[key] || fallback;
+  }
+
+  /** 这张图已经认出来的文字（空串 = 还没有）。缓存优先，其次看现有条目（扫描链/右键都可能已经认过）。 */
+  function textOf(raw) {
+    const s = absOf(raw);
+    if (!s) return '';
+    const c = textCache.get(s) || textCache.get(String(raw || ''));
+    if (c && c.text) return String(c.text);
+    for (const it of allItems()) {
+      if (it && it.text && it.src && absOf(it.src) === s) return String(it.text);
+    }
+    return '';
+  }
+
+  /** 大图 OCR 的回执：回填缓存 + 叫醒等它的那一个（不进 items/manual —— 它不挂在任何规则上） */
+  function adoptLightbox(msg) {
+    const text = String(msg.text || '');
+    if (msg.ok && msg.src) {
+      cachePut(absOf(msg.src), { text: text, conf: msg.confidence || 0, at: Date.now(), ocrMs: msg.ocrMs });
+    }
+    const w = oneWaits.get(msg.requestId);
+    if (w) {
+      oneWaits.delete(msg.requestId);
+      if (w.timer) clearTimeout(w.timer);
+      if (msg.ok) w.resolve(text);
+      else w.reject(Object.assign(new Error(msg.error || lightboxText('paneOcrFail', 'OCR failed')), { code: msg.code || '' }));
+    }
+    notify();
+  }
+
+  /**
+   * 认一张图，返回识别文本（大图灯箱那枚「OCR 识别」按钮就等这个）。
+   * 已有文本直接回（不重复跑引擎）；结果只进缓存、不进面板 —— 灯箱是临时视图，
+   * 在「重要笔记」里多出一行反而是噪声。
+   */
+  function ocrOne(raw) {
+    const src = absOf(raw) || String(raw || '');
+    if (!src) return Promise.reject(new Error(lightboxText('paneOcrFail', 'OCR failed')));
+    const hit = textOf(src);
+    if (hit) return Promise.resolve(hit);
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const done = (err, text) => {
+        if (settled) return;
+        settled = true;
+        if (err) reject(err); else resolve(text);
+      };
+      if (typeof chrome === 'undefined' || !chrome.runtime || typeof chrome.runtime.sendMessage !== 'function') {
+        done(new Error(lightboxText('paneOcrFail', 'OCR failed')));
+        return;
+      }
+      try {
+        chrome.runtime.sendMessage({ type: MSG.OCR_IMAGE, src: src, via: 'lightbox' }, (res) => {
+          if (settled) return;
+          if (!res || !res.ok) {
+            const code = String((res && res.code) || '');
+            done(Object.assign(new Error(code === 'src-rejected'
+              ? lightboxText('paneOcrDenied', 'This image address is not allowed')
+              : lightboxText('paneOcrFail', 'OCR failed')), { code: code }));
+            return;
+          }
+          /* 兜底超时：background 的看门狗会先到；这一层只防"回执永远不来"（SW 被杀） */
+          const timer = setTimeout(() => {
+            oneWaits.delete(res.requestId);
+            done(Object.assign(new Error(lightboxText('paneOcrFail', 'OCR failed')), { code: 'timeout' }));
+          }, JOB_STALE_MS);
+          if (timer && typeof timer.unref === 'function') timer.unref();
+          oneWaits.set(res.requestId, {
+            src: src, timer: timer,
+            resolve: (t) => done(null, t), reject: (e) => done(e)
+          });
+        });
+      } catch (e) { done(e); }
+    });
+  }
+
   /** 结果回来（background 中转） */
   function onResult(msg) {
     /* 【右键任意图 OCR】先认领这一类：它没有 token 账可对，硬走下面的额度逻辑只会空转 */
     if (msg.via === 'contextMenu') { adoptContextMenu(msg); return; }
+    /* 大图里点的「OCR 识别」：不属扫描链、也不进面板，只回填缓存 + 叫醒灯箱那一边 */
+    if (msg.via === 'lightbox') { adoptLightbox(msg); return; }
     /* ① 先把这笔账认出来**按 token** 归还 —— 与 src 无关，这是 #16 ③ 的根治点 */
     let token = pending.get(msg.requestId) || null;
     const src = msg.src || '';
@@ -848,8 +955,14 @@
   /* 结果经 background 回到内容脚本（`to:'content'` 才是给我们的，别的上下文的消息不认） */
   if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
     chrome.runtime.onMessage.addListener((msg) => {
-      if (!msg || msg.type !== MSG.OCR_RESULT) return false;
+      if (!msg) return false;
       if (msg.to && msg.to !== 'content') return false;
+      /* 受理即回执（右键那一刻）：先把行建出来，面板立刻有东西可画 */
+      if (msg.type === MSG.OCR_QUEUED) {
+        adoptContextMenu({ src: msg.src, requestId: msg.requestId, accepted: true });
+        return false;
+      }
+      if (msg.type !== MSG.OCR_RESULT) return false;
       onResult(msg);
       return false;
     });
@@ -895,6 +1008,9 @@
       };
     },
     classify: classify,
+    /** 大图灯箱用：认一张图 / 取这张图已认出的文字（2.0.2.15 需求①） */
+    ocrOne: ocrOne,
+    textOf: textOf,
     matchedInText: matchedInText,
     /** 匹配口径的唯一编译点（诊断/单测用；见 `ocrPatternOf`） */
     ocrPatternOf: ocrPatternOf,

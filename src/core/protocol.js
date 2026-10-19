@@ -55,7 +55,8 @@
      * 真浏览器实测（`_e2e/probe-ocr*.js`）：只有在**扩展自己的页面**（offscreen 文档）里
      * `new Worker(chrome.runtime.getURL(...))` + 本地 wasm 才稳。
      * 消息一律经 background 中转（内容脚本不直接与 offscreen 通信），并带 `to` 标记防回环。 */
-    OCR_IMAGE: 'kh:ocr:image',              // 识别一张图：{src|dataUrl, keyword, ...} → {requestId}
+    OCR_IMAGE: 'kh:ocr:image',              // 识别一张图：{src|dataUrl, keyword, via?} → {requestId}
+    OCR_QUEUED: 'kh:ocr:queued',            // background **受理即回执**（只发给发起的那一帧）：{requestId, src, via}
     OCR_CANCEL: 'kh:ocr:cancel',            // 丢弃某标签页待处理的识别任务（重建/离页时）
     OCR_RESULT: 'kh:ocr:result',            // offscreen → background（再按 requestId 送回发起方）
     OCR_LANG_STATE: 'kh:ocr:langState',     // 语言包状态：每个语言是否已就绪 + 占用字节
