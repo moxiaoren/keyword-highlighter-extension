@@ -1,0 +1,657 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>人工验收 · 2.0.2.17（六项需求 + ⑤ 的 bug）</title>
+<!--
+  ============================================================================
+  人工验收页（双击即开 / file:// / 零构建 / 零网络）
+  ----------------------------------------------------------------------------
+  这个页面**不复刻 src 逻辑**：它能加载真实模块就加载真实模块，只在页面边界
+  （浏览器外部世界）放替身，且每个替身都在页面上写明"替的是什么"：
+
+    真实模块（相对路径直连）
+      ../src/core/config.js               默认值唯一真源（cfg / 面板字号钳位）
+      ../src/core/compiler.js             ⑤ 的判据真源：ocrMeta()
+      ../src/features/combo/cells.js      KH.Cells（命中 → 格子）
+      ../src/core/scanner.js              命中匹配真源（matchedInText 要它）
+      ../src/features/fetch.js            ①② 的渲染真源：blockFor / rowsToTableHtml
+      ../src/features/img-ocr.js          ⑤⑥ 的链路真源：build / _onResult
+      ../src/ui/ocr-copy.js               状态键 / 文案
+      ../src/features/important-note.js   笔记卡片真源：聚合 / 标签 / 表格插 DOM
+      ../src/ui/components/dom.js         h()
+      ../src/ui/components/fields.js      ③ 的真源：cands 控件
+      ../src/ui/components/components.css 真样式（.kh-cand-ta / .kh-lbt 都在里面）
+
+    页面替身（只有这三样，页面上都标了）
+      · OCR 引擎        —— 图片是 canvas 画的假截图，识别结果由页面按钮喂回（_onResult 是真入口）
+      · chrome.runtime  —— 只用来"接住提交、回一个 requestId"，不联网
+      · KH.features/    —— 注册表替身，好让真实模块把 consume 交出来给页面手动调用
+        KH.Markdown/       (markdown 是极简替身，夹具用不到复杂语法)
+        KH.registry
+
+  每个需求一节，节内固定三段：**怎么点** / **判据** / **实测**（实测是页面用真实
+  模块自动算出来的 PASS/FAIL，不是人手填的）。
+  ============================================================================
+-->
+<link rel="stylesheet" href="../src/ui/components/components.css">
+<style>
+  body { margin: 0; padding: 22px 24px 60px; font: 14px/1.65 "Microsoft YaHei", "PingFang SC", system-ui, sans-serif; color: #1f2937; background: #f7f9fc; }
+  h1 { font-size: 20px; margin: 0 0 2px; }
+  .sub { color: #6b7280; font-size: 12px; margin: 0 0 16px; }
+  h2 { font-size: 15px; margin: 0 0 6px; color: #1a73e8; }
+  h3 { font-size: 12px; margin: 10px 0 4px; color: #374151; letter-spacing: .04em; }
+  .sec { background: #fff; border: 1px solid #e3e8f0; border-radius: 10px; padding: 12px 16px 14px; margin: 0 0 14px; max-width: 900px; }
+  .sec > ol, .sec > ul { margin: 4px 0 8px; padding-left: 22px; }
+  .sec li { margin: 2px 0; }
+  .crit { background: #f4f8ff; border-left: 3px solid #4a90d9; padding: 6px 10px; border-radius: 0 6px 6px 0; font-size: 13px; }
+  .probe { margin-top: 8px; font-family: Consolas, monospace; font-size: 12px; background: #fffdf5; border: 1px dashed #e6d9a8; border-radius: 8px; padding: 8px 10px; white-space: pre-wrap; }
+  .probe b.ok { color: #2e7d32; }
+  .probe b.no { color: #c62828; }
+  code { background: #eef3fa; padding: 0 4px; border-radius: 3px; font-size: 12px; }
+  .ctl { margin: 8px 0 4px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .ctl button { padding: 5px 12px; font-size: 13px; cursor: pointer; border: 1px solid #cbd6e4; background: #fff; border-radius: 6px; }
+  .ctl button:hover { background: #eef5fd; }
+  #errors { display: none; background: #fdecea; border: 1px solid #f5c6c0; color: #a12b20; border-radius: 8px; padding: 8px 10px; font: 12px/1.5 Consolas, monospace; white-space: pre-wrap; margin: 0 0 14px; max-width: 900px; }
+  .fake { color: #8a6d0b; }
+  #stage-fields .kh-editor-sec-body { display: flex; flex-wrap: wrap; gap: 12px 16px; }
+  #stage-fields .kh-fld { flex: 0 1 380px; min-width: 240px; }
+  .srcbox { max-height: 172px; overflow: auto; border: 1px solid #e3e8f0; border-radius: 8px; background: #fcfdff; padding: 4px; }
+  .srcbox table { border-collapse: collapse; font-size: 12px; }
+  .srcbox td { border: 1px solid #e3e8f0; padding: 2px 6px; vertical-align: middle; }
+  .srcbox img { max-height: 54px; }
+</style>
+</head>
+<body>
+
+<h1>人工验收 · 2.0.2.17</h1>
+<p class="sub">六项需求 + ⑤ 的 bug。页面加载的是<b>真实模块</b>，只有 OCR 引擎（画出来的假截图 + 页面按钮喂结果）、<code>chrome.runtime</code>、以及注册表垫片是替身 —— 明细见源码顶部注释。</p>
+
+<div id="errors"></div>
+
+<!-- ================= 1. 需求① 后缀 ================= -->
+<div class="sec">
+  <h2>① 重要笔记里不显示抓取字段的后缀</h2>
+  <h3>怎么点</h3>
+  <ul>
+    <li>看左侧「重要笔记」面板里<b>带表格的那张卡</b>：第一列表头现在只写字段名（<code>截图</code>、<code>开发者</code>），不再跟 <code>#图3</code> / <code>#0</code> / <code>! ^高价</code> 这类抓取口径。</li>
+    <li>对照：设置页的胶囊预览里后缀**照旧**在（那是录入口径，没动）。</li>
+  </ul>
+  <div class="crit"><b>判据：</b>卡片表格里 <code>.kh-table-suffix</code> 元素数 = 0；字段名格里不出现 <code>#</code> / <code>!</code> / <code>^</code> / <code>%</code> 这些后缀字符。</div>
+  <div class="probe" id="probe-1">…</div>
+</div>
+
+<!-- ================= 2. 需求② 合并 ================= -->
+<div class="sec">
+  <h2>② 同一卡片内，抓取内容一致的字段合并成一列</h2>
+  <h3>怎么点</h3>
+  <ul>
+    <li>同一张卡里 <code>应用功能类型</code> 与 <code>资质类型</code> 抓到的都是 <code>贷款超市类</code> ⇒ 应合并成<b>一列</b>，标签写 <code>应用功能类型/资质类型</code>，值只出现一次。</li>
+    <li>把鼠标停在那个长标签上：过长照旧省略号，<b>悬停出完整文字</b>（<code>title</code> 走 <code>.kh-lbt</code>）。</li>
+    <li>反例在页面下方的「只渲染表格」小舞台：值不同 ⇒ 不合并。</li>
+  </ul>
+  <div class="crit"><b>判据：</b>存在一个 <code>.kh-table-label</code> 文本恰为 <code>应用功能类型/资质类型</code>；该卡里 <code>贷款超市类</code> 只出现 1 次；长标签的 <code>title</code> 长度 &gt; 显示文本长度。</div>
+  <div class="probe" id="probe-2">…</div>
+</div>
+
+<!-- ================= 3. 需求③ 文本态 ================= -->
+<div class="sec">
+  <h2>③ 四个候选框：点空白进文本态，内容过长时默认展开</h2>
+  <h3>怎么点</h3>
+  <ol>
+    <li>下面四个框分别对应<b>关键词 / 标题关键词 / 抓取后续字段 / 图片命中词</b>（都是同一个真实控件）。</li>
+    <li>点框面<b>空白处</b>（不是点 <code>+</code>）⇒ 胶囊变成一整串文本，框体<b>按内容长高</b>（这里每串都很长，落进来就是多行）。</li>
+    <li>直接改；回车收成胶囊、Esc 放弃本次修改、点框外也收下。<code>|</code> 仍是分隔符（框下有提醒）。</li>
+  </ol>
+  <div class="crit"><b>判据：</b>文本态元件是 <code>textarea.kh-cand-ta</code>（不是单行 input）；<code>rows ≥ 2</code>；<code>scrollHeight ≤ clientHeight + 2</code>（内容全在里面，不靠横向滚动）；回车后 <code>read()</code> 保留新值。</div>
+  <div class="probe" id="probe-3">…</div>
+  <div id="stage-fields"><div class="kh-editor-sec-body"></div></div>
+</div>
+
+<!-- ================= 4. 需求④ 仅抓取标题 ================= -->
+<div class="sec">
+  <h2>④ 仅抓取模式：标题不再写两遍</h2>
+  <h3>怎么点</h3>
+  <ul>
+    <li>面板里「仅抓取模式」那张卡（夹具里 display 与 label 是同一个词）：标签只有 <code>🔖 计算机软件著作权登记证书</code>。</li>
+    <li>旁边「前后不是同一个词」那张卡：<code>🔖 供应商 → 华为</code> 的箭头照旧保留。</li>
+  </ul>
+  <div class="crit"><b>判据：</b>仅抓取卡的标签文本里没有 <code>→</code>；普通卡的标签里有 <code>→</code>。</div>
+  <div class="probe" id="probe-4">…</div>
+</div>
+
+<!-- ================= 5. 需求⑤ bug ================= -->
+<div class="sec">
+  <h2>⑤ bug：仅抓取模式 + 图片命中词，以前一次 OCR 都不发</h2>
+  <h3>根因（一句话）</h3>
+  <p>编译层 <code>src/core/compiler.js</code> 的 <code>ocrMeta()</code> 原本是<br>
+  <code>imgOcr: !!(kw &amp;&amp; kw.imgOcr) &amp;&amp; !o.fetchOnly</code> —— 仅抓取词 <code>fetchOnly=true</code>，把用户勾的「识别图片文字」直接抹成 <code>false</code>；<br>
+  于是 <code>src/features/img-ocr.js</code> 的 <code>anchorsFor()</code> 第 1 条准入 <code>if (!rule.meta.imgOcr) return;</code> 永远拦住 ⇒ 条目 0 条、一次识别都不发。2.0.2.17 去掉了那个短路（图片命中词判的是 <b>OCR 出来的文字</b>，与核心词无关）。</p>
+  <h3>怎么点</h3>
+  <ul>
+    <li>本节的「实测」是页面<b>真的</b>跑了链路：真实 <code>Compiler.ocrMeta()</code> 编译出 meta → 真实 <code>KH.ImgOcr.build()</code> 从本页下方那张真实表格的<b>截图值格</b>里取图 → 建出条目。</li>
+    <li>真机复现：仅抓取词 + 配「抓取后续字段」（含 <code>截图#图</code>）+ 图片命中词，图片分区这次真的会动。</li>
+  </ul>
+  <div class="crit"><b>判据：</b><code>ocrMeta({imgOcr:true}).imgOcr === true</code>（旧版是 false）；<code>ImgOcr.build()</code> 后存在 <code>ruleId</code> 等于本夹具规则的条目（旧版 0 条）。</div>
+  <div class="probe" id="probe-5">…</div>
+</div>
+
+<!-- ================= 6. 需求⑥ 键值行 ================= -->
+<div class="sec">
+  <h2>⑥ OCR 命中成功：命中那一行的「键：值」补进抓取字段表</h2>
+  <h3>怎么点</h3>
+  <ol>
+    <li>点下面这颗按钮 ⇒ 页面把一段识别结果（含 <code>登记号：2018SR458983</code>）喂给真实入口 <code>KH.ImgOcr._onResult()</code>，走的是真消息回填路径。</li>
+    <li>看面板里「OCR 命中后…」那张卡：表格下方多出 <b>标题格 = 登记号、内容格 = 2018SR458983</b>。</li>
+  </ol>
+  <div class="crit"><b>判据：</b>该卡出现 <code>登记号</code> 行；<b>只取命中行</b> —— 同一段文本里的 <code>著作权人</code> 那行不许出现；键里的空白被归一（<code>登 记 号</code> 也认）。</div>
+  <div class="ctl"><button id="feed-ocr">喂回 OCR 结果（模拟识别完成）</button><button id="reset-ocr">清空 OCR 结果</button></div>
+  <div class="probe" id="probe-6">…</div>
+</div>
+
+<!-- ================= 7. 反例舞台 ================= -->
+<div class="sec">
+  <h2>反例舞台 · 直接看 renderer 的输入输出（需求①②）</h2>
+  <p>下面三块都是真实 <code>KH.Fetch.rowsToTableHtml()</code> 的输出（不是手写 HTML），用来把"什么时候合并、什么时候不合并"摆出来：</p>
+  <h3>值相同 ⇒ 合并</h3><div id="demo-same"></div>
+  <h3>值不同 ⇒ 不合并</h3><div id="demo-diff"></div>
+  <h3>值相同但图片策略不同（<code>#图</code> vs 普通）⇒ 不合并</h3><div id="demo-opt"></div>
+  <div class="probe" id="probe-7">…</div>
+</div>
+
+<!-- ================= 8. 真实表格（夹具源） ================= -->
+<div class="sec">
+  <h2>夹具源表格（⑤ 取图 / ①② 抓字段都从这张真表里走真实 DOM）</h2>
+  <p class="fake">这张表是"页面上的真实表格"，下面那行命中是真实的文本节点；抓取走的是 <code>KH.Fetch.blockFor()</code>。图片是 canvas 现画的假截图 —— <b>识别结果由页面按钮喂</b>，页面上不会跑真 OCR。</p>
+  <div class="srcbox">
+    <table id="src-table">
+      <tbody>
+        <tr><td>合作说明</td><td id="hit-cell">本项目采用一对一模式服务</td></tr>
+        <tr><td>应用功能类型</td><td>贷款超市类</td></tr>
+        <tr><td>资质类型</td><td>贷款超市类</td></tr>
+        <tr><td>截图</td><td id="shot-cell"><img id="shot" alt="资质截图"></td></tr>
+        <tr><td>开发者</td><td>杭州某某科技有限公司</td></tr>
+        <tr><td>很长的字段名称用来验证省略号与悬停显示完整标签</td><td>已核验</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="probe" id="probe-0">…</div>
+</div>
+
+<!-- ================= 真实模块 ================= -->
+<script>
+/* ---------- 垫片：必须在真实模块之前 ---------- */
+(function () {
+  'use strict';
+  const KH = (window.KH = window.KH || {});
+  window.__ERRORS__ = [];
+  window.addEventListener('error', (e) => {
+    const t = (e && e.message) || 'unknown error';
+    window.__ERRORS__.push(t + (e && e.filename ? ' @' + e.filename.split('/').pop() + ':' + e.lineno : ''));
+    const box = document.getElementById('errors');
+    if (box) { box.style.display = 'block'; box.textContent = '页面脚本报错：\n' + window.__ERRORS__.join('\n'); }
+  });
+
+  /* 1) chrome.runtime 替身：只接住 submit，回一个 requestId（不联网、不做 OCR） */
+  window.__OCR_REQ__ = null;
+  window.__OCR_REQ_SEEN__ = null;      // 第一次请求留个底（喂回结果时会清 __OCR_REQ__）
+  window.chrome = window.chrome || {};
+  window.chrome.runtime = {
+    sendMessage(msg, cb) {
+      if (/ocr/i.test(String(msg && msg.type || ''))) {
+        window.__OCR_REQ__ = msg;
+        if (!window.__OCR_REQ_SEEN__) window.__OCR_REQ_SEEN__ = msg;
+        if (typeof cb === 'function') setTimeout(() => cb({ requestId: 'req-1' }), 0);
+        return;
+      }
+      if (typeof cb === 'function') setTimeout(() => cb({}), 0);
+    },
+    lastError: null
+  };
+
+  /* 2) 注册表替身：让真实模块把 consume 交出来 */
+  KH.features = {
+    _reg: {},
+    register(name, def) { this._reg[name] = def; },
+    get(name) { return this._reg[name]; }
+  };
+
+  /* 3) 极简 markdown（夹具只用纯文本 + **粗体**） */
+  KH.Markdown = {
+    toFragment(md, doc) {
+      const frag = doc.createDocumentFragment();
+      String(md == null ? '' : md).split('\n').forEach((line, i) => {
+        if (i) frag.appendChild(doc.createTextNode('\n'));
+        const re = /\*\*([^*]+)\*\*/g;
+        let last = 0, m;
+        while ((m = re.exec(line)) !== null) {
+          if (m.index > last) frag.appendChild(doc.createTextNode(line.slice(last, m.index)));
+          const b = doc.createElement('strong'); b.textContent = m[1]; frag.appendChild(b);
+          last = m.index + m[0].length;
+        }
+        if (last < line.length) frag.appendChild(doc.createTextNode(line.slice(last)));
+      });
+      return frag;
+    }
+  };
+})();
+</script>
+
+<!-- 真实模块（顺序 = 依赖顺序） -->
+<script src="../src/core/protocol.js"></script>
+<script src="../src/core/config.js"></script>
+<script src="../src/core/compiler.js"></script>
+<script src="../src/features/combo/cells.js"></script>
+<script src="../src/core/scanner.js"></script>
+<script src="../src/features/fetch.js"></script>
+<script src="../src/features/img-ocr.js"></script>
+<script src="../src/ui/ocr-copy.js"></script>
+<script src="../src/features/important-note.js"></script>
+<script src="../src/ui/components/dom.js"></script>
+<script src="../src/ui/components/fields.js"></script>
+
+<script>
+/* ============================================================================
+ * 页面主体：夹具 + 探针
+ * ========================================================================= */
+(function () {
+  'use strict';
+  const KH = window.KH;
+  const $ = (id) => document.getElementById(id);
+  const out = (id, lines) => { const el = $(id); if (el) el.innerHTML = lines.join('\n'); };
+  const okLine = (label, pass, detail) =>
+    '<b class="' + (pass ? 'ok' : 'no') + '">' + (pass ? 'PASS' : 'FAIL') + '</b> · ' + label +
+    (detail == null ? '' : ' —— ' + detail);
+
+  const results = {};
+
+  /* ---------------- 夹具配置：走真实 Config ---------------- */
+  const cfg = (function () {
+    const defaults = (KH.Config && KH.Config.defaults) || {};
+    let base = {};
+    try { base = (KH.Config.normalize && KH.Config.normalize({})) || {}; } catch (e) { base = {}; }
+    const note = Object.assign({}, defaults.importantNote || {}, base.importantNote || {}, { fontSize: 11, imgSize: 70 });
+    return Object.assign({}, defaults, base, { importantNote: note });
+  })();
+  KH.config = cfg;
+
+  /* ---------------- 夹具：抓取字段 / 命中 / OCR ---------------- */
+  const LABELS = '应用功能类型|资质类型|截图#图|开发者#0|很长的字段名称用来验证省略号与悬停显示完整标签';
+  const OCR_WORD = '登记号';
+  const OCR_TEXT = [
+    '计算机软件著作权登记证书',
+    '登记号：2018SR458983',
+    '著作权人：杭州某某科技有限公司',
+    '开发完成日期：2018年03月12日'
+  ].join('\n');
+
+  /* ⑤ 的判据真源：真实 Compiler.ocrMeta()（仅抓取=没有核心词；这里只喂 imgOcr 三项） */
+  const OCR_META = KH.Compiler.ocrMeta({
+    imgOcr: true, imgOcrMax: 2, imgOcrKeyword: OCR_WORD, fetchScope: 'self'
+  });
+
+  const RULE_ID = 'kw-fetchonly';
+
+  /* 命中夹具：hit 的 meta 就是编译产物该有的形状（pinId 由 core/index.js 摊进 meta）。
+   * `ruleId` 是**顶层**字段（`src/core/index.js` 的 `_hitRecord(r, extra)` 这么存的），
+   * img-ocr 的 `anchorsFor` 读的是 `h.ruleId` —— 漏了它条目键会变成 `undefined|src`。 */
+  const HITS = [];
+  function mkHit(meta, textNode) {
+    const h = {
+      ruleId: meta.pinId,
+      meta: Object.assign({ important: true, fetchHtml: '' }, meta),
+      textNode: textNode || null
+    };
+    HITS.push(h);
+    return h;
+  }
+
+  const hitCell = $('hit-cell');
+  const hitTextNode = hitCell && hitCell.firstChild;
+  window.__MANUAL__ = { cfg, HITS, OCR_META, OCR_TEXT, LABELS, RULE_ID, hitTextNode };
+
+  KH.registry = { all: () => HITS };
+
+  /* ---------------- 假截图：canvas 画出来，再当 <img src> ---------------- */
+  function drawShot() {
+    const img = $('shot');
+    if (!img) return;
+    const cv = document.createElement('canvas');
+    cv.width = 460; cv.height = 150;
+    const g = cv.getContext('2d');
+    g.fillStyle = '#ffffff'; g.fillRect(0, 0, cv.width, cv.height);
+    g.strokeStyle = '#c9d6e6'; g.lineWidth = 2; g.strokeRect(1, 1, cv.width - 2, cv.height - 2);
+    g.fillStyle = '#1f2937';
+    g.font = '600 20px "Microsoft YaHei", sans-serif';
+    g.fillText('计算机软件著作权登记证书', 18, 40);
+    g.font = '18px "Microsoft YaHei", sans-serif';
+    g.fillStyle = '#374151';
+    g.fillText(OCR_WORD + '：2018SR458983', 18, 80);
+    g.font = '14px "Microsoft YaHei", sans-serif';
+    g.fillStyle = '#6b7280';
+    g.fillText('著作权人：杭州某某科技有限公司', 18, 112);
+    img.src = cv.toDataURL('image/png');
+  }
+  drawShot();
+
+  /* ---------------- 探针 0：环境自检 ---------------- */
+  function probeEnv() {
+    const need = {
+      'KH.Config': KH.Config, 'KH.Compiler': KH.Compiler, 'KH.Cells': KH.Cells,
+      'KH.Scanner': KH.Scanner, 'KH.Fetch': KH.Fetch, 'KH.ImgOcr': KH.ImgOcr,
+      'KH.ImportantNote': KH.ImportantNote, 'KH.ui.dom': KH.ui && KH.ui.dom,
+      'KH.ui.Fields': KH.ui && KH.ui.Fields
+    };
+    const lines = [];
+    let allOk = true;
+    Object.keys(need).forEach((k) => {
+      const has = !!need[k];
+      if (!has) allOk = false;
+      lines.push(k + ' ' + (has ? '✓' : '✗ 没加载上'));
+    });
+    results.env = allOk;
+    lines.push(okLine('真实模块全部到位', allOk));
+    lines.push('命中夹具：' + HITS.length + ' 条；图片 src：' + String(($('shot') || {}).src || '').slice(0, 32) + '…');
+    out('probe-0', lines);
+    return allOk;
+  }
+
+  /* ---------------- 面板：用真实 consume 推一遍（与扩展同一入口） ---------------- */
+  function buildFixtures() {
+    HITS.length = 0;
+
+    /* 卡 A（①②）：抓取字段表格 —— 真实 blockFor 从上面那张真表里取值 */
+    mkHit({
+      text: '一对一', label: '合作说明', display: '一对一',
+      pinId: 'kw-a', fetchLabels: LABELS, fetchScope: 'self', imgOcr: false,
+      importantNote: '**应用详情**（抓取字段表格走真实 Fetch）：'
+    }, hitTextNode);
+
+    /* 卡 B（④）：仅抓取 —— display 与 label 同一个词。
+     * 必须带上能抓到的字段：仅抓取且 fetchHtml 为空的命中会被面板丢掉（不落一张空卡），
+     * 夹具只抓一个字段，既能让这张卡出现，又不会把 ①② 那张表重复一遍。 */
+    mkHit({
+      text: '计算机软件著作权登记证书', label: '计算机软件著作权登记证书', display: '计算机软件著作权登记证书',
+      fetchOnly: true, pinId: 'kw-b', fetchLabels: '开发者#0', fetchScope: 'self', imgOcr: false,
+      importantNote: '仅抓取模式：标签不该写成「🔖 X → X」。'
+    }, hitTextNode);
+
+    /* 卡 B2（④ 反例）：前后不是同一个词 */
+    mkHit({
+      text: '华为', label: '供应商', display: '华为',
+      pinId: 'kw-b2', fetchLabels: '', imgOcr: false,
+      importantNote: '前后不是同一个词时，「→ 后半截」照旧保留。'
+    });
+
+    /* 卡 C（⑤⑥）：仅抓取 + 图片命中词 —— meta 由真实 ocrExtraRows 消费 */
+    mkHit(Object.assign({
+      text: '登记号', label: '截图', display: '登记号',
+      fetchOnly: true, pinId: RULE_ID, fetchLabels: LABELS, fetchScope: 'self',
+      importantNote: '**OCR 命中后应补一行「登记号」**（只取命中行）：'
+    }, OCR_META), hitTextNode);
+  }
+
+  const panelEl = () => document.querySelector('#kh-important-note-host');
+  const shadow = () => { const h = panelEl(); return h && h.shadowRoot; };
+
+  function bootPanel() {
+    const feat = KH.features.get('important-note');
+    if (!feat || typeof feat.consume !== 'function') return false;
+    feat.consume(HITS, cfg);
+    return true;
+  }
+
+  /* ---------------- 探针 1：无后缀 ---------------- */
+  function probeSuffix() {
+    const sr = shadow();
+    if (!sr) { out('probe-1', [okLine('面板已渲染', false, '拿不到 shadowRoot')]); return; }
+    const labels = Array.from(sr.querySelectorAll('.kh-table-label'));
+    const txts = labels.map((td) => (td.textContent || '').trim());
+    const suffixEls = sr.querySelectorAll('.kh-table-suffix');
+    const dirty = txts.filter((t) => /[#!^%]/.test(t));
+    const pass = labels.length > 0 && suffixEls.length === 0 && dirty.length === 0;
+    results.suffix = pass;
+    out('probe-1', [
+      okLine('字段名格 ' + labels.length + ' 个，后缀徽标 ' + suffixEls.length + ' 个（应为 0）', pass),
+      '字段名实测：' + JSON.stringify(txts),
+      dirty.length ? '带后缀字符的格子：' + JSON.stringify(dirty) : '没有任何字段名带 # / ! / ^ / %'
+    ]);
+  }
+
+  /* ---------------- 探针 2：同值合并 + 悬停 ---------------- */
+  function probeMerge() {
+    const sr = shadow();
+    if (!sr) { out('probe-2', [okLine('面板已渲染', false)]); return; }
+    /* 只看**一张卡**：本页至少两张卡都带这张表，跨卡数「贷款超市类」自然会数出两次。 */
+    const card = Array.from(sr.querySelectorAll('.khin-item')).find((it) => (it.textContent || '').indexOf('应用功能类型') >= 0);
+    if (!card) { out('probe-2', [okLine('找到 ①② 那张卡', false)]); results.merge = false; return; }
+    const labels = Array.from(card.querySelectorAll('.kh-table-label')).map((td) => (td.textContent || '').trim());
+    const merged = labels.indexOf('应用功能类型/资质类型') >= 0;
+    const valCount = ((card.textContent || '').match(/贷款超市类/g) || []).length;
+    const lbt = Array.from(card.querySelectorAll('.kh-lbt')).map((s) => ({
+      shown: (s.textContent || '').trim(),
+      title: s.title || '',
+      /* 省略号是否真的生效：宽度被裁时 scrollWidth > clientWidth（判定用不到，只报给人看） */
+      clipped: s.scrollWidth > s.clientWidth + 1
+    }));
+    /* 悬停口径：title 必须等于完整文字（CSS 省略号负责裁切，title 负责悬停全文）——
+     * 不能用「title 比 shown 长」判定：`textContent` 本来就是全文，两者恒等。 */
+    const hoverOk = lbt.length > 0 && lbt.every((x) => x.title && x.title === x.shown);
+    const pass = merged && valCount === 1 && hoverOk;
+    results.merge = pass;
+    out('probe-2', [
+      okLine('合并成「应用功能类型/资质类型」一列', merged, merged ? '' : '实际字段名：' + JSON.stringify(labels)),
+      okLine('「贷款超市类」在这张卡里只出现 1 次', valCount === 1, '实测 ' + valCount + ' 次'),
+      okLine('每个字段名的 title 都是完整文字（悬停可看全文）', hoverOk, JSON.stringify(lbt)),
+      '被 CSS 省略号裁掉的：' + (lbt.filter((x) => x.clipped).map((x) => x.shown).join(' / ') || '（本视口下都没裁）')
+    ]);
+  }
+
+  /* ---------------- 探针 3：文本态 textarea ---------------- */
+  const fieldCtrls = [];
+  function buildFields() {
+    const host = document.querySelector('#stage-fields .kh-editor-sec-body');
+    if (!host || !(KH.ui && KH.ui.Fields)) return;
+    const LONG = '一对一,贷款超市类,资质类型,应用功能类型,计算机软件著作权登记证书,贷款超市类,网络小贷,融资担保';
+    const specs = [
+      { key: 'kw', label: '关键词', type: 'cands', placeholder: '多个用 | 分隔', clamp: false },
+      { key: 'titlekw', label: '标题关键词', type: 'cands', placeholder: '多个用 | 分隔', clamp: false },
+      { key: 'fetchlabels', label: '抓取后续字段', type: 'cands', token: true, clamp: true, placeholder: '字段名|字段名' },
+      { key: 'imgkw', label: '图片命中关键词', type: 'cands', regexAlways: true, clamp: false, placeholder: '图里要找的词' }
+    ];
+    specs.forEach((spec) => {
+      const v = spec.token
+        ? '应用功能类型|资质类型|截图#图|开发者#0|很长的字段名称用来验证省略号与悬停显示完整标签|网络小贷'
+        : LONG;
+      const ctrl = KH.ui.Fields.create(spec, v, { idPrefix: 'acc-' });
+      fieldCtrls.push(ctrl);
+      host.appendChild(ctrl.el);
+    });
+  }
+
+  function enterText(ctrl) {
+    const frame = ctrl.el.querySelector('.kh-cand-field');
+    if (!frame) return null;
+    frame.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    return ctrl.el.querySelector('textarea.kh-cand-ta');
+  }
+
+  function probeText() {
+    const ctrl = fieldCtrls[0];
+    if (!ctrl) { out('probe-3', [okLine('四个候选框已建出来', false)]); return; }
+    /* 四个框都验一遍；第一个保持展开态，让用户直接看见 */
+    const lines = [];
+    let pass = true;
+    fieldCtrls.forEach((c, i) => {
+      const ta = enterText(c);
+      const st = ta ? {
+        hidden: ta.hidden,
+        display: getComputedStyle(ta).display,
+        rows: ta.rows,
+        sh: ta.scrollHeight, ch: ta.clientHeight,
+        val: ta.value
+      } : null;
+      const thisOk = !!st && st.hidden === false && st.display !== 'none' && st.rows >= 2 &&
+        (st.ch === 0 || st.sh <= st.ch + 2) && st.val.length > 20;
+      if (!thisOk) pass = false;
+      lines.push(okLine('框 ' + (i + 1) + '（' + c.key + '）文本态', thisOk,
+        st ? ('textarea rows=' + st.rows + '，scrollHeight=' + st.sh + ' / clientHeight=' + st.ch +
+              '，值 ' + st.val.length + ' 字') : '找不到 textarea.kh-cand-ta'));
+      if (i > 0) { /* 其余框验完收回胶囊，避免四个大框挤成一坨 */
+        const box = c.el.querySelector('.kh-cand-box');
+        if (ta && box) { box.classList.remove('is-texed'); ta.hidden = true; }
+      }
+    });
+    /* 验框 2–4 时鼠标/焦点会跑到别的框，第一个框的 textarea 早被 blur 收回胶囊了 ——
+     * 要"最后留在展开态"就得**再进一次**（这也正好证明了 blur 收回是活的）。 */
+    enterText(ctrl);
+    const ta0 = ctrl.el.querySelector('textarea.kh-cand-ta');
+    lines.push('第一个框保持展开态可直接改；按回车收成胶囊。read() 现在 = ' +
+      JSON.stringify(ctrl.read()).slice(0, 60) + '…');
+    results.text = pass && !!(ta0 && !ta0.hidden && getComputedStyle(ta0).display !== 'none');
+    out('probe-3', lines);
+  }
+
+  /* ---------------- 探针 4：仅抓取标题 ---------------- */
+  function probeTag() {
+    const sr = shadow();
+    if (!sr) { out('probe-4', [okLine('面板已渲染', false)]); return; }
+    const items = Array.from(sr.querySelectorAll('.khin-item'));
+    const tagsOf = (it) => (it.querySelector('.khin-item-tags') || {}).textContent || '';
+    const only = items.find((it) => (it.textContent || '').indexOf('仅抓取模式') >= 0);
+    const plain = items.find((it) => (it.textContent || '').indexOf('前后不是同一个词') >= 0);
+    const onlyTag = only ? tagsOf(only).trim() : '';
+    const plainTag = plain ? tagsOf(plain).trim() : '';
+    const pass = onlyTag.indexOf('🔖') >= 0 && onlyTag.indexOf('→') < 0 && plainTag.indexOf('→') >= 0;
+    results.tag = pass;
+    out('probe-4', [
+      okLine('仅抓取卡：有 🔖、没有 →', onlyTag.indexOf('🔖') >= 0 && onlyTag.indexOf('→') < 0, JSON.stringify(onlyTag)),
+      okLine('普通卡：箭头照旧', plainTag.indexOf('→') >= 0, JSON.stringify(plainTag))
+    ]);
+  }
+
+  /* ---------------- 探针 5：仅抓取也要 OCR（真链路） ---------------- */
+  function probeOcrLaunch() {
+    const metaOk = OCR_META.imgOcr === true;
+    let built = 0, states = [], err = '';
+    try {
+      KH.ImgOcr.build(cfg, {}, HITS);
+      const list = KH.ImgOcr.items() || [];
+      const mine = list.filter((it) => it.ruleId === RULE_ID);
+      built = mine.length;
+      states = mine.map((it) => it.key + ':' + it.state);
+    } catch (e) { err = String(e && e.message || e); }
+    const pass = metaOk && built > 0;
+    results.ocrLaunch = pass;
+    out('probe-5', [
+      okLine('Compiler.ocrMeta({imgOcr:true}).imgOcr === true（旧版被 fetchOnly 抹成 false）', metaOk,
+        '实测 ' + JSON.stringify(OCR_META.imgOcr) + '，imgOcrKeyword=' + JSON.stringify(OCR_META.imgOcrKeyword)),
+      okLine('ImgOcr.build() 为本规则建出了条目（旧版 0 条）', built > 0,
+        '条目 ' + built + ' 条：' + (states.join('，') || '—') + (err ? '（异常：' + err + '）' : '')),
+      '提交内容（chrome.runtime 替身接住的）：' + JSON.stringify(window.__OCR_REQ_SEEN__ || null).slice(0, 160)
+    ]);
+  }
+
+  /* ---------------- 探针 6：键值行进表 ---------------- */
+  function probeKv() {
+    const sr = shadow();
+    if (!sr) { out('probe-6', [okLine('面板已渲染', false)]); return; }
+    const items = Array.from(sr.querySelectorAll('.khin-item'));
+    const card = items.find((it) => (it.textContent || '').indexOf('OCR 命中后') >= 0);
+    const txt = card ? (card.textContent || '') : '';
+    const hasKey = txt.indexOf('登记号') >= 0;
+    const hasVal = txt.indexOf('2018SR458983') >= 0;
+    const leaked = txt.indexOf('著作权人') >= 0;
+    const done = (KH.ImgOcr.items() || []).some((it) => it.ruleId === RULE_ID && it.state === 'done');
+    const pass = done && hasKey && hasVal && !leaked;
+    results.kv = pass;
+    out('probe-6', [
+      okLine('条目已识别完成（state=done）', done),
+      okLine('卡片出现「登记号 → 2018SR458983」', hasKey && hasVal),
+      okLine('非命中行没有漏进卡片（著作权人）', !leaked, leaked ? '泄漏了：' + txt.slice(0, 120) : ''),
+      card ? '该卡表格文本：' + JSON.stringify(txt.replace(/\s+/g, ' ').slice(0, 150)) : '找不到「OCR 命中后」那张卡'
+    ]);
+  }
+
+  /* ---------------- 探针 7：合并反例舞台 ---------------- */
+  function renderDemos() {
+    const F = KH.Fetch;
+    const mk = (label, value, opt) => ({ label: label, rows: [[{ t: value }]], opt: opt || null });
+    const same = F.rowsToTableHtml([mk('应用功能类型', '贷款超市类'), mk('资质类型', '贷款超市类')]);
+    const diff = F.rowsToTableHtml([mk('应用功能类型', '贷款超市类'), mk('资质类型', '融资担保')]);
+    const opt = F.rowsToTableHtml([mk('截图', '贷款超市类', { imgOnly: true }), mk('资质类型', '贷款超市类', null)]);
+    window.__DEMOS__ = { same, diff, opt };
+    const put = (id, html) => {
+      const el = $(id); if (!el) return;
+      el.innerHTML = '<table class="kh-table kh-table-fetch"><tbody>' + String(html || '').split('</tr>').map((r, i, a) => i < a.length - 1 ? r + '</tr>' : '').join('') + '</tbody></table>';
+      /* 用真实笔记里的同一套包裹：字段名格 → .kh-lbt（省略号 + title 悬停） */
+      Array.from(el.querySelectorAll('.kh-table-label')).forEach((td) => {
+        const txt = td.textContent || '';
+        const span = document.createElement('span');
+        span.className = 'kh-lbt';
+        span.title = txt;
+        span.textContent = txt;
+        td.textContent = '';
+        td.appendChild(span);
+      });
+    };
+    put('demo-same', same); put('demo-diff', diff); put('demo-opt', opt);
+    const count = (html, name) => (String(html).match(new RegExp('>' + name + '<', 'g')) || []).length;
+    const sameMerged = count(same, '应用功能类型/资质类型') === 1;
+    const diffSplit = count(diff, '应用功能类型') >= 1 && count(diff, '资质类型') >= 1 && count(diff, '应用功能类型/资质类型') === 0;
+    const optSplit = count(opt, '截图/资质类型') === 0;
+    const pass = sameMerged && diffSplit && optSplit;
+    results.demo = pass;
+    out('probe-7', [
+      okLine('值相同 ⇒ 合并成 `应用功能类型/资质类型`', sameMerged, JSON.stringify(String(same).slice(0, 120))),
+      okLine('值不同 ⇒ 不合并', diffSplit),
+      okLine('值同但图片策略不同 ⇒ 不合并', optSplit)
+    ]);
+  }
+
+  /* ---------------- 装配 ---------------- */
+  function refreshAll() {
+    probeEnv();
+    const ok = bootPanel();
+    if (!ok) { out('probe-1', [okLine('important-note 的 consume 入口', false, '注册表里没有')]); return; }
+    probeSuffix();
+    probeMerge();
+    probeTag();
+    probeOcrLaunch();
+    probeKv();
+  }
+
+  /* 启动顺序：夹具 → ④/①② 面板 → ③ 控件 → 反例 → 探针 */
+  buildFixtures();
+  buildFields();
+  renderDemos();
+  refreshAll();
+  probeText();
+
+  /* ---------------- 按钮：喂回 / 清空 OCR ---------------- */
+  $('feed-ocr').addEventListener('click', () => {
+    const src = String(($('shot') || {}).src || '');
+    const req = window.__OCR_REQ__ || {};
+    /* 真实回填入路：_onResult 是 img-ocr.js 导出给诊断/单测的同一个函数 */
+    KH.ImgOcr._onResult({
+      ok: true, requestId: 'req-1', src: src || req.src,
+      text: OCR_TEXT, confidence: 0.93, ocrMs: 1260
+    });
+    setTimeout(() => { probeOcrLaunch(); probeKv(); probeMerge(); }, 30);
+  });
+
+  $('reset-ocr').addEventListener('click', () => {
+    window.__OCR_REQ__ = null;
+    try { KH.ImgOcr.clearManual(); } catch (e) { /* 忽略 */ }
+    KH.ImgOcr.build(cfg, {}, HITS);
+    setTimeout(() => { probeOcrLaunch(); probeKv(); }, 30);
+  });
+
+  window.__MANUAL__.results = results;
+  window.__MANUAL__.refreshAll = refreshAll;
+  window.__MANUAL__.probeText = probeText;
+  window.__MANUAL__.fieldCtrls = fieldCtrls;
+})();
+</script>
+</body>
+</html>

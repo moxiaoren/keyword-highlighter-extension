@@ -856,8 +856,15 @@
   /* 输入框的**内在最小宽**（`size` 属性那 20 来个字符）会顺着列容器撑宽整张卡 ——
    * 实测不写这条，三个框同时进文本态时卡片正文从 305 长到 468，整列跟着变宽。 */
   min-width: 0;
-  padding: 5px 8px; line-height: 20px; resize: vertical; overflow: auto;
-  font: inherit; color: inherit; background: inherit;
+  /* 【2.0.2.18 真机修】两处让「按内容长高」失效的坑，都在真机上才看得出来：
+   * ① `.kh-input` 写着 `height: 30px` ⇒ 只给 `min-height` 是压不住的，textarea 恒定一行、
+   *    多出来的内容藏在内部滚动条里（验收页实测 `scrollHeight 56 / clientHeight 28`）。
+   * ② `font: inherit` 是**简写**，会把前面写的 `line-height` 重置回继承值（实测 23.1px 而不是
+   *    20px），JS 按 20 算行数就永远偏小。所以：简写在前、`line-height` 在后、并显式 `height:auto`。 */
+  font: inherit; line-height: 20px;
+  height: auto;
+  padding: 5px 8px; resize: vertical; overflow: auto;
+  color: inherit; background: inherit;
 }
 .kh-cand-box.is-texed > .kh-cand-ta[hidden] { display: none; }
 .kh-cand-box.is-texed > .kh-cand-field { display: none; }

@@ -214,6 +214,17 @@ module.exports = async function run() {
     eq((css.match(/\.kh-cand-box\.is-texed > \.kh-cand-field/g) || []).length, 1, '文本态藏起框面的规则只许有一份');
     /* 旧口径不许留：单行 input 撑满文本态的那条规则已经作废（会与 textarea 同显两个框） */
     eq((css.match(/\.kh-cand-box\.is-texed > \.kh-input/g) || []).length, 0, '单行 input 的文本态规则必须删净');
+    /* 【2.0.2.18 真机修·门禁】「文本态按内容长高」在真机上被两条 CSS 卡死过，这里钉住：
+     *   ① `.kh-input` 的 `height: 30px` 会把 textarea 压成恒定一行 ⇒ 必须显式 `height: auto`；
+     *   ② `font: inherit` 是简写，会重置 `line-height`（实测 23.1px）⇒ `line-height` 必须写在它后面。 */
+    const taRule = (css.match(/\.kh-cand-box\.is-texed > \.kh-cand-ta \{([\s\S]*?)\}/) || [])[1] || '';
+    truthy(/height:\s*auto/.test(taRule), '文本域必须显式 height:auto（否则被 .kh-input 的 30px 压成一行）');
+    const iFont = taRule.indexOf('font:');
+    const iLH = taRule.indexOf('line-height');
+    truthy(iLH >= 0, '文本域必须写 line-height（JS 按它算行数）');
+    truthy(iFont < 0 || iLH > iFont, 'line-height 必须写在 font 简写之后（简写会把它重置掉）');
+    /* JS 侧同样不许硬编码行高：行高/内边距要从计算样式里量（真机是 23.1px，不是 20px） */
+    truthy(/getComputedStyle/.test(fieldsSrc), '行高要实测，不许硬编码');
   });
 
   /* 【2.0.2.17 需求③】用户原话："这四个输入框，点击空白后变成文本内容支持批量修改已实现。

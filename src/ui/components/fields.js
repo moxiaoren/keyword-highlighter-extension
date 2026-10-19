@@ -441,11 +441,15 @@
         /** 文本态高度跟着内容走（上限 9 行，再多就滚动）：进文本态是为了**改**，看不全就没意义。 */
         const autoGrow = () => {
           if (!textMode) return;
-          const lineH = 20;            // 与 CSS 的 line-height: 20px 一致
           try {
             ta.rows = 1;               // 先复位，scrollHeight 才反映真实内容高度
-            const hgt = ta.scrollHeight || 0;
-            ta.rows = Math.max(1, Math.min(9, hgt > 0 ? Math.ceil(hgt / lineH) : 1));
+            /* 行高/内边距**实测**，不写死 20：CSS 里的 `font: inherit` 会把 `line-height` 重置，
+             * 真机算出来是 23.1px（2.0.2.18 验收页实测）—— 硬编码 20 会让行数永远偏少。 */
+            const cs = (window.getComputedStyle ? window.getComputedStyle(ta) : null);
+            const lineH = (cs && parseFloat(cs.lineHeight)) || 20;
+            const padY = cs ? ((parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0)) : 0;
+            const need = Math.max(0, (ta.scrollHeight || 0) - padY);
+            ta.rows = Math.max(1, Math.min(9, need > 0 ? Math.ceil(need / lineH) : 1));
           } catch (e) { /* 垫片没有 layout：保持 rows=1 */ }
         };
         /** 重画胶囊（唯一入口：输入时、增删改后、正则开关翻动后都走它）。 */

@@ -1482,9 +1482,14 @@
 
     /* 【2.0.2.17 需求②】同一张卡片（同一块）里，**内容完全一致**的字段合并成一列：
      * 标签用 `/` 连接（`应用功能类型/资质类型`），值只写一遍。
-     * 判据用渲染输入本身（`rows` + 图片选项），不猜标签、也不做模糊归一：
-     * 值不同、图片策略不同（仅图片 / 前 N 张）⇒ 一律不合并。跨块/跨卡片不合并。 */
-    const sigOf = (it) => JSON.stringify([it.rows, it.opt || null]);
+     * 判据用渲染输入里的**内容**，不猜标签、也不做模糊归一：值不同 ⇒ 不合并。
+     * ⚠️ 签名**不能**直接 `JSON.stringify([rows, opt])`（2.0.2.18 修的）：`opt` 是字段级选项
+     * 对象，里面带 `label`（每个字段都不同）⇒ 真机里任何两个字段的签名都不相等，合并永远
+     * 不触发（单测当时喂的是 `opt:null`，所以没抓到）。同理 `rows` 里的 `rs/cs` 是排版提示，
+     * 相同内容在 grid 分支会被加上，也不该参与比较。 */
+    const contentOf = (it) => (it.rows || []).map((line) => (line || []).map((c) => String((c && c.t) == null ? '' : c.t)));
+    const imgPolicyOf = (opt) => [!!(opt && opt.imgOnly), (opt && opt.imgLimit) || 0, !!(opt && opt.noImg)];
+    const sigOf = (it) => JSON.stringify([contentOf(it), imgPolicyOf(it.opt)]);
     const bySig = new Map();
     const merged = [];
     for (const it of items) {

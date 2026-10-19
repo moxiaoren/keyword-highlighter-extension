@@ -1359,4 +1359,23 @@ module.exports = async function run() {
     truthy(three.indexOf('A/B/C') >= 0, '三个同值字段都要保留名字：' + three);
   });
 
+  await test('★ 需求②回归：真机形状（opt 带 label、cells 带 rs/cs）同样必须合并（2.0.2.18）', () => {
+    /* 上一版判据是 `JSON.stringify([rows, opt])`，而真机 `computeBlock` 传的是
+     * `opt: optOf[label]` —— 每个字段一个**独立对象**、且对象里带 `label`（必然不同），
+     * 于是签名永不相等、合并一条都不触发。单测当时喂 `opt:null` 才漏掉的。 */
+    const realSame = F.rowsToTableHtml([
+      { label: '应用功能类型', opt: { label: '应用功能类型', suffix: '', noImg: true }, rows: [[{ t: '贷款超市类', rs: 1, cs: 1 }]] },
+      { label: '资质类型', opt: { label: '资质类型', suffix: '', noImg: true }, rows: [[{ t: '贷款超市类', rs: 1, cs: 1 }]] }
+    ]);
+    truthy(realSame.indexOf('应用功能类型/资质类型') >= 0, '真机形状也要合并：' + realSame);
+    eq((realSame.match(/贷款超市类/g) || []).length, 1, '值只写一遍');
+    /* 反向：真机形状下图片策略不同（仅图片 vs 普通）仍不许合并 */
+    const IMG = '\u0001KHIMG\u0001a|https://ex.com/a.png\u0001ENDIMG\u0001';
+    const realOptDiff = F.rowsToTableHtml([
+      { label: '截图', opt: { label: '截图', imgOnly: true }, rows: [[{ t: IMG }]] },
+      { label: '截图2', opt: { label: '截图2' }, rows: [[{ t: IMG }]] }
+    ]);
+    eq((realOptDiff.match(/kh-table-label/g) || []).length, 2, '图片策略不同 ⇒ 不合并');
+  });
+
 };
