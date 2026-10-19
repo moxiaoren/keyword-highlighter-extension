@@ -305,8 +305,56 @@
     /** 命中查询（配合 pointToRange 使用） */
     hitAtPoint(x, y) {
       const p = this.pointToRange(x, y);
-      if (!p) return null;
-      return KH.registry.query(p.node, p.offset);
+      const hit = p ? KH.registry.query(p.node, p.offset) : null;
+      /* 【只有"点落在词上"才算命中（2.0.2.16 需求⑥）】
+       * caret 在**同一段文字的空白区**会把 offset 给到该命中段末，而 `registry.query` 那条
+       * "点词尾右侧像素"的兜底（`offset === seg.end`）就认了 ⇒ 一个只有命中词的宽单元格里，
+       * 鼠标进到格子任意位置、点格子空白处都会弹备注卡（用户实测要求：悬浮与点击都严格限制在
+       * 命中词高亮范围内）。现在先看这个点是不是落在这条命中自己的高亮矩形上（3px 容差），
+       * 不是就退回几何判据（`_hitByGeometry` 另有 20px 上限）。矩形量不出来时保持旧行为——
+       * 浮层盖住文字 / Shadow DOM 这些场景本来就靠 caret 通道，不该因为量不到矩形而失效。 */
+      if (!hit) return null;
+      const rects = this._rectsOf(hit);
+      if (!rects.length) return hit;
+      const TOL = 3;
+      for (const rc of rects) {
+        if (x >= rc.left - TOL && x <= rc.right + TOL && y >= rc.top - TOL && y <= rc.bottom + TOL) return hit;
+      }
+      /* 几何兜底必须回**命中记录**本身（`_hitByGeometry` 给的是 `{node, offset}` 定位，没有
+       * `meta` —— 直接返回它会让备注卡读不到 `meta.note`，跨节点命中的第二段正是这么失效的）。 */
+      const geo = this._hitByGeometry(x, y);
+      if (!geo) return null;
+      return KH.registry.query(geo.node, geo.offset) || hit;
+    },
+
+    /**
+     * 一条命中自己的**可视矩形列表**（每个非空 client rect 一条）。
+     * 与 `_hitByGeometry` 同一套 Range 口径（优先复用渲染层缓存的 `hit._range`），
+     * 只给"这个点是不是真落在词上"用，不另建第二真源。
+     * 【为什么是列表】跨节点命中（`审核<span>不通过</span>`）与折行命中的一条 Range 会量出
+     * 多个矩形：只取第一个的话，点在后半段/第二行就会被判成"不在词上"。
+     */
+    _rectsOf(h) {
+      if (!h || !h.textNode || !h.textNode.isConnected) return [];
+      let range = h._range || null;
+      if (!range || range.startContainer !== h.textNode) {
+        try {
+          range = document.createRange();
+          range.setStart(h.textNode, Math.min(h.start, h.textNode.nodeValue.length));
+          if (h.endNode && h.endNode !== h.textNode && h.endNode.isConnected) {
+            range.setEnd(h.endNode, Math.min(h.endOffset || 0, h.endNode.nodeValue.length));
+          } else {
+            range.setEnd(h.textNode, Math.min(h.end, h.textNode.nodeValue.length));
+          }
+        } catch (err) {
+          return [];
+        }
+      }
+      let rects;
+      try { rects = range.getClientRects(); } catch (err) { return []; }
+      const out = [];
+      for (const rc of rects) if (rc && (rc.width || rc.height)) out.push(rc);
+      return out;
     },
 
     /** 全量重建：唯一入口 */

@@ -240,8 +240,53 @@ module.exports = async function run() {
     const cb = src.slice(at, at + 300);
     truthy(cb.indexOf('panel.renderImg()') >= 0, '识别状态变化要刷新面板');
     truthy(/renderImg\(\)\s*\{[\s\S]{0,900}?renderCtxCard\(\)/.test(src), 'renderImg 里要重建那张卡');
-    truthy(/renderCtxCard\(\)\s*\{[\s\S]{0,400}?removeChild/.test(src), '重建前先摘掉旧节点（不叠卡）');
-    truthy(/renderItems\(\)\s*\{[\s\S]{0,260}?this\.ctxEl = this\.ctxCard\(doc\)/.test(src),
+    truthy(/renderCtxCard\(\)\s*\{[\s\S]{0,500}?removeChild/.test(src), '重建前先摘掉旧节点（不叠卡）');
+    /* 2.0.2.16 需求⑦ 起这张卡排到**最下方**，所以赋值点从函数开头挪到了笔记卡循环之后；
+     * 契约不变：整块重建时也要把新卡记到 ctxEl（否则下次 renderCtxCard 摘不到它）。 */
+    truthy(/for \(const item of this\.items\)[\s\S]{0,2000}?this\.ctxEl = this\.ctxCard\(doc\)/.test(src),
       '整块重建时也要把新卡记到 ctxEl（否则下次 renderCtxCard 摘不到它）');
+  });
+
+  /* ==========================================================================
+   * ④ 右键那张卡：可关闭、排最下方、不干扰置顶排序（2.0.2.16 需求⑦）
+   * ==========================================================================
+   * 用户原话（m01585-7）："要支持关闭（视为之前添加的图片 OCR 都取消）；排序放在最下方；
+   * 不要影响设置卡片置顶排序"。
+   */
+
+  await test('★ 卡上有 ✕，点了整批取消手动 OCR（面板不自己动内部表）', () => {
+    const p = shadowPanel();
+    p.imgItems = [{ key: 'ctxmenu|a', src: 'https://ex.com/a.png', state: 'done', via: 'contextMenu' }];
+    const card = p.ctxCard(document);
+    const head = card.querySelector('.khin-item-head');
+    truthy(head, '卡上要有题头行（✕ 挂在这里，与笔记卡同构）');
+    const btn = head.querySelector('.khin-item-close');
+    truthy(btn, '★ 必须有 ✕（用户要求：右键 OCR 的卡要能关）');
+    eq(btn.title, KH.OcrCopy.VIEW.removeTip, '悬停文案取面板真源（面板里不许写死）');
+    eq(btn.textContent, '✕');
+    /* 记下 clearManual 被调了几次（真实面板里它会 notify ⇒ 面板重画） */
+    const imgOcr = KH.ImgOcr;
+    const realClear = imgOcr && imgOcr.clearManual;
+    let calls = 0;
+    imgOcr.clearManual = () => { calls++; };
+    try {
+      btn.dispatchEvent({ type: 'click' });
+    } finally { imgOcr.clearManual = realClear; }
+    eq(calls, 1, '★ 点 ✕ 走 clearManual（整批作废，不是只藏这张卡）');
+  });
+
+  await test('★ 这张卡排最下方，且不进置顶排序（笔记卡在上，右键产物在下）', () => {
+    const src = read('src/features/important-note.js');
+    /* 整块重建：先画完全部笔记卡，再把右键卡 append 到最后 */
+    truthy(/for \(const item of this\.items\)[\s\S]{0,2000}?this\.ctxEl = this\.ctxCard\(doc\);[\s\S]{0,300}?this\.bodyEl\.appendChild\(this\.ctxEl\)/.test(src),
+      '★ 右键卡必须排在笔记卡之后（appendChild 在循环外）');
+    /* 单选刷新：也只许 append，不许插到最前 */
+    truthy(/renderCtxCard\(\)\s*\{[\s\S]{0,600}?this\.bodyEl\.appendChild\(this\.ctxEl\)/.test(src),
+      '重建那张卡时同样 append（append = 最下方）');
+    falsy(src.indexOf('insertBefore(this.ctxEl') >= 0, '★ 旧实现是插到最前，这条锁着别回去');
+    /* 置顶排序只作用于笔记卡：ctx 卡不进那张表 */
+    truthy(src.indexOf('const sorted = pins.length ? head.sortByPins(items, pins) : items;') >= 0,
+      '置顶排序仍然只排笔记卡');
+    falsy(/sortByPins\([^)]*ctx/.test(src), '★ 右键卡不许进置顶排序（不许影响设置里的卡片顺序）');
   });
 };

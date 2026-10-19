@@ -162,4 +162,54 @@ module.exports = async function run() {
     eq(ctrl.read(), '备注', '清空那一段就是把它删掉');
     eq(textOf(ctrl, '.kh-lbl-name').join('/'), '备注', '预览里也不留空胶囊');
   });
+
+  /* ================= 【2.0.2.16 需求③】四个候选框口径统一 =================
+   * 用户口径：「这四个输入框风格、格式需要作为门禁统一，一处修改四处都统一」。
+   * 门禁两层：① 四个字段都用同一份 `cands` 实现、同一组开关（不许哪个字段自己长特例）；
+   * ② 造出来的控件结构逐项相同（万一将来有人给某一个框加个 if，这条会红）。
+   * 宽度这类真要排版的判据在真机层（`_e2e/ui.test.js`）量，垫片没有布局引擎。 */
+  suite('四个候选框口径统一（2.0.2.16 需求③）');
+  const CANDS_KEYS = ['text', 'cellVerify', 'fetchLabels', 'imgOcrKeyword'];
+  const shapeOf = (key) => {
+    const ctl = KH.ui.Fields.create(FM.byKey(key), '', {});
+    const el = ctl.el;
+    const n = (sel) => el.querySelectorAll(sel).length;
+    const cls = String(el.className || '').split(/\s+/);
+    return {
+      box: cls.indexOf('kh-cand-box') >= 0,
+      clamp: cls.indexOf('kh-cand-clamp') >= 0,
+      inp: n('.kh-input'),
+      preview: n('.kh-lbl-preview'),
+      frame: n('.kh-cand-field'),
+      add: n('.kh-cand-add'),
+      btn: n('.kh-clamp-btn'),
+      texttip: n('.kh-cand-texttip'),
+    };
+  };
+
+  await test('★ 四个框是同一份控件、同一组开关（关键词/标题关键词/字段/图片命中关键词）', () => {
+    for (const key of CANDS_KEYS) {
+      const spec = FM.byKey(key);
+      eq(spec.type, 'cands', key + ' 必须走 cands 这一份实现（风格统一靠它，不是各写一套）');
+      eq(spec.clamp, true, key + ' 必须默认单行裁切 + 展开（四个框同一口径）');
+    }
+    const base = shapeOf(CANDS_KEYS[0]);
+    for (const key of CANDS_KEYS.slice(1)) {
+      const got = shapeOf(key);
+      for (const k of Object.keys(base)) eq(got[k], base[k], key + ' 的结构项 ' + k + ' 必须与关键词框一致');
+    }
+  });
+
+  await test('★ 门禁：候选框实现与共享样式只许有一份（复制粘贴第二套就红）', () => {
+    const fieldsSrc = read('src/ui/components/fields.js');
+    eq((fieldsSrc.match(/case 'cands':/g) || []).length, 1, '`cands` 只许有一个实现分支');
+    const css = read('src/ui/components/components.css');
+    for (const sel of ['.kh-cand-field', '.kh-cand-clamp', '.kh-lbl-preview', '.kh-cand-texttip']) {
+      truthy(css.indexOf(sel) >= 0, sel + ' 必须在共享样式里定义（四个框共用一份）');
+    }
+    /* 文本态的三条规则必须挂在 `.kh-cand-box` 作用域下 —— 否则会波及设置页的「置顶排序」胶囊 */
+    eq((css.match(/\.kh-cand-box\.is-texed/g) || []).length >= 3, true, '文本态规则要成组（输入框/藏框面/占整行）');
+    eq((css.match(/\.kh-cand-box\.is-texed > \.kh-input/g) || []).length, 1, '文本态的输入框规则只许有一份');
+    eq((css.match(/\.kh-cand-box\.is-texed > \.kh-cand-field/g) || []).length, 1, '文本态藏起框面的规则只许有一份');
+  });
 };

@@ -981,6 +981,16 @@
 
   KH.ImgOcr = {
     items: allItems,
+    /**
+     * 关掉右键那张「截图」卡（2.0.2.16 需求⑦）：把这些手动条目整批丢掉。
+     * 只清 `manual`，**不动 `textCache`** —— 用户说的是"这张卡不再显示"，不是"忘掉识别结果"；
+     * 同一张图之后再右键仍然命中缓存，不必重跑引擎。`notify()` 会让面板重画那张卡（没有条目就不画）。
+     */
+    clearManual() {
+      if (!manual.size) return;
+      manual.clear();
+      notify();
+    },
     /** 当前在途额度（≥1 = 有识别在飞）。调度侧用它给重建让路（见 `scheduler.js:_deferToOcr`）
      *  —— 重建是同步全页扫描，一跑起来就把识别结果挤在门外。 */
     inflightCount: () => quotaUsed(),

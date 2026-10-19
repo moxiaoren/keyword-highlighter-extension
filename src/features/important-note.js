@@ -1692,6 +1692,24 @@
       if (!list.length) return null;
       const el = doc.createElement('div');
       el.className = 'khin-item khin-item-ctx';
+      /* 【2.0.2.16 需求⑦】右键识别的卡也要能关：关掉 = 这一批手动条目整批作废（`clearManual`）。
+       * 文案走 `VIEW.removeTip`（"本次页面不再显示"），与笔记卡的 ✕ 同一句口径 —— 面板不许自己写死。
+       * 关掉**不清文字缓存**：再右键同一张图不必重跑引擎（见 `KH.ImgOcr.clearManual` 的注释）。 */
+      const headEl = doc.createElement('div');
+      headEl.className = 'khin-item-head';
+      const tagsEl = doc.createElement('div');
+      tagsEl.className = 'khin-item-tags';
+      const closeBtn = doc.createElement('button');
+      closeBtn.className = 'khin-item-close';
+      closeBtn.title = KH.OcrCopy.VIEW.removeTip;
+      closeBtn.textContent = '✕';
+      closeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (KH.ImgOcr && typeof KH.ImgOcr.clearManual === 'function') KH.ImgOcr.clearManual();
+      });
+      headEl.appendChild(tagsEl);
+      headEl.appendChild(closeBtn);
+      el.appendChild(headEl);
       const noteEl = doc.createElement('div');
       noteEl.className = 'khin-item-note';
 
@@ -1747,7 +1765,10 @@
       if (!this.bodyEl) return;
       if (this.ctxEl && this.ctxEl.parentNode) this.ctxEl.parentNode.removeChild(this.ctxEl);
       this.ctxEl = this.ctxCard(document);
-      if (this.ctxEl) this.bodyEl.insertBefore(this.ctxEl, this.bodyEl.firstChild || null);
+      /* 【2.0.2.16 需求⑦】右键那张「截图」卡排**最下方** —— 它是用户随手识别的产物，
+       * 不该压在设置里的卡片（尤其是置顶排序排到最前的那些）上面。只在这里 append，
+       * 不参与 `sortByPins`：卡间排序是笔记卡之间的事，右键卡不进那张表。 */
+      if (this.ctxEl) this.bodyEl.appendChild(this.ctxEl);
       this.bodyEl.hidden = !(this.items.length || this.ctxEl);
     },
 
@@ -1755,8 +1776,6 @@
       if (!this.bodyEl) return;
       const doc = document;
       this.bodyEl.textContent = '';
-      this.ctxEl = this.ctxCard(doc);
-      if (this.ctxEl) this.bodyEl.appendChild(this.ctxEl);
       for (const item of this.items) {
         const el = doc.createElement('div');
         el.className = 'khin-item';
@@ -1791,6 +1810,10 @@
         el.appendChild(noteEl);
         this.bodyEl.appendChild(el);
       }
+      /* 【2.0.2.16 需求⑦】右键识别的「截图」卡排**最下方**：笔记卡（含置顶排序的）在上，
+       * 右键产物在下。整块重建时它要跟着重画，所以这条 append 也留在这里。 */
+      this.ctxEl = this.ctxCard(doc);
+      if (this.ctxEl) this.bodyEl.appendChild(this.ctxEl);
     },
 
     /**

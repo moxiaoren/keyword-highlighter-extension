@@ -677,9 +677,18 @@
   color: var(--text-4); font-size: var(--fs-sm); line-height: 1; cursor: pointer;
 }
 .kh-cand-add:hover { background: var(--brand-softer); color: var(--brand-deep); }
-/* 字段盒是**列**容器 ⇒ 这里不能用 `flex: 1 1 100%`（basis 会被当**高度**用，撑爆一行）；
- * 要的是"自己占满一行宽"，所以固定宽 100%。 */
-.kh-cand-tip { flex: 0 0 auto; width: 100%; color: var(--warning); font-size: var(--fs-xs); line-height: 1.5; }
+/* 【2.0.2.16 需求⑤】「这是字面量」提醒改成**浮层**：它以前是 flex 里的一整行（`width:100%`），
+ * 一出现就把字段盒撑高一两行，同一张卡里下面所有字段跟着往下掉、和旁边字段对不齐
+ * （用户原话：「说明文字……破坏了页面结果布局」）。现在绝对定位挂在框**下方**，出现/消失
+ * 都不改任何盒子的高度；`.kh-cand-box` 负责当定位父级（见 `position: relative` 那条）。
+ * 它仍参与最近滚动容器的可滚区（`.kh-modal-body`），所以贴底时也能滚出来看。 */
+.kh-cand-box { position: relative; }
+.kh-cand-tip {
+  position: absolute; left: 0; right: 0; top: calc(100% + 3px); z-index: 40;
+  flex: none; width: auto; padding: 4px 7px; border-radius: var(--r-sm);
+  border: 1px solid var(--border-2); background: var(--card);
+  color: var(--warning); font-size: var(--fs-xs); line-height: 1.5;
+}
 .kh-cand-tip[hidden] { display: none; }
 /* 单行编辑浮层：数值 / 候选都往这里摆**真输入框**（`.kh-input` 自带 width:100%，按用途收窄） */
 .kh-pop-edit { min-width: 0; padding: 8px; }
@@ -752,8 +761,11 @@
 
 /* 票 #57：字段子块（图片 OCR 三件）。虚线小方块 = 「这是抓取的一个分支」，
  * 而不是三件各自换行、底对齐成阶梯的独立控件。 */
+/* `min-width: 0` 不是可选项（2.0.2.16 需求①）：flex 项默认 `min-width: auto` 会吃**内容最小宽**，
+ * 子块里的候选框（`flex-basis: calc(50% - 6px)`）一长，子块就被撑到 575px、把「图片命中关键词」
+ * 顶出卡片 197px（实测 boxW 493 / cardW 305）。`min-width:0` 后子块跟着卡片宽，候选框自己裁切。 */
 .kh-fld-sub {
-  flex: 1 1 100%;
+  flex: 1 1 100%; min-width: 0;
   display: flex; flex-wrap: wrap; align-items: flex-end; gap: 4px 10px;
   padding: 4px 8px 8px;
   border: 1px dashed var(--border-2); border-radius: var(--r-md);
@@ -833,3 +845,24 @@
 .kh-cand-clamp.is-open .kh-lbl-name { max-width: none; white-space: normal; overflow-wrap: anywhere; }
 /* 抓取字段的胶囊带后缀徽标（`#图3` / `%4`）：胶囊本身不参与压缩，否则徽标会被裁掉 */
 .kh-cand-token .kh-lbl-chip { flex: 0 0 auto; }
+
+/* ==== 【2.0.2.16 需求②】候选框的**文本态**：点框面空白处 ⇒ 胶囊还原成一整串文本（`|` 分隔），
+ * 回车 / 点框外再收成胶囊。四个候选框（关键词 / 标题关键词 / 字段 / 图片命中关键词）共用这一份
+ * —— 这里**不许**出现按 `[data-for="fld-xxx"]` 的单字段特例（需求③：一处修改、四处统一）。 */
+.kh-cand-box.is-texed > .kh-input {
+  display: block; width: 100%; box-sizing: border-box; min-height: 30px;
+  /* 输入框的**内在最小宽**（`size` 属性那 20 来个字符）会顺着列容器撑宽整张卡 ——
+   * 实测不写这条，三个框同时进文本态时卡片正文从 305 长到 468，整列跟着变宽。 */
+  min-width: 0;
+}
+.kh-cand-box.is-texed > .kh-cand-field { display: none; }
+/* 文本态**占满一行**（与「展开」同一口径：展开后的形态可以占满容器宽、但不许超出）——
+ * 一整串候选在 148px 的半行里根本没法看，半行 + 横向滚动是更差的选择。
+ * 退出文本态（回车 / 点框外）立刻回到 `kh-fld` 的原始宽度。 */
+.kh-cand-box.is-texed { flex: 1 1 100%; min-width: 0; contain: inline-size; }
+/* 提醒行**必须允许换行**：`white-space: nowrap` 会把整句的宽度算进 `.kh-cand-box` 的最小宽，
+ * 顺着 `.kh-fld-sub` 把「抓取后续字段」卡片从 327 撑到 490（实测两次）。文本态本来就整行，
+ * 40 来个字在 305px 里两行就放下了。 */
+/* 文本态的提醒行：`|` 是分隔符，不是正则的「或」（比错误提示弱一级，所以不用 warning 色） */
+.kh-cand-texttip { color: var(--text-3); }
+.kh-cand-texttip[hidden] { display: none; }

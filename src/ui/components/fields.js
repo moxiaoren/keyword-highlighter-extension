@@ -341,7 +341,10 @@
        * 不变式与 `labels` 完全一致：没动过 ⇒ `read()` 逐字返回原串；有待定文本 ⇒ 也带上
        * （没回车直接保存不丢数据）。存储契约不变（仍是整串原文，分隔符由 storage 归一）。 */
       case 'cands': {
-        const inp = h('input', { class: 'kh-input', type: 'text', id: id, value: '', placeholder: spec.placeholder });
+        /* `size: 1`：文本态把这个框整行显示时，输入框**默认 `size=20` 的内在宽度**会顺着卡片
+         * 把整列撑宽（实测卡片正文 305 → 468、退出文本态后列已被 `min-width` 钉住不回缩）。
+         * 视觉宽度由 CSS 的 `width: 100%` 决定，`size` 只用于内在宽度 ⇒ 设成 1 不影响任何观感。 */
+        const inp = h('input', { class: 'kh-input', type: 'text', id: id, size: 1, value: '', placeholder: spec.placeholder });
         const prev = h('div', { class: 'kh-lbl-preview' });
         const addBtn = h('button', {
           class: 'kh-cand-add', type: 'button',
@@ -358,8 +361,18 @@
          * 比旁边的「组合方向」低一截（真机回归量盒顶就是这个）。 */
         const ph = h('span', { class: 'kh-cand-ph', text: spec.placeholder || '' });
         const frame = h('div', { class: 'kh-cand-field' }, [prev, ph, addBtn]);
+        /* 【2.0.2.16 需求②】文本态：点框面**空白处** ⇒ 胶囊还原成**一整串文本**（`|` 分隔），
+         * 回车 / 点框外再收成胶囊。为什么要有这条路：常态是胶囊，想整体改（粘贴一串、大改顺序、
+         * 把已有的串原样看一遍）就只能一段一段在浮层里敲。顺带把"原文本里的 `|` 到底算不算分词"
+         * 当面讲清楚（2.0.2.11 起两种模式都按 `|` 切，用户容易按字面理解成"或"）。 */
+        let textMode = false;
+        const textTip = h('div', {
+          class: 'kh-cand-tip kh-cand-texttip', hidden: true,
+          title: '| 是分隔符：这里的每个 | 都会拆成多个候选（不是正则的「或」）。回车或点框外收起为胶囊。',
+          text: '| 是分隔符：这里的每个 | 都会拆成多个候选（不是正则的「或」）。回车或点框外收起为胶囊。'
+        });
         const labelEl = h('label', { class: 'kh-fld-label', text: spec.label + (spec.required ? ' *' : ''), for: id });
-        const kids = [inp, frame, tip];
+        const kids = [inp, frame, tip, textTip];
         /* 【2.0.2.11 票 #63】「抓取后续字段」沿用候选词的手感，但**默认不长大**：单行裁切，
          * 词多到看不全时点「展开」占整行（用户口径 m01713：「宽度高度都默认不变，超出隐藏超出部分，
          * 但支持手动展开/收起」）。展开态只是给盒子加 `.kh-fld-wide`，不另造一套渲染。
@@ -424,6 +437,17 @@
         /** 重画胶囊（唯一入口：输入时、增删改后、正则开关翻动后都走它）。 */
         const draw = () => {
           prev.textContent = '';
+          box.classList.toggle('is-texed', textMode);
+          if (textMode) {
+            /* 文本态：胶囊 / 占位让位给那一行文本（宽度不变，见 CSS 的 `.is-texed:not(.is-open)`） */
+            ph.hidden = true;
+            textTip.hidden = false;
+            tip.hidden = true; tip.textContent = '';
+            inp.classList.remove('is-editing');
+            refreshClamp();          // 文本态按**输入框横向溢出**决定要不要给「展开」
+            return;
+          }
+          textTip.hidden = true;
           const list = split(st.displayRaw());
           for (let i = 0; i < list.length; i++) {
             /* `spec.token`（抓取后续字段）：每段本来就带 `#`/`%`/`^` 后缀 ⇒ 胶囊名取解析后的 label、
@@ -475,15 +499,37 @@
           if (!clampBtn) return;
           const measure = () => {
             if (box.classList.contains('is-open')) { clampBtn.hidden = false; return; }
-            const over = (prev.scrollWidth > prev.clientWidth + 1) || (frame.scrollWidth > frame.clientWidth + 1);
+            /* 两种态各看各的溢出源：胶囊态看胶囊行/外壳，文本态看那一行输入框（`input` 横向滚动） */
+            const over = textMode
+              ? (inp.scrollWidth > inp.clientWidth + 1)
+              : ((prev.scrollWidth > prev.clientWidth + 1) || (frame.scrollWidth > frame.clientWidth + 1));
             clampBtn.hidden = !over;
           };
           if (typeof requestAnimationFrame === 'function') requestAnimationFrame(measure);
           else measure();
         };
-        /** 点 `+` / 点框面空白处 ＝ **新录一个候选**：先把上一段的待定文本收起来 */
+        /** 进文本态：把已确定的整串摊进那一行输入框（`|` 原样保留，`read()` 仍返回原文） */
+        const enterText = () => {
+          st.commit();                 // 先把浮层里的待定段收进 raw
+          textMode = true;
+          inp.value = st.raw == null ? '' : String(st.raw);
+          draw();
+          try { if (typeof inp.focus === 'function') inp.focus(); if (typeof inp.select === 'function') inp.select(); } catch (e) { /* 垫片没有 focus/select：不影响值 */ }
+        };
+        /** 出文本态：把一行文本收成 raw（切段交给 `split`，与胶囊同一份口径） */
+        const exitText = () => {
+          if (!textMode) return false;
+          st.raw = String(inp.value == null ? '' : inp.value);
+          st.editIdx = -1;
+          inp.value = '';
+          textMode = false;
+          draw();
+          return true;
+        };
+        /** 点 `+` / 点框面空白处 ＝ **新录一个候选**：先把上一段的待定文本（或文本态）收起来 */
         const startNew = () => {
-          st.commit();              // 先把上一段的待定文本收起来
+          exitText();                  // 文本态先落盘，否则下面那次 commit 会把它丢掉
+          st.commit();                 // 先把上一段的待定文本收起来
           st.editIdx = -1; inp.value = '';
           draw();
         };
@@ -495,18 +541,30 @@
         const inNode = (t, cls) => !!D().upClass(t, cls, frame);
         frame.addEventListener('click', (ev) => {
           if (inNode(ev.target, 'kh-lbl-chip') || inNode(ev.target, 'kh-cand-add')) return;
-          startNew();
-          openPop(true);            // `+` 已经开着时只聚焦，不重开浮层（免得输入框被搬走）
+          /* 禁用态（`setDisabled` 只把 input 设成 disabled，不像富文本那样有点击拦截）：进去也打不了字 ⇒ 不进 */
+          if (box.classList.contains('is-disabled')) return;
+          /* 【2.0.2.16 需求②】点框面空白处 = **还原成文本**（不再是"新录一个候选"）：
+           * 常态胶囊适合逐个改，整串改（粘贴、看全、调顺序）需要一行能直接编辑的文本。
+           * 新录一个候选仍然有入口 —— 右边那颗 `+`。 */
+          enterText();
         });
         /* 回车 = "这一段录完了"：收进 `raw` 并清空输入框（与「字段」控件同一手感）。
          * 浮层由 `attachPop` 那颗 keydown 监听顺手关掉，这里只管把值收好。 */
         inp.addEventListener('keydown', (ev) => {
           if (!ev || ev.key !== 'Enter') return;
+          /* 文本态：回车就是把这一整串收成胶囊（`|` 切段），与浮层里"回车收这一段"同一手感 */
+          if (textMode) { if (typeof ev.preventDefault === 'function') ev.preventDefault(); exitText(); st.notify(); return; }
           st.commit(); draw(); st.notify();
         });
+        /* 文本态下点框外 / 滚走 / 关弹窗都会先 blur：值先落盘，别让用户的输入停在"没提交"的状态 */
+        inp.addEventListener('blur', () => { if (textMode) { exitText(); st.notify(); } });
         draw();
         return {
-          el: box, read: () => st.displayRaw(), key: spec.key,
+          el: box,
+          /* 文本态下 `inp.value` **就是**整串（再走 `st.displayRaw()` 会把待定段多拼一遍 ⇒ 值重复），
+           * 所以这一支单独读；两种态的返回值都是"整串原文"（存储契约不变）。 */
+          read: () => (textMode ? String(inp.value == null ? '' : inp.value) : st.displayRaw()),
+          key: spec.key,
           /* 供外层（关键词弹窗）把「正则」开关的真值告诉它，并在开关翻动时重画 */
           _repaint: (on) => { if (typeof on === 'boolean') modeOn = on; draw(); }
         };

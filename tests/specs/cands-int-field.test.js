@@ -171,8 +171,15 @@ module.exports = async function run() {
       '框要有 30px 高（＝普通输入框高 ⇒ 字段盒高与相邻字段一致、才可能行对齐）');
     truthy(/\.kh-cand-field\s*\{[^}]*border:\s*1px solid/.test(css), '框要有输入框那样的边框');
     falsy(/\.kh-cand-row\s*\{/.test(css), '旧的"胶囊行"已作废（胶囊要装进框里）');
-    truthy(/\.kh-cand-tip\s*\{[^}]*flex:\s*0\s+0\s+auto/.test(css),
-      '提示行在**列**容器里不能写 `flex: 1 1 100%`（basis 会被当成高度用）');
+    /* 【2.0.2.16 需求⑤】这句提示从"flex 里的一整行"改成**浮层**：以前它占一行 ⇒ 一出现就把
+     * 字段盒撑高、整张卡的字段跟着往下掉（用户："破坏了页面结果布局"）。现在绝对定位挂在框下方。 */
+    truthy(/\.kh-cand-tip\s*\{[^}]*position:\s*absolute/.test(css),
+      '★ 提示必须是浮层（绝对定位），不许再参与列布局');
+    truthy(/\.kh-cand-tip\s*\{[^}]*top:\s*calc\(100% \+ 3px\)/.test(css), '浮层挂在框下方');
+    truthy(/\.kh-cand-box\s*\{[^}]*position:\s*relative/.test(css),
+      '定位父级是字段盒本身（否则浮层会跑到弹窗左上角）');
+    falsy(/\.kh-cand-tip\s*\{[^}]*flex:\s*0\s+0\s+auto/.test(css),
+      '旧的"占一行"写法（flex: 0 0 auto + width: 100%）已作废');
   });
 
   await test('★ 2.0.2.10：图片 OCR 三件排进同一子块；备注/笔记内容标了 grow；备注占位只留一行', () => {

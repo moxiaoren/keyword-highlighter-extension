@@ -687,4 +687,31 @@ module.exports = async function run() {
     eq(kept[0].text, '保留', '重建后内容照旧');
     KH.features.get('img-ocr').clear(null, { reason: 'destroy' });
   });
+
+  /* ==========================================================================
+   * 关掉右键那张「截图」卡（2.0.2.16 需求⑦）
+   * ==========================================================================
+   * 用户原话（m01585-7）："要支持关闭（视为之前添加的图片 OCR 都取消）"。
+   * 口径：只作废**手动条目**，不清文字缓存 —— 关掉的是"这张卡"，不是"忘掉识别结果"。
+   */
+  suite('右键「截图」卡可关闭（2.0.2.16 需求⑦）');
+
+  await test('★ clearManual：右键条目整批消失，文字缓存照旧留着', () => {
+    KH.features.get('img-ocr').clear(null, { reason: 'destroy' });
+    O._onResult({ requestId: 'imgCtx-9', ok: true, via: 'contextMenu', src: 'https://cdn.example.com/close.png', text: '关闭前', confidence: 90, ocrMs: 12 });
+    eq(O.items().filter((it) => it.via === 'contextMenu').length, 1, '先有一条');
+    const cachedBefore = O._debug().cache;
+    truthy(cachedBefore >= 1, '识别结果进了文字缓存');
+    eq(typeof O.clearManual, 'function', '面板点 ✕ 靠这个入口（不许面板自己改内部表）');
+    O.clearManual();
+    eq(O.items().filter((it) => it.via === 'contextMenu').length, 0, '★ 关掉 = 这批手动条目整批作废');
+    eq(O._debug().cache, cachedBefore, '★ 缓存不许跟着清（同一张图再右键不该重跑引擎）');
+    KH.features.get('img-ocr').clear(null, { reason: 'destroy' });
+  });
+
+  await test('没有手动条目时点关闭：什么都不做、不抛', () => {
+    KH.features.get('img-ocr').clear(null, { reason: 'destroy' });
+    O.clearManual();
+    eq(O.items().filter((it) => it.via === 'contextMenu').length, 0);
+  });
 };
