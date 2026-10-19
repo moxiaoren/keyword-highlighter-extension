@@ -46,6 +46,15 @@
   .hint { background: #fffdf5; border: 1px dashed #e6d9a8; border-radius: 8px; padding: 8px 12px; font-size: 12.5px; color: #6b5a1c; }
   .prose p { margin: 6px 0; }
   .tag { display: inline-block; font-size: 11px; color: #5b6b7d; background: #eef2f8; border-radius: 4px; padding: 1px 6px; margin-right: 6px; }
+  #diag-card { border-color: #c9ddf7; background: #f6faff; }
+  #diag-out { font-size: 13px; line-height: 1.65; }
+  #diag-out .row { margin: 2px 0; }
+  #diag-out .bad { color: #b3261e; font-weight: 600; }
+  #diag-out .good { color: #17692f; font-weight: 600; }
+  #diag-out .warn { color: #8a5a00; font-weight: 600; }
+  #diag-out code { background: #e8f0fb; }
+  #diag-copy { margin-top: 8px; font: inherit; font-size: 12.5px; padding: 4px 12px; border: 1px solid #b9cbe3; border-radius: 6px; background: #fff; cursor: pointer; }
+  #diag-copy:active { transform: translateY(1px); }
 </style>
 </head>
 <body>
@@ -53,6 +62,14 @@
 
   <h1>真机验证页 —— 用你自己配的词验</h1>
   <p class="lead">这页不是夹具页：它就是一张普通网页。装了扩展、配好词、刷新，扩展应当照常高亮 / 抓取 / OCR / 弹「重要笔记」。<span class="tag">file://</span>要在扩展详情里打开「允许访问文件网址」。</p>
+
+  <div class="card" id="diag-card">
+    <h2>① 先看这里：扩展到底有没有在这页干活？（自动检测）</h2>
+    <div id="diag-out">正在检测…</div>
+    <button id="diag-copy">复制检测结果</button>
+    <div class="hint" style="margin-top:8px">这段结果是页面自己查 DOM 得出的（不看词库），刷新页面后会重算。
+      如果显示「一处都没命中」，把这段复制给我，我按里面的读数定位。</div>
+  </div>
 
   <div class="card">
     <h2>怎么配词（三条示例，照着建就能一次看到六项）</h2>
@@ -116,6 +133,93 @@
 
   const certs = document.getElementById('certs');
   certs.appendChild(drawCard(['计算机软件著作权登记证书', '登记号：2018SR458983', '著作权人：某某网络科技有限公司']));
+</script>
+
+<script>
+  /* 自诊断：页面自己查 DOM，判断扩展有没有在这页跑、有没有真命中。
+   * 只读页面痕迹，不碰扩展内部（content script 在隔离世界，页面拿不到它的变量）：
+   *   · 高亮是 CSS Custom Highlight API 画的，每组会在 head 插一个 <style data-kh-hl-style>
+   *     ⇒ 有它 = 至少一组高亮真的画上了
+   *   · 重要笔记面板是 shadow 宿主 #kh-important-note-host ⇒ 有它 = 面板挂上了
+   * 两者都没有时，给出「为什么可能没跑」的排查顺序，而不是一句「没生效」。 */
+  (function () {
+    const KEY_STRINGS = [
+      '贷款超市类', '计算机软件著作权登记证书', '登记号', '2018SR458983',
+      '某某网络科技有限公司', '应用功能类型', '资质类型', '开发者'
+    ];
+    const out = document.getElementById('diag-out');
+    const status = { styles: 0, hlGroups: [], noteHost: false, editorHost: false, present: [], textLen: 0 };
+
+    function collect() {
+      status.styles = document.querySelectorAll('style[data-kh-hl-style]').length;
+      status.noteHost = !!document.getElementById('kh-important-note-host');
+      status.editorHost = !!document.getElementById('kh-page-editor-host');
+      status.textLen = (document.body.textContent || '').length;
+      status.present = KEY_STRINGS.filter((t) => (document.body.textContent || '').indexOf(t) >= 0);
+      status.hlGroups = [];
+      try {
+        if (typeof CSS !== 'undefined' && CSS && CSS.highlights) {
+          CSS.highlights.forEach((_v, k) => { status.hlGroups.push(String(k)); });
+        }
+      } catch (e) { /* 页面世界读不到就算了，不影响主判据 */ }
+    }
+
+    function render() {
+      const rows = [];
+      const running = status.styles > 0 || status.hlGroups.length > 0 || status.noteHost || status.editorHost;
+      const drew = status.styles > 0 || status.hlGroups.length > 0;
+
+      rows.push('<div class="row">高亮样式节点 <b>' + status.styles + '</b> 个 · 高亮组 <b>' +
+        status.hlGroups.length + '</b> 个' + (status.hlGroups.length ? '（' + status.hlGroups.join(', ') + '）' : '') +
+        ' · 重要笔记面板 <b>' + (status.noteHost ? '已挂载' : '没出现') + '</b></div>');
+
+      if (drew) {
+        rows.push('<div class="row"><span class="good">✅ 扩展在这页跑起来了，而且真的画上了高亮。</span>' +
+          '如果某个词你期望高亮却没高亮，看下面「本页有哪些字」，90% 是那串字跟页面上的字对不上（多了空格、全半角、标点）。</div>');
+      } else if (running) {
+        rows.push('<div class="row"><span class="warn">⚠️ 扩展跑起来了，但正文<b>一处都没命中</b>。</span>' +
+          '去检查：那个词是不是写成了「仅抓取」词（仅抓取词不涂色，只在抓取成功时进重要笔记）；' +
+          '是不是把「整词匹配 / 区分大小写 / 正则」打开了；词条本身是不是停用了。</div>');
+      } else {
+        rows.push('<div class="row"><span class="bad">❌ 没检测到扩展在这页运行的任何痕迹。</span>按这个顺序查：</div>');
+        rows.push('<div class="row">1. <b>file:// 没授权</b>：chrome://extensions → 本扩展「详细信息」→ 打开「<b>允许访问文件网址</b>」（Chrome 硬规矩，不开扩展在这类页面一律不跑）。' +
+          '不想动开关就起 http 服务：<code>cd work/keyword-highlighter/tests &amp;&amp; npx --yes serve -l 8123 .</code> 然后开 <code>http://localhost:8123/manual-live-demo.html</code>。</div>');
+        rows.push('<div class="row">2. <b>装的不是 2.0.2.18</b>：chrome://extensions 上看版本号，必须是 2.0.2.18（旧版没有本轮的修复）。</div>');
+        rows.push('<div class="row">3. <b>全局暂停了 / 本站被禁用</b>：点工具栏图标看是否「已暂停」，再检查「本站禁用」里有没有这个页面。</div>');
+        rows.push('<div class="row">4. <b>刷新的顺序</b>：先配词再刷新本页；配词后没刷新，页面上不会有变化。</div>');
+      }
+
+      rows.push('<div class="row" style="margin-top:6px">本页含这些可命中的字（共 ' + status.present.length + '/' + KEY_STRINGS.length +
+        '）：<code>' + (status.present.join('</code> <code>') || '（一个都没有，说明页面没渲染完）') + '</code></div>');
+      out.innerHTML = rows.join('');
+    }
+
+    function run() { collect(); render(); }
+
+    document.getElementById('diag-copy').addEventListener('click', () => {
+      const txt = '【真机验证页自诊断】\n' +
+        'URL: ' + location.href + '\n' +
+        'UA: ' + navigator.userAgent + '\n' +
+        '高亮样式节点: ' + status.styles + '\n' +
+        '高亮组: ' + (status.hlGroups.join(', ') || '（无）') + '\n' +
+        '重要笔记面板: ' + (status.noteHost ? '已挂载' : '没出现') + '\n' +
+        '页面编辑器宿主: ' + (status.editorHost ? '已挂载' : '没出现') + '\n' +
+        '正文长度: ' + status.textLen + '\n' +
+        '本页含字: ' + (status.present.join(' / ') || '（无）') + '\n' +
+        '判定: ' + (status.styles > 0 || status.hlGroups.length ? '扩展已运行且有高亮' : '未检测到高亮');
+      const done = () => { const b = document.getElementById('diag-copy'); b.textContent = '已复制'; setTimeout(() => { b.textContent = '复制检测结果'; }, 1500); };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(done, () => window.prompt('复制这段：', txt));
+      else window.prompt('复制这段：', txt);
+    });
+
+    /* 立刻跑一次，再在扩展注入后（它可能晚于本脚本）重算几次 */
+    run();
+    setTimeout(run, 600);
+    setTimeout(run, 1600);
+    setTimeout(run, 3200);
+    /* 自检钩子（给 .tmp/check-live-demo.js 用；普通使用不需要它） */
+    window.__LIVE_DIAG__ = { run: run, status: status };
+  })();
 </script>
 </body>
 </html>
