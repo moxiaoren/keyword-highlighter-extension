@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>真机验证页 · 配词说明（三条示例）</title>
+<!--
+  ============================================================================
+  配词说明页
+
+  为什么单独一页：页面的说明文字本身也是「页面上的文字」，扩展照抓不误。
+  如果把「标题关键词写 资质证书」这种说明跟应用详情表放在同一页，
+  仅抓取词会先在说明文字里命中（说明列表里就有这些字段名），
+  抓取值就会取成说明列表里的下一项——看起来像产品的 bug，其实是说明页自己干扰自己。
+  所以：演示页只放「网页本体」，说明放这里。
+
+  返回演示页：manual-live-demo.html（链接在本页底部）
+  ============================================================================
+-->
+<style>
+  body { margin: 0; padding: 26px 30px 80px; font: 14px/1.7 "Microsoft YaHei", "PingFang SC", system-ui, sans-serif; color: #202833; background: #f6f8fb; }
+  .wrap { max-width: 980px; }
+  h1 { font-size: 19px; margin: 0 0 4px; }
+  .lead { color: #63707f; font-size: 13px; margin: 0 0 18px; }
+  .card { background: #fff; border: 1px solid #e4e9f1; border-radius: 10px; padding: 14px 18px; margin: 0 0 16px; }
+  h2 { font-size: 15px; margin: 0 0 8px; color: #1a73e8; }
+  ol, ul { margin: 6px 0; padding-left: 22px; }
+  li { margin: 4px 0; }
+  code { font-family: Consolas, monospace; background: #eef3fa; border-radius: 3px; padding: 0 4px; font-size: 12.5px; }
+  .hint { background: #fffdf5; border: 1px dashed #e6d9a8; border-radius: 8px; padding: 8px 12px; font-size: 12.5px; color: #6b5a1c; }
+  a { color: #1a73e8; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>配词说明 —— 三条示例，照抄就能一次看到六项</h1>
+  <p class="lead">说明单独放一页：说明文字本身也会被扩展当成页面文字抓，跟详情表混在一页会自己干扰自己。</p>
+
+  <div class="card">
+    <ol>
+      <li><b>普通关键词</b>：关键词写 <code>贷款超市类</code> → 回演示页刷新，正文与表格里的这个词应当被上色。</li>
+      <li><b>仅抓取 + 多字段</b>（验第①②④项）—— ★ 三个输入框各有各的活，别混：
+        <ul>
+          <li><b>关键词（核心词）留空</b>。← 这一步最容易搞错：核心词一填，它就是个「普通词」，<b>不进入仅抓取流程</b>，抓取字段也不会填进笔记。</li>
+          <li><b>标题关键词</b>写演示页上的行名，例如 <code>资质证书</code>（页上可用的还有：<code>应用功能类型</code> / <code>资质类型</code> / <code>开发者</code> / <code>上架时间</code>）。扩展靠它找到「命中行」，再从行里取后面的字段。</li>
+          <li><b>抓取后续字段</b>写 <code>应用功能类型|资质类型|开发者|截图#图</code>（<code>#图</code> = 这一格抓图）。</li>
+        </ul>
+        预期：演示页正文<b>不会</b>被上色（仅抓取词按规定不涂色，这是设计不是 bug），右下「重要笔记」出现一张卡 ——
+        标题是 <code>🔖 资质证书</code> 这类行名（不会写成 <code>A → A</code>），表里「应用功能类型/资质类型」合成<b>一列</b>（两格值都是「贷款超市类」），
+        字段名后面<b>不带</b> <code>#图3</code> 这类后缀，字段名过长仍省略、悬停看全文。</li>
+      <li><b>图片命中词</b>（验第⑤⑥项）：在上面那个<b>仅抓取词</b>里，勾「识别图片文字」，图片命中关键词写 <code>登记号</code>。
+        预期：图片真被 OCR（不是跳过），认出来之后笔记表里多一行「登记号 | 2018SR458983」。</li>
+    </ol>
+    <div class="hint" style="margin-top:8px">第③项（文本框自动长高）在「添加关键词」弹窗里验：把关键词框点成文本态、粘一串很长的词，框应当自己长高到能看全（封顶 9 行），回车收回胶囊。</div>
+  </div>
+
+  <p><a href="manual-live-demo.html">← 回演示页</a></p>
+</div>
+</body>
+</html>
