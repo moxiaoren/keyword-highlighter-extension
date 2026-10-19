@@ -270,6 +270,23 @@ module.exports = async function run() {
     eq(items[0].entries.map(e => e.kw).join(','), '应用名称');
   });
 
+  await test('★ 仅抓取：标签不许写成「🔖 标题 → 标题」（2.0.2.17 需求④）', () => {
+    /* 仅抓取没有核心词 ⇒ 编译层 `display` 退回标签词（见 combo.js: `core.trim() || label`），
+     * 于是 `→ 后半截` 与前半截一字不差 —— 白占一行宽度（用户原话："节省空间"）。 */
+    const items = head.build([hit('计算机软件著作权登记证书', '计算机软件著作权登记证书', '笔记', { text: '', fetchOnly: true })], new Set());
+    eq(items.length, 1);
+    eq(items[0].entries.length, 1);
+    eq(items[0].entries[0].kw, '计算机软件著作权登记证书');
+    eq(items[0].entries[0].adj, '', '★ 前后同一个词时不许再出「→」那段');
+    eq(head.tagHtml(items[0].entries), '<span class="khin-item-kw">🔖 计算机软件著作权登记证书</span>', '标签串');
+  });
+
+  await test('★ 前后不是同一个词时「→ 后半截」照旧（不许把这条一刀切掉）', () => {
+    const items = head.build([hit('华为', '供应商', '笔记')], new Set());
+    eq(items[0].entries[0].adj, '供应商');
+    truthy(head.tagHtml(items[0].entries).indexOf('→ 华为') >= 0, '组合词形态不变');
+  });
+
   await test('普通词命中文本与配置一致时照旧（不引入无谓变化）', () => {
     const items = head.build([hit('审核不通过', '', '笔记', { text: '审核不通过' })], new Set());
     eq(items[0].entries.map(e => e.kw).join(','), '审核不通过');
@@ -487,22 +504,16 @@ module.exports = async function run() {
       '别在渲染里重写整串 innerHTML —— 只做补包裹，表格结构不动');
   });
 
-  /* 【2.0.2.4 需求④】补包裹要**绕开后缀徽标**：`.kh-lbt` 是 max-width:8em + max-height:1.5em 的裁切层，
-   * 把「名称 + 后缀」一起卷进去 = 后缀被裁掉（用户再也看不出那一格的取值为什么长这样）。
+  /* 【2.0.2.17 需求①】字段名格不再带后缀 ⇒ 补包裹回到「整格文本包一层」这最简单的一步。
    * 只锁源码形状：垫片的 `ShimElement` 没有 `firstChild`，`noteFragment` 的搬移循环在 node 环境里跑不起来
    * （上面那条"历史笔记同样生效"也是源码断言，同一原因）；真机行为由 `_e2e/ui.test.js` 覆盖。 */
-  await test('★ 需求④：补包裹不许把后缀徽标卷进 .kh-lbt（后缀要留在裁切层外面）', () => {
+  await test('★ 需求①：补包裹只包名字（后缀已不进笔记，不许留着绕开徽标的旧逻辑）', () => {
     const src = read('src/features/important-note.js');
     const frag = (src.match(/noteFragment\(doc, note\) \{[\s\S]*?\n    \},/) || [''])[0];
     truthy(frag.length > 0, '要能定位到 noteFragment（否则下面的断言是在空串上跑）');
-    truthy(/const suf = td\.querySelector\('\.kh-table-suffix'\)/.test(frag),
-      '要把后缀徽标先摘出来（否则下面 td.textContent = "" 会把它一起清掉）');
-    truthy(/n\.nodeType === 1 && n\.className === 'kh-table-suffix'\) continue/.test(frag),
-      '★ 标题文字只许累加**除徽标以外**的子节点 —— 把后缀算进 txt，它就被卷进裁切层了');
-    truthy(/if \(suf\) td\.appendChild\(suf\)/.test(frag), '包完必须把徽标搬回标题格（否则后缀凭空消失）');
-    /* 反向：老的"整格 textContent 一把抓"写法不许回来 —— 那正是会把后缀卷进 .kh-lbt 的写法 */
-    falsy(/const txt = td\.textContent \|\| ''/.test(frag),
-      '不许再用「整格 textContent」当标题（有后缀时会把后缀一起卷进 .kh-lbt）');
+    truthy(/const txt = td\.textContent \|\| ''/.test(frag), '整格文本就是标题');
+    truthy(/span\.title = txt;/.test(frag), '全文要留在 title 里（截断只发生在视觉上，悬停能读全）');
+    falsy(/kh-table-suffix/.test(frag), '★ 旧的后缀绕行逻辑必须删净（后缀已经不进笔记了）');
   });
 
   suite('important-note · 面板 UI 修复批（T29）');
@@ -1165,5 +1176,39 @@ module.exports = async function run() {
      * 于是改结构要改两处、漏一处的表现是"设置页的胶囊长得不一样" */
     truthy(/ui\.Fields\.labelChip\(\{/.test(js), '★ 胶囊骨架必须走共享工厂 ui.Fields.labelChip（不许在这里手抄第二份）');
     falsy(js.indexOf("class: 'kh-lbl-chip'") >= 0, '★ 设置页里不许再出现手写的胶囊结构（`class: \'kh-lbl-chip\'`）');
+  });
+
+  /* 【2.0.2.17 需求⑥】图片 OCR 命中成功 ⇒ 「键：值」行并进抓取字段表。
+   * 口径（用户原话）：命中后如果 OCR 文本里存在 `登记号：2018SR458983` 这样的行，
+   * 卡片上要补一行「标题格＝登记号、内容格＝2018SR458983」。 */
+  await test('★ 需求⑥：只取**命中行**的「键：值」，键去空白、重复只留一条、别的规则不算', () => {
+    const IN = KH.ImportantNote;
+    const orig = KH.ImgOcr;
+    KH.ImgOcr = {
+      items: () => ([
+        { ruleId: 'r6', key: 'r6|a', state: 'done', matched: [{ text: '登 记 号' }],
+          text: '计算机软件著作权登记证书\n登 记 号： 2018SR458983\n著 作 权 人： 某某公司' },
+        { ruleId: 'r6', key: 'r6|b', state: 'done', matched: [{ text: '登记号' }],
+          text: '登 记 号： 2018SR458983' },
+        { ruleId: 'r-other', key: 'x', state: 'done', matched: [{ text: '登记号' }], text: '登记号：别的词' },
+        { ruleId: 'r6', key: 'r6|c', state: 'pending', matched: [], text: '' }
+      ])
+    };
+    try {
+      eq(JSON.stringify(IN.ocrExtraRows({ pinId: 'r6', imgOcr: true })),
+        JSON.stringify([{ label: '登记号', value: '2018SR458983' }]),
+        '命中行才进笔记（非命中行「著作权人」不许抄进来）、键去空白、两张图同值只留一条、别的规则不算');
+      eq(JSON.stringify(IN.ocrExtraRows({ pinId: 'r6', imgOcr: false })), '[]', '没勾「识别图片文字」⇒ 不补行');
+      eq(JSON.stringify(IN.ocrExtraRows({ pinId: 'r-none', imgOcr: true })), '[]', '别的规则的结果不许串味');
+      eq(JSON.stringify(IN.ocrExtraRows(null)), '[]', '没有 meta ⇒ 安全返回空');
+    } finally { KH.ImgOcr = orig; }
+  });
+
+  await test('★ 需求⑥：OCR 结果异步回来时**笔记跟着重建**（否则用户要等页面变动才看得到新行）', () => {
+    const src = read('src/features/important-note.js');
+    const frag = (src.match(/KH\.ImgOcr\.onChange\(\(\) => \{[\s\S]*?\n    \}\);/) || [''])[0];
+    truthy(frag.length > 0, '要能定位到 OCR 变更回调');
+    truthy(/panel\.refresh\(\)/.test(frag), '★ OCR 结果变了必须重建笔记（面板不只是图片分区）');
+    truthy(/ocrNoteSig\(\)/.test(frag), '要用指纹挡一道，别让每次状态抖动都重画整块笔记');
   });
 };

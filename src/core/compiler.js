@@ -179,22 +179,27 @@
    * 各写一份 `imgOcrMax` 的默认值逻辑，就又回到"同一件事两处实现"。
    *
    * 语义（用户确认）：
-   *   · `imgOcr`       —— 勾了「识别图片文字」且**本条不是仅抓取**（没有核心词就没有要找的字）。
+   *   · `imgOcr`       —— 勾了「识别图片文字」就成立，**与"仅抓取"无关**（2.0.2.17 需求⑤）。
+   *     早先这里写着 `&& !o.fetchOnly`，理由是"没有核心词就没有要找的字" —— 但图片命中词
+   *     压根不靠核心词：它判的是 **OCR 出来的文字**。而「仅抓取」的命中同样是真命中
+   *     （`combo.js` 的 Probe 会为它登记 hits，锚点 = 标题格首文本节点），于是那行守卫把
+   *     一整类配置静默关掉了：仅抓取 + 抓取字段抓到图 + 配了图片命中词 ⇒ 一次 OCR 都不发。
    *     注意这里**不**校验 `fetchLabels`：那是配置层的兜底（`Config.normalize`）与消费层
    *     （`img-ocr.js` 只处理配了抓取字段的规则）的职责；锚点**只来自真实命中**
    *     （K75 起：组合词"标题词定位即锚点"的旧路已删 —— 没命中就不做 OCR、不判图片关键词）。
    *   · `imgOcrMax`    —— 每处最多识别几张（留空用 `Config.defaults.imgOcr.defaultMax`）。
    *   · `imgOcrKeyword`—— 图片命中关键词（**当正则**匹配识别文本；leave 空 = 不参与图片命中）。
    * @param {object} kw 配置关键词
-   * @param {object} [opts] `{ fetchOnly: true }` = 仅抓取（无核心词）
+   * @param {object} [opts] `{ fetchOnly: true }` = 仅抓取（无核心词）。
+   *   2.0.2.17 起**不再影响本函数的任何输出**（原先它会把 `imgOcr` 压成 false，见上）；
+   *   参数保留只为两条编译路径的调用形状一致，别再往里加"按模式改 OCR 口径"的分支。
    */
-  function ocrMeta(kw, opts) {
-    const o = opts || {};
+  function ocrMeta(kw) {
     const def = (KH.Config && KH.Config.defaults && KH.Config.defaults.imgOcr) || {};
     const own = parseInt(kw && kw.imgOcrMax, 10);
     const max = Math.max(1, Math.min(20, own > 0 ? own : (def.defaultMax || 1)));
     return {
-      imgOcr: !!(kw && kw.imgOcr) && !o.fetchOnly,
+      imgOcr: !!(kw && kw.imgOcr),
       imgOcrMax: max,
       imgOcrKeyword: String((kw && kw.imgOcrKeyword) == null ? '' : kw.imgOcrKeyword).trim(),
       /* 「抓取范围」（K74）：挂在这个**共用出口**上 —— 普通词与组合词两条编译路径都会 spread 它，

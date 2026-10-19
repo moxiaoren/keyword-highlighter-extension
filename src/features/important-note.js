@@ -252,10 +252,10 @@
       display: inline-block; max-width: var(--kh-lbt-maxw, 8em); max-height: 1.5em;
       overflow: hidden; vertical-align: bottom;
     }
-    /* 【2.0.2.4 需求④】字段名后面的**后缀徽标**（#图3 / @2 / ! / ^锚文本 / %4）：
-       让用户看得出这一格的取值为什么长这样。淡、小、单行；**不放进 .kh-lbt**（那层要裁切标题，
-       放进去后缀会被裁掉），所以 noteFragment 的补包裹要把它原样搬出来（见那里的注释）。 */
-    .kh-table .kh-table-suffix {
+    /* 【2.0.2.17 需求①】字段名格不再带后缀（#图3 / @2 / ! / ^锚文本 / %4 都留在设置页）⇒
+       原来给徽标用的那层样式只剩右键「截图」卡的状态小字（识别中…／识别失败）还在用，
+       所以把它改名成它真正的用途，免得以后有人以为字段名还带徽标。 */
+    .kh-table .khin-ctxstate {
       margin-left: 4px; font-weight: 400; font-size: 9px; line-height: 1.5;
       color: var(--kh-text-3, #94a3b8); white-space: nowrap;
     }
@@ -1072,7 +1072,12 @@
         if (ignored && ignored.has(note)) continue;
         const kw = String(h.meta.text || h.meta.display || '').trim();
         if (!kw) continue;
-        const adj = String(h.meta.label || '').trim();
+        /* `→ 后半截` 只在**和前半截不是同一个词**时才显示（2.0.2.17 需求④）。
+         * 典型就是「仅抓取」：没有核心词，`combo.js` 的 `display` 只能退回标签词
+         * （`core.trim() || label`），于是标签渲染成「🔖 标题 → 标题」—— 同一句话写两遍，
+         * 白占一行宽度。判据用"两段相等"而不是 `meta.fetchOnly`：任何模式只要前后重复就不显示。 */
+        let adj = String(h.meta.label || '').trim();
+        if (adj === kw) adj = '';
         /* 置顶排序的匹配键（2.0.2.6）：规则身份 `ruleId`（命中登记时由 core/index.js 写进 `meta.pinId`）。
          * **它只并入集合、不参与去重键** —— 普通词「价格」与组合词「价格×单价」的卡片文本都是「价格」，
          * 两张卡本来就该合成一条记录（去重键是 note\0kw\0adj），拆开会让同一张卡上的词显示两遍。 */
@@ -1730,7 +1735,7 @@
       const failed = !busy && list.some((it) => it.state === 'fail');
       if (busy || failed) {
         const st = doc.createElement('span');
-        st.className = 'kh-table-suffix khin-ctxstate';
+        st.className = 'khin-ctxstate';
         st.textContent = busy ? KH.OcrCopy.VIEW.ctxBusy : KH.OcrCopy.VIEW.ctxFail;
         th.appendChild(st);
       }
@@ -1847,22 +1852,15 @@
         for (const td of tmp.querySelectorAll('td.kh-table-label')) {
           const first = td.firstElementChild;
           if (first && first.className === 'kh-lbt') continue;
-          /* 【2.0.2.4 需求④】字段名格现在可能是「名字 + 后缀徽标」两段：徽标**不许**进 .kh-lbt
-           * （那层 max-height:1.5em + max-width:8em 会把后缀裁掉），所以先把它摘出来、包完再搬回。
-           * 名字只取"除徽标以外"的子节点文本 —— 老笔记（没有徽标）走这条也逐字不变。 */
-          const suf = td.querySelector('.kh-table-suffix');
-          let txt = '';
-          for (const n of Array.prototype.slice.call(td.childNodes)) {
-            if (n.nodeType === 1 && n.className === 'kh-table-suffix') continue;
-            txt += (n.textContent || '');
-          }
+          /* 【2.0.2.17 需求①】字段名格只剩名字（后缀不再进笔记），于是这里回到最简单的一步：
+           * 整格文本包进 `.kh-lbt` —— 截断只发生在视觉上，全文在 `title` 里可悬停读回。 */
+          const txt = td.textContent || '';
           const span = doc.createElement('span');
           span.className = 'kh-lbt';
           span.title = txt;            // 全文在悬停里可读回，截断只发生在视觉上
           span.textContent = txt;
           td.textContent = '';
           td.appendChild(span);
-          if (suf) td.appendChild(suf);
         }
         while (tmp.firstChild) frag.appendChild(tmp.firstChild);
         last = m.index + m[0].length;
@@ -1919,6 +1917,49 @@
   };
 
   /**
+   * 【2.0.2.17 需求⑥】图片 OCR 命中成功 ⇒ 把**命中那一行**的「键：值」并进抓取字段表。
+   * 用户口径：图片命中词命中后，如果 OCR 文本里存在 `登记号：2018SR458983` 这样的行，
+   * 卡片上要补一行「标题格＝登记号、内容格＝2018SR458983」。
+   *
+   * 三条纪律：
+   *   · 只取**命中行**（OCR 全文里含命中词的那几行）—— 整篇 OCR 抄进卡片会把表格撑爆；
+   *   · 键做空白归一（OCR 常把「登 记 号」拆开），值得留原样；
+   *   · 同一 `键+值` 只留一条（多张图常认出同一行）。
+   */
+  const OCR_KV = /^\s*([^：:]{1,24}?)\s*[：:]\s*(.+?)\s*$/;
+  const squashWs = (s) => String(s == null ? '' : s).replace(/\s+/g, '');
+  function ocrExtraRows(meta) {
+    const ruleId = meta && meta.pinId;
+    if (!ruleId || !meta.imgOcr) return [];
+    if (!KH.ImgOcr || typeof KH.ImgOcr.items !== 'function') return [];
+    let list = [];
+    try { list = KH.ImgOcr.items() || []; } catch (e) { return []; }
+    const out = [];
+    const seen = new Set();
+    for (const it of list) {
+      if (!it || it.ruleId !== ruleId || it.state !== 'done' || !it.text) continue;
+      const words = (it.matched || []).map((m) => squashWs(m && m.text)).filter(Boolean);
+      if (!words.length) continue;
+      for (const rawLine of String(it.text).split(/\r?\n/)) {
+        const line = rawLine.trim();
+        if (!line) continue;
+        const flat = squashWs(line);
+        if (!words.some((w) => flat.indexOf(w) >= 0)) continue;   // 不是命中行
+        const m = OCR_KV.exec(line);
+        if (!m) continue;
+        const label = squashWs(m[1]);
+        const value = m[2];
+        if (!label || !value) continue;
+        const sig = label + '\u0000' + value;
+        if (seen.has(sig)) continue;
+        seen.add(sig);
+        out.push({ label: label, value: value });
+      }
+    }
+    return out;
+  }
+
+  /**
    * 从注册表命中里筛出"内容有效的"重要命中。
    *
    * 抓取内容与**触发判据**都在这里结算一次（唯一出口）：
@@ -1936,7 +1977,7 @@
     for (const h of list) {
       try {
         h.meta.fetchHtml = (KH.Fetch && h.textNode)
-          ? (KH.Fetch.blockFor(h.textNode, h.meta.fetchLabels, fetchCache, h.meta.fetchScope) || '')
+          ? (KH.Fetch.blockFor(h.textNode, h.meta.fetchLabels, fetchCache, h.meta.fetchScope, ocrExtraRows(h.meta)) || '')
           : '';
       } catch (err) {
         h.meta.fetchHtml = '';
@@ -1977,10 +2018,27 @@
   /* 图片识别的结果是**异步**回来的（OCR 在 offscreen 文档里跑），面板得自己刷新，
    * 不能等下一次页面重建 —— 否则用户要等页面变动才看见识别结果。
    * 右键识别同样走这条路：受理即展示（pending 行）与结果回来都在 `renderImg` 里落地。
-   * 灯箱还开着时也要跟着刷（全文栏与「OCR 识别/隐藏全文」按钮的换脸都靠它）。 */
+   * 灯箱还开着时也要跟着刷（全文栏与「OCR 识别/隐藏全文」按钮的换脸都靠它）。
+   * 【2.0.2.17 需求⑥】OCR 命中后笔记里要多出「键：值」行 ⇒ 结果变化时**笔记也要重建**；
+   * 用指纹挡一道，避免每个条目每次状态抖动都把整块笔记重画一遍。 */
+  let ocrNoteSigSeen = '';
+  function ocrNoteSig() {
+    if (!KH.ImgOcr || typeof KH.ImgOcr.items !== 'function') return '';
+    try {
+      return (KH.ImgOcr.items() || []).map((it) => [
+        it && it.ruleId, it && it.key, it && it.state,
+        String((it && it.text) || '').length, ((it && it.matched) || []).length
+      ].join(':')).join(';');
+    } catch (e) { return ''; }
+  }
   if (KH.ImgOcr && typeof KH.ImgOcr.onChange === 'function') {
     KH.ImgOcr.onChange(() => {
       panel.renderImg();
+      const sig = ocrNoteSig();
+      if (sig !== ocrNoteSigSeen) {
+        ocrNoteSigSeen = sig;
+        if (panel.host) panel.refresh();     // OCR 行可能刚补进抓取字段表
+      }
       const h = document.getElementById(LIGHTBOX_ID);
       if (h && typeof h._apply === 'function') h._apply();
     });
@@ -1988,5 +2046,5 @@
 
   /* `paintHits` 直接导出给单测：灯箱要在垫片里走完 openLightbox 那条路成本太高（宿主/影子根/
    * 相册/停靠都在里面），而这个函数是纯 DOM 构造，喂文本就能验。 */
-  KH.ImportantNote = { panel, head, collectEffective, IMG_PROTOCOL_OK, paintHits };
+  KH.ImportantNote = { panel, head, collectEffective, IMG_PROTOCOL_OK, paintHits, ocrExtraRows };
 })();

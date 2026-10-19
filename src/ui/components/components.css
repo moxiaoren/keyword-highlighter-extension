@@ -849,12 +849,17 @@
 /* ==== 【2.0.2.16 需求②】候选框的**文本态**：点框面空白处 ⇒ 胶囊还原成一整串文本（`|` 分隔），
  * 回车 / 点框外再收成胶囊。四个候选框（关键词 / 标题关键词 / 字段 / 图片命中关键词）共用这一份
  * —— 这里**不许**出现按 `[data-for="fld-xxx"]` 的单字段特例（需求③：一处修改、四处统一）。 */
-.kh-cand-box.is-texed > .kh-input {
+/* 【2.0.2.17 需求③】文本态 = 一块 textarea（不是单行 input）：内容多长就多高，改中段不用左右拖。
+ * 宽度仍与输入框一致（`width: 100%` + `min-width: 0`，不许把卡片撑宽）；`rows` 由 JS 按内容算。 */
+.kh-cand-box.is-texed > .kh-cand-ta {
   display: block; width: 100%; box-sizing: border-box; min-height: 30px;
   /* 输入框的**内在最小宽**（`size` 属性那 20 来个字符）会顺着列容器撑宽整张卡 ——
    * 实测不写这条，三个框同时进文本态时卡片正文从 305 长到 468，整列跟着变宽。 */
   min-width: 0;
+  padding: 5px 8px; line-height: 20px; resize: vertical; overflow: auto;
+  font: inherit; color: inherit; background: inherit;
 }
+.kh-cand-box.is-texed > .kh-cand-ta[hidden] { display: none; }
 .kh-cand-box.is-texed > .kh-cand-field { display: none; }
 /* 文本态**占满一行**（与「展开」同一口径：展开后的形态可以占满容器宽、但不许超出）——
  * 一整串候选在 148px 的半行里根本没法看，半行 + 横向滚动是更差的选择。

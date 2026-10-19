@@ -859,6 +859,22 @@ module.exports = async function run() {
     eq(F.blockFor(tn, '不存在'), null);
   });
 
+  /* 【2.0.2.17 需求⑥】OCR 命中行要能并进同一张抓取表 —— 合并（需求②）/裁切/悬停全部自动一致 */
+  await test('★ 需求⑥：blockFor 的 extras（OCR「键：值」行）并进同一张表，且不吃缓存', () => {
+    const t = table([['关键词', 'x'], ['资质类型', '贷款超市类']]);
+    const tn = t.rows[0].children[0].childNodes[0];
+    const extras = [{ label: '登记号', value: '2018SR458983' }];
+    const html = String(F.blockFor(tn, '资质类型', new WeakMap(), 'self', extras));
+    truthy(html.indexOf('贷款超市类') >= 0, '抓取字段照旧在里面：' + html);
+    truthy(html.indexOf('>登记号<') >= 0 && html.indexOf('2018SR458983') >= 0, 'OCR 行要在同一张表里：' + html);
+    /* 两条 OCR 行内容一致 ⇒ 需求② 的合并照常生效（同一套渲染，不另开分支） */
+    const same = String(F.blockFor(tn, '资质类型', new WeakMap(), 'self',
+      [{ label: '登记号', value: '2018SR458983' }, { label: '证书编号', value: '2018SR458983' }]));
+    truthy(same.indexOf('登记号/证书编号') >= 0, '内容一致的两条 OCR 行也要合并标签：' + same);
+    /* 没有 extras 时结果与旧口径逐字相同 */
+    eq(F.blockFor(tn, '资质类型'), F.blockFor(tn, '资质类型', new WeakMap(), 'self', []), '空附加行不影响结果');
+  });
+
   suite('fetch · 假表格（无 <table>）');
 
   await test('★ div/flex 假表格：按标签找元素取右邻兄弟', () => {
@@ -1300,15 +1316,47 @@ module.exports = async function run() {
     eq(sfx('名称@abc'), '@abc（无效）');
   });
 
-  await test('★ `rowsToTableHtml`：字段名格带 `.kh-table-suffix` 徽标；不写后缀时输出与历史逐字一致', () => {
+  await test('★ `rowsToTableHtml`：字段名格**不带**后缀；输出与历史逐字一致（2.0.2.17 需求①）', () => {
+    /* 后缀是抓取口径（`#图3` / `#0` / `!` / `^高价` / `%4`），只在设置页的胶囊预览里看；
+     * 笔记里塞进去既占宽度又要用户去猜（用户原话："无需展示抓取字段的后缀"）。 */
     const withSfx = F.rowsToTableHtml([{ label: '截图', suffix: '#图3', rows: [[{ t: 'abc' }]] }]);
-    truthy(withSfx.indexOf('<span class="kh-table-suffix">#图3</span>') >= 0, '有了后缀就要在字段名格里渲染徽标：' + withSfx);
-    const plain = F.rowsToTableHtml([{ label: '截图', suffix: '', rows: [[{ t: 'abc' }]] }]);
-    eq(plain.indexOf('kh-table-suffix'), -1, '没后缀 ⇒ 连类名都不许出现（老笔记的 HTML 快照不受影响）');
-    truthy(plain.indexOf('>截图</td>') >= 0, '没后缀时字段名格仍是老样子：' + plain);
-    /* 后缀是用户输入 ⇒ 必须转义（它进的是 HTML 正文，不是属性） */
-    const esc = F.rowsToTableHtml([{ label: '名称', suffix: '<b>', rows: [[{ t: 'abc' }]] }]);
-    truthy(esc.indexOf('&lt;b&gt;') >= 0 && esc.indexOf('<b>') < 0, '后缀里的尖括号必须转义：' + esc);
+    eq(withSfx.indexOf('kh-table-suffix'), -1, '★ 即使上游还带着 suffix，字段名格也不许渲染它：' + withSfx);
+    truthy(withSfx.indexOf('<td class="kh-table-label">截图</td>') >= 0, '字段名格只有名字：' + withSfx);
+    const plain = F.rowsToTableHtml([{ label: '截图', rows: [[{ t: 'abc' }]] }]);
+    eq(plain, withSfx, '带不带 suffix ⇒ 输出完全一致（老笔记 HTML 快照不受影响）');
+    /* 名字是用户输入 ⇒ 必须转义（它进的是 HTML 正文，不是属性） */
+    const esc = F.rowsToTableHtml([{ label: '<b>名称', rows: [[{ t: 'abc' }]] }]);
+    truthy(esc.indexOf('&lt;b&gt;名称') >= 0 && esc.indexOf('<b>') < 0, '字段名里的尖括号必须转义：' + esc);
+  });
+
+  await test('★ 同一卡片内内容完全一致的两个字段合并成一列（2.0.2.17 需求②）', () => {
+    /* 用户样例：应用功能类型=贷款超市类、资质类型=贷款超市类 ⇒ 标签「应用功能类型/资质类型」，值只写一遍 */
+    const same = F.rowsToTableHtml([
+      { label: '应用功能类型', rows: [[{ t: '贷款超市类' }]] },
+      { label: '资质类型', rows: [[{ t: '贷款超市类' }]] }
+    ]);
+    truthy(same.indexOf('应用功能类型/资质类型') >= 0, '两个字段名用 / 连起来：' + same);
+    eq((same.match(/贷款超市类/g) || []).length, 1, '值只出现一次（合并成一列）');
+    eq((same.match(/kh-table-label/g) || []).length, 1, '只剩一个字段名格');
+    /* 反例一：值不同 ⇒ 绝不合并（合并只认同值，不做模糊归一） */
+    const diff = F.rowsToTableHtml([
+      { label: '应用功能类型', rows: [[{ t: '贷款超市类' }]] },
+      { label: '资质类型', rows: [[{ t: '小贷公司' }]] }
+    ]);
+    eq((diff.match(/kh-table-label/g) || []).length, 2, '值不同 ⇒ 两个字段名格');
+    /* 反例二：值相同但图片策略不同（`#图` vs 普通） ⇒ 也不合并，否则会把「仅图片」的语义吞掉 */
+    const optDiff = F.rowsToTableHtml([
+      { label: '截图', opt: { imgOnly: true }, rows: [[{ t: '\u0001KHIMG\u0001a|https://ex.com/a.png\u0001ENDIMG\u0001' }]] },
+      { label: '截图2', opt: null, rows: [[{ t: '\u0001KHIMG\u0001a|https://ex.com/a.png\u0001ENDIMG\u0001' }]] }
+    ]);
+    eq((optDiff.match(/kh-table-label/g) || []).length, 2, '图片选项不同 ⇒ 不合并');
+    /* 反例三：三个同值 ⇒ 三个名字都挂上（不是只剩最后一个） */
+    const three = F.rowsToTableHtml([
+      { label: 'A', rows: [[{ t: 'x' }]] },
+      { label: 'B', rows: [[{ t: 'x' }]] },
+      { label: 'C', rows: [[{ t: 'x' }]] }
+    ]);
+    truthy(three.indexOf('A/B/C') >= 0, '三个同值字段都要保留名字：' + three);
   });
 
 };

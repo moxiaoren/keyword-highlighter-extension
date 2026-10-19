@@ -345,6 +345,10 @@
          * 把整列撑宽（实测卡片正文 305 → 468、退出文本态后列已被 `min-width` 钉住不回缩）。
          * 视觉宽度由 CSS 的 `width: 100%` 决定，`size` 只用于内在宽度 ⇒ 设成 1 不影响任何观感。 */
         const inp = h('input', { class: 'kh-input', type: 'text', id: id, size: 1, value: '', placeholder: spec.placeholder });
+        /* 【2.0.2.17 需求③】文本态改用 **textarea**：一整串候选在单行 `input` 里只能横向滚动，
+         * 想改中段就得左右拖着看（用户原话：内容过长时输入框并不能完全展示，改成过长时默认展开输入框）。
+         * `ta` 只在文本态露面，常态仍由 `inp`（浮层里编辑单段）与胶囊负责。 */
+        const ta = h('textarea', { class: 'kh-input kh-cand-ta', rows: 1, spellcheck: 'false', autocomplete: 'off', hidden: true });
         const prev = h('div', { class: 'kh-lbl-preview' });
         const addBtn = h('button', {
           class: 'kh-cand-add', type: 'button',
@@ -372,7 +376,7 @@
           text: '| 是分隔符：这里的每个 | 都会拆成多个候选（不是正则的「或」）。回车或点框外收起为胶囊。'
         });
         const labelEl = h('label', { class: 'kh-fld-label', text: spec.label + (spec.required ? ' *' : ''), for: id });
-        const kids = [inp, frame, tip, textTip];
+        const kids = [inp, ta, frame, tip, textTip];
         /* 【2.0.2.11 票 #63】「抓取后续字段」沿用候选词的手感，但**默认不长大**：单行裁切，
          * 词多到看不全时点「展开」占整行（用户口径 m01713：「宽度高度都默认不变，超出隐藏超出部分，
          * 但支持手动展开/收起」）。展开态只是给盒子加 `.kh-fld-wide`，不另造一套渲染。
@@ -434,17 +438,29 @@
           return (arr && arr.length) ? arr : plainSplit(s);
         };
         const st = segEditor(inp, split, value);
+        /** 文本态高度跟着内容走（上限 9 行，再多就滚动）：进文本态是为了**改**，看不全就没意义。 */
+        const autoGrow = () => {
+          if (!textMode) return;
+          const lineH = 20;            // 与 CSS 的 line-height: 20px 一致
+          try {
+            ta.rows = 1;               // 先复位，scrollHeight 才反映真实内容高度
+            const hgt = ta.scrollHeight || 0;
+            ta.rows = Math.max(1, Math.min(9, hgt > 0 ? Math.ceil(hgt / lineH) : 1));
+          } catch (e) { /* 垫片没有 layout：保持 rows=1 */ }
+        };
         /** 重画胶囊（唯一入口：输入时、增删改后、正则开关翻动后都走它）。 */
         const draw = () => {
           prev.textContent = '';
           box.classList.toggle('is-texed', textMode);
+          ta.hidden = !textMode;
           if (textMode) {
-            /* 文本态：胶囊 / 占位让位给那一行文本（宽度不变，见 CSS 的 `.is-texed:not(.is-open)`） */
+            /* 文本态：胶囊 / 占位让位给那块 textarea（宽度不变，见 CSS 的 `.is-texed:not(.is-open)`） */
             ph.hidden = true;
             textTip.hidden = false;
             tip.hidden = true; tip.textContent = '';
             inp.classList.remove('is-editing');
-            refreshClamp();          // 文本态按**输入框横向溢出**决定要不要给「展开」
+            if (clampBtn) clampBtn.hidden = true;   // 文本态自己会长高，不需要「展开」
+            autoGrow();
             return;
           }
           textTip.hidden = true;
@@ -499,29 +515,29 @@
           if (!clampBtn) return;
           const measure = () => {
             if (box.classList.contains('is-open')) { clampBtn.hidden = false; return; }
-            /* 两种态各看各的溢出源：胶囊态看胶囊行/外壳，文本态看那一行输入框（`input` 横向滚动） */
+            /* 两种态各看各的溢出源：胶囊态看胶囊行/外壳（文本态自己长高，不参与） */
             const over = textMode
-              ? (inp.scrollWidth > inp.clientWidth + 1)
+              ? false
               : ((prev.scrollWidth > prev.clientWidth + 1) || (frame.scrollWidth > frame.clientWidth + 1));
             clampBtn.hidden = !over;
           };
           if (typeof requestAnimationFrame === 'function') requestAnimationFrame(measure);
           else measure();
         };
-        /** 进文本态：把已确定的整串摊进那一行输入框（`|` 原样保留，`read()` 仍返回原文） */
+        /** 进文本态：把已确定的整串摊进 textarea（`|` 原样保留，`read()` 仍返回原文） */
         const enterText = () => {
           st.commit();                 // 先把浮层里的待定段收进 raw
           textMode = true;
-          inp.value = st.raw == null ? '' : String(st.raw);
+          ta.value = st.raw == null ? '' : String(st.raw);
           draw();
-          try { if (typeof inp.focus === 'function') inp.focus(); if (typeof inp.select === 'function') inp.select(); } catch (e) { /* 垫片没有 focus/select：不影响值 */ }
+          try { if (typeof ta.focus === 'function') ta.focus(); if (typeof ta.select === 'function') ta.select(); } catch (e) { /* 垫片没有 focus/select：不影响值 */ }
         };
-        /** 出文本态：把一行文本收成 raw（切段交给 `split`，与胶囊同一份口径） */
+        /** 出文本态：把那段文本收成 raw（切段交给 `split`，与胶囊同一份口径） */
         const exitText = () => {
           if (!textMode) return false;
-          st.raw = String(inp.value == null ? '' : inp.value);
+          st.raw = String(ta.value == null ? '' : ta.value);
           st.editIdx = -1;
-          inp.value = '';
+          ta.value = '';
           textMode = false;
           draw();
           return true;
@@ -556,14 +572,27 @@
           if (textMode) { if (typeof ev.preventDefault === 'function') ev.preventDefault(); exitText(); st.notify(); return; }
           st.commit(); draw(); st.notify();
         });
+        /* 文本态那块 textarea：回车收（**不换行** —— `|` 才是分隔符，换行没有语义）、Esc 放弃这次改动、边打边长高 */
+        ta.addEventListener('keydown', (ev) => {
+          if (!ev) return;
+          if (ev.key === 'Enter') {
+            if (typeof ev.preventDefault === 'function') ev.preventDefault();
+            exitText(); st.notify();
+          } else if (ev.key === 'Escape') {
+            ta.value = st.raw == null ? '' : String(st.raw);
+            exitText(); st.notify();
+          }
+        });
+        ta.addEventListener('input', () => { autoGrow(); });
         /* 文本态下点框外 / 滚走 / 关弹窗都会先 blur：值先落盘，别让用户的输入停在"没提交"的状态 */
         inp.addEventListener('blur', () => { if (textMode) { exitText(); st.notify(); } });
+        ta.addEventListener('blur', () => { if (textMode) { exitText(); st.notify(); } });
         draw();
         return {
           el: box,
-          /* 文本态下 `inp.value` **就是**整串（再走 `st.displayRaw()` 会把待定段多拼一遍 ⇒ 值重复），
+          /* 文本态下 `ta.value` **就是**整串（再走 `st.displayRaw()` 会把待定段多拼一遍 ⇒ 值重复），
            * 所以这一支单独读；两种态的返回值都是"整串原文"（存储契约不变）。 */
-          read: () => (textMode ? String(inp.value == null ? '' : inp.value) : st.displayRaw()),
+          read: () => (textMode ? String(ta.value == null ? '' : ta.value) : st.displayRaw()),
           key: spec.key,
           /* 供外层（关键词弹窗）把「正则」开关的真值告诉它，并在开关翻动时重画 */
           _repaint: (on) => { if (typeof on === 'boolean') modeOn = on; draw(); }

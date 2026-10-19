@@ -492,7 +492,7 @@ module.exports = async function run() {
     }
   });
 
-  await test('★ 「仅抓取」词仍不 OCR（编译层 `ocrMeta` 强制 imgOcr:false）', () => {
+  await test('★ 「仅抓取」词也 OCR（2.0.2.17 需求⑤：`ocrMeta` 不再按模式压掉 imgOcr）', () => {
     const only = KH.Compiler.dispatch({
       id: 'r4-only', text: '', cellVerifyEnabled: true, cellVerify: '应用名称',
       comboAxis: 'lr', cellVerifyMatchMode: 'include', fetchLabels: '包名',
@@ -500,7 +500,25 @@ module.exports = async function run() {
     }, CFG);
     truthy(only, '仅抓取词应能编译');
     eq(only.kind, 'fetch-only', 'kind');
-    eq(!!only.meta.imgOcr, false, '★ 仅抓取词即使勾了「识别图片文字」也不 OCR（既有口径不变）');
+    eq(!!only.meta.imgOcr, true, '★ 仅抓取词勾了「识别图片文字」就必须 OCR（图片命中词不靠核心词）');
+  });
+
+  await test('★ 端到端：仅抓取词的真命中要一路走到"出 OCR 条目"（不许只改 meta 就收工）', () => {
+    const only = KH.Compiler.dispatch({
+      id: 'r5-only', text: '', cellVerifyEnabled: true, cellVerify: '应用名称',
+      comboAxis: 'lr', cellVerifyMatchMode: 'include', fetchLabels: '应用截图',
+      imgOcr: true, imgOcrKeyword: '华为', fetchEnabled: true
+    }, CFG);
+    truthy(only, '仅抓取词应能编译');
+    const d = ocrTable([fakeImg({ src: 'https://ex.com/only.png' })], {
+      imgOcr: only.meta.imgOcr, imgOcrMax: only.meta.imgOcrMax,
+      fetchLabels: only.meta.fetchLabels, imgOcrKeyword: only.meta.imgOcrKeyword,
+      fetchOnly: only.meta.fetchOnly, display: only.meta.display
+    });
+    d.ruleId = 'r5-only';                    // ocrTable 的缺省 ruleId 是 r4-k75，这里钉成这条规则
+    O.build({}, {}, [hitOf(d)]);
+    truthy(O.items().length >= 1, '★ 仅抓取 + 抓取到图 + 配了图片命中词 ⇒ 必须建出 OCR 条目（2.0.2.17 需求⑤）');
+    truthy(O.items().some((it) => it && it.ruleId === 'r5-only'), '条目归属该规则');
   });
 
   await test('★ 与 K74 的 `fetchScope` 组合仍对：命中在内层 + outer1 ⇒ 取**外层**值格的图', () => {

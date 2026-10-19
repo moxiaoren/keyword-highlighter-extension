@@ -208,8 +208,36 @@ module.exports = async function run() {
       truthy(css.indexOf(sel) >= 0, sel + ' 必须在共享样式里定义（四个框共用一份）');
     }
     /* 文本态的三条规则必须挂在 `.kh-cand-box` 作用域下 —— 否则会波及设置页的「置顶排序」胶囊 */
-    eq((css.match(/\.kh-cand-box\.is-texed/g) || []).length >= 3, true, '文本态规则要成组（输入框/藏框面/占整行）');
-    eq((css.match(/\.kh-cand-box\.is-texed > \.kh-input/g) || []).length, 1, '文本态的输入框规则只许有一份');
+    eq((css.match(/\.kh-cand-box\.is-texed/g) || []).length >= 3, true, '文本态规则要成组（文本域/藏框面/占整行）');
+    /* 2.0.2.17 需求③：文本态从单行 `input` 换成 textarea（内容长了自己长高），仍只许有一份 */
+    eq((css.match(/\.kh-cand-box\.is-texed > \.kh-cand-ta \{/g) || []).length, 1, '文本态的文本域规则只许有一份');
     eq((css.match(/\.kh-cand-box\.is-texed > \.kh-cand-field/g) || []).length, 1, '文本态藏起框面的规则只许有一份');
+    /* 旧口径不许留：单行 input 撑满文本态的那条规则已经作废（会与 textarea 同显两个框） */
+    eq((css.match(/\.kh-cand-box\.is-texed > \.kh-input/g) || []).length, 0, '单行 input 的文本态规则必须删净');
+  });
+
+  /* 【2.0.2.17 需求③】用户原话："这四个输入框，点击空白后变成文本内容支持批量修改已实现。
+   * 但是当内容过长时，输入框并不能完全展示这些内容。改成过长时，默认展开输入框。"
+   * 做法 = 文本态换成 textarea，行数按内容算（上限 9 行，再多滚动）。
+   * 真浏览器的高矮由 `_e2e/ui.test.js` 量；这里锁"是文本域、值全在、回车收回、存储契约不变"。 */
+  await test('★ 需求③：文本态用 textarea（整串全显，不是单行横向滚动），回车收回值不变', () => {
+    const ctrl = mk('包名|截图#图|资质类型@1|icon');
+    const box = ctrl.el;
+    const ta = box.querySelector('.kh-cand-ta');
+    truthy(ta, '文本态要有一块自己的 textarea（单行 input 装不下一整串）');
+    truthy(ta.hidden, '常态藏起来（不许与胶囊同显）');
+    box.querySelector('.kh-cand-field').dispatchEvent({ type: 'click' });
+    truthy(box.classList.contains('is-texed'), '点框面空白 ⇒ 进文本态');
+    eq(ta.hidden, false, '文本态要露出 textarea');
+    eq(ta.value, '包名|截图#图|资质类型@1|icon', '整串原样摊开（`|` 与后缀都保留）');
+    ta.value = '包名|截图#图|资质类型@1|icon|新词';
+    ta.dispatchEvent({ type: 'keydown', key: 'Enter' });
+    eq(ctrl.read(), '包名|截图#图|资质类型@1|icon|新词', '回车把改动收回胶囊，读出来仍是整串原文');
+    falsy(box.classList.contains('is-texed'), '回了胶囊态');
+    truthy(ta.hidden, 'textarea 再藏起来');
+    /* 行数按内容算：上限 9 行（再多走滚动），且不许写成固定行数——固定行数 = 长内容又看不全 */
+    const src = read('src/ui/components/fields.js');
+    truthy(/ta\.rows = Math\.max\(1, Math\.min\(9,/.test(src), '行数要按内容算，并封顶 9 行');
+    truthy(/ta\.scrollHeight/.test(src), '量的是内容真实高度（scrollHeight），不是字数估算');
   });
 };

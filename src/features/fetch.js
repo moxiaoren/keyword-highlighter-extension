@@ -951,7 +951,7 @@
       const found = findFakeLabelInRow(startEl, item.label);
       if (!found) continue;
       const val = fakeRightValue(found.labelEl);
-      if (val) out.push({ label: item.label, suffix: suffixTextOf(item), rows: [[{ t: val, rs: 1, cs: 1 }]] });
+      if (val) out.push({ label: item.label, rows: [[{ t: val, rs: 1, cs: 1 }]] });
     }
     return out;
   }
@@ -1334,8 +1334,8 @@
         seen.add(t);
         uniq.push(e);
       }
-      if (uniq.length === 1) out.push({ label: label, suffix: uniq[0].suffix, rows: uniq[0].rows });
-      else uniq.forEach(e => out.push({ label: label + layerSuffix(e.dir, e.idx), suffix: e.suffix, rows: e.rows }));
+      if (uniq.length === 1) out.push({ label: label, rows: uniq[0].rows });
+      else uniq.forEach(e => out.push({ label: label + layerSuffix(e.dir, e.idx), rows: e.rows }));
     }
     return out;
   }
@@ -1363,7 +1363,7 @@
     const entries = [];
     for (const p of picked) {
       const rows = rowsForItem(p.item, p.cell, p.table, p.fromRow, box);
-      if (rows && rows.length) entries.push({ label: p.label, suffix: suffixTextOf(p.item), dir: p.dir, idx: p.idx, rows: rows });
+      if (rows && rows.length) entries.push({ label: p.label, dir: p.dir, idx: p.idx, rows: rows });
     }
     /* K79：多选（当前层 + 内层 / 外层…）时**一律合并**（同名同值去重、值不同加层级后缀）；
      * 只选一层时合并是**恒等变换**（不加后缀）⇒ 单层行为与 K74 完全一致。 */
@@ -1477,13 +1477,28 @@
           grid = true;
         }
       }
-      return { label: m.label, suffix: m.suffix, textLines, grid, rows: m.rows || [], opt: opt, budget: budget };
+      return { label: m.label, textLines, grid, rows: m.rows || [], opt: opt, budget: budget };
     });
 
-    /* 【2.0.2.4 需求④】字段名格 = 名字 + 后缀徽标（`.kh-table-suffix`，淡化小字）。
-     * 没写后缀 ⇒ `it.suffix` 为空串 ⇒ 输出的 HTML 与历史逐字节一致（既有快照断言不受影响）。 */
-    const labelHtml = (it, attrs) => '<td class="kh-table-label"' + (attrs || '') + '>' + escHtml(it.label)
-      + (it.suffix ? '<span class="kh-table-suffix">' + escHtml(it.suffix) + '</span>' : '') + '</td>';
+    /* 【2.0.2.17 需求②】同一张卡片（同一块）里，**内容完全一致**的字段合并成一列：
+     * 标签用 `/` 连接（`应用功能类型/资质类型`），值只写一遍。
+     * 判据用渲染输入本身（`rows` + 图片选项），不猜标签、也不做模糊归一：
+     * 值不同、图片策略不同（仅图片 / 前 N 张）⇒ 一律不合并。跨块/跨卡片不合并。 */
+    const sigOf = (it) => JSON.stringify([it.rows, it.opt || null]);
+    const bySig = new Map();
+    const merged = [];
+    for (const it of items) {
+      const sig = sigOf(it);
+      const prev = bySig.get(sig);
+      if (prev) { prev.label = prev.label + '/' + it.label; continue; }
+      bySig.set(sig, it);
+      merged.push(it);
+    }
+
+    /* 【2.0.2.17 需求①】字段名格**只放名字**：后缀（`#图3` / `#0` / `!` / `^高价` / `%4` …）是抓取口径，
+     * 属于设置页的事；塞进笔记里既占宽度又要用户去猜。编辑器的胶囊预览里照旧看得到后缀。
+     * 过长省略仍由 `.kh-lbt`（max-width + ellipsis）负责，悬停的 `title` 带完整标签。 */
+    const labelHtml = (it, attrs) => '<td class="kh-table-label"' + (attrs || '') + '>' + escHtml(it.label) + '</td>';
 
     /* 【v2.0.1.15 需求 2 · 外壳由内容构造】本函数返回 `''` = 有行但**有效值全空**
      * （值 `trim` 后为空即视为空 ⇒ 值不显示、字段名也不显示，整块不渲染）。
@@ -1492,7 +1507,7 @@
      * ② grid 分支的「有 label 表头 + 空 `<td>`」（原先根本没有字段级判空）。
      * ⚠️ 判空**不许**二次调用 `applyImgPolicy`（`it.budget` 跨格累计有状态，跑两遍会吃掉「前 N 张」预算）。 */
     let body = '';
-    for (const it of items) {
+    for (const it of merged) {
       if (it.grid) {
         const total = it.rows.length;
         /* 该字段里是否有图片：决定"纯数字格"要不要当噪音去掉（见下） */
@@ -1606,17 +1621,22 @@
     return String(label == null ? '' : label).replace(/（(?:内层|内\d+层|本层|外层|外\d+层)）$/, '');
   }
 
-  /** 真正算一次（不缓存时走这条）。字段级的图片选项（仅图片 / 前 N 张）按 label 带进渲染。 */
-  function computeBlock(textNode, rawLabels, scope, box) {
+  /**
+   * 真正算一次（不缓存时走这条）。字段级的图片选项（仅图片 / 前 N 张）按 label 带进渲染。
+   * `extras` = 【2.0.2.17 需求⑥】图片 OCR 命中的「键：值」行（`{label, value}`），与抓取字段
+   * 并进**同一张表** —— 这样合并（需求②）、裁切、悬停全文全都自动一致，不必给 OCR 行另开一套渲染。
+   */
+  function computeBlock(textNode, rawLabels, scope, box, extras) {
     const fetched = extractCached(textNode, rawLabels, scope, box);
-    if (!fetched.length) return null;
+    const extraItems = (extras || []).map((e) => ({ label: e && e.label, rows: [[{ t: e && e.value }]], opt: null }));
+    if (!fetched.length && !extraItems.length) return null;
     const optOf = {};
     for (const it of parseLabels(rawLabels)) optOf[it.label] = it;
     return rowsToTableHtml(fetched.map(f => ({
-      label: f.label, suffix: f.suffix, rows: f.rows,
+      label: f.label, rows: f.rows,
       /* `all` 下同名标签会带层级后缀 → 先按原样查，再退回"剥掉后缀"查 */
       opt: optOf[f.label] || optOf[baseLabelOf(f.label)]
-    })));
+    })).concat(extraItems));
   }
 
   /** 命中格在**根表格**里所在的行号（缓存键的一部分；见 `blockFor`） */
@@ -1691,16 +1711,19 @@
    * 因此按 `(层表格, scope, label)` 在 `box.cells` 里再缓存一层 ⇒ 不会退化成每行一次全表扫描。
    * 【性能实测】`_e2e` 的 800 行 / 3000 行重页面预算用例仍绿（见 R3 报告）。
    */
-  function blockFor(textNode, rawLabels, cache, scope) {
+  function blockFor(textNode, rawLabels, cache, scope, extras) {
     const sc = scopeOf(scope);
-    if (!cache || !textNode) return computeBlock(textNode, rawLabels, sc, null);
+    /* 【2.0.2.17 需求⑥】带 OCR 附加行时**绕开缓存**：缓存键是 `(表格, 行, labels, scope)`，
+     * 而 OCR 行按**命中所属规则**不同而不同 —— 同一格被两个关键词用到会串味。附加行为空时照常吃缓存。 */
+    const hasExtra = !!(extras && extras.length);
+    if (!cache || !textNode || hasExtra) return computeBlock(textNode, rawLabels, sc, null, extras);
     const root = fetchRoot(textNode);
-    if (!root) return computeBlock(textNode, rawLabels, sc, null);
+    if (!root) return computeBlock(textNode, rawLabels, sc, null, extras);
     const box = cacheBox(cache, textNode);
-    if (!box) return computeBlock(textNode, rawLabels, sc, null);
+    if (!box) return computeBlock(textNode, rawLabels, sc, null, extras);
     const k = String(rawLabels == null ? '' : rawLabels) + '\u0001' + sc + '\u0001' + rowKeyOf(root, textNode);
     if (box.html.has(k)) return box.html.get(k);
-    const v = computeBlock(textNode, rawLabels, sc, box);
+    const v = computeBlock(textNode, rawLabels, sc, box, extras);
     box.html.set(k, v);
     return v;
   }
