@@ -343,6 +343,35 @@
   }
 
   /**
+   * 【2.0.2.19 需求②⑤】这张图的 OCR 行有没有"列结构"（表格 / 横排两栏）。
+   * 有 ⇒ 返回列带模型，`null` ⇒ 按纯文本渲染（旧行为）。
+   * 分析在 `KH.ImgOcr.layout`（纯函数，吃 `linesOf` 的坐标），这里只做容错与"值不值得排表"的把关。
+   * @param {string} src 图片地址（与 `textOf` 同键）
+   */
+  function ocrLayoutOf(src) {
+    if (!src || !KH.ImgOcr || typeof KH.ImgOcr.linesOf !== 'function') return null;
+    try {
+      const lay = KH.ImgOcr.layout(KH.ImgOcr.linesOf(src));
+      return (lay && lay.cols >= 2 && lay.rows && lay.rows.length) ? lay : null;
+    } catch (e) { return null; }
+  }
+
+  /**
+   * 把列带模型画进容器，命中词照样标红（复用 `paintHits` 的**建节点**写法，不用 innerHTML 拼原文）。
+   * 表格 HTML 本身来自 `KH.ImgOcr.layoutHtml`（逐格转义过），所以这里可以安全 `innerHTML`。
+   * @returns {boolean} true = 画成了表格；false = 调用方该走纯文本
+   */
+  function paintOcrTable(el, lay, words) {
+    if (!el || !lay || !KH.ImgOcr || typeof KH.ImgOcr.layoutHtml !== 'function') return false;
+    const html = KH.ImgOcr.layoutHtml(lay);
+    if (!html) return false;
+    el.innerHTML = html;
+    const tds = el.querySelectorAll('td');
+    for (let i = 0; i < tds.length; i++) paintHits(tds[i], tds[i].textContent, words);
+    return true;
+  }
+
+  /**
    * 复制到剪贴板，返回 `Promise<boolean>`（false = 两条路都不通）。
    *
    * `navigator.clipboard` 在没有焦点/无权限时会 **reject**（不是抛异常），所以两条路都要接。
@@ -532,6 +561,18 @@
      * 不再重复画 ⇒ 能力搬到这里，不丢：命中词在原文里，点它复制的就是它所在的那句话。 */
     .kh-lb-hit.copied { background: #bbf7d0; }
     .kh-lb-hit.failed { background: #fecaca; color: #7f1d1d; }
+    /* 【2.0.2.19 需求②⑤】OCR 全文排成表格时（图里是表格 / 横排两栏）。
+     * 容器是 white-space: pre-wrap 的，表格必须自己把空白规则收回去 —— 否则单元格里的
+     * 缩进会被原样放大，列宽全被空格吃掉。 */
+    .kh-ocr-table {
+      border-collapse: collapse; white-space: normal; width: 100%;
+      font-size: 12.5px; line-height: 1.6;
+    }
+    .kh-ocr-table td {
+      padding: 1px 8px 1px 0; vertical-align: top; border-bottom: 1px solid rgba(255,255,255,.10);
+    }
+    .kh-ocr-table tr:last-child td { border-bottom: 0; }
+    .kh-ocr-table td.kh-ocr-wide { padding-right: 0; color: rgba(255,255,255,.92); }
     /* 【已删】原来这里有一条 has-side 后代选择器（"全文栏出现就把图片收窄"）：
      *   · 它本来就是**死规则** —— 类挂在 .kh-lb 自身、不在它的祖先链上，选择器要求的后代关系
      *     永远不成立（真机实测匹配数为 0），真实生效的一直只有上面 .kh-lb img 的 84vw；
@@ -654,7 +695,12 @@
         /* 【2.0.2.7 用户 m00292】原文里把命中词标出来（`paintHits` 只建文本节点，原文一字不动，
          * 命中的那几段套上 `<mark class="kh-lb-hit">`）—— 命中词在 OCR 条目上（`hitWords`），
          * 由开灯箱那一处随相册条目一起带进来。 */
-        paintHits(sideText, full, (cur && cur.hits) || []);
+        /* 【2.0.2.19 需求②⑤】图里本身是表格（同一物理行多个格子）或横排两栏时，排成表格比一整段
+         * 纯文本更好读（用户口径：软著横排 ⇒ 左右两个单元格；图里表格 ⇒ 表格形式）。排不出来
+         * （专栏 < 2）就退回老样子 —— 一字不变，零回归。`curText` 仍是纯文本，复制不受影响。 */
+        if (!paintOcrTable(sideText, ocrLayoutOf(cur && cur.src), (cur && cur.hits) || [])) {
+          paintHits(sideText, full, (cur && cur.hits) || []);
+        }
         sideLines.textContent = full ? KH.OcrCopy.render(KH.OcrCopy.VIEW.paneLines, { n: full.split(/\r?\n/).length }) : '';
         sideCopy.hidden = !full;            /* 没有 OCR 文本 ⇒ 按钮不出现（不是置灰） */
         box.classList.toggle('kh-lb-has-side', !!full);
@@ -1194,6 +1240,14 @@
     /* 上一轮用过的置顶表签名（见 `render`）：卡间顺序不进 `head.changed`，靠它认
      * "用户改了置顶排序"。空串 = 没配/没排序过（与 `pins.join()` 的空表结果一致 ⇒ 首轮不误判脏）。 */
     pinSig: '',
+    /* 【2.0.4 需求④】卡片复用缓存（见 `renderItems`）：上一轮每张卡对应的**正文串**。
+     * 正文没变的卡留用原元素（连里面的 `<img>` 一起），只重画标签区；
+     * 旧版每次 `textContent=''` 整块重建 ⇒ 图重新解码、滚动位置归零 = 用户看到的"闪"。 */
+    cardNotes: [],
+    cardEls: [],
+    /* 右键「截图」卡的内容签名（见 `renderCtxCard`）：OCR 状态每变一次都会调它，
+     * 签名没变就不拆不建，省掉一次 `<img>` 重载。 */
+    ctxSigCache: null,
     /* 📝 笔记区收起（2026-10-11 用户：笔记很长时把空间让给别的部分）。
      * 只翻转标记，用户收起就保持收起 —— 它是用户对视图的选择，不该被下一批结果自动弹开。 */
     noteCollapsed: false,
@@ -1295,13 +1349,17 @@
       this.pos = { left: gap, top: gap };
     },
 
-    applyPosition() {
+    /* 【2.0.4 需求④】`metrics` 可选：拖动时由 `startDrag` 把**按下那一刻**量到的尺寸传进来，
+     * 每帧不再 `getBoundingClientRect()` —— 那是"写样式→读布局"的强制同步刷新，
+     * pointermove 每次都做一遍就是用户说的"拖着不跟手"（帧率被布局卡住，指针位置追不上手指）。
+     * 拖动期间面板尺寸不会变（内容没动），沿用按下时那一次量值完全等价。 */
+    applyPosition(metrics) {
       if (!this.root) return;
       /* 一次 rect 读，横纵共用（省一次强制布局）。
        * 水平钳位用**面板实测宽度**：原来写死 360，与 `.khin-panel { width }` 成了两处真源 ——
        * 改 CSS 后钳位不跟着动；用户自己 `resize: both` 拉宽后更会算出错的 maxLeft（拖到右侧越界）。
        * 量不到时（hidden ⇒ display:none ⇒ width 0）钳位自然失效，此时面板不可见，无需钳位。 */
-      const rect = this.root.getBoundingClientRect();
+      const rect = metrics || this.root.getBoundingClientRect();
       const width = this.minimized ? 56 : rect.width;
       const maxLeft = Math.max(8, window.innerWidth - width - 8);
       /* 纵向钳位按**面板自己的实际高度**算（用户 2026-10-07：光有滚动条不够，还得滚得到）。
@@ -1328,6 +1386,8 @@
       e.preventDefault();
       const rect = this.root.getBoundingClientRect();
       const state = { startX: e.clientX, startY: e.clientY, startLeft: rect.left, startTop: rect.top, moved: false };
+      /* 【2.0.4 需求④】尺寸在按下时量一次，拖动全程复用（见 applyPosition 的说明）。 */
+      const metrics = { width: rect.width, height: rect.height };
       this.dragState = state;
       const move = (ev) => {
         if (!this.dragState) return;
@@ -1336,7 +1396,7 @@
         if (Math.abs(ev.clientX - state.startX) + Math.abs(ev.clientY - state.startY) > 3) state.moved = true;
         this.pos.left = state.startLeft + (ev.clientX - state.startX);
         this.pos.top = state.startTop + (ev.clientY - state.startY);
-        this.applyPosition();
+        this.applyPosition(metrics);
       };
       const up = () => {
         this.dragMoved = !!state.moved;      // 留给 FAB 的 click 判定：这一次是拖还是点
@@ -1766,59 +1826,111 @@
 
     /* 只重建右键那张「截图」卡：OCR 结果异步回来时用它补一块，标签区与已有卡片原地不动
      * （整块 `renderItems()` 重跑会把用户正在看的标签/滚动位置一起丢掉）。 */
+    /* 右键卡的内容签名：图地址（解析后）+ 状态 + 标签。状态 or 图变了才值得重建
+     * （pending→done 会让标题格多一句「识别中/失败」、灯箱里多一份 OCR 全文）。 */
+    ctxSig() {
+      return this.ctxItems()
+        .map((it) => [absSrc(it.src), it.state || '', String(it.label || '')].join('\u0001'))
+        .join('\u0002');
+    },
+
     renderCtxCard() {
       if (!this.bodyEl) return;
-      if (this.ctxEl && this.ctxEl.parentNode) this.ctxEl.parentNode.removeChild(this.ctxEl);
-      this.ctxEl = this.ctxCard(document);
-      /* 【2.0.2.16 需求⑦】右键那张「截图」卡排**最下方** —— 它是用户随手识别的产物，
-       * 不该压在设置里的卡片（尤其是置顶排序排到最前的那些）上面。只在这里 append，
-       * 不参与 `sortByPins`：卡间排序是笔记卡之间的事，右键卡不进那张表。 */
-      if (this.ctxEl) this.bodyEl.appendChild(this.ctxEl);
+      /* 【2.0.4 需求④】签名没变就**不拆不建**：这张卡唯一会变的内容是 OCR 状态与图清单，
+       * 而 `renderImg()`（OCR 每变一次就调）走的正是这里 —— 旧写法每次都把卡连 `<img>` 换新，
+       * 图重新解码，卡就会闪一下。签名一致时直接留着。 */
+      const sig = this.ctxSig();
+      if (!this.ctxEl || sig !== this.ctxSigCache) {
+        if (this.ctxEl && this.ctxEl.parentNode) this.ctxEl.parentNode.removeChild(this.ctxEl);
+        this.ctxEl = this.ctxCard(document);
+        this.ctxSigCache = sig;
+        /* 【2.0.2.16 需求⑦】右键那张「截图」卡排**最下方** —— 它是用户随手识别的产物，
+         * 不该压在设置里的卡片（尤其是置顶排序排到最前的那些）上面。只在这里 append，
+         * 不参与 `sortByPins`：卡间排序是笔记卡之间的事，右键卡不进那张表。 */
+        if (this.ctxEl) this.bodyEl.appendChild(this.ctxEl);
+      }
       this.bodyEl.hidden = !(this.items.length || this.ctxEl);
     },
 
     renderItems() {
       if (!this.bodyEl) return;
       const doc = document;
-      this.bodyEl.textContent = '';
-      for (const item of this.items) {
-        const el = doc.createElement('div');
-        el.className = 'khin-item';
+      /* 【2.0.4 需求④】不再 `bodyEl.textContent = ''` 整块重建。
+       * 旧写法每次重画都把卡片连同里面的 `<img>` 一起换新 ⇒ 浏览器重新解码、重排、
+       * 滚动位置归零，用户看到的就是「看板频繁闪一下」。改为**按序复用**：
+       * 正文串（note）没变的卡留用原元素，只重画标签区与内联样式；变了才重建那一张。
+       * `note` 是卡片里唯一承重的内容（抓取表格、OCR 追加的键值行都在串里），
+       * 所以"复用"不会漏更新；顺序变了就按新顺序落位。 */
+      const prevEls = this.cardEls || [];
+      const prevNotes = this.cardNotes || [];
+      const els = [];
+      const notes = [];
+      /* 右键卡永远排最后：先摘下来，收尾统一由 `renderCtxCard()` 追加 */
+      if (this.ctxEl && this.ctxEl.parentNode) this.ctxEl.parentNode.removeChild(this.ctxEl);
+      /* 卡级内联样式两个分支都要落：复用旧卡时必须能**清掉**旧值（词级图片尺寸/字号/底色
+       * 都可能在这两条笔记之间被改过 —— 只"有值才写"等于让旧值留在卡上）。 */
+      const styleOf = (el, item) => {
         if (item.imgSize) el.style.setProperty('--kh-img-size', item.imgSize + 'px');
+        else if (el.style && typeof el.style.removeProperty === 'function') el.style.removeProperty('--kh-img-size');
         /* 词级正文字号（2.0.2.2 需求 2）：卡级内联 `--kh-note-fs` 盖掉宿主级那个全局字号。
          * 该变量由 `.khin-item-note`（笔记正文）与抓取字段表格统一消费，所以写在这一层就能同时管住两者。 */
         if (item.noteFontSize) el.style.setProperty('--kh-note-fs', item.noteFontSize + 'px');
+        else if (el.style && typeof el.style.removeProperty === 'function') el.style.removeProperty('--kh-note-fs');
         // 「复用高亮底色」：铺该词实际底色（分组色 > 词色 > 全局默认）；空串不铺
-        if (/^#[0-9a-fA-F]{3,8}$/.test(item.bg || '')) el.style.background = item.bg;
-
-        const headEl = doc.createElement('div');
-        headEl.className = 'khin-item-head';
-        const tagsEl = doc.createElement('div');
-        tagsEl.className = 'khin-item-tags';
-        this.renderTags(tagsEl, item);
-        const closeBtn = doc.createElement('button');
-        closeBtn.className = 'khin-item-close';
-        closeBtn.title = KH.OcrCopy.VIEW.removeTip;   // 文案真源（T29 / F1.2）
-        closeBtn.textContent = '✕';
-        closeBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          this.ignored.add(item.note);
-          this.refresh();
-        });
-        headEl.appendChild(tagsEl);
-        headEl.appendChild(closeBtn);
-        el.appendChild(headEl);
-
-        const noteEl = doc.createElement('div');
-        noteEl.className = 'khin-item-note';
-        noteEl.appendChild(this.noteFragment(doc, item.note));
-        el.appendChild(noteEl);
-        this.bodyEl.appendChild(el);
+        el.style.background = /^#[0-9a-fA-F]{3,8}$/.test(item.bg || '') ? item.bg : '';
+      };
+      for (let i = 0; i < this.items.length; i++) {
+        const item = this.items[i];
+        const note = String(item.note == null ? '' : item.note);
+        let el = (prevEls[i] && prevNotes[i] === note) ? prevEls[i] : null;
+        if (el) {
+          /* 复用：标签区要按当前状态重画（展开/选中/命中序号都在里面），正文与 `<img>` 不动 */
+          const tagsEl = el.firstElementChild && el.firstElementChild.firstElementChild;
+          if (tagsEl) this.renderTags(tagsEl, item);
+        } else {
+          el = doc.createElement('div');
+          el.className = 'khin-item';
+          const headEl = doc.createElement('div');
+          headEl.className = 'khin-item-head';
+          const tagsEl = doc.createElement('div');
+          tagsEl.className = 'khin-item-tags';
+          this.renderTags(tagsEl, item);
+          const closeBtn = doc.createElement('button');
+          closeBtn.className = 'khin-item-close';
+          closeBtn.title = KH.OcrCopy.VIEW.removeTip;   // 文案真源（T29 / F1.2）
+          closeBtn.textContent = '✕';
+          closeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.ignored.add(item.note);
+            this.refresh();
+          });
+          headEl.appendChild(tagsEl);
+          headEl.appendChild(closeBtn);
+          el.appendChild(headEl);
+          const noteEl = doc.createElement('div');
+          noteEl.className = 'khin-item-note';
+          noteEl.appendChild(this.noteFragment(doc, note));
+          el.appendChild(noteEl);
+        }
+        styleOf(el, item);
+        els.push(el);
+        notes.push(note);
+        /* 落位：同一位置已经是对的元素就跳过，避免无谓的 DOM 移动（移动即重排） */
+        const cur = this.bodyEl.children[i];
+        if (cur !== el) this.bodyEl.insertBefore(el, cur || null);
       }
-      /* 【2.0.2.16 需求⑦】右键识别的「截图」卡排**最下方**：笔记卡（含置顶排序的）在上，
-       * 右键产物在下。整块重建时它要跟着重画，所以这条 append 也留在这里。 */
-      this.ctxEl = this.ctxCard(doc);
-      if (this.ctxEl) this.bodyEl.appendChild(this.ctxEl);
+      /* 条数变少了：把不在本次名单里的旧卡摘掉（按"在不在名单"判，
+       * 挪过位的老卡不会被误删） */
+      const keep = new Set(els);
+      const kids = Array.prototype.slice.call(this.bodyEl.children);
+      for (const child of kids) {
+        if (!keep.has(child)) this.bodyEl.removeChild(child);
+      }
+      this.cardEls = els;
+      this.cardNotes = notes;
+      /* 【2.0.2.16 需求⑦】右键「截图」卡排**最下方**，由 renderCtxCard 收尾追加；
+       * 它自己也带签名闸，没变化就不重建。 */
+      this.renderCtxCard();
     },
 
     /**
@@ -1913,47 +2025,91 @@
       /* 置顶签名随面板一起清：下次 render 从干净态重建，别拿上一站（另一个页面/另一次启动）的
        * 置顶表去比"顺序变没变"。 */
       this.pinSig = '';
+      /* 【2.0.4 需求④】复用缓存/签名随面板一起清：host 已经没了，留着只是悬空引用 */
+      this.cardEls = [];
+      this.cardNotes = [];
+      this.ctxEl = null;
+      this.ctxSigCache = null;
     }
   };
 
   /**
-   * 【2.0.2.17 需求⑥】图片 OCR 命中成功 ⇒ 把**命中那一行**的「键：值」并进抓取字段表。
-   * 用户口径：图片命中词命中后，如果 OCR 文本里存在 `登记号：2018SR458983` 这样的行，
-   * 卡片上要补一行「标题格＝登记号、内容格＝2018SR458983」。
+   * 【2.0.2.17 需求⑥ / 2.0.4 需求①】图片 OCR 命中成功 ⇒ 把图上的「键：值」并进抓取字段表。
    *
-   * 三条纪律：
-   *   · 只取**命中行**（OCR 全文里含命中词的那几行）—— 整篇 OCR 抄进卡片会把表格撑爆；
-   *   · 键做空白归一（OCR 常把「登 记 号」拆开），值得留原样；
-   *   · 同一 `键+值` 只留一条（多张图常认出同一行）。
+   * 【2.0.4 收严口径（用户裁决）】旧行为是"凡是命中行里的 `X：Y` 都进表"，范围太大：
+   * `一对一时间选择范围11:30.` 被拆成「一对一时间选择范围 | 11:30.」塞进卡片。
+   * 现在**必须先给那个词配后缀标记**（写在「图片命中关键词」的胶囊末尾，`#表` / `#kv` 都认）：
+   *   · 没标记的词 ⇒ 只做命中判定，**一行都不进表**（不再有"所有词都生效"）；
+   *   · 标记是**逐词**的，一个词误配不波及其它词；
+   *   · 进表时**标题格 = 那个命中词本身**（不是图上认出来的任意文字），值 = 紧跟其后的分隔符之后的内容。
+   * 分隔符适度放宽（用户口径）：`：`/`:`/`｜`/`|`/`＝`/`=`，以及**空白**（OCR 把「词 值」读散很常见）。
+   * 表格形式（图里就是两格）也照这个口径：**首格必须等于命中词**，值取它后面的格子。
+   *
+   * 两条纪律不变：只取命中行（整篇 OCR 抄进卡片会把表格撑爆）；同一 `词+值` 只留一条。
    */
-  const OCR_KV = /^\s*([^：:]{1,24}?)\s*[：:]\s*(.+?)\s*$/;
   const squashWs = (s) => String(s == null ? '' : s).replace(/\s+/g, '');
+  /** 键值行：命中词 + 分隔符 + 值。`{也` 之外的标点不算分隔符（`一对一时间范围11:30` 因此不会误拆）。 */
+  const KV_LEAD_SEP = /^(?:\s*[：:｜|＝=]\s*|\s+)(\S[\s\S]*)$/;
+  /** 命中词做**字面**匹配（可以带正则元字符），词内允许被 OCR 读散出空白 */
+  function kvLiteralRe(word) {
+    const chars = String(word || '').trim().split('');
+    if (!chars.length) return null;
+    const body = chars.map((c) => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s*');
+    try { return new RegExp(body, 'i'); } catch (e) { return null; }
+  }
+  /** 这一行里「命中词 + 分隔符 + 值」的值（没有就返回空串） */
+  function kvValueInLine(line, re) {
+    const m = re.exec(line);
+    if (!m) return '';
+    const after = line.slice(m.index + m[0].length);
+    const v = KV_LEAD_SEP.exec(after);
+    return v ? String(v[1]).trim() : '';
+  }
   function ocrExtraRows(meta) {
     const ruleId = meta && meta.pinId;
     if (!ruleId || !meta.imgOcr) return [];
     if (!KH.ImgOcr || typeof KH.ImgOcr.items !== 'function') return [];
+    /* 只有被标记的词才进表（唯一实现：`KH.ImgOcr.kvWords`，与匹配口径同一份标记语法） */
+    const words = (typeof KH.ImgOcr.kvWords === 'function') ? (KH.ImgOcr.kvWords(meta.imgOcrKeyword) || []) : [];
+    if (!words.length) return [];
+    const matchers = [];
+    for (const w of words) {
+      const re = kvLiteralRe(w);
+      if (re) matchers.push({ word: String(w).trim(), re: re });
+    }
+    if (!matchers.length) return [];
     let list = [];
     try { list = KH.ImgOcr.items() || []; } catch (e) { return []; }
     const out = [];
     const seen = new Set();
+    const pushRow = (label, value) => {
+      const sig = label + '\u0000' + value;
+      if (seen.has(sig)) return;
+      seen.add(sig);
+      out.push({ label: label, value: value });
+    };
     for (const it of list) {
       if (!it || it.ruleId !== ruleId || it.state !== 'done' || !it.text) continue;
-      const words = (it.matched || []).map((m) => squashWs(m && m.text)).filter(Boolean);
-      if (!words.length) continue;
-      for (const rawLine of String(it.text).split(/\r?\n/)) {
-        const line = rawLine.trim();
+      const rawLines = String(it.text).split(/\r?\n/);
+      for (let li = 0; li < rawLines.length; li++) {
+        const line = rawLines[li].trim();
         if (!line) continue;
-        const flat = squashWs(line);
-        if (!words.some((w) => flat.indexOf(w) >= 0)) continue;   // 不是命中行
-        const m = OCR_KV.exec(line);
-        if (!m) continue;
-        const label = squashWs(m[1]);
-        const value = m[2];
-        if (!label || !value) continue;
-        const sig = label + '\u0000' + value;
-        if (seen.has(sig)) continue;
-        seen.add(sig);
-        out.push({ label: label, value: value });
+        const cells = (it.lineList && it.lineList[li] && it.lineList[li].cells) || [];
+        for (const mt of matchers) {
+          /* ① 表格形式：搜到「格文本 == 命中词」的格 ⇒ 值 = 它后面的格（标题格就是那个词） */
+          let vi = -1;
+          for (let i = 0; i < cells.length; i++) {
+            if (squashWs(cells[i] && cells[i].t) === squashWs(mt.word)) { vi = i; break; }
+          }
+          if (vi >= 0 && vi < cells.length - 1) {
+            const value = cells.slice(vi + 1)
+              .map((c) => String((c && c.t) || '').trim()).filter(Boolean).join(' ').trim();
+            if (value) { pushRow(mt.word, value); continue; }
+          }
+          /* ② 文本行：命中词 + 分隔符 + 值（**标题格必须是这个词**，值只取分隔符之后） */
+          const value = kvValueInLine(line, mt.re);
+          if (value) pushRow(mt.word, value);
+        }
       }
     }
     return out;

@@ -582,40 +582,93 @@
   }
 
   /**
-   * PP-OCR 的结果 → 我们的行结构 `{t, conf, y, x}`。
-   * 上游形状：`res.lines` 是「行 → 词条数组」，词条 `{text, confidence, box:{x,y,width,height}}`，
-   * 坐标在**我们传进去那张画布**的像素空间里（含白边）—— 所以还原公式与 tesseract 那条完全一致。
+   * PP-OCR 的结果 → 我们的行结构 `{t, conf, y, x, cells}`。
+   * 上游形状（`flatten:true`）：`res.results` 是**扁平**词条数组，词条
+   * `{text, confidence, box:{x,y,width,height}}`，坐标在**我们传进去那张画布**的像素空间里（含白边）
+   * —— 所以还原公式与 tesseract 那条完全一致。
    * 【置信度必须 ×100】上游是 0–1，而我们全链路（`keepLine` 的 55 分线、`needsRotation` 的 70 分线、
    * 面板显示）都用 0–100 —— 不换算的话每一行都会被当成"低置信度"丢掉。
+   *
+   * 【2.0.2.19 需求①】为什么不再让引擎自己归行（真机证据：软著证书图丢掉顶部 6 行）：
+   *   · det 会把**装饰边框**判成一个覆盖整张画布的框（案例图 528×704 全幅，y0 h704）；
+   *   · 引擎的 `groupBoxesIntoLines` 按"相邻 y 差 ≤ 当前行平均高×0.5"归行，这个 704px 高的框把
+   *     平均高抬到 352px，于是它连同下面 11 个框一起被并进同一"行"；
+   *   · `mergeLineCrop` 随后把整幅图当一行送去识别 → 得到 conf **0.244** 的乱码，
+   *     `splitTextByPositions` 再把乱码摊回各框，最后被 `minimumConfidence:0.5` 全部丢弃
+   *     ⇒ 标题/证书号/软件名称/著作权人**凭空消失**（"识别成功"却少了一整块）。
+   *   同一批框改成 `strategy:'per-box'` 逐框识别，每框 conf **0.98–0.999**，一字不差。
+   *   所以这里：**逐框识别 + 自己归行**，并且把"占整幅 35% 以上的框"直接当边框扔掉。
    */
+  const FRAME_AREA_RATIO = 0.35;
+
   function linesFromPpocr(res, chunk, pre) {
-    const arr = (res && res.lines) || [];
-    const out = [];
+    const arr = (res && res.results) || [];
     const sc = (pre && pre.scale) || 1;
     const mg = (pre && pre.margin) || 0;
-    const inv = (v) => (v === Infinity ? 0 : v);
-    for (const items of arr) {
-      if (!items || !items.length) continue;
-      let y = Infinity, x = Infinity, sum = 0, n = 0;
-      const parts = [];
-      for (const it of items) {
-        const box = (it && it.box) || {};
-        if (typeof box.y === 'number' && box.y < y) y = box.y;
-        if (typeof box.x === 'number' && box.x < x) x = box.x;
-        sum += Number((it && it.confidence) || 0);
-        n += 1;
-        const t = String((it && it.text) || '').replace(/\s+/g, ' ').trim();
-        if (t) parts.push(t);
-      }
-      const text = parts.join(' ').trim();
-      if (!text) continue;
-      out.push({
-        t: text,
-        conf: n ? Math.round((sum / n) * 100) : 0,
-        y: (chunk ? chunk.y : 0) + Math.max(0, Math.round((inv(y) - mg) / sc)),
-        x: (chunk ? chunk.x : 0) + Math.max(0, Math.round((inv(x) - mg) / sc))
+    const canvasArea = ((pre && pre.w) || 0) * ((pre && pre.h) || 0);
+    const bx = chunk ? chunk.x : 0;
+    const by = chunk ? chunk.y : 0;
+    const inv = (v) => (v === Infinity || typeof v !== 'number' ? 0 : Math.max(0, Math.round((v - mg) / sc)));
+    const boxes = [];
+    for (const it of arr) {
+      const t = String((it && it.text) || '').replace(/\s+/g, ' ').trim();
+      const box = (it && it.box) || {};
+      const w = Number(box.width) || 0;
+      const h = Number(box.height) || 0;
+      if (!t || w <= 0 || h <= 0) continue;
+      if (canvasArea > 0 && w * h >= canvasArea * FRAME_AREA_RATIO) continue;  // 边框/底图，不是文字
+      boxes.push({
+        t: t,
+        conf: Math.round(Number((it && it.confidence) || 0) * 100),
+        x: Number(box.x) || 0,
+        y: Number(box.y) || 0,
+        w: w,
+        h: h
       });
     }
+    /* 归行：竖向量叠 ≥ 半行高，或中心差 ≤ 半行高 —— 同一物理行的多个框（表格分格、一行断成几段）并起来。
+     * 不依赖上游给的"平均高"，所以不会再被一个超大框带跑。 */
+    boxes.sort((a, b) => (a.y - b.y) || (a.x - b.x));
+    const lines = [];
+    for (const b of boxes) {
+      const cy = b.y + b.h / 2;
+      let hit = null;
+      for (const ln of lines) {
+        const lh = ln.y2 - ln.y1;
+        const ov = Math.min(b.y + b.h, ln.y2) - Math.max(b.y, ln.y1);
+        if (ov / Math.min(b.h, lh) >= 0.5 || Math.abs(cy - (ln.y1 + ln.y2) / 2) <= Math.max(4, Math.max(b.h, lh) * 0.5)) {
+          hit = ln;
+          break;
+        }
+      }
+      if (!hit) {
+        lines.push({ y1: b.y, y2: b.y + b.h, items: [b] });
+      } else {
+        hit.items.push(b);
+        if (b.y < hit.y1) hit.y1 = b.y;
+        if (b.y + b.h > hit.y2) hit.y2 = b.y + b.h;
+      }
+    }
+    const out = [];
+    for (const ln of lines) {
+      ln.items.sort((a, b) => a.x - b.x);
+      const parts = ln.items.map((b) => b.t).filter(Boolean);
+      if (!parts.length) continue;
+      let sum = 0;
+      for (const b of ln.items) sum += b.conf;
+      out.push({
+        t: parts.join(' ').replace(/\s+/g, ' ').trim(),
+        conf: Math.round(sum / ln.items.length),
+        y: by + inv(ln.y1),
+        x: bx + inv(ln.items[0].x),
+        /* 行的**单元格**（原图坐标）：需求②表格展示、需求⑤左右双栏要靠它，
+         * 旧字段一个不动，多出来的字段不参与既有判决。 */
+        cells: ln.items.map((b) => ({
+          t: b.t, x: bx + inv(b.x), y: by + inv(b.y), x2: bx + inv(b.x + b.w)
+        }))
+      });
+    }
+    out.sort((a, b) => (a.y - b.y) || (a.x - b.x));
     return out;
   }
 
@@ -662,14 +715,43 @@
     return Math.max(MIN_OVERLAP, Math.min(CHUNK_OVERLAP, byRatio));
   }
 
-  /** 单块缩放系数：**块高 ≤1600 ⇒ 1:1 不缩**；块高 1600–2000 时最多缩到 0.8（MAX_EDGE 硬顶） */
+  /**
+   * 单块缩放系数：**块高 ≤1600 ⇒ 1:1 不缩**；块高 1600–2000 时最多缩到 0.8（MAX_EDGE 硬顶）。
+   *
+   * 【2.0.4 需求③】再补一档**小图放大**：`max ≤ MAX_EDGE/2` 时一律 2×（放大后正好 ≤ MAX_EDGE）。
+   * 这条来自本文件自己的诊断结论（见 `DENSE_RESCALE` 处：瓶颈是每行在像素上的**绝对高度**）——
+   * 用户报的那张 395×700 缩略图上角标「2026」只有十来像素高，1:1 送进去 det 直接读成「29」。
+   * 小图放大的像素成本极低（395×700 ⇒ 790×1400），而缩略图正是这个功能最常见的一类输入。
+   */
+  const SMALL_EDGE = MAX_EDGE / 2;
   function scaleFor(w, h) {
     const W = Math.max(1, Math.round(w || 0));
     const Hh = Math.max(1, Math.round(h || 0));
     const max = Math.max(W, Hh);
     if (max > MAX_EDGE) return MAX_EDGE / max;
     if (Hh < TARGET_H) return Math.min(MAX_SCALE, TARGET_H / Hh);
+    if (max <= SMALL_EDGE) return 2;
     return 1;
+  }
+
+  /**
+   * 【2.0.4 需求③】非文字被认成文字：图标/装饰图形会被 det 框出来、rec 硬给几个字母
+   * （用户报的那张图里「周 OL」的 `OL` 就是这类垃圾）。判据不靠字符表，靠**置信度**：
+   * 真正的文字（哪怕只有两个字符）rec 基本都 ≥90，垃圾多在 55–75 之间。
+   * 只对**短行**（≤3 字）收紧，长行低分仍可能是艺术字正文，不跟着遭殃。
+   *
+   * 放在模块级（而不是 `runJob` 里）是为了让 `self.__khOcrPure.keepLine` 能钉住这条口径 —
+   * 识别的像素那一半在 node 里跑不了，判据这一半必须跑得了。
+   */
+  const SHORT_LINE_CONF = 75;
+  function keepLine(l) {
+    if (!l) return false;
+    if (l.conf < 55) return false;
+    const chars = String(l.t || '').replace(/\s/g, '');
+    if (chars.length < 2) return false;
+    if (chars.length <= 3 && l.conf < SHORT_LINE_CONF) return false;
+    const wordish = (chars.match(/[\u4e00-\u9fffA-Za-z0-9]/g) || []).length;
+    return wordish / chars.length >= 0.5;
   }
 
   /**
@@ -1232,7 +1314,8 @@
   const PURE = {
     CHUNK_H: CHUNK_H, CHUNK_OVERLAP: CHUNK_OVERLAP, CHUNK_MAX: CHUNK_MAX,
     CHUNK_H_RELAXED: CHUNK_H_RELAXED, MIN_OVERLAP: MIN_OVERLAP, ROT_ORDER: ROT_ORDER.slice(),
-    overlapFor: overlapFor, scaleFor: scaleFor, layoutChunks: layoutChunks, planChunks: planChunks,
+    overlapFor: overlapFor, scaleFor: scaleFor, keepLine: keepLine,
+    layoutChunks: layoutChunks, planChunks: planChunks,
     bandPlan: bandPlan, denseBandPlans: denseBandPlans, DENSE_BANDS: DENSE_BANDS,
     overlapBands: overlapBands, mergeOverlap: mergeOverlap, keyOf: keyOf,
     OVERLAP_MATCH_X: OVERLAP_MATCH_X,
@@ -1590,20 +1673,22 @@
       const recognizeChunk = async (pre, chunk) => {
         if (kind === ENGINE_PPOCR) {
           /* (a) 直接把**画布**交给引擎（PoC 就是这么喂的：`service.recognize(canvas)`）——
-           * 省掉我们这边的 `convertToBlob` PNG 编码 + 引擎侧的再解码一次。 */
-          const r = await timeout(ppocrSvc.recognize(pre.canvas || pre.blob, { noCache: true, flatten: false }), 120000, '识别');
+           * 省掉我们这边的 `convertToBlob` PNG 编码 + 引擎侧的再解码一次。
+           * 【2.0.2.19 需求①】`strategy:'per-box'` + `minimumConfidence:0`：逐框识别（默认 per-line 会被
+           * 边框大框带崩，丢整块文字，见 `linesFromPpocr` 头注），行归我们自己来做，置信度闸门也只留
+           * `keepLine` 那一道（引擎那道用符号阈值 +0.3，会把本来就认对的行吞掉）。 */
+          const r = await timeout(
+            ppocrSvc.recognize(pre.canvas || pre.blob, {
+              noCache: true, flatten: true, strategy: 'per-box', minimumConfidence: 0
+            }),
+            120000, '识别'
+          );
           return linesFromPpocr(r, chunk, pre);
         }
         const r = await timeout(worker.recognize(pre.blob), 60000, '识别');
         return linesFrom(r, chunk, pre);
       };
-      const keepLine = (l) => {
-        if (l.conf < 55) return false;
-        const chars = l.t.replace(/\s/g, '');
-        if (chars.length < 2) return false;
-        const wordish = (chars.match(/[\u4e00-\u9fffA-Za-z0-9]/g) || []).length;
-        return wordish / chars.length >= 0.5;
-      };
+      /* 【2.0.4 需求③】非文字过滤口径搬到模块级 `keepLine`（`__khOcrPure.keepLine` 可测） */
       /* 最后一次 `tidy` 的跨块去重读数（进回执 `overlap`，additive） */
       let overlapStat = { merged: 0, near: 0, maxDy: null, maxDx: null };
       const tidy = (all, chunks) => {
@@ -1737,10 +1822,14 @@
          * ⇒ 这里不传 `raw`，两条引擎同一套预处理。`prepareBlob` 的 `raw` 开关保留着，
          * 仅供真机上做"同图 A/B 对照"（省 23ms 换来什么代价，要有实测才敢开）。 */
         /* `kk>1` = **密排放大**（S3-②）：同一块按 kk 倍重采一次；不传就照 `scaleFor` 的常规判断。
-         * 显式给 `scale` 会覆盖 prepareBlob 内部的 scaleFor ⇒ 几何换算（`pre.scale`）照样自洽。 */
+         * 显式给 `scale` 会覆盖 prepareBlob 内部的 scaleFor ⇒ 几何换算（`pre.scale`）照样自洽。
+         * 【2.0.4 需求③】取**较大者**而不是相乘：小图那条路 `scaleFor` 已经给到 2，再乘 3 就是 6×
+         * （395×700 ⇒ 2370×4200 画布、40MB 像素），既慢又没好处 —— 救的是"绝对行高"，取大的那个就够。 */
+        const baseScale = scaleFor(c.w, c.h);
+        const wantScale = kk !== 1 ? Math.max(baseScale, kk) : 0;
         const pre = await prepareBlob(f.blob, Object.assign(
           { sx: c.x, sy: c.y, sw: c.w, sh: c.h },
-          kk !== 1 ? { scale: kk * scaleFor(c.w, c.h) } : null,
+          wantScale ? { scale: wantScale } : null,
           /* ppocr 吃画布 ⇒ 别产出没人读的 PNG（tesseract 仍需 blob） */
           kind === ENGINE_PPOCR ? { noBlob: true } : null
         ), f.bitmap);   // 【T51】deg 0 的块借整图那张 bitmap（试转出来的帧没有 ⇒ undefined ⇒ 自己解）
@@ -1935,6 +2024,13 @@
          * `maxDx` 是 `OVERLAP_MATCH_X`（16）能不能再收的依据，必须如实给。 */
         overlap: overlapStat,
         lines: finalLines.length, rawLines: chosen.stat.rawLines,
+        /* 【2.0.2.19 需求②⑤】结构化行（含每行的**单元格**坐标）—— 面板要把表格/左右双栏的 OCR
+         * 全文摆成表格式，光有 `text` 是做不到的（空格分不清"表格分隔"还是"词间空格"）。
+         * 只带渲染要用的四个字段；`conf` 面板已有整篇的，不必逐行再抄一遍。 */
+        lineList: finalLines.map((l) => ({
+          t: l.t, y: l.y, x: l.x,
+          cells: (l.cells || []).map((c) => ({ t: c.t, x: c.x, x2: c.x2 }))
+        })),
         notice: notice, coverage: cov, orientation: orientation,
         /* 【T51】本任务的整图解码次数（长图 7 块原本 = 1 次量尺寸 + 7 次逐块 = 8）。 */
         decodes: decodeCount - decBefore,

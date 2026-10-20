@@ -167,9 +167,12 @@ module.exports = async function run() {
    * 用户口径：「这四个输入框风格、格式需要作为门禁统一，一处修改四处都统一」。
    * 门禁两层：① 四个字段都用同一份 `cands` 实现、同一组开关（不许哪个字段自己长特例）；
    * ② 造出来的控件结构逐项相同（万一将来有人给某一个框加个 if，这条会红）。
-   * 宽度这类真要排版的判据在真机层（`_e2e/ui.test.js`）量，垫片没有布局引擎。 */
-  suite('四个候选框口径统一（2.0.2.16 需求③）');
-  const CANDS_KEYS = ['text', 'cellVerify', 'fetchLabels', 'imgOcrKeyword'];
+   * 宽度这类真要排版的判据在真机层（`_e2e/ui.test.js`）量，垫片没有布局引擎。
+   * 【2.0.3 需求②】第五个：`imgOcrNeed`（原「还需图上有」→「图片动态关键词」）从 `text` 升进这一族
+   * —— 用户要求「和关键词、标题关键词、抓取字段、图片命中关键词一样的交互逻辑」，并且点名
+   * 「写入门禁，一处改其他都一致改」。所以它必须**进这张表**：谁以后只改一个框，这里就红。 */
+  suite('候选框口径统一（2.0.2.16 需求③ · 2.0.3 起五条）');
+  const CANDS_KEYS = ['text', 'cellVerify', 'fetchLabels', 'imgOcrKeyword', 'imgOcrNeed'];
   const shapeOf = (key) => {
     const ctl = KH.ui.Fields.create(FM.byKey(key), '', {});
     const el = ctl.el;

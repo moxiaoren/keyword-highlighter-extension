@@ -149,15 +149,20 @@ function loadOffscreen(opts) {
             if (script === 'init-fail') throw Object.assign(new Error('模型没起来'), { code: 'init-failed' });
           }
           async destroy() {}
-          async recognize() {
+          async recognize(_src, opts) {
             calls.recognize += 1;
+            calls.ppocrOpts = opts;
             if (script === 'recognize-fail') throw Object.assign(new Error('识别崩了'), { code: 'ocr-failed' });
-            /* 上游形状：`lines` 是"行 → 词条数组"，置信度 0–1、坐标是 box */
+            /* 上游形状（2.0.2.19 起我们用 `flatten:true` + `per-box`）：`results` 是**扁平**词条数组。
+             * 旧形状 `lines`（行→词条数组）已不再消费 —— 引擎自己归行会被边框大框带崩，见
+             * `offscreen/ocr.js` 的 `linesFromPpocr` 头注（真机丢字根因）。 */
             return {
               text: 'PP 认出来的供应商',
               confidence: 0.99,
-              lines: [[{ text: 'PP', confidence: 0.98, box: { x: 4, y: 20, width: 40, height: 20 } },
-                { text: '认出来的供应商', confidence: 0.99, box: { x: 50, y: 20, width: 120, height: 20 } }]]
+              results: [
+                { text: 'PP', confidence: 0.98, box: { x: 4, y: 20, width: 40, height: 20 } },
+                { text: '认出来的供应商', confidence: 0.99, box: { x: 50, y: 20, width: 120, height: 20 } }
+              ]
             };
           }
         }
@@ -278,6 +283,20 @@ module.exports = async function run() {
     /* 置信度必须换算成 0–100：上游是 0–1，而 `keepLine` 的 55 分线与面板显示都用百分制 */
     truthy(r.confidence > 55, 'PP-OCR 的 0–1 置信度必须 ×100（否则每行都会被当低置信度丢掉）：' + r.confidence);
     eq(env.calls.recognize, 1, '一块只识别一次');
+  });
+
+  /* 【2.0.2.19 需求①】真机丢字的根因不是检测、是**归行**：厂商 `groupBoxesIntoLines` 按"相邻 y 差
+   * ≤ 当前行平均高 × 0.5"归行，检测器给装饰边框输出了一个覆盖整幅的框 ⇒ 平均高被抬到半张图，
+   * 边框连同下面十来行并成"一行"，整幅图当一行识别出 conf 0.244 的乱码，再被 `minimumConfidence:0.5`
+   * 全数丢光 ⇒ 标题/证书号/软件名称/著作权人凭空消失。修法是把「归行」拿回来自己做（`linesFromPpocr`），
+   * 引擎只许**逐框**识别。这里钉住调用参数，防止有人"顺手"改回引擎归行。 */
+  await test('★ 需求①：PP-OCR 必须 `per-box` 逐框识别（引擎自己归行会被边框大框带崩）', async () => {
+    const env = loadOffscreen({ models: true });
+    await env.run('auto', 'pb');
+    const opts = env.calls.ppocrOpts || {};
+    eq(opts.strategy, 'per-box', '不许再用 per-line（那会触发厂商按平均高归行）');
+    eq(opts.flatten, true, '要扁平词条：归行由 linesFromPpocr 自己做，不吃上游 lines');
+    eq(opts.minimumConfidence, 0, '低置信度框不许在上游就被丢掉（归行后由 keepLine 的 55 分线管）');
   });
 
   await test('★ 主引擎可用但**识别**时崩了：如实报错，不掩盖成"没命中"', async () => {

@@ -216,6 +216,9 @@
        * "没配抓取字段/关键词为空 → imgOcr 置 false"由 `Config.normalize` 兜底，不在这里做。 */
       imgOcr: !!f.imgOcr,
       imgOcrKeyword: str(f.imgOcrKeyword).trim(),
+      /* 【2.0.2.19 需求③】动态判据：填**抓取字段名**（逗号分隔）——这些字段抓到的值也要出现在图上
+       * 才算命中。留空 = 只看 `imgOcrKeyword`（存量配置行为一字不变）。 */
+      imgOcrNeed: str(f.imgOcrNeed).trim(),
       imgOcrMax: f.imgOcrMax || '',
 
       fetchLabels: normalizeLabels(f.fetchLabels),

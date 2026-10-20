@@ -370,7 +370,7 @@ module.exports = async function run() {
     truthy(/margin:\s*0 6px 6px/.test(item) && /padding:\s*7px 10px/.test(item) && /border:\s*1px/.test(item),
       '卡片口径（外边距 6 / 内边距 10 / 1px 边框）必须与上面那条减数对得上：' + item);
     truthy(/border-radius:\s*8px/.test(item), '条目的圆角（需求 3：卡片化）：' + item);
-    const ap = (src.match(/applyPosition\(\)\s*\{[\s\S]*?\n    \}/) || [''])[0];
+    const ap = (src.match(/applyPosition\([^)]*\)\s*\{[\s\S]*?\n    \}/) || [''])[0];
     truthy(ap.length > 0, '要能定位 applyPosition');
     const apCode = ap.replace(/\/\*[\s\S]*?\*\//g, '');   // 只看代码，不看注释里的解释文字
     /* 反例防回归：以前这里是 `const width = this.minimized ? 56 : 360;` ——
@@ -1178,28 +1178,31 @@ module.exports = async function run() {
     falsy(js.indexOf("class: 'kh-lbl-chip'") >= 0, '★ 设置页里不许再出现手写的胶囊结构（`class: \'kh-lbl-chip\'`）');
   });
 
-  /* 【2.0.2.17 需求⑥】图片 OCR 命中成功 ⇒ 「键：值」行并进抓取字段表。
-   * 口径（用户原话）：命中后如果 OCR 文本里存在 `登记号：2018SR458983` 这样的行，
-   * 卡片上要补一行「标题格＝登记号、内容格＝2018SR458983」。 */
-  await test('★ 需求⑥：只取**命中行**的「键：值」，键去空白、重复只留一条、别的规则不算', () => {
+  /* 【2.0.2.17 需求⑥ → 2.0.4 需求①收严】图片 OCR 命中后把「键：值」行并进抓取字段表，
+   * 但**必须先对那个词配后缀标记**（`#表`/`#kv`）：没标记的词只做命中判定，一行都不进表。 */
+  await test('★ 需求①：只有配了后缀标记的词才进表，标题格=命中词、值=分隔符之后', () => {
     const IN = KH.ImportantNote;
     const orig = KH.ImgOcr;
     KH.ImgOcr = {
+      kvWords: orig.kvWords,      // 标记语法的唯一实现在真模块里，桩不许另写一份
       items: () => ([
-        { ruleId: 'r6', key: 'r6|a', state: 'done', matched: [{ text: '登 记 号' }],
+        { ruleId: 'r6', key: 'r6|a', state: 'done',
           text: '计算机软件著作权登记证书\n登 记 号： 2018SR458983\n著 作 权 人： 某某公司' },
-        { ruleId: 'r6', key: 'r6|b', state: 'done', matched: [{ text: '登记号' }],
+        { ruleId: 'r6', key: 'r6|b', state: 'done',
           text: '登 记 号： 2018SR458983' },
-        { ruleId: 'r-other', key: 'x', state: 'done', matched: [{ text: '登记号' }], text: '登记号：别的词' },
-        { ruleId: 'r6', key: 'r6|c', state: 'pending', matched: [], text: '' }
+        { ruleId: 'r-other', key: 'x', state: 'done', text: '登记号：别的词' },
+        { ruleId: 'r6', key: 'r6|c', state: 'pending', text: '' }
       ])
     };
     try {
-      eq(JSON.stringify(IN.ocrExtraRows({ pinId: 'r6', imgOcr: true })),
+      const meta = { pinId: 'r6', imgOcr: true, imgOcrKeyword: '登记号#表|著作权人' };
+      eq(JSON.stringify(IN.ocrExtraRows(meta)),
         JSON.stringify([{ label: '登记号', value: '2018SR458983' }]),
-        '命中行才进笔记（非命中行「著作权人」不许抄进来）、键去空白、两张图同值只留一条、别的规则不算');
-      eq(JSON.stringify(IN.ocrExtraRows({ pinId: 'r6', imgOcr: false })), '[]', '没勾「识别图片文字」⇒ 不补行');
-      eq(JSON.stringify(IN.ocrExtraRows({ pinId: 'r-none', imgOcr: true })), '[]', '别的规则的结果不许串味');
+        '「登 记 号」被 OCR 读散也要认；「著作权人」没标记 ⇒ 不进表；两张图同值只留一条；别的规则不算');
+      eq(JSON.stringify(IN.ocrExtraRows(Object.assign({}, meta, { imgOcrKeyword: '登记号' }))), '[]',
+        '★ 收严：没配后缀标记 ⇒ 一行都不进表（旧版是"所有命中行都进表"）');
+      eq(JSON.stringify(IN.ocrExtraRows(Object.assign({}, meta, { imgOcr: false }))), '[]', '没勾「识别图片文字」⇒ 不补行');
+      eq(JSON.stringify(IN.ocrExtraRows(Object.assign({}, meta, { pinId: 'r-none' }))), '[]', '别的规则的结果不许串味');
       eq(JSON.stringify(IN.ocrExtraRows(null)), '[]', '没有 meta ⇒ 安全返回空');
     } finally { KH.ImgOcr = orig; }
   });

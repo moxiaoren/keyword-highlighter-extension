@@ -202,6 +202,10 @@
       imgOcr: !!(kw && kw.imgOcr),
       imgOcrMax: max,
       imgOcrKeyword: String((kw && kw.imgOcrKeyword) == null ? '' : kw.imgOcrKeyword).trim(),
+      /* 【2.0.2.19 需求③】动态判据：这里填**抓取字段名**（`姓名` / `姓名,公司`）。
+       * 语义见 `img-ocr.js` 的 `judge`：这些字段抓到的值也必须在识别文本里出现才算命中。
+       * 留空 = 与旧版逐字一致（只看 `imgOcrKeyword`）—— 所以存量配置行为不变。 */
+      imgOcrNeed: String((kw && kw.imgOcrNeed) == null ? '' : kw.imgOcrNeed).trim(),
       /* 「抓取范围」（K74）：挂在这个**共用出口**上 —— 普通词与组合词两条编译路径都会 spread 它，
        * 于是 `src/features/combo/**` 一行都不用改（那在本轮是禁写目录），
        * 而归一函数仍只有 `KH.Config.normalizeFetchScope` 一份。 */

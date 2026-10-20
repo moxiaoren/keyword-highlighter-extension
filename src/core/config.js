@@ -518,7 +518,10 @@
            * 用户重新勾选时不必重填）。 */
           if (o.imgOcr) {
             const hasFetch = !!(o.fetchLabels && String(o.fetchLabels).trim());
-            const hasWord = !!(o.imgOcrKeyword && String(o.imgOcrKeyword).trim());
+            /* 【2.0.2.19 需求③】判据有**两条**（静态词 / 动态字段名），填了任意一条就成立。
+             * 只认 `imgOcrKeyword` 会把"只用动态判据"的合法配置（用户例子：姓名、截图）静默关掉。 */
+            const hasWord = !!((o.imgOcrKeyword && String(o.imgOcrKeyword).trim())
+              || (o.imgOcrNeed && String(o.imgOcrNeed).trim()));
             if (!hasFetch || !hasWord) {
               o.imgOcr = false;
               changed.invalid.push('imgOcr');

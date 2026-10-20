@@ -875,6 +875,20 @@ module.exports = async function run() {
     eq(F.blockFor(tn, '资质类型'), F.blockFor(tn, '资质类型', new WeakMap(), 'self', []), '空附加行不影响结果');
   });
 
+  /* 【2.0.2.19 需求②】用户原例：抓取「员工名字|张三」+ 图里表格「姓名|张三」⇒ 合成「姓名/员工名字|张三」。
+   * 顺序不能反：图上原件里的字段名是这条信息的本名，抓取别名是页面自己的叫法。 */
+  await test('★ 需求②：OCR 行与抓取字段同值 ⇒ 合并成一行，且**图里的字段名在前**', () => {
+    const t = table([['关键词', 'x'], ['员工名字', '张三']]);
+    const tn = t.rows[0].children[0].childNodes[0];
+    const html = String(F.blockFor(tn, '员工名字', new WeakMap(), 'self', [{ label: '姓名', value: '张三' }]));
+    truthy(html.indexOf('姓名/员工名字') >= 0, '同值合成一格、图里字段名在前：' + html);
+    eq((html.match(/张三/g) || []).length, 1, '值只许写一遍（两行就是两条信息的错觉）：' + html);
+    /* 值不同 ⇒ 各占一行，绝不合并 */
+    const diff = String(F.blockFor(tn, '员工名字', new WeakMap(), 'self', [{ label: '姓名', value: '李四' }]));
+    truthy(diff.indexOf('姓名/员工名字') < 0, '值不同不许合并：' + diff);
+    truthy(diff.indexOf('李四') >= 0 && diff.indexOf('张三') >= 0, '两条都要在：' + diff);
+  });
+
   suite('fetch · 假表格（无 <table>）');
 
   await test('★ div/flex 假表格：按标签找元素取右邻兄弟', () => {

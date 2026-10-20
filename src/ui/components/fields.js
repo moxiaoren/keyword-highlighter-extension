@@ -433,10 +433,14 @@
           return out.length ? out : [str];
         };
         const tokenSplitter = spec.token && KH.Fetch && KH.Fetch.splitLabelTokens;
-        const split = !tokenSplitter ? plainSplit : (s) => {
+        /* 【2.0.3 需求②】`csvSplit`：这一格填的是**抓取字段名**（人习惯用逗号写多个），逗号也当分隔符。
+         * 只有显式声明这个开关的字段才这么切 —— 另外四个候选框里的逗号是**正文字符**（关键词 `a,b`），
+         * 跟着宽切就等于改口径。所以「一处改、全体一致」管的是控件与外壳，不是切分规则。 */
+        const csvSplit = !!spec.csvSplit && !tokenSplitter;
+        const split = tokenSplitter ? (s) => {
           const arr = KH.Fetch.splitLabelTokens(String(s == null ? '' : s));
           return (arr && arr.length) ? arr : plainSplit(s);
-        };
+        } : !csvSplit ? plainSplit : (s) => plainSplit(String(s == null ? '' : s).replace(/[,，、;；]/g, '|'));
         const st = segEditor(inp, split, value);
         /** 文本态高度跟着内容走（上限 9 行，再多就滚动）：进文本态是为了**改**，看不全就没意义。 */
         const autoGrow = () => {

@@ -241,10 +241,12 @@ module.exports = async function run() {
     truthy(cb.indexOf('panel.renderImg()') >= 0, '识别状态变化要刷新面板');
     truthy(/renderImg\(\)\s*\{[\s\S]{0,900}?renderCtxCard\(\)/.test(src), 'renderImg 里要重建那张卡');
     truthy(/renderCtxCard\(\)\s*\{[\s\S]{0,500}?removeChild/.test(src), '重建前先摘掉旧节点（不叠卡）');
-    /* 2.0.2.16 需求⑦ 起这张卡排到**最下方**，所以赋值点从函数开头挪到了笔记卡循环之后；
-     * 契约不变：整块重建时也要把新卡记到 ctxEl（否则下次 renderCtxCard 摘不到它）。 */
-    truthy(/for \(const item of this\.items\)[\s\S]{0,2000}?this\.ctxEl = this\.ctxCard\(doc\)/.test(src),
-      '整块重建时也要把新卡记到 ctxEl（否则下次 renderCtxCard 摘不到它）');
+    /* 2.0.4 需求④ 起「建卡 + 记 ctxEl + 落位」收在 renderCtxCard 一处（renderItems 循环后调它，
+     * 它自带签名闸）。契约不变：整块重建时新卡仍要记到 ctxEl，否则下次摘不到。 */
+    truthy(/renderItems\(\)\s*\{[\s\S]{0,4000}?this\.renderCtxCard\(\);/.test(src),
+      '整块重建时也要把新卡记到 ctxEl（现在由 renderCtxCard 统一建卡）');
+    truthy(/renderCtxCard\(\)\s*\{[\s\S]{0,900}?this\.ctxEl = this\.ctxCard\(document\)/.test(src),
+      'ctxEl 的赋值点必须在 renderCtxCard 里（唯一实现）');
   });
 
   /* ==========================================================================
@@ -277,11 +279,11 @@ module.exports = async function run() {
 
   await test('★ 这张卡排最下方，且不进置顶排序（笔记卡在上，右键产物在下）', () => {
     const src = read('src/features/important-note.js');
-    /* 整块重建：先画完全部笔记卡，再把右键卡 append 到最后 */
-    truthy(/for \(const item of this\.items\)[\s\S]{0,2000}?this\.ctxEl = this\.ctxCard\(doc\);[\s\S]{0,300}?this\.bodyEl\.appendChild\(this\.ctxEl\)/.test(src),
-      '★ 右键卡必须排在笔记卡之后（appendChild 在循环外）');
-    /* 单选刷新：也只许 append，不许插到最前 */
-    truthy(/renderCtxCard\(\)\s*\{[\s\S]{0,600}?this\.bodyEl\.appendChild\(this\.ctxEl\)/.test(src),
+    /* 整块重建：先画完全部笔记卡，再由 renderCtxCard（唯一建卡点）把右键卡 append 到最后 */
+    truthy(/renderItems\(\)\s*\{[\s\S]{0,4000}?this\.renderCtxCard\(\);/.test(src),
+      '★ 右键卡必须排在笔记卡之后（笔记卡循环结束才创建/追加）');
+    /* 单选刷新：也只许 append，不许插到最前（2.0.4 起前面多了签名闸，放宽字符窗） */
+    truthy(/renderCtxCard\(\)\s*\{[\s\S]{0,1500}?this\.bodyEl\.appendChild\(this\.ctxEl\)/.test(src),
       '重建那张卡时同样 append（append = 最下方）');
     falsy(src.indexOf('insertBefore(this.ctxEl') >= 0, '★ 旧实现是插到最前，这条锁着别回去');
     /* 置顶排序只作用于笔记卡：ctx 卡不进那张表 */

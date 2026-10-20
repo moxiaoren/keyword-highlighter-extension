@@ -190,17 +190,19 @@ module.exports = async function run() {
     const h = KH.ui.dom.h;
     const body = h('div', { class: 'kh-editor-sec-body' });
     document.body.appendChild(body);
-    const items = ['fetchLabels', 'fetchScope', 'imgOcr', 'imgOcrKeyword', 'imgOcrMax']
+    const items = ['fetchLabels', 'fetchScope', 'imgOcr', 'imgOcrKeyword', 'imgOcrNeed', 'imgOcrMax']
       .map((k) => ({ spec: FM.byKey(k), ctrl: mk(k, '') }));
     KH.ui.Fields.layout(items, body);
 
     const subs = body.querySelectorAll('.kh-fld-sub');
-    eq(subs.length, 1, '抓取卡只该有一个字段子块（图片 OCR 三件）');
+    eq(subs.length, 1, '抓取卡只该有一个字段子块（图片 OCR 四件）');
     const sub = subs[0];
     const cls = Array.from(sub.childNodes).map((k) => String(k.className));
-    eq(cls.length, 3, '子块里正好三件（勾选行 + 图片命中关键词 + 张数）：' + cls.join(' / '));
+    /* 【2.0.3 需求②】子块从三件变四件：图片动态关键词也是一个候选框（与图片命中关键词同宽度整行），
+     * 张数仍是内联半行 —— 顺序：开关 / 命中关键词 / 动态关键词 / 张数。 */
+    eq(cls.length, 4, '子块里正好四件（勾选行 + 图片命中关键词 + 图片动态关键词 + 张数）：' + cls.join(' / '));
     truthy(cls.some((c) => /kh-fld-bool/.test(c)), '「识别图片文字」在子块里');
-    truthy(cls.some((c) => /kh-cand-box/.test(c)), '「图片命中关键词」在子块里');
+    eq(cls.filter((c) => /kh-cand-box/.test(c)).length, 2, '两个候选框（图片命中关键词 + 图片动态关键词）在子块里');
     truthy(cls.some((c) => /kh-fld-inline/.test(c)), '「张数」在子块里');
     eq(body.childNodes.length, 3, '正文三个直接子元素：字段 / 抓取范围 / 子块（勾选行不再跟抓取范围挤一行）');
     truthy(/kh-fld-bool-wide/.test(String(mk('imgOcr', '').el.className)),

@@ -224,6 +224,27 @@ module.exports = async function run() {
     truthy(P.scaleFor(48, 20) > 1, '过小的块仍要放大（沿用 TARGET_H 的口径）');
   });
 
+  await test('★ 2.0.4 需求③：小图一律 2× 重采（角标十来像素高 ⇒ det 读成「29」）', () => {
+    const P = loadOffscreen({ lines: () => null }).self.__khOcrPure;
+    /* 用户报的那张：395×700 的缩略图，左上角「2026」只有十来像素高，1:1 送进去只认成「29」 */
+    eq(P.scaleFor(395, 700), 2, '★ 小图必须放大再识别：瓶颈是每行在像素上的绝对高度（DENSE_RESCALE 处已诊断过）');
+    eq(P.scaleFor(800, 400), 2, '800 是边界（放宽到 MAX_EDGE=1600 以内）');
+    eq(P.scaleFor(801, 400), 1, '超过 800 就仍 1:1 —— 否则放大后越过 MAX_EDGE 那道墙');
+    eq(P.scaleFor(1080, 1600), 1, '长图的块仍不放大（回归闸）');
+  });
+
+  await test('★ 2.0.4 需求③：非文字被认成文字（短且低分）必须丢掉，正常短词不误伤', () => {
+    const P = loadOffscreen({ lines: () => null }).self.__khOcrPure.keepLine;
+    eq(typeof P, 'function', 'keepLine 必须挂在纯判决层才能钉住这条口径');
+    eq(P({ t: '周 OL', conf: 62 }), false, '★ 图标/装饰图形硬给出来的两个字母（用户报的那条「周 OL」）');
+    eq(P({ t: '29', conf: 70 }), false, '「2026」被读成「29」也属同一类垃圾（短、低分）');
+    eq(P({ t: 'OL', conf: 90 }), true, '高分的短词照留（真字号小标题/缩写）');
+    eq(P({ t: '招标公告', conf: 60 }), true, '长行低分仍可能是艺术字正文 ⇒ 不在收紧范围');
+    eq(P({ t: '张', conf: 99 }), false, '单字仍不许（既有口径不变）');
+    eq(P({ t: '###', conf: 99 }), false, '纯符号仍不许（既有口径不变）');
+    eq(P(null), false, '脏数据不许抛');
+  });
+
   await test('★ 不变量 2：4 万像素高的长图必须整张覆盖（T23：块数上限 8 → 40）', () => {
     const P = loadOffscreen({ lines: () => null }).self.__khOcrPure;
     const plan = P.planChunks(1080, 40000);

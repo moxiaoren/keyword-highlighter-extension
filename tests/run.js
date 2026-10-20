@@ -143,7 +143,10 @@ const specs = [
   './specs/modal-width-resize.test.js',
   /* 命中的图折进卡片（卡片已有的图不再重复画）/ 命中图红框与命中词 title / 灯箱「识别原文」
    * 标出命中词。口径见 tests/specs/note-img-fold.test.js 头部（2.0.2.7 · 用户 m00292） */
-  './specs/note-img-fold.test.js'
+  './specs/note-img-fold.test.js',
+  /* 2.0.2.19 需求②③⑤：OCR 全文按列带排成表格（图里表格 / 横排两栏）、抓取字段值＝动态关键词
+   * （AND 语义）、图里表格行「姓名|张三」并进抓取字段表且同值合并。口径见该 spec 头部 */
+  './specs/ocr-layout.test.js'
 ];
 
 (async () => {

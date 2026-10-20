@@ -622,6 +622,16 @@
   const IMG_RE = new RegExp('\u0001KHIMG\u0001[^|]*\\|[^\u0001]*\u0001ENDIMG\u0001', 'g');
 
   /**
+   * 剔掉图片占位符，**只留文字**。`#0`（不要图）与图片动态关键词的判据比较共用这一份 ——
+   * 判据类比较（"这个值在不在图上"）绝不该把 `\u0001KHIMG\u0001alt|url\u0001ENDIMG\u0001` 当成文字的一部分，
+   * 否则值与 OCR 文本永远对不上（2.0.4 需求② 真机红就是这么来的：老实现取 `textContent` 没有占位符，
+   * 换到行文本后占位符跟着进来了）。
+   */
+  function stripImgPlaceholders(text) {
+    return String(text == null ? '' : text).replace(IMG_RE, '');
+  }
+
+  /**
    * 按字段的图片选项处理一段内容（**只动图片占位符与文字，不碰 HTML**，调用方随后仍走 escHtml）：
    *   · `imgOnly`  → 只留图片（丢掉文字）
    *   · `imgLimit` → 该字段全局最多保留 N 张图（`budget.n` 跨单元格累计，保证"前 N 张"是整字段的前 N 张）
@@ -634,7 +644,7 @@
     /* 【`#0` = 该字段不要图（2.0.2.5 需求①）】占位符剔干净、文字原样留下；
      * 图片识别那一侧由 `img-ocr` 按 `cellsForHit` 返回的 `noImg` 跳过（这里不再管识别）。 */
     if (opt && opt.noImg) {
-      s = s.replace(IMG_RE, '');
+      s = stripImgPlaceholders(s);
       return s.replace(/[ \t]{2,}/g, ' ').replace(/^[ \t]+|[ \t]+$/g, '');
     }
     /* 【刻意**不按 src 去重**】真实页面里同一张图可能在两列/两行里各出现一次
@@ -1477,7 +1487,7 @@
           grid = true;
         }
       }
-      return { label: m.label, textLines, grid, rows: m.rows || [], opt: opt, budget: budget };
+      return { label: m.label, textLines, grid, rows: m.rows || [], opt: opt, budget: budget, ocr: !!m.ocr };
     });
 
     /* 【2.0.2.17 需求②】同一张卡片（同一块）里，**内容完全一致**的字段合并成一列：
@@ -1495,7 +1505,14 @@
     for (const it of items) {
       const sig = sigOf(it);
       const prev = bySig.get(sig);
-      if (prev) { prev.label = prev.label + '/' + it.label; continue; }
+      if (prev) {
+        /* 【2.0.2.19 需求②】OCR 行与抓取字段同值合并时，**图上原件里的字段名排前面**：
+         * 用户口径「抓取 `员工名字|张三`」+「图里 `姓名|张三`」⇒「`姓名/员工名字` | 张三」——
+         * 证件/截图上的叫法才是这条信息的本名，抓取别名是页面自己的说法。
+         * 两条都是 OCR 行时保持"先见者在先"（同一批识别结果，没有谁更权威）。 */
+        prev.label = (it.ocr && !prev.ocr) ? (it.label + '/' + prev.label) : (prev.label + '/' + it.label);
+        continue;
+      }
       bySig.set(sig, it);
       merged.push(it);
     }
@@ -1630,10 +1647,14 @@
    * 真正算一次（不缓存时走这条）。字段级的图片选项（仅图片 / 前 N 张）按 label 带进渲染。
    * `extras` = 【2.0.2.17 需求⑥】图片 OCR 命中的「键：值」行（`{label, value}`），与抓取字段
    * 并进**同一张表** —— 这样合并（需求②）、裁切、悬停全文全都自动一致，不必给 OCR 行另开一套渲染。
+   * 【2.0.2.19 需求②】同值合并走 `rowsToTableHtml` 那一处（唯一实现），这里只把 OCR 行标成
+   * `ocr:true` —— 合并时字段名的先后由它决定（见那一处的注释）。
    */
   function computeBlock(textNode, rawLabels, scope, box, extras) {
     const fetched = extractCached(textNode, rawLabels, scope, box);
-    const extraItems = (extras || []).map((e) => ({ label: e && e.label, rows: [[{ t: e && e.value }]], opt: null }));
+    const extraItems = (extras || []).map((e) => ({
+      label: e && e.label, rows: [[{ t: e && e.value }]], opt: null, ocr: true
+    }));
     if (!fetched.length && !extraItems.length) return null;
     const optOf = {};
     for (const it of parseLabels(rawLabels)) optOf[it.label] = it;
@@ -1739,6 +1760,8 @@
     rowsToTableHtml, blockFor, triggerOk, fakeRightValue, nearestTable, isPlaceholderText,
     /* 图片选项（仅图片 / 前 N 张）：单测直接锁 */
     applyImgPolicy,
+    /** 图片占位符剥离（只留文字）：`#0` 与图片动态关键词的判据比较共用（见 `stripImgPlaceholders`） */
+    stripImgPlaceholders,
     /** 层级后缀剥离（内层/本层/外层）：把 label 归一到字段名（`computeBlock` 的字段选项与单测用） */
     baseLabelOf,
     /* 「抓取字段的值格（含图）」**只读访问口**（img-ocr 取图用；不改抓取内容语义） */

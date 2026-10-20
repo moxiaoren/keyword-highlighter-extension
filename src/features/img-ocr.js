@@ -319,6 +319,27 @@
   /** `imgOcrKeyword` → 正则（编译一次、多处复用）。留空 = 没有匹配口径（不再回落核心词）。 */
   const ocrPatternCache = new Map();
 
+  /* ---------------- 【2.0.4 需求①】「键值行进表」后缀标记 ----------------
+   * 用户口径：图上 `X：Y` 这种键值行并进重要笔记的抓取表，**必须先对那个词配一个后缀标记**才生效。
+   * 旧行为是"凡是命中行的 `X：Y` 都进表"⇒ 范围过大：`一对一时间选择范围11:30.` 会被拆成
+   * 「一对一时间选择范围 | 11:30.」塞进卡片（用户报的就是这条）。
+   * 现在标记写在「图片命中关键词」的**那一个胶囊末尾**，`#表` / `#kv` 两种写法都认：
+   * `一对一#表|包名` ⇒ 只有「一对一」会往表里补行，「包名」只做命中判定。
+   * 标记必须**逐词**给 —— 一个词误配不波及其它词，这就是"收严"的全部含义。 */
+  const KV_MARK = /(?:#|＃)\s*(?:表|kv)\s*$/i;
+  const kvChips = (raw) => String(raw == null ? '' : raw).split(/[|｜]/);
+
+  /** 去掉标记后的关键词原文（喂 `buildPattern` / 空白容忍重试）：标记本身绝不能被当成匹配字面 */
+  function stripKvMarks(raw) {
+    return kvChips(raw).map((c) => c.replace(KV_MARK, '').trim()).filter(Boolean).join('|');
+  }
+
+  /** 带标记的那些词（标记已剥掉）——**只有它们**允许把图上「词 + 分隔符 + 值」并进抓取表 */
+  function kvWords(raw) {
+    return kvChips(raw).filter((c) => KV_MARK.test(c))
+      .map((c) => c.replace(KV_MARK, '').trim()).filter(Boolean);
+  }
+
   /**
    * 「图片命中关键词」的**唯一编译点**（用户确认的匹配口径）：
    *   `useRegex: true` + `wholeWord: false` + `caseSensitive: false`
@@ -332,7 +353,7 @@
    * 非法正则返回 null 都在那里）；在这里自己 `new RegExp` 就是第二份实现。
    */
   function ocrPatternOf(rule) {
-    const raw = String((rule && rule.meta && rule.meta.imgOcrKeyword) || '').trim();
+    const raw = stripKvMarks(rule && rule.meta && rule.meta.imgOcrKeyword).trim();
     if (!raw) return null;
     return patternOf(raw);
   }
@@ -405,7 +426,7 @@
      *   ① 只在"直接匹配失败"后才走这条路 —— 不改变既有语义，零额外开销；
      *   ② 命中片段与区间**映射回原文**（见 `unshrinkRange`），面板上的词块与复制整句照旧可用；
      *   ③ 剔的只是**行内空白**（`WHITE_ALL` 不含 `\r`/`\n`）—— 跨行的词不算命中（票 #34 口径）。 */
-    const rawKeyword = String((rule && rule.meta && rule.meta.imgOcrKeyword) || '').trim();
+    const rawKeyword = stripKvMarks(rule && rule.meta && rule.meta.imgOcrKeyword).trim();
     const compactKeyword = rawKeyword.replace(WHITE_ALL, '');
     const textHasWs = WHITE_CHAR.test(raw);
     /* 两侧都没有空白 ⇒ 直接匹配已经就是终局，不走第二条路（零额外开销） */
@@ -428,6 +449,225 @@
       if (out.length) return out;
     }
     return direct;
+  }
+
+  /**
+   * 【2.0.2.19 需求③】动态命中的**唯一判决点**。
+   * 用户口径：「图片命中关键词配置支持配置抓取字段内容（动态结果）：例如配置抓取字段 姓名、截图，
+   * 若 姓名 抓到的值是 张三 且截图图里也有 张三 则判命中；姓名是张三而图里没有张三则不命中」
+   * ⇒ 动态判据 = **`imgOcrNeed` 里点名的那几个抓取字段**抓到的值，必须出现在识别文本里。
+   *
+   * 三条纪律（为什么不按"全部抓取字段"一刀切）：
+   *   ① **留空即旧行为**：没填 `imgOcrNeed` 就一行都不变，存量配置不该因为升级而少命中；
+   *   ② 配了就与静态「图片命中关键词」是**且**关系（用户原话的"且"）：静态词命中 + 每个点名值都在图上；
+   *   ③ 只填 `imgOcrNeed`、不填静态词也算一条合法配置（用户例子里就只有 姓名、截图 两个字段）——
+   *      此时"值出现在图上"就是命中的全部条件。
+   * 比较口径与「图片命中关键词」同一条：剔行内空白、不分大小写（OCR 把「张 三」读散是常态）。
+   * @param {object} rule 规则快照（提供 `meta.imgOcrKeyword`）
+   * @param {string} text 识别文本
+   * @param {string[]} need 动态判据值（`needOf` 归一后的；空数组 = 没有动态要求）
+   */
+  function judge(rule, text, need) {
+    const raw = String(text || '');
+    const stat = matchedInText(rule, raw);
+    const dyn = (need || []).filter(Boolean);
+    if (!dyn.length) return stat;
+    const flat = raw.replace(WHITE_ALL, '').toLowerCase();
+    const found = [];
+    for (const v of dyn) {
+      /* `need` 通常已由 `needOf` 归一（小写 + 剔空白），这里再兜一次：判决点自己把两侧弄成同口径，
+       * 免得调用方（含单测与后续新入口）拿"原样大小写"的值进来就静默不命中。 */
+      const needle = String(v == null ? '' : v).replace(WHITE_ALL, '').toLowerCase();
+      if (!needle) continue;
+      const at = flat.indexOf(needle);
+      if (at < 0) return [];                       // 有一个点名的值不在图上 ⇒ 不命中（AND）
+      /* 命中块要落在**原文**里（面板上的词块与"复制整句"靠它），所以映射回未剔空白的区间 */
+      const span = unshrinkRange(raw, at, at + needle.length);
+      found.push(span
+        ? { start: span.start, end: span.end, text: raw.slice(span.start, span.end) }
+        : { start: 0, end: 0, text: needle });
+    }
+    const hasStatic = !!stripKvMarks(rule && rule.meta && rule.meta.imgOcrKeyword).trim();
+    if (!hasStatic) return found;                  // 只有动态判据：值在图上即命中
+    return stat.length ? stat.concat(found) : [];  // 两边都配了：静态词命中也必须成立
+  }
+
+  /**
+   * 【2.0.4 需求②】`imgOcrNeed` 点名的抓取字段 → 动态判据值表（`need`）。
+   *
+   * 用户口径（原话）：「是否可以改成和抓取字段**一模一样**，默认正则、不区分大小写」。
+   * 旧实现的病根有两处，都在取值的**来源**上：
+   *   ① 字段名匹配直接拿 `cellsForHit` 的 `label`（已被 `parseLabels` 剥成裸名）去和用户原文比
+   *      ⇒ 用户在「图片动态关键词」里照抄 `开发者^高价`（跟抓取字段一个写法）时**永远匹配不上**，
+   *      整条动态判据被静默丢掉（不是不生效，是根本没算）；
+   *   ② 值取的是**值格的 textContent 原文**，没走 `rowsForItem` 的 `!`/`^`/`%` 修饰
+   *      ⇒ 笔记表里显示的是修饰后的干净值，判据里却是带尾巴的原始值，图上当然找不到。
+   * 现在：值一律走 `Fetch.extractFor` —— **与重要笔记表格同一份取值实现**（同一份分层、同一份修饰），
+   * 字段名按 `parseLabelSpec` / `baseLabelOf` 归一后比（后缀写不写都认）。这就是"一模一样"。
+   *
+   * 三条纪律（不变）：值太短不参与（图上"1"/"是"到处都是，拿它当判据只会假命中）；
+   * 占位词（无/暂无/`-`）跳过；留空即旧行为（一行不改）。
+   */
+  const NEED_MIN_LEN = 2;
+
+  /** 图片动态关键词原文 → 要看的抓取字段名（后缀可写可不写，按裸名比） */
+  function needNames(rawLabels) {
+    const out = [];
+    const parse = (KH.Fetch && typeof KH.Fetch.parseLabelSpec === 'function') ? KH.Fetch.parseLabelSpec : null;
+    for (const w of String(rawLabels || '').split(/[,，、|;]/)) {
+      const s = w.trim();
+      if (!s) continue;
+      let name = s;
+      if (parse) {
+        try { const p = parse(s); if (p && p.label) name = String(p.label).trim(); } catch (e) { name = s; }
+      }
+      if (name && out.indexOf(name) < 0) out.push(name);
+    }
+    return out;
+  }
+
+  function needOf(hitOrCell, rule) {
+    const meta = (rule && rule.meta) || {};
+    const want = needNames(meta.imgOcrNeed);
+    if (!want.length) return [];
+    const Fetch = KH.Fetch || {};
+    if (typeof Fetch.extractFor !== 'function') return [];
+    const anchor = (hitOrCell && hitOrCell.cell) ? hitOrCell.cell : hitOrCell;
+    if (!anchor) return [];
+    let entries = [];
+    try {
+      entries = Fetch.extractFor(anchor, meta.fetchLabels || '', meta.fetchScope, null) || [];
+    } catch (e) { return []; }
+    const out = [];
+    const base = (typeof Fetch.baseLabelOf === 'function') ? Fetch.baseLabelOf : ((s) => s);
+    for (const en of entries) {
+      const label = String((en && en.label) || '').trim();
+      if (!label) continue;
+      let bare = label;
+      try { bare = String(base(label) || label); } catch (e) { bare = label; }
+      if (want.indexOf(label) < 0 && want.indexOf(bare) < 0) continue;
+      for (const row of (en.rows || [])) {
+        for (const c of (row || [])) {
+          const raw = String((c && c.t) || '');
+          if (!raw) continue;
+          if (typeof Fetch.isPlaceholderText === 'function' && Fetch.isPlaceholderText(raw)) continue;
+          /* 先剔图片占位符（`\u0001KHIMG\u0001alt|url\u0001ENDIMG\u0001`）再剔空白：
+           * 只删开头那个标记会把 url 留在值里，值与 OCR 文本就永远对不上（真机抓到的红）。
+           * 剥离实现只有一份，与 `#0`（不要图）共用。 */
+          const plain = (typeof Fetch.stripImgPlaceholders === 'function') ? Fetch.stripImgPlaceholders(raw) : raw;
+          /* 逐格一个判据（沿用旧口径：格子里的值各自比），换行一起剔 —— OCR 文本里值后面
+           * 跟不跟换行不该影响命中。 */
+          const t = plain.replace(WHITE_ALL, '').replace(/[\r\n]+/g, '').toLowerCase();
+          if (t.length < NEED_MIN_LEN) continue;
+          if (out.indexOf(t) < 0) out.push(t);
+        }
+      }
+    }
+    return out;
+  }
+
+  /* ---------------- 【2.0.2.19 需求②⑤】按列带排版（纯函数：吃 `linesOf`，不吃 DOM） ---------------- */
+
+  /* 列间空白 ≥ 图宽 4% 才算"分列"（再窄就是同一列里的字距）；单格 ≥ 图宽 55% 算通栏（标题/正文段），
+   * 不参与分列判断 —— 否则一条居中标题就能把两栏桥接成一栏。 */
+  const COL_GAP_RATIO = 0.04;
+  const COL_WIDE_RATIO = 0.55;
+  const COL_MAX = 4;
+
+  /**
+   * `lineList` → 列带模型（需求②「图里是表格就排成表格」与需求⑤「横排两张图 ⇒ 左右两格」共用）。
+   *
+   * 判据只有一条：**行的单元格坐标**。同一物理行里若有多个框（`cells` 多于一格）⇒ 那就是表格的一行；
+   * 全图被一条宽空白带分成 N 段 ⇒ 就是 N 列。两者都靠坐标，不靠猜文字内容。
+   * @param {Array} lines `linesOf()` 的形状（`[{cells:[{t,x,x2}], t}]`）
+   * @returns {{width:number, cols:number, bands:Array<{x:number,x2:number}>,
+   *            rows:Array<{cols:string[], wide?:string}>}}
+   *   `cols < 2` ⇒ 调用方按纯文本渲染（旧行为，零风险）。
+   */
+  function layout(lines) {
+    const list = lines || [];
+    const cells = [];
+    let width = 0;
+    for (let i = 0; i < list.length; i++) {
+      const cs = (list[i] && list[i].cells) || [];
+      for (const c of cs) {
+        const t = String((c && c.t) || '').replace(WHITE_ALL, ' ').trim();
+        const x = Number(c && c.x);
+        const x2 = Number(c && c.x2);
+        if (!t || !isFinite(x) || !isFinite(x2) || x2 <= x) continue;
+        cells.push({ t: t, x: x, x2: x2, line: i, w: x2 - x });
+        if (x2 > width) width = x2;
+      }
+    }
+    if (!width || cells.length < 2) return { width: width, cols: 1, bands: [], rows: [] };
+    const gap = width * COL_GAP_RATIO;
+    const wideW = width * COL_WIDE_RATIO;
+    /* 只拿"非通栏"格定列带：通栏行（标题、条文正文）跨越多列是常态，让它参与就会被桥成 1 列 */
+    const narrow = cells.filter((c) => c.w < wideW).sort((a, b) => (a.x - b.x) || (a.x2 - b.x2));
+    if (!narrow.length) return { width: width, cols: 1, bands: [], rows: [] };
+    const bands = [];
+    for (const c of narrow) {
+      const cur = bands[bands.length - 1];
+      if (!cur || c.x - cur.x2 >= gap) bands.push({ x: c.x, x2: c.x2 });
+      else if (c.x2 > cur.x2) cur.x2 = c.x2;
+    }
+    /* 列太多 ⇒ 不是"表格/分栏"，是被切碎的文字：退回纯文本（宁可不好看，不可看不出话） */
+    if (bands.length < 2 || bands.length > COL_MAX) return { width: width, cols: 1, bands: [], rows: [] };
+    const bandOf = (c) => {
+      const cx = (c.x + c.x2) / 2;
+      for (let j = 0; j < bands.length; j++) if (cx >= bands[j].x && cx <= bands[j].x2) return j;
+      let best = 0;
+      let bestD = Infinity;
+      for (let j = 0; j < bands.length; j++) {
+        const d = cx < bands[j].x ? bands[j].x - cx : cx - bands[j].x2;
+        if (d < bestD) { bestD = d; best = j; }
+      }
+      return best;
+    };
+    const byLine = [];
+    for (let i = 0; i < list.length; i++) byLine.push([]);
+    for (const c of cells) byLine[c.line].push(c);
+    const rows = [];
+    for (let i = 0; i < list.length; i++) {
+      const row = byLine[i];
+      row.sort((a, b) => a.x - b.x);
+      if (!row.length) continue;
+      /* 整行只有一个通栏格 ⇒ 通栏行（标题/正文段），铺满整张表 */
+      if (row.length === 1 && row[0].w >= wideW) {
+        rows.push({ wide: row[0].t, cols: [] });
+        continue;
+      }
+      const slots = new Array(bands.length).fill('');
+      for (const c of row) {
+        const j = bandOf(c);
+        slots[j] = slots[j] ? slots[j] + ' ' + c.t : c.t;
+      }
+      rows.push({ cols: slots });
+    }
+    return { width: width, cols: bands.length, bands: bands, rows: rows };
+  }
+
+  const XLAT = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+  const xesc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (ch) => XLAT[ch]);
+
+  /**
+   * 列带模型 → 表格 HTML（`cols < 2` 或没有任何一行时返回 ''，调用方走纯文本）。
+   * 空槽输出空 `<td>`：横向两栏要靠它保持列对齐（左右两格各自成列）。
+   */
+  function layoutHtml(lay) {
+    const l = lay || {};
+    if (!l.cols || l.cols < 2 || !l.rows || !l.rows.length) return '';
+    let body = '';
+    for (const r of l.rows) {
+      if (r.wide != null) {
+        body += '<tr><td class="kh-ocr-wide" colspan="' + l.cols + '">' + xesc(r.wide) + '</td></tr>';
+        continue;
+      }
+      let tds = '';
+      for (let j = 0; j < l.cols; j++) tds += '<td>' + xesc((r.cols || [])[j] || '') + '</td>';
+      body += '<tr>' + tds + '</tr>';
+    }
+    return '<table class="kh-ocr-table">' + body + '</table>';
   }
 
   /* ---------------- 提交与回收 ---------------- */
@@ -654,11 +894,30 @@
     return '';
   }
 
+  /**
+   * 这张图的**结构化行**（`{t,y,x,cells:[{t,x,x2}]}`，2.0.2.19 需求②⑤）。
+   * 面板排版表格/左右双栏要用单元格坐标；缓存优先，条目兜底（与 `textOf` 同一条取数路）。
+   * @returns {object[]} 空数组 = 不知道版式（照旧按纯文本展示）
+   */
+  function linesOf(raw) {
+    const s = absOf(raw);
+    if (!s) return [];
+    const c = textCache.get(s) || textCache.get(String(raw || ''));
+    if (c && c.lineList && c.lineList.length) return c.lineList;
+    for (const it of allItems()) {
+      if (it && it.lineList && it.lineList.length && it.src && absOf(it.src) === s) return it.lineList;
+    }
+    return [];
+  }
+
   /** 大图 OCR 的回执：回填缓存 + 叫醒等它的那一个（不进 items/manual —— 它不挂在任何规则上） */
   function adoptLightbox(msg) {
     const text = String(msg.text || '');
     if (msg.ok && msg.src) {
-      cachePut(absOf(msg.src), { text: text, conf: msg.confidence || 0, at: Date.now(), ocrMs: msg.ocrMs });
+      cachePut(absOf(msg.src), {
+        text: text, conf: msg.confidence || 0, at: Date.now(), ocrMs: msg.ocrMs,
+        lineList: msg.lineList || []
+      });
     }
     const w = oneWaits.get(msg.requestId);
     if (w) {
@@ -734,7 +993,12 @@
     if (token) releaseHold(token);      /* 幂等：认领不到就没有副作用 */
 
     const text = String(msg.text || '');
-    if (msg.ok && src) cachePut(src, { text: text, conf: msg.confidence || 0, at: Date.now(), ocrMs: msg.ocrMs });
+    if (msg.ok && src) {
+      cachePut(src, {
+        text: text, conf: msg.confidence || 0, at: Date.now(), ocrMs: msg.ocrMs,
+        lineList: msg.lineList || []
+      });
+    }
 
     /* 结果对应的那条（可能因为页面重建而不在了：那就只更新缓存，不动 UI） */
     const entry = key ? items.get(key) : null;
@@ -748,7 +1012,8 @@
         it.state = 'done';
         it.text = text;
         it.conf = msg.confidence || 0;
-        it.matched = matchedInText(it.rule, text);
+        it.matched = judge(it.rule, text, it.need);
+        it.lineList = msg.lineList || [];
         it.ocrMs = msg.ocrMs;
         /* 引擎**如实告知**的"结果不完整/不可靠"（不变量 1/2，D-14.5）：
          * `no-text`（一个字没认出）/`tilted`（方向可疑）/`truncated`（只读了前 8 块）。
@@ -798,7 +1063,8 @@
       if (!rule || !rule.meta || !cell) return;
       if (!rule.meta.imgOcr) return;
       if (!String(rule.meta.fetchLabels || '').trim()) return;
-      if (!String(rule.meta.imgOcrKeyword || '').trim()) return;
+      if (!String(rule.meta.imgOcrKeyword || '').trim()
+        && !String(rule.meta.imgOcrNeed || '').trim()) return;
       const key = String(rule.ruleId) + '|' + idxOf(cell);
       if (seen.has(key)) return;
       seen.add(key);
@@ -844,6 +1110,10 @@
         ? KH.Fetch.cellsForHit(anchor.cell, rule.meta || '')
         : [];
       if (!fields.length) continue;
+      /* 【2.0.2.19 需求③】这些抓取字段的值同时是**动态关键词**（见 `judge`）。
+       * 【2.0.4 需求②】取值改走 `Fetch.extractFor`（与重要笔记表格同一份实现），
+       * 所以锚点/字段名都从 `anchor.cell` 重算 —— 不再复用 `cellsForHit` 的裸名字典。 */
+      const need = needOf(anchor.cell, rule);
       const valueCells = [];
       const labelOfImg = new Map();
       for (const f of fields) {
@@ -870,13 +1140,15 @@
           label: String(labelOfImg.get(got.img) || ''),
           src: src, cls: cls, host: cls.host || '',
           state: 'idle', matched: [], text: '', conf: 0,
+          need: need, lineList: [],
           cellText: String((anchor.cell && anchor.cell.textContent) || '').trim().slice(0, 120)
         };
         if (cached) {
           item.state = 'done';
           item.text = cached.text;
           item.conf = cached.conf;
-          item.matched = matchedInText(rule, cached.text);
+          item.matched = judge(rule, cached.text, need);
+          item.lineList = cached.lineList || [];
           /* 【耗时徽标必须跟着缓存走】(K80 · 真机踩到) 条目表每次重建都从缓存重建，
            * 而 `ocrMs` 此前只活在**当时那个条目对象**上 ⇒ 页面一有变动（重建）耗时徽标就空了。
            * 真机表现：E2E「每个图片条目都该显示本次识别耗时」变红（`cost:""`）。
@@ -1018,10 +1290,20 @@
       };
     },
     classify: classify,
-    /** 大图灯箱用：认一张图 / 取这张图已认出的文字（2.0.2.15 需求①） */
+    /** 大图灯箱用：认一张图 / 取这张图已认出的文字（2.0.2.15 需求①）
+     *  `linesOf` = 同一份结果的**结构化行**（含单元格坐标，2.0.2.19 需求②⑤ 排版用） */
     ocrOne: ocrOne,
     textOf: textOf,
+    linesOf: linesOf,
     matchedInText: matchedInText,
+    /** 动态命中判决 + 抓取值表（2.0.2.19 需求③；单测用）
+     *  【2.0.4 需求②】`needOf(hitOrCell, rule)` 改成吃锚点格 + 规则（值走 `Fetch.extractFor`）。 */
+    judge: judge, needOf: needOf, needNames: needNames,
+    /** 【2.0.4 需求①】「键值行进表」标记：`kvWords(raw)` = 带 `#表`/`#kv` 标记的词（已剥标记）；
+     *  `stripKvMarks(raw)` = 去掉标记的关键词原文（喂匹配用）。重要笔记那边读同一份实现。 */
+    kvWords: kvWords, stripKvMarks: stripKvMarks,
+    /** 列带排版（2.0.2.19 需求②⑤）：`layout(lineList)` → 模型；`layoutHtml(模型)` → 表格 HTML */
+    layout: layout, layoutHtml: layoutHtml,
     /** 匹配口径的唯一编译点（诊断/单测用；见 `ocrPatternOf`） */
     ocrPatternOf: ocrPatternOf,
     build: build,

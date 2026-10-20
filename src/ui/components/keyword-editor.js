@@ -58,8 +58,11 @@
     if (!String(kw.fetchLabels || '').trim()) {
       return '已勾选「识别图片文字」：请先填写「抓取后续字段」—— 图片是从这些字段的值格里取的。';
     }
-    if (!String(kw.imgOcrKeyword || '').trim()) {
-      return '已勾选「识别图片文字」：请填写「图片命中关键词」（按正则匹配图里的文字）。';
+    /* 【2.0.2.19 需求③】判据有**两条**：静态「图片命中关键词」，或「图片动态关键词」点名的抓取字段。
+     * 填了任意一条就成立 —— 只认前者会把"只用动态判据"的合法配置（用户例子：姓名、截图）拦住。 */
+    if (!String(kw.imgOcrKeyword || '').trim() && !String(kw.imgOcrNeed || '').trim()) {
+      return '已勾选「识别图片文字」：请填写「图片命中关键词」（按正则匹配图里的文字），'
+        + '或在「图片动态关键词」里填抓取字段名。';
     }
     return '';
   }
@@ -329,7 +332,7 @@
       /* K74：「抓取范围」也跟着模块开关走（抓取模块没启用时它没有意义） */
       setDisabled(byKey('fetchScope'), !on);
       setDisabled(ocrCtl, !on || !hasLabels);
-      for (const key of ['imgOcrKeyword', 'imgOcrMax']) setDisabled(byKey(key), !on || !hasLabels || !ocrOn);
+      for (const key of ['imgOcrKeyword', 'imgOcrNeed', 'imgOcrMax']) setDisabled(byKey(key), !on || !hasLabels || !ocrOn);
       if (ocrNote) {
         if (!on) {
           ocrNote.hidden = false;
