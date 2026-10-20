@@ -245,6 +245,52 @@ module.exports = async function run() {
     eq(P(null), false, '脏数据不许抛');
   });
 
+  await test('★ 2.0.6 需求①：被切块切散的同一条物理行必须拼回一行（「词：」+「值」不许串行）', () => {
+    const P = loadOffscreen({ lines: () => null }).self.__khOcrPure;
+    eq(typeof P.stitchRows, 'function', 'stitchRows 必须挂在纯判决层才能钉住这条口径');
+    /* 用户现场：图上是一行「词：值」，OCR 出来是「词：」「值」两行。
+     * 机制：图比 MAX_EDGE 宽 ⇒ layoutChunks 沿 x 切块（左块只有「词：」、右块只有「值」），
+     * 两块文本**不同** ⇒ mergeOverlap 的"逐字相等"配不上 ⇒ 两行一起活到 text。 */
+    const split = [
+      { t: '供应商：', conf: 96, x: 10, y: 100, y2: 140, ci: 0, cells: [{ t: '供应商：', x: 10, x2: 110 }] },
+      { t: '华为技术有限公司', conf: 92, x: 1000, y: 102, y2: 142, ci: 1, cells: [{ t: '华为技术有限公司', x: 1000, x2: 1300 }] }
+    ];
+    const out = P.stitchRows(split);
+    eq(out.length, 1, '★ 同一行带的两段必须并成一行（这是"串行"的直接解药）');
+    eq(out[0].t, '供应商：华为技术有限公司', '★ 分隔符结尾直接贴，不许多一个空格（下游按「词：值」取值）');
+    eq((out[0].cells || []).length, 2, '单元格要跟着带过来（重要笔记的表格形式靠它）');
+  });
+
+  await test('★ 2.0.6 需求①：重叠带重复片段只并单元格，文字不许重复一遍', () => {
+    const P = loadOffscreen({ lines: () => null }).self.__khOcrPure;
+    /* 块间有 240px 重叠 ⇒ 右块会把左块读过的尾巴再读一次（`有限公司`）：
+     * 拼行时若原样追加，值就成了「华为技术有限公司 有限公司」。 */
+    const out = P.stitchRows([
+      { t: '供应商：华为技术有限公司', conf: 95, x: 10, y: 100, y2: 140, ci: 0, cells: [{ t: '供应商：', x: 10, x2: 110 }, { t: '华为技术有限公司', x: 120, x2: 400 }] },
+      { t: '有限公司', conf: 90, x: 1400, y: 101, y2: 141, ci: 1, cells: [{ t: '有限公司', x: 1400, x2: 1520 }] }
+    ]);
+    eq(out.length, 1);
+    eq(out[0].t, '供应商：华为技术有限公司', '★ 重复片段不许让文字翻倍');
+    eq((out[0].cells || []).length, 2, '重复片段整段丢掉（留着单元格会把「有限公司」再拼进值里）');
+  });
+
+  await test('★ 2.0.6 需求①：不同物理行绝不拼（行距 40px 的两行仍是两行）', () => {
+    const P = loadOffscreen({ lines: () => null }).self.__khOcrPure;
+    const out = P.stitchRows([
+      { t: '供应商：', conf: 95, x: 10, y: 100, y2: 140, ci: 0 },
+      { t: '地址：深圳市', conf: 95, x: 10, y: 140, y2: 180, ci: 0 },
+      { t: '招标公告', conf: 95, x: 600, y: 100, y2: 140, ci: 0 }
+    ]);
+    eq(out.length, 2, '上下两行不许并；同一行的两段要并');
+    eq(out[0].t, '供应商：招标公告', '同一行按 x 从左到右拼');
+    eq(out[1].t, '地址：深圳市');
+    /* 单块图（linesFromPpocr 已经并过行）走这里必须**原样返回**，不新建对象 */
+    const same = [{ t: '一行', conf: 99, x: 1, y: 1, y2: 9, ci: 0 }];
+    eq(P.stitchRows(same)[0], same[0], '没有可拼的 ⇒ 原样返回（单块路径零变化）');
+    eq(P.stitchRows(null).length, 0, '脏数据不许抛');
+    eq(P.stitchRows([{ t: '' }, null]).length, 0, '空文本不进行');
+  });
+
   await test('★ 不变量 2：4 万像素高的长图必须整张覆盖（T23：块数上限 8 → 40）', () => {
     const P = loadOffscreen({ lines: () => null }).self.__khOcrPure;
     const plan = P.planChunks(1080, 40000);

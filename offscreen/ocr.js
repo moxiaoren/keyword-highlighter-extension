@@ -660,6 +660,9 @@
         t: parts.join(' ').replace(/\s+/g, ' ').trim(),
         conf: Math.round(sum / ln.items.length),
         y: by + inv(ln.y1),
+        /* 【2.0.6 需求①】行底部（原图坐标）：跨块拼行要知道"这两条是不是同一行带"，
+         * 只靠 top 的 y 差算不准（同一行上大字号和小字号的 y 能差十几像素）。 */
+        y2: by + inv(ln.y2),
         x: bx + inv(ln.items[0].x),
         /* 行的**单元格**（原图坐标）：需求②表格展示、需求⑤左右双栏要靠它，
          * 旧字段一个不动，多出来的字段不参与既有判决。 */
@@ -752,6 +755,75 @@
     if (chars.length <= 3 && l.conf < SHORT_LINE_CONF) return false;
     const wordish = (chars.match(/[\u4e00-\u9fffA-Za-z0-9]/g) || []).length;
     return wordish / chars.length >= 0.5;
+  }
+
+  /**
+   * 【2.0.6 需求①：OCR 把一行拆成两行】同一个物理行的多段要拼回一行（纯函数）。
+   *
+   * 用户现场：图上明明是 `词：值` 一行，识别结果却是 `词：` / `值` 两行，重要笔记里就串行了。
+   * 根源不在"归行判据"（`linesFromPpocr` 已按竖向量叠把同行的框并起来），而在**切块**：
+   * 图比 `MAX_EDGE` 宽时要沿 x 切（`layoutChunks`），左块只有「词：」、右块只有「值」，
+   * 两块的文本**不同** ⇒ `mergeOverlap` 的"逐字相等"配不上 ⇒ 两行都留着。
+   * 两行 y 相同 ⇒ 排出来就是「词：」``「值」上下两行，正是用户看到的样子。
+   *
+   * 所以这里在跨块去重之后补一步**按行重拼**：同一行带（竖向重叠 ≥ 半行高，或中心差 ≤ 0.6 行高，
+   * 与 `linesFromPpocr` 同一口径）的分段按 x 排序拼成一行，分隔符结尾的直接贴（`词：` + `值`），
+   * 其余用空格（与块内多格 join(' ') 一致）。
+   * **去重**：重叠带让相邻两块各读到同一段时，右块那截是左块的子串 ⇒ 只并单元格、不重复文字。
+   * 单块图（`linesFromPpocr` 已经并过行）走这里等价于原样返回，不改变今天的单块路径。
+   */
+  function stitchRows(lines) {
+    const all = (Array.isArray(lines) ? lines : []).filter((l) => l && typeof l.t === 'string' && l.t.trim());
+    if (all.length < 2) return all;
+    const rows = [];
+    const sorted = all.slice().sort((a, b) => (a.y - b.y) || ((a.x || 0) - (b.x || 0)));
+    for (const l of sorted) {
+      const y = Number(l.y) || 0;
+      const y2 = typeof l.y2 === 'number' && l.y2 > y ? l.y2 : y + 8;
+      const item = { y: y, y2: y2, parts: [{ t: l.t, x: Number(l.x) || 0, conf: Number(l.conf) || 0, cells: (l.cells || []).slice() }], src: [l] };
+      let hit = null;
+      for (const r of rows) {
+        const hb = item.y2 - item.y;
+        const hr = r.y2 - r.y;
+        const ov = Math.min(item.y2, r.y2) - Math.max(item.y, r.y);
+        const dcy = Math.abs((item.y + item.y2) / 2 - (r.y + r.y2) / 2);
+        if (ov >= 0.5 * Math.min(hb, hr) || dcy <= 0.6 * Math.max(hb, hr)) { hit = r; break; }
+      }
+      if (!hit) { rows.push(item); continue; }
+      hit.parts = hit.parts.concat(item.parts);
+      hit.src = hit.src.concat(item.src);
+      if (item.y < hit.y) hit.y = item.y;
+      if (item.y2 > hit.y2) hit.y2 = item.y2;
+    }
+    if (rows.every((r) => r.parts.length === 1)) return all;   // 没有可拼的 ⇒ 原样返回（不新建对象）
+    return rows.map((r) => {
+      const parts = r.parts.slice().sort((a, b) => a.x - b.x);
+      let text = '';
+      let chars = 0;
+      let confSum = 0;
+      const cells = [];
+      for (const p of parts) {
+        const k = keyOf(p.t);
+        /* 重叠带里的重复片段：**整段丢掉**（文字和单元格都不留）——留着单元格会把
+         * 「有限公司」再追加到值后面（重要笔记的表格形式正是按单元格取值）。 */
+        if (k && keyOf(text).indexOf(k) >= 0) continue;
+        text += (text && !/[：:｜|＝=]\s*$/.test(text) ? ' ' : '') + p.t;
+        const n = k.length || 1;
+        chars += n;
+        confSum += (Number(p.conf) || 0) * n;
+        for (const c of p.cells) cells.push(c);
+      }
+      const first = r.src.slice().sort((a, b) => (Number(a.x) || 0) - (Number(b.x) || 0))[0] || {};
+      return {
+        t: text.trim(),
+        conf: chars ? Math.round(confSum / chars) : (Number(first.conf) || 0),
+        y: r.y,
+        y2: r.y2,
+        x: Number.isFinite(Number(first.x)) ? Number(first.x) : 0,
+        ci: first.ci,
+        cells: cells.sort((a, b) => (a && a.x || 0) - (b && b.x || 0))
+      };
+    });
   }
 
   /**
@@ -1317,7 +1389,7 @@
     overlapFor: overlapFor, scaleFor: scaleFor, keepLine: keepLine,
     layoutChunks: layoutChunks, planChunks: planChunks,
     bandPlan: bandPlan, denseBandPlans: denseBandPlans, DENSE_BANDS: DENSE_BANDS,
-    overlapBands: overlapBands, mergeOverlap: mergeOverlap, keyOf: keyOf,
+    overlapBands: overlapBands, mergeOverlap: mergeOverlap, keyOf: keyOf, stitchRows: stitchRows,
     OVERLAP_MATCH_X: OVERLAP_MATCH_X,
     NEAR_MATCH_MAX_DY: NEAR_MATCH_MAX_DY, NEAR_MATCH_DICE: NEAR_MATCH_DICE,
     NEAR_MATCH_MIN_LEN: NEAR_MATCH_MIN_LEN, NEAR_MATCH_MAX_DLEN: NEAR_MATCH_MAX_DLEN,
@@ -1698,7 +1770,9 @@
          * 为什么合并必须在 sort 之前：`prev` 只比"上一个保留项"，同名两条一旦被别的行隔开就永远配不上。 */
         const mr = mergeOverlap(all, chunks);
         overlapStat = { merged: mr.merged, near: mr.near, maxDy: mr.maxDy, maxDx: mr.maxDx };
-        const kept = mr.lines.filter(keepLine).sort((a, b) => (a.y - b.y) || (a.x - b.x));
+        /* 【2.0.6 需求①】去重之后再**按行重拼**：被切块切散的同一条物理行（左块「词：」、
+         * 右块「值」）在这里并回一行 —— 否则 `text` 里就是上下两行，重要笔记跟着串行。 */
+        const kept = stitchRows(mr.lines).filter(keepLine).sort((a, b) => (a.y - b.y) || (a.x - b.x));
         const out = [];
         for (const l of kept) {
           const prev = out[out.length - 1];
