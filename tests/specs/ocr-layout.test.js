@@ -269,4 +269,58 @@ module.exports = async function run() {
       eq(withItems([it], () => ocrExtraRows({ pinId: 'r1', imgOcr: false, imgOcrKeyword: '姓名#表' })).length, 0);
       eq(ocrExtraRows(null).length, 0);
     });
+
+    /* 用户 m00893 追问：图里是 `词：值`，OCR 常认成 `词：` / `值` 两行 ⇒ 值必须能接上，
+     * 但绝不许为了接上就把下面的无关正文拉进卡片。 */
+    const multi = (lines, cellsOf) => ({
+      ruleId: 'r1', state: 'done',
+      text: lines.join('\n'),
+      lineList: lines.map((t, i) => ({
+        t: t,
+        cells: cellsOf ? cellsOf(lines, i) : [cell(10, 10 + t.length * 8, t)]
+      }))
+    });
+    const kvOf = (lines, csv) => withItems([multi(lines)], () =>
+      ocrExtraRows({ pinId: 'r1', imgOcr: true, imgOcrKeyword: csv }));
+
+    await test('★ 值被换行拆到下一行（词： / 值）：必须接上，且标题格仍是命中词', () => {
+      const rows = kvOf(['供应商：', '华为技术有限公司'], '供应商#表');
+      eq(JSON.stringify(rows), JSON.stringify([{ label: '供应商', value: '华为技术有限公司' }]),
+        '★ 图里是「供应商：华为技术有限公司」而 OCR 折成两行 ⇒ 仍要进表');
+    });
+
+    await test('★ 值折成两行 ⇒ 合并成一条（最多两行，再多就当正文不收）', () => {
+      const rows = kvOf(['地址：', '广东省深圳市', '南山区科技园'], '地址#表');
+      eq(rows.length, 1, JSON.stringify(rows));
+      eq(rows[0].value, '广东省深圳市 南山区科技园');
+      const long = kvOf(['地址：', '广东省深圳市', '南山区科技园', '北区'], '地址#表');
+      eq(long.length, 1, '★ 只吃两行：第三行不再并入（宁缺毋滥）');
+      eq(long[0].value, '广东省深圳市 南山区科技园');
+    });
+
+    await test('★ 换行后的那一行若是「另一字段：值」⇒ 不偷，两条各自成行', () => {
+      const rows = kvOf(['一对一：', '供应商：上海某公司'], '一对一#表|供应商#表');
+      eq(JSON.stringify(rows), JSON.stringify([{ label: '供应商', value: '上海某公司' }]),
+        '★ 「供应商：上海某公司」属于供应商那条，不许变成「一对一」的值');
+    });
+
+    await test('★ 换行后的那一行过长（>40 字）⇒ 判为正文，不进表', () => {
+      const body = '本次招标要求投标人具备独立法人资格并近三年无重大违法记录且'.repeat(2);
+      eq(kvOf(['供应商：', body], '供应商#表').length, 0,
+        '★ 分隔符后面空了不代表下一段正文就是它的值（旧误展示就是这么来的）');
+    });
+
+    await test('★ 没有分隔符的独立词行绝不往下偷（词 / 值 形态不支持）', () => {
+      const it = multi(['供应商', '华为技术有限公司'], () => []);
+      const rows = withItems([it], () => ocrExtraRows({ pinId: 'r1', imgOcr: true, imgOcrKeyword: '供应商#表' }));
+      eq(rows.length, 0, '★ 「词」单独一行、下面才是值 ⇒ 不收（否则任何标记词都能偷下一行）');
+    });
+
+    await test('★ 表格形式：词格是行末格、值在下一行 ⇒ 也能接上', () => {
+      const it = multi(['供应商', '华为技术有限公司'], (lines, i) => (
+        i === 0 ? [cell(10, 60, '姓名'), cell(120, 190, '供应商')] : [cell(120, 320, '华为技术有限公司')]
+      ));
+      const rows = withItems([it], () => ocrExtraRows({ pinId: 'r1', imgOcr: true, imgOcrKeyword: '供应商#表' }));
+      eq(JSON.stringify(rows), JSON.stringify([{ label: '供应商', value: '华为技术有限公司' }]));
+    });
 };

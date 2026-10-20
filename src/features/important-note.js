@@ -2057,14 +2057,54 @@
     const body = chars.map((c) => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s*');
     try { return new RegExp(body, 'i'); } catch (e) { return null; }
   }
-  /** 这一行里「命中词 + 分隔符 + 值」的值（没有就返回空串） */
-  function kvValueInLine(line, re) {
+  /** 这一行里命中词之后的部分：`hit`=命中，`sep`=紧跟分隔符，`value`=分隔符之后的内容 */
+  function kvSegInLine(line, re) {
     const m = re.exec(line);
-    if (!m) return '';
+    if (!m) return { hit: false, sep: false, value: '' };
     const after = line.slice(m.index + m[0].length);
     const v = KV_LEAD_SEP.exec(after);
-    return v ? String(v[1]).trim() : '';
+    if (v) return { hit: true, sep: true, value: String(v[1]).trim() };
+    /* 分隔符后面是空的 —— OCR 常把「值」换到下一行（`词：` / `值`） */
+    return { hit: true, sep: /^\s*[：:｜|＝=]\s*$/.test(after), value: '' };
   }
+  /** 这一行里「命中词 + 分隔符 + 值」的值（没有就返回空串） */
+  function kvValueInLine(line, re) {
+    return kvSegInLine(line, re).value;
+  }
+
+  /* ---------------- 值被 OCR 换行拆到下一行（`词：` / `值`） ----------------
+   * 只在「命中词后面紧跟着分隔符、但分隔符后是空的」时才往下看，且必须过三道闸，
+   * 否则宁可不进表 —— 这条功能最贵的错误就是「拉一段无关正文进卡片」：
+   *   ① 下一行自己长得像「字段：值」（有冒号且左边短）⇒ 认为那是另一条，不偷；
+   *   ② 下一行含别的命中词 ⇒ 不偷（它属于那一条）；
+   *   ③ 单行太长（> KV_NEXT_LEN）⇒ 多半是正文段落，停。
+   * 最多吃 KV_NEXT_MAX 行（值本身再折一行还能接住，再长就停）。 */
+  const KV_NEXT_MAX = 2;
+  const KV_NEXT_LEN = 40;
+  const KV_NEXT_LABEL = /^\s*[^\s：:｜|＝=]{1,16}\s*[：:]/;
+  const KV_LEAD_ONLY = /^\s*[：:｜|＝=]\s*/;
+  function kvNextValue(lines, from, word, matchers) {
+    const parts = [];
+    let used = 0;
+    for (let i = from; i < lines.length && used < KV_NEXT_MAX; i++) {
+      let t = String(lines[i] == null ? '' : lines[i]).trim();
+      if (!t) continue;
+      if (!used) t = t.replace(KV_LEAD_ONLY, '');   /* 万一分隔符自己也落在下一行开头 */
+      if (!t) continue;
+      used++;
+      if (KV_NEXT_LABEL.test(t)) break;
+      let otherWord = false;
+      for (const mt of matchers) {
+        if (mt.word === word) continue;
+        if (mt.re.test(t)) { otherWord = true; break; }
+      }
+      if (otherWord) break;
+      if (squashWs(t).length > KV_NEXT_LEN) break;
+      parts.push(t);
+    }
+    return parts.join(' ').trim();
+  }
+
   function ocrExtraRows(meta) {
     const ruleId = meta && meta.pinId;
     if (!ruleId || !meta.imgOcr) return [];
@@ -2101,14 +2141,23 @@
           for (let i = 0; i < cells.length; i++) {
             if (squashWs(cells[i] && cells[i].t) === squashWs(mt.word)) { vi = i; break; }
           }
+          let rowDone = false;
           if (vi >= 0 && vi < cells.length - 1) {
             const value = cells.slice(vi + 1)
               .map((c) => String((c && c.t) || '').trim()).filter(Boolean).join(' ').trim();
-            if (value) { pushRow(mt.word, value); continue; }
+            if (value) { pushRow(mt.word, value); rowDone = true; }
           }
+          if (rowDone) continue;
           /* ② 文本行：命中词 + 分隔符 + 值（**标题格必须是这个词**，值只取分隔符之后） */
-          const value = kvValueInLine(line, mt.re);
-          if (value) pushRow(mt.word, value);
+          const seg = kvSegInLine(line, mt.re);
+          if (!seg.hit) continue;
+          if (seg.value) { pushRow(mt.word, seg.value); continue; }
+          /* ③ 值被 OCR 换行拆到下面（图里是 `词：值`，识别成 `词：` / `值`）：
+           * 只认「词后紧跟着分隔符」这一种（表格里词格后为空也算），其余一律不往下看。 */
+          if (!seg.sep && vi < 0) continue;
+          if (seg.sep && vi >= 0 && vi < cells.length - 1) continue; /* 后面有格但为空 ⇒ 不偷下一行 */
+          const next = kvNextValue(rawLines, li + 1, mt.word, matchers);
+          if (next) pushRow(mt.word, next);
         }
       }
     }
