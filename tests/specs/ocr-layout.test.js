@@ -93,6 +93,21 @@ module.exports = async function run() {
       eq(lay.rows[2].wide.indexOf('根据《计算机软件保护条例》'), 0, '整段条文也算通栏');
     });
 
+    await test('★ 2.0.6 需求③：同一格里两段文字挨得极近 ⇒ 直接贴，不许凭空多空格', () => {
+      /* 检测框把「供应商：」和「华为」切成两段（间隙 2px）⇒ 现在是「供应商：华为」，
+       * 旧实现一律 join(' ') ⇒「供应商： 华为」，抄进笔记就是脏数据。 */
+      const lines = [
+        line(cell(10, 60, '姓名'), cell(400, 460, '张三')),
+        line(cell(10, 60, '供应商：'), cell(62, 140, '华为')),
+        line(cell(10, 60, '姓名'), cell(110, 170, '张三'))
+      ];
+      const lay = IO.layout(lines);
+      eq(lay.cols, 2, '两列结构不变');
+      eq(lay.rows[1].cols[0], '供应商：华为', '★ 间隙 2px ⇒ 贴成「供应商：华为」');
+      eq(lay.rows[2].cols[0], '姓名 张三', '真有列间距（50px）仍要留空格');
+      eq(lay.rows[0].cols[1], '张三', '跨列不受影响');
+    });
+
     await test('★ 普通一段文字（专栏 < 2 / 列太多）⇒ 必须退回纯文本（layoutHtml 返回空串）', () => {
       const one = IO.layout([line(cell(20, 400, '这是一张没有表格的截图，只有一整段文字，右边界也只到 400'))]);
       eq(one.cols, 1, '单列就是单列');

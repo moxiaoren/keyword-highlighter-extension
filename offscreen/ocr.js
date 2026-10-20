@@ -601,11 +601,68 @@
    */
   const FRAME_AREA_RATIO = 0.35;
 
+  /**
+   * 【2.0.6 需求①：宽图/薄条丢字】"占画布 35% 以上就当边框扔掉"这条**只看面积**，在**薄**的画布上会误杀正文：
+   * 一块 `1600×120` 的宽条，`margin` 之后画布约 `1664×184`（≈306k），一条通栏文字框 `1560×70` 就是 109k
+   * ⇒ 35.7% ⇒ 被判成边框**丢掉** —— 而它本来就是这一块里唯一的一行字（宽图底边余块、细长横幅都是这样）。
+   *
+   * 但方向闸**不能**简单放宽成"两边各占 70% 就算框"：横排两张证书那种图上，每张纸自己的边框框
+   * 约占画布一半（`350×470` / `720×500`），一经保留就会把那一整页的行**并成一行**（2.0.6 真机 e2e
+   * ②b-2 就是这么红的）。真正的边框只有一种：**画布是一整页**时才有"把整页包住"的框。
+   * 所以按画布形态分两档：
+   *   · 整页画布（两边都 ≥ `FRAME_PAGE_EDGE`）⇒ 沿用旧口径（面积过线就是边框）；
+   *   · 窄条 / 小块（一条字、一个值格）⇒ 只有几乎铺满画布（两边 ≥ `FRAME_FULL_RATIO`）才算框。
+   * 画布尺寸未知时（`pre.w/pre.h` 缺失）沿用旧口径，行为不变。
+   */
+  const FRAME_PAGE_EDGE = 400;
+  const FRAME_FULL_RATIO = 0.9;
+  function isFrameBox(w, h, cw, ch, area) {
+    if (!(area > 0)) return false;
+    if (w * h < area * FRAME_AREA_RATIO) return false;
+    if (!(cw > 0) || !(ch > 0)) return true;
+    if (cw >= FRAME_PAGE_EDGE && ch >= FRAME_PAGE_EDGE) return true;
+    return w >= cw * FRAME_FULL_RATIO && h >= ch * FRAME_FULL_RATIO;
+  }
+
+  /**
+   * 同行多段文字的拼接口径（纯函数）：框与框**几乎无缝**（间隙 ≤ 0.6 行高）或前段以分隔符结尾 ⇒ 直接贴，
+   * 否则留一个空格。【2.0.6 需求③：识别成功后的排版】旧写法一律 `join(' ')`，中文被 OCR 切成两段时会凭空
+   * 多一个空格（「华为技术有限 公司」「词： 值」），这串空格还会跟着进重要笔记的表格值。
+   * 英文/数字相邻时必须留空格（`Hel`+`lo` 那种只有真正粘在一起、间隙 ≤1px 才贴），中文没有词间空格。
+   */
+  const TIGHT_GAP_RATIO = 0.6;
+  function joinParts(parts, lineH) {
+    const list = Array.isArray(parts) ? parts : [];
+    let text = '';
+    let prevEnd = null;
+    for (const p of list) {
+      const t = String((p && p.t) || '');
+      if (!t) continue;
+      const x = Number(p && p.x);
+      const x2 = Number(p && p.x2);
+      if (!text) {
+        text = t;
+      } else {
+        const gap = isFinite(x) && isFinite(prevEnd) ? x - prevEnd : null;
+        const a = text.slice(-1);
+        const b = t.charAt(0);
+        const latin = /[A-Za-z0-9]/.test(a) && /[A-Za-z0-9]/.test(b);
+        const limit = latin ? 1 : Math.max(2, (Number(lineH) || 0) * TIGHT_GAP_RATIO);
+        const tight = gap !== null && gap <= limit;
+        text += (tight || /[：:｜|＝=]\s*$/.test(text) ? '' : ' ') + t;
+      }
+      prevEnd = isFinite(x2) ? x2 : null;
+    }
+    return text.replace(/\s+/g, ' ').trim();
+  }
+
   function linesFromPpocr(res, chunk, pre) {
     const arr = (res && res.results) || [];
     const sc = (pre && pre.scale) || 1;
     const mg = (pre && pre.margin) || 0;
-    const canvasArea = ((pre && pre.w) || 0) * ((pre && pre.h) || 0);
+    const canvasW = (pre && pre.w) || 0;
+    const canvasH = (pre && pre.h) || 0;
+    const canvasArea = canvasW * canvasH;
     const bx = chunk ? chunk.x : 0;
     const by = chunk ? chunk.y : 0;
     const inv = (v) => (v === Infinity || typeof v !== 'number' ? 0 : Math.max(0, Math.round((v - mg) / sc)));
@@ -616,7 +673,7 @@
       const w = Number(box.width) || 0;
       const h = Number(box.height) || 0;
       if (!t || w <= 0 || h <= 0) continue;
-      if (canvasArea > 0 && w * h >= canvasArea * FRAME_AREA_RATIO) continue;  // 边框/底图，不是文字
+      if (isFrameBox(w, h, canvasW, canvasH, canvasArea)) continue;  // 边框/底图，不是文字
       boxes.push({
         t: t,
         conf: Math.round(Number((it && it.confidence) || 0) * 100),
@@ -652,12 +709,13 @@
     const out = [];
     for (const ln of lines) {
       ln.items.sort((a, b) => a.x - b.x);
-      const parts = ln.items.map((b) => b.t).filter(Boolean);
+      const parts = ln.items.filter((b) => b.t);
       if (!parts.length) continue;
       let sum = 0;
       for (const b of ln.items) sum += b.conf;
       out.push({
-        t: parts.join(' ').replace(/\s+/g, ' ').trim(),
+        /* 【2.0.6 需求③】按框间距拼（原来一律空格 ⇒ 中文里凭空多空格） */
+        t: joinParts(parts.map((b) => ({ t: b.t, x: b.x, x2: b.x + b.w })), ln.y2 - ln.y1),
         conf: Math.round(sum / ln.items.length),
         y: by + inv(ln.y1),
         /* 【2.0.6 需求①】行底部（原图坐标）：跨块拼行要知道"这两条是不是同一行带"，
@@ -798,16 +856,26 @@
     if (rows.every((r) => r.parts.length === 1)) return all;   // 没有可拼的 ⇒ 原样返回（不新建对象）
     return rows.map((r) => {
       const parts = r.parts.slice().sort((a, b) => a.x - b.x);
-      let text = '';
+      let acc = '';
       let chars = 0;
       let confSum = 0;
       const cells = [];
+      const kept = [];
       for (const p of parts) {
         const k = keyOf(p.t);
         /* 重叠带里的重复片段：**整段丢掉**（文字和单元格都不留）——留着单元格会把
          * 「有限公司」再追加到值后面（重要笔记的表格形式正是按单元格取值）。 */
-        if (k && keyOf(text).indexOf(k) >= 0) continue;
-        text += (text && !/[：:｜|＝=]\s*$/.test(text) ? ' ' : '') + p.t;
+        if (k && acc.indexOf(k) >= 0) continue;
+        acc += p.t;
+        /* 【2.0.6 需求③】段的左右边界取它自己那几格的坐标，交给 `joinParts` 按间距决定要不要空格 */
+        const cs = (p.cells || []).filter((c) => c && isFinite(Number(c.x)) && isFinite(Number(c.x2)));
+        const xs = cs.map((c) => Number(c.x));
+        const x2s = cs.map((c) => Number(c.x2));
+        kept.push({
+          t: p.t,
+          x: xs.length ? Math.min.apply(null, xs) : p.x,
+          x2: x2s.length ? Math.max.apply(null, x2s) : null
+        });
         const n = k.length || 1;
         chars += n;
         confSum += (Number(p.conf) || 0) * n;
@@ -815,7 +883,7 @@
       }
       const first = r.src.slice().sort((a, b) => (Number(a.x) || 0) - (Number(b.x) || 0))[0] || {};
       return {
-        t: text.trim(),
+        t: joinParts(kept, r.y2 - r.y),
         conf: chars ? Math.round(confSum / chars) : (Number(first.conf) || 0),
         y: r.y,
         y2: r.y2,
@@ -1237,6 +1305,12 @@
    * 所以这次把 2 → 3 是有依据的一步（S3：109 上 2× 没救回密排页）。
    */
   const DENSE_RESCALE = 3;
+
+  /**
+   * 【2.0.6 需求②】长图某**块**读空时的补救上限（块数）：整帧重采救不了"别的块有字、就这一块空"，
+   * 而空白带本来就该读空 ⇒ 只在拿到旁证（别的块有行的坐标落进这块范围）时才补，且每帧最多补几块。
+   */
+  const MAX_EMPTY_RETRY = 2;
   /**
    * 【S3-⑥ 密排切带（E 方案）】把一页切成几条**横带**逐条识别。为什么必须有它（真机实测，109）：
    *   · 900×600 / 24 行 / 20px：首遍 det **0 框**；`DENSE_RESCALE` 3× 重采只出 **5 行且关键词那行仍丢**
@@ -1390,6 +1464,8 @@
     layoutChunks: layoutChunks, planChunks: planChunks,
     bandPlan: bandPlan, denseBandPlans: denseBandPlans, DENSE_BANDS: DENSE_BANDS,
     overlapBands: overlapBands, mergeOverlap: mergeOverlap, keyOf: keyOf, stitchRows: stitchRows,
+    isFrameBox: isFrameBox, joinParts: joinParts,
+    FRAME_AREA_RATIO: FRAME_AREA_RATIO, FRAME_PAGE_EDGE: FRAME_PAGE_EDGE, FRAME_FULL_RATIO: FRAME_FULL_RATIO, TIGHT_GAP_RATIO: TIGHT_GAP_RATIO,
     OVERLAP_MATCH_X: OVERLAP_MATCH_X,
     NEAR_MATCH_MAX_DY: NEAR_MATCH_MAX_DY, NEAR_MATCH_DICE: NEAR_MATCH_DICE,
     NEAR_MATCH_MIN_LEN: NEAR_MATCH_MIN_LEN, NEAR_MATCH_MAX_DLEN: NEAR_MATCH_MAX_DLEN,
@@ -1927,6 +2003,7 @@
         const f = plan ? Object.assign({}, f0, { plan: plan }) : f0;
         const chunks = f.plan.chunks;
         const lines = [];
+        const empties = [];
         let rawLines = 0, confSum = 0, keptN = 0, passes = 0, psm = PSM_BLOCK, pre0 = null;
         for (let i = 0; i < chunks.length; i++) {
           const pre = await chunkFor(f, i, k);
@@ -1941,11 +2018,45 @@
           /* 【第 4 项】逐行挂块号 `ci`（只增字段，行结构 = `{t, conf, y, x, ci}`）：
            * 跨块去重要知道"这两条来自哪一块"，否则 y 差小也认不出是重叠带里的同一行。 */
           lines.push.apply(lines, raw.map((l) => Object.assign({ ci: i }, l)));
+          if (!raw.length && k !== DENSE_RESCALE && chunks.length > 1) empties.push(i);
           if (tell) {
             emitProgress({
               phase: 'band', requestId: job.requestId,
               index: i + 1, total: chunks.length, hits: hitsOf(kept)
             });
+          }
+        }
+        /* 【2.0.6 需求②：长图整块丢字】`DENSE_RESCALE` 只在**整帧一个字都没读到**时才触发；长图有十几块，
+         * 只要别的块读到字，某一块读空就再也没人管它 —— 那一块的内容永久消失（回执仍说"识别成功"）。
+         * 但"读空"多半是**真的白**（分节之间的空白带），逐块无脑重采会把长图成本翻倍。所以只在拿到
+         * **旁证**时才补：别的块有一行的坐标落进这一块的范围内 ⇒ 这块本来就该有字 ⇒ 放大重采它。
+         * 每帧最多补 `MAX_EMPTY_RETRY` 块（够救"个别块失手"，不会把整帧重跑一遍）。 */
+        if (empties.length) {
+          let tried = 0;
+          for (const i of empties) {
+            if (tried >= MAX_EMPTY_RETRY) break;
+            const c = chunks[i] || {};
+            const axis = c.axis === 'x' ? 'x' : 'y';
+            const lo = Number(c[axis]) || 0;
+            const hi = lo + (Number(axis === 'x' ? c.w : c.h) || 0);
+            const bear = lines.some((l) => {
+              if (l.ci === i) return false;
+              const v = Number(l[axis]);
+              return isFinite(v) && v >= lo && v <= hi;
+            });
+            if (!bear) continue;                       // 这一块本来就空 ⇒ 不重采
+            tried += 1;
+            try {
+              const again = await chunkFor(f, i, DENSE_RESCALE);
+              const raw2 = await recognizeChunk(again, chunks[i]);
+              passes += 1;
+              if (!raw2.length) continue;
+              rawLines += raw2.length;
+              const kept2 = raw2.filter(keepLine);
+              keptN += kept2.length;
+              for (const l of kept2) confSum += l.conf;
+              lines.push.apply(lines, raw2.map((l) => Object.assign({ ci: i }, l)));
+            } catch (e) { /* 重采失败就用首遍结果，不拖垮整帧 */ }
           }
         }
         return {

@@ -245,6 +245,48 @@ module.exports = async function run() {
     eq(P(null), false, '脏数据不许抛');
   });
 
+  await test('★ 2.0.6 需求①：薄画布上的通栏文字行不许被当边框丢掉（宽图底边余块丢字）', () => {
+    const P = loadOffscreen({ lines: () => null }).self.__khOcrPure;
+    /* 一块 1600×120 的宽条，margin 32 ⇒ 画布 1664×184（≈306k）。一条通栏文字框 1560×70 = 109k
+     * ⇒ 旧口径 35.7% ⇒ 被当边框丢掉；而它本来就是这一块里唯一的一行字。 */
+    eq(P.isFrameBox(1560, 70, 1664, 184, 1664 * 184), false,
+      '★ 宽高没都占满 ⇒ 是正文，不是边框（旧口径会丢这一行）');
+    eq(P.isFrameBox(1600, 180, 1664, 184, 1664 * 184), true, '两个方向都占满 ⇒ 这才是边框/底图');
+    eq(P.isFrameBox(1580, 180, 1664, 184, 1664 * 184), true, '边框不必贴满：两边都 ≥70% 就算');
+    eq(P.isFrameBox(1560, 90, 1664, 184, 1664 * 184), false, '只横向占满（高 49%）⇒ 大号正文，别丢');
+    eq(P.isFrameBox(120, 60, 1664, 184, 1664 * 184), false, '小块本来就不是边框');
+    eq(P.isFrameBox(1560, 70, 0, 0, 306176), true, '画布尺寸未知 ⇒ 沿用旧口径（只看面积），行为不变');
+    eq(P.isFrameBox(1560, 70, 1664, 184, 0), false, '面积未知 ⇒ 不判（旧代码同样跳过）');
+    /* ★ 方向闸不能一路放宽：横排两张证书那种图上，每张纸自己的边框框约 350×470 / 720×500（占一半），
+     * 一经保留就会把那一整页的行并成一行 —— 2.0.6 真机 e2e ②b-2 就是这么红的。整页画布仍按面积判。 */
+    eq(P.isFrameBox(350, 470, 720, 500, 720 * 500), true, '★ 整页画布：纸的边框框照样当边框丢掉');
+    eq(P.FRAME_PAGE_EDGE, 400, '整页画布的分界（两边都到 400 才算一整页）');
+    eq(P.FRAME_FULL_RATIO, 0.9, '窄条/小块上必须几乎铺满才算边框');
+  });
+
+  await test('★ 2.0.6 需求③：同行多段文字按框间距拼，中文不许凭空多空格', () => {
+    const P = loadOffscreen({ lines: () => null }).self.__khOcrPure;
+    /* ① 词被框切成两段、间隙只有 2px ⇒ 贴回去（旧实现一律空格 ⇒「华为技术有限 公司」） */
+    eq(P.joinParts([{ t: '华为技术有限', x: 0, x2: 400 }, { t: '公司', x: 402, x2: 460 }], 40),
+      '华为技术有限公司', '★ 断词接回去不许带空格');
+    /* ② 表格两格：间隙 80px ≫ 0.6 行高 ⇒ 仍留空格（列与列之间该有分隔） */
+    eq(P.joinParts([{ t: '姓名', x: 0, x2: 60 }, { t: '张三', x: 140, x2: 220 }], 40),
+      '姓名 张三', '不同列仍然留空格');
+    /* ③ 前段以分隔符结尾 ⇒ 直接贴（`词：` + `值`） */
+    eq(P.joinParts([{ t: '供应商：', x: 0, x2: 100 }, { t: '华为', x: 130, x2: 200 }], 40),
+      '供应商：华为', '冒号后直接贴值');
+    /* ④ 英文单词之间必须留空格，哪怕间隙很小（6px > 1px） */
+    eq(P.joinParts([{ t: 'Hello', x: 0, x2: 50 }, { t: 'world', x: 56, x2: 110 }], 40),
+      'Hello world', '英文相邻不许粘连');
+    /* ⑤ 英文真的粘在一起（间隙 ≤1px）⇒ 接回去 */
+    eq(P.joinParts([{ t: 'Hel', x: 0, x2: 30 }, { t: 'lo', x: 31, x2: 50 }], 40),
+      'Hello', '粘在一起的英文片段要接回去');
+    /* ⑥ 坐标缺失 ⇒ 退回空格（没有依据就不猜） */
+    eq(P.joinParts([{ t: '甲' }, { t: '乙' }], 40), '甲 乙', '没有坐标 ⇒ 留空格');
+    eq(P.joinParts(null, 40), '', '脏数据不许抛');
+    eq(P.joinParts([{ t: '' }, { t: '乙', x: 0, x2: 10 }], 40), '乙', '空段跳过');
+  });
+
   await test('★ 2.0.6 需求①：被切块切散的同一条物理行必须拼回一行（「词：」+「值」不许串行）', () => {
     const P = loadOffscreen({ lines: () => null }).self.__khOcrPure;
     eq(typeof P.stitchRows, 'function', 'stitchRows 必须挂在纯判决层才能钉住这条口径');
@@ -704,6 +746,38 @@ module.exports = async function run() {
     eq(res.text.split('\n').length, 1, '文本里也只有一行');
     truthy(res.text.indexOf('供应商 甲') >= 0, '同 y 时留先出现的那条（块 0）');
     eq(env.calls.recognize, 6, '长图 6 块 ⇒ 6 次识别（去重不该多跑一遍）');
+  });
+
+  await test('★ 2.0.6 需求②：长图某块读空、但别的块证明这块有字 ⇒ 单独重采补回来', async () => {
+    /* 6 块长图（1080×8000，块高 1600、重叠 240 ⇒ 块 i 覆盖 y = [1360i, 1360i+1600]）。
+     * 假引擎给的是**块内坐标**（`linesFrom` 会加块偏移）：块 2 的 bbox y=1430 ⇒ 原图 4150，
+     * 正落在块 3 的范围 [4080,5680] 里 ⇒ 旁证成立。块 3（第 4 次识别）读空 ⇒ 第 7 次识别
+     * （块 3 放大重采）必须发生，否则那一块的字永久消失、回执还说成功。 */
+    const env = loadOffscreen({
+      lines: (i) => (i === 2
+        ? { conf: 92, lines: [{ t: '招标公告 供应商', conf: 92, y: 1430, x: 4 }] }
+        : i === 3
+          ? { conf: 0, lines: [] }
+          : i === 6
+            ? { conf: 93, lines: [{ t: '补回来的字 4200', conf: 93, y: 120, x: 4 }] }
+            : { conf: 92, lines: [] })
+    });
+    env.job({ type: MSG.OCR_IMAGE, requestId: 'rretry', tabId: 7, keyword: '供应商', dataUrl: 'data:,W=1080;H=8000' });
+    const res = await env.result('rretry');
+    eq(env.calls.recognize, 7, '★ 6 块 + 1 次补采（只补有旁证的空块）');
+    eq(res.ok, true);
+    truthy(res.text.indexOf('补回来的字') >= 0, '★ 补采到的行必须进结果');
+    eq(res.coverage.usedChunks, 6, '切块计划不变（补采不重排块）');
+  });
+
+  await test('★ 2.0.6 需求②：读空的块没有旁证（本来就是空白带）⇒ 不许白跑一遍', async () => {
+    const env = loadOffscreen({
+      lines: (i) => (i === 0 ? { conf: 92, lines: [{ t: '招标公告 供应商', conf: 92, y: 20, x: 4 }] } : { conf: 92, lines: [] })
+    });
+    env.job({ type: MSG.OCR_IMAGE, requestId: 'rnoret', tabId: 7, keyword: '供应商', dataUrl: 'data:,W=1080;H=8000' });
+    const res = await env.result('rnoret');
+    eq(env.calls.recognize, 6, '★ 空白带读空属正常，重采会把长图成本翻倍');
+    eq(res.ok, true);
   });
 
   await test('★ 用户真机复现（端到端）：三字短句被两个切片各读一次、各带一个错字 ⇒ 只留一条', async () => {

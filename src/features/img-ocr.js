@@ -584,6 +584,17 @@
    *            rows:Array<{cols:string[], wide?:string}>}}
    *   `cols < 2` ⇒ 调用方按纯文本渲染（旧行为，零风险）。
    */
+  /* 【2.0.6 需求③】同一格里两段文字要不要空格，看框与框之间的**实际间距**：
+   * 词被检测框切成两段时间隙只有几个像素，硬加空格就会写出「华为技术有限 公司」「供应商： 华为」；
+   * 真正的两列之间总有大段空白。与 `offscreen/ocr.js` 的 `joinParts` 同一条口径（隔着一道 offscreen
+   * 边界拿不到那支函数，所以这里是同一规则的第二个落点，改一处必须同改两处）。 */
+  const TIGHT_GAP_RATIO = 0.6;
+
+  /**
+   * 把识别结果的行 → 列带模型（表格）。
+   * @param {Array} lines `[{t,cells:[{t,x,x2}],y,y2}]`（引擎回执里的 `lineList`）
+   * @returns {{width:number,cols:number,bands:Array,rows:Array}}
+   */
   function layout(lines) {
     const list = lines || [];
     const cells = [];
@@ -638,9 +649,16 @@
         continue;
       }
       const slots = new Array(bands.length).fill('');
+      const prevIn = new Array(bands.length).fill(null);
+      const lineH = Math.max(1, (Number(list[i] && list[i].y2) - Number(list[i] && list[i].y)) || 0);
+      const limit = Math.max(2, lineH * TIGHT_GAP_RATIO);
       for (const c of row) {
         const j = bandOf(c);
-        slots[j] = slots[j] ? slots[j] + ' ' + c.t : c.t;
+        const prev = prevIn[j];
+        /* 同一格里前一段以分隔符收尾、或两段之间只有几个像素 ⇒ 直接贴；真有列间距才留空格 */
+        const glue = !prev || (c.x - prev.x2) <= limit || /[：:｜|＝=]\s*$/.test(slots[j]);
+        slots[j] = prev ? slots[j] + (glue ? '' : ' ') + c.t : c.t;
+        prevIn[j] = c;
       }
       rows.push({ cols: slots });
     }
