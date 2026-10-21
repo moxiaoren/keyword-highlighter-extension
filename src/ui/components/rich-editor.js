@@ -34,17 +34,36 @@
    * **两根竖线不许碰**：用户自己拖弹窗（`.kh-modal` 也有 `resize: horizontal`）时弹窗不能被我擦掉，
    * 所以只在"确实是我们写过宽度"（`mine`）时才回写弹窗。
    */
+  /* 【2.0.6.6】编辑区此刻最多能有多宽 = 弹窗正文的可用宽 − 与宿主之间那点留白。
+   * 正文框自己带左右内边距（`.kh-modal-body` 是 `14px 16px`），`clientWidth` 把内边距算在内，
+   * 所以要减掉；`pad` 是"宿主列宽 − 编辑区宽"（`growHost` 首次回调时量的），一并减掉。 */
+  function roomOf(box, pad) {
+    if (!box) return Infinity;
+    const cs = window.getComputedStyle(box);
+    const inner = box.clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
+    return Math.max(120, Math.floor(inner - (pad || 0) - 2));
+  }
+
   function growHost(ed) {
     if (!ed || typeof ResizeObserver !== 'function') return;
     /* 祖先查找统一走 `dom.js` 的 `upClass`（票 #52：这一圈原先与 `fields.js` 各手写了一份）。
      * 从**父节点**起找 —— 编辑区自己不可能带 `.kh-editor-col` / `.kh-modal`。 */
     const up = (n, cls) => D().upClass(n && n.parentElement, cls);
+    const boxOf = () => up(ed, 'kh-modal-body');    // 宽度的上限由它决定（见下方 `roomOf`）
+    /* `growHost` 是在编辑器**刚建好、还没挂进 DOM**时调的（`ed.parentElement` 是 null），
+     * 所以容器不能在接线时量一次就存着 —— 一律现查，量不到就等回调那一趟。 */
+    let boxObs = null;
     let pad = null;      // 自然状态「列宽 − 编辑区宽」（`.kh-fld` 与列之间有 gap/边距）
     /* 【2.0.6.5 需求①的连带修复】「弹窗宽度是我们写出去的」这件事必须记在**弹窗**上，不能记在编辑器
      * 局部变量里 —— 一个弹窗可以有好几个可拖区（备注 textarea、重要笔记 rte…），A 拖宽之后 B 清掉自己的
      * inline width，旧写法 `mine=false`（B 自己没长过）就永远不给弹窗瘦回去，弹窗一直撑在 1200px。
      * `host` 记的是**最后把它撑宽的那个宿主**：只有它（或它已经自己收回宽度）才有资格把弹窗擦回自然宽。 */
     const stOf = (modal) => (modal.__khGrow = modal.__khGrow || { mine: false, nat: 0, host: null });
+    /* 【2.0.6.6】拖宽不是没有上限的。弹窗最宽就是视口（`.kh-modal-lg` 是 `max-width:100%`），
+     * 编辑区一旦比「正文还剩的地方」更宽，它就连着父列一起顶出 `.kh-modal-body` —— 用户现场
+     * 正是拖宽之后整块崩掉：一列 1200px 把别的列挤走、右边留一大片空白，把弹窗拖窄更是满地横滚。
+     * 所以给编辑区一条硬上限 `max-width`（超了由浏览器削平，inline width 留着，空间回来它自己复原），
+     * 父列与弹窗的撑宽也一起夹在这条线内。上限跟着 `.kh-modal-body` 的尺寸走，所以下面还要观察它。 */
     const fit = () => {
       const modal = up(ed, 'kh-modal');
       /* 【票 #51】没有 `.kh-editor-col` 祖先的宿主（例：选项页「批量备注 / 重要笔记」弹窗里那个
@@ -53,14 +72,25 @@
        * 让编辑区拿到 want 的宽度，弹窗的留白与兄弟元素一起跟着长（不会再把弹窗压出横向滚动条）。 */
       const host = up(ed, 'kh-editor-col') || modal;
       if (!host) return;
+      if (!boxObs) {
+        const b = boxOf();
+        if (b) { boxObs = b; new ResizeObserver(fit).observe(b); }
+      }
       const isCol = host !== modal;
       const g = modal ? stOf(modal) : { mine: false, nat: 0, host: null };
       /* 该宿主已经自己收回宽度了（另一个可拖区把 inline width 清了）⇒ 它的撑宽资格作废 */
       if (isCol && g.host === host && !host.style.width) { g.mine = false; g.host = null; }
       const want = parseFloat(ed.style.width) || 0;      // 原生 resize 写的就是 inline width
+      /* 【2.0.6.6】用户把弹窗拖得**比自然宽还窄**时，那是他的选择：不许再往回撑（2.0.2.7 的
+       * 「两根竖线不许碰」）。旧写法只靠 `mine` 记账，撑宽之后用户再拖窄，`fit` 会按公式把弹窗
+       * 顶回自然宽 1040 —— 编辑区的行内宽度还压着父列，于是看起来像"弹窗自己变大、内容溢出"。 */
+      if (modal && g.mine && Math.round(modal.getBoundingClientRect().width) < g.nat) {
+        g.mine = false; g.host = null;
+      }
       if (!want) {
         if (pad == null) pad = host.clientWidth - ed.clientWidth;   // 首次回调：此时两边都还是自然宽
         else if (isCol) {                                           // 清掉 inline width ⇒ 容器回自然（自愈）
+          ed.style.maxWidth = '';
           host.style.width = ''; host.style.flex = '';
           if (g.mine && (!g.host || g.host === host || !g.host.style.width)) {
             modal.style.width = ''; g.mine = false; g.host = null;
@@ -71,8 +101,12 @@
         return;
       }
       if (pad == null) pad = host.clientWidth - ed.clientWidth;
-      const nextHost = Math.max(120, Math.round(want + pad));
-      const grow = nextHost - Math.round(host.clientWidth);
+      const cap = roomOf(boxOf(), pad);
+      ed.style.maxWidth = Number.isFinite(cap) ? cap + 'px' : '';
+      const wantShown = Number.isFinite(cap) ? Math.min(want, cap) : want;
+      const nextHost = Math.max(120, Math.round(wantShown + pad));
+      const grown = Math.round(host.clientWidth);
+      const grow = nextHost - grown;
       if (isCol && grow !== 0) { host.style.flex = '0 0 auto'; host.style.width = nextHost + 'px'; }
       if (!modal) return;
       if (grow > 0) {
@@ -86,6 +120,10 @@
       }
     };
     new ResizeObserver(fit).observe(ed);
+    /* 【2.0.6.6】上限跟着容器走：用户把弹窗拖窄（`.kh-modal` 自己也是 `resize: horizontal`）时
+     * 编辑区尺寸不变、`ResizeObserver(ed)` 一声不吭，旧的行内宽度就留在那里继续撑着父列 ⇒ 崩。
+     * 观察 `.kh-modal-body` 才是「可用宽变了」的真信号（`fit` 幂等，已经夹到位时什么都不写）。
+     * 容器要在第一趟回调里才拿得到（见上面 `boxObs` 的注释），所以观察也放在这里接。 */
     /* 【2.0.6.5 需求①的连带修复】**行内宽度被清掉时 ResizeObserver 可能什么都不发**：拖宽之后
      * 宿主列也被撑开了，编辑区清掉 inline width 退回 `width:100%` 恰好还是同一像素宽 —— 没有尺寸变化
      * 就没有回调，于是弹窗永远撑在那里（用户现场：拖宽过再拖回去，弹窗回不去了）。`style` 属性变化
