@@ -516,6 +516,7 @@
             <li>长截图会<strong>分段识别</strong>，跨分块的重叠区里，<strong>同一条物理行自动去重合并</strong>，不会因为切块把同一行文字算两遍（原图里本来就重复的内容不会被吃掉）。</li>
             <li>大图（灯箱）里那张图的<strong>识别全文</strong>在<strong>全文栏</strong>（浮层）里与大图<strong>并排</strong>展示，默认就在右侧：可用工具条上的<strong>眼睛</strong>开关<strong>隐藏 / 显示</strong>，栏内文字<strong>可选中</strong>，还有<strong>一键复制</strong>（浮层隐藏时复制按钮一起隐藏）。按住栏的<strong>标题</strong>可把它拖到别处、<strong>双击标题</strong>回到大图右侧；关掉大图即复位。图片条目上原来的 <strong>📋 一键复制按钮已移除</strong>，要复制完整识别文字请到这个浮层里取。</li>
             <li><strong>右键网页上任意一张图，可以直接识别那一张</strong>：在图片上点右键 → 「用高亮词识别这张图」，只读你点的那一张、<strong>不写进白名单</strong>（右键即同意本次代读）。点下去<strong>立刻</strong>在面板「截图」表里出现这张图（标「识别中」），结果回来原地替换成缩略图 + 标签，点开就是大图与右侧栏全文。安全边界：新入口<strong>只放行公网 http/https</strong> —— 本机回环、内网段、<code>localhost</code> 与 <code>*.local</code> / <code>*.internal</code> / <code>*.home.arpa</code>、IPv6 字面量一律拒绝且不发请求。</li>
+            <li><strong>PDF 也能命中（2.0.6.5 起）</strong>：页面里<strong>引用</strong>到的 PDF（<code>&lt;a href="….pdf"&gt;</code> 链接、<code>&lt;iframe&gt;</code> / <code>&lt;embed&gt;</code> / <code>&lt;object&gt;</code> 嵌的 PDF）会在笔记里显示成一枚 <strong>PDF 占位牌</strong>（不渲染 PDF 源文件、不下载给你看）。扩展自己取字节、自己抽文字，命中判据与图片识别完全同一套。牌子有<strong>三种边框</strong>：<span title="识别中">蓝</span>＝正在读、<span title="无命中">绿</span>＝读完了但没命中（或抽不到字）、<span title="命中">红</span>＝命中；悬停会说明命中/未命中的原因。<strong>点一下占位牌</strong>就能看这份 PDF 的<strong>全文与命中内容</strong>（命中词会标亮）。</li>
           </ul>
         </div>
 
@@ -549,6 +550,8 @@
           <li><strong>跨域图未授权时的表现</strong>：这类图片在面板里<strong>照常显示</strong>，状态标成「<strong>跨域（未授权 域名）</strong>」（一个可动手的提示，不是故障）；把它那个域名加进本页「跨域图片」白名单，或直接在网页图片上<strong>右键识别</strong>这一张，就能读它。</li>
           <li><strong>长截图去重的边界</strong>：去重认两种情形 —— ① 删掉空白后<strong>完全相同</strong>的行；② 同一物理行（竖直差 ≤8px）里<strong>很像但不完全相同</strong>的行（水平偏移 ≤16px）。②里<strong>长句</strong>按相似度 ≥0.8 判、且两次识别的<strong>置信度相差 ≥4 分</strong>才合并；<strong>短句（不足 6 字）</strong>改按单字相似度判（≥1/3 即同一行）—— 短串上「很像」很容易直接算成 0，按老口径会出现「你好啊」被两个切片各读错一个字、结果并排显示两行的情况。两条谁更可信由<strong>置信度</strong>决定，但不再因为「分不出高下」而两条都留。置信度咬得很近的长句仍会都留下 —— 宁可让你看到一条重复，也不猜着删掉真实内容。</li>
           <li><strong>超长截图的切块上限</strong>：分段识别最多 40 块（约 7 万像素高），<strong>只有超过这个高度</strong>才会截断、超出部分不会被识别（是内容缺失，不是重复）。1080 宽的长图要到 14321px 才可能触发；真触发时面板会如实标注覆盖范围。</li>
+          <li><strong>PDF 的边界（2.0.6.5）</strong>：只认页面里<strong>引用</strong>的 PDF（链接 / <code>iframe</code> / <code>embed</code> / <code>object</code>）。<strong>直接在浏览器里打开的那个 PDF 标签页读不到</strong> —— 那是浏览器自带的阅读器，扩展的内容脚本不会在那里运行，所以「先打开 PDF 再想让它识别」这条路不通，请在<strong>引用它的普通网页</strong>上看。抽的是 PDF 的<strong>文字层</strong>：扫描件、纯图片导出的 PDF 抽不出字（牌子会变绿并说明「没抽到文字，可能是扫描件」），这种情况只能用截图 / 图片识别那条路走 OCR。</li>
+          <li><strong>PDF 的其它已知限制</strong>：带<strong>密码 / 加密</strong>的 PDF 不解密（直接判读不出）；压缩方式只解最常见的 FlateDecode，少数用 LZW / JPEG2000 之类打包的内容可能缺字（面板文案会标出来）；单份上限 <strong>40MB</strong>、抽出的正文上限 <strong>20 万字</strong>（超出会截断并提示），超大 PDF 换个思路（只看其中几页）更稳。</li>
         </ul>
       </div>
 
@@ -592,9 +595,15 @@
 
         <h4>Q8：图片识别（OCR）怎么用？</h4>
         <p>在「🖼 图片识别」分区确保语言包可用（可下载 / 手动导入 / 自检）；开启后，图片里含「图片命中关键词」的文字会被识别，结果进页面左上角「重要笔记」面板最上面那张「<strong>截图</strong>」表，<strong>不产生文字高亮</strong>。想让「抓到的值」也必须在图上出现才算命中，就再填「<strong>图片动态关键词</strong>」（填抓取字段名，多个可用逗号或 <code>|</code> 分隔，如 <code>姓名,岗位</code>）：它与「图片命中关键词」是<strong>且</strong>关系，留空等于只看关键词。图里若是表格（键值对齐、或并排两栏），面板里的识别全文会<strong>按列排成表格</strong>，分不出列就退回纯文本。跨域图片可以两条路走：在「图片识别」里<strong>按站点授权</strong>，或者在网页图片上直接<strong>右键</strong>识别<strong>你点的那一张</strong> —— 右键即这一次同意扩展代读你点的那张，与站点白名单（长期授权）并存不冲突，口径见「🖼 图片识别 → 跨域图片」。另外，任何进了面板的图，点开大图后工具条上都有一键 OCR（没识别过就是「OCR 识别」，识别过就是隐藏/显示全文）。</p>
-        <h4>Q9：抓取字段的 <code>!</code>、<code>%N</code>、<code>^锚文本</code> 后缀是什么？</h4>
-        <p>加在抓取字段末尾，用于<strong>清洗取值</strong>：<code>!</code> 去掉内容里的内部空格；<code>%N</code> 只取前 N 字、<code>%a-b</code> 取第 a~b 字（按字符截取，不拆开中文/emoji）；<code>^锚文本</code> 只取<strong>锚点第一次出现之前</strong>的内容（首尾空白顺带去掉），锚点找不到就<strong>保留原文</strong>。例 <code>包名!</code>、<code>简介#1%4</code>、<code>名称^[复制]</code>。三者可混写，<strong>执行顺序固定</strong> <code>!</code> → <code>^</code> → <code>%</code>，与书写顺序无关。</p>
-        <p>什么时候用 <code>^</code>：抓取格里除了你要的值，还混着「复制」「高价值」这类控件 / 角标文字（多数按钮文字会被自动剔除，没认出来的那类会留在取值里），而<strong>前缀长度不固定</strong>、<code>%N</code> 定长切不动 —— 这时写 <code>名称^[复制]</code>，把锚点那截起全部切掉。</p>
+        <h4>Q9：抓取字段后面的那些<strong>后缀</strong>（<code>#1</code>、<code>#图</code>、<code>@2</code>、<code>!</code>、<code>%N</code>、<code>^锚文本</code>）都是什么？</h4>
+        <p><strong>写在哪</strong>：写在「抓取后续字段」里每个<strong>字段名的末尾</strong>（如 <code>资质类型#1</code>），只影响那一个字段 —— 每个字段可以配不一样的后缀。<strong>顺序随意</strong>：修饰都从末尾逐个剥，<code>应用截图@1-3#图</code> 与 <code>应用截图#图@2</code> 等价。</p>
+        <ul>
+          <li><strong>取格子（<code>#1</code> / <code>@N</code>）</strong>：<code>#1</code>＝<strong>简单模式</strong>，只取右边<strong>相邻第一个</strong>单元格、不做整块多行表格（<code>资质类型#1</code>）；<code>@</code>＝<strong>值格指向</strong>，写「标签格右边第几格才是值」，语法与关键词的单元格偏移完全一致：<code>@2</code> 第 2 格、<code>@1-3</code> 第 1~3 格、<code>@1,3</code>、<code>@1-3,5</code>（右起视觉列、只在本行内找）。留空＝旧的「右邻格」；表达式写错或越界<strong>回退右邻格</strong>，不会报错、不会变空值。</li>
+          <li><strong>管图片（<code>#图</code> / <code>#N</code> / <code>#0</code>）</strong>：<code>#图</code>＝<strong>仅图片</strong>（这个字段只留图、丢掉文字）；<code>#N</code>（N≥2）＝<strong>最多 N 张图</strong>（超出丢掉、文字照旧）；<code>#图3</code>＝仅图片且最多 3 张；<code>#0</code>＝这个字段<strong>不要图</strong>（图既不参与图片识别、也不带进抓取内容 —— 多字段里截图 / icon / logo 都带图时，用它点名哪几个字段的图不认）。</li>
+          <li><strong>洗值：<code>!</code> / <code>%</code> / <code>^</code></strong>：<code>!</code> 去掉内容里的<strong>内部空白</strong>（包名这类标识符用，<code>com.example.app lite</code> → <code>com.example.applite</code>）；<code>%N</code> 只取前 N 字、<code>%a-b</code> 取第 a~b 字（<strong>1 起算、闭区间</strong>，按字符切、不拆中文与 emoji，例 <code>%2-3</code> 取第 2、3 字）；<code>^锚文本</code> 只取<strong>锚点第一次出现之前</strong>的内容（首尾空白顺带去掉，锚点是<strong>字面文本</strong>、不走正则、区分大小写）。三者<strong>可混写</strong>，<strong>执行顺序固定</strong> <code>!</code> → <code>^</code> → <code>%</code>，与书写顺序无关；越界 / 锚点找不到一律<strong>保留原文</strong>。</li>
+        </ul>
+        <p><strong>什么时候用 <code>^</code></strong>：抓取格里除了你要的值，还混着「复制」「高价值」这类控件 / 角标文字（多数按钮文字会被自动剔除，没认出来的那类会留在取值里），而<strong>前缀长度不固定</strong>、<code>%N</code> 定长切不动 —— 这时写 <code>名称^[复制]</code>，把锚点那截起全部切掉。示例：<code>包名!</code>、<code>简介%2-3</code>、<code>名称!^[复制]%3</code>、<code>应用截图@1-3#图</code>。</p>
+        <p><strong>别和 <code>#表</code> 弄混</strong>：上面这些是<strong>抓取字段</strong>的后缀；<code>#表</code> 是写在<strong>「图片命中关键词」</strong>上的标记，管的是「图 / PDF 里读到的『词：值』要不要并进重要笔记表格」，写法见下面 Q16。</p>
         <h4>Q10：抓取的「层级」当前层 / 内层 / 外层是什么？</h4>
         <p>页面可能表格套表格。<strong>当前层</strong>＝命中格所在的那张表；<strong>内层</strong>＝当前层里嵌着的更小表格；<strong>外层</strong>＝当前层的祖先表。可多选，新建默认「当前层」。</p>
         <h4>Q11：更新日志去哪看？</h4>
@@ -605,6 +614,14 @@
         <p>已移除（图片条目上不再有那个按钮），完整识别文字请到<strong>大图（灯箱）的全文栏</strong>里取：该栏默认就在<strong>大图右侧并排</strong>显示，点<strong>一键复制</strong>，或在栏里<strong>选中后 Ctrl+C</strong>；用灯箱工具条上的<strong>眼睛</strong>开关收起 / 展开，复制按钮跟着它一起显隐（按住栏的<strong>标题</strong>可拖动、<strong>双击标题</strong>回位）。面板里<strong>点命中的词块</strong>，复制的仍是它所在的<strong>整句</strong>。</p>
         <h4>Q14：重要笔记里每个词的<strong>正文字号</strong>能单独设吗？</h4>
         <p>能（2.0.2.2 起）。<strong>全局默认</strong>在「🎨 样式 → 重要笔记 → 正文字号默认值」（6–72px，默认 11）；想只让某个词/分组不一样：打开该关键词（或分组）的编辑弹窗，在「重要笔记」区把<strong>字号</strong>填上 —— 该区要先勾选<strong>重要</strong>才会亮（关掉只是置灰，填过的内容保留）。<strong>留空＝继承全局默认</strong>。词级字号同时管住面板里的<strong>笔记正文</strong>与<strong>抓取字段表格</strong>；图片尺寸（同一区的「尺寸」）不走这条链路，它只管图片。</p>
+        <h4>Q15：PDF 里的文字能命中吗？怎么用？</h4>
+        <p>能（<strong>2.0.6.5</strong> 起）。前提是<strong>页面里引用了这份 PDF</strong> —— 抓到的值格里有 <code>&lt;a href="….pdf"&gt;</code> 链接，或有 <code>&lt;iframe&gt;</code> / <code>&lt;embed&gt;</code> / <code>&lt;object&gt;</code> 嵌着 PDF，扩展就会自己去取、抽文字，命中判据与图片识别<strong>完全同一套</strong>（「图片命中关键词」里照常填词即可，PDF 里的字与网页正文一样能对上）。</p>
+        <p>它在面板里是一枚 <strong>PDF 占位牌</strong>（<strong>不渲染 PDF 源文件</strong>，只标「这里有一份 PDF」），三色边框：<strong>蓝</strong>＝正在读、<strong>绿</strong>＝读完了<strong>没命中</strong>（或没抽到字）、<strong>红</strong>＝<strong>命中</strong>；<strong>悬停</strong>会告诉你命中/未命中的原因。<strong>点一下占位牌</strong>就能看这份 PDF 的<strong>全文与命中内容</strong>（命中词标亮，全文可选中、可复制）。</p>
+        <p><strong>读不到的情况</strong>（都是设计使然，不是故障）：① 你<strong>直接打开的那个 PDF 标签页</strong>读不到 —— 那是浏览器自带阅读器，扩展脚本不在那里运行；② <strong>扫描件 PDF</strong> 只有图片没有文字层，抽不出字（牌子变绿并提示「没抽到文字，可能是扫描件」），要识别它得用截图 + OCR 那条路；③ 带密码 / 加密的 PDF 不解密；④ 单份上限 40MB、抽出正文上限 20 万字（超出截断并提示）。</p>
+        <h4>Q16：<code>#表</code> 标记是什么？（让图 / PDF 里的「词：值」并进笔记表格）</h4>
+        <p>在「<strong>图片命中关键词</strong>」里，给某个<strong>词尾加上 <code>#表</code></strong>（也认 <code>#kv</code>），图（或 PDF）里读到的<strong>「这个词：值」</strong>就会作为<strong>一行</strong>并进重要笔记的表格 —— 左边是命中词、右边是取到的值。例：<code>登记号#表|著作权人#表</code> 会把「登记号：2025SR0456628」「著作权人：某某公司」各变成一行；<strong>不加 <code>#表</code> 的词只判命中、不进表格</strong>。</p>
+        <p><strong>写法要点</strong>：多个词用 <code>|</code> 分隔；<strong>2.0.6.5 起逗号 / 顿号 / 分号 / 空格也能当分隔符</strong>（<code>登记号#表,著作权人#表</code> 与上面等价，老版本里这种写法会被当成一个词而失效）。值的取法：同一表格里<strong>命中格右边的单元格</strong> → 同一行的<strong>冒号 / 竖线后面</strong> → 值<strong>换行写在下一行</strong>，三种都能取到（取不到值时那一行不出现，宁缺不乱）。</p>
+        <p>与 <strong>「图片动态关键词」</strong>的区别：动态关键词是<strong>且</strong>关系（要求抓到的值也必须在图上出现才算命中），<code>#表</code> 是<strong>取值进表</strong>，两者可同时用。</p>
       </div>
 
       </div>

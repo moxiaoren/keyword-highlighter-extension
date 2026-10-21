@@ -330,8 +330,10 @@
     return '';
   }
 
-  /* 【2.0.6.1 需求⑧】图片 OCR 边框三态（蓝=识别中 / 红=命中 / 绿=无命中）。 */
-  const IMG_MARK_CLS = ['khin-imghit', 'khin-imgbusy', 'khin-imgmiss'];
+  /* 【2.0.6.1 需求⑧】图片 OCR 边框三态（蓝=识别中 / 红=命中 / 绿=无命中）。
+   * 【2.0.6.5 需求②】PDF 占位沿用同一套判据：两者只有**类名**和**文案**不同，
+   * 所以写入器只有一份（`markOneImg`），差异全在下面两张表里 ——
+   * 分开写两套的话，改一处忘另一处就是"图和 PDF 表现不一致"。 */
   /** 同一张图多条条目时的取舍顺序：命中 > done > fail > pending/idle */
   function rankOf(it) {
     const st = String((it && it.state) || '');
@@ -339,32 +341,63 @@
     return hit + (st === 'done' ? 10 : st === 'fail' ? 5 : st === 'pending' ? 2 : 1);
   }
 
-  /** 给一张图挂状态框（三态 + 悬停说明）；`it` 为空就只清状态 */
-  function markOneImg(im, it) {
-    if (!im || !im.classList) return;
-    const V = (KH.OcrCopy && KH.OcrCopy.VIEW) || {};
-    let want = '';
-    let tip = null;
-    if (it) {
-      const st = String(it.state || '');
-      const words = hitWords(it);
-      if (st === 'done' && words.length) {
-        want = 'khin-imghit';
-        tip = KH.OcrCopy.render(KH.OcrCopy.VIEW.imgHitTip, { matched: words.join('、') });
-      } else if (st === 'done' || st === 'fail') {
-        want = 'khin-imgmiss';
-        const why = st === 'fail' ? (V.imgFailTip || '') : missReason(it);
-        tip = (V.imgMissTip || '') + (why ? '（' + why + '）' : '');
-      } else {
-        want = 'khin-imgbusy';
-        tip = V.imgBusyTip || '';
-      }
+  /** 图片：三态该挂哪一个 / 悬停说什么（`it` 为空 ⇒ null = 只清状态） */
+  function stateOfImg(it, V) {
+    if (!it) return null;
+    const st = String(it.state || '');
+    const words = hitWords(it);
+    if (st === 'done' && words.length) {
+      /* 走 `VIEW.imgHitTip` 的字面引用（不写成 `V.imgHitTip`）：`tests/specs/ocr-copy.test.js`
+       * 的「不变量 10」就按 `VIEW.xxx` 这个名字做源码契约检查，免得哪天有人又在这儿写死中文。 */
+      return { cls: 'khin-imghit', tip: KH.OcrCopy.render(KH.OcrCopy.VIEW.imgHitTip, { matched: words.join('、') }) };
     }
+    if (st === 'done' || st === 'fail') {
+      const why = st === 'fail' ? (V.imgFailTip || '') : missReason(it);
+      return { cls: 'khin-imgmiss', tip: (V.imgMissTip || '') + (why ? '（' + why + '）' : '') };
+    }
+    return { cls: 'khin-imgbusy', tip: V.imgBusyTip || '' };
+  }
+
+  /** PDF 占位：同上（多认一个 `blocked`：取不到文件时 `ImgOcr` 用它表示"连字节都没拿到"） */
+  function stateOfPdf(it, V) {
+    if (!it) return null;
+    const st = String(it.state || '');
+    const words = hitWords(it);
+    if (st === 'done' && words.length) {
+      return { cls: 'khin-pdfhit', tip: KH.OcrCopy.render(V.pdfHitTip, { matched: words.join('、') }) };
+    }
+    if (st === 'done') {
+      const empty = String(it.text || '').trim() ? '' : '（' + (V.pdfEmptyTip || '') + '）';
+      return { cls: 'khin-pdfmiss', tip: (V.pdfMissTip || '') + empty };
+    }
+    if (st === 'fail' || st === 'blocked') {
+      return { cls: 'khin-pdfmiss', tip: (V.pdfFailTip || '') + (it.error ? '（' + it.error + '）' : '') };
+    }
+    return { cls: 'khin-pdfbusy', tip: V.pdfBusyTip || '' };
+  }
+
+  /* 落点 → 三态类名表。加新落点（比如将来的音频/表格截图）只需要在这里补一行 + 一个 `stateOf`。 */
+  const MARK_KINDS = {
+    img: { cls: ['khin-imghit', 'khin-imgbusy', 'khin-imgmiss'], of: stateOfImg },
+    pdf: { cls: ['khin-pdfhit', 'khin-pdfbusy', 'khin-pdfmiss'], of: stateOfPdf }
+  };
+
+  /**
+   * 给一个 OCR 落点挂状态框（三态 + 悬停说明）；`it` 为空就只清状态。
+   * @param {Element} im 卡片里的 `<img>`（`kind==='img'`）或 PDF 占位 `<span data-khpdf>`（`kind==='pdf'`）
+   * @param {object|null} it `ImgOcr.items()` 的一项
+   * @param {string} [kind] `'img'`（默认）/ `'pdf'`
+   */
+  function markOneImg(im, it, kind) {
+    const k = MARK_KINDS[kind === 'pdf' ? 'pdf' : 'img'];
+    if (!im || !im.classList) return;
+    const got = k.of(it, (KH.OcrCopy && KH.OcrCopy.VIEW) || {});
+    const want = got ? got.cls : '';
+    const tip = got ? got.tip : null;
     /* 【2.0.6.2 需求④】只写**真正变了的**属性：旧写法每次都 `remove` 三态再 `add` 一遍，
      * 即使状态没变也会让 `class` 属性连跳两次；而调度器的 MutationObserver 恰好盯着 `class`
      * （`attributeFilter:['class']`）⇒ 自己触发自己，页面越静它越扫，用户看到的就是"没操作也在闪/在重建"。 */
-    for (let i = 0; i < IMG_MARK_CLS.length; i++) {
-      const cls = IMG_MARK_CLS[i];
+    for (const cls of k.cls) {
       if (cls !== want && im.classList.contains(cls)) im.classList.remove(cls);
     }
     if (want && !im.classList.contains(want)) im.classList.add(want);
@@ -375,6 +408,9 @@
       im.title = tip;
     }
   }
+
+  /** 给一枚 PDF 占位挂状态框（三态 + 悬停说明）；`it` 为空就只清状态 */
+  function markOnePdf(el, it) { markOneImg(el, it, 'pdf'); }
 
   /**
    * 【2.0.6.1 需求④】卡片重建时把旧卡里已经解码好的 `<img>` 搬过来（按 `src` 配对）。
@@ -400,45 +436,8 @@
     }
   }
 
-  /* 【2.0.6.5 需求②】PDF 占位的三态（与图片同口径，类名分开：一个是 `<img>`、一个是 `<span>`，
-   * 混用就得给每条图样式再写一遍 `span.` 前缀，反而更难维护）。 */
-  const PDF_MARK_CLS = ['khin-pdfhit', 'khin-pdfbusy', 'khin-pdfmiss'];
-
-  /** 给一枚 PDF 占位挂状态框（三态 + 悬停说明）；`it` 为空就只清状态 */
-  function markOnePdf(el, it) {
-    if (!el || !el.classList) return;
-    const V = (KH.OcrCopy && KH.OcrCopy.VIEW) || {};
-    let want = '';
-    let tip = null;
-    if (it) {
-      const st = String(it.state || '');
-      const words = hitWords(it);
-      if (st === 'done' && words.length) {
-        want = 'khin-pdfhit';
-        tip = KH.OcrCopy.render(V.pdfHitTip, { matched: words.join('、') });
-      } else if (st === 'done') {
-        want = 'khin-pdfmiss';
-        tip = (V.pdfMissTip || '') + (String(it.text || '').trim() ? '' : '（' + (V.pdfEmptyTip || '') + '）');
-      } else if (st === 'fail' || st === 'blocked') {
-        want = 'khin-pdfmiss';
-        tip = (V.pdfFailTip || '') + (it.error ? '（' + it.error + '）' : '');
-      } else {
-        want = 'khin-pdfbusy';
-        tip = V.pdfBusyTip || '';
-      }
-    }
-    for (let i = 0; i < PDF_MARK_CLS.length; i++) {
-      const cls = PDF_MARK_CLS[i];
-      if (cls !== want && el.classList.contains(cls)) el.classList.remove(cls);
-    }
-    if (want && !el.classList.contains(want)) el.classList.add(want);
-    const have = el.getAttribute ? el.getAttribute('title') : null;
-    if (tip == null) {
-      if (have != null && el.removeAttribute) el.removeAttribute('title');
-    } else if (have !== tip) {
-      el.title = tip;
-    }
-  }
+  /* 【2.0.6.5 需求②】PDF 占位的三态写在上面那张 `MARK_KINDS` 表里（`markOnePdf` 见上，
+   * 与图片共用同一个写入器）。 */
 
   /**
    * 把 OCR 状态标到卡片里那些图上（抽成函数：面板重建与识别结果回来都要走同一份判据）。
@@ -2353,10 +2352,6 @@
     if (v) return { hit: true, sep: true, value: String(v[1]).trim() };
     /* 分隔符后面是空的 —— OCR 常把「值」换到下一行（`词：` / `值`） */
     return { hit: true, sep: /^\s*[：:｜|＝=]\s*$/.test(after), value: '' };
-  }
-  /** 这一行里「命中词 + 分隔符 + 值」的值（没有就返回空串） */
-  function kvValueInLine(line, re) {
-    return kvSegInLine(line, re).value;
   }
   /* 【2.0.6.2 需求⑥】值**截到下一个字段名之前**：OCR 归行会把贴得很近的两条物理行并成一行
    * （`offscreen/ocr.js` 的 `stitchRows`），于是本行的值后面常跟着下一行的标签

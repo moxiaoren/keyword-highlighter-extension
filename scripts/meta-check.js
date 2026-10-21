@@ -852,7 +852,10 @@ if (manifest && manifest.version) {
       const firstCell = (/^\|\s*([^|]*?)\s*\|/.exec(line) || [])[1] || '';
       if (!/已发布|线上核对|当前版本/.test(firstCell)) return;   // 只认「当前版本声明」那几行
       rows++;
-      const re = /\b\d+\.\d+\.\d+(?:\.\d+)?\b/g;
+      /* 每段 1–2 位数字：版本号长得都这样（2.0.7 / 2.0.6.6），而 IP 这类（127.0.0.1）
+       * 首段 3 位数就匹配不上 —— 否则「本机回环 127.0.0.1」这种正常叙述会被当成
+       * 「声称了 127.0.0.1 版」直接判红（round 68 真实踩到：状态页写了回环地址就红）。 */
+      const re = /\b\d{1,2}\.\d{1,2}\.\d{1,2}(?:\.\d{1,2})?\b/g;
       let m;
       while ((m = re.exec(line)) !== null) {
         seen.add(m[0]);

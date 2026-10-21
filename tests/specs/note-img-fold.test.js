@@ -341,7 +341,7 @@ module.exports = async function run() {
 
   await test('★ 边框状态不许"先全清再全加"（2.0.6.2 需求④：那是自激闪烁的源头）', () => {
     const src = read('src/features/important-note.js');
-    const fn = /function markOneImg\(im, it\)[\s\S]{0,2400}?\n  \}/.exec(src);
+    const fn = /function markOneImg\(im, it(?:, kind)?\)[\s\S]{0,2400}?\n  \}/.exec(src);
     truthy(fn, 'markOneImg 应当存在');
     const body = fn[0];
     /* 旧写法每次都 remove 三态再 add 一遍：`class` 属性连跳两次，而调度器的 MutationObserver

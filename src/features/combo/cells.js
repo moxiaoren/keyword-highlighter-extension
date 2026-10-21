@@ -71,6 +71,18 @@
   }
 
   /**
+   * 单元格的整格文本（**按 scan 缓存**）。
+   *
+   * `textContent` 每读一次就要把整棵子树拼成一串；组合词探针在**每个格子**上都要读它
+   * （`matchCellLabel` 的包含判定、表头/列名对齐），同一格一轮 scan 里被读好几遍。
+   * scan 是同步的、期间 DOM 不动 ⇒ 按 `ctx` 缓存是安全的（跨轮换新 ctx，见 `cacheOf` 的说明）。
+   */
+  function textOf(el, ctx) {
+    if (!el) return '';
+    return cached(ctx, 'cellText', el, () => String(el.textContent || ''));
+  }
+
+  /**
    * 单元格内的可扫描文本节点。
    *
    * **必须委托内核**（`Scanner.util.textNodesIn` = `collectTextNodes`）：
@@ -629,7 +641,7 @@
   KH.Cells = {
     cellOf, nextCell, nextCellRaw, rowOf: (cell) => (cell ? cell.parentElement : null),
     isHeaderCell, columnDataCells, columnLabel,
-    textNodesIn, isHidden, rectOf,
+    textNodesIn, textOf, isHidden, rectOf,
     firstHeaderRow, dataRows, columnTdCells, fakeCellsUnder, isTitleRow, columnCount, visualColumnIndex, cellAtVisualColumn,
     /* 取值格表达式（左右组合词"指定取值格"）：解析与取格都只在这一层，combo.js 只做策略 */
     parseCellOffsets, cellsAtOffsets,

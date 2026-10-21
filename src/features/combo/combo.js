@@ -109,7 +109,10 @@
    */
   function matchCellLabel(rule, cell, ctx) {
     if (!rule || !rule.labelPattern || !cell) return [];
-    const raw = String(cell.textContent || '');
+    /* 整格文本走 `Cells.textOf`（按 scan 缓存的 `textContent`）：这个探针会把**每个格子**都问一遍
+     * 「标题词在不在这格里」，而 `textContent` 每读一次都要现拼整棵子树。语义不变（同一轮 scan 里
+     * DOM 不动），省的是重复拼串。 */
+    const raw = Cells.textOf(cell, ctx);
     if (!raw.trim()) return [];
     if (rule.labelExact) {
       const got = rule.labelFlags && rule.labelFlags.caseSensitive ? raw.trim() : raw.trim().toLowerCase();

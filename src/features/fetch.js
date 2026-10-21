@@ -407,6 +407,12 @@
       return { top: Math.round(b.top), bottom: Math.round(b.bottom) };
     };
 
+    /* 先按文档序收候选段（**不算几何**），再决定要不要排视觉行。
+     * 绝大多数单元格只有一段文字，给它算 `Range` 矩形纯属白付"每格一次 layout 读取"；
+     * 实测重页面（2000 行表格 / 2334 条命中）里这项开销占重要笔记结算的绝大部分
+     * （见 `_e2e/probe-perf-mem.js` 的 `blockFor` 计数）。分段顺序仍是文档序，
+     * 只有在候选 ≥2 段时才需要按矩形判断"是不是同一视觉行"。 */
+    const cands = [];
     const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, null);
     let n;
     while ((n = walker.nextNode())) {
@@ -419,24 +425,25 @@
            * 面板里只剩「下载 PDF」几个字、根本没有占位牌可点（占位符整段被吞掉）。
            * `<a>` 的文字照旧继续下钻（"下载说明书"往往就是真内容）。 */
           const pdf = pdfPlaceholder(n);
-          if (pdf) {
-            const pg = geoOf(n);
-            addSeg(pg.top, pg.bottom, { img: pdf });
-          }
+          if (pdf) cands.push({ node: n, ph: pdf });
           continue;
         }
         const ph = imgPlaceholder(n);
-        if (!ph) continue;
-        const g = geoOf(n);
-        addSeg(g.top, g.bottom, { img: ph });
+        if (ph) cands.push({ node: n, ph: ph });
         continue;
       }
       if (underInteractive(n, cell)) continue;
       if (underOverlay(n)) continue;                       // 浮层里的文字不算字段内容（只影响抓取）
       const t = (n.nodeValue || '').replace(/[\u00a0\u3000]+/g, ' ').replace(/[ \t]+/g, ' ').trim();
       if (!t) continue;
-      const g = geoOf(n);
-      addSeg(g.top, g.bottom, { text: t });
+      cands.push({ node: n, text: t });
+    }
+    if (!cands.length) return '';
+    /* 单段 ⇒ 视觉行分组没有意义，直接给结果（省掉这一格的矩形读取） */
+    if (cands.length === 1) return cands[0].ph != null ? cands[0].ph : cands[0].text;
+    for (const c of cands) {
+      const g = geoOf(c.node);
+      addSeg(g.top, g.bottom, c.ph != null ? { img: c.ph } : { text: c.text });
     }
     return rows
       .map((r) => r.parts.map((p) => (p.img != null ? p.img : p.text)).join(' ').trim())
