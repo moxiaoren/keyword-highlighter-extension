@@ -736,6 +736,21 @@
    */
   function collectRightBlock(cell, table, opts) {
     const stopRepeat = !!(opts && opts.stopAtRepeatedLabel);    const rowIdx = cell.parentElement ? cell.parentElement.rowIndex : -1;
+    /* 【2.0.6.3 需求⑥】右侧取值的边界：同一张卡里还配了别的字段时，右邻格只要**整格等于另一个
+     * 字段名**就收尾 —— 否则「授权方 | 合肥… | 被授权方 | 沈阳…」这种一行多字段的表，会把下一个
+     * 字段名连同它的值一起并进上一个字段（用户现场：`被授权方|沈阳喜焱…` 后面拖着 `授权方`）。
+     * 只认整格相等，不做包含匹配：值里恰好出现别的字段名（「开发者：授权方代表」）不受影响。 */
+    const squashLbl = (v) => String(v == null ? '' : v).replace(/[\s\u3000]+/g, '');
+    const otherLabels = new Set();
+    ((opts && opts.labels) || []).forEach((l) => {
+      const k = squashLbl(l);
+      if (k) otherLabels.add(k);
+    });
+    const selfKey = squashLbl(opts && opts.selfLabel ? opts.selfLabel : (cell.textContent || ''));
+    const isOtherLabel = (txt) => {
+      const k = squashLbl(txt);
+      return !!k && k !== selfKey && otherLabels.has(k);
+    };
     if (rowIdx < 0) return [];
     const rowspan = cell.rowSpan || 1;
     const col = cell.cellIndex;
@@ -836,6 +851,7 @@
         if (c.col === col) { labelCell = c.td; continue; }
         if (c.col > col) {
           const txt = cellVisualText(c.td, { skipNestedTables: true });   // K79：值里不含内表文字
+          if (isOtherLabel(txt)) break;                                   // 【2.0.6.3 需求⑥】撞到别的字段名就收尾
           if (txt || (c.td.rowSpan || 1) > 1 || (c.td.colSpan || 1) > 1) {
             line.push({ t: txt, rs: c.td.rowSpan || 1, cs: c.td.colSpan || 1 });
           }
@@ -1275,7 +1291,7 @@
 
   /** 逐项取「值」（`@表达式` / `#1` 简单模式 / 右邻整块）—— `extractFor` 的唯一实现。
    *  `fromRow`：标签格是否取自"命中所在那一行"（决定要不要在重复标签处收尾，见 `collectRightBlock`）。 */
-  function rowsForItem(item, target, table, fromRow, box) {
+  function rowsForItem(item, target, table, fromRow, box, labels) {
     let rows = null;
     let usedOffset = false;
     /* 值格指向（`@表达式`）：合法且取到格 → 按视觉列序取那些格；
@@ -1299,7 +1315,12 @@
           if (val) rows = [[{ t: val, rs: 1, cs: 1 }]];
         }
       } else {
-        rows = collectRightBlock(target, table, { stopAtRepeatedLabel: !!fromRow, box: box });
+        rows = collectRightBlock(target, table, {
+          stopAtRepeatedLabel: !!fromRow,
+          box: box,
+          labels: labels || null,
+          selfLabel: item.label
+        });
       }
     }
     /* `!` 去空白 / `^` 锚点截取 / `%` 字符截取：无论来自 @偏移、#1 简单模式还是整块，统一在取值出口做修饰 */
@@ -1371,8 +1392,10 @@
     if (!picked || !picked.length) return [];
 
     const entries = [];
+    /* 【2.0.6.3 需求⑥】把本卡所有字段名带下去：右侧取值遇到「另一个字段名整格」就收尾。 */
+    const allLabels = items.map((it) => it.label);
     for (const p of picked) {
-      const rows = rowsForItem(p.item, p.cell, p.table, p.fromRow, box);
+      const rows = rowsForItem(p.item, p.cell, p.table, p.fromRow, box, allLabels);
       if (rows && rows.length) entries.push({ label: p.label, dir: p.dir, idx: p.idx, rows: rows });
     }
     /* K79：多选（当前层 + 内层 / 外层…）时**一律合并**（同名同值去重、值不同加层级后缀）；

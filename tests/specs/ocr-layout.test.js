@@ -434,6 +434,25 @@ module.exports = async function run() {
       eq(JSON.stringify(rows), JSON.stringify([{ label: '姓名', value: '张三' }, { label: '部门', value: '研发部' }]));
     });
 
+    /* 【2.0.6.3 需求⑦】用户原话：「被授权方（沈阳…）时被授权方格里多出授权方」。
+     * 「授权方」是「被授权方」的后半截 —— 汉字之间没有天然词边界，旧写法用字面匹配，
+     * 找「授权方」就命中了「被授权方：沈阳…」这一行，把别人的值记到自己头上。 */
+    await test('★ 本词只是另一个已配置词的后半截时，不许命中别人的行（需求⑦「授权方」vs「被授权方」）', () => {
+      const it = kvLab([], '被授权方：沈阳喜焱网络科技有限公司杭州分公司');
+      const rows = kvRows([it], '授权方#表|被授权方#表');
+      eq(rows.length, 1, JSON.stringify(rows));
+      eq(rows[0].label, '被授权方', '★ 只认真正独立的那个字段名');
+      eq(rows[0].value, '沈阳喜焱网络科技有限公司杭州分公司', JSON.stringify(rows[0]));
+    });
+
+    /* 反例：没有更长同名字段时，前面带别的字照旧算命中（2.0.4 需求① 的口径不许被这道闸误杀） */
+    await test('★ 没有更长同名字段时，词前有别的字仍算命中（反例）', () => {
+      const it = kvLab([], '编号登记号：2018SR458983');
+      const rows = kvRows([it], '登记号#表');
+      eq(rows.length, 1, JSON.stringify(rows));
+      eq(rows[0].value, '2018SR458983', JSON.stringify(rows[0]));
+    });
+
     await test('★ 去重键压掉空白：同一个值带着不同空格只留一条（需求⑧）', () => {
       const a = kvLab([], '授权人：厦门房在线科技有限公司');
       const b = kvLab([], '授权人：厦门房 在线科技有限公司');

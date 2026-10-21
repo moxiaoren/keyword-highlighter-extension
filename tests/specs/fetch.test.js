@@ -1452,4 +1452,36 @@ module.exports = async function run() {
     truthy(html.indexOf('>运营/商务</td>') >= 0, '★ 名字原样保留：' + html);
   });
 
+
+  /* 【2.0.6.3 需求⑥】用户原话：「被授权方|沈阳喜焱网络科技有限公司杭州分公司，实际多出 授权方」。
+   * 一行多字段的表（授权方 | 合肥… | 被授权方 | 沈阳…）里，取「被授权方」的值时右侧若还有
+   * 别的字段名，就把它连同它的值一起吞进来。判据：右邻格**整格等于本卡另一个字段名** ⇒ 收尾。 */
+  await test('★ 右侧撞到另一个字段名就收尾，不许把下一个字段的值吞进来（2.0.6.3 需求⑥）', () => {
+    const t = table([
+      ['授权方', '合肥某某科技有限公司', '被授权方', '沈阳喜焱网络科技有限公司杭州分公司'],
+      ['应用名称', 'x']
+    ]);
+    const tn = t.rows[0].children[0].childNodes[0];
+    const got = F.extractFor(tn, '被授权方|授权方');
+    const of = (n) => {
+      const e = got.filter((it) => it.label === n)[0];
+      return e ? JSON.stringify(e.rows) : '';
+    };
+    const bei = of('被授权方');
+    truthy(bei.indexOf('沈阳喜焱') >= 0, '自己的值必须抓到：' + bei);
+    falsy(bei.indexOf('授权方') >= 0, '★ 不许把下一个字段名并进值：' + bei);
+    const shou = of('授权方');
+    truthy(shou.indexOf('合肥某某') >= 0, '上一个字段照旧能抓：' + shou);
+    falsy(shou.indexOf('被授权方') >= 0, '★ 也不许越界抓下一个字段名：' + shou);
+  });
+
+  /* 反例：值是普通文字时不做任何截断（只认整格等于字段名） */
+  await test('★ 值里恰好提到别的字段名（不是整格）⇒ 不做截断（2.0.6.3 需求⑥）', () => {
+    const t = table([['授权方', '被授权方为沈阳喜焱的分公司', '备注', '无']]);
+    const tn = t.rows[0].children[0].childNodes[0];
+    const got = F.extractFor(tn, '授权方|备注');
+    const shou = JSON.stringify((got.filter((it) => it.label === '授权方')[0] || { rows: [] }).rows);
+    truthy(shou.indexOf('被授权方为沈阳喜焱') >= 0, '整句仍是值：' + shou);
+  });
+
 };

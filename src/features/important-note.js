@@ -2191,11 +2191,22 @@
   /** 键值行：命中词 + 分隔符 + 值。`{也` 之外的标点不算分隔符（`一对一时间范围11:30` 因此不会误拆）。 */
   const KV_LEAD_SEP = /^(?:\s*[：:｜|＝=]\s*|\s+)(\S[\s\S]*)$/;
   /** 命中词做**字面**匹配（可以带正则元字符），词内允许被 OCR 读散出空白 */
-  function kvLiteralRe(word) {
+  function kvLiteralRe(word, siblings) {
     const chars = String(word || '').trim().split('');
     if (!chars.length) return null;
-    const body = chars.map((c) => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s*');
-    try { return new RegExp(body, 'i'); } catch (e) { return null; }
+    const body = chars.map((c) => c.replace(/[.*+?$()|[\]\\{}]/g, '\\$&')).join('\\s*');
+    /* 【2.0.6.3 需求⑦】本词只是本卡另一个已配置词的**后半截**时（用户现场：「授权方」之于「被授权方」），
+     * 要求它左边不是汉字 —— 否则找「授权方」会命中「被授权方：沈阳…」那一行，把被授权方的值当成
+     * 授权方的值，合并后标题格里凭空多出一个「授权方」。
+     * 只在"有更长的同名字段"时加这道闸：普通词照旧允许前面有别的字（2.0.4 需求① 的口径：
+     * OCR 把标签读成「编号登记号」时仍算命中，不能被这条误杀）。 */
+    const tail = (siblings || []).some((o) => {
+      const t = String(o == null ? '' : o).replace(/\s+/g, '');
+      const me = String(word || '').replace(/\s+/g, '');
+      return t && t !== me && t.length > me.length && t.slice(-me.length) === me;
+    });
+    const head = (tail && /^[\u4e00-\u9fa5]/.test(chars[0])) ? '(?<![\u4e00-\u9fa5])' : '';
+    try { return new RegExp(head + body, 'i'); } catch (e) { return null; }
   }
   /** 这一行里命中词之后的部分：`hit`=命中，`sep`=紧跟分隔符，`value`=分隔符之后的内容 */
   function kvSegInLine(line, re) {
@@ -2285,7 +2296,7 @@
     if (!words.length) return [];
     const matchers = [];
     for (const w of words) {
-      const re = kvLiteralRe(w);
+      const re = kvLiteralRe(w, words);
       if (re) matchers.push({ word: String(w).trim(), re: re });
     }
     if (!matchers.length) return [];
