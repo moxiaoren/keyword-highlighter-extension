@@ -218,6 +218,11 @@
      * 命中显示面：底部那个「🖼 图片」分区已随右键识别折进主模块一并删除）。
      * 用 outline 而不是 border：outline 不参与布局，图不会被挤动一格（点开大图还能看原文里标出来的词）。 */
     .khin-item-note img.khin-imghit { outline: 2px solid #ef4444; outline-offset: 1px; }
+    /* 【2.0.6.1 需求⑧】图片 OCR 边框三态（用户原话：识别中蓝、命中红、没命中绿）。
+     * 仍是 outline（不参与布局、不挤动图）：蓝=排队/识别中，绿=已识别但没命中（含识别失败，
+     * 失败原因走 title，不另占一态）。 */
+    .khin-item-note img.khin-imgbusy { outline: 2px solid #3b82f6; outline-offset: 1px; }
+    .khin-item-note img.khin-imgmiss { outline: 2px solid #22c55e; outline-offset: 1px; }
     /* 抓取后续字段渲染的多行表格：**所有**单元格保留换行（v1.8.3）
      * 宽度（v1.99.99.11 用户实测要求）：**按内容收缩**，不再无条件 width:100%。
      *   用户原话："表格总宽度总是等于重要笔记宽度…避免明明就一列，结果宽度上还是填满了重要笔记"。
@@ -252,6 +257,20 @@
       display: inline-block; max-width: var(--kh-lbt-maxw, 8em); max-height: 1.5em;
       overflow: hidden; vertical-align: bottom;
     }
+    /* 【2.0.6.1 需求⑥】同值字段合并后的抬头：只写最短那个名字，后面跟一个「共 N 个」的小标，
+     * 点开（原生 details 元素，无需 JS）列出全部字段名。老笔记里没有它，就照旧只显示 .kh-lbt。 */
+    .kh-table .kh-table-more { display: inline-block; margin-left: 3px; vertical-align: bottom; }
+    .kh-table .kh-table-more > summary {
+      display: inline-block; cursor: pointer; list-style: none; font-weight: 400; font-size: 9px;
+      line-height: 1.6; padding: 0 4px; border-radius: 7px;
+      color: var(--kh-brand, #2563eb); background: var(--kh-bg, #fff);
+      border: 1px solid var(--kh-brand-soft, #eaf1fb);
+    }
+    .kh-table .kh-table-more > summary::-webkit-details-marker { display: none; }
+    .kh-table .kh-table-all {
+      margin-top: 2px; font-weight: 400; font-size: 10px; line-height: 1.5;
+      color: var(--kh-text-2, #475569); white-space: normal;
+    }
     /* 【2.0.2.17 需求①】字段名格不再带后缀（#图3 / @2 / ! / ^锚文本 / %4 都留在设置页）⇒
        原来给徽标用的那层样式只剩右键「截图」卡的状态小字（识别中…／识别失败）还在用，
        所以把它改名成它真正的用途，免得以后有人以为字段名还带徽标。 */
@@ -268,6 +287,102 @@
    *  —— v1.52 起"抓取到的图片"就可能是内嵌的 data URI（旧版注释写着"data: 内嵌图无需跳转"），
    *  它本身就是原图数据，在灯箱里显示是安全的（`<img src>` 不执行脚本）。 */
   const LIGHTBOX_SRC_OK = /^(https?:\/\/|data:image\/)/i;
+
+  /**
+   * 【2.0.6.1 需求③⑧】「已识别但没命中」要用**人话**说清卡在哪一步：旧实现只把它当"没命中"，
+   * 用户看不出是「动态判据的值图上没有」还是「点名的字段根本没取到值」还是「图里压根没字」。
+   * @param {object} it OCR 条目（`ImgOcr.items()` 的一项）
+   * @returns {string} 空串 = 命中或无需解释
+   */
+  function missReason(it) {
+    const V = (KH.OcrCopy && KH.OcrCopy.VIEW) || {};
+    const R = (tpl, vars) => (tpl ? KH.OcrCopy.render(tpl, vars || {}) : '');
+    const miss = (it && Array.isArray(it.needMissing)) ? it.needMissing : [];
+    const gone = (it && Array.isArray(it.needMissingValues)) ? it.needMissingValues : [];
+    if (miss.length) return (V.imgMissField || '') + '：' + miss.join('、');
+    if (gone.length) return (V.imgMissValue || '') + '：' + gone.join('、');
+    if (!String((it && it.text) || '').trim()) return V.imgMissEmpty || '';
+    return '';
+  }
+
+  /* 【2.0.6.1 需求⑧】图片 OCR 边框三态（蓝=识别中 / 红=命中 / 绿=无命中）。 */
+  const IMG_MARK_CLS = ['khin-imghit', 'khin-imgbusy', 'khin-imgmiss'];
+  /** 同一张图多条条目时的取舍顺序：命中 > done > fail > pending/idle */
+  function rankOf(it) {
+    const st = String((it && it.state) || '');
+    const hit = hitWords(it).length ? 100 : 0;
+    return hit + (st === 'done' ? 10 : st === 'fail' ? 5 : st === 'pending' ? 2 : 1);
+  }
+
+  /** 给一张图挂状态框（三态 + 悬停说明）；`it` 为空就只清状态 */
+  function markOneImg(im, it) {
+    if (!im || !im.classList) return;
+    for (let i = 0; i < IMG_MARK_CLS.length; i++) im.classList.remove(IMG_MARK_CLS[i]);
+    if (!it) {
+      if (im.removeAttribute) im.removeAttribute('title');
+      return;
+    }
+    const V = (KH.OcrCopy && KH.OcrCopy.VIEW) || {};
+    const st = String(it.state || '');
+    const words = hitWords(it);
+    if (st === 'done' && words.length) {
+      im.classList.add('khin-imghit');
+      im.title = KH.OcrCopy.render(KH.OcrCopy.VIEW.imgHitTip, { matched: words.join('、') });
+      return;
+    }
+    if (st === 'done' || st === 'fail') {
+      im.classList.add('khin-imgmiss');
+      const why = st === 'fail' ? (V.imgFailTip || '') : missReason(it);
+      im.title = (V.imgMissTip || '') + (why ? '（' + why + '）' : '');
+      return;
+    }
+    im.classList.add('khin-imgbusy');
+    im.title = V.imgBusyTip || '';
+  }
+
+  /**
+   * 【2.0.6.1 需求④】卡片重建时把旧卡里已经解码好的 `<img>` 搬过来（按 `src` 配对）。
+   * 见 `renderItems` 的调用点：正文一变就要重建那张卡，但图常常一字未变，换新就会重新解码 ——
+   * 用户看到的「闪一下」多半来自这里。
+   */
+  function carryImgs(from, to) {
+    if (!from || !from.querySelectorAll || !to.querySelectorAll) return;
+    const olds = new Map();
+    const srcs = from.querySelectorAll('img');
+    for (let k = 0; k < srcs.length; k++) {
+      const s0 = srcs[k].getAttribute('src') || '';
+      if (s0 && !olds.has(s0)) olds.set(s0, srcs[k]);
+    }
+    if (!olds.size) return;
+    const news = Array.prototype.slice.call(to.querySelectorAll('img'));
+    for (const im of news) {
+      const s0 = im.getAttribute('src') || '';
+      const old = s0 && olds.get(s0);
+      if (!old) continue;
+      olds.delete(s0);                       // 同一张旧图只搬一次（一个格子里同图可能出现两次）
+      if (im.parentNode) im.parentNode.replaceChild(old, im);
+    }
+  }
+
+  /**
+   * 把 OCR 状态标到卡片里那些图上（抽成函数：面板重建与识别结果回来都要走同一份判据）。
+   * @param {Element} bodyEl 卡片的正文容器
+   * @param {Array} imgItems `ImgOcr.items()`
+   */
+  function applyImgMarksTo(bodyEl, imgItems) {
+    if (!bodyEl || typeof bodyEl.querySelectorAll !== 'function') return;
+    const at = new Map();
+    for (const it of (imgItems || [])) {
+      const s = absSrc(it && it.src);
+      if (!s) continue;
+      const prev = at.get(s);
+      if (!prev || rankOf(it) > rankOf(prev)) at.set(s, it);
+    }
+    for (const im of bodyEl.querySelectorAll('img')) {
+      const s = absSrc(im.currentSrc || im.getAttribute('src') || im.src);
+      markOneImg(im, s ? (at.get(s) || null) : null);
+    }
+  }
 
   /**
    * 命中词去重列表：一段识别文本里同一个词命中多次只留一块
@@ -1389,16 +1504,35 @@
       /* 【2.0.4 需求④】尺寸在按下时量一次，拖动全程复用（见 applyPosition 的说明）。 */
       const metrics = { width: rect.width, height: rect.height };
       this.dragState = state;
+      /* 【2.0.6.1 需求④】指针事件比屏幕刷新快（一次 pointermove 一批，一帧能来好几个），
+       * 每个都写一遍 left/top 等于让浏览器同帧反复重排面板 —— 手感上就是"拖着发涩"。
+       * 这里只记最后一次坐标，真正落盘交给一帧一次（rAF）；抬手时同步 flush 一帧，
+       * 保证松手那一刻停在指针位置。没有 rAF 的环境（单测垫片）退化成同步写。 */
+      let rafId = 0;
+      let pending = null;
+      const flush = () => {
+        rafId = 0;
+        if (!pending || !this.dragState) return;
+        const p = pending;
+        pending = null;
+        this.pos.left = state.startLeft + (p.x - state.startX);
+        this.pos.top = state.startTop + (p.y - state.startY);
+        this.applyPosition(metrics);
+      };
       const move = (ev) => {
         if (!this.dragState) return;
         /* 挪过 3px 才算"拖"：FAB 同时是按钮，拖着挪位置时末尾也会补一个 click ——
          * 不区分就会"拖完面板自己弹开"（原来只绑 dblclick，正是为了躲这个）。 */
         if (Math.abs(ev.clientX - state.startX) + Math.abs(ev.clientY - state.startY) > 3) state.moved = true;
-        this.pos.left = state.startLeft + (ev.clientX - state.startX);
-        this.pos.top = state.startTop + (ev.clientY - state.startY);
-        this.applyPosition(metrics);
+        pending = { x: ev.clientX, y: ev.clientY };
+        if (rafId) return;
+        if (typeof requestAnimationFrame === 'function') rafId = requestAnimationFrame(flush) || 0;
+        if (!rafId) flush();
       };
       const up = () => {
+        /* 抬手先把最后一帧落下去，再拆监听：否则松手瞬间的位置会被丢掉（停在上一帧）。 */
+        if (rafId && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(rafId);
+        flush();
         this.dragMoved = !!state.moved;      // 留给 FAB 的 click 判定：这一次是拖还是点
         /* T41：按住时长在指针抬起时**结算**（不是在 click 里现算）。计时源必须是指针事件 ——
          * click 的派发延迟是浏览器行为（触屏抬起后还要等一次双击/缩放手势判定），
@@ -1503,6 +1637,14 @@
         this.panelEl = null;
         this.bodyEl = null;
         this.countEl = null;
+        /* 【2.0.6.1 需求④】收起态**不再每轮重写 FAB**。
+         * 旧写法无条件 `root.innerHTML = …`：整页每次重扫（页面自己动一下就算）都把 FAB 连同监听器
+         * 一起换新 —— 用户看到的就是「没操作、没变动，面板也一直在重建闪一下」。FAB 上只有计数与
+         * aria 文案会变，计数没变就什么都不用做（元素与监听器原样留用）。
+         * `fabCount` 在展开态被重置成 -1（那里整块换了 DOM），所以收回来时必然重建一次。 */
+        const fabNow = this.root.querySelector ? this.root.querySelector('.khin-fab') : null;
+        if (fabNow && this.fabCount === count) return;
+        this.fabCount = count;
         /* FAB 是真按钮（T29 / F4.1）：原来是个 div、只绑了 dblclick ⇒ 键盘够不着、鼠标单击
          * 也没反应，只有「双击」这一条隐性通路（能收不能开）。现在 click 展开、dblclick 保留
          * （用户双击习惯不变）、pointerdown 仍交给拖动；计数进 aria-label，📌 与徽标都是装饰。
@@ -1555,6 +1697,7 @@
 
       // 展开态：外壳只创建一次（避免每次命中变化重播入场动画 → 闪烁）
       if (!this.panelEl) {
+        this.fabCount = -1;   // 收起态那份 FAB 已被整块换掉（见上面 `this.minimized` 分支的说明）
         /* 题头措辞（含箭头字符）一律取自 KH.OcrCopy.VIEW（F3.4：原来两个题头逐字相同，
          * 读屏听不出展开的是哪一块）；aria-controls 指向受控区。
          * 【2.0.2.15】底部「🖼 图片」分区已删除（右键识别折进主模块那张「截图」卡之后，
@@ -1656,29 +1799,13 @@
     /**
      * 把 OCR 结果标到卡片里那些图上（2.0.2.7 用户 m00292：命中的图加红框）。
      *
-     * 命中 ⇒ `.khin-imghit`（红框）+ title 说出命中的词。2.0.2.15 起这是**唯一**的图片命中显示面
-     * （底部「🖼 图片」分区已删），所以只对真有命中的图动手：没命中的图不挂 title，
-     * 免得在用户自己的图上多一句与它无关的说明。
-     * 同一张图多条条目（不同关键词）时优先取**有命中**的那条；卡片里没有对应条目的图
-     * （面板装饰图、行内图标）不碰。只在卡片重建与识别结果回来时调用。
+     * 【2.0.6.1 需求⑧】边框三态：识别中（pending/idle）= 蓝框、命中 = 红框（保持 2.0.2.7 的观感）、
+     * 完成但没命中 = 绿框；识别失败也归绿框（它不该装成"还在跑"），悬停里说失败原因。
+     * 悬停同样三态：命中说命中了什么，没命中说清卡在哪（动态判据值 / 点名字段没取到值 / 没字）。
+     * 判据只在 applyImgMarksTo 一处，面板重建与识别结果回来都走它。
      */
     applyImgMarks() {
-      if (!this.bodyEl || typeof this.bodyEl.querySelectorAll !== 'function') return;
-      const at = new Map();
-      for (const it of (this.imgItems || [])) {
-        const s = absSrc(it && it.src);
-        if (!s || !hitWords(it).length) continue;
-        at.set(s, it);
-      }
-      for (const im of this.bodyEl.querySelectorAll('img')) {
-        const s = absSrc(im.currentSrc || im.getAttribute('src') || im.src);
-        const it = s ? at.get(s) : null;
-        if (im.classList) im.classList.remove('khin-imghit');
-        if (!it) continue;
-        const words = hitWords(it);
-        if (im.classList) im.classList.add('khin-imghit');
-        im.title = KH.OcrCopy.render(KH.OcrCopy.VIEW.imgHitTip, { matched: words.join('、') });
-      }
+      applyImgMarksTo(this.bodyEl, this.imgItems);
     },
 
     /**
@@ -1882,7 +2009,8 @@
       for (let i = 0; i < this.items.length; i++) {
         const item = this.items[i];
         const note = String(item.note == null ? '' : item.note);
-        let el = (prevEls[i] && prevNotes[i] === note) ? prevEls[i] : null;
+        const prevEl = prevEls[i] || null;
+        let el = (prevEl && prevNotes[i] === note) ? prevEl : null;
         if (el) {
           /* 复用：标签区要按当前状态重画（展开/选中/命中序号都在里面），正文与 `<img>` 不动 */
           const tagsEl = el.firstElementChild && el.firstElementChild.firstElementChild;
@@ -1911,6 +2039,7 @@
           noteEl.className = 'khin-item-note';
           noteEl.appendChild(this.noteFragment(doc, note));
           el.appendChild(noteEl);
+          carryImgs(prevEl, el);
         }
         styleOf(el, item);
         els.push(el);
@@ -2129,7 +2258,12 @@
       out.push({ label: label, value: value });
     };
     for (const it of list) {
+      /* 【2.0.6.1 需求⑦】把「行」与「命中」拉回同一条判据：条目的动态判据（`imgOcrNeed`）没满足时
+       * `judge` 判**未命中**——不高亮、不加红框；旧写法只看 `state==='done'`，于是这种条目照样往表里
+       * 塞一行「词 | 值」，用户看到「表格里有这行，OCR 全文里却不高亮、图也没有红框」这套自相矛盾的画面。
+       * （`needMissingValues` 由 `ImgOcr.judgeInfo` 带出，只有动态判据失败的条目才有它。） */
       if (!it || it.ruleId !== ruleId || it.state !== 'done' || !it.text) continue;
+      if (it.needMissingValues && it.needMissingValues.length) continue;
       const rawLines = String(it.text).split(/\r?\n/);
       for (let li = 0; li < rawLines.length; li++) {
         const line = rawLines[li].trim();

@@ -476,8 +476,11 @@
           for (let i = 0; i < list.length; i++) {
             /* `spec.token`（抓取后续字段）：每段本来就带 `#`/`%`/`^` 后缀 ⇒ 胶囊名取解析后的 label、
              * 后缀画成徽标（用户口径 m01713：词的数量多也能看清各自的后缀）。解析走 `labelSegs`，
-             * 与「字段」控件同一份语法；没写后缀时它就是原串。 */
-            const tok = spec.token
+             * 与「字段」控件同一份语法；没写后缀时它就是原串。
+             * 【2.0.6.1 需求②】`suffixChip`（图片动态关键词）：这框填的也是**抓取字段名**（可带
+             * `!`/`^` 等修饰），后缀同样不参与命中 —— 画成徽标才看得见"名字是名字、修饰是修饰"，
+             * 否则用户会以为 `开发者 ! ^高价` 整串都要在图里出现。 */
+            const tok = (spec.token || spec.suffixChip)
               ? (labelSegs(list[i])[0] || { name: list[i], suffix: '' })
               : { name: list[i], suffix: '' };
             prev.appendChild(labelChip({
@@ -509,8 +512,11 @@
           /* 与 `labels` 同一约定：正在改某一段时输入框带 `is-editing`（浮层里也认得出"在改哪一段"） */
           inp.classList.toggle('is-editing', st.editIdx >= 0);
           /* 普通模式下每段都是**字面量**：段里写了正则式子（`\d+`、`.*`、`(a|b)`）时提醒一句，
-           * 否则用户会以为已经生效。2.0.2.11 票 #65 起 `|` 已经是分隔符，不再需要提醒"| 不是或"。 */
-          const warn = !spec.token && !regexOn() && /[\\^$.*+?()[\]{}]/.test(String(st.raw));
+           * 否则用户会以为已经生效。2.0.2.11 票 #65 起 `|` 已经是分隔符，不再需要提醒"| 不是或"。
+           * 【2.0.6.1 需求②】图片动态关键词（`suffixChip`）**不出这句**：它填的是抓取字段名，
+           * 后缀本来就不是匹配内容（`!`/`^` 是取值修饰），拿"正则不生效"去吓它纯属错位；
+           * 而且它的匹配本来就不是字面匹配（大小写不敏感、非全词、剔空白，见 `img-ocr.js` 的 judge）。 */
+          const warn = !spec.token && !spec.suffixChip && !regexOn() && /[\\^$.*+?()[\]{}]/.test(String(st.raw));
           tip.hidden = !warn;
           tip.textContent = warn ? '普通匹配按字面找词：这里写的 . * + ? ( ) [ ] { } \\ ^ $ 都只是普通字符；要当正则用请勾上「正则」' : '';
           refreshClamp();

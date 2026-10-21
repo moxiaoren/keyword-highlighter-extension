@@ -338,4 +338,57 @@ module.exports = async function run() {
       const rows = withItems([it], () => ocrExtraRows({ pinId: 'r1', imgOcr: true, imgOcrKeyword: '供应商#表' }));
       eq(JSON.stringify(rows), JSON.stringify([{ label: '供应商', value: '华为技术有限公司' }]));
     });
+
+    /* 【2.0.6.1 需求⑦】用户现场：表格里有这行，但 OCR 全文里不高亮、图也没有红框。
+     * 根因是「行」与「命中」不是同一条判据 —— 动态判据没满足的条目照样进表。 */
+    await test('★ 动态判据没满足的条目 ⇒ 一行都不许进表（行与命中同源）', () => {
+      const it = { ruleId: 'r1', state: 'done', text: '一对一：北京某某', lineList: [],
+        needMissingValues: ['徐州启明星教育科技有限公司'] };
+      const rows = withItems([it], () => ocrExtraRows({ pinId: 'r1', imgOcr: true, imgOcrKeyword: '一对一#表' }));
+      eq(rows.length, 0, '★ 判未命中就不许展示「词 | 值」（否则用户看到表格有行、图却没红框）');
+    });
+
+  /* ==================================================================
+   * 【2.0.6.1 需求①⑦③】图片动态关键词：空格/跨行容忍 + 可解释的未命中
+   *   用户现场（m07242 第 1 条）：「加了 开发者 ! ^高价，抓取到的结果是 徐州启明星教育科技
+   *   有限公司，图片 OCR 结果也有，但却没有判为命中」。
+   *   三个判据一起钉住：① 字段名只认裸名（后缀不参与命中）；
+   *   ② 值与图上的文字都剔全部空白（含换行）后再比；
+   *   ③ 判不中时**必须说得出差在哪**（缺哪个值 / 哪个字段没取到值）。
+   * ================================================================== */
+  suite('2.0.6.1 需求①⑦③：图片动态关键词的判据与诊断');
+    const dynRule = (need, kw) => ({ meta: { imgOcr: true, imgOcrKeyword: kw == null ? '' : kw, imgOcrNeed: need } });
+
+    await test('★ 值被 OCR 折成两行 / 被读散出空格 ⇒ 仍判命中（用户现场的未来态）', () => {
+      const ocr = '开发者：徐州启明星教育科技有限\n公司\n资质证书：计算机软件著作权登记证书';
+      eq(IO.judge(dynRule('开发者 ! ^高价'), ocr, ['徐州启明星教育科技有限公司']).length, 1,
+        '★ 长串被折行切开也要命中（这就是用户报的「图里明明有」）');
+      eq(IO.judge(dynRule('开发者 ! ^高价'), '开发者：徐 州启 明星教育 科技有限公司', ['徐州启明星教育科技有限公司']).length, 1,
+        '★ 读散出空格也要命中');
+    });
+
+    await test('★ 动态值缺失 ⇒ 未命中，且 judgeInfo 说得出缺的是哪个值', () => {
+      const ji = IO.judgeInfo(dynRule('开发者'), '开发者：别的公司', ['徐州启明星教育科技有限公司']);
+      eq(ji.hits.length, 0, '图上没有这个值 ⇒ 不命中');
+      eq(JSON.stringify(ji.missingValues), JSON.stringify(['徐州启明星教育科技有限公司']),
+        '★ 缺哪个值必须带出来（面板据此解释"为什么不命中"）');
+    });
+
+    await test('★ needInfo：点名了却没取到值的字段必须点名（旧实现静默返回空 = 永远不命中）', () => {
+      const t = table([['开发者', '徐州启明星教育科技有限公司 高价值']]);
+      const ok = IO.needInfo(t.rows[0].children[0], { meta: { imgOcrNeed: '开发者 ! ^高价', fetchLabels: '开发者 ! ^高价' } });
+      eq(JSON.stringify(ok.values), JSON.stringify(['徐州启明星教育科技有限公司']), '★ 值来自抓取表（同一份 ! ^ 修饰）');
+      eq(ok.missing.length, 0, '字段取到了值就不算缺失');
+      const bad = IO.needInfo(t.rows[0].children[0], { meta: { imgOcrNeed: '著作权人', fetchLabels: '开发者' } });
+      eq(JSON.stringify(bad.missing), JSON.stringify(['著作权人']),
+        '★ 点名的字段不在抓取字段里 ⇒ 必须报出来，不许当成"没有动态判据"');
+      eq(JSON.stringify(IO.needInfo(null, { meta: { imgOcrNeed: '开发者' } }).missing), JSON.stringify(['开发者']),
+        '锚点取不到时也要说清楚（不许静默）');
+    });
+
+    await test('★ 后缀不参与命中：字段名带 ! ^ 也只按裸名比', () => {
+      eq(JSON.stringify(IO.needNames('开发者 ! ^高价')), JSON.stringify(['开发者']),
+        '★ 用户担心的「加的后缀也参与命中」在这里被否掉');
+      eq(JSON.stringify(IO.needNames('开发者 ! ^高价|著作权人')), JSON.stringify(['开发者', '著作权人']));
+    });
 };

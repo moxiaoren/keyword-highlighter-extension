@@ -254,4 +254,39 @@ module.exports = async function run() {
     truthy(/ta\.rows = Math\.max\(1, Math\.min\(9,/.test(src), '行数要按内容算，并封顶 9 行');
     truthy(/ta\.scrollHeight/.test(src), '量的是内容真实高度（scrollHeight），不是字数估算');
   });
+
+  /* 【2.0.6.1 需求②】用户原话：「普通匹配按字面找词：这里写的 . * + ? … 要当正则用请勾上「正则」
+   * —— 图片动态关键词在添加正则词之后还是存在这种提示。帮忙看看是历史文案残留，还是真的没有
+   * 生效」。查清是两头都错位：这框填的是**抓取字段名**（可带 `!`/`^` 取值修饰），后缀不参与命中；
+   * 它的匹配也不是字面匹配（`img-ocr.js` 的 judge：不分大小写、非全词、剔全部空白）。
+   * ⇒ 该框不弹这句，且胶囊按「名字 + 后缀徽标」画（让"名字是名字、修饰是修饰"看得见）。 */
+  suite('图片动态关键词 · 文案与胶囊口径（2.0.6.1 需求②）');
+  const mkNeed = (val) => KH.ui.Fields.create(FM.byKey('imgOcrNeed'), val, {});
+
+  await test('★ 配件位声明：imgOcrNeed 走 suffixChip，其余四个候选框不受影响', () => {
+    eq(FM.byKey('imgOcrNeed').suffixChip, true, '图片动态关键词要按「名字+后缀徽标」画');
+    eq(FM.byKey('imgOcrNeed').csvSplit, true, '逗号分隔的口径不许被顺手改掉');
+    ['text', 'cellVerify', 'fetchLabels', 'imgOcrKeyword'].forEach((k) => {
+      falsy(FM.byKey(k).suffixChip, k + ' 不声明 suffixChip（`^` 在这几个框里就是正则元字符）');
+    });
+  });
+
+  await test('★ 胶囊拆成「名字 + 后缀徽标」：`开发者 ! ^高价` ⇒ 名字只有「开发者」', () => {
+    const ctrl = mkNeed('开发者 ! ^高价');
+    eq(textOf(ctrl, '.kh-lbl-name').join('/'), '开发者', '★ 用户担心的「后缀也参与命中」在界面上就看得见不成立');
+    eq(textOf(ctrl, '.kh-lbl-suffix').join('/'), '! ^高价', '修饰原样摊开（是取值用的，不是拿来比的）');
+    eq(ctrl.read(), '开发者 ! ^高价', '★ read() 仍回整串原文（存储契约不变）');
+  });
+
+  await test('★ 不弹「普通匹配按字面找词…」（历史错位文案）；别的候选框照旧弹', () => {
+    const need = mkNeed('开发者 ! ^高价');
+    const tip = need.el.querySelector('.kh-cand-tip');
+    truthy(tip, '提示节点还在（只是内容为空）');
+    eq(String(tip.textContent || ''), '', '★ 图片动态关键词不许再出现这句');
+    truthy(tip.hidden, '也不许占据任何位置');
+    const kw = KH.ui.Fields.create(FM.byKey('text'), 'a.b', {});
+    const kwTip = kw.el.querySelector('.kh-cand-tip');
+    truthy(kwTip && /普通匹配按字面找词/.test(String(kwTip.textContent || '')),
+      '关键词框照旧提醒（那里 `*` `.` 真是字面量）');
+  });
 };

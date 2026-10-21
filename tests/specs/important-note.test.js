@@ -1214,4 +1214,35 @@ module.exports = async function run() {
     truthy(/panel\.refresh\(\)/.test(frag), '★ OCR 结果变了必须重建笔记（面板不只是图片分区）');
     truthy(/ocrNoteSig\(\)/.test(frag), '要用指纹挡一道，别让每次状态抖动都重画整块笔记');
   });
+
+  /* ==========================================================================
+   * 需求④：悬浮窗反复重建闪烁 / 拖动卡顿（2.0.6.1）
+   * ==========================================================================
+   * 用户原话：「重要笔记悬浮窗反复重建闪烁、拖动卡顿不跟手…尤其是重建闪烁问题，
+   * 无操作、无变动也自动重建」。锁三条判据（都是源码契约，行为由真机覆盖）：
+   *   ① 收起态计数没变就不重写 FAB（旧写法每轮重扫都换新元素 = 无变动也闪）
+   *   ② 拖动按一帧一次落位（旧写法每个 pointermove 都写 left/top）
+   *   ③ 卡片重建时按 src 复用旧 <img>（旧写法换新元素 = 图重新解码闪一下）
+   */
+  suite('重要笔记面板不许无意义重建（2.0.6.1 需求④）');
+
+  await test('★ 收起态计数没变 ⇒ 不重写 FAB（无操作无变动不该闪）', () => {
+    const src = read('src/features/important-note.js');
+    truthy(/fabNow && this\.fabCount === count/.test(src), '计数没变必须早退，不许无条件 root.innerHTML');
+    truthy(/this\.fabCount = -1;/.test(src), '展开态换了 DOM 必须把计数标记重置（否则收回来时 FAB 是空的）');
+  });
+
+  await test('★ 拖动按一帧一次落位（指针事件比屏幕刷新快）', () => {
+    const src = read('src/features/important-note.js');
+    truthy(/requestAnimationFrame\(flush\)/.test(src), '落位必须走 rAF 合并');
+    truthy(/cancelAnimationFrame\(rafId\)/.test(src), '抬手要取掉待执行的那一帧');
+    truthy(/const up = \(\) => \{[\s\S]{0,200}?flush\(\);/.test(src), '★ 抬手先同步 flush，否则停在上一帧（看着像丢帧/不跟手）');
+  });
+
+  await test('★ 卡片重建时按 src 复用旧图（不让 <img> 重新解码闪一下）', () => {
+    const src = read('src/features/important-note.js');
+    truthy(/function carryImgs\(from, to\)/.test(src), '复用逻辑要抽成单点');
+    truthy(/carryImgs\(prevEl, el\);/.test(src), '★ 建新卡时要把旧卡的图搬过来');
+    truthy(/olds\.delete\(s0\)/.test(src), '同一张旧图只搬一次（同图可能出现两次）');
+  });
 };

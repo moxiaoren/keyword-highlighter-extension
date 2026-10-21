@@ -1520,7 +1520,19 @@
     /* 【2.0.2.17 需求①】字段名格**只放名字**：后缀（`#图3` / `#0` / `!` / `^高价` / `%4` …）是抓取口径，
      * 属于设置页的事；塞进笔记里既占宽度又要用户去猜。编辑器的胶囊预览里照旧看得到后缀。
      * 过长省略仍由 `.kh-lbt`（max-width + ellipsis）负责，悬停的 `title` 带完整标签。 */
-    const labelHtml = (it, attrs) => '<td class="kh-table-label"' + (attrs || '') + '>' + escHtml(it.label) + '</td>';
+    /* 【2.0.6.1 需求⑥】合并出来的 `开发者/核准主体名称/著作权人` 太占地方：**抬头只写最短的那个**，
+     * 后面跟一个聚合数量，点数量展开看全部（`<details>` 原生就能展开，不用挂 JS，笔记 HTML 存进卡片也照样工作）。
+     * 单个字段名（没有 `/`）一个字都不改，老笔记的 `.kh-lbt` 包裹逻辑也不受影响。 */
+    const labelCellHtml = (label) => {
+      const parts = String(label == null ? '' : label).split('/').map((s) => s.trim()).filter(Boolean);
+      if (parts.length < 2) return escHtml(label);
+      let best = parts[0];
+      for (const p of parts) if (p.length < best.length) best = p;
+      return '<span class="kh-lbt" title="' + escHtml(parts.join('/')) + '">' + escHtml(best) + '</span>'
+        + '<details class="kh-table-more"><summary title="共 ' + parts.length + ' 个字段名，点开看全部">'
+        + parts.length + '</summary><div class="kh-table-all">' + parts.map(escHtml).join('<br>') + '</div></details>';
+    };
+    const labelHtml = (it, attrs) => '<td class="kh-table-label"' + (attrs || '') + '>' + labelCellHtml(it.label) + '</td>';
 
     /* 【v2.0.1.15 需求 2 · 外壳由内容构造】本函数返回 `''` = 有行但**有效值全空**
      * （值 `trim` 后为空即视为空 ⇒ 值不显示、字段名也不显示，整块不渲染）。

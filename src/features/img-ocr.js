@@ -81,6 +81,14 @@
    * 它与 `items` 的关系是"并集"：面板读 `items()`，本表在 `build()` 里并回去、`clear()` 时按档清。
    */
   const manual = new Map();
+  /**
+   * 【2.0.6.1 需求⑨】失败备忘：src → 失败时刻。引擎报错 / 超时后，同一张图在本会话里
+   * 不再自动重排（`FAIL_MEMO_MS` 后放行一次）。没有这张表时，页面每次重扫都会把它当新条目
+   * 再提交一遍 —— 用户体感就是"图里根本没字，却一直很慢、页面还卡"。
+   * 右键手动识别**不写这张表**（用户主动点名的那一次，必须真的再跑）。
+   */
+  const failSrc = new Map();
+  const FAIL_MEMO_MS = 10 * 60 * 1000;
   let tokenSeq = 0;
   /**
    * 超过这么久还没有终态 → 内容脚本**自己判死**。
@@ -372,12 +380,17 @@
     return built || null;
   }
 
-  /* 【票 #34：只剔**行内**空白】`\r`/`\n` 是版面换行，不是"同一个词被 OCR 读散"。
-   * 剔掉它会把上下两行拼成一个词（识别结果「登记」/「号」⇒ 假命中「登记号」），而票面明说
-   * "跨行的词不在本口径内"。两个常量必须**同时**只认行内空白：`unshrinkRange` 靠"跳过被剔掉的
-   * 字符"做下标映射，若 `WHITE_ALL` 剔行内、`WHITE_CHAR` 还认 `\n`，映射会逐行错位。 */
-  const WHITE_CHAR = /[^\S\r\n]/;
-  const WHITE_ALL = /[^\S\r\n]+/g;
+  /* 【2.0.6.1 需求①⑦ · 口径变更（用户原话）】
+   * 「图片关键词（包括动态关键词）命中是需要忽略 ocr 结果里的空格的。现在登记号，识别成
+   *   登 记 号，或者登记 号等就不判为命中了。」
+   * 旧口径（票 #34）只剔**行内**空白、`\r`/`\n` 留着 ⇒ OCR 把一整串公司名折成两行、把
+   * 「登记号」读成一行一个字的时候，静态词与动态判据**都**判不中，用户看到的是
+   * 「图上明明有，却说没命中」。现在两侧一律剔掉**全部空白（含换行）**：换行只是检测框
+   * 切行留下的版面痕迹，不是语义。
+   * 两个常量必须**同时**认全部空白：`unshrinkRange` 靠"跳过被剔掉的字符"做下标映射，
+   * 口径不一致会逐行错位（命中块就画到别的字上）。 */
+  const WHITE_CHAR = /\s/;
+  const WHITE_ALL = /\s+/g;
 
   /**
    * 把「剔空白文本」里的区间映射回**原文**区间。
@@ -467,29 +480,39 @@
    * @param {string} text 识别文本
    * @param {string[]} need 动态判据值（`needOf` 归一后的；空数组 = 没有动态要求）
    */
-  function judge(rule, text, need) {
+  function judgeInfo(rule, text, need) {
     const raw = String(text || '');
     const stat = matchedInText(rule, raw);
     const dyn = (need || []).filter(Boolean);
-    if (!dyn.length) return stat;
+    if (!dyn.length) return { hits: stat, missingValues: [] };
     const flat = raw.replace(WHITE_ALL, '').toLowerCase();
     const found = [];
+    /* 【2.0.6.1 需求③】缺失的值**全收集**再返回：面板要把「图上找不到哪几个值」说出来，
+     * 否则用户只看到"没命中"却不知道差在哪（这正是本批需求①报的现象）。 */
+    const missingValues = [];
     for (const v of dyn) {
       /* `need` 通常已由 `needOf` 归一（小写 + 剔空白），这里再兜一次：判决点自己把两侧弄成同口径，
        * 免得调用方（含单测与后续新入口）拿"原样大小写"的值进来就静默不命中。 */
       const needle = String(v == null ? '' : v).replace(WHITE_ALL, '').toLowerCase();
       if (!needle) continue;
       const at = flat.indexOf(needle);
-      if (at < 0) return [];                       // 有一个点名的值不在图上 ⇒ 不命中（AND）
+      if (at < 0) { missingValues.push(String(v)); continue; }   // 有一个点名的值不在图上 ⇒ 不命中（AND）
       /* 命中块要落在**原文**里（面板上的词块与"复制整句"靠它），所以映射回未剔空白的区间 */
       const span = unshrinkRange(raw, at, at + needle.length);
       found.push(span
         ? { start: span.start, end: span.end, text: raw.slice(span.start, span.end) }
         : { start: 0, end: 0, text: needle });
     }
+    if (missingValues.length) return { hits: [], missingValues: missingValues };
     const hasStatic = !!stripKvMarks(rule && rule.meta && rule.meta.imgOcrKeyword).trim();
-    if (!hasStatic) return found;                  // 只有动态判据：值在图上即命中
-    return stat.length ? stat.concat(found) : [];  // 两边都配了：静态词命中也必须成立
+    if (!hasStatic) return { hits: found, missingValues: [] };   // 只有动态判据：值在图上即命中
+    /* 两边都配了：静态词命中也必须成立 */
+    return { hits: stat.length ? stat.concat(found) : [], missingValues: [] };
+  }
+
+  /** 判决 = `judgeInfo().hits`（唯一实现；诊断字段由 `judgeInfo` 带出） */
+  function judge(rule, text, need) {
+    return judgeInfo(rule, text, need).hits;
   }
 
   /**
@@ -526,19 +549,35 @@
     return out;
   }
 
-  function needOf(hitOrCell, rule) {
+  /**
+   * 【2.0.6.1 需求①③】`needOf` 的**带诊断版**：除了判据值，还要说清「点名的字段里有哪个
+   * 根本没取到值」。
+   *
+   * 为什么必须带出来：旧实现三处都 `return []` —— 字段名写错、字段不在抓取字段里、
+   * 锚点取不到，全都会静默变成"没有动态要求"，于是**永远不命中且毫无提示**。
+   * 用户报的正是这个观感（「难道加的字段名也参与命中，那不就是永远也不会命中么」）。
+   * 现在解析不出来 → `missing` 里点名，面板照实说「抓取字段 X 没取到值」，不再静默。
+   *
+   * @returns {{values: string[], want: string[], missing: string[]}}
+   *   `values` 已归一（剔全部空白 + 小写），喂 `judge`；
+   *   `want` 是用户点名的字段名（已剥后缀）；
+   *   `missing` 是**点名了但没在抓取结果里出现**的字段名。
+   */
+  function needInfo(hitOrCell, rule) {
     const meta = (rule && rule.meta) || {};
     const want = needNames(meta.imgOcrNeed);
-    if (!want.length) return [];
+    const info = { values: [], want: want, missing: [] };
+    if (!want.length) return info;                    // 留空即旧行为：没有动态判据
     const Fetch = KH.Fetch || {};
-    if (typeof Fetch.extractFor !== 'function') return [];
+    if (typeof Fetch.extractFor !== 'function') { info.missing = want.slice(); return info; }
     const anchor = (hitOrCell && hitOrCell.cell) ? hitOrCell.cell : hitOrCell;
-    if (!anchor) return [];
+    if (!anchor) { info.missing = want.slice(); return info; }
     let entries = [];
     try {
       entries = Fetch.extractFor(anchor, meta.fetchLabels || '', meta.fetchScope, null) || [];
-    } catch (e) { return []; }
+    } catch (e) { info.missing = want.slice(); return info; }
     const out = [];
+    const seen = [];
     const base = (typeof Fetch.baseLabelOf === 'function') ? Fetch.baseLabelOf : ((s) => s);
     for (const en of entries) {
       const label = String((en && en.label) || '').trim();
@@ -546,6 +585,8 @@
       let bare = label;
       try { bare = String(base(label) || label); } catch (e) { bare = label; }
       if (want.indexOf(label) < 0 && want.indexOf(bare) < 0) continue;
+      if (seen.indexOf(label) < 0) seen.push(label);
+      if (seen.indexOf(bare) < 0) seen.push(bare);
       for (const row of (en.rows || [])) {
         for (const c of (row || [])) {
           const raw = String((c && c.t) || '');
@@ -555,15 +596,21 @@
            * 只删开头那个标记会把 url 留在值里，值与 OCR 文本就永远对不上（真机抓到的红）。
            * 剥离实现只有一份，与 `#0`（不要图）共用。 */
           const plain = (typeof Fetch.stripImgPlaceholders === 'function') ? Fetch.stripImgPlaceholders(raw) : raw;
-          /* 逐格一个判据（沿用旧口径：格子里的值各自比），换行一起剔 —— OCR 文本里值后面
-           * 跟不跟换行不该影响命中。 */
+          /* 逐格一个判据（沿用旧口径：格子里的值各自比）；空白/换行一律剔（与 `judge` 同口径） */
           const t = plain.replace(WHITE_ALL, '').replace(/[\r\n]+/g, '').toLowerCase();
           if (t.length < NEED_MIN_LEN) continue;
           if (out.indexOf(t) < 0) out.push(t);
         }
       }
     }
-    return out;
+    info.values = out;
+    info.missing = want.filter((n) => seen.indexOf(n) < 0);
+    return info;
+  }
+
+  /** 只要值（判决点与单测的既有入口）：`needInfo().values` */
+  function needOf(hitOrCell, rule) {
+    return needInfo(hitOrCell, rule).values;
   }
 
   /* ---------------- 【2.0.2.19 需求②⑤】按列带排版（纯函数：吃 `linesOf`，不吃 DOM） ---------------- */
@@ -712,6 +759,7 @@
         it.errorCode = 'timeout';
       }
       failTwin(rec.src, rec.key, '识别引擎长时间没有回应（已超时）', 'timeout');   // T55
+      if (rec.src) failSrc.set(rec.src, t);            // 需求⑨：超时也别下一轮又排一遍
     }
     if (n) notify();
     if (n) pump();                                   // 超时收口也归还了额度 ⇒ 补发队里的图
@@ -1030,7 +1078,11 @@
         it.state = 'done';
         it.text = text;
         it.conf = msg.confidence || 0;
-        it.matched = judge(it.rule, text, it.need);
+        /* 【2.0.6.1 需求①③⑦】命中判定与"差在哪"一次算完：`missingValues` = 点名的动态值里
+         * 图上没找到的那几个 —— 面板照实说出来，不再只给一个"没命中"。 */
+        const ji = judgeInfo(it.rule, text, it.need);
+        it.matched = ji.hits;
+        it.needMissingValues = ji.missingValues;
         it.lineList = msg.lineList || [];
         it.ocrMs = msg.ocrMs;
         /* 引擎**如实告知**的"结果不完整/不可靠"（不变量 1/2，D-14.5）：
@@ -1052,6 +1104,8 @@
         it.engine = msg.engine || '';
         it.engineReason = msg.engineReason || '';
         if (msg.code === 'lang-missing') it.why = 'lang-missing';
+        /* 需求⑨：失败的图记一笔，别让下一轮扫描再排一次（右键手动那种条目不记） */
+        if (it.src && !/^ctxmenu\|/.test(it.key)) failSrc.set(it.src, Date.now());
       }
     }
     if (targets.length) notify();
@@ -1130,8 +1184,13 @@
       if (!fields.length) continue;
       /* 【2.0.2.19 需求③】这些抓取字段的值同时是**动态关键词**（见 `judge`）。
        * 【2.0.4 需求②】取值改走 `Fetch.extractFor`（与重要笔记表格同一份实现），
-       * 所以锚点/字段名都从 `anchor.cell` 重算 —— 不再复用 `cellsForHit` 的裸名字典。 */
-      const need = needOf(anchor.cell, rule);
+       * 所以锚点/字段名都从 `anchor.cell` 重算 —— 不再复用 `cellsForHit` 的裸名字典。
+       * 【2.0.6.1 需求①③】改用 `needInfo`：`needMissing` 是「点名了却没取到值」的字段名，
+       * 面板据此把「为什么不命中」说出来（旧实现这条路全是静默 `[]`）。 */
+      const ni = needInfo(anchor.cell, rule);
+      const need = ni.values;
+      const needWant = ni.want;
+      const needMissing = ni.missing;
       const valueCells = [];
       const labelOfImg = new Map();
       for (const f of fields) {
@@ -1158,14 +1217,17 @@
           label: String(labelOfImg.get(got.img) || ''),
           src: src, cls: cls, host: cls.host || '',
           state: 'idle', matched: [], text: '', conf: 0,
-          need: need, lineList: [],
+          need: need, needWant: needWant, needMissing: needMissing,
+          needMissingValues: [], lineList: [],
           cellText: String((anchor.cell && anchor.cell.textContent) || '').trim().slice(0, 120)
         };
         if (cached) {
           item.state = 'done';
           item.text = cached.text;
           item.conf = cached.conf;
-          item.matched = judge(rule, cached.text, need);
+          const ji = judgeInfo(rule, cached.text, need);
+          item.matched = ji.hits;
+          item.needMissingValues = ji.missingValues;
           item.lineList = cached.lineList || [];
           /* 【耗时徽标必须跟着缓存走】(K80 · 真机踩到) 条目表每次重建都从缓存重建，
            * 而 `ocrMs` 此前只活在**当时那个条目对象**上 ⇒ 页面一有变动（重建）耗时徽标就空了。
@@ -1175,6 +1237,13 @@
         } else if (!cls.ok) {
           item.state = 'blocked';
           item.why = cls.why;
+        } else if (failSrc.has(src) && Date.now() - failSrc.get(src) < FAIL_MEMO_MS) {
+          /* 【2.0.6.1 需求⑨】这张图刚识别失败过（引擎报错 / 超时 / 无文字且 rescue 全跑空），
+           * 同一次会话里**不再重新排队**。旧行为：页面每一次重扫都把它当新条目、再提交一遍，
+           * 于是"没文字的图也要跑好几秒"在面板反复重建时成倍放大（用户说的"没文字也耗时很长、
+           * 页面卡顿"多半就是这条）。失败信息仍照实显示，10 分钟后自动允许重试一次。 */
+          item.state = 'fail';
+          item.why = 'retry-later';
         } else if (inflight.has(src)) {
           item.state = 'pending';
         }
@@ -1229,6 +1298,8 @@
         /* 销毁（换页/停用）连 `manual` 一起清；普通重建只把扫描链条目清底，
          * 右键识别的行**留着**（它不属于本轮命中，清掉就等于用户白右键一次） */
         if (destroy) manual.clear();
+        /* 失败备忘跟着会话走：换页/停用才清（普通重扫保留，否则页面一动就又开始重排） */
+        if (destroy) failSrc.clear();
         items = new Map(Array.from(manual));
         if (destroy) {
           held.clear();
@@ -1317,6 +1388,10 @@
     /** 动态命中判决 + 抓取值表（2.0.2.19 需求③；单测用）
      *  【2.0.4 需求②】`needOf(hitOrCell, rule)` 改成吃锚点格 + 规则（值走 `Fetch.extractFor`）。 */
     judge: judge, needOf: needOf, needNames: needNames,
+    /** 【2.0.6.1 需求①③】带诊断的两个入口：
+     *  `judgeInfo(rule,text,need)` → `{hits, missingValues}`（图上找不到的那些动态值）
+     *  `needInfo(hitOrCell,rule)`  → `{values,want,missing}`（点名了却没取到值的字段名） */
+    judgeInfo: judgeInfo, needInfo: needInfo,
     /** 【2.0.4 需求①】「键值行进表」标记：`kvWords(raw)` = 带 `#表`/`#kv` 标记的词（已剥标记）；
      *  `stripKvMarks(raw)` = 去掉标记的关键词原文（喂匹配用）。重要笔记那边读同一份实现。 */
     kvWords: kvWords, stripKvMarks: stripKvMarks,

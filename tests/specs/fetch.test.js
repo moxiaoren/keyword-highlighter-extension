@@ -1392,4 +1392,26 @@ module.exports = async function run() {
     eq((realOptDiff.match(/kh-table-label/g) || []).length, 2, '图片策略不同 ⇒ 不合并');
   });
 
+  /* 【2.0.6.1 需求⑥】用户原话：「抬头只展示最短的，后面跟聚合数量，点数量下拉看有哪些」。
+   * 合并后的 `开发者/核准主体名称/著作权人` 太长，把半个格都吃掉 ⇒ 抬头只写最短那个 + `3`，
+   * 点 `3` 列出全部（原生 `<details>`，笔记 HTML 存下来也照样能展开）。 */
+  await test('★ 合并后的抬头只写最短名字 + 数量，点开列全部（2.0.6.1 需求⑥）', () => {
+    const html = F.rowsToTableHtml([
+      { label: '开发者', rows: [[{ t: '厦门房在线科技有限公司' }]] },
+      { label: '核准主体名称', rows: [[{ t: '厦门房在线科技有限公司' }]] },
+      { label: '著作权人', rows: [[{ t: '厦门房在线科技有限公司' }]] }
+    ]);
+    eq((html.match(/厦门房在线科技有限公司/g) || []).length, 1, '三个同值字段仍只写一次值');
+    eq((html.match(/kh-table-more/g) || []).length, 1, '只出一个小标（不是每个名字都摆出来）');
+    truthy(/<summary[^>]*>3<\/summary>/.test(html), '小标写的是**合并进来的字段数**：' + html);
+    truthy(/<div class="kh-table-all">开发者<br>核准主体名称<br>著作权人<\/div>/.test(html),
+      '点开要能看到全部字段名（顺序与配置一致）：' + html);
+    /* 抬头正文 = 最短的那个名字（「开发者」3 字 < 「著作权人」4 字 < 「核准主体名称」6 字） */
+    truthy(/>开发者<\/span><details/.test(html), '★ 抬头只写最短的：' + html);
+    /* 反例：单个字段名 ⇒ 一个字都不许变（老笔记、未合并的卡都走这条路） */
+    const one = F.rowsToTableHtml([{ label: '开发者', rows: [[{ t: '甲' }]] }]);
+    eq((one.match(/kh-table-more/g) || []).length, 0, '没合并就不许出小标');
+    truthy(one.indexOf('>开发者</td>') >= 0, '单个名字原样输出');
+  });
+
 };

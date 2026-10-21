@@ -288,11 +288,20 @@ module.exports = async function run() {
     eq(m[0].text, '登记 号', '只认到「登记 号」，不许把「码」也吞进来');
   });
 
-  await test('★ 跨行不算命中（票 #34）：剔的只是**行内**空白，换行不许被拼成一个词', () => {
-    eq(O.matchedInText({ meta: { imgOcrKeyword: '登记号' } }, '前缀\n登记\n号 后缀').length, 0,
-      '版面换行不是"被 OCR 读散的空格"：上下两行拼出来的词不算命中');
+  /* 【2.0.6.1 需求⑦ · 口径变更（用户 m07242 原话）】「图片关键词（包括动态关键词）命中是需要
+   * 忽略 ocr 结果里的空格的。现在登记号，识别成登 记 号，或者登记 号等就不判为命中了。」
+   * 旧口径（票 #34）把 `\r`/`\n` 当语义边界、只剔行内空白 ⇒ 图上明明有、却判不中；
+   * 现在换行也只当版面痕迹（检测框切行），两侧一律剔全部空白。这条用例就是那次裁决的钉子。 */
+  await test('★ 跨行也算了（2.0.6.1 需求⑦ 取代票 #34）：换行只是版面痕迹，剔掉后再比', () => {
+    eq(O.matchedInText({ meta: { imgOcrKeyword: '登记号' } }, '前缀\n登记\n号 后缀').length, 1,
+      '识别成「登」「记」「号」三行也必须算命中（用户原话：登 记 号 / 登记 号 都要认）');
     truthy(O.matchedInText({ meta: { imgOcrKeyword: '登记号' } }, '前缀\n登记 号 后缀').length,
       '同一行里的空格仍要容忍（回归）');
+    /* 长值折行（用户现场：一长串公司名被 OCR 折成两行） */
+    const m = O.matchedInText({ meta: { imgOcrKeyword: '徐州启明星教育科技有限公司' } },
+      '开发者\n徐州启明星教育科技有限\n公司\n[高价值]');
+    eq(m.length, 1, '长串被折行切开也要命中');
+    eq(m[0].text.indexOf('徐州'), 0, '命中块仍落在**原文**（复制整句靠它）');
   });
 
   suite('图片命中 · 准入条件（无抓取字段 / 未勾选 / 无命中 → 不产生条目）');
@@ -713,5 +722,39 @@ module.exports = async function run() {
     KH.features.get('img-ocr').clear(null, { reason: 'destroy' });
     O.clearManual();
     eq(O.items().filter((it) => it.via === 'contextMenu').length, 0);
+  });
+
+  /* ==========================================================================
+   * 需求⑨：识别失败/无文字的图别反复重排（2.0.6.1）
+   * ==========================================================================
+   * 用户原话：「图片 ocr 速度/资源占用… 无文字也耗时很长、页面卡顿」。
+   * 根因之一：页面每次重扫都把失败过的图当新条目再提交一遍（引擎不会缓存失败结果），
+   * 于是「图里根本没字」变成一轮又一轮的完整识别。
+   */
+  suite('图片 OCR 失败备忘：失败过的图本轮会话不再重排（2.0.6.1 需求⑨）');
+
+  await test('★ 识别失败过 ⇒ 重建条目表时不退回 idle、也不再提交一次', () => {
+    KH.features.get('img-ocr').clear(null, { reason: 'destroy' });   // 清失败备忘 + 缓存
+    const before = (global.__OCR_SENT__ || []).length;
+    const im = srcImg('data:image/png;base64,failMemo');
+    const a = anchorWith([im]);
+    O.build({}, {}, [hitOf(a)]);
+    eq(O.items().length, 1, '先有一条可识别的图');
+    eq((global.__OCR_SENT__ || []).length - before, 1, '第一次要真发出去');
+
+    driveOcrResults(() => ({ ok: false, error: '引擎挂了', code: 'boom' }), before);
+    eq(O.items()[0].state, 'fail', '回执失败 ⇒ 条目记失败');
+
+    const sentAfterFail = (global.__OCR_SENT__ || []).length;
+    O.build({}, {}, [hitOf(a)]);          // 页面变动 ⇒ 条目表整体重造
+    eq(O.items().length, 1);
+    eq(O.items()[0].state, 'fail', '★ 重造后仍是失败态（不许退回 idle 又跑一遍）');
+    eq(O.items()[0].why, 'retry-later', '原因要说清是"稍后重试"，不是"引擎坏了"');
+    eq((global.__OCR_SENT__ || []).length, sentAfterFail, '★ 不许再提交一次');
+
+    /* 用户主动右键点名的那张：失败备忘不许拦它（那是"我就是要再试一次"） */
+    O._onResult({ requestId: 'imgCtx-77', ok: true, via: 'contextMenu', src: 'data:image/png;base64,failMemo', text: '华为', confidence: 90 });
+    truthy(O.items().some((it) => it.via === 'contextMenu'), '右键手动识别照旧');
+    KH.features.get('img-ocr').clear(null, { reason: 'destroy' });
   });
 };

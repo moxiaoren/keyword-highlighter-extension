@@ -65,7 +65,7 @@ module.exports = async function run() {
    * ① 卡片里的图：命中铺红框、title 说出命中的词
    * ========================================================================== */
 
-  await test('★ 命中的图铺红框并说出命中了哪个词；没命中的不铺也不挂说明', () => {
+  await test('★ 命中的图铺红框并说出命中了哪个词；没命中的铺绿框且说清为什么没中', () => {
     const p = shadowPanel();
     p.bodyEl = bodyWithImgs(['https://ex.com/a.png', 'https://ex.com/b.png']);
     p.imgItems = [
@@ -80,12 +80,59 @@ module.exports = async function run() {
     truthy(String(ims[0].title).indexOf('交友') >= 0 && String(ims[0].title).indexOf('供应商') >= 0,
       'title 把命中的词说全');
     eq(ims[1].classList.contains('khin-imghit'), false, '没命中的图不铺红框');
-    eq(String(ims[1].title || ''), '', '2.0.2.15：没命中的图不挂任何说明（面板不再替它解释）');
+    /* 【2.0.6.1 需求⑧】没命中不再"什么都不说"：绿框 + 说清已识别未命中 */
+    eq(ims[1].classList.contains('khin-imgmiss'), true, '没命中的图铺绿框（用户口径：没命中给绿色）');
+    truthy(String(ims[1].title).indexOf('未命中') >= 0, 'title 要说出「已识别，未命中」：' + ims[1].title);
 
     /* 标记是每轮重建的，不是叠上去的：这一轮没命中了，红框要摘掉 */
-    p.imgItems = [{ key: 'r|a', src: 'https://ex.com/a.png', state: 'miss', text: 't', matched: [] }];
+    p.imgItems = [{ key: 'r|a', src: 'https://ex.com/a.png', state: 'done', text: 't', matched: [] }];
     p.applyImgMarks();
     eq(ims[0].classList.contains('khin-imghit'), false, '这一轮没命中 ⇒ 红框摘掉');
+    eq(ims[0].classList.contains('khin-imgmiss'), true, '⇒ 换成绿框');
+  });
+
+  /* 【2.0.6.1 需求⑧】蓝=识别中、红=命中、绿=无命中（失败也绿，悬停说失败） */
+  await test('★ 边框三态：识别中蓝、命中红、无命中绿；失败算无命中但悬停说失败', () => {
+    const p = shadowPanel();
+    p.bodyEl = bodyWithImgs(['https://ex.com/p.png', 'https://ex.com/f.png', 'https://ex.com/h.png']);
+    p.imgItems = [
+      { key: 'r|p', src: 'https://ex.com/p.png', state: 'pending', text: '', matched: [] },
+      { key: 'r|f', src: 'https://ex.com/f.png', state: 'fail', text: '', matched: [] },
+      { key: 'r|h', src: 'https://ex.com/h.png', state: 'done', text: 't', matched: [{ text: 'x' }] }
+    ];
+    p.applyImgMarks();
+    const ims = p.bodyEl.querySelectorAll('img');
+    eq(ims[0].classList.contains('khin-imgbusy'), true, '识别中 = 蓝框');
+    eq(ims[0].classList.contains('khin-imgmiss'), false, '识别中不许提前判绿');
+    eq(ims[1].classList.contains('khin-imgmiss'), true, '失败归绿框（不能装成还在跑）');
+    truthy(String(ims[1].title).indexOf('失败') >= 0, '失败原因挂 title：' + ims[1].title);
+    eq(ims[2].classList.contains('khin-imghit'), true, '命中 = 红框');
+
+    /* 同一张图多条条目：识别中压不过已完成（否则结果回来了还一直蓝） */
+    p.imgItems = [
+      { key: 'r1|h', src: 'https://ex.com/h.png', state: 'pending', text: '', matched: [] },
+      { key: 'r2|h', src: 'https://ex.com/h.png', state: 'done', text: 't', matched: [] }
+    ];
+    p.applyImgMarks();
+    eq(ims[2].classList.contains('khin-imgbusy'), false, 'done 压过 pending（结果回来就别再显示识别中）');
+    eq(ims[2].classList.contains('khin-imgmiss'), true);
+  });
+
+  await test('★ 没命中的解释要说到点上：动态值没找到 / 点名字段没取到值 / 没字', () => {
+    const p = shadowPanel();
+    p.bodyEl = bodyWithImgs(['https://ex.com/1.png', 'https://ex.com/2.png', 'https://ex.com/3.png']);
+    p.imgItems = [
+      { key: 'r|1', src: 'https://ex.com/1.png', state: 'done', text: '整个公司名被折成两行',
+        matched: [], needMissingValues: ['徐州启明星教育科技有限公司'] },
+      { key: 'r|2', src: 'https://ex.com/2.png', state: 'done', text: 't',
+        matched: [], needMissing: ['著作权人'] },
+      { key: 'r|3', src: 'https://ex.com/3.png', state: 'done', text: '   ', matched: [] }
+    ];
+    p.applyImgMarks();
+    const t = p.bodyEl.querySelectorAll('img').map((im) => String(im.title || ''));
+    truthy(t[0].indexOf('徐州启明星教育科技有限公司') >= 0, '★ 图上有字、只是动态值没对上 ⇒ 说出是哪个值：' + t[0]);
+    truthy(t[1].indexOf('著作权人') >= 0, '★ 点名字段没取到值 ⇒ 说出是哪个字段：' + t[1]);
+    truthy(t[2].indexOf('没识别出文字') >= 0, '★ 图里没字 ⇒ 直说：' + t[2]);
   });
 
   await test('★ 同一张图多条条目（不同关键词）⇒ 取有命中的那条', () => {
