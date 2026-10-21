@@ -115,6 +115,14 @@ const specs = [
    * 且按会话持久、缺 `engine` 如实回 `missing-engine`、存量 `quality` 迁移成 `engine=auto`。
    * 口径见 tests/specs/ocr-engine.test.js 头部 */
   './specs/ocr-engine.test.js',
+  /* PDF 正文抽取（2.0.6.5 需求②）：纯函数层 —— 对象/流的解析、Flate 解压后的内容流
+   * `Tj/TJ/'/"` 取字、ToUnicode CMap 反查、页面顺序与坏文件的可读报错。
+   * 口径见 tests/specs/pdf-text.test.js 头部 */
+  './specs/pdf-text.test.js',
+  /* PDF 占位命中（2.0.6.5 需求②内容侧）：认引用 → 占位符还原成 `<span data-khpdf>` →
+   * 建 `kind:pdf` 条目并发 `OCR_PDF` → 回执行文本归一成 `lineList` → 三态边框判据。
+   * 口径见 tests/specs/pdf-hit.test.js 头部 */
+  './specs/pdf-hit.test.js',
   /* 设置页与面板的引擎可感知面（S2-c）：判据 ④（档位零命中）/ 只读「高级信息」与源码常量对账 /
    * 迁移提示关得掉 / 自检三件事 / 面板降级告知。口径见 tests/specs/ocr-options.test.js 头部 */
   './specs/ocr-options.test.js',

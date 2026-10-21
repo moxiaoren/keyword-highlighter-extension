@@ -229,6 +229,20 @@
      * 失败原因走 title，不另占一态）。 */
     .khin-item-note img.khin-imgbusy { outline: 2px solid #3b82f6; outline-offset: 1px; }
     .khin-item-note img.khin-imgmiss { outline: 2px solid #22c55e; outline-offset: 1px; }
+    /* 【2.0.6.5 需求②】PDF 占位：不展示源文件，只留一枚可点开的痕迹。
+     * 三态与图片一致（蓝=正在读 / 红=命中 / 绿=读完没命中），配色也沿用同一组
+     * （用户口径：「识别时蓝色框，无命中绿色框，命中时增加红框」）。 */
+    .khin-pdf {
+      display: inline-block; vertical-align: middle; margin: 3px 6px 3px 0;
+      padding: 1px 7px; border-radius: 4px; cursor: pointer; user-select: none;
+      font-size: 10px; font-weight: 700; letter-spacing: .4px; line-height: 16px;
+      color: #475569; background: #eef2f7; box-shadow: inset 0 0 0 2px #cbd5e1;
+      white-space: nowrap;
+    }
+    .khin-pdf:hover { background: #e3e9f2; }
+    .khin-pdf.khin-pdfbusy { box-shadow: inset 0 0 0 2px #3b82f6; color: #1d4ed8; }
+    .khin-pdf.khin-pdfmiss { box-shadow: inset 0 0 0 2px #22c55e; color: #15803d; }
+    .khin-pdf.khin-pdfhit { box-shadow: inset 0 0 0 2px #ef4444; color: #b91c1c; }
     /* 抓取后续字段渲染的多行表格：**所有**单元格保留换行（v1.8.3）
      * 宽度（v1.99.99.11 用户实测要求）：**按内容收缩**，不再无条件 width:100%。
      *   用户原话："表格总宽度总是等于重要笔记宽度…避免明明就一列，结果宽度上还是填满了重要笔记"。
@@ -386,6 +400,46 @@
     }
   }
 
+  /* 【2.0.6.5 需求②】PDF 占位的三态（与图片同口径，类名分开：一个是 `<img>`、一个是 `<span>`，
+   * 混用就得给每条图样式再写一遍 `span.` 前缀，反而更难维护）。 */
+  const PDF_MARK_CLS = ['khin-pdfhit', 'khin-pdfbusy', 'khin-pdfmiss'];
+
+  /** 给一枚 PDF 占位挂状态框（三态 + 悬停说明）；`it` 为空就只清状态 */
+  function markOnePdf(el, it) {
+    if (!el || !el.classList) return;
+    const V = (KH.OcrCopy && KH.OcrCopy.VIEW) || {};
+    let want = '';
+    let tip = null;
+    if (it) {
+      const st = String(it.state || '');
+      const words = hitWords(it);
+      if (st === 'done' && words.length) {
+        want = 'khin-pdfhit';
+        tip = KH.OcrCopy.render(V.pdfHitTip, { matched: words.join('、') });
+      } else if (st === 'done') {
+        want = 'khin-pdfmiss';
+        tip = (V.pdfMissTip || '') + (String(it.text || '').trim() ? '' : '（' + (V.pdfEmptyTip || '') + '）');
+      } else if (st === 'fail' || st === 'blocked') {
+        want = 'khin-pdfmiss';
+        tip = (V.pdfFailTip || '') + (it.error ? '（' + it.error + '）' : '');
+      } else {
+        want = 'khin-pdfbusy';
+        tip = V.pdfBusyTip || '';
+      }
+    }
+    for (let i = 0; i < PDF_MARK_CLS.length; i++) {
+      const cls = PDF_MARK_CLS[i];
+      if (cls !== want && el.classList.contains(cls)) el.classList.remove(cls);
+    }
+    if (want && !el.classList.contains(want)) el.classList.add(want);
+    const have = el.getAttribute ? el.getAttribute('title') : null;
+    if (tip == null) {
+      if (have != null && el.removeAttribute) el.removeAttribute('title');
+    } else if (have !== tip) {
+      el.title = tip;
+    }
+  }
+
   /**
    * 把 OCR 状态标到卡片里那些图上（抽成函数：面板重建与识别结果回来都要走同一份判据）。
    * @param {Element} bodyEl 卡片的正文容器
@@ -394,15 +448,25 @@
   function applyImgMarksTo(bodyEl, imgItems) {
     if (!bodyEl || typeof bodyEl.querySelectorAll !== 'function') return;
     const at = new Map();
+    const atPdf = new Map();
     for (const it of (imgItems || [])) {
       const s = absSrc(it && it.src);
       if (!s) continue;
-      const prev = at.get(s);
-      if (!prev || rankOf(it) > rankOf(prev)) at.set(s, it);
+      /* PDF 条目与图片条目同居一张表（`ImgOcr.items()`），但落点不同：图挂 `<img>`、
+       * PDF 挂占位 `<span data-khpdf>` —— 分开建索引，免得同址时互相顶掉。 */
+      const box = (String(it.kind) === 'pdf') ? atPdf : at;
+      const prev = box.get(s);
+      if (!prev || rankOf(it) > rankOf(prev)) box.set(s, it);
     }
     for (const im of bodyEl.querySelectorAll('img')) {
       const s = absSrc(im.currentSrc || im.getAttribute('src') || im.src);
       markOneImg(im, s ? (at.get(s) || null) : null);
+    }
+    if (atPdf.size) {
+      for (const el of bodyEl.querySelectorAll('[data-khpdf]')) {
+        const s = absSrc(el.getAttribute('data-khpdf'));
+        markOnePdf(el, s ? (atPdf.get(s) || null) : null);
+      }
     }
   }
 
@@ -710,6 +774,20 @@
     }
     .kh-ocr-table tr:last-child td { border-bottom: 0; }
     .kh-ocr-table td.kh-ocr-wide { padding-right: 0; color: rgba(255,255,255,.92); }
+    /* 【2.0.6.5 需求②】灯箱里的 PDF 占位牌：不加载任何源文件，只告诉用户"这份是 PDF"，
+     * 全文与命中在右侧那一栏。 */
+    .kh-lb-pdfbox {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 10px; width: min(420px, 70vw); height: min(300px, 55vh); border-radius: 10px;
+      background: rgba(255,255,255,.06); box-shadow: inset 0 0 0 2px rgba(255,255,255,.22);
+      color: rgba(255,255,255,.9); user-select: none;
+    }
+    .kh-lb-pdfbox[hidden] { display: none; }
+    .kh-lb-pdfmark { font-size: 30px; font-weight: 800; letter-spacing: 2px; color: #f87171; }
+    .kh-lb-pdfname {
+      font-size: 12px; color: rgba(255,255,255,.72); max-width: 88%; text-align: center;
+      word-break: break-all;
+    }
     /* 【已删】原来这里有一条 has-side 后代选择器（"全文栏出现就把图片收窄"）：
      *   · 它本来就是**死规则** —— 类挂在 .kh-lb 自身、不在它的祖先链上，选择器要求的后代关系
      *     永远不成立（真机实测匹配数为 0），真实生效的一直只有上面 .kh-lb img 的 84vw；
@@ -731,6 +809,9 @@
         '<div class="kh-lb-stage">' +
         '<div class="kh-lb-row">' +
         '<button class="kh-lb-nav kh-lb-prev" type="button" title="上一张（←）" aria-label="上一张">‹</button>' +
+        /* 【2.0.6.5 需求②】PDF 条目在灯箱里不渲染源文件（用户口径：无需展示 pdf 源文件），
+         * 只摆一块占位牌，右侧全文栏照常给抽出来的全文与命中词。 */
+        '<div class="kh-lb-pdfbox" hidden><span class="kh-lb-pdfmark">PDF</span><span class="kh-lb-pdfname"></span></div>' +
         '<img class="kh-lb-img" alt="">' +
         '<button class="kh-lb-nav kh-lb-next" type="button" title="下一张（→）" aria-label="下一张">›</button>' +
         /* 全文栏（T46）：DOM 顺序 = 图 → 导航（‹/›）→ 浮层。浮层排在行内最后，与两个导航键共用
@@ -761,6 +842,8 @@
         '</div>';
       const box = sr.querySelector('.kh-lb');
       const img = sr.querySelector('.kh-lb-img');
+      const pdfBox = sr.querySelector('.kh-lb-pdfbox');
+      const pdfName = sr.querySelector('.kh-lb-pdfname');
       const prev = sr.querySelector('.kh-lb-prev');
       const next = sr.querySelector('.kh-lb-next');
       const idxEl = sr.querySelector('.kh-lb-idx');
@@ -809,7 +892,16 @@
         const g = host._gallery || [];
         const i = host._idx || 0;
         const cur = g[i];
-        if (cur) {
+        /* 【2.0.6.5 需求②】PDF 条目没有可显示的页面（用户口径：无需展示 pdf 源文件），
+         * 舞台换成占位牌，全文与命中仍然走右侧那一栏 —— 与图片共用同一套灯箱。 */
+        const isPdf = !!(cur && cur.pdf);
+        pdfBox.hidden = !isPdf;
+        img.hidden = isPdf;
+        if (isPdf) {
+          pdfName.textContent = String((cur && (cur.alt || cur.src)) || '');
+          img.removeAttribute('src');
+          img.removeAttribute('alt');
+        } else if (cur) {
           img.setAttribute('src', cur.src);
           if (cur.alt) img.setAttribute('alt', cur.alt); else img.removeAttribute('alt');
         }
@@ -825,7 +917,10 @@
           ? KH.ImgOcr.textOf(cur && cur.src) : '';
         const full = String(cachedText || (cur && cur.text) || '');
         curText = full;                     /* 一键复制的唯一数据源（服务端 OCR 原文，不读屏幕文字） */
-        side.hidden = !full || sideHidden;
+        /* PDF 还没抽到字时栏也要开：否则点开占位牌是一片空白，用户不知道卡在哪一步
+         * （文案来自条目自己算好的 `hint`，见 img-ocr 的 pdf 分支）。 */
+        const pdfTip = (isPdf && !full) ? String((cur && cur.hint) || '') : '';
+        side.hidden = (!full && !pdfTip) || sideHidden;
         /* 默认停靠（需求 4）只对"还没被拖过"的这一档生效：拖动过之后位置由 host._sidePos 说了算。
          * apply() 也会被翻页/缩放/换图回调触发，不能每次都把用户摆好的位置推回默认位。 */
         if (!side.hidden && !host._sideMoved) dockSide();
@@ -838,9 +933,10 @@
         if (!paintOcrTable(sideText, ocrLayoutOf(cur && cur.src), (cur && cur.hits) || [])) {
           paintHits(sideText, full, (cur && cur.hits) || []);
         }
+        if (pdfTip) sideText.textContent = pdfTip;
         sideLines.textContent = full ? KH.OcrCopy.render(KH.OcrCopy.VIEW.paneLines, { n: full.split(/\r?\n/).length }) : '';
         sideCopy.hidden = !full;            /* 没有 OCR 文本 ⇒ 按钮不出现（不是置灰） */
-        box.classList.toggle('kh-lb-has-side', !!full);
+        box.classList.toggle('kh-lb-has-side', !!full || !!pdfTip);
         /* 【2.0.2.15 需求①】这枚按钮**常驻**（位置就是原来「隐藏/显示全文」那一个）：
          *   · 有识别文本 ⇒ 「隐藏全文 / 显示全文」（老行为，一字不变）；
          *   · 还没识别 ⇒ 「OCR 识别」，点了就地认这张图；认完 apply() 自然把它换成「隐藏全文」，
@@ -1435,6 +1531,35 @@
        * 不需要识别到下一张上一张"）→ 取不到单元格时退化到最近的 table，再没有就只当单张。 */
       this.root.addEventListener('click', (e) => {
         const t = e.target;
+        /* 【2.0.6.5 需求②】点 PDF 占位 → 同一套灯箱：舞台是占位牌，右侧给抽出来的全文与命中词。
+         * 判定只看元素自身与父亲（不用 `closest('*kh-*')` —— meta-check 对带 kh- 的 closest 直接红灯）。 */
+        const pdfEl = (t && t.classList && t.classList.contains('khin-pdf')) ? t
+          : ((t && t.parentNode && t.parentNode.classList && t.parentNode.classList.contains('khin-pdf')) ? t.parentNode : null);
+        if (pdfEl) {
+          e.preventDefault();
+          const ps = absSrc(pdfEl.getAttribute('data-khpdf'));
+          if (!ps) return;
+          let pit = null;
+          for (const it of (this.imgItems || [])) {
+            if (String(it && it.kind) === 'pdf' && absSrc(it.src) === ps) { pit = it; break; }
+          }
+          const cachedText = (KH.ImgOcr && typeof KH.ImgOcr.textOf === 'function') ? KH.ImgOcr.textOf(ps) : '';
+          /* 没抽到字时得说清卡在哪一步，否则点开就是一栏空白（文案来自真源，不在这里写中文）。 */
+          const V = (KH.OcrCopy && KH.OcrCopy.VIEW) || {};
+          const stt = String((pit && pit.state) || '');
+          const err = (pit && (pit.error || pit.why)) || '';
+          const hint = stt === 'done' ? (V.pdfEmptyTip || '')
+            : ((stt === 'fail' || stt === 'blocked') ? ((V.pdfFailTip || '') + (err ? '（' + err + '）' : '')) : (V.pdfBusyTip || ''));
+          openLightbox(ps, (pit && pit.label) || '', [{
+            src: ps,
+            alt: (pit && pit.label) || '',
+            pdf: true,
+            text: String((pit && pit.text) || cachedText || ''),
+            hits: hitWords(pit),
+            hint: hint
+          }], 0);
+          return;
+        }
         if (!t || t.tagName !== 'IMG' || !t.src) return;
         e.preventDefault();
         const scope = (t.closest && (t.closest('td, th') || t.closest('table'))) || null;
@@ -2464,6 +2589,7 @@
   }
 
   /* `paintHits` 直接导出给单测：灯箱要在垫片里走完 openLightbox 那条路成本太高（宿主/影子根/
-   * 相册/停靠都在里面），而这个函数是纯 DOM 构造，喂文本就能验。 */
-  KH.ImportantNote = { panel, head, collectEffective, IMG_PROTOCOL_OK, paintHits, ocrExtraRows };
+   * 相册/停靠都在里面），而这个函数是纯 DOM 构造，喂文本就能验。
+   * `markPdf` 同理由：三态判据（蓝/绿/红）就是这条需求的验收点，不该为了测它去搭整块面板。 */
+  KH.ImportantNote = { panel, head, collectEffective, IMG_PROTOCOL_OK, paintHits, ocrExtraRows, markPdf: markOnePdf };
 })();

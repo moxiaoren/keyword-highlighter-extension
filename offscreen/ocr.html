@@ -14,7 +14,8 @@
   这个页面没有界面、不被用户看到；页面里的 script 顺序 = 依赖顺序：
     ① src/core/protocol.js  消息常量（唯一协议）
     ② vendor/tesseract/tesseract.min.js  OCR 引擎（第三方，见 vendor/tesseract/）
-    ③ offscreen/ocr.js      我们的引擎封装（语言包/模型投递 + 串行队列 + 结果回传）
+    ③ offscreen/pdf-text.js PDF 正文抽取器（纯函数，零依赖；2.0.6.5 需求②）
+    ④ offscreen/ocr.js      我们的引擎封装（语言包/模型投递 + 串行队列 + 结果回传 + PDF 抽文字）
 
   【S2】主引擎（PP-OCR）的两个依赖**不在这里用 <script> 引**：`onnxruntime-web` 的胶水与
   `ppu-paddle-ocr` 都由 `ocr.js` 用**动态 `import()`** 加载 —— 因为必须先给 `ort.env.wasm.wasmPaths`
@@ -24,6 +25,7 @@
 <body>
   <script src="../src/core/protocol.js"></script>
   <script src="../vendor/tesseract/tesseract.min.js"></script>
+  <script src="pdf-text.js"></script>
   <script src="ocr.js"></script>
 </body>
 </html>

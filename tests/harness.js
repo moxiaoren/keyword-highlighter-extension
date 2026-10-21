@@ -84,6 +84,11 @@ class ShimElement {
   set target(v) { this.setAttribute('target', v); }
   get rel() { return this.getAttribute('rel') || ''; }
   set rel(v) { this.setAttribute('rel', v); }
+  /* 真 DOM 里 `el.title = x` 会反射到 title 属性（悬停提示就是这么写的：
+   * `important-note.js` 的三态框、工具栏按钮全用 `.title`）。垫片缺它时
+   * `el.title = tip` 只是挂了个普通字段，`getAttribute('title')` 依旧 null。 */
+  get title() { return this.getAttribute('title') || ''; }
+  set title(v) { this.setAttribute('title', v); }
   get className() { return this._class; }
   set className(v) { this._class = String(v); }
   get classList() {

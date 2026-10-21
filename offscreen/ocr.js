@@ -676,6 +676,86 @@
     return text.replace(/\s+/g, ' ').trim();
   }
 
+  /* ==========================================================================
+   * 【2.0.6.5 需求③：并排多张纸读成一句 / 一个花纹框把半张图糊成一行】
+   * 用户现场（800×1067 的软著拼图：上排 3 张竖版证书并排、左下 1 张大证书、右下 2 张）：
+   *   ① 三张纸的同一 y 带被归成一行 ⇒ 面板读成
+   *      「中华人民共和国国家版权局 中华人民共和国国家版权局 中华人民共和国国家版权局」；
+   *   ② 大证书的**边框花纹**被 det 当成一个 502×400 的"文字框"，它竖向跨了半张图，
+   *      于是下面 90 个框全被并进同一"行"，拼成 701 字乱码（真机回执 `lineList[7]`）。
+   * 两条修法都是**纯几何**的，不看文字内容：
+   *   · `isTallNoise`：框高超过全图中位高的 3 倍（且至少多 24px）⇒ 当装饰/边框丢掉，
+   *     不许它当"行磁铁"。正常大标题也就中位高的 2 倍左右，够不着这条线。
+   *   · `splitLinesRuns`：归行**之后**按横向空隙把一行切成若干 run，每段单独成行 ——
+   *     并排的纸各读各的。空隙阈值取「行高的 2.5 倍」：同一格里被切碎的字（间隙几个像素）
+   *     拆不开，真机上并排两张纸的间隙 98px（行高 20）远超这条线。
+   * 必须放在 `stitchRows` **之后**（跨块拼行要按整行去重，先拆就拼不回来了）。
+   * 原始整行的 cells 留在首段的 `cellsAll` 上 ⇒ `img-ocr.js` 的 `layout()` 照旧按它排表格，
+   * **表格展示口径一个字都没动**，变的只是"文字读法"与逐格取值的来源。
+   * ========================================================================== */
+  const TALL_BOX_RATIO = 3;
+  const TALL_BOX_EXTRA = 24;
+  const RUN_GAP_LINES = 2.5;
+
+  /** 中位数（空数组 → 0）：判"异常高框"用平均会被离群值带跑 */
+  function medianOf(list) {
+    const a = (Array.isArray(list) ? list : [])
+      .map((v) => Number(v))
+      .filter((v) => isFinite(v))
+      .sort((x, y) => x - y);
+    if (!a.length) return 0;
+    const m = a.length >> 1;
+    return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
+  }
+
+  /** 装饰框判据：高得离谱（> 中位高的 3 倍，且至少多 24px）—— 花边、竖排边框都属于这一类 */
+  function isTallNoise(h, hMed) {
+    if (!(h > 0) || !(hMed > 0)) return false;
+    return h > Math.max(hMed * TALL_BOX_RATIO, hMed + TALL_BOX_EXTRA);
+  }
+
+  /**
+   * 终局行列表 → 按横向空隙切成 run（纯函数，幂等）。
+   * 每段带 `run`（0 起的序号）；首段额外带 `cellsAll`（整行原始的单元格），供表格排版用。
+   */
+  function splitLinesRuns(lines) {
+    const list = Array.isArray(lines) ? lines : [];
+    const out = [];
+    for (const l of list) {
+      const cs = (l && l.cells) || [];
+      if (!l || cs.length < 2) { out.push(l); continue; }
+      const lineH = Math.max(1, (Number(l.y2) || 0) - (Number(l.y) || 0));
+      const limit = lineH * RUN_GAP_LINES;
+      const sorted = cs.slice().sort((a, b) => (Number(a.x) || 0) - (Number(b.x) || 0));
+      const groups = [];
+      let cur = null;
+      let prevX2 = null;
+      for (const c of sorted) {
+        const x = Number(c.x) || 0;
+        const x2 = Number(c.x2) || x;
+        if (!cur || (prevX2 !== null && x - prevX2 > limit)) { cur = []; groups.push(cur); }
+        cur.push(c);
+        if (prevX2 === null || x2 > prevX2) prevX2 = x2;
+      }
+      if (groups.length < 2) { out.push(l); continue; }
+      groups.forEach((g, i) => {
+        const xs = g.map((c) => Number(c.x) || 0);
+        const x2s = g.map((c) => Number(c.x2) || 0);
+        const one = {
+          t: joinParts(g.map((c) => ({ t: c.t, x: c.x, x2: c.x2 })), lineH),
+          conf: Number(l.conf) || 0,
+          y: l.y, y2: l.y2,
+          x: Math.min.apply(null, xs),
+          run: i,
+          cells: g
+        };
+        if (i === 0) one.cellsAll = cs.slice();
+        out.push(one);
+      });
+    }
+    return out;
+  }
+
   function linesFromPpocr(res, chunk, pre) {
     const arr = (res && res.results) || [];
     const sc = (pre && pre.scale) || 1;
@@ -702,6 +782,12 @@
         w: w,
         h: h
       });
+    }
+    /* 【2.0.6.5 需求③】先把"高得离谱的框"当装饰剔掉：它不是行磁铁，下面几十个框就不会被并成一行。
+     * 中位数从**本块的框**里取（不跨块），块内没有框就什么都不做。 */
+    const hMed = medianOf(boxes.map((b) => b.h));
+    if (hMed > 0) {
+      for (let i = boxes.length - 1; i >= 0; i--) if (isTallNoise(boxes[i].h, hMed)) boxes.splice(i, 1);
     }
     /* 归行：竖向量叠 ≥ 半行高，或中心差 ≤ 半行高 —— 同一物理行的多个框（表格分格、一行断成几段）并起来。
      * 不依赖上游给的"平均高"，所以不会再被一个超大框带跑。 */
@@ -1487,6 +1573,9 @@
     bandPlan: bandPlan, denseBandPlans: denseBandPlans, DENSE_BANDS: DENSE_BANDS,
     overlapBands: overlapBands, mergeOverlap: mergeOverlap, keyOf: keyOf, stitchRows: stitchRows,
     isFrameBox: isFrameBox, joinParts: joinParts,
+    /* 【2.0.6.5 需求③】并排多张纸：装饰高框 / 拆 run 两条纯判据（真机读数见本节头注） */
+    medianOf: medianOf, isTallNoise: isTallNoise, splitLinesRuns: splitLinesRuns,
+    TALL_BOX_RATIO: TALL_BOX_RATIO, TALL_BOX_EXTRA: TALL_BOX_EXTRA, RUN_GAP_LINES: RUN_GAP_LINES,
     FRAME_AREA_RATIO: FRAME_AREA_RATIO, FRAME_PAGE_EDGE: FRAME_PAGE_EDGE, FRAME_FULL_RATIO: FRAME_FULL_RATIO, TIGHT_GAP_RATIO: TIGHT_GAP_RATIO,
     OVERLAP_MATCH_X: OVERLAP_MATCH_X,
     NEAR_MATCH_MAX_DY: NEAR_MATCH_MAX_DY, NEAR_MATCH_DICE: NEAR_MATCH_DICE,
@@ -1887,7 +1976,9 @@
           }
           out.push(l);
         }
-        return out;
+        /* 【2.0.6.5 需求③】跨块拼行做完了才按横向空隙拆 run —— 并排多张纸各读各的。
+         * 表格排版靠首段的 `cellsAll`，口径不变。 */
+        return splitLinesRuns(out);
       };
       /* ---- 帧（方向）与块：**全都按需惰性构造** —— 不试转，就一次多余的活都不干 ---- */
       const frames = new Map();        // deg -> {deg, blob, w, h, plan}
@@ -2236,7 +2327,10 @@
          * 只带渲染要用的四个字段；`conf` 面板已有整篇的，不必逐行再抄一遍。 */
         lineList: finalLines.map((l) => ({
           t: l.t, y: l.y, x: l.x,
-          cells: (l.cells || []).map((c) => ({ t: c.t, x: c.x, x2: c.x2 }))
+          cells: (l.cells || []).map((c) => ({ t: c.t, x: c.x, x2: c.x2 })),
+          /* 【2.0.6.5 需求③】被拆开的行：首段带整行原始单元格（表格排版照旧），其余段只在 `run` 上留序号 */
+          run: Number(l.run) || 0,
+          cellsAll: Array.isArray(l.cellsAll) ? l.cellsAll.map((c) => ({ t: c.t, x: c.x, x2: c.x2 })) : undefined
         })),
         notice: notice, coverage: cov, orientation: orientation,
         /* 【T51】本任务的整图解码次数（长图 7 块原本 = 1 次量尺寸 + 7 次逐块 = 8）。 */
@@ -2266,6 +2360,71 @@
         baseBmp = null;
       }
     }
+  }
+
+  /* ---------------- pdf：抽正文文字（2.0.6.5 需求②） ----------------
+   * 为什么不渲染 PDF：用户口径是「无需展示 pdf 源文件，只需要 pdf 占位」；而且 Chrome 内置 PDF
+   * 阅读器是 `<embed>` 里的插件内容，内容脚本**读不到**它的文字（也拿不到它的选中文本）⇒
+   * 要判命中只能自己把字节取下来解。浏览器自带的 pdf.js 不在扩展里（vendor 里没有），
+   * 于是用 `offscreen/pdf-text.js` 这个最小抽取器（纯 Flate + 内容流 + ToUnicode，无依赖）。
+   *
+   * 为什么在 offscreen 而不是内容脚本：内容脚本的 `fetch` 受**页面** CORS 约束，跨源 PDF 直接
+   * 被裁；offscreen 是扩展页，配了 `host_permissions: <all_urls>` 就能直取。
+   * 【不进 OCR 队列】PDF 不跑引擎、不占识别额度，但解析是同步重活 ⇒ 串一条链，避免十个
+   * PDF 一起 inflate 把文档线程卡死。 */
+  const PDF_MAX_BYTES = 40 * 1024 * 1024;     // 再大就内存与超时都扛不住（回可读错误，不硬撑）
+  const PDF_MAX_CHARS = 200000;               // 回执要塞进消息通道和面板，太长会拖垮两边
+  const PDF_FETCH_MS = 20000;                 // 一份 PDF 取不回来就别让用户等超时看门狗（120s）
+  let pdfChain = Promise.resolve();
+
+  function pdfErr(code, message) {
+    const e = new Error(message);
+    e.code = code;
+    return e;
+  }
+
+  async function extractPdf(msg) {
+    const P = self.KHPdfText;
+    if (!P || typeof P.extractText !== 'function') {
+      throw pdfErr('pdf-engine-missing', 'PDF 解析模块未加载（扩展需要重新加载）');
+    }
+    const src = String((msg && msg.src) || '');
+    if (!src) throw pdfErr('pdf-no-src', '没有 PDF 地址');
+
+    const ctl = (typeof AbortController === 'function') ? new AbortController() : null;
+    const timer = ctl ? setTimeout(() => { try { ctl.abort(); } catch (e) { /* ignore */ } }, PDF_FETCH_MS) : null;
+    let buf = null;
+    try {
+      const r = await fetch(src, ctl ? { signal: ctl.signal } : undefined);
+      if (!r || !r.ok) throw pdfErr('pdf-fetch-failed', '取不到这份 PDF（HTTP ' + String(r && r.status) + '）');
+      buf = await r.arrayBuffer();
+    } catch (e) {
+      if (e && e.code) throw e;
+      throw pdfErr('pdf-fetch-failed', '取不到这份 PDF：' + String((e && e.message) || e));
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+    if (!buf || !buf.byteLength) throw pdfErr('pdf-empty', '这份 PDF 是空的');
+    if (buf.byteLength > PDF_MAX_BYTES) {
+      throw pdfErr('pdf-too-large', '这份 PDF 太大（' + Math.round(buf.byteLength / 1048576) + 'MB），暂不解析');
+    }
+
+    const out = (await P.extractText(new Uint8Array(buf))) || {};
+    const warnings = Array.isArray(out.warnings) ? out.warnings.slice() : [];
+    let lines = (Array.isArray(out.lines) ? out.lines : []).map((s) => String(s)).filter(Boolean);
+    let text = lines.join('\n');
+    if (text.length > PDF_MAX_CHARS) {
+      text = text.slice(0, PDF_MAX_CHARS);
+      lines = text.split('\n');
+      warnings.push('文字太长，只取了前 ' + PDF_MAX_CHARS + ' 字');
+    }
+    /* `lines` 与 `text` 必须同源：内容脚本按「行号 ↔ lineList 下标」取值（重要笔记表格靠它）。 */
+    lines = text ? text.split('\n') : [];
+    return {
+      via: 'pdf', src, lines, text,
+      pages: out.pages | 0, fonts: out.fonts | 0, mapped: out.mapped | 0,
+      warnings: warnings, conf: 0
+    };
   }
 
   /* ---------------- 消息 ---------------- */
@@ -2336,6 +2495,12 @@
        * 所以这条只 sendResponse，最终结果由 runJob 单独 post。 */
       settle(Promise.resolve({ queued: queue.length + (draining ? 1 : 0) }), true);
       return true;
+    }
+    if (msg.type === MSG.OCR_PDF) {
+      /* 串行：解析是纯 CPU 活，并发只会互相拖慢（也不占 OCR 队列的额度） */
+      const job = pdfChain.then(() => extractPdf(msg));
+      pdfChain = job.then(() => {}, () => {});
+      return settle(job);
     }
     if (msg.type === MSG.OCR_CANCEL) {
       /* 【必须按字段分别撤】旧实现无条件调 `cancelForTab(msg.tabId)`：

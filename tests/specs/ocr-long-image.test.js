@@ -316,6 +316,59 @@ module.exports = async function run() {
     eq((out[0].cells || []).length, 2, '重复片段整段丢掉（留着单元格会把「有限公司」再拼进值里）');
   });
 
+  /* 【2.0.6.5 需求③】用户现场那张 9 宫格软著图（800×1067，上排三张竖版证书并排）：
+   * 归行只看纵向 ⇒ 三张纸同一 y 带的「计算机软件著作权登记证书」被并成一行，
+   * 面板里就是「…国家版权局 …国家版权局 …国家版权局」三连。修法是把一行按横向空隙
+   * 拆成若干 run，但**必须**保住表格排版（`KH.ImgOcr.layout` 靠 cells 建列带）——
+   * 所以首段额外带整行原始单元格 `cellsAll`，后续段不贡献单元格。 */
+  await test('★ 2.0.6.5 需求③：并排的多张纸各读各的（同一 y 带三张证书不许并成一句）', () => {
+    const P = loadOffscreen({ lines: () => null }).self.__khOcrPure;
+    eq(typeof P.splitLinesRuns, 'function', 'splitLinesRuns 必须挂在纯判决层才能钉住这条口径');
+    const sheet = '计算机软件著作权登记证书';
+    const ln = {
+      t: [sheet, sheet, sheet].join(' '), conf: 90, y: 56, y2: 84, x: 49,
+      cells: [{ t: sheet, x: 49, x2: 218 }, { t: sheet, x: 316, x2: 484 }, { t: sheet, x: 583, x2: 753 }]
+    };
+    const out = P.splitLinesRuns([ln]);
+    eq(out.length, 3, '★ 三张纸 ⇒ 三段（旧实现是一句三连）');
+    eq(out[0].t, sheet, '每段只有自己那张纸的字');
+    eq(out[1].t, sheet);
+    eq(out[0].cellsAll.length, 3, '★ 首段带整行 cellsAll：表格列带用它，展示逐字不变');
+    eq((out[0].cells || []).length, 1, '首段自己的 cells 只有一格');
+    eq(out[1].cellsAll, undefined, '后续段不参与列带（否则同一格算两遍）');
+    eq(out[2].x, 583, '每段带自己的左边界');
+    eq(out[0].y, 56, '同一 y 带不许漂');
+    eq(out[0].run, 0);
+    eq(out[2].run, 2);
+  });
+
+  await test('★ 2.0.6.5 需求③：表格行与单格行原样不动（`姓名 | 张三` 不许被拆散）', () => {
+    const P = loadOffscreen({ lines: () => null }).self.__khOcrPure;
+    /* 行高 40 ⇒ 断行阈值 100px；真表格的列间距 80px 够近，必须留下同一段 */
+    const table = { t: '姓名 张三', conf: 95, y: 100, y2: 140, x: 0,
+      cells: [{ t: '姓名', x: 0, x2: 60 }, { t: '张三', x: 140, x2: 220 }] };
+    const one = { t: '只有一格', conf: 90, y: 200, y2: 240, x: 10, cells: [{ t: '只有一格', x: 10, x2: 200 }] };
+    const out = P.splitLinesRuns([table, one]);
+    eq(out.length, 2, '两行仍是两行（幂等）');
+    eq(out[0].t, '姓名 张三', '★ 表格行不被拆散（拆了 `layout()` 就排不出表）');
+    eq(out[0].cellsAll, undefined, '没拆就不带 cellsAll（形状不变）');
+    eq(out[1].t, '只有一格');
+    eq(P.splitLinesRuns(null).length, 0, '脏数据不许抛');
+  });
+
+  await test('★ 2.0.6.5 需求③：装饰/边框大框（高得离谱）当噪声剔掉，正常行高不受影响', () => {
+    const P = loadOffscreen({ lines: () => null }).self.__khOcrPure;
+    eq(typeof P.medianOf, 'function', 'medianOf 必须可测（口径是"本块中位行高"）');
+    eq(P.medianOf([40, 42, 41, 700]), 41.5, '中位数不被离群值带跑（偶数个取中间两个的平均）');
+    eq(P.medianOf([700, 40, 42, 41]), 41.5, '排序不依赖输入顺序');
+    eq(P.medianOf([]), 0, '空数组 ⇒ 0（调用方据此跳过）');
+    eq(P.isTallNoise(700, 41), true, '★ 软著图上那条边框花纹框（跨半张图、把下面所有字吸成一行）');
+    eq(P.isTallNoise(130, 41), true, '(41*3=123) 超过三倍也算');
+    eq(P.isTallNoise(95, 41), false, '两倍多仍是正常文字（艺术字标题可以有这个高度差）');
+    eq(P.isTallNoise(41, 41), false);
+    eq(P.isTallNoise(700, 0), false, '中位未知 ⇒ 不判（宁留噪声也别丢正文）');
+  });
+
   await test('★ 2.0.6.4 需求②：同一段文字被识别成两个压在一起的框，不许重复一遍', () => {
     const P = loadOffscreen({ lines: () => null }).self.__khOcrPure;
     /* 用户现场：图上只有一行「登记号：abdc」，结果成了「登记号：abdc adbc」

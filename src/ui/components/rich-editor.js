@@ -40,8 +40,11 @@
      * 从**父节点**起找 —— 编辑区自己不可能带 `.kh-editor-col` / `.kh-modal`。 */
     const up = (n, cls) => D().upClass(n && n.parentElement, cls);
     let pad = null;      // 自然状态「列宽 − 编辑区宽」（`.kh-fld` 与列之间有 gap/边距）
-    let mine = false;    // 弹窗宽度是我们写的（用户自己拖弹窗时不许擦掉）
-    let natModal = 0;    // 我们动手之前弹窗的自然宽（瘦回去的下限）
+    /* 【2.0.6.5 需求①的连带修复】「弹窗宽度是我们写出去的」这件事必须记在**弹窗**上，不能记在编辑器
+     * 局部变量里 —— 一个弹窗可以有好几个可拖区（备注 textarea、重要笔记 rte…），A 拖宽之后 B 清掉自己的
+     * inline width，旧写法 `mine=false`（B 自己没长过）就永远不给弹窗瘦回去，弹窗一直撑在 1200px。
+     * `host` 记的是**最后把它撑宽的那个宿主**：只有它（或它已经自己收回宽度）才有资格把弹窗擦回自然宽。 */
+    const stOf = (modal) => (modal.__khGrow = modal.__khGrow || { mine: false, nat: 0, host: null });
     const fit = () => {
       const modal = up(ed, 'kh-modal');
       /* 【票 #51】没有 `.kh-editor-col` 祖先的宿主（例：选项页「批量备注 / 重要笔记」弹窗里那个
@@ -51,14 +54,19 @@
       const host = up(ed, 'kh-editor-col') || modal;
       if (!host) return;
       const isCol = host !== modal;
+      const g = modal ? stOf(modal) : { mine: false, nat: 0, host: null };
+      /* 该宿主已经自己收回宽度了（另一个可拖区把 inline width 清了）⇒ 它的撑宽资格作废 */
+      if (isCol && g.host === host && !host.style.width) { g.mine = false; g.host = null; }
       const want = parseFloat(ed.style.width) || 0;      // 原生 resize 写的就是 inline width
       if (!want) {
         if (pad == null) pad = host.clientWidth - ed.clientWidth;   // 首次回调：此时两边都还是自然宽
         else if (isCol) {                                           // 清掉 inline width ⇒ 容器回自然（自愈）
           host.style.width = ''; host.style.flex = '';
-          if (mine && modal) { modal.style.width = ''; mine = false; }
-        } else if (mine) {                                          // 宿主就是弹窗：只擦我们自己写过的那笔
-          modal.style.width = ''; mine = false;
+          if (g.mine && (!g.host || g.host === host || !g.host.style.width)) {
+            modal.style.width = ''; g.mine = false; g.host = null;
+          }
+        } else if (g.mine) {                                        // 宿主就是弹窗：只擦我们自己写过的那笔
+          modal.style.width = ''; g.mine = false; g.host = null;
         }
         return;
       }
@@ -68,15 +76,23 @@
       if (isCol && grow !== 0) { host.style.flex = '0 0 auto'; host.style.width = nextHost + 'px'; }
       if (!modal) return;
       if (grow > 0) {
-        if (!mine) { natModal = Math.round(modal.getBoundingClientRect().width); mine = true; }
+        if (!g.mine) { g.nat = Math.round(modal.getBoundingClientRect().width); g.mine = true; }
+        g.host = host;
         modal.style.width = Math.round(modal.getBoundingClientRect().width + grow) + 'px';
-      } else if (grow < 0 && mine) {
-        const target = Math.max(natModal, Math.round(modal.getBoundingClientRect().width) + grow);
-        modal.style.width = target > natModal ? target + 'px' : '';
-        if (target <= natModal) mine = false;
+      } else if (grow < 0 && g.mine) {
+        const target = Math.max(g.nat, Math.round(modal.getBoundingClientRect().width) + grow);
+        modal.style.width = target > g.nat ? target + 'px' : '';
+        if (target <= g.nat) { g.mine = false; g.host = null; }
       }
     };
     new ResizeObserver(fit).observe(ed);
+    /* 【2.0.6.5 需求①的连带修复】**行内宽度被清掉时 ResizeObserver 可能什么都不发**：拖宽之后
+     * 宿主列也被撑开了，编辑区清掉 inline width 退回 `width:100%` 恰好还是同一像素宽 —— 没有尺寸变化
+     * 就没有回调，于是弹窗永远撑在那里（用户现场：拖宽过再拖回去，弹窗回不去了）。`style` 属性变化
+     * 才是这件事的真信号，所以再挂一个 MutationObserver（`fit` 幂等，多跑一次无副作用）。 */
+    if (typeof MutationObserver === 'function') {
+      new MutationObserver(fit).observe(ed, { attributes: true, attributeFilter: ['style'] });
+    }
   }
 
   /** 只读渲染：与页面侧同契约（走 Markdown 单源，页面看到什么这里就是什么） */

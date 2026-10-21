@@ -246,7 +246,15 @@
   }
 
   /** 内容脚本的识别请求：不等待结果（结果另外送回该标签页），只登记路由 */
-  async function submitImage(msg, sender) {
+  async function submitImage(msg, sender) { return submitJob(msg, sender, 'image'); }
+
+  /**
+   * PDF 文本抽取请求（2.0.6.5 需求②）：路由/看门狗/回执与图片**完全共用**，
+   * 差别只有三处 —— requestId 前缀、不注入引擎（PDF 不走 OCR 引擎）、转给 offscreen 的 payload。
+   */
+  async function submitPdf(msg, sender) { return submitJob(msg, sender, 'pdf'); }
+
+  async function submitJob(msg, sender, kind) {
     /* 闸门必须在**入口**：`via` 不向下转发（`toOffscreen` 只带 src/dataUrl/keyword/engine），
      * 推到 offscreen 就没得判了。拒的时候一个字都不发出去、也不给任何回执（静默）。
      * 【只对 `via:'contextMenu'` 生效】右键菜单是**唯一**能指向任意地址（含内网）的入口，必须拦；
@@ -257,14 +265,15 @@
     }
     _sweep();                                    // 顺手清一遍（SW 睡过一觉时也能自愈）
     await ensureOffscreen();
-    const requestId = nextId('img');
+    const requestId = nextId(kind === 'pdf' ? 'pdf' : 'img');
     const tabId = sender && sender.tab ? sender.tab.id : null;
     const isExtPage = /^chrome-extension:\/\//i.test(String((sender && sender.url) || ''));
-    /* 引擎在这里定下（唯一读配置的点），随后原样注入 offscreen —— 内容脚本压根不知道这个字段 */
-    const engine = await readEngine();
+    /* 引擎在这里定下（唯一读配置的点），随后原样注入 offscreen —— 内容脚本压根不知道这个字段。
+     * PDF 抽文字不经过任何引擎，给了也是噪音 ⇒ 空串（offscreen 收到 pdf 任务压根不读它）。 */
+    const engine = kind === 'pdf' ? '' : await readEngine();
     const now = Date.now();
     const job = {
-      requestId: requestId, tabId: tabId,
+      requestId: requestId, tabId: tabId, kind: kind,
       /* frameId 必须记住：同源 iframe 也会跑内容脚本，结果要投回**发起那一帧** */
       frameId: sender ? sender.frameId : undefined,
       /* 用户点名入口的路由标记：内容脚本靠回执上的 `via` 认领（右键 →「截图」卡；大图 → 灯箱等待者） */
@@ -279,10 +288,12 @@
     if (job.via === 'contextMenu') {
       route(job, { type: MSG.OCR_QUEUED, requestId: requestId, src: msg.src, via: 'contextMenu' });
     }
-    await toOffscreen({
-      to: 'offscreen', type: MSG.OCR_IMAGE, requestId: requestId, tabId: tabId,
-      src: msg.src, dataUrl: msg.dataUrl, keyword: msg.keyword, engine: engine
-    });
+    await toOffscreen(kind === 'pdf'
+      ? { to: 'offscreen', type: MSG.OCR_PDF, requestId: requestId, tabId: tabId, src: msg.src, keyword: msg.keyword }
+      : {
+        to: 'offscreen', type: MSG.OCR_IMAGE, requestId: requestId, tabId: tabId,
+        src: msg.src, dataUrl: msg.dataUrl, keyword: msg.keyword, engine: engine
+      });
     return { ok: true, requestId: requestId, queued: true };
   }
 
@@ -377,6 +388,7 @@
     ensureOffscreen: ensureOffscreen,
     ask: ask,
     submitImage: submitImage,
+    submitPdf: submitPdf,
     onOffscreenMessage: onOffscreenMessage,
     cancelTab: cancelTab,
     /** 引擎配置读取（单点；单测直接喂假 storage 调它） */

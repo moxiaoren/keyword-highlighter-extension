@@ -76,7 +76,14 @@
     OCR_MODEL_DOWNLOAD: 'kh:ocr:modelDownload', // 运行时下载（逐件卡 sha256 + 字节数后落缓存）
     OCR_MODEL_IMPORT: 'kh:ocr:modelImport',     // 手动导入单件（离线；base64 传字节）
     OCR_MODEL_CLEAR: 'kh:ocr:modelClear',       // 清除模型缓存（清掉后主引擎需重新下载/导入）
-    OCR_PROGRESS: 'kh:ocr:progress'         // 进度（语言包/模型下载各阶段 / 排队情况）
+    OCR_PROGRESS: 'kh:ocr:progress',        // 进度（语言包/模型下载各阶段 / 排队情况）
+
+    /* ---- pdf（PDF 文本抽取）----
+     * 为什么复用 OCR 这条三段中转：`fetch` + 解压 + 解析都要在**扩展自己的页面**里跑
+     * （内容脚本受页面 CSP 约束，service worker 30s 会被杀），offscreen 文档已经是那个地方。
+     * 但它**不进 OCR 队列**（不需要引擎、不占额度），回执仍走 `OCR_RESULT`（background 按
+     * requestId 认领，天然复用）。用户口径（2.0.6.5 需求②）：不需要展示 PDF 源文件，只要占位。 */
+    OCR_PDF: 'kh:ocr:pdf'                   // 抽一份 PDF 的文字：{src, keyword} → 结果仍是 OCR_RESULT
   };
 
   const ACTION_RESULT = { OK: 'ok', ERROR: 'error' };

@@ -71,6 +71,34 @@ module.exports = async function run() {
     truthy(ta && /resize:\s*both/.test(ta), '★ `.kh-textarea` 要跟着一致，实际 ' + JSON.stringify(ta));
   });
 
+  /* 【2.0.6.5 需求①】用户原话（m00003）："备注、重要笔记的输入框最小宽度不能小于初始宽度"。
+   * 两道闸缺一不可：
+   *   ① 编辑器三列的列宽下限 —— 旧 `min-width: 0` + basis 260 让容器 808~1009px 时只压窄列而不
+   *      换行，实测弹窗拖到 900 时这两个可写区只剩 258px（初始 305）；
+   *   ② 可写区自己的 `min-width: 100%` —— `resize: both` 的把手能把框往里拖窄（拉宽是 2.0.2.7 的
+   *      本意，拖窄不是）。真机验证：inline width 写 150px 时实测宽仍是列宽（_e2e/probe-narrow.js）。 */
+  await test('★ 2.0.6.5 需求①：备注 / 重要笔记的输入框不许被压得比初始窄（列有下限 + 自身有下限）', () => {
+    const col = block(css, '.kh-editor-col');
+    truthy(col, 'components.css 里应有 `.kh-editor-col { … }` 规则');
+    const minW = /min-width:\s*min\(\s*(\d+)px\s*,\s*100%\s*\)/.exec(col);
+    truthy(minW, '★ `.kh-editor-col` 必须有 `min-width: min(<px>, 100%)` 的下限，实际 ' + JSON.stringify(col));
+    const w = Number(minW[1]);
+    /* 默认弹窗 1040 ⇒ 正文宽 993（卡内边距 32 + 滚动条占位 15）⇒ 三列各 322、可写区 300。
+     * 下限必须 ≤ 321（再大就 3×下限+28 > 993，默认三列被误折成两列，实测踩过）且不能太小，
+     * 否则拖窄时列会压过初始宽度。 */
+    truthy(w >= 300 && w <= 321,
+      '★ 列下限要 ≥ 初始可写区（300）又不许把默认三列折成两列（≤321），实际 ' + w + 'px');
+    truthy(/scrollbar-gutter:\s*stable/.test(block(css, '.kh-modal-body') || ''),
+      '★ `.kh-modal-body` 要 `scrollbar-gutter: stable`：否则内容一变长冒出滚动条就把正文挤掉 15px，' +
+      '三列在临界宽度上突然折成两列（实测 1008 → 993 那次失败就是它）');
+    const grow = block(css, '.kh-editor-sec-body-grow > .kh-fld-grow');
+    truthy(grow && /min-width:\s*min\(\s*296px/.test(grow),
+      '★ 可写区字段自己也要有下限（列的下限减掉卡内边距只剩 300），实际 ' + JSON.stringify(grow));
+    const floor = (css.match(/\.kh-textarea,\s*\.kh-rte[^{]*\{[^}]*\}/) || [''])[0];
+    truthy(/min-width:\s*100%/.test(floor),
+      '★ `.kh-textarea` / `.kh-rte` 必须 `min-width: 100%`（挡住把框拖窄，拉宽照旧），实际 ' + JSON.stringify(floor));
+  });
+
   suite('设置页「置顶排序」：胶囊与下拉框同一个框（2.0.2.7 需求④）');
 
   const html = read('options/options.html');

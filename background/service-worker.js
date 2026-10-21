@@ -170,6 +170,8 @@ const HANDLERS = {
 
   /* ---- ocr：内容脚本/设置页 → background → offscreen 文档（引擎在那里跑） ---- */
   [MSG.OCR_IMAGE]: (msg, sender) => self.OcrHost.submitImage(msg, sender),
+  /* PDF 抽文字：与图片共用一套路由与看门狗，只是 offscreen 那边不跑引擎 */
+  [MSG.OCR_PDF]: (msg, sender) => self.OcrHost.submitPdf(msg, sender),
 
   [MSG.OCR_CANCEL]: (msg, sender) => self.OcrHost.cancelTab(
     (sender && sender.tab && sender.tab.id != null) ? sender.tab.id : msg.tabId

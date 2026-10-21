@@ -458,4 +458,36 @@ module.exports = async function run() {
       const b = kvLab([], '授权人：厦门房 在线科技有限公司');
       eq(kvRows([a, b], '授权人#表').length, 1, '★ 只差空格 ⇒ 同一个值，不许记两行');
     });
+
+    /* 【2.0.6.5 需求③】用户现场：填 `登记号#表|著作权人#表` 判「无命中、也没加表格」，而
+     * `登记号|著作权人` 能命中。逐层复现后判定层其实等价（探针：两边都是同样的命中区间），
+     * 唯一能把这两个症状一起解释的输入是**词与词之间用了逗号/顿号/分号**：
+     * 旧 `kvChips` 只按 `|` 切 ⇒ 整串是一个 chip、又恰好以 `#表` 结尾 ⇒ 剥标记剥错位置
+     * ⇒ 正则里留下字面 `#表`（永不命中）+ `kvWords` 出一个脏词（加不出表格行）。
+     * 现在只要标记后面跟着分隔符就算断词，两种写法等价。 */
+    await test('★ 2.0.6.5 需求③：`#表` 后面跟逗号/顿号/分号 ⇒ 也断词（逗号写法等价于竖线）', () => {
+      eq(JSON.stringify(KH.ImgOcr.kvWords('登记号#表,著作权人#表')), JSON.stringify(['登记号', '著作权人']), '半角逗号');
+      eq(JSON.stringify(KH.ImgOcr.kvWords('登记号#表、著作权人#表')), JSON.stringify(['登记号', '著作权人']), '顿号');
+      eq(JSON.stringify(KH.ImgOcr.kvWords('登记号#表；著作权人#kv')), JSON.stringify(['登记号', '著作权人']), '全角分号 + #kv');
+      eq(KH.ImgOcr.stripKvMarks('登记号#表,著作权人#表'), '登记号|著作权人', '剥完必须等于竖线写法');
+      const comma = { meta: { imgOcrKeyword: '登记号#表,著作权人#表' } };
+      const pipe = { meta: { imgOcrKeyword: '登记号|著作权人' } };
+      const txt = '著作权人：北京山禾不动产管理有限公司\n登记号：2025SR0456628';
+      eq(JSON.stringify(KH.ImgOcr.matchedInText(comma, txt)), JSON.stringify(KH.ImgOcr.matchedInText(pipe, txt)),
+        '★ 命中区间必须与竖线写法逐字相同');
+      eq(KH.ImgOcr.matchedInText(comma, txt).length, 2);
+      /* 反例：标记不在段尾、普通词里带逗号 —— 一个逗号就是一个词的一部分，不许被拆开 */
+      eq(JSON.stringify(KH.ImgOcr.kvWords('a,b#表')), JSON.stringify(['a,b']), '标记在段尾的普通词照旧整段是一个词');
+      eq(KH.ImgOcr.stripKvMarks('一对一,A公司'), '一对一,A公司', '没有标记的词里逗号是正文字符（不许当分隔符）');
+    });
+
+    await test('★ 2.0.6.5 需求③：逗号写法照样加得出表格行（用户现场「也没增加表格」）', () => {
+      const it = { ruleId: 'r1', state: 'done',
+        text: '著作权人：北京山禾不动产管理有限公司\n登记号：2025SR0456628', lineList: [] };
+      const rows = withItems([it], () => ocrExtraRows({ pinId: 'r1', imgOcr: true, imgOcrKeyword: '登记号#表,著作权人#表' }));
+      eq(JSON.stringify(rows), JSON.stringify([
+        { label: '著作权人', value: '北京山禾不动产管理有限公司' },
+        { label: '登记号', value: '2025SR0456628' }
+      ]), '两行都进表，值不串味');
+    });
 };

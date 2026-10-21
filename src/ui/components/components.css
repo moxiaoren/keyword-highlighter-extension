@@ -165,6 +165,10 @@
 /* 【2.0.2.7】两向可拖（原 `vertical`）—— 富文本编辑框同一轮放开宽度，文本域跟着一致；
  * `position+z-index` 与 `.kh-rte` 同理：拉宽时盖在右列之上。 */
 .kh-textarea { position: relative; z-index: 2; height: auto; min-height: 52px; padding: 6px 9px; line-height: 1.55; resize: both; }
+/* 【2.0.6.5 需求①】可写区的宽度下限 = **它当前的布局宽**（`.kh-fld` 撑满一列）。
+ * `resize: both` 是 2.0.2.7 为了"拉宽"放开的，用户顺手也能**拖窄** ——「备注 / 重要笔记」缩到
+ * 比初始还窄就看不见字（用户报的就是这个）。`min-width: 100%` 只挡住拖窄，拉宽照旧。 */
+.kh-textarea, .kh-rte, .kh-fld-grow .kh-rt-editor > textarea { min-width: 100%; }
 
 /* ---------------------------------------------------------------- 弹窗 */
 .kh-modal-mask {
@@ -221,7 +225,11 @@
   font-size: 18px; cursor: pointer;
 }
 .kh-modal-x:hover { background: var(--bg-2); color: var(--text); }
-.kh-modal-body { flex: 1 1 auto; overflow: auto; padding: 14px 16px; }
+/* 【2.0.6.5 需求①】`scrollbar-gutter: stable`：竖向滚动条**提前占位**。
+ * 不加它的话，「候选框展开 / 内容变长」一出滚动条就把正文宽挤掉 15px，三列在临界宽度上突然折成
+ * 两列（实测 1008 → 993，正好跨过 3 列的下限），看起来像"展开把布局挤变形了"。占位之后宽度恒定，
+ * 三列折行只由**用户拖窄**决定，不由内容多少决定。 */
+.kh-modal-body { flex: 1 1 auto; overflow: auto; padding: 14px 16px; scrollbar-gutter: stable; }
 .kh-modal-foot {
   flex: 0 0 auto;                       /* ★ 底栏固定：表单多长都找得到「保存」 */
   display: flex;
@@ -545,7 +553,14 @@
 }
 .kh-editor-col {
   flex: 1 1 260px;                      /* 260px 放得下三个；放不下就换行整列下移 */
-  min-width: 0;
+  /* 【2.0.6.5 需求①】列的宽度下限＝**默认弹窗里的实际列宽**（1040 三列、可写区 305）。旧值
+   * `min-width:0` + basis 260 让 808~1009px 这一段只**压窄列**而不换行：实测弹窗拖到 900 时
+   * 「备注 / 笔记内容」只剩 258px，比初始还窄（用户报的就是这个）。现在列不许低于下限 ⇒ 这一段
+   * 自动换行成 2 列/1 列，可写区只会更宽、不会更窄。
+   * 取 321：正文宽 = 1040 − 卡内边距 32 − 滚动条占位 15 = 993，三列加两道 14 的缝是
+   * 3×321+28 = 991 ≤ 993（留 2px 余量，默认版式不折行）；再大就把默认的三列误折成两列（实测过）。
+   * `min(…, 100%)`：极窄宿主（弹窗最小 320）里退回"铺满父宽"，别把列顶出弹窗。 */
+  min-width: min(321px, 100%);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -783,7 +798,10 @@
  * 这样多出来的高度只会落进可写区，不会把上半排的行距撑开。 */
 .kh-editor-sec-body-grow { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
 .kh-fld-rows { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 6px 10px; }
-.kh-editor-sec-body-grow > .kh-fld-grow { flex: 1 1 auto; min-height: 0; width: 100%; }
+/* 【2.0.6.5 需求①】可写区字段（备注 / 笔记内容）自己再兜一道下限：默认弹窗里它宽 305px，
+ * 容器被挤到放不下三列时允许换行，但这一格不该被压得比初始还窄。`min(…, 100%)` = 宿主真的
+ * 比 305 还窄时退回铺满（弹窗最小 320，那一档只剩条缝，宁可铺满也别顶出滚动条）。 */
+.kh-editor-sec-body-grow > .kh-fld-grow { flex: 1 1 auto; min-height: 0; width: 100%; min-width: min(296px, 100%); }
 /* 纵向 body 的直接子项（上半排 `.kh-fld-rows` 与 grow 字段）都要**钉满父宽**。
  * `width: 100%` 不是冗余：只靠 `align-items: stretch` 时，实测「列容器 + 子项 flex-basis 为
  * 百分比」的组合会把子项按 **max-content** 摊开（305px 的卡里长到 708px，直接压到旁边两列上）。 */

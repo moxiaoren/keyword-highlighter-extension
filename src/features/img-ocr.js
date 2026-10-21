@@ -335,7 +335,37 @@
    * `一对一#表|包名` ⇒ 只有「一对一」会往表里补行，「包名」只做命中判定。
    * 标记必须**逐词**给 —— 一个词误配不波及其它词，这就是"收严"的全部含义。 */
   const KV_MARK = /(?:#|＃)\s*(?:表|kv)\s*$/i;
-  const kvChips = (raw) => String(raw == null ? '' : raw).split(/[|｜]/);
+  /* 【2.0.6.5 需求③】标记后面跟着**分隔符**（逗号/顿号/分号/空白）时，那里也是断词点：
+   * 用户常写 `登记号#表,著作权人#表`，旧实现整串当一个 chip、而它恰好以 `#表` 结尾 ⇒
+   * `stripKvMarks` 只剥末尾那一个标记，剩下的 `登记号#表,著作权人` 会被当**字面量**编译进正则
+   * ⇒ 永不命中（用户报的「显示无命中」）；`kvWords` 同时出一个脏词 ⇒ 表格也补不出行
+   * （「也没增加表格」）。两个症状是同一个根因。
+   * 只在**标记之后**放宽：普通词里的逗号照旧是正文字符（`a,b` 仍是一个词），口径没变；
+   * 标记后直接跟字（`一对一#表包名`）也不拆 —— 那不是分隔写法，按旧行为整段当正文。 */
+  const KV_TAIL_SEP = /(?:#|＃)\s*(?:表|kv)([\s,，、;；]+)/gi;
+  /**
+   * 按 `|`（含全角）切词，并在「标记 + 分隔符」处补切一刀。标记留在前一段里（`kvWords` 靠它认词）。
+   * @returns {string[]} 已 trim、已剔空段
+   */
+  function kvChips(raw) {
+    const out = [];
+    for (const seg of String(raw == null ? '' : raw).split(/[|｜]/)) {
+      let rest = seg;
+      for (;;) {
+        KV_TAIL_SEP.lastIndex = 0;
+        const m = KV_TAIL_SEP.exec(rest);
+        if (!m) break;
+        /* 切点在**标记末**，不在分隔符后：标记要留在前一段（`KV_MARK` 只认段尾标记） */
+        const at = m.index + m[0].length - m[1].length;
+        if (m.index + m[0].length >= rest.length) break;   /* 标记后面没有内容 ⇒ 这一段完整，不用切 */
+        out.push(rest.slice(0, at));
+        rest = rest.slice(at).replace(/^[\s,，、;；]+/, '');
+        if (!rest) break;
+      }
+      if (rest) out.push(rest);
+    }
+    return out.map((c) => c.trim()).filter(Boolean);
+  }
 
   /** 去掉标记后的关键词原文（喂 `buildPattern` / 空白容忍重试）：标记本身绝不能被当成匹配字面 */
   function stripKvMarks(raw) {
@@ -658,7 +688,11 @@
     const cells = [];
     let width = 0;
     for (let i = 0; i < list.length; i++) {
-      const cs = (list[i] && list[i].cells) || [];
+      /* 【2.0.6.5 需求③】并排多张纸的那一行在引擎侧被拆成了若干段（`run`）：**表格排版仍按整行**，
+       * 所以首段的 `cellsAll` 优先；被拆出来的后续段不再贡献单元格（否则同一行会被数两遍 ⇒ 列带错位）。 */
+      const cs = Array.isArray(list[i] && list[i].cellsAll)
+        ? list[i].cellsAll
+        : (Number(list[i] && list[i].run) > 0 ? [] : ((list[i] && list[i].cells) || []));
       for (const c of cs) {
         const t = String((c && c.t) || '').replace(WHITE_ALL, ' ').trim();
         const x = Number(c && c.x);
@@ -816,8 +850,12 @@
      * ⇒ 两条规则抓同一张图时各发一次（4 张图 = 8 次识别）。这里只把它置「识别中」，
      * 结果回来由 `onResult` 扇给同 `src` 的每条（缓存与额度都只按图片算一次）。 */
     if (cls.src && inflight.has(cls.src)) { entry.state = 'pending'; return false; }
+    /* PDF 条目走同一条额度/在途账，只是发出去的消息类型不同（offscreen 那边不跑引擎、只抽文字） */
+    const isPdf = entry.kind === 'pdf';
     let payload = null;
-    if (cls.viaCanvas) {
+    if (isPdf) {
+      payload = { src: cls.src };
+    } else if (cls.viaCanvas) {
       let dataUrl = null;
       try { dataUrl = canvasDataUrl(entry.img); } catch (e) { dataUrl = null; }
       if (!dataUrl) { entry.state = 'blocked'; entry.why = 'tainted'; return false; }
@@ -835,7 +873,7 @@
     entry.state = 'pending';
     try {
       chrome.runtime.sendMessage(Object.assign({
-        type: MSG.OCR_IMAGE,
+        type: isPdf ? MSG.OCR_PDF : MSG.OCR_IMAGE,
         keyword: (entry.rule && entry.rule.meta && entry.rule.meta.display) || entry.keyword || ''
         /* 【S2 引擎选择不从这里发】`imgOcr.engine` 由 **background 单点读取并注入**（#16 D-16.1）：
          * offscreen 读不到 `chrome.storage`，而内容脚本读又会让"用户改了设置"与"这条 job 排队"
@@ -1070,10 +1108,15 @@
     if (token) releaseHold(token);      /* 幂等：认领不到就没有副作用 */
 
     const text = String(msg.text || '');
+    /* PDF 回执没有 `lineList`（没有单元格坐标），只有**行文本** —— 在这里统一成同一种形状，
+     * 重要笔记的 `#表` 取值（按「行号 ↔ lineList 下标」取值）因此对 PDF 也能用。 */
+    const pdfLineList = (Array.isArray(msg.lines) ? msg.lines : text.split('\n'))
+      .map((t) => ({ t: String(t == null ? '' : t) }))
+      .filter((l) => l.t);
     if (msg.ok && src) {
       cachePut(src, {
-        text: text, conf: msg.confidence || 0, at: Date.now(), ocrMs: msg.ocrMs,
-        lineList: msg.lineList || []
+        text: text, conf: msg.confidence || 0, at: Date.now(), ocrMs: msg.ocrMs || msg.ms,
+        lineList: msg.via === 'pdf' ? pdfLineList : (msg.lineList || [])
       });
     }
 
@@ -1094,8 +1137,12 @@
         const ji = judgeInfo(it.rule, text, it.need);
         it.matched = ji.hits;
         it.needMissingValues = ji.missingValues;
-        it.lineList = msg.lineList || [];
-        it.ocrMs = msg.ocrMs;
+        it.lineList = (it.kind === 'pdf') ? pdfLineList : (msg.lineList || []);
+        it.ocrMs = msg.ocrMs || msg.ms;
+        if (it.kind === 'pdf') {
+          it.pages = msg.pages | 0;
+          it.warnings = Array.isArray(msg.warnings) ? msg.warnings : [];
+        }
         /* 引擎**如实告知**的"结果不完整/不可靠"（不变量 1/2，D-14.5）：
          * `no-text`（一个字没认出）/`tilted`（方向可疑）/`truncated`（只读了前 8 块）。
          * `why` 直接沿用引擎给的 notice 键 —— `ocr-copy.js` 认得这几个键，
@@ -1124,6 +1171,37 @@
   }
 
   /* ---------------- Feature：⑦Consume 采集 ---------------- */
+
+  /**
+   * 一个锚点里要抽文字的 PDF（2.0.6.5 需求②），按文档序、与图片同口径限流。
+   * 认的是页面自己声明的引用（`KH.Fetch.pdfRefOf`：`<a href>`/`<iframe src>`/`<embed src>`/`<object data>`），
+   * 与负责渲染占位标记的 `pdfPlaceholder` **是同一个判据** —— 否则条目和面板里那个占位框会对不上号。
+   * 【不套跨域白名单】PDF 由 offscreen（扩展页 + `host_permissions: <all_urls>`）直接 fetch，
+   * 不受页面 CORS 约束；图片要读像素、跨源拿不到，所以才需要那道授权闸门。别照抄。
+   */
+  function collectPdfs(anchor) {
+    const rule = anchor.rule;
+    const max = Math.max(1, (rule.meta && rule.meta.imgOcrMax) || 1);
+    const F = KH.Fetch;
+    if (!F || typeof F.pdfRefOf !== 'function') return [];
+    const out = [];
+    const seen = new Set();
+    for (const cell of (anchor.valueCells || [])) {
+      if (!cell || !cell.querySelectorAll) continue;
+      /* 先按标签捞、再由 `pdfRefOf` 判是不是 PDF：一个属性选择器就能少一次遍历，
+       * 但那要求垫片也支持 `[href]`（`tests/harness.js` 只认 tag/.class/后代），
+       * 判据本来就在 `pdfRefOf` 里，没必要在两处各写一遍。 */
+      for (const el of cell.querySelectorAll('a, iframe, embed, object')) {
+        if (out.length >= max) return out;
+        if (isExtUi(el)) continue;
+        const src = F.pdfRefOf(el);
+        if (!src || seen.has(src)) continue;
+        seen.add(src);
+        out.push({ src: src });
+      }
+    }
+    return out;
+  }
 
   /**
    * 本轮要处理的「锚点」= `{ rule, cell }`，来源**只有一个**：
@@ -1256,6 +1334,39 @@
            * 同一次会话里**不再重新排队**。旧行为：页面每一次重扫都把它当新条目、再提交一遍，
            * 于是"没文字的图也要跑好几秒"在面板反复重建时成倍放大（用户说的"没文字也耗时很长、
            * 页面卡顿"多半就是这条）。失败信息仍照实显示，10 分钟后自动允许重试一次。 */
+          item.state = 'fail';
+          item.why = 'retry-later';
+        } else if (inflight.has(src)) {
+          item.state = 'pending';
+        }
+        next.set(key, item);
+      }
+      /* ---- PDF（2.0.6.5 需求②）：只是"另一类待抽文字的引用"，与图片共用条目表 / 缓存 /
+       * 额度 / 面板通知。键里带 `|pdf|`，避免与同地址的图片条目撞号（现实里也不会同址）。 ---- */
+      for (const got of collectPdfs({ rule: rule, valueCells: valueCells })) {
+        const src = got.src;
+        const key = rule.ruleId + '|pdf|' + src;
+        if (next.has(key)) continue;
+        const cached = textCache.get(src) || textCache.get(absOf(src));
+        const item = {
+          key: key, ruleId: rule.ruleId, rule: rule, kind: 'pdf',
+          keyword: String((rule.meta && rule.meta.imgOcrKeyword) || ''),
+          label: '', src: src, cls: { ok: true, src: src }, host: hostOfSrc(src) || '',
+          state: 'idle', matched: [], text: '', conf: 0,
+          need: need, needWant: needWant, needMissing: needMissing,
+          needMissingValues: [], lineList: [],
+          cellText: String((anchor.cell && anchor.cell.textContent) || '').trim().slice(0, 120)
+        };
+        if (cached) {
+          item.state = 'done';
+          item.text = cached.text;
+          item.conf = cached.conf;
+          const ji = judgeInfo(rule, cached.text, need);
+          item.matched = ji.hits;
+          item.needMissingValues = ji.missingValues;
+          item.lineList = cached.lineList || [];
+          item.ocrMs = cached.ocrMs;
+        } else if (failSrc.has(src) && Date.now() - failSrc.get(src) < FAIL_MEMO_MS) {
           item.state = 'fail';
           item.why = 'retry-later';
         } else if (inflight.has(src)) {

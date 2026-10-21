@@ -35,6 +35,46 @@
   const IMG_OPEN = '\u0001KHIMG\u0001';
   const IMG_CLOSE = '\u0001ENDIMG\u0001';
 
+  /* PDF 占位符（2.0.6.5 需求②）与图片占位符同一套机制：正文整体转义后，只把占位符还原成安全元素。
+   * 为什么不能直接留 PDF 元素：`<embed>`/`<iframe>` 在面板里会真去加载阅读器（用户口径是
+   * 「无需展示 pdf 源文件，只需要 pdf 占位」），而且 Chrome 的 PDF 插件内容读不到文字。 */
+  const PDF_OPEN = '\u0001KHPDF\u0001';
+  const PDF_CLOSE = '\u0001ENDPDF\u0001';
+
+  /**
+   * 这个元素指向的 PDF 地址（绝对化后的 http(s)；不是 PDF 就回 ''）。
+   * 认的是**页面自己声明的引用**，四种写法：`<a href>`、`<iframe src>`、`<embed src>`、`<object data>`。
+   * `.pdf` 后面允许带查询串/锚点（很多下载地址是 `file.pdf?v=2`），也认 `type="application/pdf"`。
+   */
+  function pdfRefOf(el) {
+    if (!el || !el.getAttribute) return '';
+    const tag = String(el.tagName || '').toUpperCase();
+    let raw = '';
+    if (tag === 'A') raw = el.getAttribute('href') || '';
+    else if (tag === 'OBJECT') raw = el.getAttribute('data') || '';
+    else if (tag === 'IFRAME' || tag === 'EMBED') raw = el.getAttribute('src') || '';
+    else return '';
+    if (!raw) return '';
+    /* 协议闸门与 imgPlaceholder 一致：只放 http(s)（含 `//` 与相对路径，转成绝对地址） */
+    if (/^[a-z][a-z0-9+.-]*:/i.test(raw) && !/^https?:/i.test(raw) && !/^\/\//i.test(raw)) return '';
+    let abs = '';
+    try { abs = new URL(raw, location.href).href; } catch (err) { return ''; }
+    if (!/^https?:/i.test(abs)) return '';
+    const path = abs.split('#')[0].split('?')[0];
+    const type = String((el.getAttribute && el.getAttribute('type')) || '').toLowerCase();
+    if (/\.pdf$/i.test(path) || type === 'application/pdf' || type === 'application/x-pdf') return abs;
+    return '';
+  }
+
+  /** `<a>/<iframe>/<embed>/<object>` → 可还原占位符（正文里留一条「PDF」痕迹，点击才去抽文字） */
+  function pdfPlaceholder(el) {
+    const src = pdfRefOf(el);
+    if (!src) return '';
+    const enc = (s) => encodeURIComponent(s == null ? '' : String(s)).replace(/'/g, '%27');
+    const name = String((el.getAttribute && (el.getAttribute('title') || el.getAttribute('download'))) || '');
+    return PDF_OPEN + enc(name) + '|' + enc(src) + PDF_CLOSE;
+  }
+
   /** 交互控件标签：命中即剔出正文（「编辑」「查看更多」「收起」等动态控件不抓） */
   const SKIP_TAGS = {
     BUTTON: 1, INPUT: 1, SELECT: 1, TEXTAREA: 1, OPTION: 1, FORM: 1,
@@ -199,17 +239,31 @@
     return IMG_OPEN + enc(alt) + '|' + enc(src) + IMG_CLOSE;
   }
 
-  /** 占位符 → 安全 `<img>`（在 esc 之后调用：正文保持转义、图片安全插入） */
+  /**
+   * 占位符 → 安全 `<img>` / PDF 占位（在 esc 之后调用：正文保持转义、只还原安全元素）。
+   * PDF 那条（2.0.6.5 需求②）只还原成**占位标记**，真去抽文字由 `KH.PdfOcr` 按需触发 ——
+   * 面板渲染时不该为一张表格里的十个 PDF 发十个请求。
+   */
   function restoreImgs(html) {
     const escA = (s) => String(s == null ? '' : s)
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-    return String(html).replace(
+    const out = String(html).replace(
       new RegExp('\u0001KHIMG\u0001([^|]*)\\|([^\u0001]*)\u0001ENDIMG\u0001', 'g'),
       (_, a, u) => {
         let alt = '', src = '';
         try { alt = decodeURIComponent(a); src = decodeURIComponent(u); } catch (err) { return ''; }
         if (!/^https?:\/\//i.test(src)) return '';
         return '<img src="' + escA(src) + '" alt="' + escA(alt) + '" loading="lazy">';
+      }
+    );
+    return out.replace(
+      new RegExp('\u0001KHPDF\u0001([^|]*)\\|([^\u0001]*)\u0001ENDPDF\u0001', 'g'),
+      (_, n, u) => {
+        let name = '', src = '';
+        try { name = decodeURIComponent(n); src = decodeURIComponent(u); } catch (err) { return ''; }
+        if (!/^https?:\/\//i.test(src)) return '';
+        /* `data-khpdf` 是 PDF 条目与占位标记之间的**唯一约定**（`KH.PdfOcr` 按它挂三态与点击） */
+        return '<span class="khin-pdf" data-khpdf="' + escA(src) + '" title="' + escA(name || src) + '">PDF</span>';
       }
     );
   }
@@ -254,6 +308,16 @@
       const tag = (node.tagName || '').toUpperCase();
       if (tag === 'BR') { segs.push('\n'); return; }
       if (tag === 'IMG') { const ph = imgPlaceholder(node); if (ph) segs.push(ph); return; }
+      /* PDF 引用（2.0.6.5 需求②）：与图片共用占位符机制。
+       * `<a>` 的文字往往就是真内容（「下载说明书」）⇒ 占位符塞进去后**继续**遍历它的文字；
+       * `<iframe>/<embed>/<object>` 本身没有文字 ⇒ 塞完就返回（它们内部也不该抓）。 */
+      if (tag === 'A' || tag === 'IFRAME' || tag === 'EMBED' || tag === 'OBJECT') {
+        const pdf = pdfPlaceholder(node);
+        if (pdf) {
+          segs.push(pdf);
+          if (tag !== 'A') return;
+        }
+      }
       if (isInteractive(node)) return;
       /* K79：读这一层的值时**跳过它内部嵌的表格**（内表算独立的一层，见 `insideNestedTable`） */
       if (skipNested && tag === 'TABLE' && node !== el) return;
@@ -349,7 +413,18 @@
       /* K79：读这一层的值时跳过它内部嵌的表格（文字与图片都跳过） */
       if (skipNested && insideNestedTable(n, cell)) continue;
       if (n.nodeType === 1) {
-        if (n.tagName !== 'IMG') continue;                 // 只关心图片；其它元素继续下钻
+        if (n.tagName !== 'IMG') {
+          /* PDF 引用（2.0.6.5 需求②）：`cellText` 那条 walk 已经会放占位符，这里**必须也放**、
+           * 且判据一致 —— 值格取文走的是 `textOfCells` → 本函数，不补这一段时，真机表现是
+           * 面板里只剩「下载 PDF」几个字、根本没有占位牌可点（占位符整段被吞掉）。
+           * `<a>` 的文字照旧继续下钻（"下载说明书"往往就是真内容）。 */
+          const pdf = pdfPlaceholder(n);
+          if (pdf) {
+            const pg = geoOf(n);
+            addSeg(pg.top, pg.bottom, { img: pdf });
+          }
+          continue;
+        }
         const ph = imgPlaceholder(n);
         if (!ph) continue;
         const g = geoOf(n);
@@ -1812,6 +1887,9 @@
   KH.Fetch = {
     GROUP_TITLES, parseLabels, extractFor, extractFromFakeTable, collectRightBlock,
     cellText, cellVisualText, isInteractive, imgPlaceholder, restoreImgs,
+    /* PDF 引用识别（2.0.6.5 需求②）：占位符与 DOM 两条路必须用**同一判据**，否则条目与占位
+     * 标记对不上号（一个按页面元素建条目、一个按渲染出来的 `data-khpdf` 挂状态）。 */
+    pdfRefOf, pdfPlaceholder,
     rowsToTableHtml, blockFor, triggerOk, fakeRightValue, nearestTable, isPlaceholderText,
     /* 图片选项（仅图片 / 前 N 张）：单测直接锁 */
     applyImgPolicy,
