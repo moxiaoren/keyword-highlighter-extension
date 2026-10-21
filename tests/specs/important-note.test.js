@@ -1245,4 +1245,15 @@ module.exports = async function run() {
     truthy(/carryImgs\(prevEl, el\);/.test(src), '★ 建新卡时要把旧卡的图搬过来');
     truthy(/olds\.delete\(s0\)/.test(src), '同一张旧图只搬一次（同图可能出现两次）');
   });
+
+  await test('★ 2.0.6.4 需求③：聚合数量点开是浮层，不许把行/卡片撑高', () => {
+    const src = read('src/features/important-note.js');
+    const tagList = (src.match(/\.khin-tag-list \{[\s\S]{0,400}?\}/) || [''])[0];
+    truthy(/position: absolute/.test(tagList), '★ 命中词聚合下拉必须是绝对定位浮层（旧写法 flex 100% 是流内展开）');
+    falsy(/flex: 1 1 100%/.test(tagList), '流内铺满的写法必须删掉');
+    const all = (src.match(/\.kh-table \.kh-table-all \{[\s\S]{0,500}?\}/) || [''])[0];
+    truthy(/position: absolute/.test(all), '★ 字段名聚合「点开看全部」同样是浮层');
+    truthy(/\.khin-item-tags \{[^}]*position: relative/.test(src), '浮层要挂在命中词行上定位');
+    truthy(/\.kh-table \.kh-table-more \{[^}]*position: relative/.test(src), '表格小标同理');
+  });
 };

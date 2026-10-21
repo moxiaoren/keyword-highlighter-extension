@@ -316,6 +316,34 @@ module.exports = async function run() {
     eq((out[0].cells || []).length, 2, '重复片段整段丢掉（留着单元格会把「有限公司」再拼进值里）');
   });
 
+  await test('★ 2.0.6.4 需求②：同一段文字被识别成两个压在一起的框，不许重复一遍', () => {
+    const P = loadOffscreen({ lines: () => null }).self.__khOcrPure;
+    /* 用户现场：图上只有一行「登记号：abdc」，结果成了「登记号：abdc adbc」
+     * 机制：水印/印章/低清重扫会让引擎把同一段字吐成两个**几乎同位**的框。 */
+    eq(P.joinParts([
+      { t: '登记号：abdc', x: 0, x2: 120 },
+      { t: '登记号：abdc', x: 4, x2: 124 }
+    ], 20), '登记号：abdc', '★ 同位重影只留一份');
+    eq(P.joinParts([
+      { t: '登记号：abdc', x: 0, x2: 120 },
+      { t: 'abdc', x: 96, x2: 124 }
+    ], 20), '登记号：abdc', '★ 尾巴被重读一遍也只算一次');
+    /* 位置不同 = 原图真的重复写了两遍 ⇒ 两条都得留（不许拿去重当消音器） */
+    eq(P.joinParts([
+      { t: 'abdc', x: 0, x2: 60 },
+      { t: 'abdc', x: 200, x2: 260 }
+    ], 20), 'abdc abdc', '位置不同的同词照旧出现两次');
+  });
+
+  await test('★ 2.0.6.4 需求②：行距偏紧的下一行不许被并进来（重拼错行的解药）', () => {
+    const P = loadOffscreen({ lines: () => null }).self.__khOcrPure;
+    const out = P.stitchRows([
+      { t: '认证号：2026SA0064368', conf: 95, x: 10, y: 100, y2: 140, ci: 0 },
+      { t: '授权方：合肥某公司', conf: 95, x: 10, y: 160, y2: 200, ci: 0 }
+    ]);
+    eq(out.length, 2, '★ 中心差 0.5 行高的两行仍是两行（旧口径 0.6 会并成一行）');
+  });
+
   await test('★ 2.0.6 需求①：不同物理行绝不拼（行距 40px 的两行仍是两行）', () => {
     const P = loadOffscreen({ lines: () => null }).self.__khOcrPure;
     const out = P.stitchRows([

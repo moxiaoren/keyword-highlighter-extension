@@ -631,13 +631,33 @@
    * 英文/数字相邻时必须留空格（`Hel`+`lo` 那种只有真正粘在一起、间隙 ≤1px 才贴），中文没有词间空格。
    */
   const TIGHT_GAP_RATIO = 0.6;
+  /**
+   * 【2.0.6.4 需求②】同一段文字被识别成两个**压在一起**的框时（水印、印章、重影、低清重扫），
+   * 拼出来就是「登记号：abdc adbc」。判据必须**只管同位置**：文字相同/后段是前段尾巴，
+   * 且两框横向重叠超过窄者的一半 —— 原图真的重复写了两遍（位置不同）照旧两条都留。
+   */
+  function isDupPart(prev, cur, prevText, text) {
+    const a = String(prevText || '').replace(/\s+/g, '');
+    const b = String(text || '').replace(/\s+/g, '');
+    if (!a || !b) return false;
+    if (a.indexOf(b) < 0 && b.indexOf(a) < 0) return false;
+    const p0 = Number(prev && prev.x), p1 = Number(prev && prev.x2);
+    const c0 = Number(cur && cur.x), c1 = Number(cur && cur.x2);
+    if (!isFinite(p0) || !isFinite(p1) || !isFinite(c0) || !isFinite(c1)) return false;
+    const ov = Math.min(p1, c1) - Math.max(p0, c0);
+    const narrow = Math.min(p1 - p0, c1 - c0);
+    return narrow > 0 && ov >= 0.5 * narrow;
+  }
   function joinParts(parts, lineH) {
     const list = Array.isArray(parts) ? parts : [];
     let text = '';
     let prevEnd = null;
+    let prevPart = null;
     for (const p of list) {
       const t = String((p && p.t) || '');
       if (!t) continue;
+      if (text && isDupPart(prevPart, p, text, t)) continue;   // 同位置重影：整段丢掉，不重复文字
+      prevPart = p;
       const x = Number(p && p.x);
       const x2 = Number(p && p.x2);
       if (!text) {
@@ -845,7 +865,9 @@
         const hr = r.y2 - r.y;
         const ov = Math.min(item.y2, r.y2) - Math.max(item.y, r.y);
         const dcy = Math.abs((item.y + item.y2) / 2 - (r.y + r.y2) / 2);
-        if (ov >= 0.5 * Math.min(hb, hr) || dcy <= 0.6 * Math.max(hb, hr)) { hit = r; break; }
+        /* 【2.0.6.4 需求②】无竖向重叠时只认「几乎同一基线」（0.45 行高）：旧口径 0.6 会把
+         * 行距偏紧的**下一行**并进来（框高普遍大于字高，0.6×框高常已跨到下一行中线）。 */
+        if (ov >= 0.5 * Math.min(hb, hr) || dcy <= 0.45 * Math.max(hb, hr)) { hit = r; break; }
       }
       if (!hit) { rows.push(item); continue; }
       hit.parts = hit.parts.concat(item.parts);

@@ -455,16 +455,14 @@
       }
     });
 
-    /* 【2.0.2.11 票 #62】三列各锁一个 `min-width` ＝ **打开时的实测列宽**（用户口径 m01713：
-     * 「都锁。但是整体宽度还是和现在一样，支持随着输入框手动拖宽一起变宽」）。
-     * 拖窄时列不再被压到 60px 那种程度；拖宽时照旧整列一起长（`rich-editor.js` 的 `growHost`
-     * 同时拉列与弹窗）。只能**挂载后**量：构造期这些节点还没进文档，`clientWidth` 恒 0。 */
-    try {
-      for (const c of cols.values()) {
-        const w = Math.round(c.getBoundingClientRect().width);
-        if (w > 0) c.style.minWidth = w + 'px';
-      }
-    } catch (e) { /* 垫片 / 无布局环境：跳过。视觉退化，功能不受影响 */ }
+    /* 【2.0.6.4 需求①】这里原来在挂载后把三列的**实测宽度**写进 `style.minWidth`（票 #62 的
+     * 「锁列宽」）。实测证明那条锁是布局被撑破的直接原因：候选框一展开，`min-width` 变成
+     * 不可压缩的下限 ⇒ 整列从 327 长到 490，`.kh-editor-cols` 是 `flex-wrap: wrap`，第三列
+     * （重要笔记）当场被挤到下一行，整张弹窗就散了。
+     * 列宽本来就由 CSS 管：`.kh-editor-col { flex: 1 1 260px; min-width: 0 }` —— 空间够时三列
+     * 等宽、拖宽时一起长、真挤不下才换行，且内容永远撑不宽它（`min-width: 0` 才是票 #62 想要
+     * 的语义：别被压到 60px 是 `flex-basis: 260px` 给的，不是 `min-width` 给的）。
+     * 所以这里**一行都不再写**，只留说明（删代码就是修复）。 */
 
     return modal;
   }

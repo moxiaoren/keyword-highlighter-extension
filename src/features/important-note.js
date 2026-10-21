@@ -144,7 +144,7 @@
     }
     .khin-item:last-child { margin-bottom: 0; }
     .khin-item-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; margin-bottom: 3px; }
-    .khin-item-tags { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; min-width: 0; }
+    .khin-item-tags { position: relative; display: flex; flex-wrap: wrap; gap: 4px; flex: 1; min-width: 0; }
     /* 命中词块的上限是**派生的**：一个词块不许超过面板里那一行的可用宽度
      * （- 62px ≈ 卡片外边距 12 + 边框 2 + 内边距 20 + 关闭按钮与间隙 28），250px 面板下 ≈ 188px ——
      * 面板宽度一改它自己跟着走，不留会过期的字面量；卡片内边距一改也必须回来改这个减数。 */
@@ -170,9 +170,15 @@
       background: #eaf1fb; color: #3579c2; cursor: pointer;
     }
     .khin-tag-more:hover { background: #d8e7fa; }
-    /* 下拉：整行铺开（flex-basis 100%），最多 20 条、超出在列表体内滚动。
-       条目一律单行 + ellipsis —— 只做视觉省略，DOM 里仍是完整文本。 */
-    .khin-tag-list { flex: 1 1 100%; min-width: 0; margin-top: 3px; }
+    /* 下拉：**浮在卡片之上的独立小面板**（绝对定位），点开不许把整行/整张卡撑高。
+       旧写法 flex-basis 100% 是流内展开 —— 用户 2026-06 现场原话「点数字还是一个向下展开详情」
+       「希望能做到个独立的下拉控件一样」。最多 20 条、超出在列表体内滚动。 */
+    .khin-tag-list {
+      position: absolute; top: calc(100% + 4px); left: 0; z-index: 60;
+      min-width: 168px; max-width: calc(var(--khin-panel-w) - 40px);
+      background: #fff; border: 1px solid #dbe6f4; border-radius: 8px;
+      box-shadow: 0 8px 28px rgba(0,0,0,.18); padding: 6px 8px;
+    }
     .khin-tag-list-h { font-size: 10px; color: #64748b; margin-bottom: 2px; }
     .khin-tag-list-b { max-height: 132px; overflow-y: auto; }
     .khin-tag-item {
@@ -259,7 +265,7 @@
     }
     /* 【2.0.6.1 需求⑥】同值字段合并后的抬头：只写最短那个名字，后面跟一个「共 N 个」的小标，
      * 点开（原生 details 元素，无需 JS）列出全部字段名。老笔记里没有它，就照旧只显示 .kh-lbt。 */
-    .kh-table .kh-table-more { display: inline-block; margin-left: 3px; vertical-align: bottom; }
+    .kh-table .kh-table-more { position: relative; display: inline-block; margin-left: 3px; vertical-align: bottom; }
     .kh-table .kh-table-more > summary {
       display: inline-block; cursor: pointer; list-style: none; font-weight: 400; font-size: 9px;
       line-height: 1.6; padding: 0 4px; border-radius: 7px;
@@ -267,8 +273,13 @@
       border: 1px solid var(--kh-brand-soft, #eaf1fb);
     }
     .kh-table .kh-table-more > summary::-webkit-details-marker { display: none; }
+    /* 【2.0.6.4 需求③】点开是**浮层**（绝对定位），不许把表格这一行顶下去。 */
     .kh-table .kh-table-all {
-      margin-top: 2px; font-weight: 400; font-size: 10px; line-height: 1.5;
+      position: absolute; top: calc(100% + 4px); left: 0; z-index: 60;
+      min-width: max-content; max-width: 230px;
+      background: #fff; border: 1px solid #dbe6f4; border-radius: 8px;
+      box-shadow: 0 8px 28px rgba(0,0,0,.18); padding: 6px 8px;
+      font-weight: 400; font-size: 10px; line-height: 1.5;
       color: var(--kh-text-2, #475569); white-space: normal;
     }
     /* 【2.0.2.17 需求①】字段名格不再带后缀（#图3 / @2 / ! / ^锚文本 / %4 都留在设置页）⇒
