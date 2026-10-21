@@ -296,4 +296,20 @@ module.exports = async function run() {
     eq(FM.byKey('importantNote').noLabel, true, '关键词弹窗里的「笔记内容」标题要删掉');
     eq(String(body.textContent || '').indexOf('笔记内容'), -1, '正文里不许再出现「笔记内容」这行字');
   });
+
+  /* 【2.0.6.2 需求②】五个候选框**展开时**最多只能占满所在模块，不许把模块撑宽。
+   * 真因是展开态没把"最小宽"压住：胶囊（尤其长词/长字段名）的 min-content 顺着
+   * `.kh-fld-sub` 把列容器顶宽 ⇒ 整张添加关键词卡片崩掉。 */
+  await test('★ 展开态与文本态都必须压住内在最小宽（2.0.6.2 需求②）', () => {
+    const css = read('src/ui/components/components.css');
+    const open = /\.kh-cand-clamp\.is-open\s*\{([^}]*)\}/.exec(css);
+    truthy(open, '.kh-cand-clamp.is-open 规则应当存在');
+    const flat = open[1].replace(/\s+/g, ' ');
+    truthy(flat.indexOf('min-width: 0') >= 0, '★ 展开态要 min-width:0：' + flat);
+    truthy(flat.indexOf('max-width: 100%') >= 0, '★ 展开态最多占满容器（不许溢出）：' + flat);
+    truthy(flat.indexOf('contain: inline-size') >= 0, '★ 尺寸样式不许回流到父级宽度：' + flat);
+    const tex = /\.kh-cand-box\.is-texed\s*\{([^}]*)\}/.exec(css);
+    truthy(tex && tex[1].replace(/\s+/g, ' ').indexOf('min-width: 0') >= 0,
+      '★ 文本态同样要 min-width:0（textarea 的 size 内在宽度会撑宽列）');
+  });
 };

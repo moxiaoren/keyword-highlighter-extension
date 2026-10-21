@@ -43,6 +43,21 @@ async function broadcast(type, payload) {
   await Promise.all(tabs.map(t => chrome.tabs.sendMessage(t.id, Object.assign({ type }, payload || {})).catch(() => {})));
 }
 
+/* ---------------- 切页广播（2.0.6.2 需求⑤） ----------------
+ * 用户口径：切到**不可高亮**的标签页（黑名单 / 白名单以外 / 该站被禁用 / chrome 内部页）时，
+ * 不许把上一个标签页的高亮与重要笔记缓存清掉；切到**可高亮**页时才完全清理
+ * （保证同一时刻只有一个标签页在建立高亮与笔记）。
+ * 判定留在内容脚本侧（它手里有完整配置与 `SiteRules`），这里只负责把"新页是谁"发出去。 */
+chrome.tabs.onActivated.addListener(async (info) => {
+  let url = '';
+  try {
+    const t = await chrome.tabs.get(info.tabId);
+    /* 拿不到 url（chrome:// 等内部页、无 host 权限的页）= 不可高亮，正好由内容脚本按空串处理 */
+    url = (t && t.url) || '';
+  } catch (e) { url = ''; }
+  await broadcast(MSG.TAB_SWITCH, { url: url, tabId: info.tabId });
+});
+
 /* ---------------- 安装 / 更新 ---------------- */
 
 chrome.runtime.onInstalled.addListener(async (details) => {

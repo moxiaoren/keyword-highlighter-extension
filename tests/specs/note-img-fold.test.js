@@ -338,4 +338,18 @@ module.exports = async function run() {
       '置顶排序仍然只排笔记卡');
     falsy(/sortByPins\([^)]*ctx/.test(src), '★ 右键卡不许进置顶排序（不许影响设置里的卡片顺序）');
   });
+
+  await test('★ 边框状态不许"先全清再全加"（2.0.6.2 需求④：那是自激闪烁的源头）', () => {
+    const src = read('src/features/important-note.js');
+    const fn = /function markOneImg\(im, it\)[\s\S]{0,2400}?\n  \}/.exec(src);
+    truthy(fn, 'markOneImg 应当存在');
+    const body = fn[0];
+    /* 旧写法每次都 remove 三态再 add 一遍：`class` 属性连跳两次，而调度器的 MutationObserver
+     * 正好盯着 `class`（attributeFilter:['class']）⇒ 自己触发自己，页面越静它越扫。 */
+    falsy(/classList\.remove\(IMG_MARK_CLS\[i\]\);\s*\n\s*\}/.test(body),
+      '★ 不许无条件清三态：只写真正变了的那个（否则每次重扫都自激重跑）');
+    truthy(body.indexOf('if (cls !== want && im.classList.contains(cls)) im.classList.remove(cls);') >= 0,
+      '★ 幂等写法：与目标状态相同就一个字节都不动');
+    truthy(body.indexOf('if (have !== tip) {') >= 0, 'title 同样只在变了才写');
+  });
 };

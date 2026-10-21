@@ -483,8 +483,9 @@
   function judgeInfo(rule, text, need) {
     const raw = String(text || '');
     const stat = matchedInText(rule, raw);
+    const hasStatic = !!stripKvMarks(rule && rule.meta && rule.meta.imgOcrKeyword).trim();
     const dyn = (need || []).filter(Boolean);
-    if (!dyn.length) return { hits: stat, missingValues: [] };
+    if (!dyn.length) return { hits: stat, missingValues: [], staticMiss: false };
     const flat = raw.replace(WHITE_ALL, '').toLowerCase();
     const found = [];
     /* 【2.0.6.1 需求③】缺失的值**全收集**再返回：面板要把「图上找不到哪几个值」说出来，
@@ -496,18 +497,28 @@
       const needle = String(v == null ? '' : v).replace(WHITE_ALL, '').toLowerCase();
       if (!needle) continue;
       const at = flat.indexOf(needle);
-      if (at < 0) { missingValues.push(String(v)); continue; }   // 有一个点名的值不在图上 ⇒ 不命中（AND）
+      if (at < 0) { missingValues.push(String(v)); continue; }
       /* 命中块要落在**原文**里（面板上的词块与"复制整句"靠它），所以映射回未剔空白的区间 */
       const span = unshrinkRange(raw, at, at + needle.length);
       found.push(span
         ? { start: span.start, end: span.end, text: raw.slice(span.start, span.end) }
         : { start: 0, end: 0, text: needle });
     }
-    if (missingValues.length) return { hits: [], missingValues: missingValues };
-    const hasStatic = !!stripKvMarks(rule && rule.meta && rule.meta.imgOcrKeyword).trim();
-    if (!hasStatic) return { hits: found, missingValues: [] };   // 只有动态判据：值在图上即命中
-    /* 两边都配了：静态词命中也必须成立 */
-    return { hits: stat.length ? stat.concat(found) : [], missingValues: [] };
+    /* 【2.0.6.2 需求①】静态词与动态值**各判各的，不再互相清零**。
+     * 旧写法两处都是"一票否决"：`if (missingValues.length) return { hits: [] }`（缺一个动态值 ⇒ 连
+     * 静态命中一起清）与 `hits: stat.length ? stat.concat(found) : []`（静态词没判中 ⇒ 动态命中一起清）。
+     * 用户现场（m08130 第 1 条）正是这个耦合：先只配「图片动态关键词」（`imgOcrKeyword` 为空 ⇒ 走
+     * 「值在图上即命中」），之后往「图片命中关键词」加一个词 ⇒ `hasStatic` 变真、判决改走 AND 分支，
+     * 新词一旦没判中（正则写法 / 空白 / 大小写细节），**整条命中也跟着归零** ⇒ 用户看到的就是
+     * 「OCR 里明明有命中词，加了个词反而不生效」。
+     * 现在：命中的定义回到用户直觉——**OCR 文本里出现命中词或动态值就算命中**；
+     * 「动态值没凑齐」与「静态词没中」作为**诊断**带出去（`missingValues` / `staticMiss`），
+     * 由面板决定怎么解释（KV 行仍按动态值过滤，见 `ocrExtraRows`）。 */
+    return {
+      hits: stat.concat(found),
+      missingValues: missingValues,
+      staticMiss: !!(hasStatic && !stat.length)
+    };
   }
 
   /** 判决 = `judgeInfo().hits`（唯一实现；诊断字段由 `judgeInfo` 带出） */
@@ -1209,7 +1220,10 @@
         const src = cls.src || '';
         const key = rule.ruleId + '|' + (src || ('#' + got.idx));
         if (next.has(key)) continue;
-        const cached = src ? textCache.get(src) : null;
+        /* 【2.0.6.2 需求①】缓存读和写要同键：右键/灯箱写的是 `absOf(src)`，扫描链写的是原始
+         * `src`，这里只按原始 src 查 ⇒ 经过绝对化的同一张图会被当成没识别过、掉回 idle 重排队
+         * （失败一次还会落进 `failSrc` 冻 10 分钟）。两边都试一遍，顺序与 `textOf` 一致。 */
+        const cached = src ? (textCache.get(src) || textCache.get(absOf(src))) : null;
         const item = {
           key: key, ruleId: rule.ruleId, rule: rule,
           /* 面板行的关键词标签显示**图片命中关键词**（用户确认第 6 条）——它才是"在图里找什么" */
@@ -1251,8 +1265,30 @@
       }
     }
     /* 右键识别的条目不属于任何规则：扫描链重建时**并回去**，别把它冲掉（用户手动要的那一行
-     * 不该因为页面变动就消失；它自己有过结果、也留在 `manual` 里） */
-    for (const pair of manual) if (!next.has(pair[0])) next.set(pair[0], pair[1]);
+     * 不该因为页面变动就消失；它自己有过结果、也留在 `manual` 里）。
+     * 【2.0.6.2 需求①】并回去时补一次判决：这类条目 `rule` 是 null、`matched` 是空，于是
+     * "事后给它加图片命中关键词"永远算不出命中（不是没重算，是根本没有算的地方）。用**当前配置**
+     * 的规则补判，命中就挂上那条规则 —— 之后面板能解释、KV 行也能出。 */
+    let manualRules = null;
+    for (const pair of manual) {
+      if (next.has(pair[0])) continue;
+      const it = pair[1];
+      if (it && it.text && (!it.matched || !it.matched.length)) {
+        if (!manualRules) manualRules = KH.Compiler.compileAll(cfg) || [];
+        for (const r of manualRules) {
+          const meta2 = r.meta || {};
+          if (!meta2.imgOcr) continue;
+          const ji = judgeInfo(r, it.text, []);
+          if (!ji.hits.length) continue;
+          it.matched = ji.hits;
+          it.rule = r;
+          it.ruleId = r.ruleId;
+          it.keyword = String(meta2.imgOcrKeyword || '');
+          break;
+        }
+      }
+      next.set(pair[0], it);
+    }
     items = next;
     /* 采集完再统一排队（先建表再提交，避免结果回来时条目还没建） */
     for (const it of items.values()) {

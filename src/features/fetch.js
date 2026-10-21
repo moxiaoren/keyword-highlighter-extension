@@ -1497,23 +1497,43 @@
      * 对象，里面带 `label`（每个字段都不同）⇒ 真机里任何两个字段的签名都不相等，合并永远
      * 不触发（单测当时喂的是 `opt:null`，所以没抓到）。同理 `rows` 里的 `rs/cs` 是排版提示，
      * 相同内容在 grid 分支会被加上，也不该参与比较。 */
-    const contentOf = (it) => (it.rows || []).map((line) => (line || []).map((c) => String((c && c.t) == null ? '' : c.t)));
+    /* 【2.0.6.2 需求③】空格必须**不参与**比较：抓取值来自 `cellVisualText`（多段用空格拼），
+     * OCR 值来自引擎的 `joinParts`（字距一宽就插空格）——`A公司` 与 `A 公司` 是同一个值，
+     * 按原样比就永远合不上，这正是用户看到的「OCR 行和抓取行同值却不合并」。
+     * 只压空白，不做别的模糊归一（大小写/标点仍算不同）：归一过度会把真不同的值并成一条。 */
+    const squashVal = (v) => String(v == null ? '' : v).replace(/[\s\u3000]+/g, '');
+    const contentOf = (it) => (it.rows || []).map((line) => (line || []).map((c) => squashVal(c && c.t)));
     const imgPolicyOf = (opt) => [!!(opt && opt.imgOnly), (opt && opt.imgLimit) || 0, !!(opt && opt.noImg)];
-    const sigOf = (it) => JSON.stringify([contentOf(it), imgPolicyOf(it.opt)]);
+    const sigOf = (it) => JSON.stringify([contentOf(it), it.ocr ? 'ocr' : imgPolicyOf(it.opt)]);
+    const contentSigOf = (it) => JSON.stringify(contentOf(it));
+    /* 合并后的字段名用 `\u0001` 当分隔符（不落进笔记 HTML）：用户自己的字段名里可能带 `/`，
+     * 用 `/` 拼再按 `/` 切就会把「运营/商务」误认成两个合并字段、抬头只显示「商务」（2.0.6.2 需求⑦）。 */
+    const LBL_SEP = '\u0001';
     const bySig = new Map();
+    const byContent = new Map();
     const merged = [];
     for (const it of items) {
       const sig = sigOf(it);
-      const prev = bySig.get(sig);
+      const csig = contentSigOf(it);
+      let prev = bySig.get(sig);
+      /* 【2.0.6.2 需求③】OCR 行没有"图片策略"可言（`opt:null`），严格签名永远对不上抓取字段
+       * ⇒ 只要**有一侧是 OCR 行**、内容（压掉空白后）相同就合并。两条都是抓取字段时仍按严格签名比
+       * （`#图` 与普通字段的图片语义不能被吞掉）。 */
+      if (!prev) {
+        const cand = byContent.get(csig);
+        if (cand && (it.ocr || cand.ocr)) prev = cand;
+      }
       if (prev) {
         /* 【2.0.2.19 需求②】OCR 行与抓取字段同值合并时，**图上原件里的字段名排前面**：
          * 用户口径「抓取 `员工名字|张三`」+「图里 `姓名|张三`」⇒「`姓名/员工名字` | 张三」——
          * 证件/截图上的叫法才是这条信息的本名，抓取别名是页面自己的说法。
          * 两条都是 OCR 行时保持"先见者在先"（同一批识别结果，没有谁更权威）。 */
-        prev.label = (it.ocr && !prev.ocr) ? (it.label + '/' + prev.label) : (prev.label + '/' + it.label);
+        prev.label = (it.ocr && !prev.ocr) ? (it.label + LBL_SEP + prev.label) : (prev.label + LBL_SEP + it.label);
+        if (!prev.ocr) prev.ocr = !!it.ocr;
         continue;
       }
       bySig.set(sig, it);
+      if (!byContent.has(csig)) byContent.set(csig, it);
       merged.push(it);
     }
 
@@ -1524,7 +1544,7 @@
      * 后面跟一个聚合数量，点数量展开看全部（`<details>` 原生就能展开，不用挂 JS，笔记 HTML 存进卡片也照样工作）。
      * 单个字段名（没有 `/`）一个字都不改，老笔记的 `.kh-lbt` 包裹逻辑也不受影响。 */
     const labelCellHtml = (label) => {
-      const parts = String(label == null ? '' : label).split('/').map((s) => s.trim()).filter(Boolean);
+      const parts = String(label == null ? '' : label).split(LBL_SEP).map((s) => s.trim()).filter(Boolean);
       if (parts.length < 2) return escHtml(label);
       let best = parts[0];
       for (const p of parts) if (p.length < best.length) best = p;

@@ -108,6 +108,15 @@
           return true;
         }
 
+        case MSG.TAB_SWITCH:
+          /* 【2.0.6.2 需求⑤】切页了：新页可不可高亮由本页自己按配置判（SiteRules 唯一实现）。
+           * 不可高亮 ⇒ 本页（即将看不见的那个页）什么都不清；可高亮 ⇒ 完全清理。
+           * 返回 false：不需要回执，等它自己算完。 */
+          if (KH.Scheduler && typeof KH.Scheduler.noteTabSwitch === 'function') {
+            KH.Scheduler.noteTabSwitch(msg && msg.url);
+          }
+          return false;
+
         case MSG.REBUILD_REQUEST:
           try {
             const r = KH.rebuild({ source: 'request' });

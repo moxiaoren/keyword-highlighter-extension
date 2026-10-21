@@ -22,6 +22,10 @@
 
   const KH = (typeof window !== 'undefined' ? (window.KH = window.KH || {}) : (globalThis.KH = globalThis.KH || {}));
 
+  /* 【2.0.6.2 需求⑤】切走之后等后台告诉我们"新页是谁"的宽限时间：`tabs.onActivated` 一般
+   * 几毫秒就到；等不到（后台没跑/老版本）就按旧口径只清视觉，绝不把本页状态清空去赌。 */
+  const VIS_CLEAR_DELAY = 1200;
+
   const Scheduler = {
     _observer: null,
     /** 观察参数（唯一一份，主文档与各 ShadowRoot 共用）
@@ -631,20 +635,60 @@
       if (!this._config || this._config.suspendInactiveTab === false) return;
       this._visHandler = () => {
         if (document.hidden) {
-          // 省资源：只清**视觉**、保留命中表与缓存（切回时 request(gap:0) 立即重建）。
-          // 必须走 Rebuilder.clear（唯一清理出口）—— 直接调 Renderer.clear() 就是
-          // 第二条视觉清理路径（策划案 §4.7 / 附录A §4：清理只有一条实现）。
-          if (KH.Rebuilder) KH.Rebuilder.clear(null, { visual: true, registry: false, reason: 'visibility' });
+          /* 【2.0.6.2 需求⑤】切走时**先别清**，等后台广播"新页是谁"（`MSG.TAB_SWITCH`）：
+           *   · 新页不可高亮（黑名单 / 白名单以外 / 该站禁用 / chrome 内部页）⇒ 本页高亮与
+           *     重要笔记缓存**原样留着**（用户口径：那只是"新页不需要高亮"，不是本页作废）；
+           *   · 新页可高亮 ⇒ 完全清理（同一时刻只允许一个标签页在建立高亮/笔记）。
+           * 等不到广播就退回旧口径：只清**视觉**、保留命中表与缓存（切回 gap:0 立刻重建）。 */
+          if (this._visClearTimer) clearTimeout(this._visClearTimer);
+          this._visClearTimer = setTimeout(() => {
+            this._visClearTimer = null;
+            this.clearInactive('visibility');
+          }, VIS_CLEAR_DELAY);
         } else {
+          if (this._visClearTimer) { clearTimeout(this._visClearTimer); this._visClearTimer = null; }
           this.request('visibility', { gap: 0 });
         }
       };
       document.addEventListener('visibilitychange', this._visHandler);
     },
 
+    /** 只清**视觉**：保留命中表与识别缓存（切回时 `request(gap:0)` 立即重画） */
+    clearInactive(reason) {
+      /* 必须走 Rebuilder.clear（唯一清理出口）—— 直接调 Renderer.clear() 就是
+       * 第二条视觉清理路径（策划案 §4.7 / 附录A §4：清理只有一条实现）。 */
+      if (KH.Rebuilder) KH.Rebuilder.clear(null, { visual: true, registry: false, reason: reason || 'visibility' });
+    },
+
+    /** 完全清理：高亮 + 注册表 + 识别缓存 + 面板壳（切到可高亮页时用，省内存也省 CPU） */
+    clearForGood() {
+      if (KH.Rebuilder) KH.Rebuilder.clear(null, { visual: true, registry: true, reason: 'destroy' });
+    },
+
+    /**
+     * 后台说"当前前台标签页换成了 url"（`MSG.TAB_SWITCH`）。
+     * 只在"本页刚切走、清理还没落地"的那个窗口内处理；判定用唯一实现 `SiteRules.shouldHighlight`。
+     */
+    noteTabSwitch(url) {
+      if (!this._visClearTimer) return;
+      clearTimeout(this._visClearTimer);
+      this._visClearTimer = null;
+      const c = this._config || {};
+      const href = String(url || '');
+      let host = '';
+      try { host = String(new URL(href).hostname || ''); } catch (e) { host = ''; }
+      /* 拿不到主机名（chrome://、空白页、读不到 url）= 不在可高亮范围 ⇒ 什么都不清 */
+      const ok = !!(host && KH.SiteRules && typeof KH.SiteRules.shouldHighlight === 'function' &&
+        KH.SiteRules.shouldHighlight(host, href, c));
+      if (!ok) return;
+      this.clearForGood();
+    },
+
     /** 全量下线（destroy / 切站点 / 插件停用） */
     teardownAll() {
       this.teardownObserver();
+      clearTimeout(this._visClearTimer);
+      this._visClearTimer = null;
       clearInterval(this._timers.poll);
       clearInterval(this._timers.fingerprint);
       clearInterval(this._timers.growth);

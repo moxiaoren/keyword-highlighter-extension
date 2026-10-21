@@ -317,27 +317,38 @@
   /** 给一张图挂状态框（三态 + 悬停说明）；`it` 为空就只清状态 */
   function markOneImg(im, it) {
     if (!im || !im.classList) return;
-    for (let i = 0; i < IMG_MARK_CLS.length; i++) im.classList.remove(IMG_MARK_CLS[i]);
-    if (!it) {
-      if (im.removeAttribute) im.removeAttribute('title');
-      return;
-    }
     const V = (KH.OcrCopy && KH.OcrCopy.VIEW) || {};
-    const st = String(it.state || '');
-    const words = hitWords(it);
-    if (st === 'done' && words.length) {
-      im.classList.add('khin-imghit');
-      im.title = KH.OcrCopy.render(KH.OcrCopy.VIEW.imgHitTip, { matched: words.join('、') });
-      return;
+    let want = '';
+    let tip = null;
+    if (it) {
+      const st = String(it.state || '');
+      const words = hitWords(it);
+      if (st === 'done' && words.length) {
+        want = 'khin-imghit';
+        tip = KH.OcrCopy.render(KH.OcrCopy.VIEW.imgHitTip, { matched: words.join('、') });
+      } else if (st === 'done' || st === 'fail') {
+        want = 'khin-imgmiss';
+        const why = st === 'fail' ? (V.imgFailTip || '') : missReason(it);
+        tip = (V.imgMissTip || '') + (why ? '（' + why + '）' : '');
+      } else {
+        want = 'khin-imgbusy';
+        tip = V.imgBusyTip || '';
+      }
     }
-    if (st === 'done' || st === 'fail') {
-      im.classList.add('khin-imgmiss');
-      const why = st === 'fail' ? (V.imgFailTip || '') : missReason(it);
-      im.title = (V.imgMissTip || '') + (why ? '（' + why + '）' : '');
-      return;
+    /* 【2.0.6.2 需求④】只写**真正变了的**属性：旧写法每次都 `remove` 三态再 `add` 一遍，
+     * 即使状态没变也会让 `class` 属性连跳两次；而调度器的 MutationObserver 恰好盯着 `class`
+     * （`attributeFilter:['class']`）⇒ 自己触发自己，页面越静它越扫，用户看到的就是"没操作也在闪/在重建"。 */
+    for (let i = 0; i < IMG_MARK_CLS.length; i++) {
+      const cls = IMG_MARK_CLS[i];
+      if (cls !== want && im.classList.contains(cls)) im.classList.remove(cls);
     }
-    im.classList.add('khin-imgbusy');
-    im.title = V.imgBusyTip || '';
+    if (want && !im.classList.contains(want)) im.classList.add(want);
+    const have = im.getAttribute ? im.getAttribute('title') : null;
+    if (tip == null) {
+      if (have != null && im.removeAttribute) im.removeAttribute('title');
+    } else if (have !== tip) {
+      im.title = tip;
+    }
   }
 
   /**
@@ -2200,6 +2211,37 @@
   function kvValueInLine(line, re) {
     return kvSegInLine(line, re).value;
   }
+  /* 【2.0.6.2 需求⑥】值**截到下一个字段名之前**：OCR 归行会把贴得很近的两条物理行并成一行
+   * （`offscreen/ocr.js` 的 `stitchRows`），于是本行的值后面常跟着下一行的标签
+   * （`授权人 沈阳…分公司 授权人 合肥…分公司`）。旧写法「取右侧全部格 / 取整行剩余」会把
+   * 标签和下一行的值一起塞进这一格——用户看到的「一个单元格里有两个字段名」。
+   * 判据只有一条：命中词（同一个词再出现一次也算，那已经是下一条）出现的位置就是边界。 */
+  function kvCutValue(raw, matchers, self) {
+    const s = String(raw == null ? '' : raw).trim();
+    if (!s) return s;
+    let cut = s.length;
+    for (const mt of matchers) {
+      /* 自己第一次出现就是标签本身（可能落在首位）⇒ 从 1 开始找第二次 */
+      const from = (mt.word === self) ? 1 : 0;
+      const m = mt.re.exec(s.slice(from));
+      if (!m) continue;
+      const at = from + m.index;
+      if (at > 0 && at < cut) cut = at;
+    }
+    return s.slice(0, cut).trim();
+  }
+  /** 这一格是不是「字段名」（命中词之一；后面紧跟值也算 ⇒ 按前缀认） */
+  function kvIsLabelCell(text, matchers) {
+    const t = squashWs(text);
+    if (!t) return false;
+    for (const mt of matchers) {
+      const w = squashWs(mt.word);
+      if (!w) continue;
+      if (t === w) return true;
+      if (w.length >= 2 && t.indexOf(w) === 0 && t.length <= w.length + 2) return true;
+    }
+    return false;
+  }
 
   /* ---------------- 值被 OCR 换行拆到下一行（`词：` / `值`） ----------------
    * 只在「命中词后面紧跟着分隔符、但分隔符后是空的」时才往下看，且必须过三道闸，
@@ -2252,10 +2294,14 @@
     const out = [];
     const seen = new Set();
     const pushRow = (label, value) => {
-      const sig = label + '\u0000' + value;
+      const v = String(value == null ? '' : value).trim();
+      if (!v) return;
+      /* 【2.0.6.2 需求⑧】去重键压掉空白：OCR 同一个值在不同图里可能一个带空格一个不带，
+       * 按原样比会把同一条信息记两遍（表格里就出现两行一样的）。 */
+      const sig = label + '\u0000' + squashWs(v);
       if (seen.has(sig)) return;
       seen.add(sig);
-      out.push({ label: label, value: value });
+      out.push({ label: label, value: v });
     };
     for (const it of list) {
       /* 【2.0.6.1 需求⑦】把「行」与「命中」拉回同一条判据：条目的动态判据（`imgOcrNeed`）没满足时
@@ -2277,21 +2323,29 @@
           }
           let rowDone = false;
           if (vi >= 0 && vi < cells.length - 1) {
-            const value = cells.slice(vi + 1)
-              .map((c) => String((c && c.t) || '').trim()).filter(Boolean).join(' ').trim();
+            /* 【2.0.6.2 需求⑥】值只取到**下一个字段名之前**：被 `stitchRows` 并进来的下一行
+             * 标签格（`cells.slice(vi+1)` 原本一路吃到行尾）不算值。 */
+            const parts = [];
+            for (let i = vi + 1; i < cells.length; i++) {
+              const t = String((cells[i] && cells[i].t) || '').trim();
+              if (!t) continue;
+              if (kvIsLabelCell(t, matchers)) break;
+              parts.push(t);
+            }
+            const value = kvCutValue(parts.join(' '), matchers, mt.word);
             if (value) { pushRow(mt.word, value); rowDone = true; }
           }
           if (rowDone) continue;
           /* ② 文本行：命中词 + 分隔符 + 值（**标题格必须是这个词**，值只取分隔符之后） */
           const seg = kvSegInLine(line, mt.re);
           if (!seg.hit) continue;
-          if (seg.value) { pushRow(mt.word, seg.value); continue; }
+          if (seg.value) { pushRow(mt.word, kvCutValue(seg.value, matchers, mt.word)); continue; }
           /* ③ 值被 OCR 换行拆到下面（图里是 `词：值`，识别成 `词：` / `值`）：
            * 只认「词后紧跟着分隔符」这一种（表格里词格后为空也算），其余一律不往下看。 */
           if (!seg.sep && vi < 0) continue;
           if (seg.sep && vi >= 0 && vi < cells.length - 1) continue; /* 后面有格但为空 ⇒ 不偷下一行 */
           const next = kvNextValue(rawLines, li + 1, mt.word, matchers);
-          if (next) pushRow(mt.word, next);
+          if (next) pushRow(mt.word, kvCutValue(next, matchers, mt.word));
         }
       }
     }
@@ -2364,9 +2418,13 @@
   function ocrNoteSig() {
     if (!KH.ImgOcr || typeof KH.ImgOcr.items !== 'function') return '';
     try {
+      /* 【2.0.6.2 需求①】指纹里要包含**命中词内容**而不只是条数：把命中词换成一个等长的词
+       * （或同一条条目换了规则/换了动态值）时旧写法指纹不变 ⇒ 笔记表不重画，用户看到"加了词却没变"。 */
       return (KH.ImgOcr.items() || []).map((it) => [
         it && it.ruleId, it && it.key, it && it.state,
-        String((it && it.text) || '').length, ((it && it.matched) || []).length
+        String((it && it.text) || '').length,
+        ((it && it.matched) || []).map((m) => String((m && m.text) || '')).join('|'),
+        ((it && it.needMissingValues) || []).join('|')
       ].join(':')).join(';');
     } catch (e) { return ''; }
   }

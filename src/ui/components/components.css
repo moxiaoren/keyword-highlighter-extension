@@ -840,11 +840,19 @@
 .kh-cand-clamp.is-open .kh-cand-field { flex-wrap: wrap; overflow: visible; }
 .kh-cand-clamp.is-open .kh-cand-field > .kh-lbl-preview { flex-wrap: wrap; overflow: visible; }
 /* 「展开」＝**完整展示**（用户 m02382）：① 字段从半行让到整行，长词不再挤在 148px 里；
- * ② 胶囊名字取消 12em 上限与省略号，允许在胶囊内换行 —— 否则长词永远是「2018年第一季度华…」。 */
-.kh-cand-clamp.is-open { flex: 1 1 100%; }
+ * ② 胶囊名字取消 12em 上限与省略号，允许在胶囊内换行 —— 否则长词永远是「2018年第一季度华…」。
+ * 【2.0.6.2 需求②】展开态必须和文本态**同一口径**（`:874` 早有 `min-width:0; contain:inline-size`），
+ * 否则一长就把模块撑宽：`flex:1 1 100%` 只管"占满"，`min-width:auto` 仍按内容最小宽算，
+ * 而 `.kh-editor-col` / `.kh-editor-sec` / `.kh-fld` / `.kh-fld-sub` 一条 overflow 都没有 ⇒ 溢出到弹窗正文。
+ * `contain: inline-size` 让宽度只跟父容器算（高度照常随内容长），这是 2.0.2.16/2.0.2.18 两次实测出来的写法。 */
+.kh-cand-clamp.is-open { flex: 1 1 100%; min-width: 0; max-width: 100%; contain: inline-size; }
 .kh-cand-clamp.is-open .kh-lbl-name { max-width: none; white-space: normal; overflow-wrap: anywhere; }
 /* 抓取字段的胶囊带后缀徽标（`#图3` / `%4`）：胶囊本身不参与压缩，否则徽标会被裁掉 */
 .kh-cand-token .kh-lbl-chip { flex: 0 0 auto; }
+/* 展开态例外：名字已经能在胶囊里换行（上一行），胶囊必须允许被压到容器宽，
+ * 否则一个没有分隔符的超长词只能整块溢出（折叠态被 `:834` 的 `overflow:hidden` 压住，看不出来）。 */
+.kh-cand-clamp.is-open .kh-lbl-chip,
+.kh-cand-clamp.is-open.kh-cand-token .kh-lbl-chip { flex: 0 1 auto; min-width: 0; }
 
 /* ==== 【2.0.2.16 需求②】候选框的**文本态**：点框面空白处 ⇒ 胶囊还原成一整串文本（`|` 分隔），
  * 回车 / 点框外再收成胶囊。四个候选框（关键词 / 标题关键词 / 字段 / 图片命中关键词）共用这一份

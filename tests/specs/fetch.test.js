@@ -1414,4 +1414,42 @@ module.exports = async function run() {
     truthy(one.indexOf('>开发者</td>') >= 0, '单个名字原样输出');
   });
 
+  /* 【2.0.6.2 需求③】用户原话：「关于「词：值」和表格形式的词|值，展示到重要笔记悬窗表格，内容一致
+   * 合并的功能似乎还是没有实现（这个合并包括原有的抓取字段表格。比如，抓取自动抓取到的开发者-a公司，
+   * 图片ocr抓取并展示的著作权人-a公司，合并成开发者/著作权人-a公司）」。真因有两层：
+   * ① 签名按**原样**比，而抓取值与 OCR 值拼空白的口径不同（`A公司` vs `A 公司`）；
+   * ② OCR 行没有图片策略（`opt:null`），严格签名永远对不上抓取字段。 */
+  await test('★ OCR 行与抓取行同值（只差空格）必须合并成一列（2.0.6.2 需求③）', () => {
+    const merged = F.rowsToTableHtml([
+      { label: '开发者', rows: [[{ t: '厦门房在线科技有限公司' }]] },
+      { label: '著作权人', ocr: true, rows: [[{ t: '厦门房 在线科技有限公司' }]] }
+    ]);
+    eq((merged.match(/kh-table-label/g) || []).length, 1, '★ 必须只剩一个字段名格：' + merged);
+    eq((merged.match(/厦门房/g) || []).length, 1, '值只写一遍');
+    /* 2.0.2.19 需求②：图上原件里的字段名排前面 */
+    /* 2.0.2.19 需求②：图上原件里的字段名排前面；2.0.6.1 需求⑥：抬头只写最短的那个，
+     * 全串在 `title` 里、点数量展开看全部 ⇒ 这里按"最短名在抬头、OCR 名在首位"验。 */
+    truthy(merged.indexOf('title="著作权人/开发者"') >= 0, '★ OCR 行的字段名排在前面：' + merged);
+    truthy(/kh-table-all">著作权人<br>开发者</.test(merged), '另一个名字挂在 `<details>` 里');
+    /* 反例：内容不同 ⇒ 绝不合并（OCR 行也一样） */
+    const diff = F.rowsToTableHtml([
+      { label: '开发者', rows: [[{ t: '厦门房在线科技有限公司' }]] },
+      { label: '著作权人', ocr: true, rows: [[{ t: '厦门房在线信息技术有限公司' }]] }
+    ]);
+    eq((diff.match(/kh-table-label/g) || []).length, 2, '值不同 ⇒ 两个字段名格');
+    /* 反例：两个抓取字段策略不同仍不合并（OCR 才放宽） */
+    const IMG = '\u0001KHIMG\u0001a|https://ex.com/a.png\u0001ENDIMG\u0001';
+    const optDiff = F.rowsToTableHtml([
+      { label: '截图', opt: { imgOnly: true }, rows: [[{ t: IMG }]] },
+      { label: '截图2', opt: null, rows: [[{ t: IMG }]] }
+    ]);
+    eq((optDiff.match(/kh-table-label/g) || []).length, 2, '两条抓取字段图片策略不同 ⇒ 照旧不合并');
+  });
+
+  await test('★ 字段名自带 `/` 不许被当成「合并出来的两个字段」（2.0.6.2 需求⑦）', () => {
+    const html = F.rowsToTableHtml([{ label: '运营/商务', rows: [[{ t: '张三' }]] }]);
+    eq((html.match(/kh-table-more/g) || []).length, 0, '不是合并 ⇒ 不许出聚合数量小标');
+    truthy(html.indexOf('>运营/商务</td>') >= 0, '★ 名字原样保留：' + html);
+  });
+
 };

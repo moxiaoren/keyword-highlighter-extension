@@ -129,4 +129,75 @@ module.exports = async function run() {
       } finally { Date.now = realNow; }
     });
   });
+
+  /* ==========================================================================
+   * 2.0.6.2 需求⑤：切到"不可高亮"的标签页时不许清掉上一个标签页
+   * --------------------------------------------------------------------------
+   * 用户口径（m08130 第 5 条）：新页不在可高亮范围（黑名单 / 白名单以外 / 该站被禁用）⇒
+   * 上一个标签页的高亮与重要笔记缓存**留着**；新页可高亮 ⇒ 完全清理（同一时刻只留一个标签页）。
+   */
+  suite('切页清理按"新页可不可高亮"决定（2.0.6.2 需求⑤）');
+
+  await test('★ 新页不可高亮 ⇒ 一个字都不清', () => {
+    const saved = { clear: KH.Rebuilder.clear, should: KH.SiteRules && KH.SiteRules.shouldHighlight, cfg: S._config };
+    const calls = [];
+    try {
+      S._config = { siteRules: [] };
+      KH.Rebuilder.clear = (root, opts) => calls.push(opts || {});
+      KH.SiteRules.shouldHighlight = () => false;
+      S._visClearTimer = setTimeout(() => {}, 5000);
+      S.noteTabSwitch('https://blacklisted.example.com/x');
+      eq(calls.length, 0, '不可高亮 ⇒ 不许调用清理');
+      eq(S._visClearTimer, null, '待清理定时器要收掉（否则等会儿又自己清一遍）');
+    } finally {
+      clearTimeout(S._visClearTimer);
+      S._visClearTimer = null;
+      KH.Rebuilder.clear = saved.clear;
+      if (saved.should) KH.SiteRules.shouldHighlight = saved.should;
+      S._config = saved.cfg;
+    }
+  });
+
+  await test('★ 新页可高亮 ⇒ 完全清理（注册表 + 视觉一起清）', () => {
+    const saved = { clear: KH.Rebuilder.clear, should: KH.SiteRules && KH.SiteRules.shouldHighlight, cfg: S._config };
+    const calls = [];
+    try {
+      S._config = { siteRules: [] };
+      KH.Rebuilder.clear = (root, opts) => calls.push(opts || {});
+      KH.SiteRules.shouldHighlight = () => true;
+      S._visClearTimer = setTimeout(() => {}, 5000);
+      S.noteTabSwitch('https://ok.example.com/x');
+      eq(calls.length, 1, '可高亮 ⇒ 必须清一次');
+      eq(calls[0].registry, true, '完全清理要连注册表/识别缓存一起清');
+      eq(calls[0].visual, true);
+    } finally {
+      clearTimeout(S._visClearTimer);
+      S._visClearTimer = null;
+      KH.Rebuilder.clear = saved.clear;
+      if (saved.should) KH.SiteRules.shouldHighlight = saved.should;
+      S._config = saved.cfg;
+    }
+  });
+
+  await test('★ 没在切页（没有待清理定时器）时收到广播 ⇒ 什么都不做；拿不到 url 也一律不清', () => {
+    const saved = { clear: KH.Rebuilder.clear, should: KH.SiteRules && KH.SiteRules.shouldHighlight, cfg: S._config };
+    const calls = [];
+    try {
+      S._config = { siteRules: [] };
+      KH.Rebuilder.clear = (root, opts) => calls.push(opts || {});
+      KH.SiteRules.shouldHighlight = () => true;
+      S._visClearTimer = null;
+      S.noteTabSwitch('https://ok.example.com/x');
+      eq(calls.length, 0, '本页没在切走，广播与它无关');
+      S._visClearTimer = setTimeout(() => {}, 5000);
+      S.noteTabSwitch('');            // chrome:// 等读不到 url 的页
+      eq(calls.length, 0, '拿不到主机名 ⇒ 按"不可高亮"处理，绝不清缓存');
+    } finally {
+      clearTimeout(S._visClearTimer);
+      S._visClearTimer = null;
+      KH.Rebuilder.clear = saved.clear;
+      if (saved.should) KH.SiteRules.shouldHighlight = saved.should;
+      S._config = saved.cfg;
+    }
+  });
 };

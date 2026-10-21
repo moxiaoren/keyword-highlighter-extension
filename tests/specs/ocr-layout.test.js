@@ -140,9 +140,16 @@ module.exports = async function run() {
     const rule = { meta: { imgOcr: true, imgOcrKeyword: '姓名', imgOcrNeed: '姓名' } };
     const dynOnly = { meta: { imgOcr: true, imgOcrKeyword: '', imgOcrNeed: '姓名' } };
 
-    await test('★ 点名了但值不在图上 ⇒ 不命中（用户原例的否定侧）', () => {
-      eq(IO.judge(rule, '姓名\n岗位\n财务', ['张三']).length, 0, '图里只有「姓名」没有「张三」');
-      eq(IO.judge(dynOnly, '姓名\n岗位\n财务', ['张三']).length, 0, '只配动态判据时同理');
+    await test('★ 点名了但值不在图上：缺的值点名，静态命中不再被连带清零（2.0.6.2 需求①）', () => {
+      /* 旧口径是"一票否决"（缺一个值 ⇒ 连静态命中一起清），真机表现就是用户 m08130 第 1 条：
+       * 事后加一个图片命中关键词，原本能命中的条目反而全灭。现在命中的定义回到直觉，
+       * 缺什么用 `missingValues` 说出来（KV 行仍按它过滤）。 */
+      const a = IO.judgeInfo(rule, '姓名\n岗位\n财务', ['张三']);
+      eq(a.hits.length, 1, '静态词「姓名」在图上 ⇒ 照旧命中');
+      eq(JSON.stringify(a.missingValues), '["张三"]', '缺的值必须点名');
+      const b = IO.judgeInfo(dynOnly, '姓名\n岗位\n财务', ['张三']);
+      eq(b.hits.length, 0, '只配动态判据、值又不在图上 ⇒ 确实没命中');
+      eq(JSON.stringify(b.missingValues), '["张三"]');
     });
 
     await test('★ 值也在图里 ⇒ 命中（用户原例的肯定侧）', () => {
@@ -160,8 +167,10 @@ module.exports = async function run() {
         '没有动态要求时唯一口径还是静态词：静态词没命中就是不命中');
     });
 
-    await test('★ 两条都配 ⇒ 且（静态词没命中，值在也不命中）', () => {
-      eq(IO.judge(rule, '员工名字：张三', ['张三']).length, 0);
+    await test('★ 两条都配：静态词没中也不清零动态命中，用 staticMiss 点名（2.0.6.2 需求①）', () => {
+      const ji = IO.judgeInfo(rule, '员工名字：张三', ['张三']);
+      eq(ji.hits.length, 1, '值在图上 ⇒ 命中照留（旧口径这里返回 0，正是用户报的"加词反而全灭"）');
+      eq(ji.staticMiss, true, '「静态词没判中」要作为诊断带出去，而不是偷偷把命中也清零');
     });
 
     await test('★ 不看大小写（OCR 出的英文大小写不可控）', () => {
@@ -390,5 +399,44 @@ module.exports = async function run() {
       eq(JSON.stringify(IO.needNames('开发者 ! ^高价')), JSON.stringify(['开发者']),
         '★ 用户担心的「加的后缀也参与命中」在这里被否掉');
       eq(JSON.stringify(IO.needNames('开发者 ! ^高价|著作权人')), JSON.stringify(['开发者', '著作权人']));
+    });
+
+  /* ==================================================================
+   * 【2.0.6.2 需求⑥⑧】「词：值」行的**值边界**与去重
+   *   用户现场（m08130 第 6 条）：`授权人-沈阳…分公司` 那一格里同时出现了下一个字段名
+   *   （`授权人`）和它的值。根因是 OCR 归行（`offscreen/ocr.js` 的 `stitchRows`）会把贴得很近的
+   *   两条物理行并成一行，旧写法「取右侧全部格 / 取整行剩余」就把下一行的标签一起吞了。
+   * ================================================================== */
+  suite('2.0.6.2 需求⑥⑧：值截到下一个字段名之前 + 同值去重压空白');
+    const kvLab = (cells, text) => ({ ruleId: 'r1', state: 'done', text: text, lineList: [{ t: text, cells: cells }] });
+    const kvRows = (items, kw) => withItems(items, () => ocrExtraRows({ pinId: 'r1', imgOcr: true, imgOcrKeyword: kw }));
+
+    await test('★ 表格形式：值只到下一个字段名之前（不许把下一行标签吞进这一格）', () => {
+      /* 归行把两条物理行并成一行：`授权人 合肥…` 的标签格也挂在本行 cells 上 */
+      const it = kvLab([
+        cell(10, 60, '授权人'), cell(80, 240, '沈阳某某分公司'),
+        cell(260, 310, '授权人'), cell(330, 490, '合肥某某分公司')
+      ], '授权人 沈阳某某分公司 授权人 合肥某某分公司');
+      const rows = kvRows([it], '授权人#表');
+      eq(rows.length, 1, JSON.stringify(rows));
+      eq(rows[0].value, '沈阳某某分公司', '★ 值里不许出现下一个字段名（旧实现取右侧全部格）');
+    });
+
+    await test('★ 文本行：同一个词再来一次就是边界（整行剩余不许整段当值）', () => {
+      const it = kvLab([], '授权人 沈阳某某分公司 授权人 合肥某某分公司');
+      const rows = kvRows([it], '授权人#表');
+      eq(rows[0].value, '沈阳某某分公司', '★ 旧实现给的是「沈阳某某分公司 授权人 合肥某某分公司」');
+    });
+
+    await test('★ 别的命中词也是边界（`姓名 张三 部门 研发` 里姓名只能取张三）', () => {
+      const it = kvLab([], '姓名 张三 部门 研发部');
+      const rows = kvRows([it], '姓名#表|部门#表');
+      eq(JSON.stringify(rows), JSON.stringify([{ label: '姓名', value: '张三' }, { label: '部门', value: '研发部' }]));
+    });
+
+    await test('★ 去重键压掉空白：同一个值带着不同空格只留一条（需求⑧）', () => {
+      const a = kvLab([], '授权人：厦门房在线科技有限公司');
+      const b = kvLab([], '授权人：厦门房 在线科技有限公司');
+      eq(kvRows([a, b], '授权人#表').length, 1, '★ 只差空格 ⇒ 同一个值，不许记两行');
     });
 };

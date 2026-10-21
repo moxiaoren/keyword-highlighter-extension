@@ -39,6 +39,12 @@
     SITE_TOGGLE: 'kh:site:toggle',          // 临时禁用/启用当前站点
     SITE_CHANGED: 'kh:site:changed',        // 广播
 
+    /* ---- tab ---- */
+    /* 【2.0.6.2 需求⑤】切页广播：background 在 `tabs.onActivated` 时把"新页是谁"发给所有标签页，
+     * 由**内容脚本自己**用本地配置判定新页可不可高亮（判定只有一份实现：`SiteRules.shouldHighlight`）。
+     * payload: { url, tabId } */
+    TAB_SWITCH: 'kh:tab:switch',
+
     /* ---- debug（只读诊断；联调 / 真浏览器回归用） ---- */
     DEBUG_HITS: 'kh:debug:hits',            // 返回当前命中注册表快照（不改任何行为）
     DEBUG_DIAG: 'kh:debug:diag',            // 只读诊断：重建计数 / 最近触发来源 / 仅消费次数 / 相关性判定
