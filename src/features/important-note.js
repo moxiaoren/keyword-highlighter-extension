@@ -2425,12 +2425,28 @@
     /* 只有被标记的词才进表（唯一实现：`KH.ImgOcr.kvWords`，与匹配口径同一份标记语法） */
     const words = (typeof KH.ImgOcr.kvWords === 'function') ? (KH.ImgOcr.kvWords(meta.imgOcrKeyword) || []) : [];
     if (!words.length) return [];
-    const matchers = [];
-    for (const w of words) {
-      const re = kvLiteralRe(w, words);
-      if (re) matchers.push({ word: String(w).trim(), re: re });
-    }
-    if (!matchers.length) return [];
+    /* 【2.0.7.1 需求②】`#表` 词也认 `@字段名` 作用域：某字段配了限定词，就只用限定词补行。
+     * 同一个 label 只算一次（`kvLiteralRe` 要编译正则）。 */
+    const matcherCache = new Map();
+    const matchersFor = (label) => {
+      const k = String(label || '');
+      if (matcherCache.has(k)) return matcherCache.get(k);
+      let ws = words;
+      if (typeof KH.ImgOcr.scopedRaw === 'function' && typeof KH.ImgOcr.scopeKnown === 'function') {
+        try {
+          const known = KH.ImgOcr.scopeKnown({ meta: meta }) || [];
+          const scoped = KH.ImgOcr.scopedRaw(meta.imgOcrKeyword, k, known);
+          ws = (typeof KH.ImgOcr.kvWords === 'function') ? (KH.ImgOcr.kvWords(scoped) || []) : words;
+        } catch (e) { ws = words; }
+      }
+      const out = [];
+      for (const w of ws) {
+        const re = kvLiteralRe(w, ws);
+        if (re) out.push({ word: String(w).trim(), re: re });
+      }
+      matcherCache.set(k, out);
+      return out;
+    };
     let list = [];
     try { list = KH.ImgOcr.items() || []; } catch (e) { return []; }
     const out = [];
@@ -2446,12 +2462,16 @@
       out.push({ label: label, value: v });
     };
     for (const it of list) {
-      /* 【2.0.6.1 需求⑦】把「行」与「命中」拉回同一条判据：条目的动态判据（`imgOcrNeed`）没满足时
-       * `judge` 判**未命中**——不高亮、不加红框；旧写法只看 `state==='done'`，于是这种条目照样往表里
-       * 塞一行「词 | 值」，用户看到「表格里有这行，OCR 全文里却不高亮、图也没有红框」这套自相矛盾的画面。
-       * （`needMissingValues` 由 `ImgOcr.judgeInfo` 带出，只有动态判据失败的条目才有它。） */
+      /* 【2.0.6.1 需求⑦】把「行」与「命中」拉回同一条判据：条目真没命中就不该往表里塞行
+       * （否则出现「表格里有这行，OCR 全文里却不高亮、图也没有红框」的自相矛盾画面）。
+       * 【2.0.7.1 需求⑤】动态关键词是**或**：命中任意一个抓取值就算命中（`judgeInfo` 已按 OR 算好），
+       * 不再因为"另一个值图上没出现"整条拦掉（旧行为是 `needMissingValues` 非空就 `continue`，
+       * 静态词明明命中、表里却一行不出 —— 用户报的「#表 偶发不生效」）。
+       * `matched` 缺失 = 老条目（没有判决信息），按 done 照旧放行。 */
       if (!it || it.ruleId !== ruleId || it.state !== 'done' || !it.text) continue;
-      if (it.needMissingValues && it.needMissingValues.length) continue;
+      if (Array.isArray(it.matched) && !it.matched.length) continue;
+      const matchers = matchersFor(it.label);
+      if (!matchers.length) continue;
       const rawLines = String(it.text).split(/\r?\n/);
       for (let li = 0; li < rawLines.length; li++) {
         const line = rawLines[li].trim();

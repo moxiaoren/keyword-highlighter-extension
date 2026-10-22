@@ -84,6 +84,20 @@ module.exports = async function run() {
     eq(F.pdfRefOf(H.el('a', { href: 'javascript:void(0)' }, [])), '', '非 http(s) 协议一律不认');
   });
 
+  await test('★ 2.0.7.1 需求④：点击跳转控件（真地址不在 href）也要认', () => {
+    /* 用户现场：网页上是个按钮/链接，点开才跳到 PDF；href 只是 `javascript:;` 或跳板地址 */
+    const btn = H.el('a', { href: 'javascript:;', 'data-href': '/files/contract.pdf?id=3' }, [H.txt('查看附件')]);
+    eq(F.pdfRefOf(btn), new URL('/files/contract.pdf?id=3', location.href).href,
+      '★ data-href 里的 .pdf 必须认（旧版只看 href，于是判不出来）');
+    const dl = H.el('a', { href: 'javascript:void(0)', onclick: "open('/files/a.pdf')" }, [H.txt('下载')]);
+    eq(F.pdfRefOf(dl), new URL('/files/a.pdf', location.href).href, '★ onclick 里带的 .pdf 地址也认');
+    const jump = H.el('a', { href: '/api/doc/download?id=9988', title: '合同 PDF' }, []);
+    eq(F.pdfRefOf(jump), new URL('/api/doc/download?id=9988', location.href).href,
+      '★ 地址像下载入口 + 控件自己写着 PDF ⇒ 认（点击跳转的常见形态）');
+    const plain = H.el('a', { href: 'https://x.test/news/1.html', title: 'PDF 规范解读' }, []);
+    eq(F.pdfRefOf(plain), '', '普通页面链接哪怕标题有 PDF 也不许当附件（否则整页都在识别 HTML）');
+  });
+
   await test('★ 占位符 ⇒ 正文里是 `<span class="khin-pdf" data-khpdf>`（不加载阅读器）', () => {
     const mark = F.pdfPlaceholder(H.el('a', { href: 'https://x.test/a.pdf', title: '合同.pdf' }, []));
     truthy(mark && mark.indexOf('KHPDF') >= 0, '先落成带哨兵的占位符（正文整体转义时靠它保住）');

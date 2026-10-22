@@ -326,6 +326,8 @@
 
   /** `imgOcrKeyword` → 正则（编译一次、多处复用）。留空 = 没有匹配口径（不再回落核心词）。 */
   const ocrPatternCache = new Map();
+  /* 【2.0.7.1 需求①】字面兜底模式的缓存（键＝关键词原文，与正则缓存分开：两者语义不同） */
+  const ocrLiteralCache = new Map();
 
   /* ---------------- 【2.0.4 需求①】「键值行进表」后缀标记 ----------------
    * 用户口径：图上 `X：Y` 这种键值行并进重要笔记的抓取表，**必须先对那个词配一个后缀标记**才生效。
@@ -378,6 +380,64 @@
       .map((c) => c.replace(KV_MARK, '').trim()).filter(Boolean);
   }
 
+  /* ---------------- 【2.0.7.1 需求②】按抓取字段限定 OCR 关键词 ----------------
+   * 用户口径：没单独配就沿用原样（整份词对所有允许 OCR 的抓取字段生效）；某个词写了
+   * `@字段名` 之后，**那个字段只用这些限定词**（覆盖式，不是叠加）。静态词与动态词两份
+   * 列表各自独立判，互不影响。
+   * 字段名必须命中已配置的抓取字段裸名才当作用域 —— 否则 `@` 原样留在词里，
+   * 老用户把 `@` 当普通字符的写法一个字都不变。 */
+  function sameField(a, b) {
+    const norm = (s) => String(s == null ? '' : s).replace(WHITE_ALL, '').trim().toLowerCase();
+    return !!norm(a) && norm(a) === norm(b);
+  }
+
+  /** 已配置的抓取字段裸名（作用域合法值的唯一来源） */
+  function scopeKnown(rule) {
+    const out = [];
+    const F = KH.Fetch;
+    const raw = String((rule && rule.meta && rule.meta.fetchLabels) || '');
+    if (!raw || !F || typeof F.parseLabels !== 'function') return out;
+    let list = [];
+    try { list = F.parseLabels(raw) || []; } catch (e) { return out; }
+    for (const it of list) {
+      const name = String((it && it.label) || '').trim();
+      if (name && out.indexOf(name) < 0) out.push(name);
+    }
+    return out;
+  }
+
+  /** 一个词 → `{text, scope}`：`@字段名` 只有在 `known` 里才当作用域（`#表` 必须写在最末） */
+  function splitScope(chip, known) {
+    let s = String(chip == null ? '' : chip).trim();
+    let mark = '';
+    const km = KV_MARK.exec(s);
+    if (km) { mark = km[0]; s = s.slice(0, km.index).trim(); }
+    let scope = '';
+    const m = /@([^@\s]+)$/.exec(s);
+    if (m) {
+      const name = m[1].trim();
+      for (const k of (known || [])) {
+        if (sameField(k, name)) { scope = k; s = s.slice(0, m.index).trim(); break; }
+      }
+    }
+    return { text: s + mark, scope: scope };
+  }
+
+  /**
+   * 取「对某个抓取字段生效」的那份词（`|` 拼回，喂 `stripKvMarks` / `needNames`）。
+   * 覆盖式：该字段有 `@字段名` 词 ⇒ 只返回它们；没有 ⇒ 返回没写作用域的全部词（旧行为）。
+   * `field` 为空（右键条目 / 调不明字段）⇒ 只取无作用域的词，与旧行为一致。
+   */
+  function scopedRaw(raw, field, known) {
+    const chips = kvChips(raw);
+    if (!chips.length) return '';
+    const parts = chips.map((c) => splitScope(c, known));
+    const key = String(field == null ? '' : field).trim();
+    const mine = key ? parts.filter((p) => p.scope && sameField(p.scope, key)) : [];
+    if (mine.length) return mine.map((p) => p.text).join('|');
+    return parts.filter((p) => !p.scope).map((p) => p.text).join('|');
+  }
+
   /**
    * 「图片命中关键词」的**唯一编译点**（用户确认的匹配口径）：
    *   `useRegex: true` + `wholeWord: false` + `caseSensitive: false`
@@ -390,10 +450,34 @@
    * 【为什么走 `Compiler.buildPattern`】正则构造全工程只有一份（转义 / 全词边界 / `g` 兜底 /
    * 非法正则返回 null 都在那里）；在这里自己 `new RegExp` 就是第二份实现。
    */
-  function ocrPatternOf(rule) {
-    const raw = stripKvMarks(rule && rule.meta && rule.meta.imgOcrKeyword).trim();
+  function ocrPatternOf(rule, field) {
+    const known = scopeKnown(rule);
+    const raw = stripKvMarks(scopedRaw(rule && rule.meta && rule.meta.imgOcrKeyword, field, known)).trim();
     if (!raw) return null;
     return patternOf(raw);
+  }
+
+  /**
+   * 【2.0.7.1 需求①】**字面兜底**：用户词里带正则元字符（`C++`、`A(B)`、`1*2`）时，
+   * `buildPattern` 要么返回 `null`（非法正则 ⇒ 永不命中），要么按正则语义解释（`A+B` 只认
+   * `AAAB` 之类）—— 两种都是「OCR 正文里明明有，却显示未命中」。
+   * 所以正则路径**没命中**时，再按每个词的字面量找一遍；词仍按 `|` 分段（与主路径同口径）。
+   * 只在兜底位置用，正则能命中的时候语义一点不动。
+   */
+  function literalPatternOf(rawKey) {
+    const raw = String(rawKey == null ? '' : rawKey).trim();
+    if (!raw) return null;
+    if (ocrLiteralCache.has(raw)) return ocrLiteralCache.get(raw);
+    const segs = raw.split(/[|｜]/).map((s) => s.trim()).filter(Boolean);
+    let built = null;
+    if (segs.length) {
+      try {
+        const src = segs.map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+        built = new RegExp(src, 'gi');
+      } catch (e) { built = null; }
+    }
+    ocrLiteralCache.set(raw, built);
+    return built;
   }
 
   /**
@@ -446,10 +530,13 @@
    * 造一个**脱离文档**的文本节点，把整段识别文本当成"一个文本节点"跑同一个入口 ——
    * 于是"图片命中"与"文本命中"的匹配语义不会打架。
    */
-  function matchedInText(rule, text) {
+  function matchedInText(rule, text, field) {
     const U = (KH.Scanner && KH.Scanner.util) || {};
-    const pattern = ocrPatternOf(rule);
-    if (!pattern || typeof U.matchIn !== 'function') return [];
+    const known = scopeKnown(rule);
+    const rawKeyword = stripKvMarks(scopedRaw(rule && rule.meta && rule.meta.imgOcrKeyword, field, known)).trim();
+    const pattern = rawKeyword ? patternOf(rawKeyword) : null;
+    const literal = literalPatternOf(rawKeyword);
+    if ((!pattern && !literal) || typeof U.matchIn !== 'function') return [];
     const raw = String(text || '');
     /* 内核唯一匹配入口：造一个**脱离文档**的文本节点，把整段识别文本当成"一个文本节点" */
     const run = (pat, src) => {
@@ -460,7 +547,17 @@
         return [];
       }
     };
-    const direct = run(pattern, raw);
+    /* 【2.0.7.1 需求①】正则优先、字面兜底：正则跑不出命中时，再按词的字面量找一遍
+     * （`C++` 这类非法正则 / `A+B` 这类被正则语义吃掉的词，就靠这一步救回来）。 */
+    const runAny = (pats, src) => {
+      for (const p of pats) {
+        if (!p) continue;
+        const got = run(p, src);
+        if (got.length) return got;
+      }
+      return [];
+    };
+    const direct = runAny([pattern, literal], raw);
     if (direct.length) return direct;
     /* 【空白容忍 · 2.0.2.4 需求③】OCR 把「登记号」读成「登记 号」是常态（分栏/字距/表格线都会插空白），
      * 而"图片命中关键词"是人手打的 —— 一字之差就整条不命中，用户看到的是"识别了却说没命中"。
@@ -469,20 +566,16 @@
      *   ① 只在"直接匹配失败"后才走这条路 —— 不改变既有语义，零额外开销；
      *   ② 命中片段与区间**映射回原文**（见 `unshrinkRange`），面板上的词块与复制整句照旧可用；
      *   ③ 剔的只是**行内空白**（`WHITE_ALL` 不含 `\r`/`\n`）—— 跨行的词不算命中（票 #34 口径）。 */
-    const rawKeyword = stripKvMarks(rule && rule.meta && rule.meta.imgOcrKeyword).trim();
     const compactKeyword = rawKeyword.replace(WHITE_ALL, '');
     const textHasWs = WHITE_CHAR.test(raw);
     /* 两侧都没有空白 ⇒ 直接匹配已经就是终局，不走第二条路（零额外开销） */
     if (!textHasWs && compactKeyword === rawKeyword) return direct;
     const compact = textHasWs ? raw.replace(WHITE_ALL, '') : raw;
     const tries = [];
-    if (textHasWs) tries.push({ pat: pattern, text: compact });
-    if (compactKeyword !== rawKeyword) {
-      const pat2 = patternOf(compactKeyword);
-      if (pat2) tries.push({ pat: pat2, text: compact });
-    }
-    for (const t of tries) {
-      const hits = run(t.pat, t.text);
+    if (textHasWs) tries.push([pattern, literal]);
+    if (compactKeyword !== rawKeyword) tries.push([patternOf(compactKeyword), literalPatternOf(compactKeyword)]);
+    for (const pats of tries) {
+      const hits = runAny(pats, compact);
       if (!hits.length) continue;
       const out = [];
       for (const m of hits) {
@@ -510,10 +603,11 @@
    * @param {string} text 识别文本
    * @param {string[]} need 动态判据值（`needOf` 归一后的；空数组 = 没有动态要求）
    */
-  function judgeInfo(rule, text, need) {
+  function judgeInfo(rule, text, need, field) {
     const raw = String(text || '');
-    const stat = matchedInText(rule, raw);
-    const hasStatic = !!stripKvMarks(rule && rule.meta && rule.meta.imgOcrKeyword).trim();
+    const stat = matchedInText(rule, raw, field);
+    const known = scopeKnown(rule);
+    const hasStatic = !!stripKvMarks(scopedRaw(rule && rule.meta && rule.meta.imgOcrKeyword, field, known)).trim();
     const dyn = (need || []).filter(Boolean);
     if (!dyn.length) return { hits: stat, missingValues: [], staticMiss: false };
     const flat = raw.replace(WHITE_ALL, '').toLowerCase();
@@ -552,8 +646,8 @@
   }
 
   /** 判决 = `judgeInfo().hits`（唯一实现；诊断字段由 `judgeInfo` 带出） */
-  function judge(rule, text, need) {
-    return judgeInfo(rule, text, need).hits;
+  function judge(rule, text, need, field) {
+    return judgeInfo(rule, text, need, field).hits;
   }
 
   /**
@@ -574,16 +668,24 @@
    */
   const NEED_MIN_LEN = 2;
 
-  /** 图片动态关键词原文 → 要看的抓取字段名（后缀可写可不写，按裸名比） */
-  function needNames(rawLabels) {
+  /** 图片动态关键词原文 → 要看的抓取字段名（后缀可写可不写，按裸名比）
+   *  【2.0.7.1 需求②】带 `@字段名` 的条目只在那个字段上生效，覆盖式（与该字段的静态词同一条规则）。 */
+  function needNames(rawLabels, field, known) {
     const out = [];
     const parse = (KH.Fetch && typeof KH.Fetch.parseLabelSpec === 'function') ? KH.Fetch.parseLabelSpec : null;
-    for (const w of String(rawLabels || '').split(/[,，、|;]/)) {
-      const s = w.trim();
+    const parts = String(rawLabels || '').split(/[,，、|;]/)
+      .map((w) => w.trim()).filter(Boolean)
+      .map((w) => splitScope(w, known || []));
+    const key = String(field == null ? '' : field).trim();
+    const mine = key ? parts.filter((p) => p.scope && sameField(p.scope, key)) : [];
+    /* 覆盖式：这个字段有 `@字段名` 词 ⇒ 只用它们；否则用全部无作用域的（旧行为） */
+    const pick = mine.length ? mine : parts.filter((p) => !p.scope);
+    for (const p of pick) {
+      const s = String(p.text || '').trim();
       if (!s) continue;
       let name = s;
       if (parse) {
-        try { const p = parse(s); if (p && p.label) name = String(p.label).trim(); } catch (e) { name = s; }
+        try { const q = parse(s); if (q && q.label) name = String(q.label).trim(); } catch (e) { name = s; }
       }
       if (name && out.indexOf(name) < 0) out.push(name);
     }
@@ -604,9 +706,10 @@
    *   `want` 是用户点名的字段名（已剥后缀）；
    *   `missing` 是**点名了但没在抓取结果里出现**的字段名。
    */
-  function needInfo(hitOrCell, rule) {
+  function needInfo(hitOrCell, rule, field) {
     const meta = (rule && rule.meta) || {};
-    const want = needNames(meta.imgOcrNeed);
+    const known = scopeKnown(rule);
+    const want = needNames(meta.imgOcrNeed, field, known);
     const info = { values: [], want: want, missing: [] };
     if (!want.length) return info;                    // 留空即旧行为：没有动态判据
     const Fetch = KH.Fetch || {};
@@ -620,6 +723,11 @@
     const out = [];
     const seen = [];
     const base = (typeof Fetch.baseLabelOf === 'function') ? Fetch.baseLabelOf : ((s) => s);
+    /* 【2.0.7.1 需求①⑤】字段名格不是判据值：两列表/整块取值时，标签列可能被并进值格，
+     * 于是「开发者」这个字段名本身变成 needle ⇒ 图上找不到它 ⇒ `missingValues` 误报
+     * （面板看着像「连字段名都要图里有」，`#表` 又被这条误报整条拦掉）。这里把
+     * 「整格就是一个已配置字段裸名」的格剔掉 —— 只比裸名，不比值。 */
+    const labelSet = known.map((n) => String(n).replace(WHITE_ALL, '').toLowerCase()).filter(Boolean);
     for (const en of entries) {
       const label = String((en && en.label) || '').trim();
       if (!label) continue;
@@ -640,6 +748,7 @@
           /* 逐格一个判据（沿用旧口径：格子里的值各自比）；空白/换行一律剔（与 `judge` 同口径） */
           const t = plain.replace(WHITE_ALL, '').replace(/[\r\n]+/g, '').toLowerCase();
           if (t.length < NEED_MIN_LEN) continue;
+          if (labelSet.indexOf(t) >= 0) continue;        // 字段名本身：不是值
           if (out.indexOf(t) < 0) out.push(t);
         }
       }
@@ -650,8 +759,8 @@
   }
 
   /** 只要值（判决点与单测的既有入口）：`needInfo().values` */
-  function needOf(hitOrCell, rule) {
-    return needInfo(hitOrCell, rule).values;
+  function needOf(hitOrCell, rule, field) {
+    return needInfo(hitOrCell, rule, field).values;
   }
 
   /* ---------------- 【2.0.2.19 需求②⑤】按列带排版（纯函数：吃 `linesOf`，不吃 DOM） ---------------- */
@@ -1134,7 +1243,7 @@
         it.conf = msg.confidence || 0;
         /* 【2.0.6.1 需求①③⑦】命中判定与"差在哪"一次算完：`missingValues` = 点名的动态值里
          * 图上没找到的那几个 —— 面板照实说出来，不再只给一个"没命中"。 */
-        const ji = judgeInfo(it.rule, text, it.need);
+        const ji = judgeInfo(it.rule, text, it.need, it.label);
         it.matched = ji.hits;
         it.needMissingValues = ji.missingValues;
         it.lineList = (it.kind === 'pdf') ? pdfLineList : (msg.lineList || []);
@@ -1179,7 +1288,7 @@
    * 【不套跨域白名单】PDF 由 offscreen（扩展页 + `host_permissions: <all_urls>`）直接 fetch，
    * 不受页面 CORS 约束；图片要读像素、跨源拿不到，所以才需要那道授权闸门。别照抄。
    */
-  function collectPdfs(anchor) {
+  function collectPdfs(anchor, labelOfCell) {
     const rule = anchor.rule;
     const max = Math.max(1, (rule.meta && rule.meta.imgOcrMax) || 1);
     const F = KH.Fetch;
@@ -1197,7 +1306,8 @@
         const src = F.pdfRefOf(el);
         if (!src || seen.has(src)) continue;
         seen.add(src);
-        out.push({ src: src });
+        /* 【2.0.7.1 需求②】带上它所在的抓取字段：作用域关键词与面板行都要知道"这张 PDF 属于哪个字段" */
+        out.push({ src: src, label: (labelOfCell && labelOfCell.get) ? String(labelOfCell.get(cell) || '') : '' });
       }
     }
     return out;
@@ -1276,18 +1386,29 @@
        * 所以锚点/字段名都从 `anchor.cell` 重算 —— 不再复用 `cellsForHit` 的裸名字典。
        * 【2.0.6.1 需求①③】改用 `needInfo`：`needMissing` 是「点名了却没取到值」的字段名，
        * 面板据此把「为什么不命中」说出来（旧实现这条路全是静默 `[]`）。 */
-      const ni = needInfo(anchor.cell, rule);
-      const need = ni.values;
-      const needWant = ni.want;
-      const needMissing = ni.missing;
       const valueCells = [];
       const labelOfImg = new Map();
+      const labelOfCell = new Map();
+      /* 【2.0.7.1 需求②】动态判据按**图片所属抓取字段**分开算（`@字段名` 作用域）；
+       * 同一锚点内同字段只算一次（`extractFor` 不便宜），缺省字段用全局那份。 */
+      const needCache = new Map();
+      const needFor = (label) => {
+        const k = String(label || '');
+        if (needCache.has(k)) return needCache.get(k);
+        const one = needInfo(anchor.cell, rule, k);
+        const got = { values: one.values, want: one.want, missing: one.missing };
+        needCache.set(k, got);
+        return got;
+      };
       for (const f of fields) {
         /* 【字段级抠图开关 `#0`（2.0.2.5 需求①后段）】多个抓取字段里不止一个带图时（截图 + icon + logo），
          * 用 `icon#0` 点名"这个字段的图不参与图片识别"；它的图同时也被 applyImgPolicy 从抓取内容里剔掉。
          * 判定在 Fetch 侧（`cellsForHit` 返回的 `noImg`），这里只照办 —— 不在本模块养第二套后缀语法。 */
         if (f.noImg) continue;
-        for (const c of (f.cells || [])) valueCells.push(c);
+        for (const c of (f.cells || [])) {
+          valueCells.push(c);
+          if (!labelOfCell.has(c)) labelOfCell.set(c, f.label);
+        }
         for (const im of (f.imgs || [])) if (!labelOfImg.has(im)) labelOfImg.set(im, f.label);
       }
       if (!valueCells.length) continue;
@@ -1302,14 +1423,17 @@
          * `src`，这里只按原始 src 查 ⇒ 经过绝对化的同一张图会被当成没识别过、掉回 idle 重排队
          * （失败一次还会落进 `failSrc` 冻 10 分钟）。两边都试一遍，顺序与 `textOf` 一致。 */
         const cached = src ? (textCache.get(src) || textCache.get(absOf(src))) : null;
+        const label = String(labelOfImg.get(got.img) || '');
+        /* 【2.0.7.1 需求②】这张图属于哪个字段，就只用那个字段的（+ 全局）词/判据 */
+        const nf = needFor(label);
         const item = {
           key: key, ruleId: rule.ruleId, rule: rule,
           /* 面板行的关键词标签显示**图片命中关键词**（用户确认第 6 条）——它才是"在图里找什么" */
           keyword: String((rule.meta && rule.meta.imgOcrKeyword) || ''),
-          label: String(labelOfImg.get(got.img) || ''),
+          label: label,
           src: src, cls: cls, host: cls.host || '',
           state: 'idle', matched: [], text: '', conf: 0,
-          need: need, needWant: needWant, needMissing: needMissing,
+          need: nf.values, needWant: nf.want, needMissing: nf.missing,
           needMissingValues: [], lineList: [],
           cellText: String((anchor.cell && anchor.cell.textContent) || '').trim().slice(0, 120)
         };
@@ -1317,7 +1441,7 @@
           item.state = 'done';
           item.text = cached.text;
           item.conf = cached.conf;
-          const ji = judgeInfo(rule, cached.text, need);
+          const ji = judgeInfo(rule, cached.text, item.need, label);
           item.matched = ji.hits;
           item.needMissingValues = ji.missingValues;
           item.lineList = cached.lineList || [];
@@ -1343,17 +1467,19 @@
       }
       /* ---- PDF（2.0.6.5 需求②）：只是"另一类待抽文字的引用"，与图片共用条目表 / 缓存 /
        * 额度 / 面板通知。键里带 `|pdf|`，避免与同地址的图片条目撞号（现实里也不会同址）。 ---- */
-      for (const got of collectPdfs({ rule: rule, valueCells: valueCells })) {
+      for (const got of collectPdfs({ rule: rule, valueCells: valueCells }, labelOfCell)) {
         const src = got.src;
         const key = rule.ruleId + '|pdf|' + src;
         if (next.has(key)) continue;
         const cached = textCache.get(src) || textCache.get(absOf(src));
+        const label = String(got.label || '');
+        const nf = needFor(label);
         const item = {
           key: key, ruleId: rule.ruleId, rule: rule, kind: 'pdf',
           keyword: String((rule.meta && rule.meta.imgOcrKeyword) || ''),
-          label: '', src: src, cls: { ok: true, src: src }, host: hostOfSrc(src) || '',
+          label: label, src: src, cls: { ok: true, src: src }, host: hostOfSrc(src) || '',
           state: 'idle', matched: [], text: '', conf: 0,
-          need: need, needWant: needWant, needMissing: needMissing,
+          need: nf.values, needWant: nf.want, needMissing: nf.missing,
           needMissingValues: [], lineList: [],
           cellText: String((anchor.cell && anchor.cell.textContent) || '').trim().slice(0, 120)
         };
@@ -1361,7 +1487,7 @@
           item.state = 'done';
           item.text = cached.text;
           item.conf = cached.conf;
-          const ji = judgeInfo(rule, cached.text, need);
+          const ji = judgeInfo(rule, cached.text, item.need, label);
           item.matched = ji.hits;
           item.needMissingValues = ji.missingValues;
           item.lineList = cached.lineList || [];
@@ -1536,9 +1662,12 @@
      *  【2.0.4 需求②】`needOf(hitOrCell, rule)` 改成吃锚点格 + 规则（值走 `Fetch.extractFor`）。 */
     judge: judge, needOf: needOf, needNames: needNames,
     /** 【2.0.6.1 需求①③】带诊断的两个入口：
-     *  `judgeInfo(rule,text,need)` → `{hits, missingValues}`（图上找不到的那些动态值）
-     *  `needInfo(hitOrCell,rule)`  → `{values,want,missing}`（点名了却没取到值的字段名） */
+     *  `judgeInfo(rule,text,need[,field])` → `{hits, missingValues}`（图上找不到的那些动态值）
+     *  `needInfo(hitOrCell,rule[,field])`  → `{values,want,missing}`（点名了却没取到值的字段名）
+     *  【2.0.7.1 需求②】`field` = 这张图所属的抓取字段（`@字段名` 作用域靠它选词；省略=全局）。 */
     judgeInfo: judgeInfo, needInfo: needInfo,
+    /** 【2.0.7.1 需求②】作用域诊断用：`scopeKnown(rule)` = 合法字段名；`scopedRaw(raw,field,known)` = 该字段实际生效的词 */
+    scopeKnown: scopeKnown, scopedRaw: scopedRaw, literalPatternOf: literalPatternOf,
     /** 【2.0.4 需求①】「键值行进表」标记：`kvWords(raw)` = 带 `#表`/`#kv` 标记的词（已剥标记）；
      *  `stripKvMarks(raw)` = 去掉标记的关键词原文（喂匹配用）。重要笔记那边读同一份实现。 */
     kvWords: kvWords, stripKvMarks: stripKvMarks,

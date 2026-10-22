@@ -271,10 +271,11 @@ module.exports = async function run() {
     });
   });
 
-  await test('★ 胶囊拆成「名字 + 后缀徽标」：`开发者 ! ^高价` ⇒ 名字只有「开发者」', () => {
+  await test('★ 胶囊只显示名字：`开发者 ! ^高价` ⇒ 名字「开发者」、不画后缀徽标', () => {
     const ctrl = mkNeed('开发者 ! ^高价');
     eq(textOf(ctrl, '.kh-lbl-name').join('/'), '开发者', '★ 用户担心的「后缀也参与命中」在界面上就看得见不成立');
-    eq(textOf(ctrl, '.kh-lbl-suffix').join('/'), '! ^高价', '修饰原样摊开（是取值用的，不是拿来比的）');
+    eq(textOf(ctrl, '.kh-lbl-suffix').join('/'), '',
+      '【2.0.7.1 需求③】后缀只用来认字段名、不改取值（取值走「抓取字段」），画成徽标会被误读成"改值"');
     eq(ctrl.read(), '开发者 ! ^高价', '★ read() 仍回整串原文（存储契约不变）');
   });
 

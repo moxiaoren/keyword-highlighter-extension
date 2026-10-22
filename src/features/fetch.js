@@ -42,27 +42,60 @@
   const PDF_CLOSE = '\u0001ENDPDF\u0001';
 
   /**
-   * 这个元素指向的 PDF 地址（绝对化后的 http(s)；不是 PDF 就回 ''）。
-   * 认的是**页面自己声明的引用**，四种写法：`<a href>`、`<iframe src>`、`<embed src>`、`<object data>`。
-   * `.pdf` 后面允许带查询串/锚点（很多下载地址是 `file.pdf?v=2`），也认 `type="application/pdf"`。
+   * 这个元素指向的 PDF 地址（绝对化的 http(s)；不是 PDF 就回 ''）。
+   * 认的是**页面自己声明的引用**：`<a href>`、`<iframe src>`、`<embed src>`、`<object data>`，
+   * 以及【2.0.7.1 需求④】「点击才跳转」的控件 —— 真地址常藏在 `data-*` / `onclick` / `title`
+   * / `aria-label` / `download` 里，主地址只是个 `/download/123` 或 `javascript:;`。
+   * `.pdf` 出现在整串地址的任意位置（查询串里也算，如 `/view?file=a.pdf`），
+   * 也认 `type="application/pdf"`。
    */
+  const PDF_URL_RE = /\.pdf(?:[?#&]|$)/i;
+  /* 「地址像下载/预览入口」：用来兜住 `href="/doc/view?id=3"` + 文字写 PDF 的控件 */
+  const PDF_ENTRY_RE = /pdf|download|file|attach|view|preview|doc/i;
+  /* 真地址可能藏在哪些属性里（`download` 只当"这是 PDF"的证据，不当地址：它多是文件名） */
+  const PDF_URL_ATTRS = ['data-url', 'data-href', 'data-src', 'data-file', 'data-download', 'data-path', 'onclick'];
+
+  /** 属性值 → 绝对化地址（过协议闸门；`onclick="open('/a/x.pdf')"` 这种从字符串里摘一个地址） */
+  function absPdfUrl(raw) {
+    let u = String(raw == null ? '' : raw).trim();
+    if (!u) return '';
+    /* `onclick="open('/a/x.pdf')"` / 提示串：先把引号里的 .pdf 地址摘出来 */
+    const quoted = u.match(/['"]([^'"]+\.pdf[^'"]*)['"]/i);
+    if (quoted) u = quoted[1];
+    else if (/^[a-z][a-z0-9+.-]*:/i.test(u) && !/^https?:/i.test(u) && !/^\/\//i.test(u)) {
+      return '';                       /* `javascript:void(0)` 之类不是地址 */
+    }
+    let abs = '';
+    try { abs = new URL(u, location.href).href; } catch (err) { return ''; }
+    if (!/^https?:/i.test(abs)) return '';
+    return abs;
+  }
+
   function pdfRefOf(el) {
     if (!el || !el.getAttribute) return '';
+    const attr = (n) => String((el.getAttribute && el.getAttribute(n)) || '');
     const tag = String(el.tagName || '').toUpperCase();
-    let raw = '';
-    if (tag === 'A') raw = el.getAttribute('href') || '';
-    else if (tag === 'OBJECT') raw = el.getAttribute('data') || '';
-    else if (tag === 'IFRAME' || tag === 'EMBED') raw = el.getAttribute('src') || '';
+    let primary = '';
+    if (tag === 'A') primary = attr('href');
+    else if (tag === 'OBJECT') primary = attr('data');
+    else if (tag === 'IFRAME' || tag === 'EMBED') primary = attr('src');
     else return '';
-    if (!raw) return '';
-    /* 协议闸门与 imgPlaceholder 一致：只放 http(s)（含 `//` 与相对路径，转成绝对地址） */
-    if (/^[a-z][a-z0-9+.-]*:/i.test(raw) && !/^https?:/i.test(raw) && !/^\/\//i.test(raw)) return '';
-    let abs = '';
-    try { abs = new URL(raw, location.href).href; } catch (err) { return ''; }
-    if (!/^https?:/i.test(abs)) return '';
-    const path = abs.split('#')[0].split('?')[0];
-    const type = String((el.getAttribute && el.getAttribute('type')) || '').toLowerCase();
-    if (/\.pdf$/i.test(path) || type === 'application/pdf' || type === 'application/x-pdf') return abs;
+    const type = (attr('type') + ' ' + attr('data-type')).toLowerCase();
+    const declared = /application\/(?:x-)?pdf/.test(type);
+    /* 1) 主地址自己就是 PDF（`#` 后是锚点/分页，不算地址的一部分） */
+    const abs = absPdfUrl(primary);
+    if (abs && (PDF_URL_RE.test(abs.split('#')[0]) || declared)) return abs;
+    /* 2) 点击跳转控件：真地址在提示属性里（`href` 只是跳板页/脚本） */
+    for (const name of PDF_URL_ATTRS) {
+      const u = absPdfUrl(attr(name));
+      if (u && PDF_URL_RE.test(u.split('#')[0])) return u;
+    }
+    /* 3) 控件自己说"这是 PDF"（标题/文字/下载名/类名），主地址就是那个 PDF 入口。
+     * 只放「地址看起来就像下载/预览入口」的，别把普通页面上一个写着 PDF 的链接也吞进来。 */
+    const label = [attr('title'), attr('aria-label'), attr('download'), attr('data-title'),
+      attr('onclick'), String(el.textContent == null ? '' : el.textContent),
+      String(el.className == null ? '' : el.className)].join(' ');
+    if (abs && /\bpdf\b/i.test(label) && PDF_ENTRY_RE.test(abs)) return abs;
     return '';
   }
 

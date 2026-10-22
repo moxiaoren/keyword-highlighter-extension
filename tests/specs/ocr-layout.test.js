@@ -349,10 +349,20 @@ module.exports = async function run() {
     });
 
     /* 【2.0.6.1 需求⑦】用户现场：表格里有这行，但 OCR 全文里不高亮、图也没有红框。
-     * 根因是「行」与「命中」不是同一条判据 —— 动态判据没满足的条目照样进表。 */
-    await test('★ 动态判据没满足的条目 ⇒ 一行都不许进表（行与命中同源）', () => {
+     * 根因是「行」与「命中」不是同一条判据 —— 判不中的条目照样进表。
+     * 【2.0.7.1 需求⑤】判据改成**或**：只要有一个抓取值命中就算命中（`missingValues` 里
+     * 还留着别的值只是诊断信息，不再一票否决）；真正没命中的条目（`matched` 空）仍不进表。 */
+    await test('★ 一个值没命中不算未命中：动态关键词是或（命中一个就进表）', () => {
       const it = { ruleId: 'r1', state: 'done', text: '一对一：北京某某', lineList: [],
+        matched: [{ start: 0, end: 3, text: '一对一' }],
         needMissingValues: ['徐州启明星教育科技有限公司'] };
+      const rows = withItems([it], () => ocrExtraRows({ pinId: 'r1', imgOcr: true, imgOcrKeyword: '一对一#表' }));
+      eq(rows.length, 1, '★ 图里出现了「一对一：北京某某」⇒ 静态命中成立，另一个动态值缺不该拦掉整条');
+    });
+
+    await test('★ 真没命中的条目 ⇒ 一行都不许进表（行与命中同源）', () => {
+      const it = { ruleId: 'r1', state: 'done', text: '一对一：北京某某', lineList: [],
+        matched: [] };
       const rows = withItems([it], () => ocrExtraRows({ pinId: 'r1', imgOcr: true, imgOcrKeyword: '一对一#表' }));
       eq(rows.length, 0, '★ 判未命中就不许展示「词 | 值」（否则用户看到表格有行、图却没红框）');
     });

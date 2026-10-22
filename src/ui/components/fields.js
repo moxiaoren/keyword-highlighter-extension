@@ -480,9 +480,12 @@
              * 【2.0.6.1 需求②】`suffixChip`（图片动态关键词）：这框填的也是**抓取字段名**（可带
              * `!`/`^` 等修饰），后缀同样不参与命中 —— 画成徽标才看得见"名字是名字、修饰是修饰"，
              * 否则用户会以为 `开发者 ! ^高价` 整串都要在图里出现。 */
-            const tok = (spec.token || spec.suffixChip)
-              ? (labelSegs(list[i])[0] || { name: list[i], suffix: '' })
+            const tok0 = (spec.token || spec.suffixChip || spec.kvSuffix)
+              ? (labelSegs(list[i], { kv: spec.kvSuffix })[0] || { name: list[i], suffix: '' })
               : { name: list[i], suffix: '' };
+            /* 【2.0.7.1 需求③】图片动态关键词框的后缀**只用来定位字段名**（`开发者!` ⇒ 字段 开发者），
+             * 取值永远走「抓取字段」那份 spec；把后缀画成徽标会让人以为它改值 ⇒ 这里只显示名字。 */
+            const tok = spec.suffixHide ? { name: tok0.name, suffix: '' } : tok0;
             prev.appendChild(labelChip({
               name: tok.name,
               suffix: tok.suffix,
@@ -662,13 +665,23 @@
    *
    * @returns {Array<{i:number, raw:string, name:string, suffix:string}>} `i` = 原始段序号（删段用）
    */
-  function labelSegs(raw) {
+  function labelSegs(raw, opts) {
     const F = KH.Fetch;
     const s = raw == null ? '' : String(raw);
+    const kv = !!(opts && opts.kv);
     const toks = (F && typeof F.splitLabelTokens === 'function') ? F.splitLabelTokens(s) : [s];
     const out = [];
     for (let i = 0; i < toks.length; i++) {
       const tok = toks[i];
+      /* 【2.0.7.1 需求③】`#表` 是「这个命中词要往重要笔记的抓取表补行」的标记，不是名字的一部分；
+       * 剥成徽标才看得见"词是词、标记是标记"（此前它跟着词一起当名字，和隔壁框的后缀画法两副面孔）。 */
+      if (kv) {
+        const m = /(?:#|＃)\s*(?:表|kv)\s*$/i.exec(String(tok));
+        if (m) {
+          const name = String(tok).slice(0, m.index).trim();
+          if (name) { out.push({ i: i, raw: tok, name: name, suffix: '#表' }); continue; }
+        }
+      }
       const spec = (F && typeof F.parseLabelSpec === 'function') ? F.parseLabelSpec(tok) : null;
       if (spec) {
         if (!spec.label) continue;                     // 空段（结尾多个 `|`、或只写了后缀）不画胶囊

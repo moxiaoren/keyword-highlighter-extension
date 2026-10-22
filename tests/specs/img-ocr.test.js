@@ -247,6 +247,54 @@ module.exports = async function run() {
     eq(O.matchedInText({ meta: { imgOcrKeyword: '(' } }, '随便什么文本').length, 0);
   });
 
+  /* 【2.0.7.1 需求①】用户报「OCR 正文里明明有，却显示未命中」。根因之一：命中词被**恒当正则**
+   * 编译，`C++` / `A(B)` 这类直接编译失败 ⇒ 永久不命中。修法：正则先跑，不中再按**字面**找。 */
+  suite('图片命中 · 2.0.7.1 需求①：正则编译失败/语义跑偏时按字面兜底');
+
+  await test('★ `C++`（正则语法非法）⇒ 按字面命中', () => {
+    const rule = { meta: { imgOcrKeyword: 'C++' } };
+    eq(O.matchedInText(rule, '本课程 C++ 入门').length, 1, '★ 编译失败不该等于"永远不命中"');
+  });
+
+  await test('★ `A(B)`（非法正则）⇒ 按字面命中', () => {
+    truthy(O.matchedInText({ meta: { imgOcrKeyword: 'A(B)' } }, '型号 A(B) 说明').length);
+  });
+
+  await test('★ 正则可以编译时仍按正则语义（字面兜底不许改变这条）', () => {
+    eq(O.matchedInText({ meta: { imgOcrKeyword: 'A.C' } }, '前缀 AC 后缀').length, 0,
+      '`.` 仍是正则：字面兜底只在正则不中时试，`A.C` 字面是 `A\\.C`，AC 不该命中');
+  });
+
+  /* 【2.0.7.1 需求②】`@字段名` 限定词只对那个抓取字段的图生效；某字段没配限定词就用全部未限定的词。 */
+  suite('图片命中 · 2.0.7.1 需求②：@字段名 限定作用域');
+
+  const scopeRule = (kw) => ({ meta: { imgOcrKeyword: kw, fetchLabels: '名称|截图' } });
+
+  await test('★ 配了 `@截图` 的词只对截图字段生效，别的字段看不见它', () => {
+    const rule = scopeRule('一对一@截图|通用');
+    eq(O.matchedInText(rule, '一对一', '截图').length, 1, '截图字段：限定词生效');
+    eq(O.matchedInText(rule, '一对一', '名称').length, 0, '名称字段：限定词不许生效');
+    eq(O.matchedInText(rule, '通用', '名称').length, 1, '名称字段：没被限定的词照旧全局生效');
+  });
+
+  await test('★ 某字段一旦配了限定词就**只用**限定词（覆盖式，不再叠全局词）', () => {
+    const rule = scopeRule('一对一@截图|通用');
+    eq(O.matchedInText(rule, '通用', '截图').length, 0,
+      '★ 截图字段只认「一对一」——否则"单独配置"就变成了"再多加一条"，用户没法只让某字段生效');
+  });
+
+  await test('★ 没写 `@` 的神秘词（不是已知字段）⇒ 按普通词处理（向后兼容）', () => {
+    const rule = scopeRule('张三@不存在');
+    eq(O.matchedInText(rule, '张三@不存在', '名称').length, 1, '不是字段名就不当作用域，整段仍是词');
+  });
+
+  await test('★ scopedRaw：作用域选取规则可单独验（界面/笔记共用同一份）', () => {
+    const known = O.scopeKnown(scopeRule(''));
+    eq(JSON.stringify(known), JSON.stringify(['名称', '截图']));
+    eq(O.scopedRaw('一对一@截图|通用', '截图', known), '一对一', '限定字段只拼限定词');
+    eq(O.scopedRaw('一对一@截图|通用', '名称', known), '通用', '其它字段只剩未限定词');
+  });
+
   /* ==================================================================
    * 空白容忍（2.0.2.4 需求③）
    *   用户现场：OCR 结果里是「登记 号」，图片命中词是「登记号」⇒ 不算命中。
