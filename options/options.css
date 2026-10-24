@@ -331,10 +331,12 @@ body {
 
 /* 「功能说明」卡片墙。align-items 用默认的 stretch（需求 2 前是 start）：
  * 每张卡的内容长短不同，start 会让同一行的卡片底部参差、整面墙像没对齐；
- * stretch 让同一行等高，行与行之间才是整齐的横线。 */
+ * stretch 让同一行等高，行与行之间才是整齐的横线。
+ * 最小列宽 320px（原 250px）：卡里是 3–5 条短句，250px 一列时每条都要折成两三行，
+ * 短卡被拉高、空白全堆在卡底；放宽到 320px 后宽屏是 3 列，每卡更矮、彼此更接近。 */
 .kh-fn-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 12px;
   align-items: stretch;
 }
@@ -441,7 +443,7 @@ body {
 }
 .kh-fn-grid + .kh-help { margin-top: 14px; }
 .kh-help + .kh-help { margin-top: 12px; }
-/* 一块 .kh-help 里塞多条问答（FAQ 的 Q1–Q13 就是这种）时，条目之间用发丝线分档 ——
+/* 一块 .kh-help 里塞多条问答（FAQ 的 Q1–Q23 就是这种）时，条目之间用发丝线分档 ——
  * 十几条问答全糊在一张卡里，读不出"上一条到哪儿结束"。首条不吃线也不吃上边距。 */
 .kh-help h4 {
   margin: 12px 0 4px;

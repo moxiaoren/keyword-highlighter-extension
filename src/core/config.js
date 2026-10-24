@@ -226,6 +226,63 @@
   const EDITOR_WIN_W = EDITOR_W + EDITOR_WIN_PAD * 2;   // = 1100
   const EDITOR_WIN_H = 500;
 
+  /* ---- 软著一致性核对（用户 m00001 需求②：「软著里的著作权人必须与开发者一致，不一致就要授权书」）----
+   * 用户原话还点了「还有其他的比对需求」⇒ **比对对象、标签名、关键词全部可配**，代码里不写死某个行业的
+   * 字段名（换行业只改设置，不改代码）。六个列表都是「逗号分隔的名字」：
+   *   分隔符与 `pinOrderKeys` 一致（`,` `，` `、` 与换行），另收分号 —— 用户从文档里粘字段名常带 `;`；
+   *   去空、大小写不敏感去重、**不设上限**（比对对象越全判得越准；判定本身不做任何模糊匹配）。
+   * 真源是这里的 `SOFT_LISTS`（`Config.defaults.softCheck` 与归一函数都从它取，不再抄第二份）。 */
+  const SOFT_LISTS = {
+    /** 抓取字段里的「开发者」候选名（比对基准之一） */
+    devFields: '开发者,开发公司,开发主体',
+    /** 「备案主体公司」候选名（比对基准之二） */
+    subjectFields: '备案主体,主体公司,备案公司',
+    /** 软著图里「著作权人」的字段名候选 */
+    ownerLabels: '著作权人,软件著作权人',
+    /** 图里命中任一即判为「授权书」 */
+    authKeywords: '授权书,授权委托书,授权说明',
+    /** 授权书里的「授权人」（= 著作权人）候选名 */
+    grantorLabels: '授权人,授权方,许可人,授权公司',
+    /** 授权书里的「被授权人」（= 开发者）候选名 */
+    granteeLabels: '被授权人,被授权方,被许可人,被授权公司'
+  };
+  /** 比对基准枚举：`dev`=只比开发者、`subject`=只比备案主体、`both`=任一一致即通过 */
+  const SOFT_COMPARE = ['dev', 'subject', 'both'];
+  const SOFT_COMPARE_DEFAULT = 'both';
+
+  /** 字段名列表文本 → 数组（非字符串/非数组一律当空，由调用者回默认） */
+  function softList(value) {
+    let parts;
+    if (typeof value === 'string') parts = value.split(/[,，、;；\r\n]+/);
+    else if (Array.isArray(value)) parts = value;
+    else return [];
+    const out = [];
+    const seen = new Set();
+    for (let i = 0; i < parts.length; i++) {
+      const s = String(parts[i] == null ? '' : parts[i]).trim();
+      if (!s) continue;
+      const low = s.toLowerCase();
+      if (seen.has(low)) continue;
+      seen.add(low);
+      out.push(s);
+    }
+    return out;
+  }
+
+  /** 软著核对的**唯一归一**（设置页回显/落盘、读路径消费、导入旧备份三处共用一份口径）：
+   *  坏值/缺项一律回落默认（`on` 只认 `true` —— 脏值当没开，绝不"看起来开了却乱涂色"）。 */
+  function normalizeSoftCheck(raw) {
+    const src = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
+    const out = { on: src.on === true };
+    for (const k of Object.keys(SOFT_LISTS)) {
+      const list = softList(src[k]);
+      out[k] = list.length ? list.join(',') : SOFT_LISTS[k];
+    }
+    const cmp = (typeof src.compareTo === 'string') ? src.compareTo.trim().toLowerCase() : '';
+    out.compareTo = SOFT_COMPARE.indexOf(cmp) >= 0 ? cmp : SOFT_COMPARE_DEFAULT;
+    return out;
+  }
+
   /**
    * 面板图片尺寸 / 正文字号的**唯一归一函数**（读路径 `important-note.js` 与设置页共用）。
    * 取数口径两条一致：
@@ -318,6 +375,21 @@
         engine: 'auto'
       },
 
+      /* ---- 软著一致性核对（用户 m00001 需求②）----
+       * 「软著图里的著作权人必须与开发者一致，不一致就需要授权书；通过时给开发者所在单元格加绿底」。
+       * 默认 `on:false`：**没开就零涂色、零额外计算**（面板行为与上一版逐字节一致）。
+       * 六个列表 + 一个枚举的归一见 `normalizeSoftCheck`；判定与展示见 `src/features/softcheck.js`。 */
+      softCheck: {
+        on: false,
+        devFields: SOFT_LISTS.devFields,
+        subjectFields: SOFT_LISTS.subjectFields,
+        ownerLabels: SOFT_LISTS.ownerLabels,
+        authKeywords: SOFT_LISTS.authKeywords,
+        grantorLabels: SOFT_LISTS.grantorLabels,
+        granteeLabels: SOFT_LISTS.granteeLabels,
+        compareTo: SOFT_COMPARE_DEFAULT
+      },
+
       /** 一次性迁移标记（S2）：`ocrEngine` = "存量档位已回落成 `engine`，还没告知过用户"。
        *  由 `normalize` 在**发现存量 `imgOcr.quality` 时**置真；设置页提示过一次后写回假。
        *  置真的条件只看"存储里还有没有那个废弃键"，所以**写回时必须把它一起删掉**
@@ -394,6 +466,13 @@
     NOTE_FONT_MIN,
     NOTE_FONT_MAX,
     NOTE_FONT_DEFAULT,
+
+    /** 软著一致性核对的唯一归一 + 比对基准枚举（设置页 / `softcheck.js` 共用一份；见本文件上部） */
+    normalizeSoftCheck,
+    softList,
+    SOFT_COMPARE,
+    SOFT_COMPARE_DEFAULT,
+    SOFT_LISTS,
 
     /* 【票 #48】编辑器几何（真值 + 派生），与 `.kh-modal-lg` 的 CSS 由单测对齐。 */
     EDITOR_W,
@@ -480,6 +559,19 @@
       {
         const pw = normalizePanelWidth(cfg.notePanelWidth);
         if (pw !== cfg.notePanelWidth) { cfg.notePanelWidth = pw; changed.invalid.push('notePanelWidth'); }
+      }
+
+      /* ②f 软著一致性核对（用户 m00001 需求②）：六个字段名列表 + 比对基准的**读路径**脏值归一。
+       * 存储里可能直接躺着缺项 / 空串 / 非法枚举（手改 storage、旧备份）——回默认，绝不让
+       * "字段名列表是空的"把核对静默变成永远 skip（用户会以为功能坏了，却看不到原因）。
+       * 归一**不丢用户已填内容**：只补缺项、只清洗分隔符，合法名字原样保留。 */
+      {
+        const sc = normalizeSoftCheck(cfg.softCheck);
+        const old = cfg.softCheck || {};
+        for (const k of Object.keys(sc)) {
+          if (sc[k] !== old[k]) changed.invalid.push('softCheck.' + k);
+        }
+        cfg.softCheck = sc;
       }
 
       // ③ 关键词字段补齐（不改语义、不翻转）

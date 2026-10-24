@@ -904,3 +904,45 @@
 /* 文本态的提醒行：`|` 是分隔符，不是正则的「或」（比错误提示弱一级，所以不用 warning 色） */
 .kh-cand-texttip { color: var(--text-3); }
 .kh-cand-texttip[hidden] { display: none; }
+
+/* ==== 【需求】「图片命中关键词 / 图片动态关键词」的**批量管理**弹窗（`.kh-kvb-*`）
+ * 用户原话：「这个词多时候不会管理。最好能够批量处理（批量改通用，还是针对某个字段抓取到的图片。
+ * #表，也是最好能批量修改。）」——一行一个词：勾选框 / 词 / 作用域徽标 / `#表` 徽标；
+ * 词多时靠顶部过滤框与全选/反选收窄，改完点「应用」只写回勾中的那几条。
+ * 颜色一律走 tokens 变量（`meta-check` 的 CSS 硬编码色值红线）。 */
+.kh-kvb { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.kh-kvb-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
+.kh-kvb-filter { flex: 1 1 150px; min-width: 0; }
+.kh-kvb-count { flex: 0 0 auto; color: var(--text-3); font-size: var(--fs-sm); }
+.kh-kvb-op { flex: 0 0 auto; }
+.kh-kvb-sel { flex: 0 1 128px; min-width: 0; }
+.kh-kvb-sel.is-empty { opacity: .55; }
+/* 列表定高滚动：几十个词也不能把弹窗撑长，滚的是这一块 */
+.kh-kvb-list {
+  flex: 1 1 auto; min-width: 0; max-height: 46vh; overflow: auto;
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+  padding: 4px;
+}
+.kh-kvb-row {
+  display: flex; align-items: center; gap: 8px; min-width: 0;
+  padding: 4px 6px; border-radius: var(--r-sm); cursor: pointer;
+}
+.kh-kvb-row:hover { background: var(--overlay-ink-4); }
+.kh-kvb-cb { flex: 0 0 auto; margin: 0; }
+/* 词本身可以折行，但不许把整行顶宽（超长词一律 anywhere 折） */
+.kh-kvb-name { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; word-break: break-word; }
+/* 作用域徽标：通用＝灰（低调），`@字段`＝品牌色 —— 这才是"只对某字段的图生效"的信号 */
+.kh-kvb-scope {
+  flex: 0 0 auto; font-size: var(--fs-xs); line-height: 16px;
+  padding: 0 6px; border-radius: var(--r-pill);
+  color: var(--text-3); background: var(--overlay-ink-6);
+}
+.kh-kvb-scope.is-scoped { color: var(--brand-deep); background: var(--brand-soft); }
+.kh-kvb-mark {
+  flex: 0 0 auto; font-size: var(--fs-xs); line-height: 16px;
+  padding: 0 6px; border-radius: var(--r-pill);
+  color: var(--success-strong); background: var(--success-soft);
+}
+.kh-kvb-empty { padding: 10px 8px; color: var(--text-3); font-size: var(--fs-sm); }
+/* 批量入口按钮本身：与「展开」同尺寸，不参与标题行挤压 */
+.kh-kv-batch-btn { flex: 0 0 auto; }

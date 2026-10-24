@@ -320,6 +320,69 @@
           </div>
         </div>
       </details>
+
+      <!-- 软著一致性核对：抓取到的「开发者 / 备案主体」与软著图里的「著作权人」一次性比对。
+           开关默认关（关着＝零涂色、零额外计算，行为与没有这个功能时完全一样）。 -->
+      <details class="kh-adv" id="ocr-adv-soft">
+        <summary>🧾 软著一致性核对</summary>
+        <div class="kh-adv-body">
+          <p class="kh-muted">
+            开了之后，每张重要笔记卡片会用<strong>同一条规则抓到的「开发者」/「备案主体」</strong>与该规则<strong>识别出来的图片</strong>里的「著作权人」比对一次，
+            结论直接涂在<strong>开发者那一行的值格</strong>上：🟩 绿底＝对得上，🟧 橙底＝对不上（鼠标停在格子上看具体原因），灰白＝缺数据没判。
+          </p>
+          <p class="kh-muted">
+            <strong>三种通过方式：</strong>① 著作权人＝开发者；② 著作权人＝备案主体；③ 有授权书，且授权书里的<strong>授权人＝著作权人、被授权人＝开发者</strong>。<br>
+            <strong>判定有多严：</strong>只做两件事——去掉空格/全角半角/首尾标点后<strong>整串相等</strong>，或者<strong>整串减去末尾的「…有限公司 / 有限责任公司 / 股份有限公司 / 公司 / 集团」后相等</strong>。<br>
+            <strong>不做模糊匹配：</strong>不比编辑距离、不做包含、不猜拼音、不认简称。名字只要差一个字就算对不上（宁可让你多看一眼，也不给你一个假的绿底）。
+          </p>
+          <div class="kh-form-row">
+            <div class="kh-form-fld">
+              <label class="kh-check"><input type="checkbox" id="soft-on"> 开启一致性核对</label>
+            </div>
+            <div class="kh-form-fld">
+              <label class="kh-fld-label" for="soft-compare">比对谁</label>
+              <select class="kh-input" id="soft-compare">
+                <option value="both">开发者或备案主体，任一一致即可 —— 默认</option>
+                <option value="dev">只比开发者</option>
+                <option value="subject">只比备案主体</option>
+              </select>
+            </div>
+          </div>
+          <div class="kh-form-row">
+            <div class="kh-form-fld">
+              <label class="kh-fld-label" for="soft-dev">开发者字段名</label>
+              <input class="kh-input" id="soft-dev" type="text" placeholder="开发者,开发公司,开发主体" autocomplete="off">
+            </div>
+            <div class="kh-form-fld">
+              <label class="kh-fld-label" for="soft-subject">备案主体字段名</label>
+              <input class="kh-input" id="soft-subject" type="text" placeholder="备案主体,主体公司,备案公司" autocomplete="off">
+            </div>
+          </div>
+          <div class="kh-form-row">
+            <div class="kh-form-fld">
+              <label class="kh-fld-label" for="soft-owner">著作权人字段名</label>
+              <input class="kh-input" id="soft-owner" type="text" placeholder="著作权人,软件著作权人" autocomplete="off">
+            </div>
+            <div class="kh-form-fld">
+              <label class="kh-fld-label" for="soft-auth">授权书关键词</label>
+              <input class="kh-input" id="soft-auth" type="text" placeholder="授权书,授权委托书,授权说明" autocomplete="off">
+            </div>
+          </div>
+          <div class="kh-form-row">
+            <div class="kh-form-fld">
+              <label class="kh-fld-label" for="soft-grantor">授权人字段名</label>
+              <input class="kh-input" id="soft-grantor" type="text" placeholder="授权人,授权方,许可人,授权公司" autocomplete="off">
+            </div>
+            <div class="kh-form-fld">
+              <label class="kh-fld-label" for="soft-grantee">被授权人字段名</label>
+              <input class="kh-input" id="soft-grantee" type="text" placeholder="被授权人,被授权方,被许可人,被授权公司" autocomplete="off">
+            </div>
+          </div>
+          <p class="kh-muted">
+            字段名都用<strong>逗号分隔</strong>，多个名字是"或"的关系（表格里叫「开发公司」也能认）。每个行业叫法不同，照自己网站的实际表头填；留空＝用占位符里的默认值。
+          </p>
+        </div>
+      </details>
     </section>
 
     <!-- ============================================================ 站点规则 -->
@@ -416,31 +479,13 @@
       <h3>📖 功能说明</h3>
             <div class="kh-fn-grid">
         <div class="kh-hcard">
-          <h4>🚀 快速上手</h4>
+          <h4>🚀 上手与匹配</h4>
           <ul>
-            <li>在「关键词管理」添加关键词，打开网页即自动高亮。</li>
-            <li>标记「重要」的词，命中后在页面<strong>左上角</strong>弹出笔记。</li>
-            <li><strong>点击</strong>高亮词看备注；<strong>悬停</strong>只显示浏览器原生小提示。</li>
-            <li>工具栏图标弹窗可<strong>快捷加词</strong>，不必进设置页。</li>
-          </ul>
-        </div>
-
-        <div class="kh-hcard">
-          <h4>🔑 关键词 · 基础用法</h4>
-          <ul>
-            <li>增 / 删 / 改 / 启用停用，可设备注、分组、颜色、匹配规则。</li>
-            <li><strong>匹配规则</strong>：区分大小写 / 全词 / 正则，可叠加；表格里点「胶囊」勾选生效。</li>
+            <li>在「关键词管理」添加关键词，打开网页即自动高亮；工具栏图标弹窗可<strong>快捷加词</strong>，不必进设置页。</li>
+            <li><strong>匹配规则</strong>：区分大小写 / 全词 / 正则，可叠加；表格里点「胶囊」勾选即生效。</li>
+            <li>标记「重要」的词，命中后在页面<strong>左上角</strong>弹出笔记；<strong>点击</strong>高亮词看备注，<strong>悬停</strong>只显示浏览器原生小提示。</li>
             <li><strong>管理</strong>：搜索、按分组/状态/类型筛选、排序、分页（每页 50）、勾选后批量操作。</li>
             <li>生僻字可用<strong>罕见字</strong>规则 <code>hjz#</code> 匹配（也可作组合核心）。</li>
-          </ul>
-        </div>
-
-        <div class="kh-hcard">
-          <h4>🗂️ 分组</h4>
-          <ul>
-            <li>可建 / 改 / 删分组，设<strong>统一高亮颜色</strong>，组内自动跟随。</li>
-            <li>分组可整组标记<strong>重要</strong> + 填统一<strong>重要笔记</strong>，也可勾选「底色」。</li>
-            <li>删除分组时，组内关键词自动移出分组，<strong>不会丢词</strong>。</li>
           </ul>
         </div>
 
@@ -455,46 +500,44 @@
         </div>
 
         <div class="kh-hcard">
-          <h4>📎 抓取后续字段</h4>
+          <h4>📎 抓取字段</h4>
           <ul>
             <li><code>地址|籍贯</code> 可抓多标签；支持多行 / 合并单元格，表格化展示。</li>
             <li><code>#1</code>＝只取右邻一格；三方向<strong>层级</strong>（当前层/内层/外层，下拉 8 档可多选）。</li>
-            <li>字段语法：<code>#图</code> 仅图片 / <code>#3</code> 最多 3 张图 / <code>#图3</code> 仅图片且最多 3 张 / <code>#0</code> 该字段<strong>不要图</strong> / <code>@表达式</code> 指定值格。</li>
+            <li>字段语法：<code>#图</code> 仅图片 / <code>#3</code> 最多 3 张图 / <code>#图3</code> 仅图片且最多 3 张 / <code>#0</code> 该字段<strong>不要图</strong> / <code>@表达式</code> 指定值格（图片地址只接受 http / https）。</li>
             <li><strong>后缀</strong>：末尾 <code>!</code> 去内部空格、<code>%N</code> 截前 N 字 / <code>%a-b</code> 截区间（不拆中文/emoji）、<code>^锚文本</code> 只取<strong>锚点之前</strong>的内容，如 <code>包名!</code>、<code>简介#1%4</code>、<code>名称^[复制]</code>（执行顺序固定 <code>!</code> → <code>^</code> → <code>%</code>）。</li>
-            <li>自动剔除按钮文字；图片仅接受 http/https。</li>
-            <li>某条字段<strong>取不到内容</strong>（值格空着、或整格什么都没抓到）时，这一项<strong>整张卡片都不出现</strong> —— 不会只剩一个只有字段名的空壳让你点。</li>
+            <li>某条字段<strong>取不到内容</strong>（值格空着、或整格什么都没抓到）时，这一项<strong>整张卡片都不出现</strong> —— 不会只剩一个只有字段名的空壳让你点。按钮文字会自动剔除，偶尔认不出的用 <code>^锚文本</code> 切掉。</li>
           </ul>
         </div>
 
         <div class="kh-hcard">
           <h4>📌 重要笔记</h4>
           <ul>
-            <li>词 / 组可标重要；命中且有内容 → 左上角<strong>置顶悬浮面板</strong>，多条聚合。</li>
-            <li>可拖动、收起成圆钮、单条关闭（本次会话）；可<strong>看大图、相册翻页</strong>。</li>
-            <li>配合「抓取 / 仅抓取」自动拼内容。</li>
-            <li>图片尺寸按「关键词 &gt; 分组 &gt; 全局默认」取值（关键词那一档需<strong>本词</strong>勾「重要」才生效）。</li>
-            <li>同一处命中<strong>多个词</strong>时，条目上默认只显示<strong>最短</strong>的那一条；右边带一枚<strong>命中计数</strong>小标（如 <code>×3</code>），点开条目上的下拉箭头就能看到<strong>全部命中</strong>（多个词分多行列出），点其中一项可切换主显示。</li>
-            <li>同一条命中不会为了多值就铺开成好几条 —— 多出来的词都在那枚小标的下拉里，面板更省地方。</li>
-            <li>点缩略图＝看大图（灯箱）。该图的<strong>全部识别文字</strong>在<strong>全文栏</strong>（浮层）里，默认就在<strong>大图右侧并排</strong>显示；不想看就点灯箱工具条上的<strong>眼睛</strong>开关收起（再点一次弹回来），按住栏的<strong>标题</strong>可把它拖到别处、<strong>双击标题</strong>回到大图右侧。栏里文字<strong>可选中</strong>，也可点栏里的<strong>一键复制</strong>，关掉大图即复位。<strong>图片条目上原来的 📋 复制按钮已移除</strong>，要整段文字请到这里取。</li>
-            <li>面板宽度：默认 <strong>250px</strong>；「重要笔记 → 面板默认宽度」里可调 <strong>200–1200px</strong>（长期值），面板<strong>右下角</strong>随时能拖（临时值）—— 两者的区别见「📖 功能 → 注意事项」。</li>
+            <li>词 / 组标重要、且有内容 → 命中后在页面<strong>左上角</strong>弹出<strong>置顶悬浮面板</strong>，多条聚合；可拖动、收起成圆钮、单条关闭（本次会话）。</li>
+            <li>配合「抓取 / 仅抓取」自动拼内容；某一条<strong>取不到内容</strong>时这条不出现，不会只剩字段名。</li>
+            <li>同一处命中<strong>多个词</strong>时默认只显示<strong>最短</strong>一条；右边那枚 <code>×3</code> 是<strong>命中计数</strong>，点开条目上的下拉可看<strong>全部命中</strong>，点其中一项切换主显示。</li>
+            <li>图片尺寸按「关键词 &gt; 分组 &gt; 全局默认」取值（关键词那一档需<strong>本词</strong>勾「重要」才生效）；正文字号也能每个词单独设 —— 见 <strong>Q14</strong>。</li>
+            <li>面板宽度默认 <strong>250px</strong>、「重要笔记 → 面板默认宽度」可调 <strong>200–1200px</strong>，右下角拖出来的是<strong>临时值</strong>（见 <strong>Q12</strong>）；点缩略图看大图，识别全文在<strong>全文栏</strong>（见 <strong>Q13</strong>）。</li>
           </ul>
         </div>
 
         <div class="kh-hcard">
-          <h4>💬 备注卡片</h4>
+          <h4>🌐 高亮与备注</h4>
           <ul>
-            <li>点击高亮词弹出备注卡片，<code>Esc</code> / 滚动 / 再点关闭。</li>
-            <li>卡片样式（背景 / 文字 / 边框 / 圆角 / 阴影 / 宽度 / 字号）可自定义。</li>
-          </ul>
-        </div>
-
-        <div class="kh-hcard">
-          <h4>🌐 网页高亮表现</h4>
-          <ul>
-            <li>自动高亮 + 动态新内容自动亮；<strong>不破坏网页结构</strong>（纯视觉 Range 高亮）。</li>
+            <li>自动高亮 + 动态新内容自动亮；纯视觉的 Range 高亮，<strong>不改动网页结构</strong>。</li>
             <li>跨文本节点也整词命中（如 <code>审&lt;span&gt;核&lt;/span&gt;不通过</code>）。</li>
             <li>折叠内容算页面内容（含网站自做的展开/收起，可开关）；隐藏菜单 / 弹窗关闭态不误高亮。</li>
-            <li>同中命中<strong>长匹配优先</strong>防重叠；跳过 script / code / pre / 输入框；Shadow DOM 可开关。</li>
+            <li>长匹配优先防重叠；跳过 script / code / pre / 输入框；Shadow DOM 可开关。</li>
+            <li><strong>备注卡片</strong>：点击高亮词弹出，<code>Esc</code> / 滚动 / 再点关闭；背景、文字、边框、圆角、阴影、宽度、字号都可自定义。</li>
+          </ul>
+        </div>
+
+        <div class="kh-hcard">
+          <h4>🗂️ 分组</h4>
+          <ul>
+            <li>可建 / 改 / 删分组，设<strong>统一高亮颜色</strong>，组内自动跟随。</li>
+            <li>分组可整组标记<strong>重要</strong> + 填统一<strong>重要笔记</strong>，也可勾选「底色」。</li>
+            <li>删除分组时，组内关键词自动移出分组，<strong>不会丢词</strong>。</li>
           </ul>
         </div>
 
@@ -508,51 +551,36 @@
         </div>
 
         <div class="kh-hcard">
-          <h4>🖼 图片识别（OCR）</h4>
+          <h4>🖼 图片识别</h4>
           <ul>
-            <li>本地识别图片文字，匹配「图片命中关键词」。</li>
-            <li>结果进面板最上面那张「截图」表，<strong>不产生文字高亮</strong>。</li>
-            <li>识别全在本机；语言包按需下载 / 手动导入 / 自检；跨域图片按站点授权。</li>
-            <li>长截图会<strong>分段识别</strong>，跨分块的重叠区里，<strong>同一条物理行自动去重合并</strong>，不会因为切块把同一行文字算两遍（原图里本来就重复的内容不会被吃掉）。</li>
-            <li>大图（灯箱）里那张图的<strong>识别全文</strong>在<strong>全文栏</strong>（浮层）里与大图<strong>并排</strong>展示，默认就在右侧：可用工具条上的<strong>眼睛</strong>开关<strong>隐藏 / 显示</strong>，栏内文字<strong>可选中</strong>，还有<strong>一键复制</strong>（浮层隐藏时复制按钮一起隐藏）。按住栏的<strong>标题</strong>可把它拖到别处、<strong>双击标题</strong>回到大图右侧；关掉大图即复位。图片条目上原来的 <strong>📋 一键复制按钮已移除</strong>，要复制完整识别文字请到这个浮层里取。</li>
-            <li><strong>右键网页上任意一张图，可以直接识别那一张</strong>：在图片上点右键 → 「用高亮词识别这张图」，只读你点的那一张、<strong>不写进白名单</strong>（右键即同意本次代读）。点下去<strong>立刻</strong>在面板「截图」表里出现这张图（标「识别中」），结果回来原地替换成缩略图 + 标签，点开就是大图与右侧栏全文。安全边界：新入口<strong>只放行公网 http/https</strong> —— 本机回环、内网段、<code>localhost</code> 与 <code>*.local</code> / <code>*.internal</code> / <code>*.home.arpa</code>、IPv6 字面量一律拒绝且不发请求。</li>
-            <li><strong>PDF 也能命中（2.0.6.5 起）</strong>：页面里<strong>引用</strong>到的 PDF（<code>&lt;a href="….pdf"&gt;</code> 链接、<code>&lt;iframe&gt;</code> / <code>&lt;embed&gt;</code> / <code>&lt;object&gt;</code> 嵌的 PDF）会在笔记里显示成一枚 <strong>PDF 占位牌</strong>（不渲染 PDF 源文件、不下载给你看）。扩展自己取字节、自己抽文字，命中判据与图片识别完全同一套。牌子有<strong>三种边框</strong>：<span title="识别中">蓝</span>＝正在读、<span title="无命中">绿</span>＝读完了但没命中（或抽不到字）、<span title="命中">红</span>＝命中；悬停会说明命中/未命中的原因。<strong>点一下占位牌</strong>就能看这份 PDF 的<strong>全文与命中内容</strong>（命中词会标亮）。</li>
+            <li>在本机识别图片文字，结果进面板最上面那张「截图」表、<strong>不产生文字高亮</strong>；命中判据是图里出现「图片命中关键词」里的词，或（填了动态关键词时）出现抓到的值 —— 多个值是<strong>「或」</strong>；词尾加 <code>#表</code> 把「词：值」并进笔记表格，<code>@字段名</code> 只对某个字段的图生效（见 <strong>Q16 / Q17</strong>）。语言包按需下载 / 手动导入 / 自检，跨域图片按站点授权。</li>
+            <li>词条多了点这两格标题行右侧的<strong>「批量」按钮</strong>：列出全部词条，可按词 / <code>@</code> / <code>#表</code> 过滤、全选反选，一次把勾中的改成通用或某个字段、加 / 去 <code>#表</code>、或删除 —— 只改勾中的，没改就不写回（见 <strong>Q22</strong>）。</li>
+            <li>长截图<strong>分段识别</strong>，跨分块的同一条物理行自动去重；列数超过 4 的表会退回纯文本（宁可给你可读的文字，也不把被切碎的字排成 5 列）—— 见 <strong>Q20 / Q23</strong>。</li>
+            <li><strong>右键网页上任意一张图</strong>可识别这一张（只读你点的那张、不写白名单）；<strong>PDF 也能命中</strong>，在面板里是枚占位牌，<span title="识别中">蓝</span>＝正在读 / <span title="无命中">绿</span>＝没命中或没抽到字 / <span title="命中">红</span>＝命中（见 <strong>Q15</strong>）。</li>
+            <li><strong>🧾 软著一致性核对</strong>（开在「图片识别 → 🧾 软著一致性核对」里，<strong>默认关</strong>、关着就零涂色零额外计算）：把抓到的<strong>开发者 / 备案主体</strong>与软著图里的<strong>著作权人</strong>比一遍，三种算通过 —— 著作权人＝开发者、著作权人＝备案主体、有授权书且授权人＝著作权人（同时被授权人＝开发者）；通过<strong>绿底</strong>、不通过<strong>橙底</strong>、<strong>缺数据不涂色</strong>（配法、严格度与前提见 <strong>Q21</strong>）。</li>
           </ul>
         </div>
 
         <div class="kh-hcard">
-          <h4>🩺 诊断与排查</h4>
+          <h4>🩺 诊断排查</h4>
           <ul>
             <li>工具栏弹窗里可查看：整页重建 / 只刷面板次数、最近变更判定、命中规模、图片识别排队、组合词定位等。</li>
             <li>遇到「卡 / 不亮」先点它，再把数据提供给支持，能快速定位。</li>
+            <li>一条都没命中时看它的<strong>自查段</strong>：这一层文档有多少字 / 文本节点 / 图，上一轮扫到多少、被「不可见」剪掉多少、命中几条，逐条规则在文本 / 表单值 / 属性 / 影子根各出现几次 —— 最后一句点明是哪种原因（见 <strong>Q1</strong> 的自查五步）。</li>
           </ul>
         </div>
 
         <div class="kh-hcard">
-          <h4>⌨️ 快捷键 &amp; 更新</h4>
+          <h4>⌨️ 快捷键更新</h4>
           <!-- 按键由 options.js 用 chrome.commands.getAll() 的真值重画（静态文字仅兜底） -->
           <ul>
             <li><kbd data-kh-cmd="toggle-highlight">Ctrl+Shift+H</kbd>：开启 / 关闭全局高亮</li>
-            <li><kbd data-kh-cmd="toggle-site">Ctrl+Shift+S</kbd>：临时禁用 / 恢复当前站（与设置页顶部「本站开关」同通道；在普通网页上生效，浏览器内置页 / 扩展商店 / PDF 上无效）</li>
+            <li><kbd data-kh-cmd="toggle-site">Ctrl+Shift+S</kbd>：临时禁用 / 恢复当前站（普通网页上生效；浏览器内置页 / 扩展商店 / PDF 上无效）</li>
             <li><kbd data-kh-cmd="open-settings">Ctrl+Shift+Y</kbd>：打开设置页</li>
-            <li>「未分配」表示浏览器没给这条命令分按键（多半被浏览器自带快捷键占用）；可在浏览器「扩展程序 → 管理扩展 → 快捷键」里自定义，或只记住能用的那几条。</li>
+            <li>「未分配」表示浏览器没给这条命令分按键（多半被浏览器自带快捷键占用）；可在「扩展程序 → 管理扩展 → 快捷键」里自定义。</li>
             <li>「ℹ️ 关于 → 版本信息」里可<strong>检查更新</strong>。</li>
           </ul>
         </div>
-      </div>
-
-      <div class="kh-help">
-        <h4>⚠️ 注意事项与已知局限</h4>
-        <ul>
-          <li><strong>「面板宽度」有两个值，别弄混</strong>：设置页「重要笔记 → 面板默认宽度」调的是<strong>默认值（长期值）</strong>，200–1200px、默认 250px，面板每次打开都按它来；面板<strong>右下角</strong>直接拖出来的是<strong>临时值</strong>，只对当前这一次显示有效、<strong>不写回设置</strong>，刷新页面就回到默认值。要「以后都这么宽」就在设置页改；只是这会儿嫌窄/嫌宽，拖右下角即可。两处数值不一样是正常的，不是没生效。</li>
-          <li><strong>命中词后面那个小数字是什么</strong>：面板每条笔记的命中词后面跟的<strong>裸数字</strong>（如 <code>3</code>）不是次数单位，而是<strong>该词在本页命中的处数</strong>（命中 1 处时不显示小标，2 处起才出现）；点开可看全部命中。</li>
-          <li><strong>「右键读图＝一次性同意」与「站点授权＝长期授权」</strong>：在网页图片上点右键 → 「用高亮词识别这张图」，<strong>右键即代表你同意本次代为读取这张图</strong>，只读你点的那一张、<strong>不</strong>写进白名单。而跨域图床的图，扩展默认读不到，必须在「图片识别 → 跨域图片」里<strong>按站点显式授权</strong>后，自动扫描时才会代读 —— 那是长期授权，登记一次以后都算数。两者不冲突：<strong>一次性的用右键，常去的站点进名单</strong>。</li>
-          <li><strong>跨域图未授权时的表现</strong>：这类图片在面板里<strong>照常显示</strong>，状态标成「<strong>跨域（未授权 域名）</strong>」（一个可动手的提示，不是故障）；把它那个域名加进本页「跨域图片」白名单，或直接在网页图片上<strong>右键识别</strong>这一张，就能读它。</li>
-          <li><strong>长截图去重的边界</strong>：去重认两种情形 —— ① 删掉空白后<strong>完全相同</strong>的行；② 同一物理行（竖直差 ≤8px）里<strong>很像但不完全相同</strong>的行（水平偏移 ≤16px）。②里<strong>长句</strong>按相似度 ≥0.8 判、且两次识别的<strong>置信度相差 ≥4 分</strong>才合并；<strong>短句（不足 6 字）</strong>改按单字相似度判（≥1/3 即同一行）—— 短串上「很像」很容易直接算成 0，按老口径会出现「你好啊」被两个切片各读错一个字、结果并排显示两行的情况。两条谁更可信由<strong>置信度</strong>决定，但不再因为「分不出高下」而两条都留。置信度咬得很近的长句仍会都留下 —— 宁可让你看到一条重复，也不猜着删掉真实内容。</li>
-          <li><strong>超长截图的切块上限</strong>：分段识别最多 40 块（约 7 万像素高），<strong>只有超过这个高度</strong>才会截断、超出部分不会被识别（是内容缺失，不是重复）。1080 宽的长图要到 14321px 才可能触发；真触发时面板会如实标注覆盖范围。</li>
-          <li><strong>PDF 的边界（2.0.6.5）</strong>：只认页面里<strong>引用</strong>的 PDF（链接 / <code>iframe</code> / <code>embed</code> / <code>object</code>）。<strong>直接在浏览器里打开的那个 PDF 标签页读不到</strong> —— 那是浏览器自带的阅读器，扩展的内容脚本不会在那里运行，所以「先打开 PDF 再想让它识别」这条路不通，请在<strong>引用它的普通网页</strong>上看。抽的是 PDF 的<strong>文字层</strong>：扫描件、纯图片导出的 PDF 抽不出字（牌子会变绿并说明「没抽到文字，可能是扫描件」），这种情况只能用截图 / 图片识别那条路走 OCR。</li>
-          <li><strong>PDF 的其它已知限制</strong>：带<strong>密码 / 加密</strong>的 PDF 不解密（直接判读不出）；压缩方式只解最常见的 FlateDecode，少数用 LZW / JPEG2000 之类打包的内容可能缺字（面板文案会标出来）；单份上限 <strong>40MB</strong>、抽出的正文上限 <strong>20 万字</strong>（超出会截断并提示），超大 PDF 换个思路（只看其中几页）更稳。</li>
-        </ul>
       </div>
 
       </div>
@@ -594,7 +622,7 @@
         </ul>
 
         <h4>Q8：图片识别（OCR）怎么用？</h4>
-        <p>在「🖼 图片识别」分区确保语言包可用（可下载 / 手动导入 / 自检）；开启后，图片里含「图片命中关键词」的文字会被识别，结果进页面左上角「重要笔记」面板最上面那张「<strong>截图</strong>」表，<strong>不产生文字高亮</strong>。想让「抓到的值」也必须在图上出现才算命中，就再填「<strong>图片动态关键词</strong>」（填抓取字段名，多个可用逗号或 <code>|</code> 分隔，如 <code>姓名,岗位</code>）：<strong>任一个值出现在图上就算命中</strong>（2.0.7.1 起是「或」，命中几个都展示），留空等于只看关键词。两个框都能写 <code>@字段名</code> 限定只对某个抓取字段生效（如 <code>张三@截图</code>）：某个字段配了限定词就只用限定词，没配的字段照旧用全部词。图里若是表格（键值对齐、或并排两栏），面板里的识别全文会<strong>按列排成表格</strong>，分不出列就退回纯文本。跨域图片可以两条路走：在「图片识别」里<strong>按站点授权</strong>，或者在网页图片上直接<strong>右键</strong>识别<strong>你点的那一张</strong> —— 右键即这一次同意扩展代读你点的那张，与站点白名单（长期授权）并存不冲突，口径见「🖼 图片识别 → 跨域图片」。另外，任何进了面板的图，点开大图后工具条上都有一键 OCR（没识别过就是「OCR 识别」，识别过就是隐藏/显示全文）。</p>
+        <p>在「🖼 图片识别」分区确保语言包可用（可下载 / 手动导入 / 自检）；开启后，图片里含「图片命中关键词」的文字会被识别，结果进页面左上角「重要笔记」面板最上面那张「<strong>截图</strong>」表，<strong>不产生文字高亮</strong>。想让「抓到的值」也必须在图上出现才算命中，就再填「<strong>图片动态关键词</strong>」（填抓取字段名，多个可用逗号或 <code>|</code> 分隔，如 <code>姓名,岗位</code>）：<strong>任一个值出现在图上就算命中</strong>（2.0.7.1 起是「或」，命中几个都展示），留空等于只看关键词。两个框都能写 <code>@字段名</code> 限定只对某个抓取字段生效（如 <code>张三@截图</code>）：某个字段配了限定词就只用限定词，没配的字段照旧用全部词。图里若是表格（键值对齐、或并排两栏），面板里的识别全文会<strong>按列排成表格</strong>，分不出列就退回纯文本。跨域图片可以两条路走：在「图片识别」里<strong>按站点授权</strong>，或者在网页图片上直接<strong>右键</strong>识别<strong>你点的那一张</strong> —— 右键即这一次同意扩展代读你点的那张，与站点白名单（长期授权）并存不冲突，口径见「🖼 图片识别 → 跨域图片」。另外，任何进了面板的图，点开大图后工具条上都有一键 OCR（没识别过就是「OCR 识别」，识别过就是隐藏/显示全文）。要注意被识别的对象是<strong>页面里真有的图</strong>：把截图贴进笔记、或从别处拖进面板的图不参与识别，也不想让它参与 —— 要在网页上那张原图上<strong>右键</strong>识别，或让抓取把那张图收进「截图」表。</p>
         <h4>Q9：抓取字段后面的那些<strong>后缀</strong>（<code>#1</code>、<code>#图</code>、<code>@2</code>、<code>!</code>、<code>%N</code>、<code>^锚文本</code>）都是什么？</h4>
         <p><strong>写在哪</strong>：写在「抓取后续字段」里每个<strong>字段名的末尾</strong>（如 <code>资质类型#1</code>），只影响那一个字段 —— 每个字段可以配不一样的后缀。<strong>顺序随意</strong>：修饰都从末尾逐个剥，<code>应用截图@1-3#图</code> 与 <code>应用截图#图@2</code> 等价。</p>
         <ul>
@@ -609,7 +637,7 @@
         <h4>Q11：更新日志去哪看？</h4>
         <p>设置页「ℹ️ 关于 → 版本信息」，可用<strong>右侧目录</strong>按版本号跳转；完整历史在<strong>欢迎页</strong>。</p>
         <h4>Q12：设置页改了「面板默认宽度」，为什么面板没跟着变？</h4>
-        <p>「面板默认宽度」调的是<strong>默认值</strong>（以后每次打开的面板宽度，<strong>各站点共用这一份设置</strong>）；没拖过<strong>右下角</strong>的面板，这会儿正开着也会<strong>立刻</strong>跟着变。一旦拖过<strong>右下角</strong>，面板就按你拖出来的宽度显示 —— 那是<strong>临时值</strong>，只作用在页面上、不写进设置，此时再改设置页也不会顶掉它，<strong>刷新页面就回到默认值</strong>。填 200–1200 之外会自动夹到边界，填了非数字则回到 250。</p>
+        <p>「面板默认宽度」调的是<strong>默认值</strong>（以后每次打开的面板宽度，<strong>各站点共用这一份设置</strong>）；没拖过<strong>右下角</strong>的面板，这会儿正开着也会<strong>立刻</strong>跟着变。一旦拖过<strong>右下角</strong>，面板就按你拖出来的宽度显示 —— 那是<strong>临时值</strong>，只作用在页面上、不写进设置，此时再改设置页也不会顶掉它，<strong>刷新页面就回到默认值</strong>。填 200–1200 之外会自动夹到边界，填了非数字则回到 250。<strong>两处数值不一样是正常的，不是没生效</strong>：想要「以后都这么宽」就改设置页，只是这会儿嫌窄 / 嫌宽就拖右下角。</p>
         <h4>Q13：图片条目上的「📋 一键复制」去哪了？</h4>
         <p>已移除（图片条目上不再有那个按钮），完整识别文字请到<strong>大图（灯箱）的全文栏</strong>里取：该栏默认就在<strong>大图右侧并排</strong>显示，点<strong>一键复制</strong>，或在栏里<strong>选中后 Ctrl+C</strong>；用灯箱工具条上的<strong>眼睛</strong>开关收起 / 展开，复制按钮跟着它一起显隐（按住栏的<strong>标题</strong>可拖动、<strong>双击标题</strong>回位）。面板里<strong>点命中的词块</strong>，复制的仍是它所在的<strong>整句</strong>。</p>
         <h4>Q14：重要笔记里每个词的<strong>正文字号</strong>能单独设吗？</h4>
@@ -617,7 +645,7 @@
         <h4>Q15：PDF 里的文字能命中吗？怎么用？</h4>
         <p>能（<strong>2.0.6.5</strong> 起）。前提是<strong>页面里引用了这份 PDF</strong> —— 抓到的值格里有 <code>&lt;a href="….pdf"&gt;</code> 链接，或有 <code>&lt;iframe&gt;</code> / <code>&lt;embed&gt;</code> / <code>&lt;object&gt;</code> 嵌着 PDF，扩展就会自己去取、抽文字，命中判据与图片识别<strong>完全同一套</strong>（「图片命中关键词」里照常填词即可，PDF 里的字与网页正文一样能对上）。<strong>2.0.7.1 起</strong>还认「<strong>点击才跳转</strong>」的控件：真地址藏在 <code>data-href</code> / <code>data-src</code> / <code>download</code> / <code>onclick</code> / <code>title</code> 里、或地址像下载入口且控件自己写着 PDF，一样能取到并命中。</p>
         <p>它在面板里是一枚 <strong>PDF 占位牌</strong>（<strong>不渲染 PDF 源文件</strong>，只标「这里有一份 PDF」），三色边框：<strong>蓝</strong>＝正在读、<strong>绿</strong>＝读完了<strong>没命中</strong>（或没抽到字）、<strong>红</strong>＝<strong>命中</strong>；<strong>悬停</strong>会告诉你命中/未命中的原因。<strong>点一下占位牌</strong>就能看这份 PDF 的<strong>全文与命中内容</strong>（命中词标亮，全文可选中、可复制）。</p>
-        <p><strong>读不到的情况</strong>（都是设计使然，不是故障）：① 你<strong>直接打开的那个 PDF 标签页</strong>读不到 —— 那是浏览器自带阅读器，扩展脚本不在那里运行；② <strong>扫描件 PDF</strong> 只有图片没有文字层，抽不出字（牌子变绿并提示「没抽到文字，可能是扫描件」），要识别它得用截图 + OCR 那条路；③ 带密码 / 加密的 PDF 不解密；④ 单份上限 40MB、抽出正文上限 20 万字（超出截断并提示）。</p>
+        <p><strong>读不到的情况</strong>（都是设计使然，不是故障）：① 你<strong>直接打开的那个 PDF 标签页</strong>读不到 —— 那是浏览器自带阅读器，扩展脚本不在那里运行；② <strong>扫描件 PDF</strong> 只有图片没有文字层，抽不出字（牌子变绿并提示「没抽到文字，可能是扫描件」），要识别它得用截图 + OCR 那条路；③ 带密码 / 加密的 PDF 不解密；④ 单份上限 40MB、抽出正文上限 20 万字（超出截断并提示）；⑤ 压缩方式只解最常见的 FlateDecode，少数用 LZW / JPEG2000 之类打包的内容可能缺字（面板文案会标出来）。超大 PDF 换个思路 —— 只看其中几页更稳。</p>
         <h4>Q16：<code>#表</code> 标记是什么？（让图 / PDF 里的「词：值」并进笔记表格）</h4>
         <p>在「<strong>图片命中关键词</strong>」里，给某个<strong>词尾加上 <code>#表</code></strong>（也认 <code>#kv</code>），图（或 PDF）里读到的<strong>「这个词：值」</strong>就会作为<strong>一行</strong>并进重要笔记的表格 —— 左边是命中词、右边是取到的值。例：<code>登记号#表|著作权人#表</code> 会把「登记号：2025SR0456628」「著作权人：某某公司」各变成一行；<strong>不加 <code>#表</code> 的词只判命中、不进表格</strong>。</p>
         <p><strong>写法要点</strong>：多个词用 <code>|</code> 分隔；<strong>2.0.6.5 起逗号 / 顿号 / 分号 / 空格也能当分隔符</strong>（<code>登记号#表,著作权人#表</code> 与上面等价，老版本里这种写法会被当成一个词而失效）。值的取法：同一表格里<strong>命中格右边的单元格</strong> → 同一行的<strong>冒号 / 竖线后面</strong> → 值<strong>换行写在下一行</strong>，三种都能取到（取不到值时那一行不出现，宁缺不乱）。</p>
@@ -626,6 +654,27 @@
         <p><strong>抓取字段</strong>（「抓取后续字段」）：<code>#1</code> / <code>@N</code> / <code>#图</code> / <code>#N</code> / <code>#0</code> / <code>!</code> / <code>^锚文本</code> / <code>%N</code> —— 全都<strong>改取值</strong>（取哪格、要不要图、怎么洗值），只有这一处真正改值。</p>
         <p><strong>图片命中关键词</strong>：<code>#表</code>（也认 <code>#kv</code>）＝图 / PDF 里的「词：值」并进笔记表格，<strong>逐词</strong>生效；<code>@字段名</code>＝这个词只对那个抓取字段的图生效。后缀在界面上画成徽标，不再混进词名。</p>
         <p><strong>图片动态关键词</strong>：填的是抓取字段名；<code>@字段名</code>＝这条判据只对哪个图片字段生效。这里写的其它后缀（<code>!</code> <code>^</code> <code>%</code>）<strong>只用来认出字段名</strong>（<code>开发者! ^高价</code> 仍是字段「开发者」），<strong>不改变取值</strong> —— 要裁值请写在同一名的<strong>抓取字段</strong>里，避免两套后缀各改一半、彼此打架。</p>
+        <h4>Q18：高亮词后面那个小数字是什么？</h4>
+        <p>不是次数单位，是<strong>该词在本页命中的处数</strong>。命中 <strong>1 处</strong>时不显示这枚小标，<strong>2 处起</strong>才出现（如 <code>×3</code>）；点开条目上的下拉箭头，能看到<strong>全部命中</strong>，点其中一项可切换主显示。</p>
+        <h4>Q19：右键读图和站点授权有什么区别？跨域图读不到怎么办？</h4>
+        <p><strong>右键读图＝一次性同意</strong>：在网页图片上点右键 →「用高亮词识别这张图」，右键本身就代表你同意<strong>本次</strong>代读这张图，只读你点的那一张、<strong>不</strong>写进白名单。<strong>站点授权＝长期授权</strong>：跨域图床的图默认读不到，要在「图片识别 → 跨域图片」里<strong>按站点显式授权</strong>后，自动扫描时才会代读 —— 登记一次，以后都算数。两者不冲突：<strong>一次性的用右键，常去的站点进名单</strong>。</p>
+        <p><strong>没授权时的表现</strong>：这类图片在面板里<strong>照常显示</strong>，状态标成「<strong>跨域（未授权 域名）</strong>」—— 那是个可动手的提示，不是故障。两条解法：① 把它那个域名加进本页「跨域图片」白名单；② 直接在网页图片上<strong>右键识别</strong>这一张。</p>
+        <h4>Q20：长截图很长，会不会重复或者漏掉？</h4>
+        <p><strong>去重只认两种情形</strong>：① 删掉空白后<strong>完全相同</strong>的行；② 同一物理行（竖直差 ≤8px）里<strong>很像但不完全相同</strong>的行（水平偏移 ≤16px）。②里<strong>长句</strong>按相似度 ≥0.8 判、且两次识别的<strong>置信度相差 ≥4 分</strong>才合并；<strong>短句（不足 6 字）</strong>改按单字相似度判（≥1/3 即同一行）。谁更可信由<strong>置信度</strong>决定，但不再因为「分不出高下」而两条都留；置信度咬得很近的长句仍然都会留下 —— 宁可让你看到一条重复，也不猜着删掉真实内容。原图里本来就重复的内容不会被吃掉。</p>
+        <p><strong>上限是 40 块</strong>（约 7 万像素高）：只有超过这个高度才会截断，<strong>超出部分不会被识别</strong>（是内容缺失，不是重复）。1080 宽的长图要到 14321px 才可能触发；真触发时面板会如实标注覆盖范围。</p>
+        <h4>Q21：软著一致性核对怎么配？要满足什么前提？</h4>
+        <p><strong>先满足前提</strong>：软著图必须由<strong>同一条规则</strong>的图片识别扫到（自动扫描或右键识别都算），而且这条规则同时抓了「开发者」或「备案主体」。缺任何一边就不判 —— 著作权人没读到、或开发者 / 备案主体没抓到，都<strong>不涂色、不出徽标</strong>（不猜、不假绿）。</p>
+        <p><strong>打开与配置</strong>：「图片识别 → 🧾 软著一致性核对」里勾「开启一致性核对」（<strong>默认关</strong>，关着就是零涂色、零额外计算，行为与上一版完全一致）。「比对谁」三档：开发者或备案主体任一一致即可（默认）/ 只比开发者 / 只比备案主体。六个「字段名」文本框（开发者、备案主体、著作权人、授权书关键词、授权人、被授权人）都能填多个别名，<strong>逗号分隔、多个名字是「或」的关系</strong>，<strong>留空＝用占位符里的默认值</strong>。</p>
+        <p><strong>三种算通过</strong>：① 著作权人＝开发者；② 著作权人＝备案主体；③ 有授权书，且<strong>授权人＝著作权人、被授权人＝开发者</strong>。</p>
+        <p><strong>判定很严格</strong>（这才是它可靠的原因）：只做两件事 —— 去掉空格、全角折半角、忽略大小写、去掉首尾标点后<strong>整串相等</strong>；或者<strong>整串减掉末尾</strong>的「股份有限公司 / 有限责任公司 / 有限公司 / 公司 / 集团」后<strong>整串相等</strong>。<strong>不做</strong>编辑距离、包含、拼音、简称 —— 差一个字就算对不上（宁可漏判，也不给你一个假的绿）。</p>
+        <p><strong>怎么看结果</strong>：通过 ⇒ 目标值格<strong>绿底</strong>（左侧还有一条绿条），表后跟一行 <code>✅ 一句话原因</code>；不通过 ⇒ <strong>橙底</strong> + <code>⚠️ 原因</code>（原因里写明两家公司的全名，方便你直接比对）；缺数据 ⇒ 不判、不涂色。已知上限：同一张表里<strong>同名字段出现多行</strong>时，只判<strong>第一行</strong>。</p>
+        <h4>Q22：词条太多，怎么批量改作用域和 <code>#表</code>？</h4>
+        <p><strong>入口</strong>：「图片命中关键词」和「图片动态关键词」这两格的<strong>标题行右侧各有一枚「批量」按钮</strong>（另外两个框没有）。点开弹窗标题是「<strong>&lt;字段名&gt; · 批量管理</strong>」，里面列出<strong>该格全部词条</strong>，每条后面带着作用域徽标（<code>通用</code> 或 <code>@截图</code>）和 <code>#表</code> 徽标。</p>
+        <p><strong>怎么选</strong>：顶部过滤框按<strong>词、<code>@</code>、<code>#表</code></strong>都能筛；「全选」「反选」只作用于<strong>当前过滤结果</strong>；旁边显示「共 N 个词，已选 M 个」。</p>
+        <p><strong>能一次做什么</strong>（都只对<strong>勾选中</strong>的词生效）：<code>设为通用</code>（去掉 <code>@字段名</code>）、<code>设为该字段</code>（旁边下拉<strong>只列真配过的抓取字段</strong>；还没配字段时下拉禁用并提示先配「抓取后续字段」）、<code>加 #表</code>、<code>去 #表</code>（可重复点，不会叠成 <code>#表#表</code>）、<code>删除选中</code>。</p>
+        <p><strong>写回很保守</strong>：只改你勾中的那几条，其余词<strong>一字不动</strong>，原来的 <code>|</code> / <code>｜</code> / 空格写法<strong>原位保留</strong>；一条都没改就点「应用」＝<strong>不写回、直接关</strong> —— 所以「打开看一眼」永远不会改造你的原串。<strong>语义</strong>：<code>#表</code> 永远收在词条最末；<code>@字段名</code> 只有 <code>@</code> 后面是<strong>已配置的抓取字段裸名</strong>时才算作用域，不是真字段就整段按普通词处理（老配置零影响）。</p>
+        <h4>Q23：为什么这张表没排成表格？</h4>
+        <p>识别结果会在<strong>同一行有 ≥2 个框</strong>时才认作表格（键值对齐、并排两栏都算）。两个会退回纯文本的情形：① 这一行<strong>只有一个框</strong> —— 没有对齐证据，宁可按文字给你；② <strong>列数超过 4</strong>（序号 / 名称 / 数量 / 单价 / 金额 这类）—— 这是<strong>有意的</strong>：宁可退成可读的文本，也不要把被切碎的文字硬排成 5 列。</p>
       </div>
 
       </div>

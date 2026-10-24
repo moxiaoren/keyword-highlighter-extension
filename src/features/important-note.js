@@ -303,6 +303,18 @@
       margin-left: 4px; font-weight: 400; font-size: 9px; line-height: 1.5;
       color: var(--kh-text-3, #94a3b8); white-space: nowrap;
     }
+    /* ---- 软著一致性核对（用户 m00001 需求②）----
+     * 结论只落在**值格**上（见 softcheck.js 的 decorateTable）：通过=绿底、需授权书=琥珀底、跳过=不涂。
+     * 底色用浅色 + 左内阴影当色条：卡片本身可能铺了"复用高亮底色"，浅底在深色卡上仍能认出颜色。 */
+    .kh-table td.khin-soft-ok { background: #e7f8ec; box-shadow: inset 3px 0 0 #16a34a; }
+    .kh-table td.khin-soft-warn { background: #fff4e5; box-shadow: inset 3px 0 0 #f59e0b; }
+    /* 表格下面那行小徽标：一句人话的结论（完整 reason 也在 title 里，悬停可读） */
+    .khin-soft-badge {
+      display: block; margin-top: 4px; padding: 2px 6px; border-radius: 6px;
+      font-size: 10px; line-height: 1.6; white-space: normal; word-break: break-word;
+    }
+    .khin-soft-badge.khin-soft-ok { color: #15803d; background: #e7f8ec; border: 1px solid #bbe7c8; }
+    .khin-soft-badge.khin-soft-warn { color: #b45309; background: #fff4e5; border: 1px solid #f6d5a7; }
   `;
 
   /** 图片协议白名单（与内容脚本 sanitize 同口径：仅 http(s)） */
@@ -1699,6 +1711,11 @@
     /** 渲染（幂等；内容未变则不重建 DOM） */
     render(items, cfg) {
       const doc = document;
+      /* 记住本次配置：`refresh()` / `renderImg()` 是面板自触发的重绘，没有外部 cfg 可传，
+       * 旧写法传的是 `KH.config` —— 全仓从未给它赋过值（恒 undefined），于是这两条重绘一律
+       * 回落到默认值（面板宽度 / 字号 / 软著核对开关都跟着丢）。这里留一份，重绘走 `this.cfg`。 */
+      if (cfg) this.cfg = cfg;
+      cfg = cfg || this.cfg || {};
       this.ensure(doc);
       /* 图片尺寸与正文字号都走 `KH.Config` 的**唯一归一函数**（2.0.2.6 需求③ 收口）：
        * 边界常量与设置页数字输入的 min/max 是同一对，越界夹紧、坏值回默认 —— 手改 storage /
@@ -1747,6 +1764,8 @@
         /* 卡片没变 ⇒ 只补两块会变的东西：图上的命中红框、右键那张「截图」卡 */
         this.applyImgMarks();
         this.renderCtxCard();
+        /* 卡片被复用（note 没变）时结论仍可能变：OCR 刚识别完 / 用户改了比对配置 ⇒ 重落一次 */
+        this.applySoftCheck();
       }
       this.show();
     },
@@ -1763,11 +1782,13 @@
        * 多出一个空宿主（K71 的「两者都关 ⇒ 面板不存在」就是这么红的）。所以只在真有右键条目时补渲染。 */
       if (!this.root && !this.ctxItems().length) return;
       if (!this.panelEl) {
-        this.render(this.items, KH.config);
+        this.render(this.items, this.cfg);
         return;
       }
       this.applyImgMarks();
       this.renderCtxCard();
+      /* OCR 状态变化走这条（没有新增定时器）：识别结果一回来就重落核对结论 */
+      this.applySoftCheck();
       if (!this.items.length && !this.ctxItems().length) this.hide();
       else this.show();
     },
@@ -2206,6 +2227,37 @@
       /* 【2.0.2.16 需求⑦】右键「截图」卡排**最下方**，由 renderCtxCard 收尾追加；
        * 它自己也带签名闸，没变化就不重建。 */
       this.renderCtxCard();
+      /* 软著一致性核对（用户 m00001 需求②）：卡片 DOM 就位后再落结论（关闭时无副作用） */
+      this.applySoftCheck();
+    },
+
+    /**
+     * 软著一致性核对（用户 m00001 需求②）：把每张卡片自己的抓取表交给 `KH.SoftCheck.decorateTable`。
+     * 数据两路都来自本地已有事实，不新增请求也不新增定时器：
+     *   · 开发者 / 备案主体的值 = 这张卡自己的 `.kh-table-fetch`（`KH.Fetch` 生成，标签格后紧跟值格）；
+     *   · 著作权人 / 授权书 = 本卡来源规则的 OCR 条目（`KH.ImgOcr.items()` 里 `ruleId` 属于本卡的
+     *     `pinIds`，即命中登记时写的 `meta.pinId` = `ruleId`）。
+     * 配置关着时 `decorateTable` 直接返回 ⇒ 零涂色、零额外计算（行为与上一版一致）。
+     */
+    applySoftCheck() {
+      const sc = KH.SoftCheck;
+      if (!sc || typeof sc.decorateTable !== 'function') return;
+      const els = this.cardEls || [];
+      if (!els.length) return;
+      const cfg = this.cfg || KH.config || {};
+      const all = (KH.ImgOcr && typeof KH.ImgOcr.items === 'function') ? (KH.ImgOcr.items() || []) : [];
+      for (let i = 0; i < els.length; i++) {
+        const item = this.items[i];
+        if (!item) continue;
+        const table = els[i].querySelector ? els[i].querySelector('table.kh-table-fetch') : null;
+        if (!table) continue;
+        /* 只喂本卡来源规则的条目：两张卡各自抓不同字段时，A 卡的著作权人不能拿去判 B 卡 */
+        const ids = item.pinIds || [];
+        const mine = ids.length
+          ? all.filter((it) => it && ids.indexOf(String(it.ruleId || '').toLowerCase()) >= 0)
+          : [];
+        sc.decorateTable(table, { cfg: cfg, items: mine });
+      }
     },
 
     /**
@@ -2261,7 +2313,7 @@
       if (!this.host) return;
       const hits = (KH.registry && typeof KH.registry.all === 'function') ? KH.registry.all() : [];
       const effective = collectEffective(hits);
-      this.render(head.build(effective, this.ignored), KH.config);
+      this.render(head.build(effective, this.ignored), this.cfg);
     },
 
     /* 显隐写成**幂等**的：重复 show/hide 不再写 attribute（少一次 DOM 变更，

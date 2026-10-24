@@ -264,7 +264,7 @@
     /* 同上（`cands`）。`regexAlways: true`：图片命中词**恒为正则**（`img-ocr.js` 固定
      * `useRegex: true`，没有开关），所以它按 `|` 切分永远是对的。 */
     { key: 'imgOcrKeyword', label: '图片命中关键词', type: 'cands', sec: 'fetch', csv: 0, sub: 'ocr', clamp: true,
-      width: 2, regexAlways: true, kvSuffix: true, placeholder: '如：一对一',
+      width: 2, regexAlways: true, kvSuffix: true, kvBatch: true, placeholder: '如：一对一',
       /* 【2.0.4 需求①】词尾 `#表`（或 `#kv`）是**逐词**的入表标记：只有带标记的词，图里
        * 「词+分隔符+值」才会并进重要笔记表格。旧版对**所有词**生效，结果「一对一时间选择范围
        * 11:30.」被拆成 键=一对一时间选择范围 / 值=11:30. 塞进卡片（用户原话）⇒ 收严成点名制。
@@ -289,7 +289,7 @@
      * 【2.0.6.1 需求②】`suffixChip`：字段名可带 `!`/`^` 等取值修饰 ⇒ 胶囊按「名字 + 后缀徽标」画，
      * 且不再弹「普通匹配按字面找词…」那句（这句对"填字段名、按值比文本"的框是错位文案）。 */
     { key: 'imgOcrNeed', label: '图片动态关键词', type: 'cands', sec: 'fetch', csv: 0, sub: 'ocr',
-      clamp: true, width: 2, csvSplit: true, suffixChip: true, suffixHide: true,
+      clamp: true, width: 2, csvSplit: true, suffixChip: true, suffixHide: true, kvBatch: true,
       placeholder: '如：开发者',
       /* 【2.0.7.1 需求③⑤】两处口径变更：
        *  · 后缀只用来**认出字段名**（`开发者!` ⇒ 字段 开发者），取值永远走「抓取字段」那份 spec

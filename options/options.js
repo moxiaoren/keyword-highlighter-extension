@@ -1666,6 +1666,50 @@
     renderOcrLangs();
     renderOcrSites();
     renderOcrAdv();
+    renderSoftCheck();
+  }
+
+  /* ---- 软著一致性核对（开关 + 六个字段名）：嵌套配置整份写，空值靠归一化回落默认 ---- */
+  let softWired = false;
+  const SOFT_TEXT_IDS = {
+    devFields: 'soft-dev', subjectFields: 'soft-subject', ownerLabels: 'soft-owner',
+    authKeywords: 'soft-auth', grantorLabels: 'soft-grantor', granteeLabels: 'soft-grantee'
+  };
+
+  function softCfg() {
+    const n = KH.Config.normalizeSoftCheck;
+    return (typeof n === 'function') ? n(cfg.softCheck) : Object.assign({}, cfg.softCheck || {});
+  }
+
+  function renderSoftCheck() {
+    if (!$('ocr-adv-soft')) return;
+    if (!softWired) { softWired = true; wireSoftCheck(); }
+    const sc = softCfg();
+    const on = $('soft-on');
+    if (on) on.checked = sc.on === true;
+    const cmp = $('soft-compare');
+    if (cmp) cmp.value = sc.compareTo;
+    for (const k of Object.keys(SOFT_TEXT_IDS)) {
+      const input = $(SOFT_TEXT_IDS[k]);
+      if (input) input.value = sc[k] || '';
+    }
+  }
+
+  function wireSoftCheck() {
+    const on = $('soft-on');
+    if (on) on.addEventListener('change', (e) => saveNested({ softCheck: { on: e.target.checked === true } }));
+    const cmp = $('soft-compare');
+    if (cmp) cmp.addEventListener('change', (e) => saveNested({ softCheck: { compareTo: String(e.target.value || '') } }));
+    for (const k of Object.keys(SOFT_TEXT_IDS)) {
+      const input = $(SOFT_TEXT_IDS[k]);
+      if (!input) continue;
+      input.addEventListener('change', (e) => {
+        const patch = {};
+        patch[k] = String(e.target.value || '').trim();
+        /* 存的是"用户原文"（清空就存空串，归一化时回落默认值），回显一律按真正生效的值 */
+        return saveNested({ softCheck: patch }).then(renderSoftCheck);
+      });
+    }
   }
 
   function wireOcr() {

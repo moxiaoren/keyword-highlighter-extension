@@ -814,15 +814,27 @@
     if (!width || cells.length < 2) return { width: width, cols: 1, bands: [], rows: [] };
     const gap = width * COL_GAP_RATIO;
     const wideW = width * COL_WIDE_RATIO;
-    /* 只拿"非通栏"格定列带：通栏行（标题、条文正文）跨越多列是常态，让它参与就会被桥成 1 列 */
-    const narrow = cells.filter((c) => c.w < wideW).sort((a, b) => (a.x - b.x) || (a.x2 - b.x2));
-    if (!narrow.length) return { width: width, cols: 1, bands: [], rows: [] };
-    const bands = [];
-    for (const c of narrow) {
-      const cur = bands[bands.length - 1];
-      if (!cur || c.x - cur.x2 >= gap) bands.push({ x: c.x, x2: c.x2 });
-      else if (c.x2 > cur.x2) cur.x2 = c.x2;
-    }
+    /* 列带证据：**先只认多格行**（同一行里有两个以上框 = 表格的一行）。
+     * 单格行（标题、整段条文）本来就是通栏行，让它参与建带就会被桥成 1 列 —— 这一条同时顶替了
+     * 旧的"单格宽 ≥ wideW 就剔掉"。旧口径按**绝对宽度**剔格，会把长标签的键值表（「软件名称」
+     * 这类标签格宽到内容的 59%）整列当成通栏踢出去，只剩右列 ⇒ 整张表退回纯文本。
+     * 两遍：先按老口径（多格行里再剔通栏格）试，不够 2 列再退一步只要求"多格行" ——
+     * 「一条居中标题把两栏桥接成一栏」仍被挡住（那种行只有一格），宽标签列不再被杀。 */
+    const perLine = new Array(list.length).fill(0);
+    for (const c of cells) perLine[c.line]++;
+    const multis = cells.filter((c) => perLine[c.line] >= 2);
+    const bandsOf = (arr) => {
+      const out = [];
+      for (const c of arr.slice().sort((a, b) => (a.x - b.x) || (a.x2 - b.x2))) {
+        const cur = out[out.length - 1];
+        if (!cur || c.x - cur.x2 >= gap) out.push({ x: c.x, x2: c.x2 });
+        else if (c.x2 > cur.x2) cur.x2 = c.x2;
+      }
+      return out;
+    };
+    let bands = bandsOf(multis.filter((c) => c.w < wideW));
+    if (bands.length < 2) bands = bandsOf(multis);
+    if (!bands.length) return { width: width, cols: 1, bands: [], rows: [] };
     /* 列太多 ⇒ 不是"表格/分栏"，是被切碎的文字：退回纯文本（宁可不好看，不可看不出话） */
     if (bands.length < 2 || bands.length > COL_MAX) return { width: width, cols: 1, bands: [], rows: [] };
     const bandOf = (c) => {

@@ -400,6 +400,18 @@
           });
           headEl = h('div', { class: 'kh-fld-labelrow' }, [labelEl, clampBtn]);
         }
+        /* 【需求】批量入口：词攒到几十个以后，逐个点胶囊去改「作用域」与 `#表` 是不现实的
+         * （用户原话：这个词多时候不会管理）。按钮长在标题行右侧，与「展开」同一尺寸。
+         * 只有声明了 `kvBatch` 的两个字段挂它 —— 别的候选框（核心词 / 标题词）没有作用域这回事。 */
+        let batchBtn = null;
+        if (spec.kvBatch) {
+          batchBtn = h('button', {
+            class: 'kh-mini-btn kh-kv-batch-btn', type: 'button', text: '批量',
+            title: '词多了不好管：按作用域（通用 / @某个抓取字段）与 #表 批量改，只动勾选的词'
+          });
+          if (headEl === labelEl) headEl = h('div', { class: 'kh-fld-labelrow' }, [labelEl, batchBtn]);
+          else headEl.appendChild(batchBtn);
+        }
         if (spec.token) kids.push(legendEl());
         const boxCls = fldCls + ' kh-cand-box'
           + (spec.clamp ? ' kh-cand-clamp' : '')
@@ -567,6 +579,167 @@
           draw();
         };
         const openPop = attachPop(addBtn, inp, box, () => draw(), startNew);
+        /** 已配置的抓取字段裸名 —— 作用域的**唯一合法取值**（取同表单「抓取后续字段」控件现算）。
+         *  查找必须落在**控件自己的根**上：页面编辑器的弹窗挂在 Shadow DOM 里，
+         *  `document.getElementById` 在那边永远找不到（那会让 `@字段` 全被当成普通词）。
+         *  取不到（单测垫片没有真的 `getElementById` / 控件还没挂进表单）⇒ 空表 ⇒ 所有 `@…`
+         *  都按普通词处理，正是"老配置零影响"要的行为，也保证这条路永不抛。 */
+        const knownFields = () => {
+          try {
+            let root = document;
+            try {
+              const r = (typeof box.getRootNode === 'function') ? box.getRootNode() : null;
+              if (r && r !== document && typeof r.getElementById === 'function') root = r;
+            } catch (e) { root = document; }
+            const el = (root && typeof root.getElementById === 'function')
+              ? root.getElementById((c.idPrefix || 'fld-') + 'fetchLabels') : null;
+            const F = KH.Fetch;
+            if (!el || !F || typeof F.parseLabels !== 'function') return [];
+            const out = [];
+            for (const it of (F.parseLabels(el.value) || [])) {
+              const n = String((it && it.label) || '').trim();
+              if (n && out.indexOf(n) < 0) out.push(n);
+            }
+            return out;
+          } catch (e) { return []; }
+        };
+        /**
+         * 【需求】批量管理弹窗：列出这一格的**全部词条**（词 / 作用域徽标 / `#表`），勾选后整批改。
+         * 写回走 `kvApply`：**只换勾选的那几条，别的词一个字不动**（分隔符与空格原样保留）。
+         * @returns `ui.Modal` 实例（单测靠它拿节点）
+         */
+        const openBatch = () => {
+          exitText();                 // 文本态里正在打的整串先落盘，否则下面那次 commit 会把它丢掉
+          st.commit();
+          const known = knownFields();
+          const rows = kvRows(st.raw, known);
+          if (!rows.length) { D().toast('这一格还没有词，先加几个再来批量管理'); return null; }
+          const picked = rows.map(() => false);
+          let vis = [];
+          const filter = h('input', {
+            class: 'kh-input kh-kvb-filter', type: 'search',
+            placeholder: '按词或字段名过滤（如 截图、@、#表）'
+          });
+          const countEl = h('span', { class: 'kh-kvb-count' });
+          const listEl = h('div', { class: 'kh-kvb-list' });
+          const scopeSel = h('select', { class: 'kh-input kh-kvb-sel' },
+            [h('option', { value: '', text: '选一个抓取字段…' })].concat(
+              known.map((k) => h('option', { value: k, text: k }))
+            ));
+          if (!known.length) {
+            scopeSel.disabled = true;
+            scopeSel.title = '还没配置「抓取后续字段」，没法按字段限定作用域';
+            scopeSel.className = 'kh-input kh-kvb-sel is-empty';
+          }
+          const alive = () => rows.map((r, i) => i).filter((i) => !rows[i].gone);
+          const selIdx = () => alive().filter((i) => picked[i]);
+          const syncCount = () => {
+            countEl.textContent = '共 ' + alive().length + ' 个词，已选 ' + selIdx().length + ' 个';
+          };
+          /** 重画列表：过滤只影响"看得见哪些"，勾选状态跟着行号走，不受过滤影响 */
+          const paint = () => {
+            listEl.textContent = '';
+            const q = String(filter.value == null ? '' : filter.value).trim().toLowerCase();
+            vis = [];
+            for (const i of alive()) {
+              const r = rows[i];
+              const tag = r.scope ? '@' + r.scope : '通用';
+              if (q && (r.name + ' ' + tag).toLowerCase().indexOf(q) < 0) continue;
+              vis.push(i);
+              const cb = h('input', { class: 'kh-kvb-cb', type: 'checkbox' });
+              cb.checked = !!picked[i];
+              cb.addEventListener('change', () => { picked[i] = !!cb.checked; syncCount(); });
+              listEl.appendChild(h('label', { class: 'kh-kvb-row' }, [
+                cb,
+                h('span', { class: 'kh-kvb-name', text: r.name }),
+                h('span', { class: 'kh-kvb-scope' + (r.scope ? ' is-scoped' : ''), text: tag }),
+                r.mark ? h('span', { class: 'kh-kvb-mark', text: '#表' }) : null
+              ]));
+            }
+            if (!vis.length) listEl.appendChild(h('div', { class: 'kh-kvb-empty', text: '没有匹配的词' }));
+            syncCount();
+          };
+          /** 对选中的词逐条改写：`fn(词条)` 返回要 patch 的键（返回 null ＝ 这条跳过） */
+          const each = (fn) => {
+            let n = 0;
+            for (const i of selIdx()) {
+              const r = rows[i];
+              const cur = (r.next == null) ? r : (kvRows(r.next, known)[0] || r);
+              const pt = fn(cur);
+              if (!pt) continue;
+              const t = kvPatch(cur, pt);
+              if (t == null) continue;                    // 解析不出名字的怪词条：不动它
+              rows[i].next = t;
+              const view = kvRows(t, known)[0];
+              if (view) { rows[i].name = view.name; rows[i].scope = view.scope; rows[i].mark = view.mark; }
+              n += 1;
+            }
+            return n;
+          };
+          const run = (fn) => {
+            if (!selIdx().length) { D().toast('先勾选要改的词'); return; }
+            const n = fn();
+            if (!n) { D().toast('选中的词里没有能这样改的'); return; }
+            paint();
+          };
+          const btn = (label, extra, onClick, tip) => {
+            const b = h('button', { class: 'kh-btn kh-kvb-op' + (extra ? ' ' + extra : ''), type: 'button', text: label });
+            if (tip) b.title = tip;
+            b.addEventListener('click', onClick);
+            return b;
+          };
+          const pickBtn = (label, mode) => {
+            const b = h('button', { class: 'kh-mini-btn kh-kvb-op', type: 'button', text: label });
+            b.addEventListener('click', () => {
+              for (const i of vis) picked[i] = (mode === 'inv') ? !picked[i] : true;
+              paint();
+            });
+            return b;
+          };
+          const barTop = h('div', { class: 'kh-kvb-bar' }, [filter, pickBtn('全选', 'all'), pickBtn('反选', 'inv'), countEl]);
+          const barOps = h('div', { class: 'kh-kvb-bar' }, [
+            btn('设为通用', '', () => run(() => each(() => ({ scope: null }))),
+              '去掉 @字段名：这些词对所有抓图都算命中'),
+            btn('设为该字段', 'kh-btn-primary', () => {
+              const target = String(scopeSel.value == null ? '' : scopeSel.value).trim();
+              if (!target) { D().toast('先在右边选一个抓取字段'); return; }
+              run(() => each(() => ({ scope: target })));
+            }, '只在抓到「选定字段」的图上算命中'),
+            scopeSel,
+            btn('加 #表', '', () => run(() => each(() => ({ mark: true }))),
+              '命中后把图上的键值行并进重要笔记的抓取表'),
+            btn('去 #表', '', () => run(() => each(() => ({ mark: false })))),
+            btn('删除选中', 'kh-btn-danger', () => {
+              let n = 0;
+              for (const i of selIdx()) { rows[i].gone = true; rows[i].next = ''; n += 1; }
+              if (!n) { D().toast('先勾选要删的词'); return; }
+              paint();
+            }, '只删勾选的词，其他词不受影响')
+          ]);
+          filter.addEventListener('input', () => paint());
+          const modal = ui.Modal.open({
+            title: spec.label + ' · 批量管理',
+            body: h('div', { class: 'kh-kvb' }, [barTop, barOps, listEl]),
+            size: 'md',
+            saveLabel: '应用',
+            onSave: () => {
+              const next = rows.map((r) => (r.next == null ? null : r.next));
+              let moved = false;
+              for (const v of next) { if (v != null) { moved = true; break; } }
+              /* 一条都没改 ⇒ 直接关，**不写回**：这样"打开看一眼再应用"绝不会动到原串格式 */
+              if (moved) { st.raw = kvApply(st.raw, rows, next); draw(); st.notify(); }
+              return true;
+            }
+          });
+          paint();
+          return modal;
+        };
+        if (batchBtn) {
+          batchBtn.addEventListener('click', (ev) => {
+            if (ev && typeof ev.stopPropagation === 'function') ev.stopPropagation();
+            openBatch();
+          });
+        }
         /* 框面本身也可点（像真输入框那样"点哪儿都能开始录入"）；胶囊与 `+` 各自有主，别抢它们的活。
          * `closest('...[kh-]...')` 在本仓库是机械红线（meta-check），祖先查找统一走 `dom.js` 的 `upClass`
          * （票 #52：这一圈原先与 `rich-editor.js` 各手写了一份）。`frame` 是边界 —— 框里的胶囊算"点了框"，
@@ -612,7 +785,9 @@
           read: () => (textMode ? String(ta.value == null ? '' : ta.value) : st.displayRaw()),
           key: spec.key,
           /* 供外层（关键词弹窗）把「正则」开关的真值告诉它，并在开关翻动时重画 */
-          _repaint: (on) => { if (typeof on === 'boolean') modeOn = on; draw(); }
+          _repaint: (on) => { if (typeof on === 'boolean') modeOn = on; draw(); },
+          /* 批量管理入口（`kvBatch` 字段才有；别的候选框是 null） */
+          _batch: spec.kvBatch ? openBatch : null
         };
       }
       default: {
@@ -691,6 +866,135 @@
       }
     }
     return out;
+  }
+
+  /* ==========================================================================
+   * 【需求】「图片命中关键词 / 图片动态关键词」词条的**批量解析与写回**
+   * --------------------------------------------------------------------------
+   * 用户原话：「这个词多时候不会管理。最好能够批量处理（批量改通用，还是针对某个字段抓取到的
+   * 图片。#表，也是最好能批量修改。）」
+   *
+   * **口径只有一份**：`#表` 必须挂在词条**最末**，`@字段名` 只有命中**已配置的抓取字段裸名**
+   * 才算作用域（否则整段当普通词 ⇒ 老配置零影响）—— 这就是 `src/features/img-ocr.js` 的
+   * `kvChips` / `splitScope` 那两条语义。这里镜像成同一套纯函数，原因是**管理端拿不到那份实现**：
+   * `options.html` 的 script 清单里没有 img-ocr.js。这与 `fetch.js` 里 `normalizeLabels` 的处境
+   * 一样（"同一语义的第二个必需实现"，不是漏改）。
+   * 锁口径的是 `tests/specs/imgkw-batch.test.js`：把这里的解析结果与 `KH.ImgOcr` 的
+   * `scopedRaw / stripKvMarks / kvWords` 链逐条对账 —— 那边改口径，这里当场红。
+   * ponytail: 同一语义的第二份实现（约 120 行），天花板是"改 img-ocr 必须同时看这里"；
+   *   升级路径：把 img-ocr.js 的纯函数段拆成独立文件（去掉 L1549 的 `KH.features.register`
+   *   载入副作用），管理端与内容端共用一份即可删掉这段镜像。
+   */
+  const KV_MARK_RE = /(?:#|＃)\s*(?:表|kv)\s*$/i;
+  const KV_TAIL_SEP_RE = /(?:#|＃)\s*(?:表|kv)([\s,，、;；]+)/gi;
+  const KV_AT_RE = /@([^@\s]+)$/;
+
+  /** 切词：与 `img-ocr.js` 的 `kvChips` 同口径（`|`/`｜` 永远切一刀，`#表` 后面跟分隔符也切） */
+  function kvChips(raw) {
+    const out = [];
+    for (const seg of String(raw == null ? '' : raw).split(/[|｜]/)) {
+      let rest = seg;
+      for (;;) {
+        KV_TAIL_SEP_RE.lastIndex = 0;
+        const m = KV_TAIL_SEP_RE.exec(rest);
+        if (!m) break;
+        const at = m.index + m[0].length - m[1].length;
+        if (m.index + m[0].length >= rest.length) break;
+        out.push(rest.slice(0, at));
+        rest = rest.slice(at).replace(/^[\s,，、;；]+/, '');
+        if (!rest) break;
+      }
+      if (rest) out.push(rest);
+    }
+    return out.map((c) => c.trim()).filter(Boolean);
+  }
+
+  /** 字段名比较：与 `img-ocr.js` 的 `sameField` 同口径（去空白、去首尾、小写） */
+  function kvSameField(a, b) {
+    const norm = (s) => String(s == null ? '' : s).replace(/\s+/g, '').trim().toLowerCase();
+    const x = norm(a);
+    return !!x && x === norm(b);
+  }
+
+  /**
+   * 整串 → 词条行（弹窗列表的数据源）。
+   * @param {string} raw 字段原文
+   * @param {Array<string>} known 已配置的抓取字段裸名；空表 ⇒ 所有 `@…` 都按普通词
+   * @returns {Array<{raw:string, name:string, scope:string, mark:boolean}>}
+   *   `raw` 是**原文那一段**（写回时靠它定位，`|` 两侧的空格也因此不会被归一）；
+   *   `scope` 取的是 `known` 里的规范值（与 `splitScope` 一致）
+   */
+  function kvRows(raw, known) {
+    const ks = (known || []).filter(Boolean);
+    return kvChips(raw).map((chip) => {
+      const km = KV_MARK_RE.exec(chip);
+      const body = km ? chip.slice(0, km.index) : chip;
+      let scope = '';
+      let name = body.trim();
+      const at = KV_AT_RE.exec(body);
+      if (at) {
+        for (const k of ks) {
+          if (kvSameField(k, at[1])) { scope = k; name = body.slice(0, at.index).trim(); break; }
+        }
+      }
+      return { raw: chip, name: name, scope: scope, mark: !!km };
+    });
+  }
+
+  /**
+   * 改一条词条：`@字段` 在前、`#表` 在后（标记必须收尾，否则读的时候不算）。
+   * @param {object} row `kvRows` 的一行
+   * @param {{scope:*, mark:*}} o 省略的键＝保留原样；`scope` 给 `null`/`''` ＝ 设为通用
+   * @returns {string|null} 解析不出名字的怪词条返回 null（不参与改写，也不能被抹成空串）
+   */
+  function kvPatch(row, o) {
+    const p = o || {};
+    if (!row || !row.name) return null;
+    const scope = (p.scope === undefined) ? row.scope : p.scope;
+    const mark = (p.mark === undefined) ? row.mark : !!p.mark;
+    return row.name + (scope ? '@' + scope : '') + (mark ? '#表' : '');
+  }
+
+  /**
+   * 写回整串：**只换被点名的那几行，其余一个字不动**（`|` 写法、两侧空格、`｜` 都原位保留）。
+   * @param {string} raw 字段原文
+   * @param {Array} rowsIn `kvRows(raw, known)` 的结果（顺序即原文顺序）
+   * @param {Array<string|null>} next 与 `rowsIn` 等长；`null`/省略＝这一行不动，`''`＝删掉这一行
+   *   （连它紧邻的一个分隔符一起收走，否则会留下 `a||c` 这种看着像"空词"的脏数据）
+   */
+  function kvApply(raw, rowsIn, next) {
+    const str = String(raw == null ? '' : raw);
+    const list = rowsIn || [];
+    const nx = next || [];
+    const spans = [];
+    let from = 0;
+    for (let i = 0; i < list.length; i++) {
+      const chip = list[i].raw;
+      /* `kvChips` 是按原文顺序切出的独立片段 ⇒ 从上一个片段末尾往后找，命中的必定是本段
+       * （同一个词重复出现也对得上：游标已经推过去了）。找不到就退回"按 `|` 重排"。 */
+      const at = str.indexOf(chip, from);
+      if (at < 0) {
+        return list.map((r, k) => (nx[k] == null ? r.raw : nx[k])).join('|');
+      }
+      const v = nx[i];
+      let s0 = at;
+      let s1 = at + chip.length;
+      if (v === '') {
+        const after = /^[ \t]*[|｜][ \t]*/.exec(str.slice(s1));
+        if (after) s1 += after[0].length;
+        else {
+          const before = /[|｜][ \t]*$/.exec(str.slice(0, s0));
+          if (before) s0 -= before[0].length;
+        }
+      }
+      if (v != null) spans.push({ s: s0, e: s1, text: v });
+      from = at + chip.length;
+    }
+    if (!spans.length) return str;              // 一个都没改 ⇒ 逐字原样（往返一致靠这一行）
+    let out = '';
+    let pos = 0;
+    for (const sp of spans) { out += str.slice(pos, sp.s) + sp.text; pos = sp.e; }
+    return out + str.slice(pos);
   }
 
   /**
@@ -845,5 +1149,7 @@
     return bodyEl;
   }
 
-  ui.Fields = { create, layout, labelChip };
+  /* `kv*` 三件套外露给单测：批量管理的解析/写回是纯函数，钉口径用，
+   * 与 `KH.ImgOcr` 的 `scopedRaw / stripKvMarks / kvWords` 对账（见 tests/specs/imgkw-batch.test.js）。 */
+  ui.Fields = { create, layout, labelChip, kvChips, kvRows, kvPatch, kvApply };
 })();

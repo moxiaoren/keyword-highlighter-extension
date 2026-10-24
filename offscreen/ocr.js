@@ -969,25 +969,48 @@
       let confSum = 0;
       const cells = [];
       const kept = [];
+      let prevX2 = null;   // 上一段读到的右边界：geometric 判据——两段到底有没有重叠
       for (const p of parts) {
-        const k = keyOf(p.t);
+        let t = String(p.t == null ? '' : p.t);
+        let cs = (p.cells || []).filter((c) => c && isFinite(Number(c.x)) && isFinite(Number(c.x2)));
+        const k = keyOf(t);
         /* 重叠带里的重复片段：**整段丢掉**（文字和单元格都不留）——留着单元格会把
          * 「有限公司」再追加到值后面（重要笔记的表格形式正是按单元格取值）。 */
         if (k && acc.indexOf(k) >= 0) continue;
-        acc += p.t;
+        /* 【本轮修：半重叠接缝】整段去重只认"这一段整段在已拼文本里"，可相邻两块在重叠带里
+         * 各读到**同一行的一截**时（真机：`供应商：华为技术有限` + `华为技术有限公司`）两段都只
+         * 有一半重合 ⇒ 整段照加 ⇒ 拼出双写。判据仍是几何的：本段左边界落在上一段右边界之内
+         * 才算接缝（`p.x < prevX2`），再按原文相等裁掉右块头上与左块尾部重合的那几个字。
+         * 没 cells 的分段（tesseract 路径）拿不到右边界 ⇒ 不做接缝裁剪，保持旧行为。 */
+        if (prevX2 !== null && t && Number(p.x) < prevX2 - 0.5) {
+          const cut = seamCut(acc, t);
+          if (cut) {
+            t = t.slice(cut);
+            /* 接缝左侧的格子已经由左块给过，只留右侧真正新的那几格；
+             * 跨在接缝上的格子（`x < prevX2 < x2`）**留着** —— 它是值的来源，宁可位置偏一点也不丢值
+             * （代价：这种格子的起点可能比实际偏左，表格按列取文字不会重复取到）。 */
+            cs = cs.filter((c) => Number(c.x2) > prevX2);
+          }
+        }
+        const body = t.trim();
+        if (!body) continue;   // 整段都在接缝里 ⇒ 不落文字也不落格子
+        acc += t;
         /* 【2.0.6 需求③】段的左右边界取它自己那几格的坐标，交给 `joinParts` 按间距决定要不要空格 */
-        const cs = (p.cells || []).filter((c) => c && isFinite(Number(c.x)) && isFinite(Number(c.x2)));
         const xs = cs.map((c) => Number(c.x));
         const x2s = cs.map((c) => Number(c.x2));
+        const end = x2s.length
+          ? Math.max.apply(null, x2s)
+          : (isFinite(Number(p.x2)) ? Number(p.x2) : (isFinite(Number(p.x)) ? Number(p.x) : null));
+        if (end != null) prevX2 = prevX2 === null ? end : Math.max(prevX2, end);
         kept.push({
-          t: p.t,
+          t: body,
           x: xs.length ? Math.min.apply(null, xs) : p.x,
           x2: x2s.length ? Math.max.apply(null, x2s) : null
         });
-        const n = k.length || 1;
+        const n = keyOf(body).length || 1;
         chars += n;
         confSum += (Number(p.conf) || 0) * n;
-        for (const c of p.cells) cells.push(c);
+        for (const c of cs) cells.push(c);
       }
       const first = r.src.slice().sort((a, b) => (Number(a.x) || 0) - (Number(b.x) || 0))[0] || {};
       return {
@@ -1020,12 +1043,18 @@
     const span = vertical ? h : w;
     const cross = vertical ? w : h;
     const crossCap = Math.max(chunkH, MAX_EDGE);
+    /* 【本轮修】跨轴步长必须按**跨轴块宽**算（`crossCap - overlap`），不能借沿轴的 `step`：
+     * 沿轴步长由 `chunkH` 推出来，而跨轴块宽是独立的上限（`crossCap`）。两者只在
+     * `chunkH ≥ MAX_EDGE` 时碰巧相等（默认 1600 / 放宽 2000 都属于这种），所以老代码在生产常量下
+     * 不自曝；一旦块高被调小（单测 800），跨轴就会以 672px 步长铺 1600px 宽的块 ⇒ 重叠 928px
+     * 而设计值是 128px，同一片区域被重复识别 7 遍、块数虚增、更快撞上 `CHUNK_MAX` 的截断线。 */
+    const cstep = Math.max(1, crossCap - overlap);
     const axis = vertical ? 'y' : 'x';
     const out = [];
     for (let p = 0; p < span; p += step) {
       const len = Math.min(chunkH, span - p);
       if (len <= 0) break;
-      for (let q = 0; q < cross; q += step) {
+      for (let q = 0; q < cross; q += cstep) {
         const clen = Math.min(crossCap, cross - q);
         if (clen <= 0) break;
         out.push({
@@ -1131,6 +1160,22 @@
    * **大小写仍不折**（大小写是真实文本差异）。 */
   const OVERLAP_MATCH_X = 16;      // 实测 |Δx| ≤ 5px（flat/tight 两轮样张）⇒ 取 ~3 倍余量；回执 overlap.maxDx 如实上报
   const keyOf = (t) => String(t == null ? '' : t).replace(/\s+/g, '');
+
+  /**
+   * 接缝长度：`acc` 的尾部与 `t` 的头部重合几个字（**≥2 才算**，返回值就是要从 `t` 头上裁掉的字数）。
+   * 用于【本轮修】`stitchRows` 的半重叠拼行：相邻两块在重叠带里各读到同一行的一截时，
+   * 右块的头就是左块的尾，整段照加会写出「供应商：华为技术有限华为技术有限公司」。
+   * 只做**原文相等**比对（不折叠空白/大小写）：这层判据的唯一目的是"同一个字的两次读数"，
+   * 多认一种近似就会把原图真的写了两遍的文本裁掉。上限 24 字：再长的重合只可能来自短行整段重复，
+   * 那由调用方的整段去重（`acc.indexOf(keyOf(t))`）负责。
+   */
+  function seamCut(acc, t) {
+    const s = String(acc == null ? '' : acc);
+    const n = String(t == null ? '' : t);
+    const max = Math.min(s.length, n.length, 24);
+    for (let k = max; k >= 2; k--) if (s.slice(s.length - k) === n.slice(0, k)) return k;
+    return 0;
+  }
 
   /**
    * 【T22 近失配对】逐字相等吃不到的那一类：同一物理行被相邻两块各读一次，**两次各带一个错字**
@@ -2327,6 +2372,11 @@
          * 只带渲染要用的四个字段；`conf` 面板已有整篇的，不必逐行再抄一遍。 */
         lineList: finalLines.map((l) => ({
           t: l.t, y: l.y, x: l.x,
+          /* 【本轮修】`y2` 必须带过去：面板的表格排版（`img-ocr.js` 的 `layout`）用行高决定
+           * "同一格里的两段文字要不要空格"，高/低限是 `max(2, 行高×0.6)`。少了 `y2`，
+           * 行高恒为 0 ⇒ 限值退化到 2px ⇒ 「华为」+「技术有限公司」（间隙 8px，同一格）
+           * 被写成「华为 技术有限公司」，脏空格跟着进重要笔记。 */
+          y2: l.y2,
           cells: (l.cells || []).map((c) => ({ t: c.t, x: c.x, x2: c.x2 })),
           /* 【2.0.6.5 需求③】被拆开的行：首段带整行原始单元格（表格排版照旧），其余段只在 `run` 上留序号 */
           run: Number(l.run) || 0,
