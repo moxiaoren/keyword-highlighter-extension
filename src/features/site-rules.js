@@ -2,7 +2,10 @@
  * src/features/site-rules.js · 站点规则（域名级 + 网址级 + 本地临时禁用）
  * ----------------------------------------------------------------------------
  * 语义**逐条对齐旧版 v1.52.0 `utils.js:364-425`**（不得改动判定顺序，否则线上行为会变）：
- *   ① 本地临时禁用（siteDisabledMap）最优先 —— 命中即不高亮
+ *   ⓪ 标签页级临时禁用最优先（【2.0.7.2 需求⑤】只活在本页内存里，见下方 `tabDisabled`）
+ *   ① 历史站点级禁用（siteDisabledMap 存量）其次 —— 命中即不高亮
+ *      （旧按钮写的就是它；按钮改成标签页级后不再写它，但**存量继续生效** ——
+ *        老用户升级不该被静默改变高亮行为，要撤销请到设置页那份「历史站点级禁用」列表里点掉）
  *   ② 网址级规则（scope='url'）先判；命中即按其 type 决定（whitelist=生效 / blacklist=不生效）
  *   ③ 再判域名级规则；命中同上
  *   ④ 一条都没命中：**存在任意白名单则默认不生效，否则默认生效**
@@ -17,7 +20,21 @@
 
   const KH = (typeof window !== 'undefined' ? (window.KH = window.KH || {}) : (globalThis.KH = globalThis.KH || {}));
 
+  /* 【2.0.7.2 需求⑤】标签页级临时禁用 —— **只活在这个文档的内存里**：
+   *   · 判定本身在 background 侧做（`chrome.storage.session` 只有扩展自己的页面/后台能读，
+   *     内容脚本读不到；tabId 也只有 background 从 `sender.tab` 拿得到），
+   *     内容脚本只在启动与收到推送时把结论记在这里；
+   *   · 为什么不落 local：关了标签页、重启浏览器都该自动消失 —— 落了 local 就退化成
+   *     "永久禁用整站"，正好是上一版被投诉的那个行为；
+   *   · 为什么判据放在本模块：站点门禁的唯一实现是 `shouldHighlight`（`KH.boot()` 与
+   *     `applyConfig()` 两条路径都经它），加在这里两条路径同时生效；分头改两处迟早漏一处。 */
+  let tabDisabled = false;
+
   const SiteRules = {
+    /** 本页是否被标签页级临时禁用（内容脚本启动时问 background、以及后台推送变更时写进来） */
+    markTabDisabled(on) { tabDisabled = !!on; },
+    isTabDisabled() { return tabDisabled; },
+
     /** 单条规则匹配（字段名与存储完全一致，防串位） */
     match(hostname, rule, url) {
       if (!rule || !rule.pattern) return false;
@@ -52,6 +69,10 @@
     shouldHighlight(hostname, url, cfg) {
       const rules = (cfg && cfg.siteRules) || [];
       const disabled = (cfg && cfg.siteDisabledMap) || {};
+
+      /* 标签页级临时禁用：命中即"这个标签页里的任何网址都不走高亮"。
+       * 只认内存标记（见文件上部 `tabDisabled`），不读任何存储 —— 内容脚本读不到 session 区。 */
+      if (tabDisabled) return false;
 
       if (disabled[hostname]) return false;
 

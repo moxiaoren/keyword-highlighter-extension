@@ -489,15 +489,18 @@
             /* `spec.token`（抓取后续字段）：每段本来就带 `#`/`%`/`^` 后缀 ⇒ 胶囊名取解析后的 label、
              * 后缀画成徽标（用户口径 m01713：词的数量多也能看清各自的后缀）。解析走 `labelSegs`，
              * 与「字段」控件同一份语法；没写后缀时它就是原串。
-             * 【2.0.6.1 需求②】`suffixChip`（图片动态关键词）：这框填的也是**抓取字段名**（可带
+             * 【2.0.6.1 需求②】`suffixChip`（图上须有的字段值）：这框填的也是**抓取字段名**（可带
              * `!`/`^` 等修饰），后缀同样不参与命中 —— 画成徽标才看得见"名字是名字、修饰是修饰"，
              * 否则用户会以为 `开发者 ! ^高价` 整串都要在图里出现。 */
             const tok0 = (spec.token || spec.suffixChip || spec.kvSuffix)
               ? (labelSegs(list[i], { kv: spec.kvSuffix })[0] || { name: list[i], suffix: '' })
               : { name: list[i], suffix: '' };
-            /* 【2.0.7.1 需求③】图片动态关键词框的后缀**只用来定位字段名**（`开发者!` ⇒ 字段 开发者），
-             * 取值永远走「抓取字段」那份 spec；把后缀画成徽标会让人以为它改值 ⇒ 这里只显示名字。 */
-            const tok = spec.suffixHide ? { name: tok0.name, suffix: '' } : tok0;
+            /* 【2.0.7.2 需求④】原先这里还有一条 `suffixHide`（图片动态关键词只显示名字、不画后缀徽标，
+             * 因为 2.0.7.1 认定"后缀只用来认出字段名、不改取值"）。那个认定本轮被推翻：
+             * 后缀在这一格**真生效**（`开发者^高价` 先裁出 `a公司` 再比），所以徽标必须画出来 ——
+             * 一个"能改取值"的后缀却画成名字的一部分，用户没法判断自己到底配了什么。
+             * 分支已删：现在只有"画徽标"一种口径，不再有第二个开关。 */
+            const tok = tok0;
             prev.appendChild(labelChip({
               name: tok.name,
               suffix: tok.suffix,
@@ -535,6 +538,12 @@
           tip.hidden = !warn;
           tip.textContent = warn ? '普通匹配按字面找词：这里写的 . * + ? ( ) [ ] { } \\ ^ $ 都只是普通字符；要当正则用请勾上「正则」' : '';
           refreshClamp();
+          /* 【2.0.7.2 需求①·根因】把**当前整串**挂到框上：别的控件（尤其同一张表单里的
+           * 「抓取后续字段」）要靠它知道"到底配了哪些字段"。为什么不能读 `input.value`：
+           * 候选框常态是**胶囊**，那个 `input` 只活在点 `+` 弹出的小浮层里、平时是空的 ——
+           * 读它永远得到空串 ⇒ 批量弹窗的「设为该字段」下拉框恒为灰、`@截图` 被当普通词
+           * （用户报的正是这两条）。`draw()` 是唯一重画入口，所以这里永远不会读到旧值。 */
+          try { box.setAttribute('data-raw', st.displayRaw()); } catch (e) { /* 垫片没有 setAttribute 就算了 */ }
         };
         /* 展开按钮只在**真的看不全**时出现（用户口径 m02382：胶囊多了、长了也要维持一个输入框的样子，
          * 冗余的不展示；展开后才全显）。判据是胶囊行有没有溢出。
@@ -591,12 +600,24 @@
               const r = (typeof box.getRootNode === 'function') ? box.getRootNode() : null;
               if (r && r !== document && typeof r.getElementById === 'function') root = r;
             } catch (e) { root = document; }
-            const el = (root && typeof root.getElementById === 'function')
-              ? root.getElementById((c.idPrefix || 'fld-') + 'fetchLabels') : null;
+            const wantId = (c.idPrefix || 'fld-') + 'fetchLabels';
+            /* 【2.0.7.2 需求①·根因】候选框的真实值在**框的 `data-raw`** 上（胶囊态时那个
+             * `input` 是空的）。原来只读 `el.value` ⇒ 恒空 ⇒ 下拉框灰、`@字段` 不算作用域。
+             * 先找 `[data-for=id]` 的框面（`cands`/`labels` 都挂这个钩子），取不到再退回 `input.value`。 */
+            let raw = '';
+            try {
+              const face = (root && typeof root.querySelector === 'function')
+                ? root.querySelector('[data-for="' + wantId + '"]') : null;
+              if (face && typeof face.getAttribute === 'function') raw = String(face.getAttribute('data-raw') || '');
+            } catch (e) { raw = ''; }
+            if (!raw) {
+              const el = (root && typeof root.getElementById === 'function') ? root.getElementById(wantId) : null;
+              if (el) raw = String(el.value == null ? '' : el.value);
+            }
             const F = KH.Fetch;
-            if (!el || !F || typeof F.parseLabels !== 'function') return [];
+            if (!raw || !F || typeof F.parseLabels !== 'function') return [];
             const out = [];
-            for (const it of (F.parseLabels(el.value) || [])) {
+            for (const it of (F.parseLabels(raw) || [])) {
               const n = String((it && it.label) || '').trim();
               if (n && out.indexOf(n) < 0) out.push(n);
             }
@@ -643,7 +664,7 @@
             vis = [];
             for (const i of alive()) {
               const r = rows[i];
-              const tag = r.scope ? '@' + r.scope : '通用';
+              const tag = r.scopes.length ? '@' + r.scopes.join('@') : '通用';
               if (q && (r.name + ' ' + tag).toLowerCase().indexOf(q) < 0) continue;
               vis.push(i);
               const cb = h('input', { class: 'kh-kvb-cb', type: 'checkbox' });
@@ -652,7 +673,7 @@
               listEl.appendChild(h('label', { class: 'kh-kvb-row' }, [
                 cb,
                 h('span', { class: 'kh-kvb-name', text: r.name }),
-                h('span', { class: 'kh-kvb-scope' + (r.scope ? ' is-scoped' : ''), text: tag }),
+                h('span', { class: 'kh-kvb-scope' + (r.scopes.length ? ' is-scoped' : ''), text: tag }),
                 r.mark ? h('span', { class: 'kh-kvb-mark', text: '#表' }) : null
               ]));
             }
@@ -671,7 +692,7 @@
               if (t == null) continue;                    // 解析不出名字的怪词条：不动它
               rows[i].next = t;
               const view = kvRows(t, known)[0];
-              if (view) { rows[i].name = view.name; rows[i].scope = view.scope; rows[i].mark = view.mark; }
+              if (view) { rows[i].name = view.name; rows[i].scopes = view.scopes; rows[i].mark = view.mark; }
               n += 1;
             }
             return n;
@@ -698,13 +719,23 @@
           };
           const barTop = h('div', { class: 'kh-kvb-bar' }, [filter, pickBtn('全选', 'all'), pickBtn('反选', 'inv'), countEl]);
           const barOps = h('div', { class: 'kh-kvb-bar' }, [
-            btn('设为通用', '', () => run(() => each(() => ({ scope: null }))),
+            btn('设为通用', '', () => run(() => each(() => ({ scopes: [] }))),
               '去掉 @字段名：这些词对所有抓图都算命中'),
             btn('设为该字段', 'kh-btn-primary', () => {
               const target = String(scopeSel.value == null ? '' : scopeSel.value).trim();
               if (!target) { D().toast('先在右边选一个抓取字段'); return; }
-              run(() => each(() => ({ scope: target })));
+              run(() => each(() => ({ scopes: [target] })));
             }, '只在抓到「选定字段」的图上算命中'),
+            btn('追加该字段', '', () => {
+              const target = String(scopeSel.value == null ? '' : scopeSel.value).trim();
+              if (!target) { D().toast('先在右边选一个抓取字段'); return; }
+              run(() => each((cur) => {
+                const list = (cur.scopes || []).concat([target]);
+                const uniq = [];
+                for (const v of list) if (v && uniq.indexOf(v) < 0) uniq.push(v);
+                return { scopes: uniq };
+              }));
+            }, '保留已有作用域、再**加一个**：一个词可以同时管多个字段的图（词尾写成 词@截图@名称）'),
             scopeSel,
             btn('加 #表', '', () => run(() => each(() => ({ mark: true }))),
               '命中后把图上的键值行并进重要笔记的抓取表'),
@@ -929,15 +960,21 @@
     return kvChips(raw).map((chip) => {
       const km = KV_MARK_RE.exec(chip);
       const body = km ? chip.slice(0, km.index) : chip;
-      let scope = '';
       let name = body.trim();
-      const at = KV_AT_RE.exec(body);
-      if (at) {
-        for (const k of ks) {
-          if (kvSameField(k, at[1])) { scope = k; name = body.slice(0, at.index).trim(); break; }
-        }
+      /* 【2.0.7.2 需求①】一个词**可以连写多个** `@字段名`（`一对一@截图@名称`）：从后往前剥，
+       * 只要有一个不是真配过的字段名就停手（剩下那段含 `@` 按普通词，老配置零影响）。
+       * 与 img-ocr.js 的 `splitScope` 同口径，门禁在 tests/specs/imgkw-batch.test.js。 */
+      const scopes = [];
+      for (;;) {
+        const at = KV_AT_RE.exec(name);
+        if (!at) break;
+        let hit = '';
+        for (const k of ks) { if (kvSameField(k, at[1])) { hit = k; break; } }
+        if (!hit) break;
+        if (scopes.indexOf(hit) < 0) scopes.unshift(hit);
+        name = name.slice(0, at.index).trim();
       }
-      return { raw: chip, name: name, scope: scope, mark: !!km };
+      return { raw: chip, name: name, scopes: scopes, scope: scopes.join(','), mark: !!km };
     });
   }
 
@@ -950,9 +987,9 @@
   function kvPatch(row, o) {
     const p = o || {};
     if (!row || !row.name) return null;
-    const scope = (p.scope === undefined) ? row.scope : p.scope;
+    const scopes = (p.scopes === undefined) ? (row.scopes || []) : (p.scopes || []);
     const mark = (p.mark === undefined) ? row.mark : !!p.mark;
-    return row.name + (scope ? '@' + scope : '') + (mark ? '#表' : '');
+    return row.name + scopes.map((s) => '@' + s).join('') + (mark ? '#表' : '');
   }
 
   /**

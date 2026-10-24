@@ -50,13 +50,15 @@
     </div>
   </div>
 
-  <!-- ③ 快捷操作：＋ 快速添加（主按钮）/ 🚫 禁用本站（文案与图标随状态切换） -->
+  <!-- ③ 快捷操作：＋ 快速添加（主按钮）/ 🚫 禁用本标签页（文案与图标随状态切换）
+       【2.0.7.2 需求⑤】「禁用本站」改成「禁用本标签页」：只影响这一个标签页，
+       该标签页里打开任何网址都不高亮，关掉标签页自动取消，同站点的别的标签页不受影响。 -->
   <div class="kh-pop-actions">
     <button class="kh-btn kh-btn-primary kh-pop-action" id="btn-add" type="button" title="在网页上加词（弹窗会关闭）">
       <span aria-hidden="true">＋</span>快速添加
     </button>
-    <button class="kh-btn kh-pop-action" id="btn-site" type="button" title="临时禁用/启用本站">
-      <span id="btn-site-icon" aria-hidden="true">🚫</span><span id="btn-site-text">禁用本站</span>
+    <button class="kh-btn kh-pop-action" id="btn-site" type="button" title="临时禁用/恢复本标签页的高亮">
+      <span id="btn-site-icon" aria-hidden="true">🚫</span><span id="btn-site-text">禁用本标签页</span>
     </button>
   </div>
 

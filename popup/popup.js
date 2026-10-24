@@ -3,8 +3,10 @@
  * ----------------------------------------------------------------------------
  * 统一化要点（与 v2 架构一致，勿回退）：
  *   · 全局开关 → `MSG.GLOBAL_TOGGLE`，由 background 统一落盘 + 广播 + 换图标
- *   · 站点禁用 → **storage.siteDisabledMap 为主**（内容脚本经 storage.onChanged
- *     必然生效），`MSG.SITE_TOGGLE` 只作 best-effort 通知
+ *   · 站点禁用 → 【2.0.7.2 需求⑤】已改成**标签页级**（只影响当前这一个标签页，该标签页里打开
+ *     任何网址都不高亮，关掉标签页自动取消）。状态由后台按 tabId 存 `chrome.storage.session`
+ *     （内容脚本读不到 session 区，所以判定与落盘都在后台，弹窗只发 `MSG.TAB_DISABLED_SET`）。
+ *     `storage.local.siteDisabledMap` 只剩"历史站点级禁用"的存量：**只读不写**，存量继续生效。
  *   · 版本显示 → `chrome.runtime.getManifest().version`（manifest 是唯一真源）
  *   · 快速添加 → 两条路：① **委托当前网页**（`MSG.EDITOR_OPEN` 让内容脚本在页面上弹
  *     1040px 三列编辑器）；② 委托不了就**另开独立编辑窗口**（`popup/editor.html`，1100×500，同一套 UI）。
@@ -29,6 +31,9 @@
 
   let cfg = null;
   let hostname = '';
+  /* 【2.0.7.2 需求⑤】当前标签页是否被"标签页级临时禁用"（真值来源 = 内容脚本回报，
+   * 因为判定在后台按 tabId 做；这里只缓存最近一次渲染的结果，给点击时决定"翻到哪一边"） */
+  let curTabDisabled = false;
 
   /* ---------------- 通用小工具 ---------------- */
 
@@ -102,7 +107,8 @@
     } catch (e) { return null; }
   }
 
-  /** 指定标签页在内容脚本里的**真值**：`siteEnabled`（受全局开关 × 本站禁用 × 网址规则共同决定）。
+  /** 指定标签页在内容脚本里的**真值**：`siteEnabled`（受全局开关 × 本标签页禁用 × 站点规则共同决定）
+   *  与 `tabDisabled`（本标签页是否被标签页级临时禁用，【2.0.7.2 需求⑤】）。
    *  站点卡原来只读 `siteDisabledMap`，于是被网址规则禁掉的页面显示「生效中」，按钮点两次页面零变化（C7 F-2）。
    *  返回 null = 内容脚本不可达（chrome:// / 扩展页 / 未注入），由调用方降级成「不可用」。 */
   async function contentSiteEnabled(tab) {
@@ -116,7 +122,9 @@
           return null;
         }
       );
-      if (r && typeof r.siteEnabled === 'boolean') return r.siteEnabled;
+      if (r && typeof r.siteEnabled === 'boolean') {
+        return { siteEnabled: r.siteEnabled, tabDisabled: !!r.tabDisabled };
+      }
     } catch (e) { /* 内容脚本不可达：不算错误，走降级分支 */ }
     return null;
   }
@@ -341,7 +349,7 @@
       badge.classList.add('is-unknown');
       $('btn-site').disabled = true;
       $('btn-site-icon').textContent = '🚫';
-      $('btn-site-text').textContent = '禁用本站';
+      $('btn-site-text').textContent = '禁用本标签页';
       return;
     }
     const badge = $('site-badge');
@@ -351,12 +359,14 @@
 
     $('btn-site').disabled = false;
     $('btn-site-icon').textContent = disabled ? '✅' : '🚫';
-    $('btn-site-text').textContent = disabled ? '启用本站' : '禁用本站';
+    $('btn-site-text').textContent = disabled ? '恢复本标签页' : '禁用本标签页';
     $('btn-site').classList.toggle('is-site-disabled', !!disabled);
-    $('btn-site').title = disabled ? '重新启用本站高亮' : '临时禁用本站高亮';
+    $('btn-site').title = disabled ? '恢复本标签页的高亮（关掉这个标签页后自动恢复）'
+      : '临时禁用本标签页的高亮：这个标签页里打开什么网址都不高亮，关掉它就自动取消';
   }
 
-  /** 页面确实没高亮、但不是"本站禁用名单"造成的（全局暂停 / 网址规则）：badge 说实话，按钮按"点了有没有用"决定 */
+  /** 页面确实没高亮、但不是"本标签页禁用"造成的（全局暂停 / 历史站点级禁用 / 网址规则）：
+   *  badge 说实话，按钮按"点了有没有用"决定 */
   function setSiteBlockedView(blocked, label, btnTitle) {
     const badge = $('site-badge');
     badge.classList.remove('is-unknown');
@@ -365,7 +375,7 @@
 
     $('btn-site').disabled = !!blocked;
     $('btn-site-icon').textContent = '🚫';
-    $('btn-site-text').textContent = '禁用本站';
+    $('btn-site-text').textContent = '禁用本标签页';
     $('btn-site').classList.remove('is-site-disabled');
     $('btn-site').title = btnTitle;
   }
@@ -384,8 +394,8 @@
   /* ---------------- 渲染：站点状态（判据 = 内容脚本真值，storage 只决定按钮文案） ---------------- */
 
   /**
-   * @param {boolean|null} eff 内容脚本回报的 `siteEnabled`（null = 不可达）
-   * @param {boolean} globalEnabled 全局开关（用于区分"本站禁用"与"全局暂停"两种归因）
+   * @param {object|null} eff 内容脚本回报的 `{ siteEnabled, tabDisabled }`（null = 不可达）
+   * @param {boolean} globalEnabled 全局开关（用于区分"本标签页禁用"与"全局暂停"两种归因）
    */
   async function renderSite(eff, globalEnabled) {
     if (!hostname) {
@@ -397,8 +407,11 @@
     $('site-name').textContent = hostname;
     $('site-name').title = hostname;
 
+    /* 历史站点级禁用（storage.local.siteDisabledMap 的存量）：**只读不写**。
+     * 它是旧版「禁用本站」留下的整站禁用，新按钮管不到它，只能去设置页那份历史列表里恢复 ——
+     * 所以卡片必须说实话，不能给一个点了没用的按钮。 */
     const { siteDisabledMap } = await read(['siteDisabledMap']);
-    const mapDisabled = !!((siteDisabledMap || {})[hostname]);
+    const legacyDisabled = !!((siteDisabledMap || {})[hostname]);
 
     /* 内容脚本不可达（chrome:// / 扩展页 / 未注入）：维持原有「不可用」降级，不猜 */
     if (eff === null) {
@@ -406,15 +419,27 @@
       $('btn-site').title = '当前页面不支持站点设置';
       return;
     }
-    /* 真值 = 生效中：按钮按"本站禁用名单"的现状显示（点一下把它加进去） */
-    if (eff === true) { setSiteDisabledView(mapDisabled, true); return; }
-    /* 页面确实没高亮，归因决定 badge 说实话、按钮有没有用 */
-    if (mapDisabled) { setSiteDisabledView(true, true); return; }
-    if (globalEnabled === false) {
-      setSiteBlockedView(false, '已暂停', '临时禁用本站高亮（当前全局高亮已暂停）');
+
+    /* 真值来自内容脚本：它启动时问过后台"本标签页是否被禁用"，所以这里不必再问一遍 */
+    curTabDisabled = !!eff.tabDisabled;
+
+    /* ① 本标签页被临时禁用 —— 新按钮管的就是这一种，点一下即可恢复 */
+    if (curTabDisabled) { setSiteDisabledView(true, true); return; }
+
+    /* ② 真值 = 生效中：按钮按"现在能不能禁"显示（点一下禁掉这个标签页） */
+    if (eff.siteEnabled === true) { setSiteDisabledView(false, true); return; }
+
+    /* ③ 页面确实没高亮，归因决定 badge 说实话、按钮有没有用 */
+    if (legacyDisabled) {
+      setSiteBlockedView(true, '已禁用',
+        '该站点在旧版本被「禁用本站」禁过（历史记录，升级不改变它）；这个按钮现在只管当前标签页，请到设置页的「历史站点级禁用」列表里恢复');
       return;
     }
-    /* 既没被本站禁用、也没暂停 ⇒ 只能是被网址规则挡掉了：此时点按钮没用，如实禁用并说明去哪改 */
+    if (globalEnabled === false) {
+      setSiteBlockedView(false, '已暂停', '临时禁用本标签页高亮（当前全局高亮已暂停）');
+      return;
+    }
+    /* 既没被本标签页禁用、也没暂停 ⇒ 只能是被网址规则挡掉了：此时点按钮没用，如实禁用并说明去哪改 */
     setSiteBlockedView(true, '已禁用', '该页面被网址规则禁用，请到设置页调整规则');
   }
 
@@ -451,7 +476,8 @@
     const globalOn = bg && bg.globalEnabled !== undefined ? bg.globalEnabled : (globalEnabled !== false);
     renderGlobalState(globalOn);
 
-    // 站点卡判据：向内容脚本要**真值**（storage 里的 siteDisabledMap 只决定按钮文案）
+    // 站点卡判据：向内容脚本要**真值**（它回报 siteEnabled 与本标签页禁用态，
+    // siteDisabledMap 只在 renderSite 里当"历史存量"读一次，不参与本按钮的写）
     const eff = await contentSiteEnabled(tab);
     await renderSite(eff, globalOn);
     renderKeywordCount();
@@ -486,25 +512,29 @@
     toast(value ? '已开启全局高亮' : '已暂停全局高亮', 'ok');
   });
 
-  // 站点禁用：storage 为主（内容脚本 storage.onChanged 必然生效），消息仅作提醒
+  /* 【2.0.7.2 需求⑤】禁用改成**标签页级**：只影响当前这一个标签页（同站点的别的标签页不受影响），
+   * 该标签页里打开任何网址都不高亮，关掉标签页自动取消。
+   * 落盘在 background（storage.session 只有扩展页/后台能读，判定也要 tabId），这里只发消息。
+   * 不再写 siteDisabledMap：那个键现在是"历史站点级禁用"的存量，只读不写（升级不改变老用户行为）。 */
   $('btn-site').addEventListener('click', async () => {
-    if (!hostname) { toast('当前页面不支持站点设置', 'error'); return; }
-    const { siteDisabledMap = {} } = await read(['siteDisabledMap']);
-    const next = !siteDisabledMap[hostname];
-    const map = Object.assign({}, siteDisabledMap);
-    if (next) map[hostname] = true; else delete map[hostname];
-    /* 先落盘、成了再翻卡片：旧写法先翻卡片再写、且不看返回值 ⇒ 写失败时卡片显示
-     * 「已禁用」而磁盘没变、页面照常高亮，用户以为生效了（C7 F-1）。 */
-    const okWrite = await write({ siteDisabledMap: map });
-    if (!okWrite) {
-      toast('保存失败：本地存储已满或被禁用，本次改动未生效', 'error');
+    const tab = await activeTab();
+    if (!tab || tab.id == null) { toast('拿不到当前标签页，无法禁用', 'error'); return; }
+    const next = !curTabDisabled;
+
+    const res = await askBackground({ type: MSG.TAB_DISABLED_SET, tabId: tab.id, disabled: next });
+    /* 先落盘、成了再翻卡片：后台明确回 ok:false、或压根没答复（timedOut / null）时，
+     * 卡片一律不动并如实报错 —— 旧写法的毛病正是"先翻卡片再写、且不看返回值"，
+     * 卡片说「已禁用」而磁盘没变、页面照常高亮，用户以为生效了（C7 F-1）。 */
+    if (!res || res.ok === false || res.timedOut) {
+      toast('保存失败：' + ((res && res.error) || '后台未响应，本次改动未生效'), 'error');
       return;
     }
 
-    setSiteDisabledView(next, true);
-    const reply = await nudgeContent(MSG.SITE_CHANGED, { host: hostname, disabled: next });
-    toast(next ? '已禁用本站高亮' : '已启用本站高亮', 'ok');
-    if (!reply) console.info('[KH] popup：内容脚本未响应，站点状态已写入 storage，页面刷新后同样生效');
+    curTabDisabled = !!res.disabled;
+    setSiteDisabledView(curTabDisabled, true);
+    /* 页面里的高亮由后台推 `TAB_DISABLED_CHANGED` 触发热生效（content 收到就重评上线/下线），
+     * 所以这里不额外再发一条 —— 推送发不出去时（该页没有内容脚本）也没有需要它做的事。 */
+    toast(curTabDisabled ? '已禁用本标签页的高亮' : '已恢复本标签页的高亮', 'ok');
   });
 
   /* 快速添加：与关键词管理界面**一模一样**的独立编辑器（用户实测要求："单独弹出一个一模一样的弹出"）。
@@ -646,8 +676,11 @@
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local') return;
     if (changes.globalEnabled) renderGlobalState(changes.globalEnabled.newValue !== false);
+    /* siteDisabledMap 是"历史站点级禁用"的存量（用户可能在设置页那份列表里点掉它）：
+     * 它不再是我们自己写的键，所以不能直接拿去翻卡片 —— 整卡重算一次，判据仍走内容脚本真值。 */
     if (changes.siteDisabledMap && hostname) {
-      setSiteDisabledView(!!((changes.siteDisabledMap.newValue || {})[hostname]), true);
+      const recalc = render();
+      recalc.catch(() => { /* 重算失败不影响弹窗可用，下次打开会再算 */ });
     }
     if (changes.keywords) renderKeywordCount(changes.keywords.newValue);
   });

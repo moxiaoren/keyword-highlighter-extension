@@ -100,15 +100,17 @@ module.exports = async function run() {
     truthy(/const ok = await write\(/.test(body), 'background 不可达时仍走直接落盘兜底，但要看返回值');
   });
 
-  await test('★ popup：站点卡「先落盘、成了再翻卡片」', () => {
+  await test('★ popup：站点卡「先落盘、成了再翻卡片」（标签页级通道）', () => {
     const src = readSrc('popup/popup.js');
     const body = code(between(src, "$('btn-site').addEventListener", '快速添加'));
-    const w = body.indexOf('await write({ siteDisabledMap: map })');
-    const flip = body.indexOf('setSiteDisabledView(next, true)');
-    truthy(w >= 0, '应能看到写盘调用');
+    truthy(body, '应能找到站点按钮处理器');
+    const ask = body.indexOf('MSG.TAB_DISABLED_SET');
+    const flip = body.indexOf('setSiteDisabledView(');
+    truthy(ask >= 0, '应能看到落盘调用（发后台的 TAB_DISABLED_SET —— 判定与落盘都在后台）');
     truthy(flip >= 0, '应能看到卡片翻转调用');
-    truthy(w < flip, '★ 写盘必须在翻卡片**之前**（旧代码顺序相反且不看返回值）');
-    truthy(/if \(!okWrite\)/.test(body), '★ 写失败必须提前 return，不翻卡片、不报成功');
+    truthy(ask < flip, '★ 落盘必须在翻卡片**之前**（旧代码顺序相反且不看返回值）');
+    truthy(/if \(!res \|\| res\.ok === false \|\| res\.timedOut\)/.test(body),
+      '★ 后台回 ok:false / 没答复（timedOut / null）都必须提前 return，不翻卡片、不报成功');
     truthy(/保存失败/.test(body), '失败要有用户可见提示');
   });
 

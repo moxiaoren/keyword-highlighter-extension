@@ -42,6 +42,8 @@ const specs = [
   './specs/scheduler-fallback.test.js',
   /* 图片命中：读不出地址的图不许被静默丢掉（K62） */
   './specs/img-ocr.test.js',
+  /* 图片词条的作用域（可连写多个 `@字段名`）与批量改写口径：与 fields.js 那份镜像对账（2.0.7.2 需求①） */
+  './specs/imgkw-batch.test.js',
   /* K70 编辑弹窗布局：R4 独立验收（红队）的清单层复核 —— 与 R3 的用例换角度，互不替代 */
   './specs/k70-editor-layout-r4.test.js',
   /* K71「抓取后续字段」模块启用：编译层的门 / 迁移规则 / 清理清单在声明层的判定 */
@@ -154,7 +156,10 @@ const specs = [
   './specs/note-img-fold.test.js',
   /* 2.0.2.19 需求②③⑤：OCR 全文按列带排成表格（图里表格 / 横排两栏）、抓取字段值＝动态关键词
    * （AND 语义）、图里表格行「姓名|张三」并进抓取字段表且同值合并。口径见该 spec 头部 */
-  './specs/ocr-layout.test.js'
+  './specs/ocr-layout.test.js',
+  /* 【2.0.7.2 需求⑤】标签页级临时禁用：只影响当前标签页 / 任何网址都不高亮 / 关标签页即取消 /
+   * 重启不残留（storage.session）＋「后台只推给那个标签页」的热生效链路。口径见该 spec 头部 */
+  './specs/tab-disable.test.js'
 ];
 
 (async () => {

@@ -45,6 +45,17 @@
      * payload: { url, tabId } */
     TAB_SWITCH: 'kh:tab:switch',
 
+    /* 【2.0.7.2 需求⑤】标签页级临时禁用的三条（新增，不动上面的 site 域：SITE_TOGGLE 与
+     * SITE_CHANGED 仍归"历史站点级禁用"（siteDisabledMap 存量）那条老路径）。
+     * 为什么非得经 background 判：`chrome.storage.session` 只有扩展自己的页面/后台能读，内容脚本读不到；
+     * 而 tabId 也只有 background 从 `sender.tab` 拿得到（内容脚本不知道自己属于哪个标签页）。
+     * 于是：问 `TAB_DISABLED_QUERY`（payload { tabId? }）→ 回 { disabled }；
+     *       设 `TAB_DISABLED_SET`（payload { tabId?, disabled? }，省略 disabled = 翻转）；
+     *       改完 background 用 `TAB_DISABLED_CHANGED`（payload { disabled }）推给该标签页热生效。 */
+    TAB_DISABLED_QUERY: 'kh:tab:disabledQuery',
+    TAB_DISABLED_SET: 'kh:tab:disabledSet',
+    TAB_DISABLED_CHANGED: 'kh:tab:disabledChanged',
+
     /* ---- debug（只读诊断；联调 / 真浏览器回归用） ---- */
     DEBUG_HITS: 'kh:debug:hits',            // 返回当前命中注册表快照（不改任何行为）
     DEBUG_DIAG: 'kh:debug:diag',            // 只读诊断：重建计数 / 最近触发来源 / 仅消费次数 / 相关性判定

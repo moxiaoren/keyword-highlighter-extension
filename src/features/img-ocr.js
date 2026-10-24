@@ -406,36 +406,44 @@
     return out;
   }
 
-  /** 一个词 → `{text, scope}`：`@字段名` 只有在 `known` 里才当作用域（`#表` 必须写在最末） */
+  /** 一个词 → `{text, scopes}`：`@字段名` 只有在 `known` 里才当作用域（`#表` 必须写在最末）。
+   *  【2.0.7.2 需求①】**可以连写多个**：`一对一@截图@名称` = 这个词对「截图」或「名称」两个字段的图都生效
+   *  （用户原话：关键词并不是指向一个字段，需要支持指向多个字段）。从后往前剥，书写顺序保留；
+   *  只要有一个 `@…` 不是真配过的字段名就停手 —— 剩下那段（含那些 `@`）按普通词处理，
+   *  老用户把 `@` 当普通字符的写法一个字都不变。 */
   function splitScope(chip, known) {
     let s = String(chip == null ? '' : chip).trim();
     let mark = '';
     const km = KV_MARK.exec(s);
     if (km) { mark = km[0]; s = s.slice(0, km.index).trim(); }
-    let scope = '';
-    const m = /@([^@\s]+)$/.exec(s);
-    if (m) {
+    const scopes = [];
+    for (;;) {
+      const m = /@([^@\s]+)$/.exec(s);
+      if (!m) break;
       const name = m[1].trim();
-      for (const k of (known || [])) {
-        if (sameField(k, name)) { scope = k; s = s.slice(0, m.index).trim(); break; }
-      }
+      let hit = '';
+      for (const k of (known || [])) if (sameField(k, name)) { hit = k; break; }
+      if (!hit) break;                        // 不是真字段 ⇒ 整段按普通词（老配置零影响）
+      if (scopes.indexOf(hit) < 0) scopes.unshift(hit);
+      s = s.slice(0, m.index).trim();
     }
-    return { text: s + mark, scope: scope };
+    return { text: s + mark, scopes: scopes, scope: scopes.join(',') };
   }
 
   /**
    * 取「对某个抓取字段生效」的那份词（`|` 拼回，喂 `stripKvMarks` / `needNames`）。
    * 覆盖式：该字段有 `@字段名` 词 ⇒ 只返回它们；没有 ⇒ 返回没写作用域的全部词（旧行为）。
    * `field` 为空（右键条目 / 调不明字段）⇒ 只取无作用域的词，与旧行为一致。
+   * 【2.0.7.2 需求①】多作用域：一个词连写 `@截图@名称` 时，**任一**命中本字段即算"属于它"。
    */
   function scopedRaw(raw, field, known) {
     const chips = kvChips(raw);
     if (!chips.length) return '';
     const parts = chips.map((c) => splitScope(c, known));
     const key = String(field == null ? '' : field).trim();
-    const mine = key ? parts.filter((p) => p.scope && sameField(p.scope, key)) : [];
+    const mine = key ? parts.filter((p) => p.scopes.some((sc) => sameField(sc, key))) : [];
     if (mine.length) return mine.map((p) => p.text).join('|');
-    return parts.filter((p) => !p.scope).map((p) => p.text).join('|');
+    return parts.filter((p) => !p.scopes.length).map((p) => p.text).join('|');
   }
 
   /**
@@ -668,28 +676,39 @@
    */
   const NEED_MIN_LEN = 2;
 
-  /** 图片动态关键词原文 → 要看的抓取字段名（后缀可写可不写，按裸名比）
-   *  【2.0.7.1 需求②】带 `@字段名` 的条目只在那个字段上生效，覆盖式（与该字段的静态词同一条规则）。 */
-  function needNames(rawLabels, field, known) {
+  /** 图片动态关键词原文 → 要看的抓取字段（**原文 spec 保留后缀** + 裸名）
+   *  【2.0.7.1 需求②】带 `@字段名` 的条目只在那个字段上生效，覆盖式（与该字段的静态词同一条规则）。
+   *  【2.0.7.2 需求④】后缀**不再丢弃**：用户写 `开发者^高价`，`^高价` 就是取值的修饰
+   *  —— 与「抓取字段」同一套语法、同一份实现（`Fetch.extractFor` 自己会解析）。
+   *  旧实现只留裸名（`parseLabelSpec(s).label`），于是 `^高价` 静默失效、拿到的是原始整格
+   *  「a公司 高价值」，用户要的「a公司」永远出不来。`raw` 因此必须原样带走。 */
+  function needSpecs(rawLabels, field, known) {
     const out = [];
     const parse = (KH.Fetch && typeof KH.Fetch.parseLabelSpec === 'function') ? KH.Fetch.parseLabelSpec : null;
     const parts = String(rawLabels || '').split(/[,，、|;]/)
       .map((w) => w.trim()).filter(Boolean)
       .map((w) => splitScope(w, known || []));
     const key = String(field == null ? '' : field).trim();
-    const mine = key ? parts.filter((p) => p.scope && sameField(p.scope, key)) : [];
+    const mine = key ? parts.filter((p) => p.scopes.some((sc) => sameField(sc, key))) : [];
     /* 覆盖式：这个字段有 `@字段名` 词 ⇒ 只用它们；否则用全部无作用域的（旧行为） */
-    const pick = mine.length ? mine : parts.filter((p) => !p.scope);
+    const pick = mine.length ? mine : parts.filter((p) => !p.scopes.length);
     for (const p of pick) {
-      const s = String(p.text || '').trim();
-      if (!s) continue;
-      let name = s;
+      const raw = String(p.text || '').trim();
+      if (!raw) continue;
+      let label = raw;
       if (parse) {
-        try { const q = parse(s); if (q && q.label) name = String(q.label).trim(); } catch (e) { name = s; }
+        try { const q = parse(raw); if (q && q.label) label = String(q.label).trim(); } catch (e) { label = raw; }
       }
-      if (name && out.indexOf(name) < 0) out.push(name);
+      if (!label) continue;
+      if (out.some((o) => o.label === label && o.raw === raw)) continue;
+      out.push({ raw: raw, label: label });
     }
     return out;
+  }
+
+  /** 只要字段裸名（诊断/单测入口；取值请用 `needSpecs`，它带着用户写的后缀） */
+  function needNames(rawLabels, field, known) {
+    return needSpecs(rawLabels, field, known).map((s) => s.label);
   }
 
   /**
@@ -709,7 +728,8 @@
   function needInfo(hitOrCell, rule, field) {
     const meta = (rule && rule.meta) || {};
     const known = scopeKnown(rule);
-    const want = needNames(meta.imgOcrNeed, field, known);
+    const specs = needSpecs(meta.imgOcrNeed, field, known);
+    const want = specs.map((s) => s.label);
     const info = { values: [], want: want, missing: [] };
     if (!want.length) return info;                    // 留空即旧行为：没有动态判据
     const Fetch = KH.Fetch || {};
@@ -717,8 +737,13 @@
     const anchor = (hitOrCell && hitOrCell.cell) ? hitOrCell.cell : hitOrCell;
     if (!anchor) { info.missing = want.slice(); return info; }
     let entries = [];
+    /* 【2.0.7.2 需求④】取值用**用户自己写的那份 spec**（`开发者^高价`），不再用 `meta.fetchLabels`
+     * 的全局配置 —— 否则「图片动态关键词」里的后缀永远是死字，用户没法给判据单独裁值。
+     * 一个字段写进 `extractFor` 的 labels 串，修饰由 `parseLabelSpec` 在那条链上统一施加
+     * （`!`/`^`/`%` 与「抓取字段」是同一份实现）。 */
+    const labelsArg = specs.map((s) => s.raw).join('|');
     try {
-      entries = Fetch.extractFor(anchor, meta.fetchLabels || '', meta.fetchScope, null) || [];
+      entries = Fetch.extractFor(anchor, labelsArg, meta.fetchScope, null) || [];
     } catch (e) { info.missing = want.slice(); return info; }
     const out = [];
     const seen = [];
@@ -1680,6 +1705,10 @@
     judgeInfo: judgeInfo, needInfo: needInfo,
     /** 【2.0.7.1 需求②】作用域诊断用：`scopeKnown(rule)` = 合法字段名；`scopedRaw(raw,field,known)` = 该字段实际生效的词 */
     scopeKnown: scopeKnown, scopedRaw: scopedRaw, literalPatternOf: literalPatternOf,
+    /** 【2.0.7.2 需求①】`splitScope(chip, known)` → `{text, scopes[, scope]}`：词尾可连写多个 `@字段名` */
+    splitScope: splitScope,
+    /** 【2.0.7.2 需求④】`needSpecs(raw,field,known)` = 要看的字段（**带用户写的后缀**，取值喂 `Fetch.extractFor`） */
+    needSpecs: needSpecs,
     /** 【2.0.4 需求①】「键值行进表」标记：`kvWords(raw)` = 带 `#表`/`#kv` 标记的词（已剥标记）；
      *  `stripKvMarks(raw)` = 去掉标记的关键词原文（喂匹配用）。重要笔记那边读同一份实现。 */
     kvWords: kvWords, stripKvMarks: stripKvMarks,

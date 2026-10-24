@@ -412,92 +412,43 @@ module.exports = async function run() {
     });
 
   /* ==================================================================
-   * 【2.0.6.2 需求⑥⑧】「词：值」行的**值边界**与去重
-   *   用户现场（m08130 第 6 条）：`授权人-沈阳…分公司` 那一格里同时出现了下一个字段名
-   *   （`授权人`）和它的值。根因是 OCR 归行（`offscreen/ocr.js` 的 `stitchRows`）会把贴得很近的
-   *   两条物理行并成一行，旧写法「取右侧全部格 / 取整行剩余」就把下一行的标签一起吞了。
+   * 【2.0.7.2 需求③④】动态判据：**抓到的值**才是命中词；后缀在这格真生效
+   *   用户口径（round 70 第 3/4 条）：
+   *     ③ 「是抓取到的内容作为命中词，不需要包含图片动态关键词本身。比如词是核准主体名称、
+   *        抓取到的内容是 a公司，那命中词是 a公司 —— 即使图里不出现『核准主体名称』也要命中。」
+   *     ④ 「抓取字段里没配 `开发者^高价`，但我想只在图片动态关键词里配 `开发者^高价` 来限住取值
+   *        （抓到的整格是 `a公司 高价值`，我要的是 `a公司`）」。
+   *   ⇒ 两条都要求：取值**用这格自己写的 spec**（2.0.7.2 前是把后缀剥掉、改走全局 fetchLabels）。
    * ================================================================== */
-  suite('2.0.6.2 需求⑥⑧：值截到下一个字段名之前 + 同值去重压空白');
-    const kvLab = (cells, text) => ({ ruleId: 'r1', state: 'done', text: text, lineList: [{ t: text, cells: cells }] });
-    const kvRows = (items, kw) => withItems(items, () => ocrExtraRows({ pinId: 'r1', imgOcr: true, imgOcrKeyword: kw }));
+  suite('2.0.7.2 需求③④：动态判据以「抓到的值」为命中词，后缀在这一格生效');
+    const row1 = (label, value) => table([[label, value]]).rows[0].children[0];
 
-    await test('★ 表格形式：值只到下一个字段名之前（不许把下一行标签吞进这一格）', () => {
-      /* 归行把两条物理行并成一行：`授权人 合肥…` 的标签格也挂在本行 cells 上 */
-      const it = kvLab([
-        cell(10, 60, '授权人'), cell(80, 240, '沈阳某某分公司'),
-        cell(260, 310, '授权人'), cell(330, 490, '合肥某某分公司')
-      ], '授权人 沈阳某某分公司 授权人 合肥某某分公司');
-      const rows = kvRows([it], '授权人#表');
-      eq(rows.length, 1, JSON.stringify(rows));
-      eq(rows[0].value, '沈阳某某分公司', '★ 值里不许出现下一个字段名（旧实现取右侧全部格）');
+    await test('★ 需求③：图里只要有**抓到的值**就算命中（不要求出现字段名本身）', () => {
+      const anchor = row1('核准主体名称', 'a公司');
+      const rule = { meta: { imgOcr: true, imgOcrKeyword: '', imgOcrNeed: '核准主体名称', fetchLabels: '核准主体名称' } };
+      const ni = IO.needInfo(anchor, rule);
+      eq(JSON.stringify(ni.values), JSON.stringify(['a公司']), '★ 判据值 = 抓到的内容（不是字段名）');
+      eq(IO.judge(rule, '图上只有这家公司：a公司', ni.values).length, 1, '★ 图里有 a公司 ⇒ 命中');
+      eq(IO.judge(rule, '核准主体名称', ni.values).length, 0,
+        '★ 反过来：图里只有字段名本身、没有值 ⇒ 不命中（说明判据确实是"值"）');
     });
 
-    await test('★ 文本行：同一个词再来一次就是边界（整行剩余不许整段当值）', () => {
-      const it = kvLab([], '授权人 沈阳某某分公司 授权人 合肥某某分公司');
-      const rows = kvRows([it], '授权人#表');
-      eq(rows[0].value, '沈阳某某分公司', '★ 旧实现给的是「沈阳某某分公司 授权人 合肥某某分公司」');
+    await test('★ 需求④：`开发者^高价` 只在图片动态关键词里写，也要按 `^高价` 裁出 a公司', () => {
+      const anchor = row1('开发者', 'a公司 高价值');
+      /* 抓取字段里**没有** 开发者（用户原话：这个关键词抓取字段里面没有配），只在判据里写 */
+      const rule = { meta: { imgOcr: true, imgOcrKeyword: '', imgOcrNeed: '开发者^高价', fetchLabels: '截图' } };
+      const ni = IO.needInfo(anchor, rule);
+      eq(JSON.stringify(ni.values), JSON.stringify(['a公司']),
+        '★ 后缀在这一格真生效：整格 `a公司 高价值` 按 `^高价` 切成 `a公司`');
+      eq(IO.judge(rule, '审批人：a公司', ni.values).length, 1, '图里有 a公司 ⇒ 命中');
+      eq(IO.judge(rule, '审批人：a公司 高价值', ['a公司 高价值']).length, 1, '（对照）不裁值时整格也算命中');
     });
 
-    await test('★ 别的命中词也是边界（`姓名 张三 部门 研发` 里姓名只能取张三）', () => {
-      const it = kvLab([], '姓名 张三 部门 研发部');
-      const rows = kvRows([it], '姓名#表|部门#表');
-      eq(JSON.stringify(rows), JSON.stringify([{ label: '姓名', value: '张三' }, { label: '部门', value: '研发部' }]));
+    await test('★ 需求④：不写后缀 ⇒ 取值与「抓取字段」逐字一致（不因这次改动变严）', () => {
+      const anchor = row1('开发者', 'a公司 高价值');
+      const rule = { meta: { imgOcr: true, imgOcrNeed: '开发者', fetchLabels: '开发者' } };
+      eq(JSON.stringify(IO.needInfo(anchor, rule).values), JSON.stringify(['a公司高价值']),
+        '不写后缀就照抓取字段口径取整格（只剔空白、不分大小写）');
     });
 
-    /* 【2.0.6.3 需求⑦】用户原话：「被授权方（沈阳…）时被授权方格里多出授权方」。
-     * 「授权方」是「被授权方」的后半截 —— 汉字之间没有天然词边界，旧写法用字面匹配，
-     * 找「授权方」就命中了「被授权方：沈阳…」这一行，把别人的值记到自己头上。 */
-    await test('★ 本词只是另一个已配置词的后半截时，不许命中别人的行（需求⑦「授权方」vs「被授权方」）', () => {
-      const it = kvLab([], '被授权方：沈阳喜焱网络科技有限公司杭州分公司');
-      const rows = kvRows([it], '授权方#表|被授权方#表');
-      eq(rows.length, 1, JSON.stringify(rows));
-      eq(rows[0].label, '被授权方', '★ 只认真正独立的那个字段名');
-      eq(rows[0].value, '沈阳喜焱网络科技有限公司杭州分公司', JSON.stringify(rows[0]));
-    });
-
-    /* 反例：没有更长同名字段时，前面带别的字照旧算命中（2.0.4 需求① 的口径不许被这道闸误杀） */
-    await test('★ 没有更长同名字段时，词前有别的字仍算命中（反例）', () => {
-      const it = kvLab([], '编号登记号：2018SR458983');
-      const rows = kvRows([it], '登记号#表');
-      eq(rows.length, 1, JSON.stringify(rows));
-      eq(rows[0].value, '2018SR458983', JSON.stringify(rows[0]));
-    });
-
-    await test('★ 去重键压掉空白：同一个值带着不同空格只留一条（需求⑧）', () => {
-      const a = kvLab([], '授权人：厦门房在线科技有限公司');
-      const b = kvLab([], '授权人：厦门房 在线科技有限公司');
-      eq(kvRows([a, b], '授权人#表').length, 1, '★ 只差空格 ⇒ 同一个值，不许记两行');
-    });
-
-    /* 【2.0.6.5 需求③】用户现场：填 `登记号#表|著作权人#表` 判「无命中、也没加表格」，而
-     * `登记号|著作权人` 能命中。逐层复现后判定层其实等价（探针：两边都是同样的命中区间），
-     * 唯一能把这两个症状一起解释的输入是**词与词之间用了逗号/顿号/分号**：
-     * 旧 `kvChips` 只按 `|` 切 ⇒ 整串是一个 chip、又恰好以 `#表` 结尾 ⇒ 剥标记剥错位置
-     * ⇒ 正则里留下字面 `#表`（永不命中）+ `kvWords` 出一个脏词（加不出表格行）。
-     * 现在只要标记后面跟着分隔符就算断词，两种写法等价。 */
-    await test('★ 2.0.6.5 需求③：`#表` 后面跟逗号/顿号/分号 ⇒ 也断词（逗号写法等价于竖线）', () => {
-      eq(JSON.stringify(KH.ImgOcr.kvWords('登记号#表,著作权人#表')), JSON.stringify(['登记号', '著作权人']), '半角逗号');
-      eq(JSON.stringify(KH.ImgOcr.kvWords('登记号#表、著作权人#表')), JSON.stringify(['登记号', '著作权人']), '顿号');
-      eq(JSON.stringify(KH.ImgOcr.kvWords('登记号#表；著作权人#kv')), JSON.stringify(['登记号', '著作权人']), '全角分号 + #kv');
-      eq(KH.ImgOcr.stripKvMarks('登记号#表,著作权人#表'), '登记号|著作权人', '剥完必须等于竖线写法');
-      const comma = { meta: { imgOcrKeyword: '登记号#表,著作权人#表' } };
-      const pipe = { meta: { imgOcrKeyword: '登记号|著作权人' } };
-      const txt = '著作权人：北京山禾不动产管理有限公司\n登记号：2025SR0456628';
-      eq(JSON.stringify(KH.ImgOcr.matchedInText(comma, txt)), JSON.stringify(KH.ImgOcr.matchedInText(pipe, txt)),
-        '★ 命中区间必须与竖线写法逐字相同');
-      eq(KH.ImgOcr.matchedInText(comma, txt).length, 2);
-      /* 反例：标记不在段尾、普通词里带逗号 —— 一个逗号就是一个词的一部分，不许被拆开 */
-      eq(JSON.stringify(KH.ImgOcr.kvWords('a,b#表')), JSON.stringify(['a,b']), '标记在段尾的普通词照旧整段是一个词');
-      eq(KH.ImgOcr.stripKvMarks('一对一,A公司'), '一对一,A公司', '没有标记的词里逗号是正文字符（不许当分隔符）');
-    });
-
-    await test('★ 2.0.6.5 需求③：逗号写法照样加得出表格行（用户现场「也没增加表格」）', () => {
-      const it = { ruleId: 'r1', state: 'done',
-        text: '著作权人：北京山禾不动产管理有限公司\n登记号：2025SR0456628', lineList: [] };
-      const rows = withItems([it], () => ocrExtraRows({ pinId: 'r1', imgOcr: true, imgOcrKeyword: '登记号#表,著作权人#表' }));
-      eq(JSON.stringify(rows), JSON.stringify([
-        { label: '著作权人', value: '北京山禾不动产管理有限公司' },
-        { label: '登记号', value: '2025SR0456628' }
-      ]), '两行都进表，值不串味');
-    });
 };

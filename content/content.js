@@ -4,7 +4,7 @@
  * 职责只有四件事，**不含任何业务逻辑**（铁律 §2：不许自己实现管线）：
  *   1. 调用 `KH.boot()` 启动
  *   2. 监听 storage 变化 → `KH.applyConfig()`
- *   3. 响 background 的快捷键消息（切换全局 / 切换本站 / 打开设置）
+ *   3. 响 background 的快捷键消息（切换全局 / 切换本标签页禁用态 / 打开设置）
  *   4. 页面卸载时 `KH.destroy()`
  * ========================================================================= */
 
@@ -20,7 +20,36 @@
     return;
   }
 
+  /* 消息常量提到最前：启动阶段（下面 ①）就要用它问后台"本标签页是否被临时禁用"，
+   * 而它原来声明在 ③ 消息路由那一节（顺序一颠倒就是 undefined）。 */
+  const MSG = KH.MSG;
+
   /* ---------------- ① 启动 ---------------- */
+
+  /**
+   * 【2.0.7.2 需求⑤】先把"本标签页是否被标签页级临时禁用"对齐，再 boot。
+   * 为什么必须问后台：`chrome.storage.session` 只有扩展自己的页面与后台能读，内容脚本读不到；
+   * tabId 也只有后台从 `sender.tab` 拿得到。判定留在后台，本页只把结论交给
+   * `SiteRules.markTabDisabled()` —— 门禁唯一实现仍是 `SiteRules.shouldHighlight`。
+   * 问不到（后台还没醒 / 扩展上下文刚失效）按"未禁用"处理，并把标记归零：
+   * 宁可高亮，也不要因为一次通信失败把整页静默关掉，更不能让上一次的禁用态粘在本页。
+   */
+  async function syncTabDisabled() {
+    let off = false;
+    try {
+      const r = await chrome.runtime.sendMessage({ type: MSG.TAB_DISABLED_QUERY });
+      off = !!(r && r.ok && r.disabled);
+    } catch (e) {
+      off = false;
+    }
+    if (KH.SiteRules && KH.SiteRules.markTabDisabled) KH.SiteRules.markTabDisabled(off);
+    return off;
+  }
+
+  /** 先对齐标签页禁用态、再启动（顺序不能反：boot 内部的门禁会读那个标记） */
+  function bootWithTabState() {
+    return syncTabDisabled().then(() => KH.boot());
+  }
 
   /**
    * 就绪标记（`<html data-kh-state="on|off">`）—— 实现已收敛到内核 `KH.markState`
@@ -33,7 +62,7 @@
     catch (err) { /* documentElement 不可写时忽略 */ }
   }
 
-  KH.boot().then((ok) => {
+  bootWithTabState().then((ok) => {
     markState(ok);
     console.debug('[KH] boot', ok ? '高亮态' : '未启用',
       'v' + (chrome.runtime.getManifest ? chrome.runtime.getManifest().version : '?'),
@@ -64,8 +93,6 @@
 
   /* ---------------- ③ 快捷键 / 消息路由（统一协议，禁止硬编码字符串） ---------------- */
 
-  const MSG = KH.MSG;
-
   try {
     chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (!msg || !msg.type) return false;
@@ -82,31 +109,18 @@
             .catch(e => sendResponse({ ok: false, error: String(e) }));
           return true;
 
-        case MSG.SITE_CHANGED:
-          // 「临时禁用本站」已由 background 落盘（siteDisabledMap），这里只需按新状态重评并上线/下线
-          KH.boot().then(ok => { markState(ok); sendResponse({ ok: true, siteEnabled: ok }); })
-            .catch(e => sendResponse({ ok: false, error: String(e) }));
-          return true;
-
-        case MSG.SITE_TOGGLE: {
-          // 兜底路径：万一 background 没在跑（例如扩展刚更新过、SW 尚未唤醒），
-          // 由内容脚本自己翻转本机禁用状态并落盘 —— storage.onChanged 会把状态同步到其它标签页。
-          (async () => {
-            try {
-              const host = location.hostname;
-              const { siteDisabledMap = {} } = await chrome.storage.local.get('siteDisabledMap');
-              const next = !siteDisabledMap[host];
-              if (next) siteDisabledMap[host] = true; else delete siteDisabledMap[host];
-              await chrome.storage.local.set({ siteDisabledMap });
-              const ok = await KH.boot();
-              markState(ok);
-              sendResponse({ ok: true, host, disabled: next, siteEnabled: ok });
-            } catch (e) {
-              sendResponse({ ok: false, error: String(e) });
-            }
-          })();
-          return true;
+        case MSG.TAB_DISABLED_CHANGED: {
+          /* 【2.0.7.2 需求⑤】后台刚改了本标签页的禁用态：**当场重评、当场上下线**，
+           * 不许等下一次 boot —— 用户点了按钮，页面就该立刻变灰（或立刻恢复高亮）。 */
+          if (KH.SiteRules && KH.SiteRules.markTabDisabled) KH.SiteRules.markTabDisabled(!!msg.disabled);
+          KH.boot().then(ok => markState(ok))
+            .catch(e => console.error('[KH] 标签页禁用态热更新失败', e));
+          return false;   // 后台推送，不需要回执（它只关心"该页有没有收到"）
         }
+
+        /* 老的两条（SITE_CHANGED / SITE_TOGGLE）随「禁用本站」改成标签页级一起下线：
+         * 现在没有任何发送方（后台只推 TAB_DISABLED_CHANGED，设置页的站点级按钮直接调后台），
+         * 留着就是第二份 siteDisabledMap 读-改-写实现（审计 F-30 的成因）。 */
 
         case MSG.TAB_SWITCH:
           /* 【2.0.6.2 需求⑤】切页了：新页可不可高亮由本页自己按配置判（SiteRules 唯一实现）。
@@ -146,6 +160,9 @@
           sendResponse({
             ok: true,
             siteEnabled: !!KH.state.siteEnabled,
+            /* 【2.0.7.2 需求⑤】本标签页是否被标签页级临时禁用（弹窗据此把按钮显示成"恢复"）。
+             * 内容脚本读不到 session 区，这个标记是它启动时/收到推送时由后台告诉它的。 */
+            tabDisabled: !!(KH.SiteRules && KH.SiteRules.isTabDisabled && KH.SiteRules.isTabDisabled()),
             globalEnabled: !!(KH.config && KH.config.globalEnabled),
             hits: KH.registry.size,
             rules: KH.rules.length,
@@ -252,7 +269,9 @@
    */
   window.addEventListener('pageshow', (e) => {
     if (!(e && e.persisted)) return;
-    KH.boot().then(markState).catch((err) => {
+    /* 走 bootWithTabState 而不是裸 boot：在缓存里待着的时候，这个标签页可能刚被禁用
+     * （它收不到那条推送），恢复时必须重新问一次，否则会带着旧结论上线。 */
+    bootWithTabState().then(markState).catch((err) => {
       markState(false);
       console.error('[KH] bfcache 恢复后重启失败', err);
     });

@@ -15,9 +15,12 @@
  */
 'use strict';
 
-importScripts('../src/core/protocol.js', 'ocr.js');
+importScripts('../src/core/protocol.js', 'tab-disabled.js', 'ocr.js');
 
 const MSG = self.KH.MSG;
+/* 【2.0.7.2 需求⑤】标签页级临时禁用的状态机（storage.session 读写 + 关标签页清键）在旁边的模块里，
+ * 这里只做路由与"改完推给那个标签页"。 */
+const TabDisabled = self.KH.TabDisabled;
 
 /** 版本唯一来源：manifest */
 function currentVersion() {
@@ -41,6 +44,16 @@ async function updateIcon(globalEnabled) {
 async function broadcast(type, payload) {
   const tabs = await chrome.tabs.query({});
   await Promise.all(tabs.map(t => chrome.tabs.sendMessage(t.id, Object.assign({ type }, payload || {})).catch(() => {})));
+}
+
+/** 【2.0.7.2 需求⑤】只推给某一个标签页：标签页级禁用的"点完立刻生效"全靠这条
+ *  （用户点完按钮不刷新页面就该变灰 / 复原，不能等下一次 boot）。
+ *  发不到就当没发过 —— 该页没有内容脚本（chrome:// 内部页、刚打开还没注入）时，
+ *  它下次 boot 会自己来问 `TAB_DISABLED_QUERY`。 */
+async function notifyTabDisabled(tabId, disabled) {
+  if (tabId == null) return;
+  try { await chrome.tabs.sendMessage(tabId, { type: MSG.TAB_DISABLED_CHANGED, disabled: !!disabled }); }
+  catch (e) { /* 见上：没有接收方是正常情况，不是错误 */ }
 }
 
 /* ---------------- 切页广播（2.0.6.2 需求⑤） ----------------
@@ -126,9 +139,13 @@ chrome.commands.onCommand.addListener(async (command) => {
       break;
     }
     case 'toggle-site': {
+      /* 【2.0.7.2 需求⑤】快捷键改成**标签页级**翻转：以前是把 SITE_TOGGLE 丢给内容脚本，
+       * 由它去翻 localStorage 里的 siteDisabledMap（整站）。现在判定权在后台（只有它拿得到
+       * tabId 与 session 区），内容脚本只负责"收到推送就上下线"。 */
       const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (!tabs.length) break;
-      await chrome.tabs.sendMessage(tabs[0].id, { type: MSG.SITE_TOGGLE }).catch(() => {});
+      if (!tabs.length || tabs[0].id == null) break;
+      const next = await TabDisabled.setDisabled(tabs[0].id);
+      await notifyTabDisabled(tabs[0].id, next);
       break;
     }
     case 'open-settings':
@@ -136,6 +153,14 @@ chrome.commands.onCommand.addListener(async (command) => {
       break;
   }
 });
+
+/** 【2.0.7.2 需求⑤】取消息涉及哪个标签页：设置页/弹窗手上有 tabId 就直接给；
+ *  内容脚本给不了（它不知道自己是谁），只能靠 `sender.tab` —— 这也是判定必须留在后台的原因。 */
+function tabIdOf(msg, sender) {
+  if (msg && msg.tabId != null) return msg.tabId;
+  if (sender && sender.tab && sender.tab.id != null) return sender.tab.id;
+  return null;
+}
 
 /* ---------------- 消息路由（统一协议） ---------------- */
 
@@ -166,6 +191,24 @@ const HANDLERS = {
     await chrome.storage.local.set({ siteDisabledMap });
     await broadcast(MSG.SITE_CHANGED, { host, disabled: next });
     return { ok: true, host, disabled: next };
+  },
+
+  /* ---- 【2.0.7.2 需求⑤】标签页级临时禁用：问 / 设 ----
+   * 为什么是"问"而不是直接让内容脚本读：`chrome.storage.session` 只有扩展自己的页面与后台能读；
+   * tabId 也只有后台从 `sender.tab` 拿得到（内容脚本不知道自己属于哪个标签页）。
+   * 所以判定一律由后台做，内容脚本只接收结论。 */
+  [MSG.TAB_DISABLED_QUERY]: async (msg, sender) => {
+    const tabId = tabIdOf(msg, sender);
+    return { ok: true, tabId, disabled: await TabDisabled.isDisabled(tabId) };
+  },
+
+  [MSG.TAB_DISABLED_SET]: async (msg, sender) => {
+    const tabId = tabIdOf(msg, sender);
+    if (tabId == null) return { ok: false, error: '缺少 tabId' };
+    /* msg.disabled 省略 = 翻转（快捷键语义）；给了就按给定值写（按钮语义，幂等、不怕连点） */
+    const next = await TabDisabled.setDisabled(tabId, (msg && msg.disabled === undefined) ? undefined : !!msg.disabled);
+    await notifyTabDisabled(tabId, next);
+    return { ok: true, tabId, disabled: next };
   },
 
   /* ---- ocr：内容脚本/设置页 → background → offscreen 文档（引擎在那里跑） ---- */
@@ -205,9 +248,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   return true; // 异步响应
 });
 
-/* 标签页关闭 → 丢掉它在排队的识别任务（免得为一个已经不存在的页面白烧 CPU） */
+/* 标签页关闭 → 丢掉它在排队的识别任务（免得为一个已经不存在的页面白烧 CPU）；
+ * 顺手清掉它的标签页级禁用记录（【2.0.7.2 需求⑤】"关掉标签页就自动取消"的硬保证：
+ * 靠"页面没了自然不高亮"是不够的，tabId 会被浏览器复用，残留记录会让新标签页一开就是灰的） */
 chrome.tabs.onRemoved.addListener((tabId) => {
   try { self.OcrHost.cancelTab(tabId); } catch (e) { /* ignore */ }
+  TabDisabled.clearTab(tabId).catch(() => {});
 });
 
 /* ---------------- 存储变更 → 图标 ---------------- */
