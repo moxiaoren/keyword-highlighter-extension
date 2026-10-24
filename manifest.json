@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "update_url": "https://moxiaoren.github.io/keyword-highlighter-extension/update-beta.xml",
+  "update_url": "https://moxiaoren.github.io/keyword-highlighter-extension/update.xml",
   "name": "__MSG_extName__",
   "version": "2.0.7.3",
   "description": "__MSG_extDesc__",
@@ -117,7 +117,5 @@
         "<all_urls>"
       ]
     }
-  ],
-  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAlnSUO7Ao747y4bfwfcrTvg4YAmQFMGQhGrk4yvdz6YzQuU1UtcrYe1Yk2qCQo2lUjeEgFMzLD7CQFSWb4zsaHbazf1KE9czs+UBsOL6/Og+DGBufDRg/gZmywgAXNvpm/k6El9BNURfpcRWifpQ6rNLTNmZJ1Q2lrgwykn0KgLjsfSHimHqw8So3igo9t25N8d986KXBK4MdIUZCe8n7e0ZCsYYU+vVduEszc+6F8vQBrTH/LiqNg99nEa8OA1fuiV9kDIz1bU2kLGNQZOi0RjqXS6unSkIl0CNTd/HKhGLqlt5t6c6EBK7e2uhXvycPHYBqpLYfRWhK2nccNHpnfQIDAQAB",
-  "version_name": "2.0.7.2 beta"
+  ]
 }
