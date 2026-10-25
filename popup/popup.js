@@ -321,7 +321,7 @@
   /* ---------------- 渲染：头部 / 站点卡 ---------------- */
 
   /* 全局开关：**首屏（HTML 里 aria-busy + disabled）到这一帧之间不声称任何状态**（C7 O-4）。
-   * 旧版 popup.html:26 硬编码「全局已开启」而开关画着未勾选，前 39–43ms 自相矛盾；
+   * 旧版 popup.html 硬编码「全局已开启」而开关画着未勾选，前 39–43ms 自相矛盾；
    * 现在三件事在同一帧落地：摘 aria-busy、解 disabled、写值 + 文案。 */
   function renderGlobalState(enabled) {
     const lbl = $('lbl-global');
@@ -490,7 +490,7 @@
     const value = !!e.target.checked;
     renderGlobalState(value);   // 乐观渲染（失败或 background 回执会修正）
     const res = await askBackground({ type: MSG.GLOBAL_TOGGLE, value });
-    /* background 明确回报失败（例如配额顶满：它的处理器 reject 后被 `:168` 折成 ok:false）
+    /* background 明确回报失败（例如配额顶满：它的处理器 reject 后被折成 ok:false）
      * —— 旧写法只判 `!res`，把 `{ok:false}` 当成成功继续报「已暂停全局高亮」。 */
     if (res && res.ok === false) {
       renderGlobalState(!value);

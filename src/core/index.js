@@ -59,7 +59,7 @@
    * 【配置签名】只序列化**已知配置键**（`KH.Config.defaults` 的顶层键），未知键一律不进签名。
    * ---------------------------------------------------------------------------
    * 为什么不能直接 `JSON.stringify(config)`：`KH.Config.merge` 对未知键**宽容保留**
-   * （`config.js:264`），而 `content/content.js:49-60` 会把 `chrome.storage.local` 里
+   * （`config.js`），而 `content/content.js` 会把 `chrome.storage.local` 里
    * **每一个键**都当成配置送来 —— 版本标记（`khLastSeenVersion`）、OCR 语言/模型缓存
    * （`kh-ocr-lang-v1` / `kh-ocr-model-v1`）、频道键全在里面。用全量签名 ⇒ 这些写入
    * 也算"配置变了" ⇒ **每个打开的标签页各跑一轮整页重建**（T3 实测：一次写入 = 目标页
@@ -79,8 +79,8 @@
    */
   /* 【连签名都不进】页面侧**零读点**的顶层键（连 ⑦Consume 都不读它）。
    * 写它 ⇒ 两个签名都不变 ⇒ `config-noop` ⇒ **永不动任何东西**（不重建、也不仅消费）。
-   *   · `migrated` ＝ OCR 迁移提示"还没告知过"的标记：只有 `options.js:1505` 拿它显示、
-   *     `config.js:349-350` 归一置位；点掉提示时写它（`ocr-options.test.js:118` 钉着）。
+   *   · `migrated` ＝ OCR 迁移提示"还没告知过"的标记：只有 `options.js` 拿它显示、
+   *     `config.js` 归一置位；点掉提示时写它（`ocr-options.test.js` 钉着）。
    * 判据 = **零页面侧读点**：有任何一处读它就必须归到另两类（UI-only 或核心签名）。 */
   const NOT_A_RENDER_INPUT = ['migrated'];
 
@@ -104,31 +104,31 @@
    * （或站点门禁）阶段，就**不许**进本表 —— 漏重建 = 页面不更新，比多重建严重得多。
    *
    * 现表三键的读点清单（T33 / T36b 逐点核过，T52 复核行号；只列**从配置对象取值**的生产读点）：
-   *   · `importantNote` ＝ `config.js:191-197` 的 `{imgSize, fontSize}`
-   *     → `important-note.js:1181` / `:1187`（`panel.render` 里写 `--kh-img-size` / `--kh-note-fs`）。
-   *     ⚠️ **同名陷阱**：`kw.importantNote`（词/组自己的笔记正文，`fieldmap.js:256`）是**另一个东西**，
-   *     由 `compiler.js:142-143` 读进 `meta` ⇒ 它出现在签名的**嵌套层**，改它必须重编译 + 重建。
+   *   · `importantNote` ＝ `config.js` 的 `{imgSize, fontSize}`
+   *     → `important-note.js` 的 `panel.render`（写 `--kh-img-size` / `--kh-note-fs`）。
+   *     ⚠️ **同名陷阱**：`kw.importantNote`（词/组自己的笔记正文，`fieldmap.js`）是**另一个东西**，
+   *     由 `compiler.js` 读进 `meta` ⇒ 它出现在签名的**嵌套层**，改它必须重编译 + 重建。
    *     所以 `configSigCore` 只摘**顶层**键，绝不能把 `importantNote` 从 replacer 数组里删掉。
-   *   · `notePanelWidth` → `important-note.js:1195-1196`（写 `--khin-panel-w`）。
-   *   · `noteCardStyle`（T36b 追加）→ `note-card.js:238` 的 `applyStyle(cfg)`。
-   *     ⚠️ **别拿 consume 当它的生效路径**（T36b 原写「调用点 `:271` 在 consume 链上」，**不成立**）：
-   *     `applyStyle` 只被 `note-card.js:267` 的 `show()` 调用（`:271`）；consume（`note-card.js:453-466`）
-   *     只调 `card.bind()`，而 `bind`（`note-card.js:332-334`）第二次调用即早退 —— 改配色**不**在
+   *   · `notePanelWidth` → `important-note.js`（写 `--khin-panel-w`）。
+   *   · `noteCardStyle`（T36b 追加）→ `note-card.js` 的 `applyStyle(cfg)`。
+   *     ⚠️ **别拿 consume 当它的生效路径**（T36b 原写「调用点在 consume 链上」，**不成立**）：
+   *     `applyStyle` 只被 `note-card.js` 的 `show()` 调用；consume（`note-card.js` 的 `consume()`）
+   *     只调 `card.bind()`，而 `bind`（`note-card.js`）第二次调用即早退 —— 改配色**不**在
    *     仅消费那一轮落到卡片上，要等卡片下次 `show()`。**判据本身仍成立**：Scan / Render / Compiler /
-   *     站点门禁一个都不读它（`src/core/` 侧零读点，`config.js:179` 只是 defaults 表），
+   *     站点门禁一个都不读它（`src/core/` 侧零读点，`config.js` 只是 defaults 表），
    *     所以分类不动，只订正这条理由。
-   *   · ⚠️ **`imgOcr` 不许进本表**（T52 从本表摘掉，回归 F1）：`img-ocr.js:641` 在**仅消费通道直接早退**
+   *   · ⚠️ **`imgOcr` 不许进本表**（T52 从本表摘掉，回归 F1）：`img-ocr.js` 在**仅消费通道直接早退**
    *     （`if (ctx && ctx.consumeOnly) return;`），它依赖的不变式是「图片相关的变更必然判 'full'」
-   *     （`relevance.js:345-346`）。而白名单 `cfg.imgOcr.crossOriginSites` 的页面侧唯一读点是
-   *     `img-ocr.js:190`（`crossOriginAllowed`），那个函数只在 `build()` 里跑 —— 判成 UI-only 就等于
+   *     （`relevance.js`）。而白名单 `cfg.imgOcr.crossOriginSites` 的页面侧唯一读点是
+   *     `img-ocr.js`（`crossOriginAllowed`），那个函数只在 `build()` 里跑 —— 判成 UI-only 就等于
    *     **设置页把站点加进白名单后，已打开页面不生效**（要等一次真正的整页重建），与设置页文案
    *     「登记一次以后都算数」直接冲突。**变体乙（让它重跑跨域判定）也不要**：仅消费通道给的 `hits`
-   *     不是全量命中，照常 `build()` 会把已有图片命中清空（见 `img-ocr.js:630-631`），要安全就得动
+   *     不是全量命中，照常 `build()` 会把已有图片命中清空（见 `img-ocr.js`），要安全就得动
    *     `build()` / 条目合并逻辑，风险不成比例。
    *     **接受的代价**：改 `imgOcr.engine`（页面侧零读点，由 background 单点读并注入 payload，
-   *     `background/ocr.js:71-73`）也会顺带整页重建一次 —— 罕见、一次性。**别为它做精细分类**。
-   * `panel.render` 在判 `dirty`（`important-note.js:1210`）**与提前 return**之前就把三个 CSS 变量
-   * 写掉了（`:1181` / `:1187` / `:1195-1196`），所以「仅消费」这条路即使面板内容一个字没变，
+   *     `background/ocr.js`）也会顺带整页重建一次 —— 罕见、一次性。**别为它做精细分类**。
+   * `panel.render` 在判 `dirty`（`important-note.js`）**与提前 return**之前就把三个 CSS 变量
+   * 写掉了（`--kh-img-size` / `--kh-note-fs` / `--khin-panel-w`），所以「仅消费」这条路即使面板内容一个字没变，
    * 新宽度 / 字号 / 图片尺寸也照旧生效。
    */
   const UI_ONLY_KEYS = ['importantNote', 'notePanelWidth', 'noteCardStyle'];
@@ -180,7 +180,7 @@
      *   → **几何命中**（注册表 Range 矩形测试） → `null`。**绝不**回退到 `closest('.kh-*')` /
      *   `data-kh-*` 之类 DOM 反查。
      *
-     * 旧版缺陷（keyword-engine.js:2153-2156）：只用 `caretRangeFromPoint`，无标准 API 回退，
+     * 旧版缺陷（keyword-engine.js）：只用 `caretRangeFromPoint`，无标准 API 回退，
      * 非 Chromium 内核（如 Firefox）点击定位直接失效。
      * 另一处细节：标准 API 存在但**该点返回 null**（点在空白处/元素间隙）时，
      * 旧写法会直接放弃；此处仍继续尝试私有 API，只有两条都拿不到才返回 null。
@@ -503,7 +503,7 @@
             /* `pinId` = 规则的稳定身份（ruleId），供「重要笔记 → 置顶排序」匹配（2.0.2.6）。
              * 为什么不能拿卡片上的 `text` 当置顶键：它是**运行时页面文本** —— 正则词的卡片文本
              * 每页都不同、罕见字的卡片文本就是那个生僻字，配置侧根本枚举不出来。
-             * 三条编译路径（compiler.js:230 / combo.js:172 / rare-char.js:118）都写了 `ruleId: kw.id`，
+             * 三条编译路径（compiler.js / combo.js / rare-char.js）都写了 `ruleId: kw.id`，
              * 于是「配置里的关键词」与「面板上的卡片」之间只有 ruleId 这一条恒定通路。 */
             meta: Object.assign({ text: r.text, pinId: r.rule.ruleId }, r.rule.meta || {}),
             contentKey: r.rule.ruleId + '|' + (r.node ? r.node.nodeValue.slice(0, 32) : '') + '|' + r.start + '-' + r.end
@@ -931,7 +931,7 @@
     /**
      * 启动。由 content/content.js 调用，是全页唯一的启动入口。
      *
-     * 【站点状态切换必须能"下线"】(旧版 content.js:59-103 `reEvaluateSite` 的语义，不得丢)
+     * 【站点状态切换必须能"下线"】(旧版 content.js `reEvaluateSite` 的语义，不得丢)
      *   同一个入口同时承担三种情形：
      *     · 首次启动
      *     · 配置变更后的重建（globalEnabled / 关键词）

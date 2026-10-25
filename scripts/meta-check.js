@@ -896,6 +896,74 @@ if (manifest && manifest.version) {
   }
 }
 
+/* ------------------------------------------------------- 注释里禁行号锚点（票 #51）
+ * 为什么禁：全仓 57 处 `xxx.js:行号` 锚点实测只有 3 处仍准确 —— 17 处指向 v1 已删除的树
+ * （lib/keyword-engine.js / lib/storage.js / utils.js / content/important-note.js …），18 处
+ * 所指行已换成完全不相干的代码。命中率 5%：行号随任何一次编辑漂移，而注释没人会跟着改。
+ * 符号名（`mergeDeep()` / `--khin-panel-w` / `renderTags`）可 grep、不随行号漂移 —— 跨文件
+ * 引用一律写符号名，让读者自己去跳。确实要指出历史出处，写成 `v1: 原模块`（本行含 `v1:` 放行）。
+ * 同一条规则顺手管住"裸行号"：只写行号、不写文件名的引用同样会烂，一并禁止。
+ */
+{
+  const ANCHOR_HOSTS = JS_ALL
+    .concat(walk('scripts', r => r.endsWith('.js')))
+    .filter(r => r !== 'src/ui/changelog.js');          // 文案表里出现历史版本号/旧路径是正常的
+  const ANCHOR_RE = /(?:^|[^\w:])([A-Za-z0-9_\-]+\.(?:js|css|html)):(\d+)/;
+  const BARE_RE = /`:(\d+)`/;                            // 裸行号：反引号里只有一个行号
+  const offenders = [];
+  for (const rel of ANCHOR_HOSTS) {
+    read(rel).split(/\r?\n/).forEach((line, i) => {
+      const t = line.trim();
+      // 只看注释段：行首注释整行算，行尾 `//` 之后的半截算；字符串里的 `x.js` 不算
+      const isBlock = /^(\*|\/\*)/.test(t);
+      const ci = line.indexOf('//');
+      const seg = isBlock ? line : (ci >= 0 ? line.slice(ci) : '');
+      if (!seg) return;
+      if (/v1[:：]/.test(line)) return;                  // 显式历史出处放行
+      const hit = ANCHOR_RE.exec(seg) || BARE_RE.exec(seg);
+      if (!hit) return;
+      offenders.push(rel + ':' + (i + 1) + '  ' + t.slice(0, 110));
+    });
+  }
+  if (offenders.length) {
+    bad('注释里出现行号锚点（已退役的约定：57 处里只有 3 处仍准确）—— 改用符号名引用'
+      + '（`函数名()` / `--css-var` / `KH.Xxx.yyy`）；历史出处写成 `v1: 原模块`',
+    offenders.join('\n      '));
+  } else ok('注释无行号锚点（跨文件引用一律用符号名，历史出处走 `v1:` 前缀）');
+}
+
+/* ------------------------------------------------ 旧实现哨兵（票 #52，从 spec 搬来）
+ * 这几条原本写在 `tests/specs/` 里，用 `readFileSync` 读源码做字符串匹配 —— 那是"禁止回潮"，
+ * 不是行为断言：放 spec 里会随重构假红（换个等价写法就红），且读源码的 spec 让人误以为
+ * 覆盖了行为。红线门禁才是它们该待的地方：红灯禁止交付，代价是每次改代码都会被扫一遍。
+ * 搬进来同时给 spec 松绑：spec 只留真行为（渲染几个节点、状态挂哪、DOM 有没有重建）。
+ */
+{
+  // ① K79：抓取层的层级靠内表递归自证，不许退回"向上找祖先链"的老实现（tableChain）
+  const t1 = findIn(['src/features/fetch.js'], /tableChain/);
+  if (t1.length) bad('禁止祖先链实现回潮（tableChain 已删净，层级靠内表递归自证）', t1.join('\n      '));
+  else ok('抓取层无祖先链实现回潮（tableChain 已退役）');
+
+  // ② 更新日志条目只许走文档档：welcome.js 不许 li.innerHTML =
+  const t2 = findIn(['welcome/welcome.js'], /li\.innerHTML\s*=/);
+  if (t2.length) bad('更新日志条目只许文档档（welcome.js 不许 li.innerHTML =，走 toDocFragment）', t2.join('\n      '));
+  else ok('更新日志条目只许文档档（welcome.js 无 li.innerHTML）');
+
+  // ③ 标签区唯一注入点：`head.tagHtml` 只许在 renderTags 里调用一次。
+  //    （就地重画本身仍然用 innerHTML 换这个容器 —— 见 renderTags 的头注释；禁的是
+  //     "renderItems 里顺手再加一行注入 item.entries"那种第二注入点，它会把展开态冲掉）
+  const t3 = findIn(['src/features/important-note.js'], /head\.tagHtml\(/);
+  if (t3.length !== 1) {
+    bad('标签区只许一个注入点（renderTags 里调一次 head.tagHtml），实测 ' + t3.length + ' 处',
+      t3.join('\n      '));
+  } else ok('标签区唯一注入点（head.tagHtml 仅在 renderTags 内调用）');
+
+  // ④ 面板文案单源：OCR 那两句只许从 KH.OcrCopy.VIEW 取，不许在逻辑里写死
+  const t4 = findIn(['src/features/important-note.js'], /点开看全部|共 \{n\} 条/);
+  if (t4.length) bad('面板文案单源：OCR 文案必须取 KH.OcrCopy.VIEW，不许写死字面量', t4.join('\n      '));
+  else ok('面板文案单源（OCR 文案取自 KH.OcrCopy.VIEW）');
+}
+
 /* ------------------------------------------------------------------ 输出 */
 
 /* README 里的「机械红线（N 项）」必须就是本次实测条数 —— 手写数字一定会烂（票 #42）。

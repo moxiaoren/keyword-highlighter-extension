@@ -43,7 +43,7 @@
     /** 半行/整行容器类（所有类型统一走这个，避免只有文本框认 `width`） */
     const fldCls = 'kh-fld' + (spec.width === 2 ? ' kh-fld-wide' : '');
     /* 【K71 口径 B】容器带 `title: spec.hint` —— 长解释从此**有地方住**：
-     * 弹窗正文只留短句/短标签，完整语义进 tooltip。`h()` 对 null/false 直接跳过（dom.js:25），
+     * 弹窗正文只留短句/短标签，完整语义进 tooltip。`h()` 对 null/false 直接跳过（dom.js），
      * 所以没有 hint 的字段不会写出一个空 title。 */
     const hintTitle = spec.hint || null;
     /** 标签 + 控件。`inline: true` 时两者**同一行**（如 `尺寸：[ ]`） */
@@ -823,7 +823,7 @@
       }
       default: {
         /* `placeholder: spec.placeholder`（**不兜 `|| ''`**）：没声明占位的字段就**真的没有**
-         * 这个属性 —— `h()` 对 null/undefined 直接跳过（dom.js:25）。写成 `''` 会在 DOM 里
+         * 这个属性 —— `h()` 对 null/undefined 直接跳过（dom.js）。写成 `''` 会在 DOM 里
          * 留下一个空 placeholder，C4 的判定（"空值时不再恒显占位"）就没法用属性判死了；
          * 渲染效果一样（空串也什么都不显示），但语义干净。 */
         const inp = h('input', { class: 'kh-input', type: 'text', id: id, value: value == null ? '' : String(value), placeholder: spec.placeholder });
@@ -1039,7 +1039,7 @@
    *
    * 两处都用它：字段控件的「可编辑胶囊列表」（`case 'labels'`）与设置页「重要笔记置顶」
    * （`options.js renderPinOrder`）。原先各写一份 —— 骨架（类名嵌套）是视觉契约，
-   * 抄两份迟早漏一处（`components.css:598-613` 是样式那半边的单一来源，这里是结构那半边）。
+   * 抄两份迟早漏一处（`components.css` 是样式那半边的单一来源，这里是结构那半边）。
    *
    * **只共用骨架**：文案、"✕ 干什么"、"点胶囊干什么"都由调用方给（两处行为本来就不同）。
    *
@@ -1055,7 +1055,7 @@
   function labelChip(o) {
     const h = D().h;
     const c = o || {};
-    /* `h()` 只跳过 null/undefined（dom.js:25），写 `''` 会在 DOM 里留一个空 title ⇒ 没值就别写这个键 */
+    /* `h()` 只跳过 null/undefined（dom.js），写 `''` 会在 DOM 里留一个空 title ⇒ 没值就别写这个键 */
     const chipAttrs = { class: 'kh-lbl-chip' };
     if (c.chipTitle) chipAttrs.title = c.chipTitle;
     const kids = [h('span', { class: 'kh-lbl-name', text: c.name })];

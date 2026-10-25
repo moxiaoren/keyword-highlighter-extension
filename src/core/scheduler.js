@@ -9,7 +9,7 @@
  *
  * 关键统一点（R14）：**四条通道共用一个 `lastRebuildAt`**。
  *   旧版 `_prcLastRebuild`（click）与 `_lastUrlRebuild`（URL）是两套独立口径，互相压制
- *   （content.js:31-32,80-90），一次误触发的 click 重建会把紧随其后的真实 URL 重建压掉。
+ *   （content.js），一次误触发的 click 重建会把紧随其后的真实 URL 重建压掉。
  *
  * 自身写入抑制（方案 §4.2 ✚补充②）：
  *   靠"重建抑制窗口"（`Rebuilder.inRebuildWindow`），**绝不用"移除内容/新增内容形态"判定自身写入**

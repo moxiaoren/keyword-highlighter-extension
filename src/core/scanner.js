@@ -468,7 +468,7 @@
    *      命中字符贴节点首/尾时，正则 lookahead/lookbehind 只看当前文本节点内部 → 误判 `B` 为独立全词。
    *      修复：命中贴节点末尾→查右邻兄弟首个可见字符、贴开头→查左邻兄弟末字符，
    *      若延续词字符(/[\p{L}\p{N}_]/u)则作废命中。"
-   *   旧版对应实现：keyword-engine.js:183-234 `_crossNodeBoundaryIsWord`（v1.14.1【3】）。
+   *   旧版对应实现：keyword-engine.js `_crossNodeBoundaryIsWord`（v1.14.1【3】）。
    *
    *   为什么单独需要它：`Compiler.buildPattern` 的全词边界用 `(?<!词字符)…(?!词字符)`，
    *   而**节点边界处没有字符**，两侧断言天然通过 → 拆开的词会被误判成独立全词。
@@ -586,7 +586,7 @@
    * 跨（行内）父级向上冒泡的延续载体查找。
    *
    * 【v2 相对旧版的增强，属"补齐漏判"而非改语义】
-   *   旧版 `_nextVisibleNode/_prevVisibleNode`（keyword-engine.js:199-206）**只看同层兄弟**，
+   *   旧版 `_nextVisibleNode/_prevVisibleNode`（keyword-engine.js）**只看同层兄弟**，
    *   因此 `关<b>键</b>词` 这种"命中被包在行内标签里"的拆词方式它判不出来
    *   （`<b>` 内的文本节点没有兄弟 → 直接返回"无延续"）→ 「键」被误判为独立全词。
    *   这属于旧版逐步实现留下的覆盖缺口。v2 沿**行内祖先链**继续向上看一层，

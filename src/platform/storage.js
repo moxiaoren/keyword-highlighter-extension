@@ -2,7 +2,7 @@
  * src/platform/storage.js · 管理端（options / popup）唯一读写信封
  * ----------------------------------------------------------------------------
  * 为什么要有这个文件：旧版 options.js（2396 行）里到处直接 `chrome.storage.local
- * .get/set`，并且**又写了一份默认值**（lib/storage.js:17-59）—— 于是出现
+ * .get/set`，并且**又写了一份默认值**（lib/storage.js）—— 于是出现
  * "默认值有两份、改一处漏一处""导入导出走的字段和 UI 走的字段不是同一套"。
  * v2 收敛为唯一信封：
  *
@@ -744,7 +744,7 @@
       /* 关键词 + 分组 */
       if (include.keywords && has.keywords) {
         /* A1（唯一会丢数据的路径）：`text` 为空的**「仅抓取」词**是合法数据 —— 旧版
-         * （1.52.0 `lib/storage.js:475-500`）的导入路径就保留它，v2 重构时被
+         * （1.52.0 `lib/storage.js`）的导入路径就保留它，v2 重构时被
          * `.filter(k => k.text)` 丢掉了。判据照契约 §四.2：核心词为空时，看
          * 「单元格组合」+「标题关键词(左格)」是否都成立（`sanitizeKeyword` 会顺带补 `fetchOnly`）。 */
         const srcKw = (data.keywords || []).map(k => sanitizeKeyword(k, cfg))

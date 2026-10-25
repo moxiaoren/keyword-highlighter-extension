@@ -5,7 +5,7 @@
  *   · 命中一律 `Range + CSS.highlights`；**全库只有本文件允许出现 `CSS.highlights.set(`**
  *     （UN-03 / meta-check #5 校验唯一性）。
  *   · 绝不 `replaceChild` / `splitText` / `unwrap` —— 这正是旧版孤儿节点的病根
- *     （旧版 lib/keyword-engine.js:1661 的「仅抓取」路径仍在拆节点，R1 已整改）。
+ *     （旧版 lib/keyword-engine.js 的「仅抓取」路径仍在拆节点，R1 已整改）。
  *   · `::highlight` 表达不了的能力（边框、圆角、图片底纹）走 RendererPlugin，
  *     由插件自己在 Shadow DOM / 覆盖层里画，**不允许退回拆节点**。
  *

@@ -587,7 +587,7 @@ module.exports = async function run() {
    */
   await test('★ 同页 9 张图：并发上限（4）之外的必须被补发（旧实现只跑前 4 张）', () => {
     /* 先清掉前面用例留在途的额度（走**真实销毁路径**：`KH.features.get('img-ocr').clear`，
-     * 与 `src/core/rebuilder.js:111` 同签名）——否则它们占着 4 个位置，本用例一张也发不出去 */
+     * 与 `src/core/rebuilder.js` 同签名）——否则它们占着 4 个位置，本用例一张也发不出去 */
     KH.features.get('img-ocr').clear(null, { reason: 'destroy' });
     const before = (global.__OCR_SENT__ || []).length;
     const hits = [];

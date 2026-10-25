@@ -4,7 +4,7 @@
  * 分类是对的（`noteCardStyle` 的页面侧读点只在 ⑦Consume，见 `config-noop.test.js` 的 T36b），
  * 坏在 `src/features/note-card.js` 的 `bind(configRef)`：`_bound` 那个一次性早退把**每次
  * `consume` 新传进来的 `() => cfg` 闭包**一起冻住了 ⇒ `show()` 与两处读点永远拿到 boot 那次的
- * 对象。而且 `card` 是**模块单例**（`note-card.js:485` 的 `KH.NoteCard`），整页重建也不会重置
+ * 对象。而且 `card` 是**模块单例**（`note-card.js` 的 `KH.NoteCard`），整页重建也不会重置
  * `_bound`，所以「把它从 UI-only 键里摘出去、靠整页重建生效」这条路修不了这个病。
  *
  * 本 spec 与 `config-noop.test.js` 的 T57 两条**换角度**，不重复：

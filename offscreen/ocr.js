@@ -1450,7 +1450,7 @@
   /**
    * 【S3-⑤ 密排重采倍数】首遍一个字都没读到 ⇒ 把同一帧按此倍数重采再扫（见 `scanFrame(0,false,k)`）。
    * **为什么是 3、而不是 2 或 4**（真机 + 代码算出来的，不是试出来的）：
-   *   · det 把长边取 `clamp(0.75×长边, 960, 1920)`（`vendor/ppu-paddle-ocr/core/detection/box-geometry.js:1`），
+   *   · det 把长边取 `clamp(0.75×长边, 960, 1920)`（`vendor/ppu-paddle-ocr/core/detection/box-geometry.js`），
    *     我们的重采**显式覆盖** `scaleFor` ⇒ 不撞 `MAX_EDGE=1600` 那道墙；
    *   · 密排样张（900×600 / 20px 行）：k=2 ⇒ det 长边 1350 ⇒ 行高 **30px**；900k ≥ 2560（k≥2.84）才顶到
    *     det 的 **1920 上限** ⇒ 行高 **42.7px**。**3 是"能拿到 det 最大分辨率"的最小倍数**，再大只是更糊；

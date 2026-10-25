@@ -11,7 +11,7 @@
  * 内核 `tests/bootstrap.js` 的 loadKernel 只按 manifest 加载内容脚本 —— 拿不到它。
  * 这里用 `new Function('self','chrome', 源码)` 给它一个**假的消息层**：
  * 于是"看门狗有没有真的投出终态""认领不到时投给了谁"都成了可断言的事实，而不是靠读代码猜。
- * （同款手法先例：`tests/specs/color-field.test.js:27`、`tests/specs/optional-batch8.test.js:107`）
+ * （同款手法先例：`tests/specs/color-field.test.js`、`tests/specs/optional-batch8.test.js`）
  *
  * 【为什么要带"负样本"】不变量 7 今天是**绿**的（offscreen 里本来就没写 chrome.storage）。
  * 一个永远为绿的守卫等于没有守卫 —— 所以每条静态守卫都要先喂一段"确实违规"的样本证明它真会红。
@@ -335,7 +335,7 @@ module.exports = async function run() {
     };
 
     await withChrome(stub, async () => {
-      /* 从干净台账起步：走**真实销毁路径**（`src/core/rebuilder.js:111` 就是 `feat.clear(root, o)`）。
+      /* 从干净台账起步：走**真实销毁路径**（`src/core/rebuilder.js` 就是 `feat.clear(root, o)`）。
        * 顺带锁住签名 —— 旧实现写成 `clear(reason)`，而调用方传的是 `(root, opts)`，
        * 于是 `reason === 'destroy'` 永远不成立、销毁时额度根本不清零（S1-b 顺手修掉的附带缺陷）。 */
       const feat = KH.features.get('img-ocr');

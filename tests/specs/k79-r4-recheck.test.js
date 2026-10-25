@@ -428,7 +428,7 @@ module.exports = async function run() {
      *   2.0.0.5 ⇒ `驳回原因=驳回原因\n内层重复|甲应用`（**内表文字 + 下一行值一起吞**）
      *   2.0.0.6 ⇒ `驳回原因=甲应用`（内表文字不吞了，**仍然**吞下一行的值）
      * ⇒ 越界**不是 K79 引入的**：两条"新字段起始行"判据在 2.0.0.5 里同样带 `!headerLike` 门槛
-     *   （旧版 `fetch.js:689/699/704`），K79 只是去掉了内表文字那层噪音、让越界更显眼。 */
+     *   （旧版 `fetch.js`），K79 只是去掉了内表文字那层噪音、让越界更显眼。 */
     const inner0 = kv(['驳回原因', '内层重复']);
     const t = mkTable([
       [{ th: true, text: '驳回原因' }, { th: true, text: '其它' }],
@@ -576,7 +576,7 @@ module.exports = async function run() {
 
   await test('★ R4-5d 面④：组合词「仅抓取」锚在**标题格**（非命中格）时的层判定', () => {
     /* 真实形状：标题词「应用名称」在标题格，值格在它右边；内表挂在**另一个格**里。
-     * 仅抓取登记的是标题格的**第一个文本节点**（见 combo.js:273）⇒ 锚点＝标题格。 */
+     * 仅抓取登记的是标题格的**第一个文本节点**（见 combo.js）⇒ 锚点＝标题格。 */
     const inner = kv(['包名', '内层包名'], ['驳回原因', '内层驳回']);
     const outer = mkTable([
       ['应用名称', '甲应用', '附件', { table: inner }],
@@ -629,7 +629,7 @@ module.exports = async function run() {
     deepEq(flat(F.extractFor(tbAnchor, LB, 'inner')), ['驳回原因=tb 内层驳回'],
       '★ 内表自己没有嵌表 ⇒ 内层方向**回落当前层**（K74"不许变空"），读数＝内表那一格的值');
     /* ③ 登记（非本轮回退）：这一形状里"标签列右侧没有列"⇒ `labelIsLastColumn` 为真 ⇒
-     * `collectRightBlock` 走的是"值就在标签列"那条老路径（`fetch.js:700-702`，**不带**
+     * `collectRightBlock` 走的是"值就在标签列"那条老路径（`fetch.js`，**不带**
      * `skipNestedTables`），于是当前层读到的是标签列那个格子的全文（含嵌表文字）。
      * 这是 K79 有意没碰的既有语义（两列表「应用名称 | 包名」靠它取值），不是本轮回退。 */
     deepEq(flat(F.extractFor(headerAnchor, LB, 'self')),
@@ -704,7 +704,7 @@ module.exports = async function run() {
     console.log('        [R4-6c] 内层文字泄漏=' + innerTextLeaked + ' 本层文字泄漏=' + outerTextLeaked);
     /* ★ 红牌实测（本文件唯一一条"两份待遇不一致"的证据）：
      *   本层那一份：`#图` 生效（文字被丢掉）；内层那一份：`#图` **被静默忽略**（文字漏出来）。
-     * 根因：`baseLabelOf`（fetch.js:1431）只剥 `本层|外层|外\d+层`，
+     * 根因：`baseLabelOf`（fetch.js）只剥 `本层|外层|外\d+层`，
      *   ⇒ `optOf['截图（内层）']` 取不到 ⇒ `opt` 为 undefined ⇒ 该行按"没有图片选项"渲染。
      * 修法（一行）：把 `内层|内\d+层` 加进那个替换的 alternation。 */
     truthy(!outerTextLeaked, '★ 本层那一份：`#图` 生效（丢掉文字）');

@@ -611,7 +611,7 @@ module.exports = async function run() {
   });
 
   await test('★ 需求 2 · 消费侧路径：值格为空（带 rowspan）⇒ blockFor 返回空串', () => {
-    /* 真 DOM 路径（标签**找得到** + 值渲染后为空）：空值格带 rowspan>1 时不会被 `:768` 过滤掉
+    /* 真 DOM 路径（标签**找得到** + 值渲染后为空）：空值格带 rowspan>1 时不会被字段级判空过滤掉
      * ⇒ 仍进 rows ⇒ 走到 rowsToTableHtml —— 这正是空卡片产物的产生路径。 */
     const t = table([['关键词', 'x'], ['备注', ''], ['其它', 'y']]);
     t.rows[1].children[1].rowSpan = 2;

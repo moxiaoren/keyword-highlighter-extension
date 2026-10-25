@@ -17,7 +17,7 @@
  * 【怎么测】`offscreen/ocr.js` 是普通 IIFE（不进 content_scripts），用 `new Function` 给它一个假
  * 运行环境：假 IDB / 假画布 / 假 fetch / 假 Tesseract，外加一个 `self.__khOcrImport` 钩子顶替
  * 动态 `import()` —— 于是"主引擎建不起来""模型没缓存"这类分支在 node 里也能真跑一遍。
- * 手法与 `tests/specs/ocr-long-image.test.js:90` 同款（那张 spec 测的是长图几何，这张测引擎裁决）。
+ * 手法与 `tests/specs/ocr-long-image.test.js` 同款（那张 spec 测的是长图几何，这张测引擎裁决）。
  */
 'use strict';
 const H = require('../harness');

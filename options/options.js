@@ -1141,7 +1141,7 @@
     for (const k of PF_KEYS) $('pf-' + k).checked = !!cfg[k];
     $('pf-changeHandling').value = (cfg.changeHandling === 'always') ? 'always' : 'smart';
     /* 变更处理方式只在「页面内容变化时自动重建」开着时才生效：那一条关掉后 `scheduler.setupObserver`
-     * 连 MutationObserver 都不建（scheduler.js:291-294），这个下拉怎么切都不会有任何作用。
+     * 连 MutationObserver 都不建（scheduler.js），这个下拉怎么切都不会有任何作用。
      * 禁用 + 一行说明，好过让用户对着一个不生效的值反复切。`mutate()` 走 `renderAll()`，
      * 所以勾选状态一变这里会自己刷新，不需要额外接线。 */
     const chOn = cfg.pageRebuildOnChange !== false;

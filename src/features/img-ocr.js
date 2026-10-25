@@ -1587,7 +1587,7 @@
          * 它靠的是「`imgOcr` 在核心签名里」这一件事：改它 ⇒ 核心签名变 ⇒ 整页重建 ⇒ 走的是
          * 非 consumeOnly 路径 ⇒ `classify()` 用新配置重算。**别把 `imgOcr` 移进 `index.js` 的
          * `UI_ONLY_KEYS`**（T36b 正是这么干的，结果跨域白名单 `crossOriginSites` 的页面侧唯一读点
-         * —— 本文件 `:190` 的 `crossOriginAllowed`，只在 `build()` 里跑 —— 在已打开的页面上不生效，
+         * —— 本文件的 `crossOriginAllowed`，只在 `build()` 里跑 —— 在已打开的页面上不生效，
          * 要等一次真正的整页重建；回归编号 F1）。除非哪天把 `build()` 改成能安全合并"部分命中"，
          * 否则这个早退与那条分类是绑在一起的。 */
         if (ctx && ctx.consumeOnly) return;
@@ -1596,7 +1596,7 @@
       },
       /**
        * 重建清底：条目清掉但**缓存留着**（同一张图不必反复识别）。
-       * 【签名必须与调用方一致】`src/core/rebuilder.js:111` 调的是 `feat.clear(root, o)`，
+       * 【签名必须与调用方一致】`src/core/rebuilder.js` 调的是 `feat.clear(root, o)`，
        * 旧实现写成 `clear(reason)` ⇒ 形参收到的是 `root`（恒为 null/元素），
        * `reason === 'destroy'` **永远不成立** —— 销毁时在途额度与去重集根本不清，
        * 下一次挂载就白少 4 个可用额度（S1-b 顺手修掉的附带缺陷）。
@@ -1682,7 +1682,7 @@
       }
       return {
         items: items.size, cache: textCache.size, pending: pending.size,
-        /* `popup/popup.js:197` 读的就是这个键 ⇒ 键名不许改，含义＝当前占用的额度 */
+        /* `popup/popup.js` 读的就是这个键 ⇒ 键名不许改，含义＝当前占用的额度 */
         inflight: quotaUsed(),
         blocked: blocked,
         states: Array.from(items.values()).map((i) => i.key + ':' + i.state)

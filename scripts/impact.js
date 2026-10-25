@@ -149,7 +149,7 @@ const RULES = [
   { re: /^src\/build-info\.js$/, aspects: ['ui'] },                // 版本徽标
   /* 【2026-10-06】OCR 文案唯一真源（票 #17）：它同时被**内容层**的面板（`important-note.js`）
    * 与 options/popup 使用 —— 只给 `['ui']` 会选中一个**不含内容层**的范围，
-   * 而"选中一个空范围"比全量还危险（假绿；`regression-areas.js:52-56` 记过同类陷阱）。
+   * 而"选中一个空范围"比全量还危险（假绿；`regression-areas.js` 记过同类陷阱）。
    * 口径与 `src/ui/components/` 一致：`ui` + `interact`。 */
   { re: /^src\/ui\/ocr-copy\.js$/, aspects: ['ui', 'interact'] },
   { re: /^src\/ui\//, aspects: ['ui'] },

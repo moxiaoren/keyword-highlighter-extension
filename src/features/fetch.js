@@ -1695,7 +1695,7 @@
     /* 【v2.0.1.15 需求 2 · 外壳由内容构造】本函数返回 `''` = 有行但**有效值全空**
      * （值 `trim` 后为空即视为空 ⇒ 值不显示、字段名也不显示，整块不渲染）。
      * 判定点**唯一**：每个字段先渲进局部 `buf` + 局部 `anyVal`，出块前 `if (!anyVal) continue;`。
-     * 空卡片两种形态都在此收口：① 文本分支的空壳表（原先 `:1446`/`:1448` 逐项 continue 后仍拼 `</table>`）；
+     * 空卡片两种形态都在此收口：① 文本分支的空壳表（原先两条 continue 后仍拼 `</table>`）；
      * ② grid 分支的「有 label 表头 + 空 `<td>`」（原先根本没有字段级判空）。
      * ⚠️ 判空**不许**二次调用 `applyImgPolicy`（`it.budget` 跨格累计有状态，跑两遍会吃掉「前 N 张」预算）。 */
     let body = '';
@@ -1732,7 +1732,7 @@
         continue;
       }
       /* 文本分支：「值」只认 `s.lines[i]`；`b.gtitle`（一级分组标题）、`label`、`s.title`（二级标题）
-       * 都不算值 —— 只有标题没有值的块 = 空字段。原 `:1446`/`:1448` 两条 continue 收敛进下方唯一判定点。 */
+       * 都不算值 —— 只有标题没有值的块 = 空字段。原先两条 continue 收敛进下方唯一判定点。 */
       const filled = parseBlock(it.textLines, it.label);
 
       const blockTotal = filled.reduce(

@@ -101,7 +101,7 @@
 node tests/run.js                 # 单元测试（共 1055 项：1054 通过 + 1 跳过，始终全跑）
                                   #   注：`_tools/`、`_MIGRATION_CHECKLIST.md`、`_e2e/` 属**工作区仓**；
                                   #   只 clone 公开扩展仓时这几条检查会**明红并说出修法**（票 #47，不静默跳过）
-node scripts/meta-check.js        # 机械红线（47 项：纯视觉不改 DOM / 单源字段 / 私钥不入包 …）
+node scripts/meta-check.js        # 机械红线（52 项：纯视觉不改 DOM / 单源字段 / 私钥不入包 …）
 node tests/integrity.js           # 资源引用 / id 双向 / CSS 变量 / manifest
 cd _e2e && node run.js            # 真浏览器回归（playwright-core + 系统 Edge；内容层 / UI 层分组全跑）
 cd _e2e && node run.js --aspects=hit,interact   # 按「方面」裁剪；--only=<组名> 定点验证

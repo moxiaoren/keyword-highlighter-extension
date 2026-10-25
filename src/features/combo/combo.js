@@ -9,7 +9,7 @@
  *   ③ fetch-only 仅抓取：**核心词为空**、只有标题格作为锚点。
  *                命中登记进注册表但不渲染（D2 决策：完全不渲染），
  *                数据供"重要笔记"消费 —— 与旧版 `_highlightFetchOnly`
- *                （keyword-engine.js:1661，那时它还会 replaceChild 插 span）语义一致，
+ *                （keyword-engine.js，那时它还会 replaceChild 插 span）语义一致，
  *                但**去掉了插 span**（旧版唯一残留的 DOM 改造路径，正是策划案要根治的病根）。
  *
  * 三个关键语义（都来自旧版且必须保留）：
