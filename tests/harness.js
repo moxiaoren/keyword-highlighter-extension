@@ -236,6 +236,18 @@ class ShimElement {
     this.childNodes = [];
     for (const node of parseHtml(String(html == null ? '' : html))) this.appendChild(node);
   }
+  /** insertAdjacentHTML —— 生产代码只用了一处（`panel.renderTags` 展开时把下拉列表接到标签区末尾），
+   *  垫片缺它那条分支在单测里直接 `TypeError` ⇒ 展开/收起只能靠读源码断言（票 #52 要改成行为断言）。 */
+  insertAdjacentHTML(pos, html) {
+    const nodes = parseHtml(String(html == null ? '' : html));
+    const at = String(pos).toLowerCase();
+    if (at === 'beforeend') { for (const n of nodes) this.appendChild(n); return; }
+    if (at === 'afterbegin') { const ref = this.childNodes[0] || null; for (const n of nodes) this.insertBefore(n, ref); return; }
+    const p = this.parentNode;
+    if (!p) return;
+    if (at === 'afterend') { const sib = this.nextSibling; for (const n of nodes) p.insertBefore(n, sib); return; }
+    if (at === 'beforebegin') { for (const n of nodes) p.insertBefore(n, this); }
+  }
 }
 
 const HTML_ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' };

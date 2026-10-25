@@ -53,10 +53,6 @@ function isSubseq(a, b) {
   for (let j = 0; j < b.length && i < a.length; j++) if (a[i] === b[j]) i++;
   return i === a.length;
 }
-/** 剥掉块注释与行注释（与 write-honesty 的 code() 同一口径）：旧写法会留在注释里当反面教材 */
-function stripComments(s) {
-  return String(s).replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
-}
 
 module.exports = async function run() {
   const { KH } = require('../bootstrap');
@@ -73,8 +69,8 @@ module.exports = async function run() {
     const wel = fs.readFileSync(path.join(ROOT, 'welcome', 'welcome.js'), 'utf8');
     truthy(/toDocFragment/.test(opt), '★ options 侧必须走文档档（旧代码是 h(li,{text})）');
     truthy(/toDocFragment/.test(wel), '★ welcome 侧必须走文档档（旧代码是 li.innerHTML = it）');
-    /* 断言要看**去掉注释的代码**：旧写法的原样还留在旁边当反面教材的注释里 */
-    falsy(/li\.innerHTML\s*=/.test(stripComments(wel)), '★ 条目不许再走 innerHTML');
+    /* 「条目不许再走 innerHTML」这条源码哨兵已迁到 scripts/meta-check.js 的红线列表
+     * （它就是一条静态断言，且要剥注释才判得准 —— 那种活属于门禁，不属于行为测试）。 */
     const whtml = fs.readFileSync(path.join(ROOT, 'welcome', 'welcome.html'), 'utf8');
     truthy(/src\/platform\/markdown\.js/.test(whtml),
       '★ welcome 页必须真的把渲染器加载进来（否则只能退回纯文本，标记照旧上屏）');

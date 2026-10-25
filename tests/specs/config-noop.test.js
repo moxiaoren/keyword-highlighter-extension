@@ -1,8 +1,8 @@
 /* tests/specs/config-noop.test.js — 配置"没真变"就不许动页面（K80 · F2 / 2.0.1.14）
  * ----------------------------------------------------------------------------
  * 实测缺陷（T3 裁决 6a，`_stage/wayfinder-perf/rootcause.md`）：
- *   `content/content.js:49-60` 把 `chrome.storage.local` 的**每一个键**都拼成 patch 送来，
- *   而 `Config.merge` 对未知键"宽容保留"（`config.js:264`）—— 于是版本标记
+ *   `content/content.js` 把 `chrome.storage.local` 的**每一个键**都拼成 patch 送来，
+ *   而 `Config.merge` 对未知键"宽容保留"（`config.js`）—— 于是版本标记
  *   （`khLastSeenVersion`）、OCR 语言包/模型缓存（`kh-ocr-lang-v1` / `kh-ocr-model-v1`）
  *   这些**跟页面渲染毫无关系**的写入，也会被当成"配置变了"，
  *   触发**每个打开的标签页各跑一整轮全页重建**。
@@ -79,12 +79,14 @@ module.exports = async function run() {
   }
 
   try {
-    KH.Config = {
-      defaults: Object.assign({}, realDefaults),
-      /* merge 的宽容保留语义与真实 `config.js:255-268` 一致：未知键原样收下 */
-      merge: (stored) => Object.assign({}, stored),
-      normalize: (c) => ({ config: Object.assign({}, c) })
-    };
+    /* 桩只覆盖"调度判据"这三件事；其余成员（归一函数 / 常量 / 面板 render 用到的读表辅助）
+     * 由原型继承真实 Config —— 否则每加一个 render 依赖就要往桩里补一把，而且补漏时
+     * 底下那条"三个 CSS 变量必须在 dirty 判定之前写"会被 TypeError 挡住，看起来像产品坏了。 */
+    KH.Config = Object.create(real.Config);
+    KH.Config.defaults = Object.assign({}, realDefaults);
+    /* merge 的宽容保留语义与真实 `config.js` 一致：未知键原样收下 */
+    KH.Config.merge = (stored) => Object.assign({}, stored);
+    KH.Config.normalize = (c) => ({ config: Object.assign({}, c) });
     KH.Compiler = { compileAll: () => [{ kind: 'normal', ruleId: 'r1' }] };
     KH.SiteRules = { shouldHighlight: () => true };
     KH.Scheduler = {
@@ -182,23 +184,23 @@ module.exports = async function run() {
       eq(consumeCalls.length, 0, '★ 连仅消费都不跑 —— 没变就是没变');
     });
 
-    await test('★ T33 前提守卫：panel.render 必须在判 dirty / 提前 return 之前写三个 CSS 变量', () => {
+    await test('★ T33 前提守卫：render 必须在判 dirty / 提前 return 之前写三个 CSS 变量', () => {
       /* 这条守的是 T33 的**整个前提**：仅消费这条路内容一个字没变也照样应用新宽度/字号/图片尺寸。
-       * 谁把变量写入挪到 `dirty` 判定之后（或挪进 renderContent），优化就静默失效 —— 真机表现是
-       * "设置页改了宽度、面板不动"，而所有其它断言仍然全绿。 */
-      const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'features', 'important-note.js'), 'utf8');
-      const iRender = src.indexOf('render(items, cfg) {');
-      truthy(iRender > 0, '找不到 panel.render()，守卫失效（改名了就把这条一起改）');
-      const body = src.slice(iRender);
-      const iDirty = body.indexOf('const dirty = !this.panelEl');
-      truthy(iDirty > 0, '找不到 dirty 判定，守卫失效');
-      for (const v of ['--kh-img-size', '--kh-note-fs', '--khin-panel-w']) {
-        const i = body.indexOf("setProperty('" + v + "'");
-        truthy(i > 0, '★ ' + v + ' 必须在 render() 里写（否则设置页改了它，面板不理）');
-        truthy(i < iDirty, '★ ' + v + ' 的写入必须在 dirty 判定之前 —— 否则"仅消费"在内容没变时不应用新值');
-      }
-      truthy(body.indexOf('normalizePanelWidth(cfg && cfg.notePanelWidth)') > 0,
-        '★ 面板宽度必须直接由 cfg.notePanelWidth 经唯一归一函数得出（别在渲染层二次实现归一）');
+       * 用"页面上一个笔记都没有"跑真 render —— 实际路径就是 ①ensure 造壳 ②写三个 CSS 变量
+       * ③发现没内容 ⇒ hide + 提前 return。变量若挪到 `dirty` 判定之后（或挪进 renderContent），
+       * 这条路一个都写不出来 ⇒ 这里红。真机表现："设置页改了宽度、面板不动"，而其它断言全绿。
+       * （旧写法按行切 `render()` 函数体做字符串定位 —— 换个等价换行/缩进就假红，且证明不了运行结果。） */
+      const p = Object.create(KH.ImportantNote.panel);
+      p.panelEl = null;                     // 外壳未建 ⇒ 必须走 ensure() + 前半段，不靠任何桩
+      p.render([], { notePanelWidth: 9999, importantNote: { imgSize: 9999, fontSize: 9999 } });
+      eq(p.root.style.getPropertyValue('--khin-panel-w'), KH.Config.normalizePanelWidth(9999) + 'px',
+        '★ --khin-panel-w 必须在 dirty 判定之前写（越界值经唯一归一函数夹到上界）');
+      /* 图片尺寸与正文字号写在 host 上（变量定义处是宿主/影子里的规则），面板宽度写在 .khin-wrap
+       * 上 —— 别对着同一个元素查三个变量，那会看起来像"没写"。 */
+      eq(p.host.style.getPropertyValue('--kh-img-size'), KH.Config.normalizeImgSize(9999) + 'px',
+        '★ --kh-img-size 同上（写掉了设置页改了图尺寸、面板不理）');
+      eq(p.host.style.getPropertyValue('--kh-note-fs'), KH.Config.normalizeNoteFontSize(9999) + 'px',
+        '★ --kh-note-fs 同上');
     });
 
     await test('★ 未知键与已知键混在同一批 ⇒ 以"有真变化"为准（不许被未知键带偏，也不许漏）', async () => {
@@ -250,9 +252,9 @@ module.exports = async function run() {
     /* 【T36b】消减清单（lead 裁决 ① ② 另加）：顶层键按**读点位置**分三类，别一刀切。
      *   ① 页面侧零读点（`migrated`）        ⇒ 两个签名都不进 ⇒ 写入后连 Consume 都不跑（永不动任何东西）
      *   ② 页面侧读点全在 ⑦Consume（`noteCardStyle`）⇒ 进 UI_ONLY_KEYS ⇒ 只重跑 Consume
-     *   （T52 订正：`imgOcr` **不在**此类 —— `img-ocr.js:641` 在仅消费通道早退，见下面它的反向守卫）
+     *   （T52 订正：`imgOcr` **不在**此类 —— `img-ocr.js` 在仅消费通道早退，见下面它的反向守卫）
      *   ③ 被 ③Scan / ⑤Render / 编译 / 站点门禁读的 ⇒ 留在核心签名 ⇒ 照旧整页重建
-     * 为什么 `migrated` 必须堵：`options.js:1692-1709` 点掉迁移提示会写它（`ocr-options.test.js:118` 钉着），
+     * 为什么 `migrated` 必须堵：`options.js` 点掉迁移提示会写它（`ocr-options.test.js` 钉着），
      * 不堵的话**每个打开的标签页各重建一轮** —— 与 K80/F2 修的是同一类"无关写入白干活"。 */
     await test('★ T36b：迁移标记 migrated 零页面侧读点 ⇒ 两个签名都不进（连仅消费都不许跑）', async () => {
       runs = 0; arm = 0; consumeCalls.length = 0;
@@ -280,13 +282,13 @@ module.exports = async function run() {
     });
 
     /* 【T52 / F1 反向守卫】`imgOcr` **不许**进 UI_ONLY_KEYS —— 别被"engine 页面侧零读点"骗回去。
-     * 依据：`img-ocr.js:641` 在**仅消费通道直接早退**（`if (ctx && ctx.consumeOnly) return;`），
-     * 它成立的前提是"图片相关的变更必然判 'full'"（`relevance.js:345-346`）；而跨域白名单
-     * `imgOcr.crossOriginSites` 的页面侧唯一读点（`img-ocr.js:190` 的 `crossOriginAllowed`）
+     * 依据：`img-ocr.js` 在**仅消费通道直接早退**（`if (ctx && ctx.consumeOnly) return;`），
+     * 它成立的前提是"图片相关的变更必然判 'full'"（`relevance.js`）；而跨域白名单
+     * `imgOcr.crossOriginSites` 的页面侧唯一读点（`img-ocr.js` 的 `crossOriginAllowed`）
      * **只在 `build()` 里跑** ⇒ 一旦 imgOcr 落进 UI_ONLY_KEYS，**设置页把站点加进白名单后
      * 已打开页面不生效**（要等一次真正的整页重建），与设置页"登记一次以后都算数"的文案直接冲突
      * —— 这就是发版阻塞回归 F1。变体乙（让它重跑跨域判定）同样不行：仅消费通道给的 hits 不是
-     * 全量命中，照常 `build()` 会把已有图片命中清空（`img-ocr.js:630-631`）。
+     * 全量命中，照常 `build()` 会把已有图片命中清空（`img-ocr.js`）。
      * **接受的代价**：改 `engine` 也顺带整页重建一次（罕见、一次性），别为它做精细分类。 */
     await test('★ T52 反向守卫：imgOcr 改动必须整页重建（不许塞进 UI_ONLY_KEYS —— img-ocr 在仅消费通道早退）', async () => {
       const cases = [
@@ -347,7 +349,7 @@ module.exports = async function run() {
     });
     await test('★ T33/T36b 守卫：UI-only 键的配置读点只许在"归一 / 消费 / 设置页"三处（判据被写进代码，不是注释）', () => {
       const root = path.join(__dirname, '..', '..');
-      /* 只认"从配置对象上取值"的写法：`kw.importantNote`（词自己的笔记正文，compiler.js:142）与
+      /* 只认"从配置对象上取值"的写法：`kw.importantNote`（词自己的笔记正文，compiler.js）与
        * `h.meta.importantNote`（命中身上的值）是**另一个东西**，不算配置读点。 */
       /* T52：`imgOcr` 已从 UI_ONLY_KEYS 摘掉（回归 F1，见上面它的反向守卫），故不在本表；
        * 它的分类由那条动态守卫钉着，不是靠这里的静态读点清单。 */
@@ -386,8 +388,8 @@ module.exports = async function run() {
      * `page.reload()` 之后才变：
      *   {"before":{"rebuildCount":4,"consumeOnlyCount":1},"after":{"rebuildCount":4,"consumeOnlyCount":2},
      *    "cardFirstShow":{"varBg":"#ffffff"},"cardStillOld":{"varBg":"#ffffff"},"cardReShow":{"varBg":"#ffffff"}}
-     * 根因不在分类，在 `note-card.js:332-334`：`bind(configRef)` 的一次性早退把**每次 consume 新传进来的
-     * `() => cfg` 闭包**一起丢掉了（监听只该装一次，配置引用不该被顺带冻住），于是 `:378` / `:415`
+     * 根因不在分类，在 `note-card.js`：`bind(configRef)` 的一次性早退把**每次 consume 新传进来的
+     * `() => cfg` 闭包**一起丢掉了（监听只该装一次，配置引用不该被顺带冻住），于是卡片里
      * 两处读点永远拿到 boot 那次的 cfg ⇒ 靠"改走整页重建"也救不了：`card` 是模块单例，重建同样只调
      * 一次 consume、照样早退。下面两条把"新值必须真的到达卡片"钉死（垫片里没有真 DOM 事件管线，
      * 所以用最小手段：接管 document 监听拿到真实 click 处理器 + 观测引用本身）。

@@ -255,8 +255,8 @@ module.exports = async function run() {
       const once = C.normalizeFetchScope(sc);
       eq(C.normalizeFetchScope(once), once, '幂等：' + sc + ' → ' + once);
     }
-    falsy(/tableChain/.test(require('fs').readFileSync(require('path').join(__dirname, '..', '..', 'src', 'features', 'fetch.js'), 'utf8')),
-      '★ 旧的"祖先链"实现（tableChain）必须删净，不能再被顺手用回来（R1 的源码级哨兵）');
+    /* 「祖先链实现（tableChain）不许回潮」这条源码哨兵已迁到 scripts/meta-check.js 的红线列表：
+     * 它本来就是静态断言、不属于行为测试，放在这里只会让"改一行 fetch.js"顺手打红一个功能 spec。 */
   });
 
   /* ==================== A5 标签格是 <th> 的三种形状（R4-TH 返工） ==================== */

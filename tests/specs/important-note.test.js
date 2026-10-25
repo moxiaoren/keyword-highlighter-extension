@@ -163,21 +163,49 @@ module.exports = async function run() {
     truthy(/hitsTotal:\s*'共 \{n\} 条'/.test(copy), copy.slice(0, 40));
     truthy(src.indexOf('KH.OcrCopy.VIEW.moreHits') >= 0 && src.indexOf('KH.OcrCopy.VIEW.hitsTotal') >= 0,
       '面板只许引用 VIEW，不许自己写这两句');
-    falsy(/点开看全部|共 \{n\} 条/.test(src), '面板里不许出现这两句字面量（写死就是各写一套）：');
+    /* 「面板里不许出现这两句字面量」这条静态哨兵已迁到 scripts/meta-check.js 的红线列表。 */
     truthy(src.indexOf('more.title = KH.OcrCopy.render(KH.OcrCopy.VIEW.moreHits') >= 0,
       '悬停说明要在 renderTags 的 DOM 层挂（字符串层不带 title 属性）');
   });
 
   await test('★ 契约：展开/收起就地重画标签区（不走 refresh/render ⇒ head.changed 不脏也能更新）', () => {
-    const src = read('src/features/important-note.js');
-    truthy(src.indexOf('this.renderTags(tagsEl, item);') >= 0, '唯一注入点要改成就地重画');
-    falsy(src.indexOf('tagsEl.innerHTML = head.tagHtml(item.entries);') >= 0, '旧的一行注入必须消失');
-    const fn = src.slice(src.indexOf('renderTags(tagsEl, item) {'), src.indexOf('renderItems() {'));
-    truthy(fn.length > 0, '要能定位 renderTags 函数体（否则下面的断言是在空串上跑）');
-    falsy(/this\.(refresh|render)\(/.test(fn), 'head.changed 在 entries 未变时判不脏 ⇒ 不许走 refresh()/render()');
-    // 展开态必须挂面板侧：head 每次重建会把状态清掉
-    truthy(/expandedTags: new Set\(\)/.test(src) && /pickedTags: new Map\(\)/.test(src),
-      '展开态 / 选中态要挂在 panel 上');
+    /* 真跑 renderTags：同一个容器画三遍（原样 / 展开 / 收起 / 选过一条），
+     * 并盯住 refresh()/render() 一次都不许被调 —— 它们在 head.changed 判"不脏"时是整个空转的，
+     * 走它们等于"点了小标屏上没反应"（这条契约的存在理由）。
+     * （旧写法按行切函数体正则找 `this.refresh(` —— 换行/抽小函数就假红，且证明不了运行结果。） */
+    const panel = KH.ImportantNote.panel;
+    truthy(panel.expandedTags instanceof Set, '展开态要挂面板侧（head 每次重建会把状态清掉）');
+    truthy(panel.pickedTags instanceof Map, '选中态要挂面板侧');
+
+    const p = shadowPanel();
+    p.expandedTags = new Set();          // 影子面板用自己的集合/映射，别污染真面板单例
+    p.pickedTags = new Map();
+    let refreshes = 0;
+    let renders = 0;
+    p.refresh = () => { refreshes += 1; };
+    p.render = () => { renders += 1; };
+
+    const item = { note: '甲', entries: [{ kw: '长词条甲', adj: '' }, { kw: '短', adj: '' }] };
+    const tagsEl = H.el('div');
+    p.renderTags(tagsEl, item);
+    truthy(tagsEl.innerHTML.indexOf('短') >= 0, '未展开时只展示最短那条命中（就地画进传入的容器）');
+    eq(tagsEl.querySelectorAll('.khin-tag-list').length, 0, '未展开时不许出下拉列表');
+
+    p.expandedTags.add(item.note);
+    p.renderTags(tagsEl, item);
+    eq(tagsEl.querySelectorAll('.khin-tag-list').length, 1, '展开后下拉列表要出现在同一个容器里');
+    eq(tagsEl.querySelectorAll('.khin-tag-item').length, 2, '下拉要列出全部命中');
+
+    p.expandedTags.delete(item.note);
+    p.renderTags(tagsEl, item);
+    eq(tagsEl.querySelectorAll('.khin-tag-list').length, 0, '收起后列表必须回到没有（还是同一个容器）');
+
+    p.pickedTags.set(item.note, 0);      // 用户在列表里选了第一条
+    p.renderTags(tagsEl, item);
+    truthy(tagsEl.innerHTML.indexOf('长词条甲') >= 0, '选过的条目要成为展示的那一条');
+
+    eq(refreshes, 0, '★ 不许走 refresh()（head.changed 判不脏 ⇒ 整条 render 会空转）');
+    eq(renders, 0, '★ 不许走 render()（同上）');
   });
 
   suite('important-note · 脏检查（命中未变不重建 DOM）');
@@ -394,14 +422,19 @@ module.exports = async function run() {
     eq(C.normalizePanelWidth(250.6), 251, '面板宽度只收整数');
     eq(C.PANEL_WIDTH_MIN, 200, '下界常量（用户 2026-10-13 拍板 160 → 200）');
     eq(C.PANEL_WIDTH_MAX, 1200, '上界常量（2.0.2.7 用户 2026-10-15：600 → 1200）');
-    /* 配置 → 面板的接线：写入口只有 render() 一处，且用的是 config 的归一函数（不许复制一份边界） */
-    const src = read('src/features/important-note.js');
-    truthy(/KH\.Config\.normalizePanelWidth\(/.test(src), '面板必须调 config 的唯一归一函数');
-    /* config ⇒ 变量的唯一证据层：写入的值必须直接由 cfg.notePanelWidth 经唯一归一函数得出。
-     * 字面量不可能满足这个正则（样式表里的默认值只是首屏兜底，真正生效的是这一行内联写入）。 */
-    truthy(/setProperty\('--khin-panel-w',\s*\n\s*KH\.Config\.normalizePanelWidth\(cfg && cfg\.notePanelWidth\)/.test(src),
+    /* 配置 → 面板的接线：真跑一次 render，直接看 CSS 变量上落下来的值。
+     * 以前这里靠正则找 `setProperty('--khin-panel-w', ⏎ …)`（精确到换行缩进）与函数名 ——
+     * 等价改写就假红，而"到底写没写上去"仍然没人证明。 */
+    const p = shadowPanel();
+    p.render([], { notePanelWidth: 320 });
+    eq(p.root.style.getPropertyValue('--khin-panel-w'), '320px',
       '面板宽度必须由 render() 从 cfg.notePanelWidth 写到 CSS 变量上（否则设置页改了面板不理）');
-    /* consume(hits, cfg) 必须把 cfg 交给 render —— 否则上面那行永远拿不到用户选的值 */
+    const q = shadowPanel();
+    q.render([], { notePanelWidth: 9999 });
+    eq(q.root.style.getPropertyValue('--khin-panel-w'), KH.Config.PANEL_WIDTH_MAX + 'px',
+      '越界值必须经 config 的唯一归一函数夹到上界（渲染层不许自己复制一份边界）');
+    /* consume(hits, cfg) 必须把 cfg 交给 render —— 否则上面那条在真实链路上永远拿不到用户选的值 */
+    const src = read('src/features/important-note.js');
     const cons = (src.match(/consume\(hits, cfg\) \{[\s\S]*?\n      \},/) || [''])[0];
     truthy(/panel\.render\([\s\S]*?, cfg\)/.test(cons), 'consume 必须把 cfg 传给 render：' + cons);
   });
@@ -605,7 +638,7 @@ module.exports = async function run() {
   await test('★ T52 反向用例：位移 ≤3px 不算「拖」⇒ 松手仍按点击处理（阈值是曼哈顿距离 >3px，不是 ≥）', () => {
     const src = read('src/features/important-note.js');
     /* 反向（"不算拖"那一侧）用例：FAB 同时是「展开」按钮与「拖动」把手，手按上去松开的途中只抖
-     * 1~3px 的**必须仍算点击**（面板照开）。阈值实现在 important-note.js:1153：
+     * 1~3px 的**必须仍算点击**（面板照开）。阈值实现在 important-note.js：
      * 曼哈顿距离 |dx|+|dy| > 3 才 `state.moved = true`。
      * 装置说明：tests/harness.js 的 ShimElement 自 T38 起有事件通道（addEventListener /
      * dispatchEvent），但 **window 上的 pointermove/pointerup 管线仍然没有**
@@ -739,7 +772,7 @@ module.exports = async function run() {
    * 「★ 双击标题栏收起为圆形 FAB，再双击展开」）第二步红，`.khin-panel` 300ms 后不存在。
    *
    * 机制（源码全路径，逐行可核）：一次鼠标双击 = down/up/click(1) → down/up/click(2) → dblclick。
-   *   · click(1) 落点 = FAB 中心：`important-note.js:1264` 的 click 过三道具后调 openPanel()
+   *   · click(1) 落点 = FAB 中心：`important-note.js` 的 click 过三道具后调 openPanel()
    *     （:1252-1256），里面 `renderContent()` **就地换壳** `this.root.innerHTML = …`
    *     （:1245-1247 的 FAB → :1288-1311 的 `.khin-panel` + `.khin-header`）；
    *   · 第二次 click 与 dblclick 仍落在同一屏幕坐标 —— 坐标处已经是刚生成的 `.khin-header`
