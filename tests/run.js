@@ -159,7 +159,14 @@ const specs = [
   './specs/ocr-layout.test.js',
   /* 【2.0.7.2 需求⑤】标签页级临时禁用：只影响当前标签页 / 任何网址都不高亮 / 关标签页即取消 /
    * 重启不残留（storage.session）＋「后台只推给那个标签页」的热生效链路。口径见该 spec 头部 */
-  './specs/tab-disable.test.js'
+  './specs/tab-disable.test.js',
+  /* 2.0.8「扫描期计算样式复用」：同一元素一轮扫描里只问一次 getComputedStyle
+   * （原生 checkVisibility 判否时 collapsedInPlace / customCollapseExpandable 会沿祖先链逐个问，
+   * 而相邻元素的祖先链高度重合）—— 断言"总调用数 === 被问过的元素数"，并锁住跨轮不陈旧 */
+  './specs/scan-style-memo.test.js',
+  /* 2.0.8「文案跳转」：设置页正文里的指路文案改成真链接（`<a href="#sec-help" data-hspan="about">`），
+   * 走 `options.js` 的 `goSection()` 通道 —— 这里对账分区 id / 二级 Tab id / 欢迎页路径三处资产 */
+  './specs/copy-jumps.test.js'
 ];
 
 (async () => {

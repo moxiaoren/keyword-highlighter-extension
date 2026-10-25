@@ -120,7 +120,8 @@
       if (typeof getComputedStyle !== 'function') {
         return (el.hasAttribute && el.hasAttribute('hidden')) ? 2 : 0;
       }
-      const st = getComputedStyle(el);
+      const st = styleOf(el);
+      if (!st) return 0;
       if (st.display === 'none' || st.contentVisibility === 'hidden') return 2;
       if (st.visibility === 'hidden' || st.visibility === 'collapse') return 1;
       return 0;
@@ -137,8 +138,8 @@
   function contentsPassThrough(el) {
     try {
       if (typeof getComputedStyle !== 'function') return false;
-      const st = getComputedStyle(el);
-      return st.display === 'contents'
+      const st = styleOf(el);
+      return !!st && st.display === 'contents'
         && st.contentVisibility !== 'hidden'
         && st.visibility !== 'hidden' && st.visibility !== 'collapse';
     } catch (e) { return false; }
@@ -215,7 +216,8 @@
        * ⚠️ K77 的 R4 复验实测（真机 · 自造装置）：原先的 `depth < 8` 会让**嵌套 7 层以上**的折叠内容漏扫
        * （span→details 之间 6 层 ⇒ 命中；7/8/9 层 ⇒ 0）——**已按此修**（8 → 128）。 */
       for (let depth = 0; n && n.nodeType === 1 && depth < 128; depth++, n = n.parentElement) {
-        const st = getComputedStyle(n);
+        const st = styleOf(n);
+        if (!st) return false;
         if (st.display === 'none') return false;                            // 真·隐藏 ⇒ 不是折叠
         if (st.visibility === 'hidden' || st.visibility === 'collapse') return false;
         if (st.contentVisibility === 'hidden') return true;                 // 折叠在原位（②）
@@ -246,7 +248,7 @@
     let n = el.previousElementSibling, hops = 0;
     while (n && hops < 4) {
       if (String(n.textContent || '').trim()) {
-        const st = (typeof getComputedStyle === 'function') ? getComputedStyle(n) : null;
+        const st = (typeof getComputedStyle === 'function') ? styleOf(n) : null;
         if (!st || (st.display !== 'none' && st.visibility !== 'hidden' && st.visibility !== 'collapse')) return true;
       }
       n = n.previousElementSibling; hops++;
@@ -255,7 +257,7 @@
      * "控件与内容各自一个兄弟块"的结构，控件的**前一个兄弟**才是可见前文。 */
     const up = el.parentElement && el.parentElement.previousElementSibling;
     if (up && String(up.textContent || '').trim()) {
-      const st = (typeof getComputedStyle === 'function') ? getComputedStyle(up) : null;
+      const st = (typeof getComputedStyle === 'function') ? styleOf(up) : null;
       if (!st || (st.display !== 'none' && st.visibility !== 'hidden')) return true;
     }
     return false;
@@ -331,7 +333,8 @@
       /* ⚠️ 这里**不能**在遇到 `display:none` 时 `break`：⑤（不是浮层）与⑥（没有 visibility 隐藏）要沿**整条祖先链**判，
        * 而"让它隐藏的那个 `display:none`"往往就在链中间 —— break 之后浮层判定永远不生效（本函数自己踩过）。 */
       for (let d = 0; n && n.nodeType === 1 && d < 128; d++, n = n.parentElement) {
-        const st = getComputedStyle(n);
+        const st = styleOf(n);
+        if (!st) return false;
         if (st.visibility === 'hidden' || st.visibility === 'collapse') return false;    // ⑥
         if (st.contentVisibility === 'hidden') return false;                            // 不归这条管
         /* 自身就是"定位弹层"⇒ 不是流内折叠（R4 的收窄建议；折叠起来的长内容几乎都在流里） */
@@ -381,6 +384,25 @@
   /** 本轮扫描里"被判定为可读内容"的块（`display:contents` / 折叠 / ①）—— 它们的**子树照旧扫**（见 `rendersSubtree`）。
    *  同样**每轮换新**（样式/结构随时变）。 */
   let passthroughSet = new WeakSet();
+
+  /** 本轮扫描的**计算样式**缓存（2.0.8）：同一个元素在一轮扫描里被反复问样式是纯重复开销 ——
+   *  `collapsedInPlace` / `customCollapseExpandable` 会沿祖先链逐个问（上限 128），而相邻元素的祖先链
+   *  绝大部分是**重合的**；`isVisualInline` 还会和它们问同一个元素。真机上这是"重页面整页重建"里
+   *  唯一还在按元素数放大的样式读。样式不会在一次同步扫描中间变，所以**每轮换新**就够
+   *  （跨轮复用会陈旧：class 切换后 display 会变，K77 的拆词判据直接吃它）。
+   *  与 `visualInlineCache` 分开是因为它缓存的是**样式对象**而不是"是不是行内"这一个布尔。 */
+  let styleCache = new WeakMap();
+
+  /** 取本轮扫描缓存里的计算样式；拿不到（环境没有 `getComputedStyle` / 抛错）统一返回 `null`，
+   *  调用方各自按自己的保守口径处理 —— 这里**不替任何人决定**"看不见"。 */
+  function styleOf(el) {
+    const hit = styleCache.get(el);
+    if (hit !== undefined) return hit;
+    let st = null;
+    try { st = getComputedStyle(el); } catch (e) { st = null; }
+    styleCache.set(el, st);
+    return st;
+  }
 
   /** 该元素的祖先里有没有"已被判定为可读内容"的块（只在原生判否那条罕见路径上问） */
   function passedThroughAncestor(el) {
@@ -451,6 +473,7 @@
      * 放在这里是因为它是"收集文本节点"的唯一入口（`scan` 与组合词的格内扫描都走它）。 */
     visualInlineCache = new WeakMap();
     passthroughSet = new WeakSet();
+    styleCache = new WeakMap();
     walkTextNodes(root, out, opts);
     if (opts.shadow) {
       for (const sr of collectShadowRoots(root)) walkTextNodes(sr, out, opts);
@@ -520,9 +543,9 @@
     if (hit !== undefined) return hit;
     let ok;
     try {
-      if (typeof getComputedStyle !== 'function') ok = INLINE_TAGS.has(el.tagName);
+      const st = (typeof getComputedStyle !== 'function') ? null : styleOf(el);
+      if (!st) ok = INLINE_TAGS.has(el.tagName);
       else {
-        const st = getComputedStyle(el);
         ok = INLINE_DISPLAYS.has(st.display)
           && st.position !== 'absolute' && st.position !== 'fixed'
           && (!st.float || st.float === 'none');

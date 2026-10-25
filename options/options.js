@@ -1342,36 +1342,71 @@
     }
   }
 
+  /** 帮助与隐私里的**二级** Tab（隐私/功能/数据/常见/安全/性能/关于）切成 `pan` 那一页，
+   *  返回该面板元素（没有就 null）。顶部二级 Tab 的点击与正文指路链接共用这一处。 */
+  function activateHelpTab(pan) {
+    if (!pan) return null;
+    const sec = $('sec-help');
+    const helpTabs = document.getElementById('help-tabs');
+    if (sec) {
+      for (const p of sec.querySelectorAll('.kh-hpanel')) p.classList.toggle('active', p.getAttribute('data-hpan') === pan);
+    }
+    if (helpTabs) {
+      for (const b of helpTabs.querySelectorAll('.kh-htab')) b.classList.toggle('active', b.getAttribute('data-hpan') === pan);
+    }
+    return sec ? sec.querySelector('[data-hpan="' + pan + '"]') : null;
+  }
+
+  /** 切分区：顶部 Tab / hash 直达 / **正文里的指路链接**共用同一处（谁在激活只判一次）。
+   *  `hspan` 给了就顺手把帮助区的二级 Tab 切到那一页并滚到它（「关于 → 版本信息」用）。 */
+  function goSection(id, hspan) {
+    if (SECTIONS.indexOf(id) < 0) return;
+    const sec = $('sec-' + id);
+    if (sec && sec.id) { try { history.replaceState(null, '', '#' + sec.id); } catch (err) { /* file:// 等场景忽略 */ } }
+    showSection(id);
+    const pan = hspan ? activateHelpTab(hspan) : null;
+    const main = document.querySelector('.kh-main');
+    if (pan && pan.scrollIntoView) pan.scrollIntoView({ block: 'start' });
+    else if (main && main.scrollIntoView) main.scrollIntoView({ block: 'start' });
+    else window.scrollTo(0, 0);
+  }
+
+  /** 正文里的指路链接：`<a href="#sec-help" data-hspan="about">` —— 走 `goSection` 同一条通道。
+   *  ⚠️ 不能靠浏览器原生锚点：非当前分区带 `hidden`，原生滚动落空 ⇒ 点了像什么都没发生。
+   *  只绑一次（`renderTabs` 会被重复调用）。 */
+  let jumpBound = false;
+  function bindCopyJumps() {
+    if (jumpBound) return;
+    jumpBound = true;
+    document.addEventListener('click', (e) => {
+      const t = e.target;
+      const a = (t && t.closest) ? t.closest('a[href^="#sec-"]') : null;
+      if (!a) return;
+      e.preventDefault();
+      goSection(String(a.getAttribute('href')).replace(/^#sec-/, ''), a.getAttribute('data-hspan'));
+    });
+  }
+
   function renderTabs() {
     const tabs = Array.prototype.slice.call(document.querySelectorAll('.kh-tab'));
     for (const a of tabs) {
       a.addEventListener('click', (e) => {
         // 自己切分区（不依赖浏览器对 #hash 的滚动）：切完回到内容顶部，否则会停在上一节的中段
         e.preventDefault();
-        const id = a.dataset.tab;
-        if (SECTIONS.indexOf(id) < 0) return;
-        const sec = $('sec-' + id);
-        if (sec) {
-          try { history.replaceState(null, '', '#' + sec.id); } catch (err) { /* file:// 等场景忽略 */ }
-        }
-        showSection(id);
-        const main = document.querySelector('.kh-main');
-        if (main && main.scrollIntoView) main.scrollIntoView({ block: 'start' });
-        else window.scrollTo(0, 0);
+        goSection(a.dataset.tab);
       });
     }
     // 帮助与隐私：内部二级 Tab 分页（一屏一类，逻辑独立、不干扰外层分区切换）
     const helpTabs = document.getElementById('help-tabs');
     if (helpTabs) {
-      const helpPans = Array.prototype.slice.call(document.querySelectorAll('#sec-help .kh-hpanel'));
       helpTabs.addEventListener('click', (e) => {
         const b = e.target.closest('.kh-htab');
         if (!b) return;
-        const pan = b.dataset.hpan;
-        for (const tb of helpTabs.querySelectorAll('.kh-htab')) tb.classList.toggle('active', tb === b);
-        for (const p of helpPans) p.classList.toggle('active', p.dataset.hpan === pan);
+        activateHelpTab(b.dataset.hpan);
       });
     }
+    // 正文里的指路链接（「关于 → 版本信息」「欢迎页」等）与顶部 Tab 走同一条通道
+    bindCopyJumps();
 
     // 支持从 popup / 欢迎页带 hash 跳进来（如 options.html#help）
     const fromHash = String(location.hash || '').replace(/^#sec-/, '').replace(/^#/, '');
