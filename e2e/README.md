@@ -49,3 +49,6 @@ node run.js --aspects=none # 不启动浏览器，只做装置自检
 - 判读顺序：先看 `report.txt` 的退出码与末尾摘要；**环境类失败**（装不上 Chromium、卡在 `launchPersistentContext`）与**断言失败**要分开定级——前者修 workflow，后者修代码。
 - Linux 上要 `--no-sandbox --disable-dev-shm-usage`（已写进 workflow 的 `KHE_EXTRA_ARGS`）。
 - 受沙箱限制的本地环境会在 `spawn EPERM` 处失败（起不了浏览器进程）：那是权限不是装置，交给 CI。
+
+**首个实跑读数（2026-11-01，run 41289214041，提交 `afd295e`）**：内容层 36 · 0 / UI 层 105 · 0，退出码 0，OCR 语言包那步现场取到了资产。
+注意 `--aspects=hit,ui` 会裁掉 visual / interact / fetch 等组，所以 141 比全量 237 少——要全量断言就把 aspects 传成空或 `all`。
