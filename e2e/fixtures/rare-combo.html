@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>罕见字 + 单元格组合 · 真实测试装置</title>
+<style>
+  body { font-family: "Microsoft YaHei", sans-serif; margin: 20px; }
+  table { border-collapse: collapse; width: 560px; }
+  td { border: 1px solid #e2e8f0; padding: 6px 10px; font-size: 14px; }
+  .lbl { background: #f8fafc; width: 160px; }
+</style>
+</head>
+<body>
+<h1>罕见字 + 单元格组合</h1>
+
+<!-- 规格（changelog）：罕见字可作「单元格组合」的核心词 ——
+     左格标题「资质类型」右侧出现罕见字才命中；不在组合上下文里的罕见字**不得**命中。
+     旧实现把带组合的罕见字退化成"整页逐字扫罕见字"，于是下面三处会一起亮。 -->
+<table>
+  <tbody>
+    <tr>
+      <td class="lbl">资质类型</td>
+      <td id="rare-in">昉</td>          <!-- 应命中：标题格右侧的罕见字 -->
+    </tr>
+    <tr>
+      <td class="lbl">应用名称</td>
+      <td id="rare-out">昉</td>         <!-- 不该命中：左格标题不是「资质类型」 -->
+    </tr>
+    <tr>
+      <td class="lbl">资质类型</td>
+      <td id="rare-common">审查</td>    <!-- 不该命中：右格全是常用字 -->
+    </tr>
+  </tbody>
+</table>
+
+<p id="rare-plain">正文里的罕见字：谞（不在任何组合上下文里，不该命中）</p>
+</body>
+</html>

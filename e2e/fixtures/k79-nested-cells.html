@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>K79 装置 · 嵌套表的两种位置（值格内 / 另一个单元格内）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  table { border-collapse: collapse; margin: 8px 0; }
+  th, td { border: 1px solid #c8ced8; padding: 4px 8px; font-size: 14px; vertical-align: top; }
+  h2 { font-size: 15px; margin: 18px 0 6px; }
+  .inner td { background: #f6f8fb; }
+</style>
+</head>
+<body>
+<h1>K79 装置 · 嵌套表位置两种（每层同名字段，值不同 ⇒ 看值就知道取了哪一层）</h1>
+
+<!-- 形状 A：内表在**另一个单元格**里（不是「驳回原因」的值格） -->
+<h2>形状 A · 内表在另一个单元格里（「附件」格）</h2>
+<table id="aOuter">
+  <tbody>
+    <tr>
+      <td>驳回原因</td><td>外层驳回A</td>
+      <td>附件</td>
+      <td>
+        <table class="inner" id="aInner">
+          <tbody>
+            <tr><td>驳回原因</td><td>内层驳回A</td></tr>
+            <tr><td>命中格</td><td>甲词</td></tr>
+          </tbody>
+        </table>
+      </td>
+    </tr>
+    <tr><td>详情</td><td>外层详情A</td><td>—</td><td>—</td></tr>
+  </tbody>
+</table>
+
+<!-- 形状 B：内表就在**「驳回原因」的值格里面** -->
+<h2>形状 B · 内表在值格里面</h2>
+<table id="bOuter">
+  <tbody>
+    <tr>
+      <td>驳回原因</td>
+      <td>
+        <table class="inner" id="bInner">
+          <tbody>
+            <tr><td>驳回原因</td><td>内层驳回B</td></tr>
+            <tr><td>命中格</td><td>乙词</td></tr>
+          </tbody>
+        </table>
+      </td>
+    </tr>
+    <tr><td>详情</td><td>外层详情B</td></tr>
+  </tbody>
+</table>
+
+</body>
+</html>

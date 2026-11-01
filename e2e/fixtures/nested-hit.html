@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>嵌套表格：命中在单元格内部的表格里</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  table { border-collapse: collapse; margin: 8px 0; }
+  th, td { border: 1px solid #ccc; padding: 4px 8px; font-size: 14px; }
+  h2 { font-size: 15px; margin: 16px 0 6px; }
+  .inner td { background: #f6f8fb; }
+</style>
+</head>
+<body>
+<h1>嵌套表格 · 命中锚点与抓取层级</h1>
+
+<h2>A. 外层表里也命中同一个词，且外层表是「标签 | 值」两列；值格里套了一张内层表格（内层里也命中）</h2>
+<table id="outerA">
+  <tr><td>驳回原因</td><td>资质材料不清晰</td></tr>
+  <tr><td>运营备注</td><td>高价值</td></tr>
+  <tr><td>详情</td>
+    <td>
+      外层说明
+      <table class="inner" id="innerA">
+        <tr><td>你好</td><td>内层值</td></tr>
+      </table>
+    </td>
+  </tr>
+  <tr><td>名称</td><td>你好</td></tr>
+</table>
+
+<h2>B. 只有内层命中（外层表里那个词是别的），外层同一张表仍有抓取字段</h2>
+<table id="outerB">
+  <tr><td>驳回原因</td><td>营业执照过期</td></tr>
+  <tr><td>运营备注</td><td>需跟进</td></tr>
+  <tr><td>详情</td>
+    <td>
+      外层说明B
+      <table class="inner" id="innerB">
+        <tr><td>你好</td><td>内层值B</td></tr>
+      </table>
+    </td>
+  </tr>
+  <tr><td>名称</td><td>另一家公司</td></tr>
+</table>
+
+</body>
+</html>

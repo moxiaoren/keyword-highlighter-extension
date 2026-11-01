@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>K79-R4 独立真机装置</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  table { border-collapse: collapse; margin-bottom: 24px; }
+  td, th { border: 1px solid #bbb; padding: 4px 8px; font-size: 13px; vertical-align: top; }
+  th { background: #f0f0f0; }
+  table table { margin: 2px 0; }
+</style>
+</head>
+<body>
+<h3>K79-R4 · 抓取层级（内层 / 当前层 / 外层）独立复验装置</h3>
+
+<!-- ============ ① 普通词：命中落在外层表自己的行里 ============ -->
+<table id="t-outer">
+  <tbody>
+    <tr>
+      <th>说明</th>
+      <th>附件</th>
+    </tr>
+    <tr>
+      <td class="anchor">外层锚点 R4X9</td>
+      <td>
+        外层附件注记 R4X9
+        <table id="t-inner">
+          <tbody>
+            <tr><td>驳回原因</td><td>内层驳回 R4R4</td></tr>
+            <tr><td>内层备注</td><td>内层备注 R4B7</td></tr>
+            <tr><td>截图</td><td><img src="https://ex.com/r4-inner.png" alt="内层图" width="16" height="16"></td></tr>
+          </tbody>
+        </table>
+      </td>
+    </tr>
+    <tr>
+      <td>驳回原因</td>
+      <td class="outer-val">外层驳回 R4W1</td>
+    </tr>
+    <tr>
+      <td>详情</td>
+      <td>外层详情 R4D2</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- ============ ② 组合词「仅抓取」：标题格右邻格里有内表 ============ -->
+<table id="t-combo">
+  <tbody>
+    <tr>
+      <th>仅抓取标题 R4T5</th>
+      <th>附件</th>
+    </tr>
+    <tr>
+      <td>甲应用</td>
+      <td>
+        <table id="t-combo-inner">
+          <tbody>
+            <tr><td>驳回原因</td><td>内层驳回 R4C3</td></tr>
+            <tr><td>截图</td><td><img src="https://ex.com/r4-combo-inner.png" alt="组合内层图" width="16" height="16"></td></tr>
+          </tbody>
+        </table>
+      </td>
+    </tr>
+    <tr>
+      <td>驳回原因</td>
+      <td>外层驳回 R4C8</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- ============ ③ 红牌装置：内表用 <th> 做**数据行**的键（K74 经典形状） ============ -->
+<table id="t-th">
+  <tbody>
+    <tr>
+      <th>红牌锚点 R4Z1</th>
+      <th>附件</th>
+    </tr>
+    <tr>
+      <td>
+        <table id="t-th-inner">
+          <tbody>
+            <tr><th>驳回原因</th><td>内层驳回 R4Z2</td></tr>
+            <tr><th>后续字段</th><td>后续值 R4Z3</td></tr>
+          </tbody>
+        </table>
+      </td>
+      <td>占位</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- ============ ④ 值格"有文字 + 有图"：验证 #图 在正常值格上照旧生效 ============ -->
+<table id="t-imgtext">
+  <tbody>
+    <tr>
+      <th>图锚点 R4Y7</th>
+      <th>附件截图</th>
+    </tr>
+    <tr>
+      <td>图锚点 R4Y7</td>
+      <td>截图说明 R4Y8 <img src="https://ex.com/r4-own.png" alt="本层图" width="16" height="16"></td>
+    </tr>
+  </tbody>
+</table>
+</body>
+</html>

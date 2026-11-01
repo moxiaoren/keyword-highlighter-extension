@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>晚挂的 ShadowRoot（自定义元素晚升级）· 真实测试装置</title>
+<style>
+  body { font-family: "Microsoft YaHei", sans-serif; margin: 20px; }
+  #late-host { display: block; border: 1px dashed #cbd5e1; padding: 8px; margin-top: 12px; }
+</style>
+</head>
+<body>
+<h1>晚挂的 ShadowRoot</h1>
+
+<p id="page-line">页面正文：审核不通过</p>
+
+<!-- 宿主在**初始 HTML** 里就存在（所以首扫时它还没有 shadowRoot），
+     随后延迟 500ms 才 attachShadow + 填内容 —— 模拟"自定义元素晚升级"
+     （bundle 异步加载后才 customElements.define，在 connectedCallback 里 attachShadow）。
+     关键：attachShadow **不产生任何 MutationRecord**，所以文档树观察器永远看不到它，
+     只有"定期补挂 ShadowRoot"才能发现。 -->
+<div id="late-host"></div>
+
+<script>
+  setTimeout(function () {
+    var host = document.getElementById('late-host');
+    var sr = host.attachShadow({ mode: 'open' });
+    sr.innerHTML = '<p id="shadow-line">影子里的审核不通过</p>';
+  }, 500);
+</script>
+</body>
+</html>

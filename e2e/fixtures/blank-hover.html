@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>空白区域悬停 · 不应弹出别处命中的备注</title>
+<style>
+  body { font-family: "Microsoft YaHei", sans-serif; margin: 20px; }
+  #hit-line { font-size: 15px; }
+  /* 大片**没有文本**的区域：caret 两条 API 都返回 null → 会落到几何回退。
+     与上方命中词垂直相距数百像素，任何"最近命中"都远超合理容差。 */
+  #blank-area {
+    height: 620px; margin-top: 28px;
+    background: repeating-linear-gradient(45deg, #f8fafc, #f8fafc 12px, #eef2f7 12px, #eef2f7 24px);
+    border: 1px dashed #cbd5e1;
+  }
+</style>
+</head>
+<body>
+<h1>空白区域悬停不应弹备注</h1>
+
+<p id="hit-line">这条记录是审核不通过的。</p>
+<p id="hit-line-2">另一条也是审核不通过，用来确认同页有多个命中时行为一致。</p>
+
+<div id="blank-area"></div>
+</body>
+</html>

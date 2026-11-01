@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>冷门极端场景体检</title>
+<style>body{font:14px/1.7 system-ui;margin:16px;max-width:1000px}
+h2{font-size:14px;margin:18px 0 6px;color:#555}
+.p{border:1px solid #eee;padding:6px 8px;margin:4px 0;border-radius:4px}
+table{border-collapse:collapse;margin:6px 0}td,th{border:1px solid #ccc;padding:4px 8px}
+svg{border:1px solid #eee}</style></head>
+<body>
+<h1>冷门极端场景（关键词：审核不通过 / 甲＋名称 / 审核 / BUG / a* / 空）</h1>
+
+<h2>1 隐藏行内元素夹在词中间：审核&lt;span display:none&gt;XX&lt;/span&gt;不通过
+  → 视觉上就是"审核不通过"，期望**命中**</h2>
+<p class="p" id="w1">审核<span style="display:none">XX</span>不通过</p>
+
+<h2>2 零宽字符夹在词中间：审核\u200b不通过 → 观察（视觉上无间隙）</h2>
+<p class="p" id="w2">审核&#8203;不通过</p>
+
+<h2>3 &lt;template&gt; 里的词 → 期望**不**命中（未渲染）</h2>
+<template id="tpl"><p>审核不通过（模板内，不该命中）</p></template>
+<p class="p" id="w3">正文占位</p>
+
+<h2>4 SVG &lt;text&gt; 里的词 → 期望命中</h2>
+<svg id="w4" width="260" height="30"><text x="4" y="20">审核不通过</text></svg>
+
+<h2>5 &lt;details&gt; 未展开里的词 → 观察（不可见）</h2>
+<details id="w5"><summary>展开看看</summary><p>审核不通过（折叠内）</p></details>
+
+<h2>6 两个**完全相同**的表格（同表头同数据）→ 期望：各算一次，共 2 次，不得重复计数</h2>
+<table id="dup1"><thead><tr><th>名称</th></tr></thead><tbody><tr><td>甲</td></tr></tbody></table>
+<table id="dup2"><thead><tr><th>名称</th></tr></thead><tbody><tr><td>甲</td></tr></tbody></table>
+
+<h2>7 重叠关键词：「审核」与「审核不通过」同时配置 → 期望不重复上色（长词优先）</h2>
+<p class="p" id="w7">审核不通过</p>
+
+<h2>8 表格 caption / tfoot → 上下格是否照常</h2>
+<table id="w8">
+  <caption>这是标题</caption>
+  <tfoot><tr><td>合计</td><td>0</td></tr></tfoot>
+  <thead><tr><th>名称</th><th>备注</th></tr></thead>
+  <tbody><tr><td>甲</td><td>x</td></tr></tbody>
+</table>
+
+<h2>9 contenteditable 区域内的词 → 默认策略观察</h2>
+<div class="p" id="w9" contenteditable="true">审核不通过（可编辑区）</div>
+
+<h2>10 iframe 内的词 → 期望命中（all_frames）</h2>
+<iframe id="w10" src="iframe-inner.html" width="320" height="60"></iframe>
+
+<h2>11 动态：命中后把节点删掉 / 改写 → 期望不残留</h2>
+<p class="p" id="w11">审核不通过（稍后会被删）</p>
+<button id="btn-del">删掉上面那段</button>
+
+<h2>12 危险配置：正则 a* / 空字符串 / 非法正则 [ 都不会被扫描到（在正文里不出现）
+  → 真正要验的是"**页面不能卡死、扩展不能崩**"</h2>
+<p class="p" id="w12">正文：这里没有可匹配内容，上面那三个关键词用于验证引擎健壮性。</p>
+
+<script>
+  document.getElementById('btn-del').addEventListener('click', () => {
+    const el = document.getElementById('w11');
+    if (el) el.remove();
+  });
+</script>
+</body>
+</html>

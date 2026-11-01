@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>抓取 · 单元格多图 / 图文混排</title>
+<style>
+  body { font-family: "Microsoft YaHei", sans-serif; margin: 20px; color: #222; }
+  h1 { font-size: 18px; }
+  h2 { font-size: 14px; color: #475569; margin: 22px 0 6px; }
+  table { border-collapse: collapse; margin-top: 8px; }
+  td, th { border: 1px solid #cbd5e1; padding: 6px 12px; font-size: 13px; vertical-align: top; }
+  /* 真实站点的截图列表：一行缩略图 = inline-block + vertical-align:middle，
+     而且每张图高度不同（这正是把"一行 4 图"误判成"一列 4 行"的原因） */
+  .inline-block { display: inline-block; }
+  .img-list { list-style: none; margin: 0; padding: 0; }
+  .img-list-item { display: inline-block; vertical-align: middle; margin-right: 10px; }
+  .el-image { display: inline-block; }
+  .el-image__inner { display: block; width: 54px; object-fit: cover; }
+</style>
+</head>
+<body>
+<h1>抓取：一格多图（应保持"一行多图"）/ 图文混排（应保住原顺序）</h1>
+
+<!-- 用户实测结构（已脱敏）：应用截图 = 一个单元格里 4 张缩略图 -->
+<h2>① 一格四图（ul &gt; li 缩略图，同一行、高矮不一）</h2>
+<table id="tbl-multi-img">
+  <tbody>
+    <tr>
+      <td class="lbl" id="lbl-hit">应用名称</td>
+      <td id="hit-cell">审核不通过</td>
+    </tr>
+    <tr>
+      <td class="lbl">应用截图</td>
+      <td colspan="8" id="imgs-cell">
+        <div class="inline-block" app-id="app-0001">
+          <ul class="img-list">
+            <li class="img-list-item"><div class="el-image img"><img class="el-image__inner" src="pixel.png" alt="截图1" style="height:54px"></div></li>
+            <li class="img-list-item"><div class="el-image img"><img class="el-image__inner" src="pixel.png" alt="截图2" style="height:72px"></div></li>
+            <li class="img-list-item"><div class="el-image img"><img class="el-image__inner" src="pixel.png" alt="截图3" style="height:48px"></div></li>
+            <li class="img-list-item"><div class="el-image img"><img class="el-image__inner" src="pixel.png" alt="截图4" style="height:64px"></div></li>
+          </ul>
+        </div>
+      </td>
+    </tr>
+    <tr>
+      <td class="lbl">备注说明</td>
+      <td id="mixed-cell">先看文字<div class="block-img"><img src="pixel.png" alt="混合图" style="height:40px"></div>再看结尾文字</td>
+    </tr>
+  </tbody>
+</table>
+<p class="note">
+  预期：①「应用截图」的多张图保持在**同一行**（不是一列 4 行）；
+  ②「备注说明」的内容按网页顺序：先看文字 → 图 → 再看结尾文字。
+</p>
+</body>
+</html>

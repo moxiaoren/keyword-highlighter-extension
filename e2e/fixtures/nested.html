@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>嵌套表格命中体检</title>
+<style>body{font:14px/1.7 system-ui;margin:16px}table{border-collapse:collapse;margin:6px 0}
+td,th{border:1px solid #ccc;padding:4px 8px}h2{font-size:14px;margin:18px 0 6px;color:#555}
+table table{border-color:#f0a;background:#fff7fd}</style></head>
+<body>
+<h1>单元格里再套表格（上下格组合：标题词「名称」＋核心词「甲」）</h1>
+
+<h2>R 外层一对 + 内层自带完整一对 → 期望：外层 1 + 内层 1 = 2（各算各的）</h2>
+<div id="caseR"><table id="outerR">
+  <thead><tr><th>名称</th></tr></thead>
+  <tbody><tr><td>甲
+    <table id="innerR"><thead><tr><th>名称</th></tr></thead>
+      <tbody><tr><td>甲</td></tr></tbody></table>
+  </td></tr></tbody>
+</table></div>
+
+<h2>S 内层只有「甲」、没有自己的表头 → 期望：只算外层 1（**不得**因外层表头把内层那个甲也算进来）</h2>
+<div id="caseS"><table id="outerS">
+  <thead><tr><th>名称</th></tr></thead>
+  <tbody><tr><td>
+    <table id="innerS"><tbody><tr><td>甲</td></tr></tbody></table>
+  </td></tr></tbody>
+</table></div>
+
+<h2>T 内层是**另一个表头**（「别的」+甲）→ 期望：不命中（列对不上，不得串用外层表头）</h2>
+<div id="caseT"><table id="outerT">
+  <thead><tr><th>名称</th></tr></thead>
+  <tbody><tr><td>
+    <table id="innerT"><thead><tr><th>别的</th></tr></thead>
+      <tbody><tr><td>甲</td></tr></tbody></table>
+  </td></tr></tbody>
+</table></div>
+
+<h2>U 三级嵌套（外层 名称/甲；内层再套内层）→ 期望：外层 1，内层 1</h2>
+<div id="caseU"><table id="outerU">
+  <thead><tr><th>名称</th></tr></thead>
+  <tbody><tr><td>甲
+    <table id="innerU"><thead><tr><th>名称</th></tr></thead>
+      <tbody><tr><td>
+        <table id="innerU2"><tbody><tr><td>甲</td></tr></tbody></table>
+      </td></tr></tbody></table>
+  </td></tr></tbody>
+</table></div>
+
+<h2>V 外层**左右格**组合，且右格里套了表格 → 期望：右格（含内层表格的整格）仍按"包含关键词"命中 1 次</h2>
+<div id="caseV"><table id="outerV">
+  <tr><td>左标题</td><td>右格里只有内层表格：
+    <table id="innerV"><tbody><tr><td>乙</td></tr></tbody></table>
+  </td></tr>
+</table></div>
+</body>
+</html>

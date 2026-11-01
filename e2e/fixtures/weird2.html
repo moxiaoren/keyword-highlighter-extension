@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>冷门场景二：布局改写 / 虚拟滚动 / 跨 frame / 高亮被清</title>
+<style>
+  body{font:14px/1.7 system-ui;margin:16px;max-width:1020px}
+  h2{font-size:14px;margin:18px 0 6px;color:#555}
+  .p{border:1px solid #eee;padding:6px 8px;margin:4px 0;border-radius:4px}
+  /* ① 把一个**真 <table>** 用 CSS 改成 flex 布局（响应式表常见的改写手法） */
+  #flexTbl, #flexTbl thead, #flexTbl tbody, #flexTbl tr { display: block; }
+  #flexTbl tr { display: flex; gap: 8px; }
+  #flexTbl th, #flexTbl td { flex: 1 1 0; border: 1px solid #ddd; padding: 4px 8px; }
+  /* ② 虚拟滚动容器 */
+  #vhead, #vlist { display: table; width: 100%; border-collapse: collapse; }
+  #vhead .row, #vlist .row { display: table-row; }
+  #vhead .cell, #vlist .cell { display: table-cell; border: 1px solid #eee; padding: 3px 8px; }
+  #vhead { border: 1px solid #ddd; border-bottom: 0; background: #fafafa; font-weight: 600; }
+  #vlist { height: 120px; overflow-y: auto; border: 1px solid #ddd; }
+  #vlist .row b { color: #888; font-weight: 400; margin-right: 6px; }
+</style>
+</head>
+<body>
+<h1>冷门场景二（关键词：审核不通过 / 甲＋名称）</h1>
+
+<h2>1 真 &lt;table&gt;，但 CSS 改成 flex 布局 → 上下格是否还按 DOM 列语义命中</h2>
+<table id="flexTbl">
+  <thead><tr><th>名称</th><th>备注</th></tr></thead>
+  <tbody><tr><td>甲</td><td>x</td></tr></tbody>
+</table>
+
+<h2>2 虚拟滚动：只渲染可视行，滚动时换一批行（新行里也有「甲」）</h2>
+<div id="vhead"><div class="row"><span class="cell">名称</span><span class="cell">备注</span></div></div>
+<div id="vlist"><div class="row">（滚动试试）</div></div>
+
+<h2>3a 跨 frame 的上下格：表头「名称」在父页，数据「甲」在 **iframe 内部**
+  → 期望：**不**命中（跨文档不该配成一对）</h2>
+<table id="crossTbl">
+  <thead><tr><th>名称</th></tr></thead>
+  <tbody><tr><td><iframe id="frA" src="frame-data.html" width="220" height="46"></iframe></td></tr></tbody>
+</table>
+
+<h2>3b 整张表都在 iframe 内部（表头+数据同文档）→ 期望：命中</h2>
+<iframe id="frB" src="frame-table.html" width="320" height="110"></iframe>
+
+<h2>4 页面自己调用 CSS.highlights.clear() → 观察我们的高亮会不会被一起清掉、能否恢复</h2>
+<p class="p" id="w4">审核不通过（这段会被 clear 波及）</p>
+<button id="btn-clear">模拟页面调用 CSS.highlights.clear()</button>
+<button id="btn-mutate">制造一次 DOM 变动（触发重扫）</button>
+
+<script>
+  /* ② 极简虚拟滚动：滚动位置决定渲染哪 50 行 */
+  (function () {
+    const TOTAL = 500, VISIBLE = 50;
+    const box = document.getElementById('vlist');
+    function render() {
+      const start = Math.floor(box.scrollTop / 24) * 2;
+      const html = [];
+      for (let i = 0; i < VISIBLE; i++) {
+        const n = start + i;
+        html.push('<div class="row"><span class="cell"><b>#' + n + '</b>' + (n % 5 === 0 ? '甲' : '普通行') + '</span><span class="cell">备注' + n + '</span></div>');
+      }
+      box.innerHTML = html.join('');
+    }
+    box.addEventListener('scroll', render);
+    box.style.height = '120px';
+    render();
+    window.__vrender = render;
+  })();
+  document.getElementById('btn-clear').addEventListener('click', () => {
+    if (window.CSS && CSS.highlights) CSS.highlights.clear();
+  });
+  document.getElementById('btn-mutate').addEventListener('click', () => {
+    const d = document.createElement('div');
+    d.textContent = '（触发重扫）';
+    document.body.appendChild(d);
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R4 独立装置 · K75（假表格收窄 / OCR 真命中 / 默认关）</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  table { border-collapse: collapse; margin: 8px 0; }
+  th, td { border: 1px solid #c8ced8; padding: 4px 8px; font-size: 14px; }
+  .fakerow { display: flex; gap: 8px; margin: 6px 0; }
+  .fakerow > div { border: 1px solid #c8ced8; padding: 4px 8px; min-width: 120px; }
+  h1 { font-size: 18px; }
+</style>
+</head>
+<body>
+<h1>标题里含丙式词（不在任何行容器里）</h1>
+
+<!-- 真表格：标题那处命中**不许**越界抓到这里的值 -->
+<table id="r4k75real">
+  <tbody>
+    <tr><td>驳回原因</td><td>真表格值</td></tr>
+    <tr><td>运营备注</td><td>高价值</td></tr>
+  </tbody>
+</table>
+
+<!-- div 假表格 ①（扁平 .row > label + value + hit）：命中**直接落在自己的格子**里 -->
+<div class="fakerow" id="r4k75plain">
+  <div class="lbl">驳回原因</div>
+  <div class="val">纯甲值</div>
+  <div class="hit">甲式词</div>
+</div>
+
+<!-- div 假表格 ②（同形状）：命中落在**命中格里的 `<span>`** 内（真实站点常见） -->
+<div class="fakerow" id="r4k75nested">
+  <div class="lbl">驳回原因</div>
+  <div class="val">纯乙值</div>
+  <div class="hit"><span>乙式词</span></div>
+</div>
+
+<!-- div 假表格 ③（命中在**两层**行内元素 `span > a` 里） -->
+<div class="fakerow" id="r4k75deep">
+  <div class="lbl">驳回原因</div>
+  <div class="val">纯庚值</div>
+  <div class="hit"><span><a href="#r4k75deep">庚式词</a></span></div>
+</div>
+
+<!-- div 假表格 ④（标签自己再嵌一层：`.row > .cell > span.lbl`，格子整段文本仍是标签） -->
+<div class="fakerow" id="r4k75nestlbl">
+  <div class="cell"><span class="lbl">驳回原因</span></div>
+  <div class="val">纯辛值</div>
+  <div class="hit">辛式词</div>
+</div>
+
+<!-- div 假表格 ⑤（**命中格内有 3 个子节点**，命中在最内层 span 里） -->
+<div class="fakerow" id="r4k75multi">
+  <div class="lbl">驳回原因</div>
+  <div class="val">纯子值</div>
+  <div class="hit">前 <b>中</b> <span>子式词</span></div>
+</div>
+
+<!-- div 假表格 ⑥（行容器 `display:contents`：DOM 上同一行、布局上没有盒子） -->
+<div class="fakerow" id="r4k75contents" style="display:contents">
+  <div class="lbl">驳回原因</div>
+  <div class="val">纯壬值</div>
+  <div class="hit"><span>壬式词</span></div>
+</div>
+
+<!-- 对照孪生行：与上面那行**逐节点同形**，只是**没有** `display:contents` -->
+<div class="fakerow" id="r4k75wrapctl">
+  <div class="lbl">驳回原因</div>
+  <div class="val">纯卯值</div>
+  <div class="hit"><span>卯式词</span></div>
+</div>
+
+<!-- 越界对照 ①：命中那一行**没有**标签（标签在下一行）⇒ 不许拿下一行的值 -->
+<div class="fakerow" id="r4k75other1">
+  <div class="val">隔壁行的值</div>
+  <div class="hit"><span>癸式词</span></div>
+</div>
+<div class="fakerow" id="r4k75other2">
+  <div class="lbl">驳回原因</div>
+  <div class="val">别行标签的值</div>
+</div>
+
+<!-- 退化形状：整行只有 **1 个元素子节点**（标签与命中同一格）⇒ 保守不抓，但不许报错、不许拿别行的值 -->
+<div class="fakerow" id="r4k75single">
+  <div class="cell">驳回原因 <span>丑式词</span></div>
+</div>
+
+<!-- body 直下裸文本（无行容器） -->
+<p id="r4k75bare">裸文本里的丁式词</p>
+
+</body>
+</html>

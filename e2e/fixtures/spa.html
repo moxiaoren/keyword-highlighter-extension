@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>SPA 列表 → 详情 · 真实测试装置</title>
+<style>
+  body { font-family: "Microsoft YaHei", sans-serif; margin: 20px; }
+  #app { border: 1px solid #cbd5e1; padding: 12px; }
+</style>
+</head>
+<body>
+<h1>SPA 列表 → 详情</h1>
+
+<!-- 列表页初始内容（含关键词，便于确认初始态是命中态） -->
+<div id="app">
+  <p id="list-line">列表页：审核不通过</p>
+  <a id="go-detail" href="#">去详情</a>
+</div>
+
+<!-- 供探针/用例调用：模拟 SPA 路由切换后的内容注入。
+     两种注入方式都要覆盖：
+       ① append：只替换容器子节点（document.body 保留）—— 绝大多数 SPA
+       ② replaceBody：整个 body 被替换掉（少数框架/老实现） -->
+<script>
+  window.__spaGo = function (mode, delayMs) {
+    history.pushState({ page: 'detail' }, '', '/detail/123');
+    setTimeout(function () {
+      var html = '<p id="detail-line">详情页：审核不通过</p>';
+      if (mode === 'replaceApp') {
+        document.getElementById('app').innerHTML = html;
+      } else if (mode === 'appendToApp') {
+        document.getElementById('app').insertAdjacentHTML('beforeend', html);
+      } else if (mode === 'replaceBody') {
+        var nb = document.createElement('body');
+        nb.innerHTML = html;
+        document.documentElement.replaceChild(nb, document.body);
+      }
+    }, delayMs == null ? 300 : delayMs);
+  };
+</script>
+</body>
+</html>

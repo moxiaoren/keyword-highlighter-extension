@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>R4 独立装置 · 嵌套表格抓取范围</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  table { border-collapse: collapse; margin: 8px 0; }
+  th, td { border: 1px solid #c8ced8; padding: 4px 8px; font-size: 14px; vertical-align: top; }
+  h2 { font-size: 15px; margin: 18px 0 6px; }
+  .inner td { background: #f6f8fb; }
+</style>
+</head>
+<body>
+<h1>R4 装置 · 嵌套表格抓取范围（自造，供 probe-k74-recheck.js 用）</h1>
+
+<!-- ① 三层嵌套：命中「甲词」在最内层的**值格**；每层都有「驳回原因」但值不同 ⇒ 能精确识别取到了哪一层 -->
+<h2>① 三层嵌套（scope 逐值）：驳回原因 = 外层驳回 / 中层驳回 / 内层驳回</h2>
+<table id="r4outer">
+  <tbody>
+    <tr><td>驳回原因</td><td>外层驳回</td></tr>
+    <tr><td>只在外层</td><td>外层独有</td></tr>
+    <tr><td>详情</td>
+      <td>
+        <table class="inner" id="r4mid">
+          <tbody>
+            <tr><td>驳回原因</td><td>中层驳回</td></tr>
+            <tr><td>中层独有</td><td>中层独有值</td></tr>
+            <tr><td>详情</td>
+              <td>
+                <table class="inner" id="r4inner">
+                  <tbody>
+                    <tr><td>驳回原因</td><td>内层驳回</td></tr>
+                    <tr><td>命中格</td><td>甲词</td></tr>
+                  </tbody>
+                </table>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- ② 同一外层行内外都命中 ⇒ auto 下必须合成一张卡（命中词只出现在表格里，标题里**不许**出现，
+     否则标题那处命中会走假表格路径、污染面板 —— R4 第一版就踩了这个坑） -->
+<h2>② 同一外层行里内外都命中（A2 聚合）</h2>
+<table id="r4same">
+  <tbody>
+    <tr><td>驳回原因</td><td>同行外层值</td></tr>
+    <tr><td>载体</td>
+      <td>
+        乙词
+        <table class="inner" id="r4sameInner">
+          <tbody><tr><td>命中格</td><td>乙词</td></tr></tbody>
+        </table>
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- ③ 标签在**表头行**（th）、值在数据行 ⇒ 走"整表兜底"的老路径 -->
+<h2>③ 标签在表头行（th）：供应商 / 备注</h2>
+<table id="r4header">
+  <thead><tr><th>供应商</th><th>备注</th></tr></thead>
+  <tbody>
+    <tr><td>华为技术有限公司</td><td>高价值</td></tr>
+    <tr><td>丙词</td><td>命中行</td></tr>
+  </tbody>
+</table>
+
+<!-- ④ 每行都重复「标签|值」；命中在第 3 行 ⇒ 行级优先只能取第 3 行的值 -->
+<h2>④ 每行重复「驳回原因|值」：命中行在第 3 行</h2>
+<table id="r4row">
+  <tbody>
+    <tr><td>驳回原因</td><td>第一行的值</td></tr>
+    <tr><td>驳回原因</td><td>第二行的值</td></tr>
+    <tr><td>驳回原因</td><td>第三行的值</td><td>丁词</td></tr>
+  </tbody>
+</table>
+
+<!-- ⑤ 标签格 rowspan=3（下一行同列没有标签格）⇒ 值必须收满 3 行 -->
+<h2>⑤ 标签 rowspan=3：值跨 3 行</h2>
+<table id="r4span">
+  <tbody>
+    <tr><td rowspan="3">驳回原因</td><td>跨行值1</td></tr>
+    <tr><td>跨行值2</td></tr>
+    <tr><td>跨行值3</td></tr>
+    <tr><td>尾部标签</td><td>尾部值（命中行：己词）</td></tr>
+  </tbody>
+</table>
+
+</body>
+</html>

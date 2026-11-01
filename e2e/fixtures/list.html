@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>列表页 · 真实测试装置</title>
+<style>
+  body { font-family: "Microsoft YaHei", sans-serif; margin: 20px; color: #222; }
+  h1 { font-size: 18px; }
+  h2 { font-size: 14px; color: #475569; margin: 22px 0 6px; }
+  table { border-collapse: collapse; margin-top: 8px; }
+  td, th { border: 1px solid #cbd5e1; padding: 6px 12px; font-size: 13px; vertical-align: top; }
+  th { background: #f1f5f9; }
+  .flexcell { display: flex; gap: 8px; }
+  .flexcell > div { background: #f8fafc; padding: 2px 6px; }
+</style>
+</head>
+<body>
+<h1>真实测试装置</h1>
+
+<!--
+  每个表格只服务一条断言，彼此不共享字段名，避免抓取块/组合词互相污染。
+
+  抓取块算法口径（`Fetch.collectRightBlock`，与旧版一致）：
+    · 从**标签格所在行**开始，标签右侧的格子也算该字段内容；
+    · 往下持续收集，直到"标签列有内容、且该行标签列右侧没有任何内容" → 下一个字段开始。
+-->
+
+<!-- ① 普通词 + 多行抓取 + flex 并排
+     按抓取块口径布置（与文档/旧版一致）：
+       · 标签格「驳回原因」用 rowspan=2 合并两行（右侧无内容）；
+       · 值格在**旁边一列**：第 1 行是多行（<br>），第 2 行是 flex 并排；
+       · 再下面一行标签列为空 → 继续；出现新内容行则收尾。
+     命中格：第 1 行第 3 列的「审核不通过」（k1）。 -->
+<h2>① 普通词 / 多行抓取 / flex 并排</h2>
+<table id="tbl">
+  <tbody id="tbody">
+    <tr>
+      <td colspan="2">资质类型</td>
+      <td>审核不通过</td>
+    </tr>
+    <tr>
+      <td rowspan="2">驳回原因</td>
+      <td>驳回原因</td>
+      <td>资质材料不清晰<br>请重新上传营业执照<img id="fetch-img" src="pixel.png" alt="营业执照扫描件"></td>
+    </tr>
+    <tr>
+      <td>运营备注</td>
+      <td><div class="flexcell"><div>高价值</div><div>需跟进</div></div></td>
+    </tr>
+    <tr>
+      <td>哨兵</td>
+      <td></td>
+      <td></td>
+    </tr>
+  </tbody>
+</table>
+<p class="note">
+  抓取块口径：标签格「驳回原因」的右侧格子 = 第 1 行「资质材料不清晰<br>请重新上传营业执照」（多行）
+  + 第 2 行「高价值 / 需跟进」（flex 并排，应合并为一行）。
+</p>
+
+<!-- ② 左右格组合词：左格「资质类型」→ 右格核心「资质A1 / 资质A2」 -->
+<h2>② 左右格组合词</h2>
+<table id="tbl-lr">
+  <tbody>
+    <tr>
+      <td>资质类型</td>
+      <td><span id="qual-a">资质A1</span> <span id="qual-b">资质A2</span></td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- ③ 仅抓取触发判据 -->
+<h2>③ 仅抓取触发判据（右格为「-」不显示；右格只有控件也不显示）</h2><table id="tbl-fetch">
+  <thead><tr><th>应用名称</th><th>包名</th></tr></thead>
+  <tbody>
+    <tr><td>空值应用</td><td>-</td></tr>
+    <tr><td>有值应用</td><td>com.foo.real</td></tr>
+    <tr><td>按钮应用</td><td><button class="el-button">编辑</button></td></tr>
+    <tr><td>操作列应用</td><td><div class="opt-col"><span class="operate">编辑</span><span>删除</span></div></td></tr>
+    <tr><td>伪链接应用</td><td><a class="el-link" href="javascript:;">删除</a></td></tr>
+    <tr><td>占位加按钮应用</td><td>- <button class="el-button">编辑</button></td></tr>
+    <tr><td>无值应用</td><td>无</td></tr>
+    <tr><td>占位加真内容应用</td><td>- 备注：需补材料</td></tr>
+  </tbody>
+</table>
+
+<!-- ④ 上下格（tb）组合词：表头列「是否刚需」× 数据行「否」 -->
+<h2>④ 上下格组合词（仅表头生效）</h2>
+<table id="tbl-tb">
+  <thead><tr><th>名称</th><th>是否刚需</th></tr></thead>
+  <tbody>
+    <tr><td>甲应用</td><td>否</td></tr>
+    <tr><td>是否刚需</td><td>普通值</td></tr>
+  </tbody>
+</table>
+
+<h2>⑤ 正文（备注卡片 / 悬停）</h2>
+<p id="tail">尾注：这一段正文用来验证备注卡片与悬停 tooltip（不含被测关键词）。</p>
+<p id="boundary-host">（全词+正则边界用例会往这里插文本）</p>
+
+<h2>⑥ 原始文字颜色保留（默认文字色不得覆盖网页自身的颜色）</h2><!-- 网页自己标红的字：命中后必须**仍然是红的**（色差 ΔE≈51，分得开 → 保留原色） -->
+<p id="redline">这一行原本是<span style="color:#e53935">红色文字，里面也有 审核不通过 这个词</span>。</p>
+<!-- 白字叠橙底：亮度接近但颜色分得开（ΔE≈88）→ 同样保留（"不显"的本质是颜色分不开） -->
+<p id="whiteline">这一行是<span style="color:#ffffff">橙底上的白字，含 审核不通过</span>，颜色分得开就保留。</p>
+<!-- 原色与默认底色(#ff9500)几乎同一个颜色（ΔE≈0）：必须兜底成看得清的颜色 -->
+<p id="invisline">这一行是<span style="color:#ff9500">橙底上的橙字，含 审核不通过</span>，分不开就得兜底。</p>
+<!-- 近似橙（ΔE≈12）：也分不开，同样要兜底 -->
+<p id="nearline">这一行是<span style="color:#ffa733">橙底上的近似橙字，含 审核不通过</span>，也得分不开。</p>
+</body>
+</html>

@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>上下格匹配结构适应性装置</title>
+<style>body{font:14px/1.6 system-ui;margin:16px}table{border-collapse:collapse;margin:8px 0}td,th{border:1px solid #ccc;padding:4px 8px}h2{font-size:15px;margin:18px 0 4px}</style>
+</head>
+<body>
+<h1>上下格（tb）匹配：各种表格结构</h1>
+<p>每个结构里都有表头「名称」与数据「甲」。关键词配置：标题词=名称、核心词=甲、方向=上下格。</p>
+
+<h2>① 标准：thead/th + tbody/td</h2>
+<table id="t1">
+  <thead><tr><th>名称</th><th>备注</th></tr></thead>
+  <tbody><tr><td>甲</td><td>x</td></tr><tr><td>乙</td><td>y</td></tr></tbody>
+</table>
+
+<h2>② 表头用 td（thead 里放 td）</h2>
+<table id="t2">
+  <thead><tr><td>名称</td><td>备注</td></tr></thead>
+  <tbody><tr><td>甲</td><td>x</td></tr></tbody>
+</table>
+
+<h2>③ 没有 thead，首行是 th（全在 tbody）</h2>
+<table id="t3">
+  <tbody><tr><th>名称</th><th>备注</th></tr><tr><td>甲</td><td>x</td></tr></tbody>
+</table>
+
+<h2>④ 没有 thead/tbody，首行也是 td</h2>
+<table id="t4">
+  <tr><td>名称</td><td>备注</td></tr>
+  <tr><td>甲</td><td>x</td></tr>
+</table>
+
+<h2>⑤ 首行是「合并标题行」，第二行才是表头（真实站点很常见）</h2>
+<table id="t5">
+  <tr><td colspan="2">某某申请表</td></tr>
+  <tr><th>名称</th><th>备注</th></tr>
+  <tr><td>甲</td><td>x</td></tr>
+</table>
+
+<h2>⑥ 表头表 + 数据表分开（el-table 那种两块）</h2>
+<div id="t6wrap">
+  <table id="t6head"><thead><tr><th>名称</th><th>备注</th></tr></thead></table>
+  <table id="t6body"><tbody><tr><td>甲</td><td>x</td></tr></tbody></table>
+</div>
+
+<h2>⑦ 假表格（div 行容器，无 table）</h2>
+<div id="t7" class="grid">
+  <div class="row"><span class="cell">名称</span><span class="cell">备注</span></div>
+  <div class="row"><span class="cell">甲</span><span class="cell">x</span></div>
+</div>
+<style>.grid{display:table}.grid .row{display:table-row}.grid .cell{display:table-cell;border:1px solid #ccc;padding:4px 8px}</style>
+
+<h2>⑧ 首行合并标题 + 第二行表头用 td（不是 th）</h2>
+<table id="t8">
+  <tr><td colspan="2">某某申请表</td></tr>
+  <tr><td>名称</td><td>备注</td></tr>
+  <tr><td>甲</td><td>x</td></tr>
+</table>
+
+<h2>⑨ 多行表头（两级），表头在 thead 里两行</h2>
+<table id="t9">
+  <thead>
+    <tr><th rowspan="2">名称</th><th colspan="2">明细</th></tr>
+    <tr><th>甲</th><th>乙</th></tr>
+  </thead>
+  <tbody><tr><td>甲</td><td>x</td><td>y</td></tr></tbody>
+</table>
+
+<h2>⑩ 表头文字在嵌套 span 里</h2>
+<table id="t10">
+  <thead><tr><th><span class="hd">名称</span></th><th>备注</th></tr></thead>
+  <tbody><tr><td>甲</td><td>x</td></tr></tbody>
+</table>
+</body>
+</html>

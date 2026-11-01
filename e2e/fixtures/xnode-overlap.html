@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>跨节点重叠 · 裁决</title>
+<style>
+  body { font-family: "Microsoft YaHei", sans-serif; margin: 20px; color: #222; font-size: 16px; }
+  h1 { font-size: 18px; }
+  h2 { font-size: 14px; color: #475569; margin: 22px 0 6px; }
+  #ov { font-size: 20px; letter-spacing: 1px; }
+  .note { color: #64748b; font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>跨文本节点命中的重叠裁决</h1>
+
+<!--
+  装置口径：`审<span>核</span>不通过` —— 一行内被 <span> 拆成三个文本节点。
+    关键词 A = 「审核不」→ 跨节点命中，起点在 span **前**的文本节点「审」
+    关键词 B = 「核不」  → 跨节点命中，起点在 span **内**的文本节点「核」
+  两者在「核」「不」两段上**视觉重叠**，但起点节点不同。
+  旧裁决层只比"起始节点 + 区间" → 判不出冲突 → 两条都被渲染（同一段文字被两个高亮组叠着涂）。
+  现在应只渲染**一条**，且按"长匹配优先"胜出的是「审核不」。
+-->
+<h2>① 两条跨节点命中互相重叠（起点在不同节点）</h2>
+<p id="ov">审<span>核</span>不通过</p>
+<p class="note">预期：只出现 **1** 条高亮，文本为「审核不」（长匹配优先）；不得出现两条叠加。</p>
+</body>
+</html>

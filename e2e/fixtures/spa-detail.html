@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>SPA 详情页（可直接加载 = 刷新路径）· 真实测试装置</title>
+<style>
+  body { font-family: "Microsoft YaHei", sans-serif; margin: 20px; }
+  #app { border: 1px solid #cbd5e1; padding: 12px; }
+</style>
+</head>
+<body>
+<h1>SPA 详情页</h1>
+
+<!-- 直接用这个 URL 加载（= 用户手动刷新的等价路径）必须能命中：
+     它锁住"刷新就好"的那一半行为不被改坏。 -->
+<div id="app">
+  <p id="detail-line">详情页：审核不通过</p>
+</div>
+</body>
+</html>

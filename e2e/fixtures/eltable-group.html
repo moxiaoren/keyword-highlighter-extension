@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>el-table 多级表头分表结构 · 真实测试装置</title>
+<style>
+  body { font-family: "Microsoft YaHei", sans-serif; margin: 20px; }
+  .el-table { border: 1px solid #cbd5e1; width: 720px; }
+  .el-table__header-wrapper table, .el-table__body-wrapper table { border-collapse: collapse; width: 100%; }
+  .el-table__header-wrapper th, .el-table__body-wrapper td {
+    border: 1px solid #e2e8f0; padding: 6px 10px; font-size: 13px;
+  }
+  .el-table__header-wrapper th { background: #f8fafc; }
+  /* 真实 el-table 里两张表也都在 DOM 中（表头表 + 数据表），视觉上拼成一张 */
+  .el-table__header-wrapper { position: static; }
+  .el-table__body-wrapper { position: static; }
+</style>
+</head>
+<body>
+<h1>el-table 多级表头（thead 两行）· 表头表 + 数据表</h1>
+
+<!-- 关键结构：表头表「纯 thead、无 tbody」且 thead 有 **两行**（class="is-group"）。
+     命中列标题的那一行是**下层**行 —— 这正是旧 dataRows 把上层表头行误当数据行、
+     导致跨表定位被短路、上下格组合词整列失效的触发条件。 -->
+<div class="el-table el-table--fit el-table--border el-table--group el-table--enable-row-hover">
+  <div class="el-table__header-wrapper">
+    <table class="el-table__header">
+      <thead class="is-group has-gutter">
+        <tr>
+          <th colspan="2" class="col-group">基本信息</th>
+          <th colspan="2" class="col-group">准入信息</th>
+        </tr>
+        <tr>
+          <th class="col_1">应用名称</th>
+          <th class="col_2">包名</th>
+          <th class="col_3">是否刚需</th>
+          <th class="col_4">备注</th>
+        </tr>
+      </thead>
+    </table>
+  </div>
+  <div class="el-table__body-wrapper is-scrolling-none" style="height:120px">
+    <table class="el-table__body">
+      <tbody>
+        <!-- 第 1 行：第 3 列（是否刚需）是**应命中**的格；第 4 列（备注）是同词诱饵，**不该命中** -->
+        <tr class="el-table__row">
+          <td class="col_1">夸夸盒</td>
+          <td class="col_2">com.aaa.real</td>
+          <td class="col_3" id="tb-target">否</td>
+          <td class="col_4" id="tb-decoy">否</td>
+        </tr>
+        <tr class="el-table__row">
+          <td class="col_1">网盘助手</td>
+          <td class="col_2">com.bbb.app</td>
+          <td class="col_3">是</td>
+          <td class="col_4">-</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+</body>
+</html>

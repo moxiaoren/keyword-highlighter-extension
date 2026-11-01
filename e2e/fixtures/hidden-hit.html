@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>隐藏容器里的词不该命中</title>
+<style>
+  body { font-family: "Microsoft YaHei", sans-serif; margin: 20px; color: #222; }
+  h1 { font-size: 18px; }
+  h2 { font-size: 14px; color: #475569; margin: 20px 0 6px; }
+  .note { color: #64748b; font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>隐藏容器里的关键词**不该**命中（用户实测：页面上看不见却被高亮）</h1>
+
+<h2>① 可见的（应命中 1 处）</h2>
+<p id="vis">状态：审核不通过</p>
+
+<h2>② 自己 display:none（应 0 处）</h2>
+<div id="hid" style="display:none"><p>状态：审核不通过</p></div>
+
+<h2>③ **祖先** display:none，中间还隔了两层（应 0 处）—— 用户实际遇到的就是这种</h2>
+<div id="hid-nested" style="display:none">
+  <div><section><p>状态：审核不通过</p></section></div>
+</div>
+
+<h2>④ visibility:hidden（应 0 处）</h2>
+<div id="hid-vis" style="visibility:hidden"><p>状态：审核不通过</p></div>
+
+<h2>⑤ hidden 属性（应 0 处）</h2>
+<div id="hid-attr" hidden><p>状态：审核不通过</p></div>
+
+<h2>⑥ 取巧：visibility:hidden 的祖先里，后代自己 visibility:visible（**应命中**）</h2>
+<div id="re-visible-wrap" style="visibility:hidden">
+  <p id="re-visible" style="visibility:visible">状态：审核不通过</p>
+</div>
+
+<p class="note">判据：不渲染（display:none / content-visibility:hidden / hidden）→ 整棵子树剪掉；
+visibility:hidden → 只跳过自己，后代用 visible 可以把自己重新显示出来。</p>
+</body>
+</html>

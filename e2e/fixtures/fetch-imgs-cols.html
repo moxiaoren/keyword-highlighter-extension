@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>抓取 · 占位/最新版本/历史版本（多列图片）</title>
+<style>
+  body { font-family: "Microsoft YaHei", sans-serif; margin: 20px; color: #222; }
+  h1 { font-size: 18px; }
+  h2 { font-size: 14px; color: #475569; margin: 22px 0 6px; }
+  table { border-collapse: collapse; margin-top: 8px; }
+  td, th { border: 1px solid #cbd5e1; padding: 6px 12px; font-size: 13px; vertical-align: top; }
+  th { background: #f1f5f9; }
+  img { width: 40px; height: 30px; vertical-align: middle; margin-right: 4px; }
+  .note { color: #64748b; font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>抓取：图片行的两种形态（用户给的结构原样复刻）</h1>
+
+<!-- 用户给的结构（真实页面里"历史版本为空"那一格显示的是计数 0）：
+       占位    最新版本      历史版本
+       截图    图一图二      0
+       截图    图一图二      图一图二图三
+     命中格（审核不通过）与截图同表，便于抓取。 -->
+<h2>① 表头「最新版本 / 历史版本」+ 两行「截图」（第一行历史版本是 0）</h2>
+<table id="tbl-ver">
+  <thead>
+    <tr><th>占位</th><th>最新版本</th><th>历史版本</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>审核不通过</td>
+      <td>附注</td>
+      <td>备注</td>
+    </tr>
+    <tr>
+      <td>截图</td>
+      <td><img src="pixel.png" alt="新1"><img src="pixel.png" alt="新2"></td>
+      <td>0</td>
+    </tr>
+    <tr>
+      <td>截图</td>
+      <td><img src="pixel.png" alt="新1"><img src="pixel.png" alt="新2"></td>
+      <td><img src="pixel.png" alt="旧1"><img src="pixel.png" alt="旧2"><img src="pixel.png" alt="旧3"></td>
+    </tr>
+  </tbody>
+</table>
+<p class="note">
+  预期：字段「截图」应把两个版本列的图都抓到；第一行历史版本那个 0（＝没有图）**不该**变成画面里一个孤零零的单元格。
+</p>
+
+<h2>② 只有图片、没有任何文字的单元格（仅图片）</h2>
+<table id="tbl-imgonly">
+  <tbody>
+    <tr><td>应用名称</td><td>审核不通过</td></tr>
+    <tr><td>应用截图</td><td><img src="pixel.png" alt="图一"><img src="pixel.png" alt="图二"></td></tr>
+  </tbody>
+</table>
+<p class="note">预期：仅图片的字段也要能抓到并展示（现在可能被判成"没有内容"）。</p>
+</body>
+</html>

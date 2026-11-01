@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>极端场景体检</title>
+<style>
+  body{font:14px/1.7 system-ui;margin:16px;max-width:1000px}
+  h2{font-size:14px;margin:18px 0 6px;color:#555}
+  table{border-collapse:collapse;margin:6px 0}
+  td,th{border:1px solid #ccc;padding:4px 8px}
+  .p{border:1px solid #eee;padding:6px 8px;margin:4px 0;border-radius:4px}
+</style></head>
+<body>
+<h1>极端场景体检（关键词：审核不通过 / 甲＋名称）</h1>
+
+<h2>A 深层嵌套拆词：审&lt;b&gt;&lt;i&gt;核&lt;/i&gt;&lt;/b&gt;不通过 → 期望命中</h2>
+<p class="p" id="cA">审<b><i>核</i></b>不通过</p>
+
+<h2>B 前面有空 span：&lt;span&gt;&lt;/span&gt;审核不通过 → 期望命中</h2>
+<p class="p" id="cB"><span></span>审核不通过</p>
+
+<h2>C 中间夹空 span：审核&lt;span&gt;&lt;/span&gt;不通过 → 期望命中</h2>
+<p class="p" id="cC">审核<span></span>不通过</p>
+
+<h2>D 中间夹 &lt;br&gt;：审核&lt;br&gt;不通过 → 期望<b>不</b>命中（视觉上断行）</h2>
+<p class="p" id="cD">审核<br>不通过</p>
+
+<h2>E 跨块级元素：&lt;div&gt;审核&lt;/div&gt;&lt;div&gt;不通过&lt;/div&gt; → 期望<b>不</b>命中</h2>
+<div class="p" id="cE"><div>审核</div><div>不通过</div></div>
+
+<h2>F 首字独立：&lt;span&gt;审核&lt;/span&gt;不通过 → 期望命中</h2>
+<p class="p" id="cF"><span>审核</span>不通过</p>
+
+<h2>G 尾随空 span：审核不通过&lt;span&gt;&lt;/span&gt; → 期望命中</h2>
+<p class="p" id="cG">审核不通过<span></span></p>
+
+<h2>H 同一段三次出现 → 期望 3 个命中</h2>
+<p class="p" id="cH">审核不通过 / 审核不通过 / 审核不通过</p>
+
+<h2>I emoji 夹在词中间：审核😀不通过 → 期望<b>不</b>命中；审核不通过😀 → 期望命中且高亮正确</h2>
+<p class="p" id="cI1">审核😀不通过</p>
+<p class="p" id="cI2">审核不通过😀 后面还有字</p>
+
+<h2>J script / style / 注释里的关键词 → 期望<b>不</b>命中</h2>
+<script>var x = "审核不通过";</script>
+<style>/* 审核不通过 */</style>
+<p class="p" id="cJ">正文（上面 script/style 里不应命中）</p>
+
+<h2>K 输入控件里的关键词 → 期望<b>不</b>命中（可编辑区跳过）</h2>
+<p class="p" id="cK"><input value="审核不通过"> <textarea>审核不通过</textarea></p>
+
+<h2>L Shadow DOM 里的关键词 → 期望命中（shadowDOMEnabled 默认开）</h2>
+<div id="cL"></div>
+
+<h2>M 上下格：表头带 colspan（列错位）→ 观察是否命中</h2>
+<table id="tM">
+  <tr><th colspan="2">名称</th><th>备注</th></tr>
+  <tr><td>甲</td><td>x</td><td>y</td></tr>
+</table>
+
+<h2>M2 上下格：标题词在 colspan 之后（真正的列错位）→ 观察是否命中</h2>
+<table id="tM2">
+  <tr><th colspan="2">其它</th><th>名称</th></tr>
+  <tr><td>a</td><td>b</td><td>甲</td></tr>
+</table>
+
+<h2>N 上下格：分节表头（表头行在中间）→ 观察第二段是否命中</h2>
+<table id="tN">
+  <tr><th>名称</th><th>备注</th></tr>
+  <tr><td>乙</td><td>x</td></tr>
+  <tr><th>名称</th><th>备注</th></tr>
+  <tr><td>甲</td><td>y</td></tr>
+</table>
+
+<h2>O 上下格：单元格里再套 div/span → 期望命中</h2>
+<table id="tO">
+  <thead><tr><th><span>名称</span></th><th>备注</th></tr></thead>
+  <tbody><tr><td><div><span>甲</span></div></td><td>x</td></tr></tbody>
+</table>
+
+<h2>P 上下格：表格里嵌套表格 → 外层列应命中，内层不串</h2>
+<table id="tP">
+  <thead><tr><th>名称</th><th>备注</th></tr></thead>
+  <tbody><tr><td>甲</td><td><table><tr><td>内层</td><td>内层2</td></tr></table></td></tr></tbody>
+</table>
+
+<h2>Q 大量同词（500 次）→ 期望全部命中且不卡</h2>
+<p class="p" id="cQ"></p>
+
+<script>
+  // L: Shadow DOM
+  (function () {
+    const host = document.getElementById('cL');
+    const sr = host.attachShadow({ mode: 'open' });
+    sr.innerHTML = '<p>影子里的 审核不通过</p>';
+  })();
+  // Q: 500 次
+  document.getElementById('cQ').textContent = new Array(500).fill('审核不通过').join(' ');
+</script>
+</body>
+</html>

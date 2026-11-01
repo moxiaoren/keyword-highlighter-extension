@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>灯箱相册 · 同格/异格</title>
+<style>
+  body { font-family: "Microsoft YaHei", sans-serif; margin: 20px; color: #222; }
+  h1 { font-size: 18px; }
+  h2 { font-size: 14px; color: #475569; margin: 22px 0 6px; }
+  table { border-collapse: collapse; margin-top: 8px; }
+  td, th { border: 1px solid #cbd5e1; padding: 6px 12px; font-size: 13px; vertical-align: top; }
+  th { background: #f1f5f9; }
+  img { display: inline-block; width: 28px; height: 28px; vertical-align: middle; margin-left: 4px; }
+  .note { color: #64748b; font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>灯箱相册：相册只按「同一个表格单元格」归组</h1>
+
+<!--
+  装置口径：
+    · 命中格在第 1 行第 3 列「审核不通过」（配置里的 k1，note + fetchLabels 驳回原因|运营备注）；
+    · 「驳回原因」的值格里有 **两张图**（甲图 / 乙图）→ 同一个单元格 → 应识别为相册（上一张/下一张可用）；
+    · 「运营备注」的值格里有 **一张图**（丙图）→ 另一个单元格 → 单张（上一张/下一张置灰）。
+  这样一条笔记里同时覆盖"同格两张"和"异格各一张"，正好对应用户口径。
+-->
+<h2>① 同格两张图 / 异格一张图</h2>
+<table id="tbl-lb">
+  <tbody>
+    <tr>
+      <td colspan="2">资质类型</td>
+      <td>审核不通过</td>
+    </tr>
+    <tr>
+      <td rowspan="2">驳回原因</td>
+      <td>驳回原因</td>
+      <td>资质材料不清晰<br>请重新上传营业执照<img id="lb-a" src="pixel.png" alt="甲图"><img id="lb-b" src="pixel.png" alt="乙图"></td>
+    </tr>
+    <tr>
+      <td>运营备注</td>
+      <td><div class="flexcell"><div>高价值</div><div>需跟进</div><img id="lb-c" src="pixel.png" alt="丙图"></div></td>
+    </tr>
+  </tbody>
+</table>
+<p class="note">
+  预期：甲图 / 乙图同一单元格 → 灯箱里「上一张 下一张」可用（1 / 2 ⇄ 2 / 2）；
+  丙图单独一个单元格 → 灯箱里「上一张 下一张」置灰（不显示索引）。
+</p>
+</body>
+</html>

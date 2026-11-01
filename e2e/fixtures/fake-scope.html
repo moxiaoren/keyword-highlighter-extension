@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>假表格越界抓取 · 命中在正文标题里</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; }
+  table { border-collapse: collapse; margin: 8px 0; }
+  td, th { border: 1px solid #ccc; padding: 4px 8px; font-size: 14px; }
+  h1 { font-size: 18px; margin: 8px 0 14px; }
+  h2 { font-size: 14px; margin: 16px 0 6px; color: #555; }
+  /* div 假表格（无 <table>）：.row > .label + .value */
+  #fakeRows .row { display: flex; gap: 10px; margin: 6px 0; padding: 4px 0; border-bottom: 1px dashed #ddd; }
+  #fakeRows .label { min-width: 84px; font-weight: 600; }
+</style>
+</head>
+<body>
+<!-- ① 命中词出现在**正文标题**里：它不在任何行容器里 ⇒ 假表格路径必须直接放弃，
+        不许拿 body/包裹层当容器去抓下面那张真表格（用户实测报的"多出一张无关的卡"）。 -->
+<h1>命中词「范围检查」出现在正文标题里</h1>
+
+<h2>① 真表格：标签「驳回原因 / 运营备注」（命中词**不在**这张表里）——
+  修前：标题里的命中会越界抓到这里的值，多出一张无关的卡</h2>
+<table id="realTbl">
+  <tbody>
+    <tr><td>驳回原因</td><td>资质材料不清晰</td></tr>
+    <tr><td>运营备注</td><td>高价值</td></tr>
+  </tbody>
+</table>
+
+<h2>② div 假表格（.row &gt; .label + .value）：命中词与「驳回原因」**在同一行**
+  —— 这条能力不许回退</h2>
+<div id="fakeRows">
+  <div class="row">
+    <span class="label">范围检查</span>
+    <span class="label">驳回原因</span>
+    <span class="value">资质材料不清晰</span>
+  </div>
+  <div class="row">
+    <span class="label">另一行</span>
+    <span class="label">运营备注</span>
+    <span class="value">别的值</span>
+  </div>
+</div>
+
+</body>
+</html>

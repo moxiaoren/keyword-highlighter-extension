@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>SPA 列表页（点击进详情）· 真实测试装置</title>
+<style>
+  body { font-family: "Microsoft YaHei", sans-serif; margin: 20px; }
+  #app { border: 1px solid #cbd5e1; padding: 12px; min-height: 80px; }
+</style>
+</head>
+<body>
+<h1>SPA 列表 → 详情</h1>
+
+<div id="app">
+  <p id="list-line">列表页：审核不通过</p>
+  <a id="go-detail" href="/spa-detail.html">查看详情</a>
+</div>
+
+<script>
+  /* 模拟真实 SPA：点击 → pushState 换 URL → **异步**渲染详情内容。
+     异步这一点很关键：路由切换时刻 DOM 里还没有详情内容，
+     所以"路由那一刻的一次重建"必然扫不到，必须靠后续通道补上。 */
+  document.getElementById('go-detail').addEventListener('click', function (e) {
+    e.preventDefault();
+    history.pushState({ page: 'detail' }, '', '/spa-detail.html');
+    setTimeout(function () {
+      document.getElementById('app').innerHTML = '<p id="detail-line">详情页：审核不通过</p>';
+    }, 400);
+  });
+</script>
+</body>
+</html>

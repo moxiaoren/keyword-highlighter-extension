@@ -1,0 +1,14 @@
+{
+  "name": "keyword-highlighter-e2e",
+  "version": "1.0.0",
+  "private": true,
+  "description": "真机回归装置：playwright-core + 本机 Edge/Chrome（CDP 加载未打包扩展），跑内容层与 UI 层断言",
+  "scripts": {
+    "e2e": "node run.js --aspects=all",
+    "e2e:sanity": "node run.js --aspects=none",
+    "e2e:install": "npm i --no-audit --no-fund"
+  },
+  "dependencies": {
+    "playwright-core": "1.63.0"
+  }
+}

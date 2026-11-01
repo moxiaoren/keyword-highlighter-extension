@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>组合词 · 被拆成多个文本节点</title>
+<style>
+  body { font-family: "Microsoft YaHei", sans-serif; margin: 20px; color: #222; }
+  h1 { font-size: 18px; }
+  h2 { font-size: 14px; color: #475569; margin: 22px 0 6px; }
+  table { border-collapse: collapse; margin-top: 8px; }
+  td, th { border: 1px solid #cbd5e1; padding: 6px 12px; font-size: 13px; vertical-align: top; }
+  th { background: #f1f5f9; }
+  .note { color: #64748b; font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>组合词跨文本节点：必须与「普通词」用同一套"视觉连续"口径</h1>
+
+<!--
+  用户实测缺陷（v1.99.99.8 修）：
+    页面为了给半个词上色，把核心词拆成 <span style="color:red">来遇</span>见你。
+    同一页里**普通规则**命中（走内核的跨节点 run 扫描），组合规则却漏 →
+    用户看到的是"同一个词，普通规则亮了、组合规则不亮"。
+  装置口径：k8 = 组合词（标题「软件介绍」→ 核心「来遇见你」，左右格）；k9 = 上下格（表头「是否重点关注」→ 核心「是的哦」）。
+-->
+<h2>① 左右格：**核心词**被 &lt;span&gt; 拆成两段（应命中，且整词一个 Range）</h2>
+<table id="tbl-x-lr">
+  <tbody>
+    <tr>
+      <td id="lr-label">软件介绍</td>
+      <td id="lr-core"><span id="lr-span" title="风险" style="color:#e53935">来遇</span>见你</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>② 左右格：**标题词**自己被拆开、核心是单节点（也应命中）</h2>
+<table id="tbl-x-label">
+  <tbody>
+    <tr>
+      <td id="lbl-split">软件<span>介绍</span></td>
+      <td id="lbl-core">来遇见你</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>③ 上下格：数据格里的核心词被拆开（也应命中）</h2>
+<table id="tbl-x-tb">
+  <thead><tr><th>名称</th><th>是否重点关注</th></tr></thead>
+  <tbody>
+    <tr><td>甲</td><td id="tb-core"><span id="tb-span">是</span>的哦</td></tr>
+  </tbody>
+</table>
+
+<h2>④ 反例：看着像连着的，其实被**块级**元素隔开（不该命中）</h2>
+<table id="tbl-x-block">
+  <tbody>
+    <tr>
+      <td id="blk-label">软件介绍</td>
+      <td id="blk-core"><div>来遇</div><div>见你</div></td>
+    </tr>
+  </tbody>
+</table>
+<p class="note">
+  块级元素之间不存在"视觉连续"——「来遇」和「见你」是两行两块，跨节点命中**不应该**成立
+  （否则就是过度命中，会把不相关的两段拼成一个词）。
+</p>
+</body>
+</html>

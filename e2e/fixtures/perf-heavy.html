@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>重页面（性能探针用）· 2 万+ 元素</title>
+<style>
+  body { font-family: "Microsoft YaHei", sans-serif; margin: 12px; }
+  table { border-collapse: collapse; }
+  td { border: 1px solid #e2e8f0; padding: 2px 6px; font-size: 12px; white-space: nowrap; }
+</style>
+</head>
+<body>
+<h1>重页面性能探针</h1>
+<p id="tick">计时段落：审核不通过</p>
+<table><tbody id="big"></tbody></table>
+
+<script>
+  /* 行数可配（`?rows=N`，默认 3000）：用来量"整页扫描 / 整页读文本"这类操作的**规模曲线**，
+     找性能拐点。3000 行 × 6 格 ≈ 18000 个元素。 */
+  (function () {
+    var m = /[?&]rows=(\d+)/.exec(location.search);
+    var ROWS = m ? Math.min(Number(m[1]), 20000) : 3000;
+    var tb = document.getElementById('big');
+    var html = '';
+    for (var i = 0; i < ROWS; i++) {
+      html += '<tr>' +
+        '<td>应用' + i + '</td>' +
+        '<td>com.app.' + i + '</td>' +
+        '<td>' + (i % 3 ? '审核不通过' : '审核中') + '</td>' +
+        '<td>运营备注</td>' +
+        '<td>资质类型</td>' +
+        '<td>资质A' + (i % 2 + 1) + '</td>' +
+        '</tr>';
+    }
+    tb.innerHTML = html;
+    document.title = '重页面 ' + ROWS + ' 行';
+  })();
+</script>
+</body>
+</html>

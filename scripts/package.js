@@ -25,7 +25,7 @@ const VERSION = MANIFEST.version;
 const PREFIX = 'keyword-highlighter-extension';
 
 /** 不进入交付包的目录（相对仓库根，正斜杠） */
-const EXCLUDE_DIRS = ['tests', 'scripts', 'dist', 'release', 'node_modules', '.git', '.github', '.tmp'];   // release/ 含签名私钥，绝不能进交付包；.tmp/ 是施工临时脚本（2026-10-19 实测：漏排这件事，zip 从 104 涨到 113 个文件）
+const EXCLUDE_DIRS = ['tests', 'scripts', 'dist', 'release', 'node_modules', '.git', '.github', '.tmp', 'e2e'];   // release/ 含签名私钥，绝不能进交付包；.tmp/ 是施工临时脚本（2026-10-19 实测：漏排这件事，zip 从 104 涨到 113 个文件）；e2e/ 是真机装置（2026-11-01 入仓，980 KB，不进包）
 const EXCLUDE_FILE_RE = /\.(md|log|map)$/i;
 /** 私钥 / 证书 / 已签名包**一律不进交付包**。
  *  实测踩到过一次：发布脚本在仓库根建了 release/ 并在里面放了 key.pem，
@@ -222,11 +222,23 @@ function main() {
   } else if (e2eSelector === 'none') {
     console.log('\n本次变更不涉及交付行为（none）→ 跳过真浏览器回归。');
   } else {
-    console.log('\n=== 真浏览器回归（_e2e/run.js ' + e2eSelector + '）===');
-    const e2eDir = path.join(ROOT, '..', '..', '_e2e');
-    const e2eRun = path.join(e2eDir, 'run.js');
-    if (!fs.existsSync(e2eRun)) {
-      console.error('⚠️ 找不到 ' + e2eRun + '，跳过真浏览器回归（这一步本应必过，请检查工作区是否完整）');
+    /* 双路径：仓内 `e2e/`（2026-11-01 起，CI 与干净检出都靠它）**优先**；
+     * 老工作区根的 `_e2e/` 作回退（那边的探针脚本不进仓）。
+     * 判据不只看 run.js 在不在，还要看依赖装没装（`playwright-core` 不进仓）：
+     * 仓内刚 clone 下来是没装依赖的，这时回退到老位置，别把本机出包卡死。
+     * 两个都不可用 = 装置缺失：明确说"没跑"，绝不假装绿。 */
+    const e2eCands = [
+      path.join(ROOT, 'e2e'),
+      path.join(ROOT, '..', '..', '_e2e')
+    ];
+    const usable = (d) => fs.existsSync(path.join(d, 'run.js')) &&
+      fs.existsSync(path.join(d, 'node_modules', 'playwright-core'));
+    const e2eDir = e2eCands.find(usable) || null;
+    const e2eRun = e2eDir ? path.join(e2eDir, 'run.js') : path.join(e2eCands[0], 'run.js');
+    console.log('\n=== 真浏览器回归（' + e2eRun + ' ' + e2eSelector + '）===');
+    if (!e2eDir) {
+      console.error('⚠️ 真机装置不可用（试过 ' + e2eCands.join(' 与 ') +
+        '：要么没有 run.js，要么没装 playwright-core —— 仓内先 `cd e2e && npm i`），跳过真浏览器回归（这一步本应必过）');
     } else if (!findBrowser()) {
       console.error('⚠️ 本机找不到 Edge/Chrome，跳过真浏览器回归（这一步本应必过）');
     } else {

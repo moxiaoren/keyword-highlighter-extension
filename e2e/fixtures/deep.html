@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>深层嵌套 + 组合 + 抓取</title>
+<style>body{font:14px/1.7 system-ui;margin:16px}table{border-collapse:collapse;margin:6px 0}
+td,th{border:1px solid #ccc;padding:4px 8px}h2{font-size:14px;margin:18px 0 6px;color:#555}
+table table{border-color:#f0a;background:#fff7fd}</style></head>
+<body>
+<h1>内层表格复杂 / 内层命中组合词 / 抓取外层</h1>
+
+<h2>W 内层表格很复杂：自带 标题行 + thead/th + colspan + 多行多列；外层也有表头
+  → 期望：外层 1 + 内层 1（各自按自己的表头算列）</h2>
+<div id="caseW">
+  <table id="outerW">
+    <thead><tr><th>名称</th></tr></thead>
+    <tbody><tr><td>
+      <table id="innerW">
+        <tr><td colspan="3">内层标题行</td></tr>
+        <thead><tr><th>其它</th><th colspan="2">名称</th></tr></thead>
+        <tbody>
+          <tr><td>x</td><td>甲</td><td>y</td></tr>
+          <tr><td>z</td><td>甲</td><td>w</td></tr>
+        </tbody>
+      </table>
+    </td></tr></tbody>
+  </table>
+</div>
+
+<h2>X 内层表格命中**左右格**组合词（内层里 左标题｜乙 成对）→ 期望：1 次</h2>
+<div id="caseX">
+  <table id="innerX">
+    <tr><td>左标题</td><td>乙</td></tr>
+    <tr><td>别的</td><td>无关</td></tr>
+  </table>
+</div>
+
+<h2>Y 内层表格命中**上下格**组合词（内层自己的 名称 表头 + 列里的 甲）→ 期望：1 次</h2>
+<div id="caseY">
+  <table id="innerY">
+    <thead><tr><th>名称</th><th>备注</th></tr></thead>
+    <tbody><tr><td>甲</td><td>x</td></tr></tbody>
+  </table>
+</div>
+
+<h2>Z 抓取：值格里套了内层表格（标签「驳回原因」/「运营备注」）→ 期望：两个字段都能抓到，
+  且内层表格不会把「运营备注」这个下一字段挤掉</h2>
+<table id="fetchTbl">
+  <tbody>
+    <tr>
+      <td>驳回原因</td>
+      <td>外层文字第一行<br>
+        <table><tbody><tr><td>内层A</td><td>内层B</td></tr></tbody></table>
+        外层文字第二行
+      </td>
+    </tr>
+    <tr>
+      <td>运营备注</td>
+      <td>高价值需跟进</td>
+    </tr>
+    <tr><td>审核不通过</td><td>命中行，用来触发抓取</td></tr>
+  </tbody>
+</table>
+
+<h2>Z2 对照组：**同样的两列表，但值格里没有嵌套表格**（用来判断上面那组异常是不是嵌套造成的）</h2>
+<table id="fetchPlain">
+  <tbody>
+    <tr><td>驳回原因</td><td>外层文字第一行<br>外层文字第二行</td></tr>
+    <tr><td>运营备注</td><td>高价值需跟进</td></tr>
+    <tr><td>审核不通过</td><td>命中行，用来触发抓取</td></tr>
+  </tbody>
+</table>
+</body>
+</html>
