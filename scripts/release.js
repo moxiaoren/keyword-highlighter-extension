@@ -32,6 +32,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { execFileSync } = require('child_process');
+const guard = require('./release-guard');
 
 const ROOT = path.join(__dirname, '..');
 const REL = path.join(ROOT, 'release');
@@ -130,6 +131,33 @@ async function fetchPublished() {
 (async () => {
   log('关键词高亮 · 发版流水线   版本 ' + VERSION + '   通道 稳定版（stable）');
   log('仓库根：' + ROOT);
+
+  /* ------------------------------------------- ⓪ 事务前置（B6 · release-guard）
+   * 三条闸的前两条：工作树必须干净、线上同名版本必须不存在。
+   * 事故背景（2.0.7.2 被同名版本顶掉，真源码从未进远端 main，只能从 zip 逆向还原）见
+   * scripts/release-guard.js 的头注释。 */
+  const ALLOW_DIRTY = argv.indexOf('--allow-dirty') >= 0;
+  const ALLOW_REUSE = argv.indexOf('--allow-reuse') >= 0;
+  step('0', '事务前置：工作树 / 版本占用');
+  try {
+    const clean = guard.assertCleanTree(ROOT, { allowDirty: ALLOW_DIRTY });
+    if (!clean.checked) log('    ⚠️ ' + clean.reason);
+    else if (clean.allowed) log('    ⚠️ --allow-dirty：带着 ' + clean.dirty + ' 个未提交改动发版（这次发出去的包不属于任何提交）');
+    else log('    ✓ 工作树干净');
+  } catch (err) {
+    die('工作树不干净，拒绝发版：\n      ' + (err.detail || err.message) +
+      '\n    修法：先把改动 `git commit`（或 `git stash`）再发；确实要在脏树上发，加 --allow-dirty（不建议）。');
+  }
+  try {
+    const v = await guard.assertVersionUnused({
+      version: VERSION, manifestUrl: BASE + '/latest.json', allowReuse: ALLOW_REUSE
+    });
+    if (!v.checked) log('    ⚠️ ' + v.reason);
+    else if (v.reuse) log('    ⚠️ --allow-reuse：版本 ' + VERSION + ' 线上已存在，正在覆盖同名版本');
+    else log('    ✓ 版本 ' + VERSION + ' 未被占用（线上当前 ' + v.online + '）');
+  } catch (err) {
+    die('版本占用检查未通过：' + err.message);
+  }
 
   /* ---------------------------------------------------------------- ① 门禁 */
   if (!SKIP_GATES) {
@@ -453,6 +481,18 @@ async function fetchPublished() {
   if (WITH_ZIP) log('    release/' + ZIP_NAME);
   log('    release/' + CRX_NAME);
   log('    release/PUBLISH.md');
+
+  /* ---------------------------------------- ⑥ 收尾：自动打 tag（B6 第三条）
+   * 只打本地 tag，不自动推送：推 tag 会触发 CI 构建，是不是现在推由人决定。
+   * 目的只有一个 —— 让"版本号 → 具体提交"这条链断不了（2.0.7.2 就是断在这）。 */
+  {
+    const t = guard.tagRelease(ROOT, VERSION, { channel: 'stable' });
+    if (t.tagged) {
+      log('\n    ✓ 已打 tag ' + t.name + ' → ' + t.commit + '（要触发 CI 构建再 `git push origin ' + t.name + '`）');
+    } else {
+      log('\n    · ' + t.reason);
+    }
+  }
 
   /* ------------------------------------------------------------- 小结 */
   const files = fs.readdirSync(REL).filter((f) => f !== 'key.pem');

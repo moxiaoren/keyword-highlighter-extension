@@ -30,6 +30,8 @@
 | 脚本 | 作用 | 典型用法 |
 |---|---|---|
 | `scripts/release.js` | **稳定版完整流水线**：门禁 → 打包 → 签名 crx → 生成 `latest.json` / `update.xml` → 汇总 | `node scripts/release.js --channel stable`（或 `--promote`） |
+| `scripts/release-guard.js` | **发版事务护栏**（两个 release 脚本共用）：①工作树不干净拒绝发版 ②线上同名版本已存在拒绝覆盖 ③成功后自动打 tag（只打本地，推不推由人决定） | 由 `release.js` / `release-beta.js` 自动调用；应急绕过 `--allow-dirty` / `--allow-reuse` |
+| `scripts/changelog.js` | 从 `src/ui/changelog.js` 生成仓库根 `CHANGELOG.md`（最近 30 版）；`--check` 只核对不同步则退出码 1，已接进出包前置 | `node scripts/changelog.js` / `node scripts/changelog.js --check` |
 | `scripts/release-beta.js` | **测试版流水线**（与正式版完全分离）：复用 `package.js` 的门禁与打包 → 改 manifest 三处 → 重打成测试版 zip → 用测试版密钥签 crx → 写 `latest-beta.json` / `update-beta.xml` | `node scripts/release-beta.js` |
 | `scripts/update-config.js` | **只重生成更新配置**（latest.json / latest-beta.json / update.xml / update-beta.xml），不重新打包 | `node scripts/update-config.js --channel stable --zip <zip> --crx <crx>` |
 | `scripts/publish-gh.js` | 推到 gh-pages（**不需要 git**，走 GitHub API）。**测试版必须加 `--beta-only`**：否则它还要去收集稳定版清单、而稳定版产物不在本机 ⇒ 直接中止；站点资产（语言包 + OCR 模型）没变时加 `--skip-assets`（旧名 `--skip-lang` 仍兼容；gh-pages 建 tree 用 `base_tree`，不发＝原地保留）。**首次带模型发版必须去掉它**，否则站点上没有 `models/`，主引擎首次识别会 404 | 测试版：`GH_TOKEN=… node scripts/publish-gh.js --beta-only`<br>稳定版：`GH_TOKEN=… node scripts/publish-gh.js` |
@@ -79,6 +81,18 @@ zip 里带时间戳，**同一次构建重新打包，哈希也会变**。所以
 - **不要**在打包之后单独跑 `update-config.js` 指向另一个包 —— 哈希会对不上，用户端校验会直接拒绝 ✗；
 - 正确顺序永远是：**打包 → 立刻生成配置（release.js 已经这么做了）→ 上传同一批文件**；
 - 反过来也成立：已经上传的包不要重新打，否则线上清单与线上文件会不一致。
+## 发版事务护栏（2026-11-01 起，脚本内自动执行）
+
+三条闸的理由只有一个：**线上任何一版都必须能用某个提交复现**。2026-10-29 的 2.0.7.2 事故是三条同时缺位的产物——脏树发版、同名版本重发顶掉、发完不打 tag，最后只能从 gh-pages 的 zip 逆向还原 15 个文件。
+
+| 闸 | 什么情况下拒绝 | 应急开关 |
+|---|---|---|
+| ① 工作树干净 | `git status --porcelain --untracked-files=no` 有任何输出即中止（未跟踪的新文件不算，产物本来就新写） | `--allow-dirty`（不建议） |
+| ② 版本号未被占用 | 线上清单里已有**同版本号**⇒ 拒绝覆盖；线上版本**比本地新**⇒ 拒绝（先同步） | `--allow-reuse` |
+| ③ 成功后自动打 tag | 出完产物打 `v<版本>`（稳定）/ `v<版本>-beta`（测试）；**只打本地**，`git push origin <tag>` 才触发 CI 构建 | 已存在同名 tag 时不移动，只提示 |
+
+> ② 看的清单：稳定版 `latest.json`、测试版 `latest-beta.json`。读不到线上清单时**不阻断**，只打印⚠️——网络断掉不该让人发不了版，但要让人知道这条闸这次没生效。
+
 ## 怎么发测试版
 
 ```bash

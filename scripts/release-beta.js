@@ -28,6 +28,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { execFileSync } = require('child_process');
+const guard = require('./release-guard');
 
 const ROOT = path.join(__dirname, '..');
 const REL = path.join(ROOT, 'release');
@@ -86,6 +87,31 @@ function makeZip(dir, zipOut) {
   if (!fs.existsSync(KEY)) die('缺测试版密钥：' + KEY + '\n  先生成一把：node scripts/release-beta.js 需要 release/key-beta.pem（见 RELEASE.md）');
   if (!fs.existsSync(PUB)) die('缺测试版公钥文本：' + PUB);
   fs.mkdirSync(REL, { recursive: true });
+
+  /* ⓪ 事务前置（B6）：工作树干净 + 线上同名测试版未被占用（清单看 latest-beta.json）。
+   * 事故背景见 scripts/release-guard.js 头注释（2.0.7.2 被同名版本顶掉）。 */
+  {
+    const allowDirty = process.argv.indexOf('--allow-dirty') >= 0;
+    const allowReuse = process.argv.indexOf('--allow-reuse') >= 0;
+    log('\n[0] 事务前置：工作树 / 版本占用');
+    try {
+      const clean = guard.assertCleanTree(ROOT, { allowDirty });
+      if (!clean.checked) log('    ⚠️ ' + clean.reason);
+      else if (clean.allowed) log('    ⚠️ --allow-dirty：带着 ' + clean.dirty + ' 个未提交改动发版');
+      else log('    ✓ 工作树干净');
+    } catch (e) {
+      die('工作树不干净，拒绝发版：\n      ' + (e.detail || e.message) +
+        '\n    修法：先 commit（或 stash）再发；确实要在脏树上发，加 --allow-dirty（不建议）。');
+    }
+    try {
+      const v = await guard.assertVersionUnused({ version: VERSION, manifestUrl: BASE + '/latest-beta.json', allowReuse });
+      if (!v.checked) log('    ⚠️ ' + v.reason);
+      else if (v.reuse) log('    ⚠️ --allow-reuse：测试版 ' + VERSION + ' 线上已存在，正在覆盖');
+      else log('    ✓ 测试版 ' + VERSION + ' 未被占用（线上当前 ' + v.online + '）');
+    } catch (e) {
+      die('版本占用检查未通过：' + e.message);
+    }
+  }
 
   /* ① 门禁 + 常规打包（复用正式版那套，保证产物内容一致） */
   {
@@ -166,6 +192,13 @@ function makeZip(dir, zipOut) {
     ].join('\n');
     fs.writeFileSync(path.join(REL, 'update-beta.xml'), xml, 'utf8');
     log('    release/update-beta.xml（appid=' + betaId + ' ← 测试版自己的 ID）');
+  }
+
+  /* ⑤ 收尾：自动打 tag（只打本地，推不推由人决定） */
+  {
+    const t = guard.tagRelease(ROOT, VERSION, { channel: 'beta' });
+    if (t.tagged) log('\n    ✓ 已打 tag ' + t.name + ' → ' + t.commit + '（要触发 CI 构建再 `git push origin ' + t.name + '`）');
+    else log('\n    · ' + t.reason);
   }
 
   log('\n测试版产物：release/' + ZIP_NAME + '、latest-beta.json' + (crxOk ? '、' + CRX_NAME + '、update-beta.xml' : ''));
