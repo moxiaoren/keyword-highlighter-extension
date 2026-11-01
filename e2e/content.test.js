@@ -3082,8 +3082,7 @@ module.exports = async function runContent(ctx) {
         window: {},
         document: { createElement: () => ({ style: {}, setAttribute() {}, appendChild() {} }) }
       };
-      const code = fs.readFileSync(path.join(__dirname, '..', 'work', 'keyword-highlighter',
-        'src', 'features', 'img-ocr.js'), 'utf8');
+      const code = fs.readFileSync(path.join(EXT_DIR, 'src', 'features', 'img-ocr.js'), 'utf8');
       new Function('window', 'document', 'globalThis', code)(sandbox.window, sandbox.document, sandbox);
       _ocrLayoutMod = sandbox.window.KH.ImgOcr;
     }

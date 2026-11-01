@@ -65,6 +65,12 @@ jobs:
           test -x "$P" || { echo "找不到可执行的 Chromium：$P"; exit 1; }
           echo "Chromium: $P"
 
+      # 语言包是「真机回归的测试资产」，不进交付包（交付包只有引擎与 wasm），所以 CI 里现取：
+      # 走 manifest 里的官方源下载并逐个核对 sha256；取不到时那组会明确报「缺资产」而不是超时死等。
+      - name: 取 OCR 语言包（测试资产）
+        continue-on-error: true
+        run: node scripts/fetch-lang.js
+
       - name: 跑真机回归（内容层 hit + UI 层）
         id: run
         working-directory: e2e
