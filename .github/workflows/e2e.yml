@@ -67,7 +67,6 @@ jobs:
 
       - name: 跑真机回归（内容层 hit + UI 层）
         id: run
-        continue-on-error: true   # 不阻断发版，但也绝不把「跑不起来」报成通过
         working-directory: e2e
         env:
           KHE_BROWSER: ${{ steps.browser.outputs.path }}
@@ -112,6 +111,7 @@ jobs:
           if-no-files-found: error   # 连 artifact 都没有 = 这一轮等于没跑，必须红
 
       - name: 结论
+        if: always()
         run: |
           if [ "${{ steps.run.outcome }}" != "success" ]; then
             echo "::warning::真机回归没通过（非发版门禁）。看 artifact 里的 console.log 与 _out/report.txt；环境类失败（装不上浏览器/启动即崩）与断言失败要分开判。"

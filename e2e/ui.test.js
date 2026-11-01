@@ -3693,7 +3693,12 @@ module.exports = async function runUi(ctx) {
     const { launch } = require('./harness');
     const tmp = fsx.mkdtempSync(pathx.join(osx.tmpdir(), 'kh-nocss-'));
     const extCopy = pathx.join(tmp, 'ext');
-    fsx.cpSync(pathx.resolve(__dirname, '../work/keyword-highlighter'), extCopy, {
+    const EXT_ROOT = process.env.KH_EXT_DIR
+      ? pathx.resolve(process.env.KH_EXT_DIR)
+      : (fsx.existsSync(pathx.join(__dirname, '..', 'manifest.json'))
+        ? pathx.resolve(__dirname, '..')
+        : pathx.resolve(__dirname, '..', 'work', 'keyword-highlighter'));
+    fsx.cpSync(EXT_ROOT, extCopy, {
       recursive: true,
       filter: (s) => !/([\\/])(\.git|dist|node_modules|_out)([\\/]|$)/.test(s)
     });

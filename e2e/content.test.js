@@ -10,7 +10,15 @@ const { CONFIG } = require('./test-config');
  * 依据（2026-10-13 更新）：SPEC.md:228 显式作废 200px 口径（与本轮需求 2「默认 250px、可调 160–600」冲突）；
  * `config.js` 的 `PANEL_WIDTH_MIN=160 / PANEL_WIDTH_MAX=600 / PANEL_WIDTH_DEFAULT=250`；
  * `config.js` 里的 `notePanelWidth: PANEL_WIDTH_DEFAULT`。 */
-require(path.join(__dirname, '..', 'work', 'keyword-highlighter', 'src', 'core', 'config.js'));
+/* 装置两边都能跑：扩展仓内（\`<仓>/e2e/\`，扩展目录就是上一级）与老工作区的 \`_e2e/\`
+ * （扩展在 \`../work/keyword-highlighter\`）。所以按「KH_EXT_DIR → 上一级有 manifest.json → 老工作区」取，
+ * 别写死一条相对路径——写死的那次在 CI 里直接 Cannot find module。 */
+const EXT_DIR = process.env.KH_EXT_DIR
+  ? path.resolve(process.env.KH_EXT_DIR)
+  : (require('fs').existsSync(path.join(__dirname, '..', 'manifest.json'))
+    ? path.resolve(__dirname, '..')
+    : path.resolve(__dirname, '..', 'work', 'keyword-highlighter'));
+require(path.join(EXT_DIR, 'src', 'core', 'config.js'));
 const KHConfig = globalThis.KH.Config;
 
 const FIX = (origin, f) => origin + '/' + f;
