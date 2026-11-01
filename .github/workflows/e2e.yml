@@ -1,0 +1,120 @@
+name: 真机回归（e2e 子集）
+
+# 为什么单独一条 workflow：
+# - release.yml 只在打 tag 时跑，而真机回归要更频繁地有读数（每次改 src 就想知道有没有打穿）；
+# - 它**不参与发版门禁**：这条挂了不发版红，但它必须留下 artifact（截图 + 报告），
+#   让人能区分「代码坏了」和「CI 环境跑不起来」（缺依赖、下载失败、headless 不兼容）。
+# 判据：artifact 里有 `report.txt` 且退出码为 0 = 这一轮真机层确实跑过；没有 artifact = 没跑成，不算通过。
+
+on:
+  workflow_dispatch:
+    inputs:
+      aspects:
+        description: '回归方面（内容层 hit/visual/interact/fetch/site + UI 层 ui，逗号分隔）'
+        required: false
+        default: 'hit,ui'
+      full:
+        description: '不按影响面裁剪，全量跑（慢但最稳）'
+        type: boolean
+        required: false
+        default: true
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'content/**'
+      - 'background/**'
+      - 'options/**'
+      - 'popup/**'
+      - 'e2e/**'
+      - 'scripts/regression-areas.js'
+  # 每周一凌晨跑一次，防止「没人改所以没人发现」——环境漂移（Chrome 升级、依赖失效）也会被这条抓到
+  schedule:
+    - cron: '0 22 * * 0'
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 装装置依赖（playwright-core）
+        working-directory: e2e
+        run: npm install --no-audit --no-fund
+
+      - name: 装 Chromium（含系统库）
+        working-directory: e2e
+        run: npx --yes playwright-core install --with-deps chromium
+
+      - name: 解析浏览器路径并自检
+        id: browser
+        working-directory: e2e
+        run: |
+          set -e
+          P="$(node -e "process.stdout.write(require('playwright-core').chromium.executablePath())")"
+          echo "path=$P" >> "$GITHUB_OUTPUT"
+          test -x "$P" || { echo "找不到可执行的 Chromium：$P"; exit 1; }
+          echo "Chromium: $P"
+
+      - name: 跑真机回归（内容层 hit + UI 层）
+        id: run
+        continue-on-error: true   # 不阻断发版，但也绝不把「跑不起来」报成通过
+        working-directory: e2e
+        env:
+          KHE_BROWSER: ${{ steps.browser.outputs.path }}
+          KHE_HEADLESS: 'new'
+          KHE_EXTRA_ARGS: '--no-sandbox --disable-dev-shm-usage'
+        run: |
+          set -o pipefail
+          mkdir -p _out
+          ARGS="--aspects=${{ github.event.inputs.aspects || 'hit,ui' }}"
+          if [ "${{ github.event.inputs.full }}" = "true" ] || [ -z "${{ github.event.inputs.full }}" ]; then
+            ARGS="$ARGS --full"
+          fi
+          echo "运行：node run.js $ARGS"
+          node run.js $ARGS 2>&1 | tee _out/console.log
+          echo "exit=$?" >> "$GITHUB_OUTPUT"
+
+      - name: 落报告
+        if: always()
+        working-directory: e2e
+        run: |
+          mkdir -p _out
+          {
+            echo "时间：$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "提交：${{ github.sha }}"
+            echo "运行方式：${{ github.event_name }}"
+            echo "浏览器：${{ steps.browser.outputs.path }}"
+            echo "方面：${{ github.event.inputs.aspects || 'hit,ui' }}"
+            echo "退出码：${{ steps.run.outcome == 'success' && '0' || '非 0（见 console.log）' }}"
+            echo
+            echo "—— 断言末尾摘要 ——"
+            tail -n 40 _out/console.log 2>/dev/null || echo "（没有 console.log：装置没跑起来）"
+          } > _out/report.txt
+          cat _out/report.txt >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 上传 artifact（截图 / 报告 / 控制台）
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-${{ github.sha }}
+          path: |
+            e2e/_out/
+          if-no-files-found: error   # 连 artifact 都没有 = 这一轮等于没跑，必须红
+
+      - name: 结论
+        run: |
+          if [ "${{ steps.run.outcome }}" != "success" ]; then
+            echo "::warning::真机回归没通过（非发版门禁）。看 artifact 里的 console.log 与 _out/report.txt；环境类失败（装不上浏览器/启动即崩）与断言失败要分开判。"
+          else
+            echo "真机回归通过。"
+          fi
