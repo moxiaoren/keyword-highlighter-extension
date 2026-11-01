@@ -105,10 +105,16 @@ for (const html of HTMLS) {
 }
 
 /* ---------- 4. CSS var 定义 ---------- */
+/* 只扫**会进交付包**的 CSS：`e2e/`（真机装置）、`node_modules/`、`dist/`、`release/`、`.git/`
+ * 都不进包，扫它们只会把第三方依赖自己的变量算成"未定义"（2026-11-01 实测：
+ * `e2e/node_modules/playwright-core` 的报告页 CSS 报出 --monospace-font / --color-focus-border，
+ * 而这两条根本不属于本扩展）。排除清单与 `scripts/package.js` 的 EXCLUDE_DIRS 保持一致。 */
+const SKIP_DIRS = new Set(['e2e', 'node_modules', 'dist', 'release', '.git', '.github', 'tests', 'scripts']);
 const CSS_DEFS = new Set();
 const CSS_FILES = [];
 (function walkCss(dir) {
   for (const n of fs.readdirSync(path.join(ROOT, dir))) {
+    if (SKIP_DIRS.has(n)) continue;
     const rel = dir + '/' + n;
     const st = fs.statSync(path.join(ROOT, rel));
     if (st.isDirectory()) walkCss(rel);
