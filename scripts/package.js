@@ -42,8 +42,56 @@ const SKIP_GATES = ARGV.indexOf('--skip-gates') >= 0;   // 应急：连 meta-che
 const SKIP_E2E = ARGV.indexOf('--skip-e2e') >= 0;       // 应急：只跳真浏览器回归
 const FORCE_FULL = ARGV.indexOf('--full') >= 0;         // 不信影响面结论时：强制全跑真浏览器回归
 
-/** 真浏览器回归需要本机有 Chromium 系浏览器（找不到就明确警告并跳过，不静默） */
-function findBrowser() {
+/* ---------------- 体积预算（B5，2026-11-01） ----------------
+ * 为什么要有：2.0.8 的解压包 20.6 MB，其中 `vendor/` 占 18 MB、ORT wasm 单文件 14.2 MB（占 69%）。
+ * 体积是一次性涨上去的——上一次加模型时没人拦，下一次再加就还是没人拦，直到某天装不上/慢到离谱。
+ * 这里在**暂存之前**按真实文件大小算，超了就拒绝出包（不是警告）：
+ *   ① 解压总量 ≤ 22 MB（当前 20.6 MB，留约 1.4 MB 余量）
+ *   ② 单文件 ≤ 15 MB（当前 14.24 MB，是那个 wasm；换更大模型必须显式改这里 + 在 RELEASE.md 记一笔）
+ * 应急：`KH_SKIP_SIZE_BUDGET=1`（只跳过这两条，其它门禁照常）。 */
+const SIZE_TOTAL_MAX = 22 * 1024 * 1024;
+const SIZE_FILE_MAX = 15 * 1024 * 1024;
+const SKIP_SIZE = process.env.KH_SKIP_SIZE_BUDGET === '1';
+
+/** 体积预算检查（B5）。`node scripts/package.js --size-only` 可单独跑，不打包、不起浏览器。 */
+function checkSizeBudget(files) {
+  const mb = (n) => (n / 1024 / 1024).toFixed(2) + ' MB';
+  if (SKIP_SIZE) {
+    console.error('\n⚠️ KH_SKIP_SIZE_BUDGET=1：已跳过体积预算（解压 ≤' + mb(SIZE_TOTAL_MAX) + ' / 单文件 ≤' + mb(SIZE_FILE_MAX) + '）');
+    return;
+  }
+  let total = 0;
+  const rows = [];
+  for (const f of files) {
+    let st;
+    try { st = fs.statSync(path.join(ROOT, f)); } catch (e) { continue; }
+    total += st.size;
+    if (st.size > SIZE_FILE_MAX) rows.unshift({ f, size: st.size, over: true });
+    else rows.push({ f, size: st.size, over: false });
+  }
+  rows.sort((a, b) => (b.over - a.over) || (b.size - a.size));
+  console.log('\n=== 体积预算（B5）===');
+  console.log('  解压合计：' + mb(total) + ' / 上限 ' + mb(SIZE_TOTAL_MAX) + '（' + files.length + ' 个文件）');
+  for (const x of rows.slice(0, 3)) console.log('  · ' + mb(x.size).padStart(9) + '  ' + x.f);
+  const over = [];
+  if (total > SIZE_TOTAL_MAX) over.push('解压合计 ' + mb(total) + ' 超过上限 ' + mb(SIZE_TOTAL_MAX));
+  for (const x of rows) if (x.over) over.push(x.f + ' = ' + mb(x.size) + ' 超过单文件上限 ' + mb(SIZE_FILE_MAX));
+  if (over.length) {
+    console.error('\n✗ 体积超出预算，拒绝出包：');
+    for (const s of over) console.error('  ' + s);
+    console.error('  真要发这个体积：先在 package.js 里显式改 SIZE_TOTAL_MAX / SIZE_FILE_MAX，并在 RELEASE.md 记一笔为什么。');
+    process.exit(1);
+  }
+  console.log('  ✓ 在预算内');
+}
+
+/* 自检入口：只看体积，不打包、不起浏览器（受限沙箱里也能跑） */
+if (ARGV.indexOf('--size-only') >= 0) {
+  checkSizeBudget(walk('.', []).sort());
+  process.exit(0);
+}
+
+/** 真浏览器回归需要本机有 Chromium 系浏览器（找不到就明确警告并跳过，不静默） */function findBrowser() {
   const cands = [
     process.env.KH_CHROME,
     'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
@@ -268,8 +316,10 @@ function main() {
     process.exit(1);
   }
 
-  const distDir = path.join(ROOT, 'dist');
-  const stageDir = path.join(distDir, 'stage-build');
+  /* ③c 体积预算（B5，2026-11-01）：超了**拒绝出包**，别等用户装不上才发现 */
+  checkSizeBudget(files);
+
+  const distDir = path.join(ROOT, 'dist');  const stageDir = path.join(distDir, 'stage-build');
   rmrf(stageDir);
   fs.mkdirSync(stageDir, { recursive: true });
   for (const f of files) copyInto(f, stageDir);

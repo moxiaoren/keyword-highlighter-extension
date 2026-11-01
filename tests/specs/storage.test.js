@@ -377,6 +377,15 @@ module.exports = async function run() {
     eq(out.meta.scope.siteRules, false);
   });
 
+  await test('★ meta 带 schemaVersion 与可解析的 exportedAt（A2：导出文件可自证版本）', () => {
+    const out = JSON.parse(S.exportJSON({ keywords: true, siteRules: true, siteDisabled: true, styles: true }, {}));
+    eq(out.meta.schemaVersion, 1, '结构版本号，与插件版本号无关');
+    eq(S.SCHEMA_VERSION, 1, '常量与导出值必须一致（改版本就一起改）');
+    truthy(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(out.meta.exportedAt),
+      'exportedAt 必须是可解析的 ISO 时间，实际：' + out.meta.exportedAt);
+    truthy(!Number.isNaN(Date.parse(out.meta.exportedAt)), 'exportedAt 必须能被 Date.parse 解析');
+  });
+
   suite('storage · 兼容读取（存量旧格式）');
 
   await test('旧版平铺的 highlightStyle 能被 stylesFrom 读到', () => {

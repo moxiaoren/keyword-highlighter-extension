@@ -650,6 +650,12 @@
     /** 只有完整备份才携带的全局开关 */
     GLOBAL_KEYS: ['globalEnabled', 'shadowDOMEnabled', 'suspendInactiveTab'],
 
+    /** 导出文件格式版本（A2，2026-11-01）。
+     *  语义：**结构性**变化的递增号，不是插件版本号——插件可以从 2.0.8 跳到 2.1.0，
+     *  只要 JSON 的 4 块结构没变，这里就还是 1。导入端遇到比它认识的更高值时应提示
+     *  「这份备份来自更新版本」，而不是当成损坏文件静默丢弃。 */
+    SCHEMA_VERSION: 1,
+
     pick(obj, keys) {
       const out = {};
       for (const k of keys) if (obj && obj[k] !== undefined) out[k] = obj[k];
@@ -681,6 +687,7 @@
       }
       out.meta = {
         app: 'keyword-highlighter',
+        schemaVersion: this.SCHEMA_VERSION,
         version: (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.getManifest)
           ? chrome.runtime.getManifest().version : '',
         scope: { keywords: !!sc.keywords, siteRules: !!sc.siteRules, siteDisabled: !!sc.siteDisabled, styles: !!sc.styles },
