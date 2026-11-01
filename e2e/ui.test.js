@@ -3700,7 +3700,11 @@ module.exports = async function runUi(ctx) {
         : pathx.resolve(__dirname, '..', 'work', 'keyword-highlighter'));
     fsx.cpSync(EXT_ROOT, extCopy, {
       recursive: true,
-      filter: (s) => !/([\\/])(\.git|dist|node_modules|_out)([\\/]|$)/.test(s)
+      /* 只复制会进交付包的东西：`_profiles`（浏览器 profile，里面有锁着的 Cookies）、
+       * `e2e/`（装置自身）、`release/`（密钥）、`dist/`、`node_modules/`、`_out/` 都不跟走。
+       * 2026-11-01 实测踩到：装置进仓后 `e2e/_profiles` 也在仓内，复制时报
+       * `EBUSY: resource busy or locked, copyfile …\\Default\\Network\\Cookies`。 */
+      filter: (s) => !/([\\/])(\.git|dist|node_modules|_out|_profiles|release|e2e)([\\/]|$)/.test(s)
     });
     for (const rel of ['src/ui/tokens.css', 'src/ui/components/components.css']) {
       fsx.rmSync(pathx.join(extCopy, rel), { force: true });
