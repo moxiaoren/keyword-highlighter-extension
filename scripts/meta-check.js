@@ -506,7 +506,9 @@ if (manifest) {
  * 这条守的是**交付目录自身**：工程里一旦长出 `_dump/` 或 `_tmp.js`，出包即红灯
  * （package.js 的 walk() 只挡了顶层 `_` 文件，`_` 目录会漏网，所以在源头兜住）。
  */
-const SHIP_EXCLUDE = ['tests', 'scripts', 'dist', 'node_modules', '.git'];
+/* e2e（2026-11-01 入仓）与 tests/scripts 一样不进交付包（package.js 的 EXCLUDE_DIRS 里有它），
+ * 所以它跑出来的 e2e/ 下的 _out/（断言截图落点）不该触发「交付目录含 _ 路径」。 */
+const SHIP_EXCLUDE = ['tests', 'scripts', 'dist', 'node_modules', '.git', 'e2e'];
 (function checkUnderscorePath() {
   const badPaths = [];
   const scan = (dir) => {
