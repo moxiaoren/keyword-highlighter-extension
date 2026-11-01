@@ -896,6 +896,40 @@ if (manifest && manifest.version) {
   }
 }
 
+/* ===== 19. 外置记忆页的体量纪律（C1 · 2026-11-01） ===== */
+
+// 为什么：`_memory/STATUS.md` 曾长到 204,897 B / 181 行，最长单行 27,024 字符，开头还自称
+// "30 行左右"——它同时干着现状、发版回执、决策、待办、历史五件事。每个会话开头读它要花几万
+// token，读完还有一半是别的轮次的细节。体量只能靠机器守，靠自觉必然长回去。
+// 三条：① ≤8 KB ② 单行 ≤400 字符（否则又是一坨连贴都贴不出来的长行）
+// ③ 五个固定标题都在（会话只读这五节就知道现状）。
+// 脱离工作区单独交付时 `_memory/` 不存在 ⇒ 三条都跳过，不算红灯。
+{
+  const statusAbs = path.join(root, '..', '..', '_memory', 'STATUS.md');
+  const HEADINGS = ['## 当前版本', '## 门禁终值', '## 当前红灯', '## 本轮待办', '## 指针'];
+  let src = null;
+  try { src = fs.readFileSync(statusAbs, 'utf8'); }
+  catch (err) { if (err.code !== 'ENOENT') warn('记忆页体量核对跳过：' + err.message); }
+  if (src === null) {
+    ok('记忆页体量核对跳过（脱离工作区运行）');
+  } else {
+    const bytes = Buffer.byteLength(src, 'utf8');
+    if (bytes <= 8192) ok('记忆页体量 ' + bytes + ' B ≤ 8192');
+    else bad('记忆页 ' + bytes + ' B 超过 8 KB 上限（历史请挪 `_memory/archive/`）');
+
+    let worst = 0, worstNo = 0;
+    src.split(/\r?\n/).forEach((line, i) => {
+      if (line.length > worst) { worst = line.length; worstNo = i + 1; }
+    });
+    if (worst <= 400) ok('记忆页最长单行 ' + worst + ' 字符 ≤ 400');
+    else bad('记忆页第 ' + worstNo + ' 行有 ' + worst + ' 字符（上限 400：长内容要拆行或归档）');
+
+    const missing = HEADINGS.filter(h => !new RegExp('^' + h + '\\s*$', 'm').test(src));
+    if (!missing.length) ok('记忆页五个固定标题齐全（' + HEADINGS.length + ' 节）');
+    else bad('记忆页缺固定标题：' + missing.join(' / '));
+  }
+}
+
 /* ------------------------------------------------------- 注释里禁行号锚点（票 #51）
  * 为什么禁：全仓 57 处 `xxx.js:行号` 锚点实测只有 3 处仍准确 —— 17 处指向 v1 已删除的树
  * （lib/keyword-engine.js / lib/storage.js / utils.js / content/important-note.js …），18 处

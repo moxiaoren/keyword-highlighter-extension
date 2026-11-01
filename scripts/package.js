@@ -166,6 +166,15 @@ function main() {
     process.exit(1);
   }
 
+  // ①b 更新日志与真源同步（CHANGELOG.md 由 src/ui/changelog.js 生成，不同步禁止出包）
+  console.log('');
+  try {
+    if (!SKIP_GATES) execFileSync(process.execPath, [path.join(ROOT, 'scripts/changelog.js'), '--check'], { stdio: 'inherit', cwd: ROOT });
+  } catch (err) {
+    console.error('\n✗ CHANGELOG.md 与 src/ui/changelog.js 不同步，禁止打包（跑 `node scripts/changelog.js` 重新生成）。');
+    process.exit(1);
+  }
+
   // ② 单测
   console.log('');
   try {
