@@ -78,6 +78,12 @@
     }
     /* 抓取表格没有表头行：只给字段 label 格上色（首行是数据，不是表头） */
     .kh-note-body .kh-table .kh-table-label { background: var(--kh-brand-soft, #eaf1fb); font-weight: 600; }
+    /* 【2.0.8.8 需求④】内容格「不完整展示」：折 3 行（包一层块级 div 才生效，见 important-note 里的长注释） */
+    .kh-note-body .kh-table td.kh-val-clip { vertical-align: top; }
+    .kh-note-body .kh-table .kh-val-box {
+      display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3;
+      overflow: hidden; white-space: pre-line; word-break: break-word; cursor: help;
+    }
   `;
 
   /* ---------------- 命中身份与几何（重建后仍能找回同一条命中） ----------------
@@ -150,6 +156,8 @@
         '.kh-tip .kh-table { border-collapse: collapse; margin-top: 2px; background: transparent; }\n' +
         '.kh-tip .kh-table td { background: rgba(0,0,0,.04); color: #333; border-color: rgba(0,0,0,.1); padding: 2px 7px; white-space: pre-line; }\n' +
         '.kh-tip .kh-table .kh-table-label { background: var(--kh-brand-soft, #eaf1fb); font-weight: 600; }\n' +
+        '.kh-tip .kh-table td.kh-val-clip { vertical-align: top; }\n' +
+        '.kh-tip .kh-table .kh-val-box { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; white-space: pre-line; word-break: break-word; cursor: help; }\n' +
         '</style>' +
         '<div class="kh-tip" hidden></div>';
       document.body.appendChild(host);

@@ -42,6 +42,17 @@
 
   const HOST_ID = 'kh-important-note-host';
 
+  /** 摘要列那一行里的正文预览：去掉 Markdown/HTML 记号，压成一行，超长截断。 */
+  function summarizeNote(note) {
+    let s = String(note == null ? '' : note);
+    s = s.replace(/<[^>]*>/g, ' ');
+    s = s.replace(/!\[[^\]]*\]\([^)]*\)/g, ' ');
+    s = s.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');
+    s = s.replace(/[#>*_`~|]/g, ' ');
+    s = s.replace(/\s+/g, ' ').trim();
+    return s.length > 60 ? s.slice(0, 60) + '…' : s;
+  }
+
   const STYLE = `
     :host { all: initial; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -86,6 +97,132 @@
      * min-width 必须跟着抬到 200px（用户 2026-10-13 拍板：160 → 200）—— CSS 里 min-width 压过 width，只改 width 等于白改。
      * 宽度不再写死在这里：唯一真源是 .khin-wrap 上的 --khin-panel-w；applyPosition() 的水平钳位
      * 读面板**实测**宽度，也不再抄一个字面量。 */
+    /* =====================【2.0.8.4 需求④ / 2.0.8.5 重做】页签 + AI 对话面 =====================
+     * 两种形态共用：khin-tabs（笔记 / AI 助手）+ khin-pane-note（原先的笔记区）+
+     * khin-ai（对话面），三者由 syncTab() 切显隐。尺寸按面板现有的紧凑档走
+     * （11px 正文、24px 级按钮），不新开一套尺码。
+     *
+     * 2.0.8.5 重做要点（用户：「ai助手分页设计的好看一点」）：
+     *   · 顶部一条状态带：模式（网页对话 / API）+ 清空；不再是两个灰按钮平铺
+     *   · 气泡分左右、带小圆头像，助手侧可流式出字（光标闪动），出错用琥珀色而不是刺眼的红
+     *   · 输入区贴底、自动长高（最多 5 行）、发送键带图标，空态给三条常用开场
+     *   · 全部沿用面板的浅色 token，不引入新字体/新色系 */
+    .khin-tabs { display: flex; gap: 4px; padding: 0 8px 6px; flex: 0 0 auto; }
+    .khin-tab {
+      flex: 1 1 0; min-width: 0; padding: 3px 6px; border: 1px solid #e3e8f0; background: #fff;
+      color: #64748b; font: inherit; font-size: 11px; line-height: 16px; border-radius: 7px;
+      cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .khin-tab.is-on { background: #eef4ff; border-color: #b9cff0; color: #1d4ed8; font-weight: 600; }
+    .khin-pane { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+    .khin-pane[hidden], .khin-ai[hidden] { display: none !important; }
+    .khin-ai { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; background: #fcfdff; }
+
+    .khin-chat { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; padding: 8px 10px 10px; gap: 8px; }
+    .khin-chat-head {
+      display: flex; align-items: center; gap: 6px; flex: 0 0 auto;
+      padding: 0 0 5px; border-bottom: 1px solid #eef1f6;
+    }
+    .khin-chat-dot { width: 6px; height: 6px; border-radius: 50%; background: #22c55e; flex: 0 0 auto; }
+    .khin-chat-dot.is-busy { background: #f59e0b; animation: khin-pulse 1s ease-in-out infinite; }
+    .khin-chat-dot.is-off { background: #cbd5e1; }
+    .khin-chat-mode {
+      flex: 1 1 auto; min-width: 0; font-size: 10px; color: #64748b;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .khin-chat-list {
+      flex: 1 1 auto; min-height: 90px; overflow-y: auto;
+      display: flex; flex-direction: column; gap: 8px; padding: 2px 0;
+    }
+    .khin-chat-empty {
+      display: flex; flex-direction: column; gap: 6px; padding: 10px 2px;
+      color: #94a3b8; font-size: 11px; line-height: 1.5;
+    }
+    .khin-chat-empty b { color: #64748b; font-weight: 600; }
+    .khin-chat-quick { display: flex; flex-wrap: wrap; gap: 4px; }
+    .khin-chat-quick button {
+      border: 1px dashed #dbe2ec; background: #fbfcfe; color: #64748b; font: inherit; font-size: 10px;
+      line-height: 15px; padding: 2px 7px; border-radius: 999px; cursor: pointer;
+    }
+    .khin-chat-quick button:hover { border-color: #b9cff0; color: #1d4ed8; background: #f5f9ff; }
+    .khin-chat-row { display: flex; align-items: flex-start; gap: 5px; max-width: 100%; }
+    .khin-chat-row.is-me { flex-direction: row-reverse; }
+    .khin-chat-av {
+      width: 16px; height: 16px; border-radius: 50%; flex: 0 0 auto; margin-top: 1px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 9px; line-height: 1; color: #fff; background: #94a3b8; user-select: none;
+    }
+    .khin-chat-row.is-me .khin-chat-av { background: #3579c2; }
+    .khin-chat-bubble {
+      font-size: 11px; line-height: 1.55; padding: 6px 9px; border-radius: 10px;
+      white-space: pre-wrap; word-break: break-word; max-width: calc(100% - 26px);
+      background: #f6f7f9; color: #1f2937; border: 1px solid #eef1f6;
+    }
+    .khin-chat-row.is-me .khin-chat-bubble {
+      background: #eef4ff; border-color: #dbe7fb; border-bottom-right-radius: 3px;
+    }
+    .khin-chat-row.is-bot .khin-chat-bubble { border-bottom-left-radius: 3px; }
+    .khin-chat-row.is-err .khin-chat-bubble { background: #fffbeb; border-color: #fde68a; color: #92400e; }
+    .khin-chat-row.is-err .khin-chat-av { background: #f59e0b; }
+    .khin-chat-caret {
+      display: inline-block; width: 2px; height: 11px; margin-left: 1px; vertical-align: -1px;
+      background: #3579c2; animation: khin-caret 1s steps(1) infinite;
+    }
+    .khin-chat-tools { display: flex; gap: 4px; margin-top: 3px; }
+    .khin-chat-link {
+      border: 0; background: transparent; color: #1d4ed8; font: inherit; font-size: 10px;
+      padding: 0; cursor: pointer; text-decoration: underline;
+    }
+    .khin-chat-form {
+      display: flex; align-items: flex-end; gap: 5px; flex: 0 0 auto;
+      padding-top: 6px; border-top: 1px solid #eef1f6;
+    }
+    .khin-chat-in {
+      flex: 1 1 auto; min-width: 0; box-sizing: border-box; resize: none;
+      min-height: 34px; max-height: 96px; padding: 6px 8px;
+      border: 1px solid #dbe2ec; border-radius: 9px; font: inherit;
+      font-size: 11px; line-height: 1.5; color: #1f2937; background: #fff;
+      overflow-y: auto;
+    }
+    .khin-chat-in:focus-visible { outline: none; border-color: #9dbcf0; box-shadow: 0 0 0 2px rgba(99,140,220,.18); }
+    .khin-chat-send {
+      flex: 0 0 auto; width: 30px; height: 30px; border-radius: 9px; border: 1px solid #3579c2;
+      background: #3579c2; color: #fff; font: inherit; font-size: 13px; line-height: 1;
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+    }
+    .khin-chat-send[disabled] { background: #e2e8f0; border-color: #e2e8f0; color: #94a3b8; cursor: default; }
+    .khin-chat-btn {
+      border: 1px solid #dbe2ec; background: #fff; color: #475569; font: inherit; font-size: 10px;
+      line-height: 15px; padding: 2px 7px; border-radius: 6px; cursor: pointer;
+    }
+    .khin-chat-btn:hover { border-color: #b9cff0; }
+    /* ----【2.0.8.7 需求②】审核条（收在聊天头下方，展开才占位）---- */
+    .khin-audit {
+      flex: 0 0 auto; display: flex; flex-direction: column; gap: 5px;
+      padding: 7px 8px; border: 1px solid #e6ecf5; border-radius: 9px; background: #f8fbff;
+    }
+    .khin-audit[hidden] { display: none; }
+    .khin-audit-line { display: flex; align-items: center; gap: 5px; min-width: 0; }
+    .khin-audit-name {
+      flex: 1 1 auto; min-width: 0; box-sizing: border-box;
+      height: 24px; padding: 0 7px; border: 1px solid #dbe2ec; border-radius: 7px;
+      font: inherit; font-size: 11px; color: #1f2937; background: #fff;
+    }
+    .khin-audit-name:focus-visible { outline: none; border-color: #9dbcf0; box-shadow: 0 0 0 2px rgba(99,140,220,.18); }
+    .khin-audit-note {
+      flex: 1 1 auto; min-width: 0; font-size: 10px; color: #64748b;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .khin-audit-prev {
+      max-width: 48px; max-height: 48px; border-radius: 7px; border: 1px solid #e6ecf5;
+      background: #fff; align-self: flex-start;
+    }
+    .khin-audit-prev[hidden] { display: none; }
+    @keyframes khin-pulse { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
+    @keyframes khin-caret { 0%,49% { opacity: 1 } 50%,100% { opacity: 0 } }
+    .khin-chat-btn.is-primary { background: #3579c2; border-color: #3579c2; color: #fff; }
+    .khin-chat-btn:hover { border-color: #b9cff0; }
+    .khin-chat-btn.is-primary:hover { background: #2f6bb0; }
     .khin-panel {
       width: var(--khin-panel-w); min-width: 200px; max-width: calc(100vw - 32px);
       max-height: calc(100vh - 24px); background: #fff;
@@ -125,6 +262,109 @@
     /* 正文至少留得住一行（用户 2026-10-07 的"被挤没"就是缩到 0 了）—— 再多交给它自己滚 */
     .khin-body { flex: 1 1 auto; min-height: 60px; overflow-y: auto; padding: 6px 0; }
     .khin-body.khin-collapsed { display: none; }
+
+    /* ---------- 【2026-11-03 需求】四态：贴边条 / 摘要列 / 手风琴 / 浮窗 ----------
+     * 用户原话：「重要笔记悬浮窗优化（还是之前说的内容过多，主次不分明，遮挡页面等问题）」。
+     * 贴边条 8px 宽、96px 高，竖排条数；悬停/点击滑出 300px 摘要列（最高 45vh，内部滚动）；
+     * 点一行手风琴展开（同时只开一张，展开态最高 60vh）；「浮窗」回旧卡片。
+     * 所有尺寸都是硬上限 —— 内容再多也不许把页面盖住（验收：1/5/20 条时可见高度 ≤60vh）。 */
+    .khin-rail {
+      position: relative; width: 8px; height: 96px; padding: 0; border: 0;
+      border-radius: 0 6px 6px 0; background: rgba(53,121,194,.16);
+      display: flex; align-items: center; justify-content: center; cursor: pointer;
+      overflow: visible; transition: background .15s ease;
+    }
+    .khin-rail:hover { background: rgba(53,121,194,.3); }
+    /* [2.0.8.6] 贴边条可上下拖：光标给个「能抓」的暗示 */
+    .khin-rail { cursor: grab; touch-action: none; }
+    .khin-rail.is-dragging { cursor: grabbing; }
+    .khin-rail[data-side="right"] { border-radius: 6px 0 0 6px; }
+    /* 条子只有 8px，条数做成挂在右侧的小圆泡（在条子之外，不占命中宽度）。 */
+    .khin-rail-count {
+      position: absolute; top: -3px; left: 5px; min-width: 17px; height: 17px;
+      box-sizing: border-box; padding: 0 4px; border-radius: 9px;
+      background: #3579c2; color: #fff; font-size: 10px; font-weight: 600;
+      line-height: 17px; text-align: center; font-style: normal;
+      box-shadow: 0 0 0 2px #fff;
+    }
+    .khin-rail[data-side="right"] .khin-rail-count { left: auto; right: 5px; }
+    .khin-rail-unread {
+      position: absolute; top: 18px; left: 8px; width: 5px; height: 5px; border-radius: 50%;
+      background: #e53935; display: none;
+    }
+    .khin-wrap.has-unread .khin-rail-unread { display: block; }
+    /* 【2.0.8.4 需求②】摘要列**顶边对齐贴边条、只向下长**。
+     * 旧写法是 top:50% + translateY(-50%)（垂直居中）—— 每次重扫重建行时内容高度一变，
+     * 整列就跟着上下挪；钉住之后尤其明显（用户原话：「钉住之后出现悬窗上下跳动，没有滚动页面」）。
+     * 现在锚点固定在贴边条顶边，高度变化只往下延伸，视觉上不会跳。
+     * is-expanded 把 45vh → 60vh 的差额**上移一半**（7.5vh），展开前后中心点不变。 */
+    .khin-drawer {
+      position: absolute; top: 0; left: calc(100% + 6px);
+      width: 300px; max-width: calc(100vw - 24px); max-height: 45vh; transition: width .14s ease-out;
+      background: #fff; border: 1px solid #e3e8f0; border-radius: 12px;
+      box-shadow: 0 8px 28px rgba(0,0,0,.18); display: flex; flex-direction: column;
+      overflow: hidden; animation: khin-in .14s ease-out;
+    }
+    .khin-drawer[data-side="right"] { left: auto; right: calc(100% + 6px); }
+    .khin-drawer[hidden] { display: none !important; }
+    /* 展开（手风琴）时高度上限 45vh → 60vh：顶边上移差额的一半，中心点不动 ⇒ 展开这一下不"跳"。 */
+    .khin-drawer.is-expanded { max-height: 60vh; top: -7.5vh; }
+    /* [2.0.8.6] AI 页签给一档更宽：300 宽里气泡挤成一团（用户截图实测） */
+    .khin-drawer.is-ai { width: 344px; max-height: 56vh; }
+    .khin-dh {
+      display: flex; align-items: center; gap: 6px; padding: 8px 10px; flex: 0 0 auto;
+      background: linear-gradient(180deg, #fff, #eaf1fb); border-bottom: 1px solid #eef1f6;
+    }
+    .khin-dh-title { font-size: 13px; font-weight: 600; color: #3579c2; flex: 1; white-space: nowrap; }
+    .khin-dh-count { font-size: 11px; color: #3579c2; background: #eaf1fb; border-radius: 9px; padding: 0 6px; }
+    .khin-dh-btn {
+      border: 0; background: none; color: #8a8a8a; cursor: pointer; font-size: 12px;
+      padding: 2px 5px; border-radius: 4px; line-height: 1.2; font-family: inherit;
+    }
+    .khin-dh-btn:hover { color: #333; background: rgba(0,0,0,.05); }
+    .khin-dh-btn.is-on { color: #3579c2; background: #eaf1fb; }
+    .khin-rows { flex: 1 1 auto; overflow: auto; }
+    .khin-row { border-bottom: 1px solid #f0f3f7; }
+    .khin-row:last-child { border-bottom: 0; }
+    /* 【2.0.8.8 需求①】收纳态整行铺的就是**卡片本身的颜色**，不再自己调淡。
+     * 用户原话：「贴边模式底色不要自己搞，直接复用卡片颜色就行。你现在搞的颜色太淡了，
+     * 还会和其他淡色卡片混淆从而误判重要程度。」
+     * ⇒ 底色与卡片 .khin-item 的 item.bg 同源（--khin-tint 由 rowBgOf() 给原色）。
+     * 整行已经是色块：左侧 3px 色条与 8px 方点跟底色同色，看不见只剩噪声 ⇒ 退休；
+     * 悬停改成叠一层白，不再把底色盖回 #f7faff（否则一动鼠标颜色就"消失"）。 */
+    .khin-row.has-tint { background: var(--khin-tint, transparent); }
+    .khin-row.has-tint .khin-row-head { padding-left: 5px; }
+    .khin-row.has-tint .khin-row-dot { display: none; }
+    .khin-row.has-tint .khin-row-sub { color: #334155; }
+    .khin-row.has-tint .khin-row-head:hover { background: rgba(255,255,255,.45); }
+    .khin-row-cat {
+      flex: 0 0 auto; max-width: 72px; font-size: 10px; line-height: 16px; padding: 0 5px;
+      border-radius: 8px; background: rgba(15,23,42,.06); color: #475569;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .khin-row-head { display: flex; align-items: center; gap: 6px; padding: 7px 8px; cursor: pointer; min-height: 36px; }
+    .khin-row-head:hover { background: #f7faff; }
+    .khin-row-dot { width: 8px; height: 8px; border-radius: 2px; flex: 0 0 auto; background: #3579c2; }
+    .khin-row-t {
+      font-size: 12px; font-weight: 600; color: #1f2937; max-width: 96px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 0 auto;
+    }
+    .khin-row-sub {
+      font-size: 11px; color: #64748b; flex: 1 1 auto; min-width: 0;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .khin-row-n { font-size: 10px; color: #3579c2; background: #eaf1fb; border-radius: 8px; padding: 0 5px; flex: 0 0 auto; }
+    .khin-row-btn { border: 0; background: none; color: #8a8a8a; cursor: pointer; font-size: 12px; padding: 1px 3px; border-radius: 4px; flex: 0 0 auto; font-family: inherit; }
+    .khin-row-btn:hover { color: #333; background: rgba(0,0,0,.05); }
+    .khin-row-body { max-height: calc(60vh - 96px); overflow: auto; padding: 0 8px 8px; }
+    .khin-row-body[hidden] { display: none; }
+    .khin-row-empty { padding: 14px 12px; font-size: 12px; color: #94a3b8; text-align: center; }
+    .khin-df { flex: 0 0 auto; padding: 6px 10px; border-top: 1px solid #eef1f6; display: flex; justify-content: flex-end; }
+    .khin-df-btn {
+      border: 1px solid #e3e8f0; background: #fff; color: #475569; cursor: pointer;
+      font-size: 12px; padding: 3px 10px; border-radius: 6px; font-family: inherit;
+    }
+    .khin-df-btn:hover { background: #f7faff; color: #3579c2; }
     /* 整页只有图片命中时这份列表是空的，但它仍占着 min-height:60px 的 flex 槽位
      * ⇒ 面板顶部白出一条 60px 的带子（T29 / F6.1）。它必须和别的分区一样有自己的
      * [hidden] 兜底：display:none 才不参与 flex 布局（visibility/opacity 都不行）。 */
@@ -143,6 +383,8 @@
       background: #f8fafc; border: 1px solid #eef1f6; border-radius: 8px;
     }
     .khin-item:last-child { margin-bottom: 0; }
+    /* 摘要列展开区里的卡片沿用同一张卡，但外层已经给了 padding 与底色，这里只剥掉重复的边距/边框。 */
+    .khin-row-body .khin-item { margin: 0; box-shadow: none; border: 0; }
     .khin-item-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; margin-bottom: 3px; }
     .khin-item-tags { position: relative; display: flex; flex-wrap: wrap; gap: 4px; flex: 1; min-width: 0; }
     /* 命中词块的上限是**派生的**：一个词块不许超过面板里那一行的可用宽度
@@ -163,6 +405,26 @@
       font-size: 13px; padding: 2px 4px; border-radius: 4px; line-height: 1; flex-shrink: 0;
     }
     .khin-item-close:hover { color: #e53935; background: #ffe9e9; }
+    /* 【2.0.8.4 需求③】浮窗单卡收起/展开（非贴边模式逐卡折叠，只留标签行）。
+     * 按钮比 ✕ 弱一档：灰色、更小；收起后正文整块不占位（不是 max-height:0 的动画，
+     * 免得面板高度跟着动一下）。 */
+    .khin-item-fold {
+      background: none; border: none; cursor: pointer; color: #94a3b8;
+      font-size: 11px; padding: 2px 4px; border-radius: 4px; line-height: 1; flex-shrink: 0;
+      font-family: inherit;
+    }
+    .khin-item-fold:hover { color: #3579c2; background: #eaf1fb; }
+    .khin-item.khin-folded .khin-item-note { display: none; }
+    /* [2.0.8.7 口径 A1] 合并行并进「进表」那张表：靠一条虚线分隔，不再另起一张表 */
+    .kh-table-fetch tr.kh-merge-first > td { border-top: 1px dashed #dbe2ec; }
+    .kh-table-fetch tr.kh-merge-row.kh-merge-hidden { display: none; }
+    .khin-item.is-merge-open .kh-table-fetch tr.kh-merge-hidden,
+    .khin-row-body.is-merge-open .kh-table-fetch tr.kh-merge-hidden { display: table-row; }
+    .kh-merge-more {
+      margin: 2px 0 0; padding: 0 2px; border: 0; background: none; cursor: pointer;
+      font: inherit; font-size: 10px; line-height: 16px; color: #3579c2;
+    }
+    .kh-merge-more:hover { text-decoration: underline; }
     /* 命中计数小标：一张卡命中多个时才出现（N>1），点了在下面铺开下拉。 */
     .khin-tag-more {
       flex: 0 0 auto; font-size: 10px; font-weight: 600; line-height: 15px; padding: 0 5px;
@@ -258,6 +520,17 @@
     .kh-table .kh-table-label {
       background: var(--kh-brand-soft, #eaf1fb); font-weight: 600; color: var(--kh-text, #1f2937);
     }
+    /* 【2.0.8.8 需求②】隐私政策行的小徽标：「名」=主标题、「开」=开发者，看它们在不在这段
+     * 隐私政策正文里（用户原话：「在标题单元格插入“名”，“开”的小图标」）。
+     * 行底色（全中=浅绿、有缺=浅黄）由 JS 用 KH.NoteCheck.COLOR_OK / COLOR_BAD **内联**写入，
+     * 色值只留一份；这里只负责徽标形状与命中/未命中的深浅。 */
+    .kh-policy-flag {
+      display: inline-block; margin-left: 3px; padding: 0 3px; border-radius: 3px;
+      font-size: 10px; line-height: 14px; font-weight: 600; vertical-align: bottom;
+      background: #e2e8f0; color: #475569;
+    }
+    .kh-policy-flag.is-hit { background: #2e7d32; color: #fff; }
+    .kh-policy-flag.is-miss { background: #b45309; color: #fff; }
     /* 字段标题格里的文本（= 设置「抓取字段」里填的那个名字）**不必整段展示**，省下的宽度留给内容。
      * 用户 2026-10-11 原话："抓取字段的标题内容可以不完整展示…实际抓取到的内容展示还是需要完整展示的，节省宽度"。
      * 做法：标题文本包一层 .kh-lbt（见下方 noteFragment 的补包裹），**宽度上限 + 单行裁切**，
@@ -276,6 +549,14 @@
     .kh-table .kh-table-label .kh-lbt {
       display: inline-block; max-width: var(--kh-lbt-maxw, 8em); max-height: 1.5em;
       overflow: hidden; vertical-align: bottom;
+    }
+    /* 【2.0.8.8 需求④】内容格「不完整展示」（抓取字段后缀写一个波浪号）：折成 3 行，悬停 title 读全文。
+     * 必须多包一层块级 div —— 真机实测直接对 td 用 -webkit-line-clamp 会被 Chromium 归一到
+     * table-cell，clamp 不生效（同上一条注释里被淘汰的写法②）。值本身一个字不改，只裁显示。 */
+    .kh-table td.kh-val-clip { vertical-align: top; }
+    .kh-table .kh-val-box {
+      display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3;
+      overflow: hidden; white-space: pre-line; word-break: break-word; cursor: help;
     }
     /* 【2.0.6.1 需求⑥】同值字段合并后的抬头：只写最短那个名字，后面跟一个「共 N 个」的小标，
      * 点开（原生 details 元素，无需 JS）列出全部字段名。老笔记里没有它，就照旧只显示 .kh-lbt。 */
@@ -303,18 +584,6 @@
       margin-left: 4px; font-weight: 400; font-size: 9px; line-height: 1.5;
       color: var(--kh-text-3, #94a3b8); white-space: nowrap;
     }
-    /* ---- 软著一致性核对（用户 m00001 需求②）----
-     * 结论只落在**值格**上（见 softcheck.js 的 decorateTable）：通过=绿底、需授权书=琥珀底、跳过=不涂。
-     * 底色用浅色 + 左内阴影当色条：卡片本身可能铺了"复用高亮底色"，浅底在深色卡上仍能认出颜色。 */
-    .kh-table td.khin-soft-ok { background: #e7f8ec; box-shadow: inset 3px 0 0 #16a34a; }
-    .kh-table td.khin-soft-warn { background: #fff4e5; box-shadow: inset 3px 0 0 #f59e0b; }
-    /* 表格下面那行小徽标：一句人话的结论（完整 reason 也在 title 里，悬停可读） */
-    .khin-soft-badge {
-      display: block; margin-top: 4px; padding: 2px 6px; border-radius: 6px;
-      font-size: 10px; line-height: 1.6; white-space: normal; word-break: break-word;
-    }
-    .khin-soft-badge.khin-soft-ok { color: #15803d; background: #e7f8ec; border: 1px solid #bbe7c8; }
-    .khin-soft-badge.khin-soft-warn { color: #b45309; background: #fff4e5; border: 1px solid #f6d5a7; }
   `;
 
   /** 图片协议白名单（与内容脚本 sanitize 同口径：仅 http(s)） */
@@ -1258,6 +1527,90 @@
      口径是"去首尾空白后按码点数比"，所以先归一再比。 */
   const tagText = (s) => String(s == null ? '' : s).trim();
 
+  /* ---- 【2.0.8.6 需求①】图文合并：命中的图字段 → 一条「自定义标题 ｜ 值」行 ----
+   * 用户口径：抓取字段的图片 + 它的 OCR 动态词命中 ⇒ 出一行「自定义标题 = 该字段抓到的值」。
+   * 「动态词」就是这条规则的 `imgOcrNeed`（字段名表），所以标题配置表按**字段名**配：
+   * `cfg.imgMerge.rows = [{field, title, hidden}]`（唯一归一见 `KH.Config.normalizeImgMerge`）。
+   * 返回「配置里配了、这条规则也确实拿这个字段当动态判据」的那些行（顺序 = 配置顺序）。
+   * 没有配置 ⇒ 空数组 ⇒ 卡片与旧版逐字节一致。
+   *
+   * 【2.0.8.7 需求①·修口径】2.0.8.6 只判「配置行 ∈ imgOcrNeed」，**没看这次图片有没有真的命中**
+   * ⇒ 图没识别到 / 动态值一个都没在图上，照样出一行空壳。用户原话是「**如果命中**，则出现一个
+   * 自定义标题」——所以这里加一道闸：`hit` 由 `ocrFieldHit()` 现算，没命中就不出这一行。 */
+  function mergeRowsFor(meta, cfg) {
+    const mg = (cfg && cfg.imgMerge) || null;
+    if (!mg || mg.on === false || !mg.rows || !mg.rows.length) return [];
+    const need = String((meta && meta.imgOcrNeed) || '');
+    const have = need.split(/[,，、;；\s]+/).map(tagText).filter(Boolean).map((s) => s.toLowerCase());
+    /* 【2.0.8.7 口径 B2】不在动态词表里的字段也能触发，但**必须真的进表出了值**：
+     * 用户场景②是「图里命中『登记号』→ 进表（标题登记号，内容 abc1234）→ 合并」，
+     * 这里的「登记号」是静态命中词，通常不会写进 `imgOcrNeed`。只按「图有命中」就出行会误报
+     * （图里认出一个无关词也算），所以判据落在「`ocrExtraRows()` 为这个字段产出了值」上。
+     * 懒算：配置里只要还有动态字段走，就不去碰 OCR 条目表。 */
+    let staticMap = null;
+    const staticValues = () => {
+      if (staticMap) return staticMap;
+      staticMap = new Map();
+      let rows = [];
+      try { rows = ocrExtraRows(meta) || []; } catch (e) { rows = []; }
+      for (let i = 0; i < rows.length; i++) {
+        const k = squashWs((rows[i] && rows[i].label) || '').toLowerCase();
+        const v = String((rows[i] && rows[i].value) || '').trim();
+        if (k && v && !staticMap.has(k)) staticMap.set(k, v);
+      }
+      return staticMap;
+    };
+    const out = [];
+    for (let i = 0; i < mg.rows.length; i++) {
+      const r = mg.rows[i] || {};
+      const f = tagText(r.field);
+      if (!f) continue;
+      const title = tagText(r.title) || f;
+      const hidden = r.hidden === true;
+      if (have.indexOf(f.toLowerCase()) >= 0) {
+        out.push({ field: f, title: title, hidden: hidden, hit: ocrFieldHit(meta, f) });
+        continue;
+      }
+      const v = staticValues().get(squashWs(f).toLowerCase()) || '';
+      if (v) out.push({ field: f, title: title, hidden: hidden, hit: true, value: v });
+    }
+    return out;
+  }
+
+  /**
+   * 【2.0.8.7 需求①】「该字段的图片这次真的命中了吗」——唯一判决点。
+   *
+   * 命中 = 存在一条**属于这条规则、标签就是这个字段**的 OCR 条目，且
+   *   · `state === 'done'` 且读到了文字；
+   *   · 配了动态判据（`imgOcrNeed`）时：那些字段值**全部**在图上（`needMissingValues` 空）；
+   *   · 没配动态判据时：静态「图片命中关键词」至少中一个（`matched` 非空）。
+   *
+   * 之所以不在 `decorateMerge` 里另判一次：判决与 `judgeInfo` 同源（同一份 `need`/`matched`），
+   * 这里是"按字段聚合"的读法，改判决口径只需要改 `img-ocr.js` 那一处。
+   */
+  function ocrFieldHit(meta, field) {
+    const I = KH.ImgOcr;
+    if (!I || typeof I.items !== 'function') return false;
+    const want = String(field == null ? '' : field).replace(/\s+/g, '').toLowerCase();
+    if (!want) return false;
+    const ruleId = String((meta && meta.pinId) || '');
+    let list = [];
+    try { list = I.items() || []; } catch (e) { return false; }
+    for (let i = 0; i < list.length; i++) {
+      const it = list[i] || {};
+      if (ruleId && String(it.ruleId || '') !== ruleId) continue;
+      if (String(it.label == null ? '' : it.label).replace(/\s+/g, '').toLowerCase() !== want) continue;
+      if (it.state !== 'done' || !it.text) continue;
+      const dyn = (it.need || []).filter(Boolean);
+      if (dyn.length) {
+        if (!(it.needMissingValues || []).length) return true;
+        continue;
+      }
+      if ((it.matched || []).length) return true;
+    }
+    return false;
+  }
+
   const head = {
     /**
      * 命中集 → 有效条目（顺序 = 入参顺序 = 文档序，全程**不排序**）。
@@ -1350,7 +1703,7 @@
      * @param {object[]} hits  registry 命中
      * @param {Set<string>} ignored 本次会话被用户关掉的笔记内容
      */
-    build(hits, ignored) {
+    build(hits, ignored, cfg) {
       const rawMap = new Map();     // note\0kw\0adj -> { note, kw, adj, pinIds, imgSize, bg }
       for (const h of hits || []) {
         if (!h || !h.meta) continue;
@@ -1372,13 +1725,22 @@
          * **它只并入集合、不参与去重键** —— 普通词「价格」与组合词「价格×单价」的卡片文本都是「价格」，
          * 两张卡本来就该合成一条记录（去重键是 note\0kw\0adj），拆开会让同一张卡上的词显示两遍。 */
         const pinId = String(h.meta.pinId || '').trim().toLowerCase();
+        const merge = mergeRowsFor(h.meta, cfg);
         const key = note + '\u0000' + kw + '\u0000' + adj;
         const prev = rawMap.get(key);
-        if (prev) { if (pinId) prev.pinIds.add(pinId); continue; }   // 去重（但把 pinId 收进来）
+        if (prev) {
+          if (pinId) prev.pinIds.add(pinId);
+          merge.forEach((m) => {
+            const p = prev.mergeMap.get(m.field);
+            if (!p || (!p.hit && m.hit)) prev.mergeMap.set(m.field, m);
+          });
+          continue;   // 去重（但把 pinId / 合并行收进来）
+        }
         rawMap.set(key, {
           note, kw, adj,
           pinIds: new Set(pinId ? [pinId] : []),
           imgSize: h.meta.imgSize || '',
+          mergeMap: new Map(merge.map((m) => [m.field, m])),
           noteFontSize: h.meta.noteFontSize || '',
           bg: h.meta.impNoteBg || ''
         });
@@ -1387,7 +1749,13 @@
       const noteMap = new Map();    // note -> { note, imgSize, noteFontSize, bg, entrySet, pinIds }
       rawMap.forEach((r) => {
         let g = noteMap.get(r.note);
-        if (!g) { g = { note: r.note, imgSize: r.imgSize, noteFontSize: r.noteFontSize, bg: r.bg, entrySet: new Set(), pinIds: new Set() }; noteMap.set(r.note, g); }
+        if (!g) { g = { note: r.note, imgSize: r.imgSize, noteFontSize: r.noteFontSize, bg: r.bg, entrySet: new Set(), pinIds: new Set(), mergeMap: new Map() }; noteMap.set(r.note, g); }
+        (r.mergeMap ? Array.from(r.mergeMap.values()) : []).forEach((m) => {
+          /* 同一字段在多张卡上都有配置行 ⇒ 合成一行；这一轮真命中的那条优先
+           * （否则可能被同字段的「没命中」覆盖掉，合并行就永远出不来）。 */
+          const prev = g.mergeMap.get(m.field);
+          if (!prev || (!prev.hit && m.hit)) g.mergeMap.set(m.field, m);
+        });
         if (!g.imgSize && r.imgSize) g.imgSize = r.imgSize;
         if (!g.noteFontSize && r.noteFontSize) g.noteFontSize = r.noteFontSize;
         if (!g.bg && r.bg) g.bg = r.bg;
@@ -1402,7 +1770,7 @@
           const i = k.indexOf('\u0000');
           entries.push({ kw: k.slice(0, i), adj: k.slice(i + 1) });
         });
-        items.push({ note: g.note, entries, pinIds: Array.from(g.pinIds), imgSize: g.imgSize || '', noteFontSize: g.noteFontSize || '', bg: g.bg || '' });
+        items.push({ note: g.note, entries, pinIds: Array.from(g.pinIds), imgSize: g.imgSize || '', noteFontSize: g.noteFontSize || '', bg: g.bg || '', mergeRows: Array.from(g.mergeMap.values()) });
       });
       return items;
     },
@@ -1420,7 +1788,11 @@
       if ((oldItems || []).length !== (newItems || []).length) return true;
       const key = (it) => (it.note || '') + '\u0001' + (it.bg || '') + '\u0001' + (it.imgSize || '') + '\u0001' +
         (it.noteFontSize || '') + '\u0001' +
-        (it.entries || []).map(e => (e.kw || '') + '\u0003' + (e.adj || '')).sort().join('\u0002');
+        (it.entries || []).map(e => (e.kw || '') + '\u0003' + (e.adj || '')).sort().join('\u0002') +
+        /* 【2.0.8.7 需求①】图文合并行的「这次命没命中」也算内容：OCR 结果一回来，
+         * 该出现的合并行要出现、不该出现的要消失 —— 不把它放进指纹，面板会一直停在旧样子。 */
+        '\u0004' + (it.mergeRows || []).map(r => (r.field || '') + ':' + (r.hit ? '1' : '0') + ':' +
+          (r.hidden ? '1' : '0') + ':' + (r.title || '') + ':' + (r.value || '')).join('\u0005');
       const oldKeys = new Set((oldItems || []).map(key));
       for (const it of newItems) if (!oldKeys.has(key(it))) return true;
       return false;
@@ -1473,6 +1845,70 @@
 
   /* =================== 面板 =================== */
 
+  /* ==========================================================================
+   * 【2.0.8.7 需求③ → 2.0.8.8 需求①】摘要列「收纳态」也要看得出类别
+   * --------------------------------------------------------------------------
+   * 2.0.8.7 的原话是「收纳状态不太好判断这个卡片属于什么类别」，当时的做法是整行铺一层
+   * **极浅的卡片底色 + 左边 3px 色条 + 行头类别 chip**。
+   * 2.0.8.8 用户把这层底色的口径改了：「底色不要自己搞，直接复用卡片颜色就行。你现在搞的
+   * 颜色太淡了，还会和其他淡色卡片混淆从而误判重要程度。」
+   * ⇒ 底色下面只剩一个函数（`rowBgOf`），返回的就是卡片原色；色条与方点已随同色而退休。
+   * 类别 chip（`entries[].adj`）保持不变。
+   * ======================================================================== */
+  /**
+   * 【2.0.8.8 需求①】收纳态整行铺的底色 = **卡片本身的颜色**。
+   * 旧实现把卡片色降到 10% 透明度，用户口径是「颜色太淡，和别的淡色卡片混淆、误判重要程度」，
+   * 所以这里不再换算，只做规范化（`#abc` → `#aabbcc`、8 位带 alpha 的取前 6 位）。
+   * 颜色唯一来源仍是 `item.bg`（卡片 `.khin-item` 的 `background`），别处不要再调浓淡。
+   */
+  function rowBgOf(hex) {
+    const h = String(hex || '').replace('#', '');
+    if (!/^[0-9a-fA-F]{3,8}$/.test(h)) return '';
+    if (h.length === 3 || h.length === 4) {
+      return ('#' + h[0] + h[0] + h[1] + h[1] + h[2] + h[2]).toLowerCase();
+    }
+    if (h.length === 6 || h.length === 8) return ('#' + h.slice(0, 6)).toLowerCase();
+    return '';
+  }
+
+  /**
+   * 【2.0.8.8 需求②③】抓取表里按字段 key（`title` / `dev` / `entity` / `link` / `policy`）找那一行。
+   * 跳过合并行（它们的左列是自定义标题，可能和字段同名）。
+   */
+  function rowOfField(table, key) {
+    const NC = (KH && KH.NoteCheck) || (typeof window !== 'undefined' && window.KH && window.KH.NoteCheck);
+    if (!NC || !table || !table.querySelectorAll) return null;
+    const trs = table.querySelectorAll('tr');
+    for (let i = 0; i < trs.length; i++) {
+      const tr = trs[i];
+      if (String(tr.className || '').indexOf('kh-merge-row') >= 0) continue;
+      const tds = tr.querySelectorAll('td');
+      if (!tds.length) continue;
+      if (NC.fieldKey(tds[0].textContent) === key) return tr;
+    }
+    return null;
+  }
+
+  /** 整行（两个单元格）铺一层底色；传空串就还原。 */
+  function tintRow(row, color) {
+    if (!row || !row.querySelectorAll) return;
+    const tds = row.querySelectorAll('td');
+    for (let i = 0; i < tds.length; i++) {
+      tds[i].style.background = color || '';
+      if (color) tds[i].title = tds[i].title || '';
+    }
+  }
+
+  /** 类别名：取第一条命中词所属规则的备注（`adj`）；没备注就空着，不硬编「未分类」。 */
+  function catOf(item) {
+    const entries = (item && item.entries) || [];
+    for (let i = 0; i < entries.length; i++) {
+      const adj = tagText(entries[i] && entries[i].adj);
+      if (adj) return adj.length > 8 ? adj.slice(0, 8) + '…' : adj;
+    }
+    return '';
+  }
+
   const panel = {
     host: null,
     root: null,          // shadow 内的 .khin-wrap
@@ -1480,6 +1916,22 @@
     bodyEl: null,
     countEl: null,
     minimized: false,
+    /* 【2026-11-03 需求】四态：rail（贴边条）/ list（摘要列滑出）/ float（旧的左上角卡片）。
+     * `pinned` = 摘要列钉住（鼠标移开不自动收）；`expandKeys` = 展开着的那些行的 note 文本；
+     * `railSide` = 贴边条停哪一侧；`shellMode` 记录当前外壳是 rail 还是 float（避免每轮重播动画）。
+     * 【2.0.8.7 需求③】`expandKey`（单值手风琴）改成 `expandKeys`（Set）：用户要同时看好几张卡，
+     * 「同时只开一张」是为省遮挡想出来的，反而成了限制。列本身仍 60vh 封顶、内部滚动，
+     * 多开几张不会更挡页面。 */
+    mode: 'rail',
+    pinned: false,
+    expandKeys: null,
+    pinDefaultDone: false,
+    railSide: 'left',
+    /* [2.0.8.6] 贴边条的纵向位置：null = 默认居中（42%）；拖过之后是视口内的中心 y（px） */
+    railTop: null,
+    shellMode: '',
+    closeTimer: 0,
+    openTimer: 0,
     items: [],
     /* 上一轮用过的置顶表签名（见 `render`）：卡间顺序不进 `head.changed`，靠它认
      * "用户改了置顶排序"。空串 = 没配/没排序过（与 `pins.join()` 的空表结果一致 ⇒ 首轮不误判脏）。 */
@@ -1489,6 +1941,10 @@
      * 旧版每次 `textContent=''` 整块重建 ⇒ 图重新解码、滚动位置归零 = 用户看到的"闪"。 */
     cardNotes: [],
     cardEls: [],
+    /* 【2.0.8.5 无感重建】按 key 复用：note 文本 → 卡片元素、摘要列 note → 行元素。
+     * 有了它们，内容变但结构没变时只改文字，不重造 DOM（不闪、不丢图片解码与滚动位置）。 */
+    cardMap: new Map(),
+    rowEls: new Map(),
     /* 右键「截图」卡的内容签名（见 `renderCtxCard`）：OCR 状态每变一次都会调它，
      * 签名没变就不拆不建，省掉一次 `<img>` 重载。 */
     ctxSigCache: null,
@@ -1496,6 +1952,23 @@
      * 只翻转标记，用户收起就保持收起 —— 它是用户对视图的选择，不该被下一批结果自动弹开。 */
     noteCollapsed: false,
     ignored: new Set(),  // 本次页面会话内已被用户关闭的笔记（按 note 文本）
+    /* 【2.0.8.4 需求③】浮窗（非贴边）里被用户单独收起的卡片，同样按 note 文本挂面板侧。
+     * 语义是"这张卡先只看标题"：正文整块藏起来、标签行留着，便于一眼认出是哪张卡；
+     * 用户收起就保持收起，不因为下一次结果刷新自动弹开（与 `noteCollapsed` 同一口径）。 */
+    collapsedNotes: new Set(),
+    /* ----【2.0.8.4 需求④】AI 对话助手（贴边与浮窗共用同一份会话）----
+     * `tab`：面板当前看的是「笔记」还是「AI」；`aiMsgs` 是本次页面会话的对话（不发页面内容，
+     * 用户口径：纯自由对话）；`aiBusy` 挡重复发送；`aiEl/aiListEl` 是当前形态里那块容器，
+     * 切形态时会重建（对话本身在 `aiMsgs` 里，不会丢）。 */
+    tab: 'note',
+    aiMsgs: [],
+    aiBusy: false,
+    /* 【2.0.8.7 需求②】审核条的状态：选中的图标（dataURL）与"正在跑云端"的忙位。 */
+    auditImage: '',
+    auditBusy: false,
+    aiEl: null,
+    aiListEl: null,
+    aiPort: null,
     /* 标签下拉的展开态 / 选中的命中序号（均按 note 文本挂**面板侧**）。
      * 不许挂 head：标签区每次重建（head.changed() 判脏 → renderContent() → renderItems()），
      * 挂在 head 上会被重置，展开中的下拉会自己合上。 */
@@ -1534,7 +2007,25 @@
       doc.body.appendChild(host);
       this.host = host;
       this.setDefaultPosition();
+      this.detectRailSide();
       this.applyPosition();
+      /* 全局键盘（只在面板可见时生效）：Esc 收一级、`[` 收成条、`]` 展开摘要列。 */
+      this.onKeyDown = (e) => {
+        if (!this.root || this.root.hidden) return;
+        const t = e.target;
+        const typing = !!(t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable));
+        if (typing || e.ctrlKey || e.metaKey || e.altKey) return;
+        if (e.key === 'Escape' && this.mode === 'list') {
+          this.pinned = false;
+          this.setMode('rail', { focus: true });
+        } else if (e.key === '[' && this.mode !== 'rail') {
+          this.pinned = false;
+          this.setMode('rail', { focus: true });
+        } else if (e.key === ']' && this.mode === 'rail') {
+          this.openList(false);
+        }
+      };
+      doc.addEventListener('keydown', this.onKeyDown, true);
 
       /* 点击缩略图 → **当前页灯箱看大图**（用户实测要求；旧行为是新标签页）。
        * data: 内嵌图同样支持（本身就是原图数据），只有非 http(s) 协议才不处理。
@@ -1628,6 +2119,17 @@
      * 拖动期间面板尺寸不会变（内容没动），沿用按下时那一次量值完全等价。 */
     applyPosition(metrics) {
       if (!this.root) return;
+      /* 【2026-11-03 需求】贴边条/摘要列贴着视口边缘（垂直居中 42%），不参与拖动钳位；
+       * 浮窗仍是旧的左上角卡片，拖动 + 四边钳位照旧。 */
+      if (this.mode !== 'float') {
+        this.root.style.left = this.railSide === 'left' ? '0px' : 'auto';
+        this.root.style.right = this.railSide === 'right' ? '0px' : 'auto';
+        this.root.style.top = (this.railTop == null) ? '42%' : (Math.round(this.railTop) + 'px');
+        this.root.style.transform = 'translateY(-50%)';
+        return;
+      }
+      this.root.style.right = 'auto';
+      this.root.style.transform = '';
       /* 一次 rect 读，横纵共用（省一次强制布局）。
        * 水平钳位用**面板实测宽度**：原来写死 360，与 `.khin-panel { width }` 成了两处真源 ——
        * 改 CSS 后钳位不跟着动；用户自己 `resize: both` 拉宽后更会算出错的 maxLeft（拖到右侧越界）。
@@ -1748,6 +2250,9 @@
       const pinChanged = this.pinSig !== pinSig;
       this.pinSig = pinSig;
       const sorted = pins.length ? head.sortByPins(items, pins) : items;
+      /* 【2.0.8.6 需求②】默认钉住置顶词（见 applyPinDefault 的三条克制）。必须在 dirty 之前算：
+       * 它改的 `pinned` / `expandKeys` 本身就是"要重画"的信号。 */
+      const pinDefault = this.applyPinDefault(sorted, pins);
 
       if (!sorted.length && !this.ctxItems().length) {
         this.items = sorted;
@@ -1756,18 +2261,25 @@
       }
       /* 外壳还没建过也必须走 renderContent：`head.changed([], [])` 是 false，
        * 光看内容新旧会漏掉"整页只有右键识别的图、面板还没建"这种情况（实测踩过：
-       * 面板宿主建出来了、里面却没有那张「截图」卡）。 */
-      const dirty = !this.panelEl || this.minimized || pinChanged || head.changed(this.items, sorted);
+       * 面板宿主建出来了、里面却没有那张「截图」卡）。
+       * 【2.0.8.4 需求②】"外壳缺没缺"要按**当前形态的壳**判：贴边形态没有 `panelEl`
+       * （摘列用 railEl/drawerEl），旧判据 `!this.panelEl` 在贴边模式下**恒真** ⇒ 每轮重扫都
+       * 整块重建摘要列，展开的卡/列内滚动/已解码的图全被重置，而摘要列又跟着高度上下挪
+       * （用户实测："钉住之后悬窗上下跳动"）。 */
+      const shellMissing = this.mode === 'float'
+        ? !this.panelEl
+        : (!this.panelEl && !this.railEl);
+      const dirty = shellMissing || this.minimized || pinChanged || pinDefault || head.changed(this.items, sorted);
       this.items = sorted;
       if (dirty) this.renderContent();
       else {
         /* 卡片没变 ⇒ 只补两块会变的东西：图上的命中红框、右键那张「截图」卡 */
         this.applyImgMarks();
         this.renderCtxCard();
-        /* 卡片被复用（note 没变）时结论仍可能变：OCR 刚识别完 / 用户改了比对配置 ⇒ 重落一次 */
-        this.applySoftCheck();
       }
       this.show();
+      /* 默认钉住的那条要**看得见**才算数：还在贴边条形态就把它滑出来（只这一次）。 */
+      if (pinDefault && this.mode === 'rail') this.openList(true);
     },
 
     /**
@@ -1781,16 +2293,879 @@
        * 但**不能无条件**走完整渲染：`render()` 一进来就 `ensure()` 造壳 ⇒ 整页明明没东西也会
        * 多出一个空宿主（K71 的「两者都关 ⇒ 面板不存在」就是这么红的）。所以只在真有右键条目时补渲染。 */
       if (!this.root && !this.ctxItems().length) return;
-      if (!this.panelEl) {
+      /* 【2.0.8.4 需求②】`panelEl` 在贴边形态指向摘列抽屉 ⇒ 不能再拿它当"整轮还没渲染过"的判据；
+       * 真正的判据是"宿主/外壳建了没"（两者都没有才走整轮）。 */
+      if (!this.root || (!this.panelEl && !this.railEl)) {
         this.render(this.items, this.cfg);
         return;
       }
       this.applyImgMarks();
       this.renderCtxCard();
+      /* 摘要列里也画着右键那张「截图」卡与命中红框：OCR 状态一变，行内容必须跟着重画
+       * （行有指纹闸，内容没变不会白重建）。 */
+      if (this.mode === 'list') { this.rowsSig = ''; this.renderRows(); }
       /* OCR 状态变化走这条（没有新增定时器）：识别结果一回来就重落核对结论 */
-      this.applySoftCheck();
       if (!this.items.length && !this.ctxItems().length) this.hide();
       else this.show();
+    },
+
+    /* =====================【2026-11-03 需求】四态：贴边条 → 摘要列 → 手风琴 → 浮窗 =====================
+     * 用户原话：「重要笔记悬浮窗优化（还是之前说的内容过多，主次不分明，遮挡页面等问题）」。
+     * 口径见 docs/ui-v3/2026-11-02-重要笔记悬浮窗-交互重做方案.md：
+     *   贴边条（默认左缘 8px，竖排条数；左缘被 fixed 元素占住就自动换右缘）
+     *   → 悬停/点击滑出摘要列（宽 300，最高 45vh，每卡一行：色块 + 标题 + 首字段值 + N 处）
+     *   → 点一行手风琴展开（同时只开一张，内容区最高 60vh，内部滚动）
+     *   →「浮窗」按钮回左上角卡片；浮窗双击标题栏回贴边条。
+     * **遮挡的三条硬边界**：摘要列 45vh、展开后 60vh、行内容区 calc(60vh - 96px) 并滚动。
+     * ============================================================================================ */
+
+    /** 摘要列打开（`pin` = 钉住常驻；悬停打开不钉）。 */
+    /**
+     * 【2.0.8.6 需求②】贴边模式默认钉住「设置里置顶排序的第一个词」那条笔记，并展开它的抓取内容。
+     * 用户原话：「重要笔记悬浮窗贴边模式，默认钉住设置里配置成排序置顶那个词的抓取内容，
+     * 并且展开展示（如果没有就还是全部收起）」。
+     * 三条克制：
+     *   · 只在**本次挂载第一次**渲染时做一次（`pinDefaultDone`）；用户手动收起后不再自动弹回来；
+     *   · 置顶词没配 / 全页没有对应命中 → 什么都不做，保持原来的全部收起；
+     *   · 只认置顶表**第一个**词：置顶表是用户排过序的，第一个才是他要先看到的那条。
+     */
+    applyPinDefault(sorted, pins) {
+      if (this.pinDefaultDone) return false;
+      this.pinDefaultDone = true;
+      if (!pins || !pins.length || !sorted || !sorted.length) return false;
+      const key = tagText(pins[0]).toLowerCase();
+      if (!key) return false;
+      let hit = null;
+      for (let i = 0; i < sorted.length; i++) {
+        const it = sorted[i] || {};
+        const inEntries = (it.entries || []).some((e) => tagText(e && e.kw).toLowerCase() === key);
+        const inIds = (it.pinIds || []).some((p) => tagText(p).toLowerCase() === key);
+        if (inEntries || inIds) { hit = it; break; }
+      }
+      if (!hit) return false;
+      this.pinned = true;
+      this.expandSet().add(String(hit.note == null ? '' : hit.note));
+      return true;
+    },
+
+    /** 展开集合（懒建）。【2.0.8.7 需求③】允许多张同时展开 —— 用户原话：
+     *  「虽然每次只能展开一个减少了遮挡，但是存在需要同时看好几个卡片的情况」。 */
+    expandSet() {
+      if (!this.expandKeys) this.expandKeys = new Set();
+      return this.expandKeys;
+    },
+
+    isOpenNote(key) {
+      return !!(this.expandKeys && this.expandKeys.has(key));
+    },
+
+    /** 开/关一行的展开体。关掉最后一张时顺手清掉 `is-expanded`，列高回到 45vh。 */
+    setOpenNote(key, on) {
+      const set = this.expandSet();
+      if (on) set.add(key); else set.delete(key);
+      return set.size > 0;
+    },
+
+    openList(pin) {
+      this.cancelAutoClose();
+      if (pin) this.pinned = true;
+      if (this.mode !== 'list') this.setMode('list');
+      else { this.renderContent(); this.applyPosition(); }
+    },
+
+    /** 鼠标移开后的自动收起（钉住时永不触发）。 */
+    scheduleClose(ms) {
+      this.cancelAutoClose();
+      if (this.pinned) return;
+      this.closeTimer = setTimeout(() => {
+        this.closeTimer = 0;
+        if (!this.pinned && this.mode === 'list') this.setMode('rail');
+      }, ms == null ? 1200 : ms);
+    },
+
+    cancelAutoClose() {
+      if (this.closeTimer) { clearTimeout(this.closeTimer); this.closeTimer = 0; }
+      if (this.openTimer) { clearTimeout(this.openTimer); this.openTimer = 0; }
+    },
+
+    /** 切形态（唯一入口）。`opts.focus` 只在键盘/按钮切换时用，悬停打开不抢焦点。 */
+    setMode(mode, opts) {
+      const next = (mode === 'list' || mode === 'float') ? mode : 'rail';
+      this.mode = next;
+      if (next !== 'list') this.expandKeys = null;
+      this.cancelAutoClose();
+      this.renderContent();
+      this.applyPosition();
+      if (opts && opts.focus) {
+        const el = next === 'float' ? this.panelEl : (this.drawerEl || this.railEl);
+        if (el && el.focus) { try { el.focus({ preventScroll: true }); } catch (e) { /* 老内核 */ } }
+      }
+    },
+
+    /** 贴边条/摘要列的外壳（与浮窗外壳互斥；`shellMode` 防止每轮重播入场动画）。 */
+    renderRailContent(count) {
+      const doc = document;
+      const V = KH.OcrCopy.VIEW;
+      if (this.shellMode !== 'rail') {
+        this.shellMode = 'rail';
+        this.panelEl = null;
+        this.bodyEl = null;
+        this.countEl = null;
+        this.noteBarEl = null;
+        this.noteCountEl = null;
+        this.noteArrowEl = null;
+        /* 条数竖排；未读点是「有笔记且现在收着」的提示，不参与计数（计数在条子身上）。 */
+        this.root.innerHTML =
+          '<button class="khin-rail" type="button" data-side="left" aria-expanded="false">' +
+            '<span class="khin-rail-count"></span>' +
+            '<span class="khin-rail-unread" aria-hidden="true"></span>' +
+          '</button>' +
+          '<div class="khin-drawer" hidden data-side="left">' +
+            '<div class="khin-dh">' +
+              '<span class="khin-dh-title"></span>' +
+              '<span class="khin-dh-count"></span>' +
+              '<button class="khin-dh-btn" data-act="pin" type="button"></button>' +
+              '<button class="khin-dh-btn" data-act="side" type="button"></button>' +
+              '<button class="khin-dh-btn" data-act="float" type="button"></button>' +
+              '<button class="khin-dh-btn" data-act="rail" type="button">—</button>' +
+            '</div>' +
+            /* 【2.0.8.4 需求④】页签 + 两个互斥面板：笔记（摘列）与 AI 对话共用这一块宽度。 */
+            '<div class="khin-tabs" role="tablist">' +
+              '<button class="khin-tab" type="button" role="tab" data-tab="note"></button>' +
+              '<button class="khin-tab" type="button" role="tab" data-tab="ai"></button>' +
+            '</div>' +
+            '<div class="khin-pane khin-pane-note">' +
+              '<div class="khin-rows"></div>' +
+              '<div class="khin-df"><button class="khin-df-btn" data-act="copy" type="button"></button></div>' +
+            '</div>' +
+            '<div class="khin-ai" hidden></div>' +
+          '</div>';
+        this.railEl = this.root.querySelector('.khin-rail');
+        this.railCountEl = this.root.querySelector('.khin-rail-count');
+        this.drawerEl = this.root.querySelector('.khin-drawer');
+        /* 【2.0.8.4 需求②】贴边形态也把 `panelEl` 指到"当前形态的主容器"（摘列抽屉）：
+         * 脏判据 `!panelEl` 一直是"外壳建没建过"的唯一信号（单测也按这个桩写），
+         * 贴边模式下让它恒为 null 就等于每轮都判脏。 */
+        this.panelEl = this.drawerEl;
+        this.rowsEl = this.root.querySelector('.khin-rows');
+        this.drawerCountEl = this.root.querySelector('.khin-dh-count');
+        this.pinBtnEl = this.root.querySelector('[data-act="pin"]');
+        this.copyBtnEl = this.root.querySelector('[data-act="copy"]');
+        const bind = (el, ev, fn) => { if (el) el.addEventListener(ev, fn); };
+
+        /* [2.0.8.6] 贴边条可以上下拖了：默认居中，拖过的位置记在本页会话里。
+         * 与点击共存：位移 < 3px 才算「点了一下」，否则收手不弹抽屉。 */
+        let railDrag = null;
+        bind(this.railEl, 'pointerdown', (e) => {
+          if (e.button !== 0) return;
+          const rect = this.railEl.getBoundingClientRect();
+          railDrag = { y: e.clientY, center: rect.top + rect.height / 2, moved: 0 };
+          try { this.railEl.setPointerCapture(e.pointerId); } catch (err) { /* 老内核 */ }
+          this.railEl.classList.add('is-dragging');
+        });
+        bind(this.railEl, 'pointermove', (e) => {
+          if (!railDrag) return;
+          const dy = e.clientY - railDrag.y;
+          if (Math.abs(dy) > 3) railDrag.moved = 1;
+          if (!railDrag.moved) return;
+          const half = 24;
+          const y = Math.max(half, Math.min(window.innerHeight - half, railDrag.center + dy));
+          this.railTop = y;
+          this.applyPosition();
+        });
+        const endRailDrag = (e) => {
+          if (!railDrag) return;
+          const moved = railDrag.moved;
+          railDrag = null;
+          this.railEl.classList.remove('is-dragging');
+          try { this.railEl.releasePointerCapture(e.pointerId); } catch (err) { /* 忽略 */ }
+          if (moved) { this.railDraggedAt = Date.now(); e.preventDefault(); e.stopPropagation(); return; }
+          this.openList(true);
+        };
+        bind(this.railEl, 'pointerup', endRailDrag);
+        bind(this.railEl, 'pointercancel', endRailDrag);
+        /* 单击仍然保留：真实指针事件里 pointerup 已处理过（`railDrag` 为 null 时这里不重复），
+         * 而键盘 Enter/空格 / 单测里的 `click()` 只派发 click —— 必须照样能打开。 */
+        bind(this.railEl, 'click', (e) => {
+          e.stopPropagation();
+          if (railDrag) return;
+          /* 刚拖完那一下：浏览器仍会补发 click，别再把它当"点开" */
+          if (this.railDraggedAt && Date.now() - this.railDraggedAt < 300) return;
+          this.openList(true);
+        });
+        bind(this.railEl, 'mouseenter', () => {
+          this.cancelAutoClose();
+          if (this.mode !== 'rail') return;
+          /* 120ms 才滑出：鼠标只是扫过页面左缘时不该闪一个 300px 的列。 */
+          this.openTimer = setTimeout(() => {
+            this.openTimer = 0;
+            if (this.mode === 'rail') this.openList(false);
+          }, 120);
+        });
+        bind(this.railEl, 'mouseleave', () => { if (!this.pinned) this.scheduleClose(1200); });
+        bind(this.drawerEl, 'mouseenter', () => this.cancelAutoClose());
+        bind(this.drawerEl, 'mouseleave', () => { if (!this.pinned) this.scheduleClose(1200); });
+        /* 键盘：Esc 收一级；↑/↓ 在行头之间移；Enter 由行头的 role=button 自己处理。 */
+        bind(this.drawerEl, 'keydown', (e) => {
+          if (e.key === 'Escape') { e.stopPropagation(); this.pinned = false; this.setMode('rail', { focus: true }); return; }
+          if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+          const heads = this.rowsEl ? this.rowsEl.querySelectorAll('.khin-row-head') : [];
+          if (!heads.length) return;
+          e.preventDefault();
+          let i = -1;
+          for (let k = 0; k < heads.length; k++) if (heads[k] === doc.activeElement) i = k;
+          const n = e.key === 'ArrowDown' ? Math.min(heads.length - 1, i + 1) : Math.max(0, i - 1);
+          heads[n === -1 ? 0 : n].focus();
+        });
+
+        const act = (name, fn) => {
+          const b = this.root.querySelector('[data-act="' + name + '"]');
+          if (b) b.addEventListener('click', (e) => { e.stopPropagation(); fn(); });
+        };
+        act('pin', () => {
+          this.pinned = !this.pinned;
+          this.renderContent();
+          if (!this.pinned) this.scheduleClose(1200);
+        });
+        act('side', () => {
+          this.railSide = this.railSide === 'left' ? 'right' : 'left';
+          this.renderContent();
+          this.applyPosition();
+        });
+        act('float', () => this.setMode('float', { focus: true }));
+        act('rail', () => { this.pinned = false; this.setMode('rail', { focus: true }); });
+        act('copy', () => this.copyAll());
+        /* 【2.0.8.4 需求④】页签只在用户点击时切（悬停滑出仍默认看笔记，别让鼠标扫过就跳页签）。 */
+        this.bindTabs(this.drawerEl);
+      }
+
+      /* ---- 每次 render 只刷「会变」的那些 ---- */
+      if (this.railCountEl) this.railCountEl.textContent = String(count);
+      const railLabel = KH.OcrCopy.render(KH.OcrCopy.VIEW.railLabel, { n: count });
+      this.railEl.title = KH.OcrCopy.render(V.railTip, { n: count });
+      this.railEl.setAttribute('aria-label', railLabel);
+      this.railEl.setAttribute('data-side', this.railSide);
+      this.railEl.setAttribute('aria-expanded', this.mode === 'list' ? 'true' : 'false');
+      this.root.classList.toggle('has-unread', count > 0 && this.mode === 'rail');
+      if (this.drawerEl) {
+        this.drawerEl.hidden = this.mode !== 'list';
+        this.drawerEl.setAttribute('data-side', this.railSide);
+        this.drawerEl.classList.toggle('is-expanded', this.mode === 'list' && !!(this.expandKeys && this.expandKeys.size));
+      }
+      const dhTitle = this.root.querySelector('.khin-dh-title');
+      if (dhTitle) dhTitle.textContent = V.drawerTitle;
+      if (this.drawerCountEl) this.drawerCountEl.textContent = KH.OcrCopy.render(V.drawerCount, { n: count });
+      if (this.pinBtnEl) {
+        this.pinBtnEl.textContent = this.pinned ? V.pinned : V.pin;
+        this.pinBtnEl.title = this.pinned ? V.pinned : V.pin;
+        this.pinBtnEl.classList.toggle('is-on', !!this.pinned);
+      }
+      const sideBtn = this.root.querySelector('[data-act="side"]');
+      if (sideBtn) sideBtn.title = V.sideTip;
+      const floatBtn = this.root.querySelector('[data-act="float"]');
+      if (floatBtn) floatBtn.textContent = KH.OcrCopy.VIEW.floatBtn;
+      const railBtn = this.root.querySelector('[data-act="rail"]');
+      if (railBtn) railBtn.title = KH.OcrCopy.VIEW.collapseTip;
+      if (this.copyBtnEl) this.copyBtnEl.textContent = V.copyAll;
+      if (this.mode === 'list') this.renderRows();
+      /* 页签状态与 AI 面板跟着外壳一起落（切形态/首次建壳都会走到这里），
+       * 否则「AI」页签下的内容会在重建后消失或与笔记面板同时露出来。 */
+      this.syncTab();
+    },
+
+    /** 摘要列的一行一张卡（`expandKeys` 是同时展开着的那几条 note；2.0.8.7 起不再只开一张）。 */
+    renderRows() {
+      if (!this.rowsEl) return;
+      /* 【2.0.8.4 需求②】内容没变就**一行都不动**。
+       * 旧写法每轮都 `innerHTML=''` 重造全部行：展开态那张卡里刚解码好的图、列内滚动位置、
+       * 用户的文本选择全部归零 —— 页面自己抖一下（定时器/轮播）就重来一次，用户看到的就是
+       * 「钉住之后悬窗上下跳动」。判据用行内容的指纹（note 全文 + 底色 + 词条 + 右键卡 + 展开项），
+       * note 里已经包含抓取表格的值，所以字段值变了照样会重建。 */
+      const sig = this.rowsSignature();
+      if (this.rowsSig === sig && this.rowsEl.firstChild) return;
+      const keepScroll = this.rowsEl.scrollTop || 0;
+      const doc = document;
+      const V = KH.OcrCopy.VIEW;
+      const ctx = this.ctxItems();
+      const rows = [];
+      for (let i = 0; i < this.items.length; i++) rows.push({ item: this.items[i] });
+      const specs = rows.slice();
+      if (ctx.length) specs.push({ ctx: true });
+      const keyOf = (spec) => (spec.ctx ? '@ctx' : String(spec.item.note == null ? '' : spec.item.note));
+
+      /* 【2.0.8.5 无感重建】内容变了但**行的集合没变**时，就地改文字，不重造 DOM。
+       * 旧写法这一支也是 `innerHTML=''` 全部重建：页面里一个计时器/计数器动一下就闪一次，
+       * 展开那张卡里的图会重新解码、文本选择会掉、列内滚动会弹 —— 用户看到的就是"闪烁"。
+       * 判据只看"行还在不在"，因为内容指纹已经在上一步挡掉了"什么都没变"的情况。 */
+      const prevList = this.rowList || [];
+      /* 【2.0.8.7 需求④·闪烁根因②】按**位置**认同一集，不再按 key（note 全文）认。
+       * 旧判据要求每一行的 note 文本一字不差，页面正文一变 key 就全变 ⇒ 走 `innerHTML=''`
+       * 整列重造，图重解码、滚动归零。位置一致时逐行 `patchRow` 就够了，内容变了它也负责改。
+       * 仍然要求这些行**真挂在这个列表里**：切形态（浮窗 ↔ 贴边）会连壳带列表一起换掉，
+       * 旧行还在数组里但已经不在 DOM 上 —— 那时必须重建，否则摘要列会空白。 */
+      let sameSet = specs.length > 0 && prevList.length === specs.length;
+      if (sameSet) {
+        for (let i = 0; i < specs.length; i++) {
+          const r = prevList[i];
+          if (!r || r.parentNode !== this.rowsEl || this.rowsEl.children[i] !== r) { sameSet = false; break; }
+        }
+      }
+      this.rowEls = new Map();
+      this.rowList = [];
+      if (sameSet) {
+        for (let i = 0; i < specs.length; i++) {
+          const row = prevList[i];
+          this.patchRow(row, specs[i]);
+          this.rowEls.set(keyOf(specs[i]), row);
+          this.rowList.push(row);
+        }
+        this.rowsSig = sig;
+        if (keepScroll) this.rowsEl.scrollTop = keepScroll;
+        return;
+      }
+
+      this.rowsEl.innerHTML = '';
+      if (!rows.length && !ctx.length) {
+        const empty = doc.createElement('div');
+        empty.className = 'khin-row-empty';
+        empty.textContent = V.rowsEmpty;
+        this.rowsEl.appendChild(empty);
+        this.rowEls = new Map();
+        this.rowList = [];
+        return;
+      }
+      const addRow = (spec) => {
+        const key = spec.ctx ? '@ctx' : String(spec.item.note == null ? '' : spec.item.note);
+        const open = this.isOpenNote(key);
+        const row = doc.createElement('div');
+        row.className = 'khin-row';
+        /* 【2.0.8.8 需求①】整行底色 = 卡片原色（`item.bg`），不再自己调淡（见 `rowBgOf`）。 */
+        const bg = (!spec.ctx && /^#[0-9a-fA-F]{3,8}$/.test(spec.item.bg || '')) ? spec.item.bg : '';
+        if (bg) {
+          row.classList.add('has-tint');
+          row.style.setProperty('--khin-tint', rowBgOf(bg));
+        }
+        const head = doc.createElement('div');
+        head.className = 'khin-row-head';
+        head.setAttribute('role', 'button');
+        head.setAttribute('tabindex', '0');
+        head.setAttribute('aria-expanded', open ? 'true' : 'false');
+        const dot = doc.createElement('span');
+        dot.className = 'khin-row-dot';
+        if (bg) dot.style.background = bg;
+        const catText = spec.ctx ? '' : catOf(spec.item);
+        const cat = catText ? doc.createElement('span') : null;
+        if (cat) {
+          cat.className = 'khin-row-cat';
+          cat.textContent = catText;
+          cat.title = '类别：' + catText;
+        }
+        const title = doc.createElement('span');
+        title.className = 'khin-row-t';
+        const entries = (spec.item && spec.item.entries) || [];
+        title.textContent = spec.ctx ? V.ctxShotLabel
+          : String((entries[0] && entries[0].kw) || (spec.item.note ? summarizeNote(spec.item.note).slice(0, 12) : '') || '（空）');
+        const sub = doc.createElement('span');
+        sub.className = 'khin-row-sub';
+        sub.textContent = spec.ctx ? V.ctxSub : summarizeNote(spec.item.note);
+        sub.title = sub.textContent;
+        const nEl = doc.createElement('span');
+        nEl.className = 'khin-row-n';
+        nEl.textContent = KH.OcrCopy.render(V.rowCount, { n: spec.ctx ? ctx.length : entries.length });
+        head.appendChild(dot);
+        if (cat) head.appendChild(cat);
+        head.appendChild(title); head.appendChild(sub); head.appendChild(nEl);
+
+        if (!spec.ctx) {
+          const loc = doc.createElement('button');
+          loc.className = 'khin-row-btn';
+          loc.type = 'button';
+          loc.textContent = V.locate;
+          loc.title = V.locateTip;
+          loc.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const kw = String((entries[0] && entries[0].kw) || '');
+            if (kw && typeof window.find === 'function') { try { window.find(kw, false, false, true, false, false, false); } catch (err) { /* 页面不让找 */ } }
+          });
+          head.appendChild(loc);
+        }
+        const close = doc.createElement('button');
+        close.className = 'khin-row-btn';
+        close.type = 'button';
+        close.textContent = '✕';
+        close.title = V.removeTip;
+        close.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (spec.ctx) {
+            if (KH.ImgOcr && typeof KH.ImgOcr.clearManual === 'function') KH.ImgOcr.clearManual();
+          } else {
+            this.ignored.add(spec.item.note);
+            this.refresh();
+          }
+        });
+        head.appendChild(close);
+
+        const toggle = () => {
+          const next = !this.isOpenNote(key);
+          this.setOpenNote(key, next);
+          this.renderContent();
+          /* 展开后把这张卡滚进视野（列本身限高，不能指望用户自己找）。 */
+          const mine = this.rowEls && this.rowEls.get(key);
+          const body = (mine && mine.querySelector) ? mine.querySelector('.khin-row-body:not([hidden])') : null;
+          if (body && body.scrollIntoView) { try { body.scrollIntoView({ block: 'nearest' }); } catch (e) { /* 老内核 */ } }
+        };
+        head.addEventListener('click', toggle);
+        head.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); toggle(); }
+        });
+
+        const body = doc.createElement('div');
+        body.className = 'khin-row-body';
+        body.hidden = !open;
+        if (open) {
+          const card = spec.ctx ? this.ctxCard(doc) : this.buildCardEl(spec.item);
+          if (card) { body.appendChild(card); this.applyImgMarksToEl(card); }
+        }
+        row.appendChild(head);
+        row.appendChild(body);
+        this.rowsEl.appendChild(row);
+        if (this.rowEls) this.rowEls.set(key, row);
+        if (this.rowList) this.rowList.push(row);
+      };
+      for (let i = 0; i < rows.length; i++) addRow(rows[i]);
+      if (ctx.length) addRow({ ctx: true });
+      this.rowsSig = sig;
+      /* 重建了就把列内滚动位置放回去（内容变多是常态；不能因为多了一条就把用户读到的位置顶走）。 */
+      if (keepScroll) this.rowsEl.scrollTop = keepScroll;
+    },
+
+    /**
+     * 就地更新一行（行集合没变时用）：只改文字与展开体，元素本身不重造。
+     * 这是【2.0.8.5 无感重建】的关键一步 —— 行还是那几行时，用户不该看到任何闪动。
+     */
+    patchRow(row, spec) {
+      if (!row) return;
+      const V = KH.OcrCopy.VIEW;
+      const key = spec.ctx ? '@ctx' : String(spec.item.note == null ? '' : spec.item.note);
+      const open = this.isOpenNote(key);
+      const head = row.querySelector('.khin-row-head');
+      const title = row.querySelector('.khin-row-t');
+      const sub = row.querySelector('.khin-row-sub');
+      const nEl = row.querySelector('.khin-row-n');
+      const dot = row.querySelector('.khin-row-dot');
+      const entries = (spec.item && spec.item.entries) || [];
+      const titleText = spec.ctx ? V.ctxShotLabel
+        : String((entries[0] && entries[0].kw) || (spec.item.note ? summarizeNote(spec.item.note).slice(0, 12) : '') || '（空）');
+      if (title && title.textContent !== titleText) title.textContent = titleText;
+      const subText = spec.ctx ? V.ctxSub : summarizeNote(spec.item.note);
+      if (sub && sub.textContent !== subText) { sub.textContent = subText; sub.title = subText; }
+      const nText = KH.OcrCopy.render(V.rowCount, { n: spec.ctx ? this.ctxItems().length : entries.length });
+      if (nEl && nEl.textContent !== nText) nEl.textContent = nText;
+      /* 底色 / 色条 / 类别 chip 就地改（换底色不该重造行）。 */
+      const bg = (!spec.ctx && /^#[0-9a-fA-F]{3,8}$/.test(spec.item.bg || '')) ? spec.item.bg : '';
+      row.classList.toggle('has-tint', !!bg);
+      if (bg) {
+        row.style.setProperty('--khin-tint', rowBgOf(bg));
+      } else {
+        row.style.removeProperty('--khin-tint');
+      }
+      if (dot) dot.style.background = bg;
+      this.patchCat(row, spec);
+      if (head) head.setAttribute('aria-expanded', open ? 'true' : 'false');
+      const body = row.querySelector('.khin-row-body');
+      if (body) {
+        body.hidden = !open;
+        if (open) {
+          /* 【2.0.8.7 需求④·闪烁根因①】内容签名没变就**一个字都不动**。
+           * 旧写法这里无条件 `innerHTML=''` 再重建卡片：展开状态下每轮刷新都会把卡里的图
+           * 重新解码一遍、把列内滚动与文本选择归零 —— 用户看到的就是"闪"。 */
+          const csig = this.cardSig(spec);
+          if (row.__cardSig !== csig || !body.firstChild) {
+            body.innerHTML = '';
+            const card = spec.ctx ? this.ctxCard(document) : this.buildCardEl(spec.item);
+            if (card) { body.appendChild(card); this.applyImgMarksToEl(card); }
+            row.__cardSig = csig;
+          } else {
+            this.applyImgMarksToEl(body.firstChild);
+          }
+        } else if (body.firstChild) {
+          body.innerHTML = '';
+          row.__cardSig = '';
+        }
+      }
+    },
+
+    /** 类别 chip：有就补/改，没有就摘掉（规则备注改了不用整行重造）。 */
+    patchCat(row, spec) {
+      const head = row.querySelector('.khin-row-head');
+      if (!head) return;
+      const want = spec.ctx ? '' : catOf(spec.item);
+      let cat = head.querySelector('.khin-row-cat');
+      if (!want) {
+        if (cat && cat.parentNode) cat.parentNode.removeChild(cat);
+        return;
+      }
+      if (!cat) {
+        cat = head.ownerDocument.createElement('span');
+        cat.className = 'khin-row-cat';
+        const dot = head.querySelector('.khin-row-dot');
+        if (dot && dot.nextSibling) head.insertBefore(cat, dot.nextSibling);
+        else head.appendChild(cat);
+      }
+      if (cat.textContent !== want) {
+        cat.textContent = want;
+        cat.title = '类别：' + want;
+      }
+    },
+
+    /** 一张卡「画出来是什么样」的签名：展开体只有在它变了的时候才重建。 */
+    cardSig(spec) {
+      if (spec.ctx) {
+        const c = this.ctxItems();
+        const bits = [];
+        for (let i = 0; i < c.length; i++) {
+          bits.push(String(c[i].src || '') + ':' + String(c[i].state || '') + ':' + String((c[i].text || '').length));
+        }
+        return 'ctx' + bits.join('|');
+      }
+      const it = spec.item || {};
+      const entries = it.entries || [];
+      const kw = [];
+      for (let i = 0; i < entries.length; i++) {
+        kw.push(String((entries[i] && entries[i].kw) || '') + '\u0001' + String((entries[i] && entries[i].adj) || ''));
+      }
+      let merge = '';
+      try { merge = JSON.stringify(it.mergeRows || []); } catch (e) { merge = ''; }
+      return String(it.note || '') + '\u0002' + String(it.bg || '') + '\u0002' + String(it.imgSize || '') +
+        '\u0002' + String(it.noteFontSize || '') + '\u0002' + kw.join('\u0003') + '\u0002' + merge;
+    },
+
+    /**
+     * 摘要列行内容的指纹（`renderRows` 的唯一重建判据）。
+     * 只收**会画到行上**的东西：note 全文（抓取表格的 HTML 就在串里）、底色、词条、右键卡状态、
+     * 当前展开项。刻意不收"对象身份"——每轮 Consume 都会新造条目对象，按身份比等于永远重建。
+     */
+    rowsSignature() {
+      const parts = [];
+      for (let i = 0; i < this.items.length; i++) {
+        const it = this.items[i] || {};
+        const entries = it.entries || [];
+        const kw = [];
+        for (let k = 0; k < entries.length; k++) kw.push(String((entries[k] && entries[k].kw) || ''));
+        parts.push(String(it.note == null ? '' : it.note) + '\u0001' + String(it.bg || '') +
+          '\u0001' + String(it.imgSize || '') + '\u0001' + String(it.noteFontSize || '') +
+          '\u0001' + kw.join('\u0002') +
+          '\u0001' + (it.mergeRows || []).map((r) => (r.field || '') + ':' + (r.hit ? '1' : '0') + ':' + (r.value || '')).join(','));
+      }
+      const ctx = this.ctxItems();
+      const ctxSig = [];
+      for (let i = 0; i < ctx.length; i++) {
+        const c = ctx[i] || {};
+        ctxSig.push(String(c.src || '') + ':' + String(c.state || '') + ':' + String((c.text || '').length));
+      }
+      return parts.join('\u0003') + '\u0004' + ctxSig.join('\u0002') + '\u0004' +
+        (this.expandKeys ? Array.from(this.expandKeys).sort().join('\u0005') : '');
+    },
+
+    /** 单张笔记卡（摘要列展开态与浮窗态共用；`renderItems` 新建卡也走它）。 */
+    buildCardEl(item) {
+      const doc = document;
+      const el = doc.createElement('div');
+      el.className = 'khin-item';
+      const headEl = doc.createElement('div');
+      headEl.className = 'khin-item-head';
+      const tagsEl = doc.createElement('div');
+      tagsEl.className = 'khin-item-tags';
+      this.renderTags(tagsEl, item);
+      const closeBtn = doc.createElement('button');
+      closeBtn.className = 'khin-item-close';
+      closeBtn.title = KH.OcrCopy.VIEW.removeTip;
+      closeBtn.textContent = '✕';
+      closeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.ignored.add(item.note);
+        this.refresh();
+      });
+      headEl.appendChild(tagsEl);
+      headEl.appendChild(closeBtn);
+      el.appendChild(headEl);
+      const noteEl = doc.createElement('div');
+      noteEl.className = 'khin-item-note';
+      noteEl.appendChild(this.noteFragment(doc, item.note));
+      el.appendChild(noteEl);
+      if (item.imgSize) el.style.setProperty('--kh-img-size', item.imgSize + 'px');
+      if (item.noteFontSize) el.style.setProperty('--kh-note-fs', item.noteFontSize + 'px');
+      el.style.background = /^#[0-9a-fA-F]{3,8}$/.test(item.bg || '') ? item.bg : '';
+      this.decorateMerge(el, item);
+      this.decorateChecks(el, item);
+      return el;
+    },
+
+    /**
+     * 【2.0.8.8 需求②③】卡片里的两处合规小校验（判定口径全在 `src/features/note-check.js`）：
+     *   ① 隐私政策行：主标题 / 开发者 / 隐私政策链接抓到的内容**都在**正文里 ⇒ 浅绿，
+     *      缺任意一项 ⇒ 浅黄；标题单元格补「名」「开」两枚徽标（用户口径）。
+     *   ② 开发者 与 核准主体名称 同法人 ⇒ 两行浅绿，不同 ⇒ 浅黄；查不到 ⇒ 原样不动
+     *      （用户口径：「都失败标未查明，不改底色」）。
+     * 两处都按字段值做签名，同样的内容不重画（否则每次刷新都会闪一下）。
+     */
+    decorateChecks(el, item) {
+      const NC = (KH && KH.NoteCheck) || (typeof window !== 'undefined' && window.KH && window.KH.NoteCheck);
+      if (!NC || !el || !el.querySelector) return;
+      const table = el.querySelector('table.kh-table-fetch');
+      if (!table) return;
+      let fields;
+      try { fields = NC.readFields(table); } catch (e) { return; }
+      this.paintPolicy(table, fields, NC);
+      this.paintEntity(el, table, fields, NC);
+    },
+
+    /** 需求②：隐私政策行底色 + 「名」「开」徽标。 */
+    paintPolicy(table, fields, NC) {
+      const tr = rowOfField(table, 'policy');
+      if (!tr) return;
+      const sig = [fields.title, fields.dev, fields.link, fields.policy].join('\u0001');
+      if (tr.getAttribute('data-kh-policy-sig') === sig) return;
+      tr.setAttribute('data-kh-policy-sig', sig);
+      const labelCell = tr.querySelector('td');
+      if (labelCell) {
+        const old = labelCell.querySelectorAll('.kh-policy-flag');
+        for (let i = 0; i < old.length; i++) if (old[i].parentNode) old[i].parentNode.removeChild(old[i]);
+      }
+      tintRow(tr, '');
+      let v = null;
+      try { v = NC.policyVerdict(fields); } catch (e) { v = null; }
+      if (!v) return;
+      tintRow(tr, v.ok ? NC.COLOR_OK : NC.COLOR_BAD);
+      const labelOf = { title: '主标题', dev: '开发者', content: '隐私政策链接' };
+      const tips = [];
+      for (let i = 0; i < v.items.length; i++) {
+        const it = v.items[i];
+        tips.push((labelOf[it.key] || it.key) + (it.hit ? '：有' : '：没有'));
+        if (!labelCell || (it.key !== 'title' && it.key !== 'dev')) continue;
+        const doc = tr.ownerDocument || document;
+        const flag = doc.createElement('span');
+        flag.className = 'kh-policy-flag ' + (it.hit ? 'is-hit' : 'is-miss');
+        flag.textContent = it.key === 'title' ? '名' : '开';
+        flag.title = (labelOf[it.key] || it.key) + (it.hit ? '：在隐私政策里找到' : '：隐私政策里没找到');
+        labelCell.appendChild(flag);
+      }
+      const tip = '隐私政策校验 · ' + tips.join(' · ');
+      const tds = tr.querySelectorAll('td');
+      for (let i = 0; i < tds.length; i++) tds[i].title = tip;
+    },
+
+    /** 需求③：开发者 / 核准主体 两边查法定代表人，再判断是否同一人。 */
+    paintEntity(el, table, fields, NC) {
+      const devTr = rowOfField(table, 'dev');
+      const entTr = rowOfField(table, 'entity');
+      if (!devTr || !entTr) return;
+      const dev = String(fields.dev || '').trim();
+      const ent = String(fields.entity || '').trim();
+      if (!dev || !ent) return;
+      /* 同一行？字段名撞车时（比如表里两行都叫「开发者」）不做二次涂色，交给上面那条。 */
+      if (devTr === entTr) return;
+      const sig = dev + '\u0001' + ent;
+      if (entTr.getAttribute('data-kh-ent-sig') === sig) return;
+      entTr.setAttribute('data-kh-ent-sig', sig);
+      devTr.setAttribute('data-kh-ent-sig', sig);
+      const repOfSide = (name) => {
+        if (NC.isPersonName(name)) return Promise.resolve(String(name));
+        return this.lookupEntity(name).then((rep) => (NC.isPersonName(rep) ? rep : String(rep || '')));
+      };
+      Promise.all([repOfSide(dev), repOfSide(ent)]).then((reps) => {
+        /* 卡片可能已经被下一次刷新换掉：旧节点不再画（新卡自己会重算）。 */
+        if (el && el.isConnected === false) return;
+        if (table && table.isConnected === false) return;
+        const verdict = NC.sameLegalRep({ name: dev, rep: reps[0] }, { name: ent, rep: reps[1] });
+        if (verdict === 'unknown') {
+          /* 未查明：不改底色，只在悬停里如实说一句（不猜法人名）。 */
+          const tip = '同法人校验：未查明（开发者 ' + (reps[0] || '?') + ' / 核准主体 ' + (reps[1] || '?') + '）';
+          [devTr, entTr].forEach((r) => {
+            const tds = r.querySelectorAll('td');
+            for (let i = 0; i < tds.length; i++) tds[i].title = tip;
+          });
+          return;
+        }
+        const color = verdict === 'same' ? NC.COLOR_OK : NC.COLOR_BAD;
+        tintRow(devTr, color);
+        tintRow(entTr, color);
+        const tip = (verdict === 'same' ? '同法人：' : '法人不同：')
+          + '开发者 ' + (reps[0] || '?') + ' / 核准主体 ' + (reps[1] || '?');
+        [devTr, entTr].forEach((r) => {
+          const tds = r.querySelectorAll('td');
+          for (let i = 0; i < tds.length; i++) tds[i].title = tip;
+        });
+      }).catch(() => { /* 查询失败 = 未查明，保持原样 */ });
+    },
+
+    /**
+     * 查一家公司的法定代表人（走 background，结果本身在后台按 7 天缓存）。
+     * 面板层再存一层内存缓存：同一张卡反复重建时不要再发消息。
+     */
+    lookupEntity(name) {
+      const key = String(name || '').trim();
+      if (!key) return Promise.resolve('');
+      this._entCache = this._entCache || new Map();
+      if (this._entCache.has(key)) return Promise.resolve(this._entCache.get(key));
+      return new Promise((resolve) => {
+        let api = null;
+        try { api = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) ? chrome : null; } catch (e) { api = null; }
+        if (!api) { resolve(''); return; }
+        const MSG = (KH && KH.MSG) || {};
+        try {
+          api.runtime.sendMessage({ type: MSG.ENTITY_LOOKUP, name: key }, (res) => {
+            if (api.runtime.lastError) { resolve(''); return; }
+            const rep = (res && res.ok && res.rep) ? String(res.rep) : '';
+            if (rep) this._entCache.set(key, rep);
+            resolve(rep);
+          });
+        } catch (e) { resolve(''); }
+      });
+    },
+
+    /**
+     * 【2.0.8.6 需求①】把「自定义标题 ｜ 值」行贴在这张卡自己的抓取表下面。
+     * 口径与「进表」一致：还是一张两列的表格，只是标题由配置给、值取同卡抓取表里那个字段的值
+     * （不另发请求、不重算抓取）。`hidden` 的行默认收着，卡片底部给一个「显示 N 条」的开关。
+     * 字段在表里没有值（没抓到 / 不在 `imgOcrNeed` 里）⇒ 不出这一行，也不留空壳。
+     */
+    decorateMerge(el, item) {
+      if (!el || !el.querySelector) return;
+      /* 【2.0.8.7 口径 A1】合并行**直接并进「进表」那张表**（同一个 tbody），
+       * 不再在表下面另起一张 `.kh-table-merge`：列对齐、复制/导出出来是连贯的一段。
+       * 行上打 `kh-merge-row`：重画时能精确摘掉，`valueOf` 扫表时也会跳过它们。 */
+      const clearRows = () => {
+        const old = el.querySelectorAll('tr.kh-merge-row');
+        for (let i = 0; i < old.length; i++) if (old[i].parentNode) old[i].parentNode.removeChild(old[i]);
+        const more = el.querySelector('.kh-merge-more');
+        if (more && more.parentNode) more.parentNode.removeChild(more);
+      };
+      /* 【2.0.8.7 需求①】只留**这次真的命中**的行：没命中的字段与没配一样，不留空壳。 */
+      const rows = ((item && item.mergeRows) || []).filter((r) => r && r.hit);
+      const table = el.querySelector('table.kh-table-fetch');
+      if (!rows.length || !table) {
+        clearRows();
+        if (table) table.removeAttribute('data-kh-merge-sig');
+        return;
+      }
+      const sq = (s) => String(s == null ? '' : s).replace(/\s+/g, '');
+      const valueOf = (field) => {
+        const want = sq(field).toLowerCase();
+        if (!want) return '';
+        const trs = table.querySelectorAll('tr');
+        for (let i = 0; i < trs.length; i++) {
+          /* 跳过自己上一轮画的合并行：它们的左列是「自定义标题」，可能正好等于某个字段名 */
+          if (String(trs[i].className || '').indexOf('kh-merge-row') >= 0) continue;
+          const tds = trs[i].querySelectorAll('td');
+          if (!tds.length) continue;
+          if (sq(tds[0].textContent).toLowerCase() !== want) continue;
+          const v = tds.length > 1 ? String(tds[1].textContent || '').trim() : '';
+          if (v) return v;
+        }
+        return '';
+      };
+      const show = [];
+      let hidden = 0;
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i] || {};
+        /* 静态命中那条路在 `mergeRowsFor` 里已经把值算出来了（`ocrExtraRows` 的产出行），
+         * 优先用它：表里同名字段可能有多行，回头看表反而可能挑到别的行。 */
+        const v = String(r.value || '').trim() || valueOf(r.field);
+        if (!v) continue;
+        show.push({ title: r.title || r.field, value: v, hidden: r.hidden === true });
+        if (r.hidden) hidden++;
+      }
+      if (!show.length) {
+        clearRows();
+        table.removeAttribute('data-kh-merge-sig');
+        return;
+      }
+      /* 【2.0.8.7 需求④·闪烁根因③】内容一模一样就**不拆不建**：
+       * 旧写法每轮先 `remove()` 再 `insertBefore()`（没变也重排），
+       * 而且「显示 N 条」按钮是表的兄弟节点，`remove()` 只摘表 ⇒ 每轮留一颗孤儿按钮。 */
+      const sig = show.map((r) => r.title + '\u0001' + r.value + '\u0001' + (r.hidden ? '1' : '0')).join('\u0002');
+      if (table.getAttribute('data-kh-merge-sig') === sig) return;
+      clearRows();
+      table.setAttribute('data-kh-merge-sig', sig);
+      const doc = el.ownerDocument || document;
+      const body = (table.tBodies && table.tBodies[0]) || table;
+      for (let i = 0; i < show.length; i++) {
+        const r = show[i];
+        const tr = doc.createElement('tr');
+        tr.className = 'kh-merge-row' + (i === 0 ? ' kh-merge-first' : '') + (r.hidden ? ' kh-merge-hidden' : '');
+        const a = doc.createElement('td');
+        a.className = 'kh-table-label';
+        a.textContent = r.title;
+        const b = doc.createElement('td');
+        b.textContent = r.value;
+        tr.appendChild(a);
+        tr.appendChild(b);
+        if (r.hidden) tr.hidden = true;
+        body.appendChild(tr);
+      }
+      if (!hidden) { el.classList.remove('is-merge-open'); return; }
+      const more = doc.createElement('button');
+      more.type = 'button';
+      more.className = 'kh-merge-more';
+      more.textContent = KH.OcrCopy.VIEW.mergeMore.replace('{n}', String(hidden));
+      more.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const on = el.classList.toggle('is-merge-open');
+        more.textContent = on
+          ? KH.OcrCopy.VIEW.mergeLess
+          : KH.OcrCopy.VIEW.mergeMore.replace('{n}', String(hidden));
+      });
+      table.parentNode.insertBefore(more, table.nextSibling);
+    },
+
+    /** 只给单张卡补图上的命中框（摘要列展开时用；整页的 applyImgMarks 仍然管浮窗）。 */
+    applyImgMarksToEl(el) {
+      if (!el) return;
+      applyImgMarksTo(el, this.imgItems);
+    },
+
+    /** 导出这几条：把笔记原文拼起来放剪贴板（按钮上给 1.2s 回执）。 */
+    copyAll() {
+      const text = this.items.map((it) => String(it.note == null ? '' : it.note).trim()).filter(Boolean).join('\n\n---\n\n');
+      const done = () => {
+        if (!this.copyBtnEl) return;
+        const old = this.copyBtnEl.textContent;
+        this.copyBtnEl.textContent = KH.OcrCopy.VIEW.copied;
+        setTimeout(() => { if (this.copyBtnEl) this.copyBtnEl.textContent = old; }, 1200);
+      };
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, done);
+        else {
+          const ta = document.createElement('textarea');
+          ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+          document.body.appendChild(ta); ta.select();
+          try { document.execCommand('copy'); } catch (e) { /* 无权限 */ }
+          document.body.removeChild(ta);
+          done();
+        }
+      } catch (e) { done(); }
+    },
+
+    /** 左缘 60px 内有 fixed/sticky 元素 ⇒ 贴边条自动停右缘（方案 §避让第一条）。 */
+    detectRailSide() {
+      try {
+        const y = Math.round(window.innerHeight * 0.42);
+        const isDocked = (el) => {
+          let p = el;
+          for (let i = 0; p && i < 8; i++) {
+            const st = window.getComputedStyle ? window.getComputedStyle(p) : null;
+            if (st && (st.position === 'fixed' || st.position === 'sticky')) return true;
+            p = p.parentNode;
+          }
+          return false;
+        };
+        for (let x = 6; x <= 60; x += 6) {
+          const el = document.elementFromPoint(x, y);
+          if (!el || el === document.documentElement || el === document.body || el === this.host) continue;
+          if (isDocked(el)) { this.railSide = 'right'; break; }
+        }
+      } catch (e) { /* 探测失败就用默认左缘 */ }
     },
 
     renderContent() {
@@ -1798,6 +3173,13 @@
       /* 计数 = 笔记卡片 + 右键识别的图（那张「截图」卡也是用户眼里的内容，
        * 只有它的时候计数不许是 0 —— 那会让人以为面板里是空的） */
       const count = this.items.length + this.ctxItems().length;
+      if (this.mode === 'float') { this.renderFloatContent(count); return; }
+      this.renderRailContent(count);
+    },
+
+    /** 浮窗态：2.0.8.1 的左上角卡片（可拖动、可缩放）；收起目标从 FAB 换成贴边条。 */
+    renderFloatContent(count) {
+      if (!this.root) return;
 
       // 收起态：整块换成圆形 FAB（单击/双击/回车都能展开 —— 拖动收尾不算，见 startDrag）
       if (this.minimized) {
@@ -1863,7 +3245,8 @@
       }
 
       // 展开态：外壳只创建一次（避免每次命中变化重播入场动画 → 闪烁）
-      if (!this.panelEl) {
+      if (this.shellMode !== 'float' || !this.panelEl) {
+        this.shellMode = 'float';
         this.fabCount = -1;   // 收起态那份 FAB 已被整块换掉（见上面 `this.minimized` 分支的说明）
         /* 题头措辞（含箭头字符）一律取自 KH.OcrCopy.VIEW（F3.4：原来两个题头逐字相同，
          * 读屏听不出展开的是哪一块）；aria-controls 指向受控区。
@@ -1875,14 +3258,22 @@
               '<span class="khin-header-icon" aria-hidden="true">📌</span>' +
               '<span class="khin-header-title">重要笔记</span>' +
               '<span class="khin-header-count">0 条</span>' +
-              '<button class="khin-header-btn" data-act="min">—</button>' +
+              '<button class="khin-header-btn" data-act="rail">—</button>' +
             '</div>' +
-            '<div class="khin-notebar" role="button" tabindex="0" aria-expanded="true" aria-controls="khin-note-body" hidden>' +
-              '<span class="khin-notetitle">📝 笔记</span>' +
-              '<span class="khin-notecount"></span>' +
-              '<span class="khin-notearrow">' + KH.OcrCopy.VIEW.noteCollapse + '</span>' +
+            /* 【2.0.8.4 需求④】页签：笔记 / AI 助手。两块互斥（hidden），共用面板宽度。 */
+            '<div class="khin-tabs" role="tablist">' +
+              '<button class="khin-tab" type="button" role="tab" data-tab="note"></button>' +
+              '<button class="khin-tab" type="button" role="tab" data-tab="ai"></button>' +
             '</div>' +
-            '<div class="khin-body" id="khin-note-body"></div>' +
+            '<div class="khin-pane khin-pane-note">' +
+              '<div class="khin-notebar" role="button" tabindex="0" aria-expanded="true" aria-controls="khin-note-body" hidden>' +
+                '<span class="khin-notetitle">📝 笔记</span>' +
+                '<span class="khin-notecount"></span>' +
+                '<span class="khin-notearrow">' + KH.OcrCopy.VIEW.noteCollapse + '</span>' +
+              '</div>' +
+              '<div class="khin-body" id="khin-note-body"></div>' +
+            '</div>' +
+            '<div class="khin-ai" hidden></div>' +
           '</div>';
         this.panelEl = this.root.querySelector('.khin-panel');
         this.bodyEl = this.root.querySelector('.khin-body');
@@ -1918,18 +3309,21 @@
            * 只在 fabOpenedAt 非 0 时生效 ⇒ 未经过 FAB 展开的面板（例如页面刷新后恢复）不受影响。 */
           const sinceFabOpen = Date.now() - this.fabOpenedAt;
           if (this.fabOpenedAt && sinceFabOpen >= 0 && sinceFabOpen < FAB_LONG_PRESS_MS) { this.fabOpenedAt = 0; return; }
-          this.minimized = true;
-          this.renderContent();
-          this.applyPosition();
+          this.minimized = false;
+          this.setMode('rail', { focus: true });
         });
-        const minBtn = this.panelEl.querySelector('[data-act="min"]');
-        minBtn.title = KH.OcrCopy.VIEW.minTip;      // 文案真源（T29 / F1.2）
-        minBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          this.minimized = true;
-          this.renderContent();
-          this.applyPosition();
-        });
+        const railBtn = this.panelEl.querySelector('[data-act="rail"]');
+        if (railBtn) {
+          railBtn.title = KH.OcrCopy.VIEW.collapseTip;
+          railBtn.textContent = KH.OcrCopy.VIEW.collapseBtn;
+          railBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.minimized = false;
+            this.setMode('rail', { focus: true });
+          });
+        }
+        /* 【2.0.8.4 需求④】浮窗也有「笔记 / AI」页签，与贴边摘列是同一份会话。 */
+        this.bindTabs(this.panelEl);
       }
 
       if (this.countEl) this.countEl.textContent = count + ' 条';
@@ -1948,6 +3342,629 @@
       this.renderItems();
       /* 命中红框跟着卡片一起重建：卡片是整体换新的，标记必须在这一趟重算（旧框也在这趟摘掉） */
       this.applyImgMarks();
+      /* 【2.0.8.4 需求④】页签/对话面也跟着落（外壳刚建好时必须补这一次，见 renderRailContent 里的说明） */
+      this.syncTab();
+    },
+
+    /* =====================【2.0.8.4 需求③】浮窗逐卡收起 =====================
+     * 用户原话：「非贴边模式希望新增支持单独收起部分卡片的功能」。
+     * 口径：只作用于**浮窗**卡片（摘要列已经有手风琴，不给同一块内容第二套折叠）；
+     * 收起 = 正文整块藏起来、标签行留着；状态按 note 文本挂在面板侧，页面刷新后同一张卡保持收起。
+     * ======================================================================== */
+
+    /** 这张卡当前是否被单独收起（与 `ignored`/`expandedTags` 同一把钥匙：note 文本）。 */
+    isCardCollapsed(item) {
+      return this.collapsedNotes.has(String(item && item.note == null ? '' : item.note));
+    },
+
+    /** 把收起态落到一个具体卡元素上（**就地**更新，不重建 DOM —— 重建会丢滚动与图片解码）。 */
+    applyCardCollapsed(el, item) {
+      if (!el || !el.classList) return;
+      const folded = this.isCardCollapsed(item);
+      el.classList.toggle('khin-folded', folded);
+      const head = el.firstElementChild;
+      const btn = head ? head.querySelector('.khin-item-fold') : null;
+      if (btn) {
+        btn.textContent = folded ? '▸' : '▾';
+        btn.title = folded ? KH.OcrCopy.VIEW.cardExpand : KH.OcrCopy.VIEW.cardCollapse;
+        btn.setAttribute('aria-expanded', folded ? 'false' : 'true');
+      }
+    },
+
+    /** 点一下收起/展开这张卡（只翻标记 + 就地刷这一个元素，绝不走 render()）。 */
+    toggleCard(item) {
+      const key = String(item && item.note == null ? '' : item.note);
+      if (this.collapsedNotes.has(key)) this.collapsedNotes.delete(key);
+      else this.collapsedNotes.add(key);
+      const els = this.cardEls || [];
+      for (let i = 0; i < els.length; i++) {
+        const cur = this.items[i];
+        if (cur && String(cur.note == null ? '' : cur.note) === key) this.applyCardCollapsed(els[i], cur);
+      }
+    },
+
+    /** 往卡头塞那颗「收起/展开」按钮（新建卡时调用一次）。 */
+    addFoldBtn(headEl, item) {
+      const doc = document;
+      const btn = doc.createElement('button');
+      btn.className = 'khin-item-fold';
+      btn.type = 'button';
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.toggleCard(item);
+      });
+      headEl.appendChild(btn);
+      return btn;
+    },
+
+    /* =====================【2.0.8.4 需求④】AI 对话助手 =====================
+     * 一个模块、两种形态共用：贴边摘列与浮窗都用同一套「笔记 / AI」页签，对话存在 `aiMsgs` 里，
+     * 切形态只重建界面、不丢会话。
+     * 口径：**纯自由对话** —— 只发用户自己打的话（用户 2026-11-03 拍板，不带页面标题/URL/笔记内容）。
+     * 请求走后台（`KH.MSG.AI_CHAT`）：内容脚本里的 fetch 按**页面来源**走 CORS，直连各家 API 会失败；
+     * 后台是扩展来源 + host_permissions，才发得出去（实现见 `background/ai.js`）。
+     * ====================================================================== */
+
+    /** 页签绑定（每个壳建好时挂一次；元素随壳重建，所以不存在监听器叠加）。 */
+    bindTabs(scope) {
+      if (!scope || !scope.querySelectorAll) return;
+      const V = KH.OcrCopy.VIEW;
+      const tabs = scope.querySelectorAll('.khin-tab');
+      for (let i = 0; i < tabs.length; i++) {
+        const b = tabs[i];
+        const name = b.getAttribute('data-tab') === 'ai' ? 'ai' : 'note';
+        b.textContent = name === 'ai' ? V.tabAi : V.tabNote;
+        b.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.setTab(name);
+        });
+      }
+    },
+
+    /** 切页签（'note' | 'ai'）。切换只翻显隐与重画对话，不动笔记卡片。 */
+    setTab(tab) {
+      this.tab = (tab === 'ai') ? 'ai' : 'note';
+      this.syncTab();
+    },
+
+    /** 把页签状态落到当前壳：笔记面板与 AI 面板互斥显示。 */
+    syncTab() {
+      if (!this.root) return;
+      const aiOn = this.tab === 'ai';
+      const tabs = this.root.querySelectorAll('.khin-tab');
+      for (let i = 0; i < tabs.length; i++) {
+        const on = tabs[i].getAttribute('data-tab') === (aiOn ? 'ai' : 'note');
+        tabs[i].classList.toggle('is-on', on);
+        tabs[i].setAttribute('aria-selected', on ? 'true' : 'false');
+      }
+      if (this.drawerEl) this.drawerEl.classList.toggle('is-ai', aiOn);
+      const pane = this.root.querySelector('.khin-pane-note');
+      const box = this.root.querySelector('.khin-ai');
+      if (pane) pane.hidden = aiOn;
+      if (box) {
+        box.hidden = !aiOn;
+        if (aiOn) this.renderAiBox(box);
+      }
+      if (!aiOn) { this.aiEl = null; this.aiListEl = null; }
+    },
+
+    /** 走哪条通路：`web`（网页对话，免 Key，默认）/ `api`（OpenAI 兼容接口，要 Key）。 */
+    aiMode() {
+      const ai = (this.cfg && this.cfg.ai) || {};
+      return ai.mode === 'api' ? 'api' : 'web';
+    },
+
+    /** 能不能发：web 模式只要没关闭就行（登录态由对话页保证）；api 模式仍要地址 + Key。 */
+    aiReady() {
+      const ai = (this.cfg && this.cfg.ai) || {};
+      if (ai.enabled === false) return false;
+      if (this.aiMode() === 'web') return true;
+      if (!ai.baseUrl) return false;
+      return !!ai.apiKey || ai.provider === 'custom';
+    },
+
+    /**
+     * 长连接（流式回包）：网页版是边生成边出字，`sendMessage` 的一问一答接不住。
+     * 连不上就退化成"没有连接"，发送时如实报错，不假装成功。
+     */
+    ensureAiPort() {
+      if (this.aiPort) return this.aiPort;
+      try {
+        if (!chrome || !chrome.runtime || typeof chrome.runtime.connect !== 'function') return null;
+        const port = chrome.runtime.connect({ name: (KH.MSG && KH.MSG.AI_PORT) || 'kh:ai' });
+        this.aiPort = port;
+        port.onMessage.addListener((m) => this.onAiMessage(m));
+        port.onDisconnect.addListener(() => {
+          void (chrome.runtime && chrome.runtime.lastError);
+          this.aiPort = null;
+          if (this.aiBusy) {
+            this.aiBusy = false;
+            const last = this.aiMsgs[this.aiMsgs.length - 1];
+            if (last && last.role === 'assistant' && last.streaming) { last.streaming = false; last.role = 'error'; last.text = last.text || '连接断开了（后台被回收？重开面板再试）'; }
+            this.renderAiList();
+          }
+        });
+        return port;
+      } catch (e) {
+        this.aiPort = null;
+        return null;
+      }
+    },
+
+    /** 后台推过来的三件事：增量 / 完成 / 出错。 */
+    onAiMessage(m) {
+      if (!m || !m.type) return;
+      const last = this.aiMsgs[this.aiMsgs.length - 1];
+      if (m.type === 'chunk') {
+        if (last && last.role === 'assistant') { last.text = String(m.text == null ? '' : m.text); this.paintAiTail(last.text); }
+        return;
+      }
+      if (m.type === 'done') {
+        this.aiBusy = false;
+        if (last && last.role === 'assistant') {
+          last.text = String(m.text || last.text || '');
+          last.streaming = false;
+        } else {
+          this.aiMsgs.push({ role: 'assistant', text: String(m.text || '') });
+        }
+        this.renderAiList();
+        return;
+      }
+      if (m.type === 'error') {
+        this.aiBusy = false;
+        if (last && last.role === 'assistant' && last.streaming) this.aiMsgs.pop();
+        this.aiMsgs.push({ role: 'error', text: String(m.error || '请求失败'), needLogin: !!m.needLogin });
+        this.renderAiList();
+      }
+    },
+
+    /** 建/刷对话面（容器只建一次，之后只重画消息列表 —— 重建会把正在输入的内容清掉）。 */
+    renderAiBox(box) {
+      if (!box) return;
+      const V = KH.OcrCopy.VIEW;
+      const doc = document;
+      this.aiEl = box;
+      if (box.getAttribute('data-kh-built') !== '1') {
+        box.setAttribute('data-kh-built', '1');
+        box.innerHTML =
+          '<div class="khin-chat">' +
+            '<div class="khin-chat-head">' +
+              '<span class="khin-chat-dot"></span>' +
+              '<span class="khin-chat-mode"></span>' +
+              '<button class="khin-chat-btn" type="button" data-act="ai-audit"></button>' +
+              '<button class="khin-chat-btn" type="button" data-act="ai-clear"></button>' +
+            '</div>' +
+            /* 【2.0.8.7 需求②】审核条：查名称 / 图标是否蹭品牌或涉敏感内容。
+             * 默认收着；点顶栏「审核」展开，结论直接落进对话流（不新开一块面板）。 */
+            '<div class="khin-audit" hidden>' +
+              '<div class="khin-audit-line">' +
+                '<input class="khin-audit-name" type="text" />' +
+                '<button class="khin-chat-btn" type="button" data-act="ai-audit-pick"></button>' +
+                '<input class="khin-audit-file" type="file" accept="image/*" hidden />' +
+              '</div>' +
+              '<div class="khin-audit-line">' +
+                '<button class="khin-chat-btn khin-audit-run" type="button" data-act="ai-audit-run"></button>' +
+                '<span class="khin-audit-note"></span>' +
+              '</div>' +
+              '<img class="khin-audit-prev" alt="" hidden />' +
+            '</div>' +
+            '<div class="khin-chat-list" role="log" aria-live="polite"></div>' +
+            '<div class="khin-chat-form">' +
+              '<textarea class="khin-chat-in" rows="1"></textarea>' +
+              '<button class="khin-chat-send" type="button" data-act="ai-send" aria-label="发送">↑</button>' +
+            '</div>' +
+          '</div>';
+        const input = box.querySelector('.khin-chat-in');
+        input.placeholder = V.aiPlaceholder;
+        input.setAttribute('aria-label', V.aiPlaceholder);
+        input.addEventListener('input', () => {
+          input.style.height = 'auto';
+          input.style.height = Math.min(96, Math.max(34, input.scrollHeight)) + 'px';
+        });
+        box.querySelector('[data-act="ai-send"]').addEventListener('click', (e) => { e.stopPropagation(); this.sendAi(); });
+        const clear = box.querySelector('[data-act="ai-clear"]');
+        clear.textContent = V.aiClear;
+        clear.title = V.aiClearTip || '';
+        clear.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.aiMsgs = [];
+          this.renderAiList();
+          /* 网页版自己记着上文：清空时让它也开新对话，否则下次提问会串到上一轮。 */
+          if (this.aiMode() === 'web') { const p = this.ensureAiPort(); if (p) { try { p.postMessage({ action: 'new' }); } catch (err) { /* 后台没起 */ } } }
+        });
+        input.addEventListener('keydown', (e) => {
+          e.stopPropagation();
+          if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); this.sendAi(); }
+        });
+        /* 【2.0.8.7 需求②】审核条的接线：展开 / 选图标 / 跑审核。 */
+        const auditBtn = box.querySelector('[data-act="ai-audit"]');
+        auditBtn.textContent = V.aiAudit;
+        auditBtn.title = V.aiAuditTip || '';
+        auditBtn.addEventListener('click', (e) => { e.stopPropagation(); this.toggleAudit(); });
+        const pickBtn = box.querySelector('[data-act="ai-audit-pick"]');
+        const fileIn = box.querySelector('.khin-audit-file');
+        pickBtn.addEventListener('click', (e) => { e.stopPropagation(); if (fileIn) fileIn.click(); });
+        if (fileIn) {
+          fileIn.addEventListener('change', () => {
+            const f = fileIn.files && fileIn.files[0];
+            if (f) this.readAuditIcon(f);
+            fileIn.value = '';
+          });
+        }
+        box.querySelector('[data-act="ai-audit-run"]').addEventListener('click', (e) => { e.stopPropagation(); this.runAudit(); });
+        this.syncAuditBar();
+      }
+      this.syncAiHead();
+      this.renderAiList();
+    },
+
+    /* ===== 【2.0.8.7 需求②】审核：本地词库先筛，配了 Cloudflare 再云端复核 =====
+     * 为什么放在面板：用户的原话是「分析应用名称和 icon 是否涉及蹭品牌 / 敏感内容」，
+     * 这是看页面时顺手做的事，不该再去开设置页。结论直接落进对话流，和 AI 问答一条线。 */
+
+    /** 展开 / 收起审核条（默认收着，不占对话空间）。 */
+    toggleAudit() {
+      const box = this.aiEl;
+      if (!box) return;
+      const bar = box.querySelector('.khin-audit');
+      if (!bar) return;
+      bar.hidden = !bar.hidden;
+      this.syncAuditBar();
+      if (!bar.hidden) {
+        const name = bar.querySelector('.khin-audit-name');
+        const V = KH.OcrCopy.VIEW;
+        if (name) { name.placeholder = V.aiAuditName || ''; name.focus(); }
+      }
+    },
+
+    /** 审核条的状态：按钮文案 / 本地还是云端 / 图标预览。 */
+    syncAuditBar() {
+      const box = this.aiEl;
+      if (!box) return;
+      const V = KH.OcrCopy.VIEW;
+      const aa = (this.cfg && this.cfg.aiAudit) || {};
+      const pick = box.querySelector('[data-act="ai-audit-pick"]');
+      if (pick) pick.textContent = this.auditImage ? (V.aiAuditPickDone || '') : (V.aiAuditPick || '');
+      const run = box.querySelector('[data-act="ai-audit-run"]');
+      if (run) {
+        run.textContent = this.auditBusy ? (V.aiAuditRunning || '') : (V.aiAuditRun || '');
+        run.disabled = !!this.auditBusy;
+      }
+      const prev = box.querySelector('.khin-audit-prev');
+      if (prev) {
+        prev.hidden = !this.auditImage;
+        if (this.auditImage) prev.src = this.auditImage;
+      }
+      const note = box.querySelector('.khin-audit-note');
+      if (note) {
+        /* 说实话：没 token 就写"只跑本地"，别让用户以为云端也查了。 */
+        const cloud = !!(aa.accountId && aa.token) && !aa.localOnly;
+        note.textContent = cloud ? String(aa.model || '') : (V.aiAuditLocalOnly || '');
+      }
+    },
+
+    /** 图标读进来缩到 512px 内（免费额度按 token 算，原图直接传是浪费）。 */
+    readAuditIcon(file) {
+      if (!file || !/^image\//.test(file.type || '')) return;
+      const me = this;
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = function () {
+        try {
+          const max = 512;
+          const w = img.naturalWidth || img.width || max;
+          const h = img.naturalHeight || img.height || max;
+          const scale = Math.min(1, max / Math.max(w, h));
+          const cw = Math.max(1, Math.round(w * scale));
+          const ch = Math.max(1, Math.round(h * scale));
+          const c = document.createElement('canvas');
+          c.width = cw;
+          c.height = ch;
+          const g = c.getContext('2d');
+          if (!g) throw new Error('canvas');
+          g.drawImage(img, 0, 0, cw, ch);
+          me.auditImage = c.toDataURL('image/png');
+        } catch (err) {
+          me.auditImage = '';
+        }
+        URL.revokeObjectURL(url);
+        me.syncAuditBar();
+      };
+      img.onerror = function () {
+        URL.revokeObjectURL(url);
+        me.auditImage = '';
+        me.syncAuditBar();
+      };
+      img.src = url;
+    },
+
+    /** 跑一次审核：本地出结论 → 有图标且有免 Key 通道时再让云上看图。 */
+    runAudit() {
+      const box = this.aiEl;
+      const V = KH.OcrCopy.VIEW;
+      if (!box || this.auditBusy) return;
+      const bar = box.querySelector('.khin-audit');
+      const nameEl = bar && bar.querySelector('.khin-audit-name');
+      const name = String((nameEl && nameEl.value) || '').trim();
+      const image = String(this.auditImage || '');
+      if (!name && !image) { this.pushAuditMsg('error', V.aiAuditNeed || ''); return; }
+      const API = KH.AiAudit;
+      const local = (API && typeof API.screen === 'function') ? API.screen(name) : { level: 0, hits: [] };
+      this.pushAuditMsg('user', (name || (V.aiAuditEmptyName || '')) + (image ? ' ［含图标］' : ''));
+      this.pushAuditMsg('assistant', (API && typeof API.describe === 'function') ? API.describe(local, null) : '');
+      const aa = (this.cfg && this.cfg.aiAudit) || {};
+      const cloudOk = !!image && !!aa.accountId && !!aa.token && !aa.localOnly;
+      if (!cloudOk) {
+        this.pushAuditMsg('assistant', image ? (V.aiAuditNoKey || '') : (V.aiAuditLocalOnly || ''));
+        return;
+      }
+      const me = this;
+      this.auditBusy = true;
+      this.syncAuditBar();
+      this.pushAuditMsg('assistant', V.aiAuditRunning || '');
+      const msg = { type: (KH.MSG && KH.MSG.AI_AUDIT) || 'kh:ai:audit', name: name, image: image };
+      try {
+        chrome.runtime.sendMessage(msg, (resp) => {
+          void (chrome.runtime && chrome.runtime.lastError);
+          me.auditBusy = false;
+          me.syncAuditBar();
+          /* "审核中…" 那条刚推的气泡只用来占位，回包到了就换成真结论。 */
+          const last = me.aiMsgs[me.aiMsgs.length - 1];
+          if (last && last.role === 'assistant' && last.text === (V.aiAuditRunning || '')) me.aiMsgs.pop();
+          if (!resp || !resp.ok) {
+            me.pushAuditMsg('error', String((resp && (resp.error || resp.needSetup)) || (V.aiAuditFail || '')));
+            return;
+          }
+          me.pushAuditMsg('assistant', me.formatAudit(local, resp.audit || null));
+        });
+      } catch (err) {
+        this.auditBusy = false;
+        this.syncAuditBar();
+        this.pushAuditMsg('error', String((err && err.message) || err));
+      }
+    },
+
+    /** 把本地 + 云端两份结论拼成一段人话（云端只补"品牌/敏感项 + 一句话"）。 */
+    formatAudit(local, cloud) {
+      const API = KH.AiAudit;
+      const lines = [];
+      if (API && typeof API.describe === 'function') lines.push(API.describe(local, cloud));
+      const brands = (cloud && Array.isArray(cloud.brands)) ? cloud.brands : [];
+      for (let i = 0; i < brands.length; i++) {
+        const b = brands[i] || {};
+        if (!b.name) continue;
+        lines.push('· 品牌：' + String(b.name) + (b.why ? ' — ' + String(b.why) : ''));
+      }
+      const sens = (cloud && Array.isArray(cloud.sensitive)) ? cloud.sensitive : [];
+      for (let i = 0; i < sens.length; i++) {
+        const s = sens[i] || {};
+        if (!s.tag) continue;
+        lines.push('· 敏感：' + String(s.tag) + (s.why ? ' — ' + String(s.why) : ''));
+      }
+      if (cloud && cloud.summary) lines.push(String(cloud.summary));
+      return lines.filter(Boolean).join('\n');
+    },
+
+    /** 结论写进对话流（复用消息列表，不新开一块面板）。 */
+    pushAuditMsg(role, text) {
+      this.aiMsgs.push({ role: role, text: String(text == null ? '' : text) });
+      if (this.aiMsgs.length > 60) this.aiMsgs.splice(0, this.aiMsgs.length - 60);
+      this.renderAiList();
+    },
+
+    /** 顶部状态带：模式名 + 忙/闲小圆点（忙时呼吸）。 */
+    syncAiHead() {
+      const box = this.aiEl;
+      if (!box) return;
+      const V = KH.OcrCopy.VIEW;
+      const modeEl = box.querySelector('.khin-chat-mode');
+      const dot = box.querySelector('.khin-chat-dot');
+      const ready = this.aiReady();
+      if (modeEl) {
+        const web = this.aiMode() === 'web';
+        modeEl.textContent = (web ? V.aiModeWeb : V.aiModeApi) + (ready ? '' : (web ? '' : ' · ' + V.aiNotReady));
+        modeEl.title = web ? V.aiModeWebTip : V.aiModeApiTip;
+      }
+      if (dot) {
+        dot.classList.toggle('is-busy', !!this.aiBusy);
+        dot.classList.toggle('is-off', !ready);
+      }
+      const send = box.querySelector('[data-act="ai-send"]');
+      if (send) send.disabled = !ready;
+    },
+
+    /** 一行消息（用户 / 助手 / 错误），气泡 + 小头像；助手行带复制。 */
+    buildAiRow(m) {
+      const V = KH.OcrCopy.VIEW;
+      const doc = document;
+      const isMe = m.role === 'user';
+      const isErr = m.role === 'error';
+      const row = doc.createElement('div');
+      row.className = 'khin-chat-row ' + (isMe ? 'is-me' : (isErr ? 'is-err' : 'is-bot'));
+      const av = doc.createElement('span');
+      av.className = 'khin-chat-av';
+      av.textContent = isMe ? V.aiAvMe : (isErr ? '!' : 'AI');
+      row.appendChild(av);
+      const wrap = doc.createElement('div');
+      wrap.style.minWidth = '0';
+      const bubble = doc.createElement('div');
+      bubble.className = 'khin-chat-bubble';
+      const textEl = doc.createElement('span');
+      textEl.className = 'khin-chat-text';
+      /* 模型回包是**外来文本**，一律 textContent 落地，绝不按 HTML/Markdown 解析。 */
+      textEl.textContent = String(m.text == null ? '' : m.text);
+      bubble.appendChild(textEl);
+      if (m.streaming) {
+        const caret = doc.createElement('span');
+        caret.className = 'khin-chat-caret';
+        bubble.appendChild(caret);
+      }
+      wrap.appendChild(bubble);
+      if (!isMe && !m.streaming && String(m.text || '').trim()) {
+        const tools = doc.createElement('div');
+        tools.className = 'khin-chat-tools';
+        const copy = doc.createElement('button');
+        copy.className = 'khin-chat-link';
+        copy.type = 'button';
+        copy.textContent = V.aiCopy;
+        copy.addEventListener('click', (e) => { e.stopPropagation(); this.copyAiText(String(m.text || '')); });
+        tools.appendChild(copy);
+        wrap.appendChild(tools);
+      }
+      if (isErr && m.needLogin) {
+        const tools = doc.createElement('div');
+        tools.className = 'khin-chat-tools';
+        const go = doc.createElement('button');
+        go.className = 'khin-chat-link';
+        go.type = 'button';
+        go.textContent = V.aiGoLogin;
+        go.addEventListener('click', (e) => { e.stopPropagation(); this.openAiWeb(); });
+        tools.appendChild(go);
+        wrap.appendChild(tools);
+      }
+      row.appendChild(wrap);
+      return row;
+    },
+
+    /** 只重画消息列表（发送 / 回包 / 清空都走这里）。 */
+    renderAiList() {
+      const box = this.aiEl;
+      if (!box) return;
+      const list = box.querySelector('.khin-chat-list');
+      if (!list) return;
+      this.aiListEl = list;
+      const V = KH.OcrCopy.VIEW;
+      const doc = document;
+      const keepBottom = (list.scrollHeight - list.scrollTop - list.clientHeight) < 40;
+      list.innerHTML = '';
+      const ready = this.aiReady();
+      if (!this.aiMsgs.length && !this.aiBusy) {
+        const empty = doc.createElement('div');
+        empty.className = 'khin-chat-empty';
+        const tip = doc.createElement('div');
+        tip.innerHTML = '';
+        tip.textContent = ready ? V.aiEmpty : V.aiNeedKey;
+        empty.appendChild(tip);
+        if (ready) {
+          const quick = doc.createElement('div');
+          quick.className = 'khin-chat-quick';
+          const seeds = [V.aiSeed1, V.aiSeed2, V.aiSeed3];
+          for (let i = 0; i < seeds.length; i++) {
+            if (!seeds[i]) continue;
+            const b = doc.createElement('button');
+            b.type = 'button';
+            b.textContent = seeds[i];
+            b.addEventListener('click', (e) => {
+              e.stopPropagation();
+              const input = this.aiEl && this.aiEl.querySelector('.khin-chat-in');
+              if (input) { input.value = seeds[i]; input.focus(); }
+            });
+            quick.appendChild(b);
+          }
+          empty.appendChild(quick);
+        } else {
+          const go = doc.createElement('button');
+          go.className = 'khin-chat-btn';
+          go.type = 'button';
+          go.textContent = V.aiOpenOptions;
+          go.addEventListener('click', (e) => { e.stopPropagation(); this.openAiOptions(); });
+          empty.appendChild(go);
+        }
+        list.appendChild(empty);
+        this.syncAiHead();
+        return;
+      }
+      for (let i = 0; i < this.aiMsgs.length; i++) list.appendChild(this.buildAiRow(this.aiMsgs[i] || {}));
+      this.syncAiHead();
+      list.scrollTop = keepBottom ? list.scrollHeight : list.scrollTop;
+    },
+
+    /** 流式增量只改最后一条气泡的文字（不重建列表 —— 高频重建会闪）。 */
+    paintAiTail(text) {
+      const list = this.aiListEl;
+      if (!list) return;
+      const rows = list.querySelectorAll('.khin-chat-row.is-bot');
+      const row = rows[rows.length - 1];
+      if (!row) return;
+      const el = row.querySelector('.khin-chat-bubble .khin-chat-text');
+      if (el) el.textContent = String(text == null ? '' : text);
+      const nearBottom = (list.scrollHeight - list.scrollTop - list.clientHeight) < 40;
+      if (nearBottom) list.scrollTop = list.scrollHeight;
+    },
+
+    /** 复制一段回复（剪贴板在内容脚本里走 execCommand 最稳，异步 API 需要用户手势）。 */
+    copyAiText(text) {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        ta.remove();
+      } catch (e) { /* 复制失败不打断对话 */ }
+    },
+
+    /** 打开设置页（内容脚本不能稳定地直接开，统一交给后台）。 */
+    openAiOptions() {
+      try {
+        const type = (KH.MSG && KH.MSG.AI_OPEN_OPTIONS) || '';
+        if (!type || !chrome || !chrome.runtime || !chrome.runtime.sendMessage) return;
+        chrome.runtime.sendMessage({ type: type }, () => { void (chrome.runtime && chrome.runtime.lastError); });
+      } catch (e) { /* 老内核 / 扩展上下文已失效：静默 */ }
+    },
+
+    /** 网页模式：把对话页切到前台（登录 / 看一眼它到底回了什么）。 */
+    openAiWeb() {
+      try {
+        const type = (KH.MSG && KH.MSG.AI_WEB_OPEN) || '';
+        if (!type || !chrome || !chrome.runtime || !chrome.runtime.sendMessage) return;
+        chrome.runtime.sendMessage({ type: type }, () => { void (chrome.runtime && chrome.runtime.lastError); });
+      } catch (e) { /* 静默 */ }
+    },
+
+    /** 发一条：请求交给后台（CORS / 标签页 / 长连接都在那边）。 */
+    sendAi() {
+      const box = this.aiEl;
+      if (!box || this.aiBusy) return;
+      const input = box.querySelector('.khin-chat-in');
+      const text = String((input && input.value) || '').trim();
+      if (!text) return;
+      const V = KH.OcrCopy.VIEW;
+      if (!this.aiReady()) {
+        this.aiMsgs.push({ role: 'error', text: V.aiNeedKey });
+        this.renderAiList();
+        return;
+      }
+      input.value = '';
+      input.style.height = '';
+      this.aiMsgs.push({ role: 'user', text: text });
+      this.aiMsgs.push({ role: 'assistant', text: '', streaming: true });
+      this.aiBusy = true;
+      this.renderAiList();
+      /* 只发对话本身：不带页面标题 / URL / 笔记（用户口径：纯自由对话）。 */
+      const messages = [];
+      for (let i = 0; i < this.aiMsgs.length; i++) {
+        const m = this.aiMsgs[i];
+        if (m && (m.role === 'user' || (m.role === 'assistant' && !m.streaming))) messages.push({ role: m.role, content: m.text });
+      }
+      const port = this.ensureAiPort();
+      if (!port) {
+        this.aiBusy = false;
+        this.aiMsgs.pop();
+        this.aiMsgs.push({ role: 'error', text: '扩展后台不可用（刷新页面或重装后再试）' });
+        this.renderAiList();
+        return;
+      }
+      try {
+        port.postMessage({ action: 'ask', mode: this.aiMode(), messages: messages });
+      } catch (err) {
+        this.aiBusy = false;
+        this.aiMsgs.pop();
+        this.aiMsgs.push({ role: 'error', text: String((err && err.message) || err) });
+        this.renderAiList();
+      }
     },
 
     /** 笔记区的收起态落到 DOM（收起时正文整块藏起来，只留题头一行） */
@@ -2177,7 +4194,11 @@
         const item = this.items[i];
         const note = String(item.note == null ? '' : item.note);
         const prevEl = prevEls[i] || null;
-        let el = (prevEl && prevNotes[i] === note) ? prevEl : null;
+        /* 【2.0.8.5 无感重建】先按"同一位置"复用，再按 **note 文本**兜底复用：
+         * 置顶排序一变（新命中插到最上面）时，位置对应的旧卡全都换了内容 —— 只按位置判会把
+         * 下面每一张都重造一遍，看起来就是"整块闪了一下"。note 是卡片的唯一承重内容，
+         * 拿它当 key 就能让"内容没变但位置挪了"的卡整个搬过去，不重建。 */
+        let el = (prevEl && prevNotes[i] === note) ? prevEl : (this.cardMap ? (this.cardMap.get(note) || null) : null);
         if (el) {
           /* 复用：标签区要按当前状态重画（展开/选中/命中序号都在里面），正文与 `<img>` 不动 */
           const tagsEl = el.firstElementChild && el.firstElementChild.firstElementChild;
@@ -2200,6 +4221,8 @@
             this.refresh();
           });
           headEl.appendChild(tagsEl);
+          /* 【2.0.8.4 需求③】逐卡收起：按钮在 ✕ 左边，只作用于浮窗卡片。 */
+          this.addFoldBtn(headEl, item);
           headEl.appendChild(closeBtn);
           el.appendChild(headEl);
           const noteEl = doc.createElement('div');
@@ -2209,6 +4232,11 @@
           carryImgs(prevEl, el);
         }
         styleOf(el, item);
+        /* 【2.0.8.4 需求③】收起态每轮都对一遍：复用旧卡时也要跟上（新建卡则补上初始箭头）。 */
+        this.applyCardCollapsed(el, item);
+        /* 【2.0.8.6 需求①】合并行也每轮对一遍：字段值可能后到（异步抓取/OCR），
+         * 幂等实现（先摘旧的再贴），不会叠行。 */
+        this.decorateMerge(el, item);
         els.push(el);
         notes.push(note);
         /* 落位：同一位置已经是对的元素就跳过，避免无谓的 DOM 移动（移动即重排） */
@@ -2224,40 +4252,11 @@
       }
       this.cardEls = els;
       this.cardNotes = notes;
+      this.cardMap = new Map();
+      for (let i = 0; i < notes.length; i++) this.cardMap.set(notes[i], els[i]);
       /* 【2.0.2.16 需求⑦】右键「截图」卡排**最下方**，由 renderCtxCard 收尾追加；
        * 它自己也带签名闸，没变化就不重建。 */
       this.renderCtxCard();
-      /* 软著一致性核对（用户 m00001 需求②）：卡片 DOM 就位后再落结论（关闭时无副作用） */
-      this.applySoftCheck();
-    },
-
-    /**
-     * 软著一致性核对（用户 m00001 需求②）：把每张卡片自己的抓取表交给 `KH.SoftCheck.decorateTable`。
-     * 数据两路都来自本地已有事实，不新增请求也不新增定时器：
-     *   · 开发者 / 备案主体的值 = 这张卡自己的 `.kh-table-fetch`（`KH.Fetch` 生成，标签格后紧跟值格）；
-     *   · 著作权人 / 授权书 = 本卡来源规则的 OCR 条目（`KH.ImgOcr.items()` 里 `ruleId` 属于本卡的
-     *     `pinIds`，即命中登记时写的 `meta.pinId` = `ruleId`）。
-     * 配置关着时 `decorateTable` 直接返回 ⇒ 零涂色、零额外计算（行为与上一版一致）。
-     */
-    applySoftCheck() {
-      const sc = KH.SoftCheck;
-      if (!sc || typeof sc.decorateTable !== 'function') return;
-      const els = this.cardEls || [];
-      if (!els.length) return;
-      const cfg = this.cfg || KH.config || {};
-      const all = (KH.ImgOcr && typeof KH.ImgOcr.items === 'function') ? (KH.ImgOcr.items() || []) : [];
-      for (let i = 0; i < els.length; i++) {
-        const item = this.items[i];
-        if (!item) continue;
-        const table = els[i].querySelector ? els[i].querySelector('table.kh-table-fetch') : null;
-        if (!table) continue;
-        /* 只喂本卡来源规则的条目：两张卡各自抓不同字段时，A 卡的著作权人不能拿去判 B 卡 */
-        const ids = item.pinIds || [];
-        const mine = ids.length
-          ? all.filter((it) => it && ids.indexOf(String(it.ruleId || '').toLowerCase()) >= 0)
-          : [];
-        sc.decorateTable(table, { cfg: cfg, items: mine });
-      }
     },
 
     /**
@@ -2313,13 +4312,30 @@
       if (!this.host) return;
       const hits = (KH.registry && typeof KH.registry.all === 'function') ? KH.registry.all() : [];
       const effective = collectEffective(hits);
-      this.render(head.build(effective, this.ignored), this.cfg);
+      this.render(head.build(effective, this.ignored, this.cfg), this.cfg);
     },
 
     /* 显隐写成**幂等**的：重复 show/hide 不再写 attribute（少一次 DOM 变更，
      * 也避免把 hidden 属性翻转成"每次重建都抖一下"） */
     show() { if (this.root && this.root.hidden) this.root.hidden = false; },
     hide() { if (this.root && !this.root.hidden) this.root.hidden = true; },
+
+    /**
+     * 【2.0.8.4 需求①】面板是不是"正开着"（用户看得见内容）。
+     *
+     * 只回答一件事：**现在有没有一块内容需要跟着页面变**。
+     *   · 浮窗展开态（不是收成 FAB）⇒ 开；
+     *   · 贴边摘要列展开 ⇒ 开；
+     *   · 只剩一根贴边条 ⇒ 关（条子上只有条数，条数由命中集决定，命中变了自然会走整页重建）。
+     *
+     * 调度侧（`scheduler._drainMutations`）在 Relevance 判 'skip' 时拿它做兜底：
+     * 开着才补跑一次 Consume，避免"页面换了内容、面板还是旧值"。
+     */
+    isOpen() {
+      if (!this.root || this.root.hidden) return false;
+      if (this.mode === 'float') return !this.minimized;
+      return this.mode === 'list';
+    },
 
     /**
      * 重建前清底：**不动显隐**（只保留外壳）。
@@ -2346,9 +4362,33 @@
       this.panelEl = null;
       this.bodyEl = null;
       this.countEl = null;
+      /* 【2.0.8.4】贴边形态的引用与行指纹一并清：宿主都拆了，留着就是悬空引用 / 让下一轮误判"没变"。 */
+      this.railEl = null;
+      this.drawerEl = null;
+      this.rowsEl = null;
+      this.rowsSig = '';
+      this.collapsedNotes.clear();
+      this.pinDefaultDone = false;
+      /* 【2.0.8.4 需求④】对话面引用与本次会话的对话一起清（面板都下线了，留着只是悬空引用）。 */
+      this.aiEl = null;
+      this.aiListEl = null;
+      this.aiMsgs = [];
+      this.aiBusy = false;
+      this.tab = 'note';
+      /* 【2.0.8.5】长连接也要断：不断的话后台会在端口上继续推 chunk，面板对象却已经没了。 */
+      if (this.aiPort) {
+        try { this.aiPort.disconnect(); } catch (e) { /* 已经断了 */ }
+        this.aiPort = null;
+      }
+      /* 外壳模式也必须清：宿主已拆，下一轮 ensure() 造的是空壳，若 `shellMode` 还停在 'rail'/'float'，
+       * 两个 render*Content 都会跳过建壳 ⇒ 面板永久空白（悬空引用 + 不重建）。 */
+      this.shellMode = '';
       this.dragState = null;
       this.ignored.clear();
       this.items = [];
+      /* 【2.0.8.5】按 key 复用的两张表随面板一起清（宿主已拆，留着是指向已删除节点的引用）。 */
+      this.rowEls = new Map();
+      this.cardMap = new Map();
       /* 置顶签名随面板一起清：下次 render 从干净态重建，别拿上一站（另一个页面/另一次启动）的
        * 置顶表去比"顺序变没变"。 */
       this.pinSig = '';
@@ -2374,6 +4414,9 @@
    *
    * 两条纪律不变：只取命中行（整篇 OCR 抄进卡片会把表格撑爆）；同一 `词+值` 只留一条。
    */
+  /* 【2.0.8.6 需求③】OCR 进表正则的模块级缓存（见 ocrExtraRows 里的 matchersFor）。 */
+  const MATCHER_MEMO = new Map();
+  const MATCHER_MEMO_MAX = 400;
   const squashWs = (s) => String(s == null ? '' : s).replace(/\s+/g, '');
   /** 键值行：命中词 + 分隔符 + 值。`{也` 之外的标点不算分隔符（`一对一时间范围11:30` 因此不会误拆）。 */
   const KV_LEAD_SEP = /^(?:\s*[：:｜|＝=]\s*|\s+)(\S[\s\S]*)$/;
@@ -2479,6 +4522,11 @@
     if (!words.length) return [];
     /* 【2.0.7.1 需求②】`#表` 词也认 `@字段名` 作用域：某字段配了限定词，就只用限定词补行。
      * 同一个 label 只算一次（`kvLiteralRe` 要编译正则）。 */
+    /* 【2.0.8.6 需求③ 提速】`kvLiteralRe` 每次都要编译正则，而 `ocrExtraRows` 在每张卡、每轮
+     * 重绘时都会跑一遍 —— 同一份词表 + 同一个作用域字段的结果**完全一样**。这里用一张有上限的
+     * 模块级缓存把它接住：命中即复用编译好的正则，词表/作用域变了 key 就变，不会串味。
+     * 缓存是软上限（400 条，超了整张清空）：词表是用户配置，规模有限，不做 LRU 也够。 */
+    const memoKey = String(meta.imgOcrKeyword || '') + '\u0001' + String(meta.fetchLabels || '');
     const matcherCache = new Map();
     const matchersFor = (label) => {
       const k = String(label || '');
@@ -2491,11 +4539,15 @@
           ws = (typeof KH.ImgOcr.kvWords === 'function') ? (KH.ImgOcr.kvWords(scoped) || []) : words;
         } catch (e) { ws = words; }
       }
+      const memok = memoKey + '\u0001' + k + '\u0001' + ws.join('\u0002');
+      if (MATCHER_MEMO.has(memok)) { matcherCache.set(k, MATCHER_MEMO.get(memok)); return MATCHER_MEMO.get(memok); }
       const out = [];
       for (const w of ws) {
         const re = kvLiteralRe(w, ws);
         if (re) out.push({ word: String(w).trim(), re: re });
       }
+      if (MATCHER_MEMO.size >= MATCHER_MEMO_MAX) MATCHER_MEMO.clear();
+      MATCHER_MEMO.set(memok, out);
       matcherCache.set(k, out);
       return out;
     };
@@ -2607,7 +4659,7 @@
         const ctxCount = (KH.ImgOcr && typeof KH.ImgOcr.items === 'function')
           ? KH.ImgOcr.items().filter((it) => it && it.via === 'contextMenu').length : 0;
         if (!list.length && !ctxCount && !panel.host) return;    // 从没出现过：连外壳都不造
-        panel.render(head.build(collectEffective(hits), panel.ignored), cfg);
+        panel.render(head.build(collectEffective(hits), panel.ignored, cfg), cfg);
       },
 
       clear(root, opts) {
@@ -2658,5 +4710,10 @@
   /* `paintHits` 直接导出给单测：灯箱要在垫片里走完 openLightbox 那条路成本太高（宿主/影子根/
    * 相册/停靠都在里面），而这个函数是纯 DOM 构造，喂文本就能验。
    * `markPdf` 同理由：三态判据（蓝/绿/红）就是这条需求的验收点，不该为了测它去搭整块面板。 */
-  KH.ImportantNote = { panel, head, collectEffective, IMG_PROTOCOL_OK, paintHits, ocrExtraRows, markPdf: markOnePdf };
+  KH.ImportantNote = {
+    panel, head, collectEffective, IMG_PROTOCOL_OK, paintHits, ocrExtraRows, markPdf: markOnePdf,
+    /* 【2.0.8.7】合并闸门是「图这次真的 OCR 命中才出行」的判据所在 —— 纯函数 + 只读
+     * `KH.ImgOcr.items()`，导出给单测，免得为了验一条判定去搭整块面板。 */
+    mergeRowsFor, ocrFieldHit, rowBgOf, catOf
+  };
 })();

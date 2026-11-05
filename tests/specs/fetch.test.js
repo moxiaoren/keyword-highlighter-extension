@@ -329,6 +329,36 @@ module.exports = async function run() {
     truthy(html.indexOf('值') >= 0);
   });
 
+  suite('fetch · 内容格「不完整展示」（2.0.8.8 需求④ · 字段后缀 ~）');
+
+  await test('后缀 ~ 被解析成 clip：`%20~` 这类并写也认，展示串带 ~', () => {
+    const one = F.parseLabelSpec('隐私政策~');
+    eq(one.label, '隐私政策');
+    eq(one.clip, true);
+    eq(F.suffixTextOf(one), '~');
+    const both = F.parseLabelSpec('隐私政策%20~');
+    eq(both.label, '隐私政策');
+    eq(both.sliceSpec, '20');
+    eq(both.clip, true, '% 与 ~ 可以并写');
+    truthy(F.suffixTextOf(both).indexOf('~') >= 0);
+    const plain = F.parseLabelSpec('开发者');
+    eq(plain.clip, false, '没写 ~ 就是完整展示');
+  });
+
+  await test('勾了「不完整展示」→ 值格多一层 .kh-val-box，悬停 title 带全文', () => {
+    const opt = F.parseLabelSpec('隐私政策~');
+    const html = F.rowsToTableHtml([{ label: '隐私政策', rows: [[{ t: '这是一段很长的隐私政策正文，里面写满了各种条款', rs: 1, cs: 1 }]], opt }]);
+    truthy(html.indexOf('class="kh-val-clip"') >= 0, html);
+    truthy(html.indexOf('class="kh-val-box"') >= 0, html);
+    truthy(html.indexOf('title="这是一段很长的隐私政策正文，里面写满了各种条款"') >= 0, 'title 应给全文：' + html);
+  });
+
+  await test('没勾（默认）→ 输出与老版本逐字节同构，不包任何裁切盒', () => {
+    const html = F.rowsToTableHtml([{ label: '隐私政策', rows: [[{ t: '正文', rs: 1, cs: 1 }]], opt: F.parseLabelSpec('隐私政策') }]);
+    eq(html.indexOf('kh-val-box'), -1);
+    eq(html.indexOf('kh-val-clip'), -1);
+  });
+
   suite('fetch · 用户真实样例：审测一体审核结果描述（多行合并）');
 
   /** 把生成的 HTML 拆成"每行有多少格"，用于断言列对齐 */

@@ -2092,16 +2092,16 @@ module.exports = async function runUi(ctx) {
       truthy(r.overBox <= 0, id + ' 未展开时右边界不许出卡片：over ' + r.overBox);
     }
     eq(base.pageOverflow, false, '未展开时整页不许横向溢出：' + JSON.stringify(base.page));
-    /* 展开（点框面空白 ⇒ 文本态，占满一行）：仍不许超出卡片 */
-    await opt.click('.kh-cand-box[data-for="fld-text"] .kh-cand-field', { position: { x: 3, y: 3 } });
+    /* 列表模式：点「修改」开浮层弹窗（不进卡片流），候选框宽度与整页宽度都不许变 */
+    const beforeOpen = base.boxes['fld-text'];
+    await opt.click('.kh-cand-box[data-for="fld-text"] .kh-list-btn');
     await opt.waitForTimeout(300);
-    const texed = await opt.evaluate(measure, ['fld-text']);
-    const t = texed.boxes['fld-text'];
-    truthy(t && t.boxW > 0, '点框面空白处应进文本态（整串可编辑）');
-    truthy(t.boxW <= t.cardW + 1, '文本态占整行，但也不许比卡片宽：box ' + t.boxW + ' / card ' + t.cardW);
-    truthy(t.overBox <= 0, '文本态右边界不许出卡片：over ' + t.overBox);
-    eq(texed.pageOverflow, false, '文本态整页不许横向溢出：' + JSON.stringify(texed.page));
-    await opt.keyboard.press('Enter');
+    const listBox = await opt.$('.kh-modal .kh-list-box');
+    truthy(!!listBox, '点「修改」应打开列表弹窗');
+    const opened = await opt.evaluate(measure, ['fld-text']);
+    eq(opened.boxes['fld-text'].boxW, beforeOpen.boxW, '弹窗是浮层：候选框宽度不受影响');
+    eq(opened.pageOverflow, false, '弹窗打开时整页不许横向溢出：' + JSON.stringify(opened.page));
+    await opt.keyboard.press('Escape');
     await opt.waitForTimeout(200);
     await closeEditor();
   });
@@ -2119,12 +2119,12 @@ module.exports = async function runUi(ctx) {
       on('imgOcr');
     });
     // 图片命中关键词只有在「抓取字段非空」时才可编辑（syncCombo 的 hasLabels 闸），先灌抓取字段
-    await opt.click('.kh-cand-box[data-for="fld-fetchLabels"] .kh-cand-field', { position: { x: 3, y: 3 } });
-    await opt.waitForTimeout(200);
-    const flTa = await opt.$('.kh-cand-box[data-for="fld-fetchLabels"] .kh-cand-ta');
-    truthy(!!flTa, '抓取字段框点空白应进文本态');
-    await flTa.fill('应用功能类型|资质类型|截图#图|开发者');
+    /* 列表弹窗的「添加」输入框：回车即按 | 拆成多行，保存后收回胶囊 */
+    await opt.click('.kh-cand-box[data-for="fld-fetchLabels"] .kh-list-btn');
+    await opt.waitForTimeout(250);
+    await opt.fill('.kh-modal .kh-list-add', '应用功能类型|资质类型|截图#图|开发者');
     await opt.keyboard.press('Enter');
+    await opt.click('.kh-modal:has(.kh-list-box) .kh-modal-foot .kh-btn-primary');
     await opt.waitForTimeout(400);
     const WORDS = '车机互联|一对一|1对1|1v1|学法减分|违章查询|水电查询|保查|费查|用查|金查|私密视频|免费上网|GPT|SUNO|'
       + 'BANANA|Nano|Image|GOOGLE|OpenAI|Midjourney|gemini|Grok|微信|绿泡泡|sora|提额|通过率|违章缴费|查询违章|手指测量|'
@@ -2137,14 +2137,13 @@ module.exports = async function runUi(ctx) {
     const before = await opt.evaluate(colsOf);
     eq(before.length, 3, '编辑弹窗应是三列：' + JSON.stringify(before));
 
-    // 进文本态灌整串 → 回车收回胶囊（与用户「点框面空白批量粘贴」同一条路径）
-    await opt.click('.kh-cand-box[data-for="fld-imgOcrKeyword"] .kh-cand-field', { position: { x: 3, y: 3 } });
+    // 列表弹窗灌整串 → 保存后收回胶囊（与用户「一次粘贴几十个词」同一条路径）
+    await opt.click('.kh-cand-box[data-for="fld-imgOcrKeyword"] .kh-list-btn');
     await opt.waitForTimeout(250);
-    const taEl = await opt.$('.kh-cand-box[data-for="fld-imgOcrKeyword"] .kh-cand-ta');
-    truthy(!!taEl, '点框面空白应进文本态（textarea 要出现）');
-    await taEl.fill(WORDS);
+    await opt.fill('.kh-modal .kh-list-add', WORDS);
     await opt.waitForTimeout(200);
     await opt.keyboard.press('Enter');
+    await opt.click('.kh-modal:has(.kh-list-box) .kh-modal-foot .kh-btn-primary');
     await opt.waitForTimeout(400);
     const chips = await opt.evaluate(() => document.querySelectorAll('.kh-cand-box[data-for="fld-imgOcrKeyword"] .kh-lbl-chip').length);
     const wantChips = WORDS.split('|').length;
@@ -3149,25 +3148,22 @@ module.exports = async function runUi(ctx) {
   await pop.goto('chrome-extension://' + api.extId + '/popup/popup.html', { waitUntil: 'load' });
   await pop.waitForTimeout(700);
 
-  await test('★ 头部：logo + 标题 + 全局状态副标题 + 全局开关', async () => {
+  /* 【2.0.8.7 测试精简】头部与站点卡都是「弹窗首屏的一次读取」，合并成一条：
+   * 少一次页面往返，断言一条不少。 */
+  await test('★ 弹窗首屏结构：logo / 标题 / 全局状态 / 全局开关 + 站点卡域名与徽标', async () => {
     const r = await pop.evaluate(() => ({
       logo: !!document.querySelector('.kh-pop-logo'),
       title: (document.body.textContent.match(/关键词高亮/) || [])[0] || null,
       state: (document.getElementById('global-state') || {}).textContent || null,
-      toggle: !!document.getElementById('chk-global')
+      toggle: !!document.getElementById('chk-global'),
+      name: (document.getElementById('site-name') || {}).textContent || null,
+      badge: (document.getElementById('site-badge') || {}).textContent || null
     }));
+    console.log('        首屏: ' + JSON.stringify(r));
     truthy(r.logo, '应有 logo（🔍）');
     truthy(r.title, '应有标题「关键词高亮」');
     truthy(r.state && /全局已(开启|暂停)/.test(r.state), '副标题应显示全局状态，实际 ' + r.state);
     truthy(r.toggle, '应有全局开关');
-  });
-
-  await test('★ 当前站点卡片显示域名 + 生效/失效徽标', async () => {
-    const r = await pop.evaluate(() => ({
-      name: (document.getElementById('site-name') || {}).textContent || null,
-      badge: (document.getElementById('site-badge') || {}).textContent || null
-    }));
-    console.log('        站点卡: ' + JSON.stringify(r));
     truthy(r.name, '应显示站点名/域名，实际 ' + r.name);
     truthy(r.badge, '应有生效/失效徽标');
   });
@@ -3447,13 +3443,6 @@ module.exports = async function runUi(ctx) {
       '仅计数档 title 要写明可安全外发，实际：' + titles.counts);
 
     await pop.evaluate(() => { if (window.__origSend) chrome.tabs.sendMessage = window.__origSend; delete window.__canned; });
-  });
-
-  await test('（已删除）★ O-3 更新说明上屏', async () => {
-    /* 2026-10-05 口径：插件入口取消线上更新（提示条 / 检查更新 / 下载 / 稍后 全部退场），
-     * 页面里已无 #update-banner / #update-notes / #btn-check-update，这条真机用例随之作废。
-     * 保留空壳只为标注删除原因，避免读者以后按旧报告去页面上找这些 id。 */
-    truthy(true, '已随线上更新退场，不再断言');
   });
 
   await test('★ O-1 更新通道：有图标、单击只「准备」不落盘、再点才确认；被 manifest 强制成测试版时只读', async () => {
@@ -3755,7 +3744,8 @@ module.exports = async function runUi(ctx) {
     await good.close();
   });
 
-  await test('底部：帮助 / 完整设置 / 动态版本徽标', async () => {
+  /* 【2.0.8.7 测试精简】底部三件与「无 JS 报错」合并：同一会话、同一份累积错误列表。 */
+  await test('底部：帮助 / 完整设置 / 动态版本徽标 + 全程无 JS 报错', async () => {
     const r = await pop.evaluate(() => ({
       help: !!document.getElementById('btn-help'),
       options: !!document.getElementById('btn-options'),
@@ -3765,9 +3755,6 @@ module.exports = async function runUi(ctx) {
     truthy(r.options, '应有「完整设置」');
     const ver = await pop.evaluate(() => chrome.runtime.getManifest().version);
     includes(r.ver, ver, '版本徽标应动态读到 ' + ver + '，实际 ' + r.ver);
-  });
-
-  await test('popup 无 JS 报错', async () => {
     falsy(popErrors.length, '报错：' + popErrors.join(' | '));
   });
 

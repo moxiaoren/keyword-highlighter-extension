@@ -59,25 +59,50 @@ function findChromium() {
   return null;
 }
 
-/* 跨平台（与 release.js 同一口径）：win32 走 powershell，其余用 unzip / zip 系统命令 */
+/* 跨平台（与 release.js 同一口径）：win32 走 powershell，其余用 unzip / zip 系统命令。
+ * 2026-11-05：DSH 沙箱里 `spawn powershell` 直接 EPERM（本机打包必踩），补一条 **python zipfile 兜底** ——
+ * python 用的是系统解释器（与 node 同级放行），产物口径一致：解包到指定目录、压缩时包内顶层 = 目录名。
+ * 顺序仍是 powershell 优先：有它就用它，行为和以前一个字不差。 */
+function pyFallback(code, args) {
+  execFileSync('python', ['-c', code].concat(args), { stdio: 'inherit' });
+}
 function extractZip(zipPath, destDir) {
   if (process.platform === 'win32') {
-    execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-Command',
-      'Expand-Archive -Path "' + zipPath + '" -DestinationPath "' + destDir + '" -Force'], { stdio: 'pipe' });
+    try {
+      execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-Command',
+        'Expand-Archive -Path "' + zipPath + '" -DestinationPath "' + destDir + '" -Force'], { stdio: 'inherit' });
+    } catch (e) {
+      pyFallback('import sys,zipfile;zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])', [zipPath, destDir]);
+    }
   } else {
-    execFileSync('unzip', ['-o', '-q', zipPath, '-d', destDir], { stdio: 'pipe' });
+    execFileSync('unzip', ['-o', '-q', zipPath, '-d', destDir], { stdio: 'inherit' });
   }
 }
 /* 压缩目录为 zip（包内顶层 = 目录名，与官方 Compress-Archive 行为一致） */
 function makeZip(dir, zipOut) {
   if (process.platform === 'win32') {
-    execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-Command',
-      'Compress-Archive -Path "' + dir + '" -DestinationPath "' + zipOut + '" -CompressionLevel Optimal -Force'], { stdio: 'pipe' });
+    try {
+      execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-Command',
+        'Compress-Archive -Path "' + dir + '" -DestinationPath "' + zipOut + '" -CompressionLevel Optimal -Force'], { stdio: 'inherit' });
+    } catch (e) {
+      const code = [
+        'import sys,os,zipfile',
+        'd,out=sys.argv[1],sys.argv[2]',
+        'base=os.path.basename(d)',
+        'z=zipfile.ZipFile(out,"w",zipfile.ZIP_DEFLATED)',
+        'for root,dirs,files in os.walk(d):',
+        '    for f in files:',
+        '        p=os.path.join(root,f)',
+        '        z.write(p,os.path.join(base,os.path.relpath(p,d)))',
+        'z.close()'
+      ].join(String.fromCharCode(10));
+      pyFallback(code, [dir, zipOut]);
+    }
   } else {
     const base = path.basename(dir);
     const cwd0 = process.cwd();
     process.chdir(path.dirname(dir));
-    try { execFileSync('zip', ['-q', '-r', zipOut, base], { stdio: 'pipe' }); }
+    try { execFileSync('zip', ['-q', '-r', zipOut, base], { stdio: 'inherit' }); }
     finally { process.chdir(cwd0); }
   }
 }

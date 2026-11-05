@@ -90,6 +90,32 @@
         <input type="file" id="file-batch-import" accept=".csv,.json,text/csv,application/json" hidden>
       </div>
 
+      <!-- ============================================================ 推荐词（2.0.8.4 需求⑤）
+           「高亮词管理界面增加一个推荐词模式，支持配置在线表格（格式需符合导出的 excel），给予其他用户参考」。
+           读法：公开可访问的表格链接（插件导出的 .xls 直链，或同列头的 .csv）→ 解析 → 勾选 → 只导入勾选的。
+           不做"猜格式"：列数 / 首列不对就直说缺什么（列头唯一真源 = KH.Store.CSV_HEADERS）。 -->
+      <details class="kh-adv" id="kw-adv-reco">
+        <summary>📥 推荐词（从在线表格导入）</summary>
+        <div class="kh-adv-body">
+          <p class="kh-muted">把别人分享给你的表格链接贴进来：支持「导出 → Excel」导出的 <code>.xls</code> 直链，或同样列头的 <code>.csv</code>（腾讯文档 / 飞书 / Google 表格导出成这两种都行）。列头必须与导出的 Excel 一致 —— 不对会直接告诉你缺哪一列，不会猜。链接只是本机记录，不随导出走。</p>
+          <div class="kh-form-row">
+            <div class="kh-form-fld kh-form-fld-wide">
+              <label class="kh-fld-label" for="reco-url">在线表格链接（公开可访问）</label>
+              <input class="kh-input" id="reco-url" type="text" spellcheck="false" placeholder="https://example.com/reco.xls">
+            </div>
+            <div class="kh-form-fld">
+              <label class="kh-fld-label">操作</label>
+              <div class="kh-ai-actions">
+                <button class="kh-btn" id="reco-fetch" type="button">读取</button>
+                <button class="kh-btn kh-btn-primary" id="reco-import" type="button" disabled>导入勾选的词</button>
+              </div>
+            </div>
+          </div>
+          <p class="kh-muted" id="reco-state"></p>
+          <div class="kh-reco-list" id="reco-list" hidden></div>
+        </div>
+      </details>
+
       <!-- 批量栏：常驻一行，未勾选时整行禁用 -->
       <div class="kh-batch-bar" id="batch-bar">
         <label class="kh-check kh-batch-all"><input type="checkbox" id="batch-select-page"> 本页全选</label>
@@ -189,6 +215,119 @@
         </div>
       </div>
       <p class="kh-muted">命中的卡片按上面胶囊里的先后固定排在面板最前，其余卡片保持原顺序；同一个词只能置顶一次，按选择的先后排序（要换位置先取消、再重选）。</p>
+
+      <!-- ============================================================ AI 助手（2.0.8.4 需求④）
+           面板里的第二个页签「AI 助手」；贴边摘列与浮窗共用同一份会话。
+           口径：默认接 DeepSeek 官方；协议是通用的 OpenAI 兼容格式，任何兼容服务/中转都能填；
+           **纯自由对话**（只发用户自己打的话，不带页面标题/网址/笔记内容）；
+           Key 只存本机、不进导出（storage 的"不导出"清单里有登记，单测钉着）。 -->
+      <h3 class="kh-sub">AI 对话助手</h3>
+      <p class="kh-sec-lead">页面「重要笔记」面板里多一个「<strong>AI 助手</strong>」页签（贴边摘列和浮窗都有）。默认走 <strong>DeepSeek 网页对话</strong>：复用你在 <code>chat.deepseek.com</code> 的登录态，<strong>免 Key</strong>；想换成自己的模型就切到 <strong>API</strong> 模式，填任何 OpenAI 兼容接口。两种模式都是<strong>纯自由对话</strong>：只发你自己打的那几句，不携带页面标题、网址或笔记内容。</p>
+      <div class="kh-form-row">
+        <div class="kh-form-fld">
+          <label class="kh-fld-label" for="ai-mode">对话来源</label>
+          <!-- 选项由 options.js 从 KH.Config.AI_MODES 注入（不在这里抄一份） -->
+          <select class="kh-input" id="ai-mode"></select>
+        </div>
+        <div class="kh-form-fld kh-form-fld-wide">
+          <label class="kh-fld-label" id="ai-web-label">网页对话的连通性</label>
+          <div class="kh-ai-actions">
+            <button class="kh-btn" id="ai-web-open" type="button">打开对话页</button>
+            <button class="kh-btn" id="ai-web-probe" type="button">自检</button>
+            <span class="kh-muted" id="ai-test-state"></span>
+          </div>
+        </div>
+      </div>
+      <p class="kh-muted" id="ai-mode-tip">网页模式下，扩展会在后台保留一个 <code>chat.deepseek.com</code> 标签页（可以最小化）替你发消息；第一次用请先在那个页面登录一次，之后一直有效。</p>
+      <div id="ai-api-fields">
+        <div class="kh-form-row">
+          <div class="kh-form-fld">
+            <label class="kh-fld-label" for="ai-provider">服务商</label>
+            <select class="kh-input" id="ai-provider"></select>
+          </div>
+          <div class="kh-form-fld kh-form-fld-wide">
+            <label class="kh-fld-label" for="ai-baseUrl">接口地址（Base URL）</label>
+            <input class="kh-input" id="ai-baseUrl" type="text" spellcheck="false" placeholder="https://api.deepseek.com/v1">
+          </div>
+        </div>
+        <div class="kh-form-row">
+          <div class="kh-form-fld">
+            <label class="kh-fld-label" for="ai-model">模型</label>
+            <input class="kh-input" id="ai-model" type="text" spellcheck="false" placeholder="deepseek-chat">
+          </div>
+          <div class="kh-form-fld">
+            <label class="kh-fld-label" for="ai-apiKey">API Key</label>
+            <input class="kh-input" id="ai-apiKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk-…（只存本机）">
+          </div>
+          <div class="kh-form-fld">
+            <label class="kh-fld-label" for="ai-maxTokens">单次回复上限 (tokens)</label>
+            <!-- min/max 由 options.js 从 KH.Config.AI_MAX_MIN / AI_MAX_MAX 注入（不在这里抄一份） -->
+            <input class="kh-input" id="ai-maxTokens" type="number" step="100">
+          </div>
+        </div>
+        <div class="kh-form-row">
+          <div class="kh-form-fld kh-form-fld-wide">
+            <label class="kh-fld-label" for="ai-system">系统提示词（可留空）</label>
+            <input class="kh-input" id="ai-system" type="text" placeholder="例如：用简洁的中文回答">
+          </div>
+          <div class="kh-form-fld">
+            <label class="kh-fld-label">连通性</label>
+            <div class="kh-ai-actions">
+              <button class="kh-btn" id="ai-test" type="button">测试连接</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <label class="kh-check"><input type="checkbox" id="ai-enabled"> 在面板里显示「AI 助手」页签</label>
+
+      <!-- ============================================ AI 审核（2.0.8.7 需求②）
+           免登录、免费额度：Cloudflare Workers AI（10,000 neurons/天，按图标约 1000~2000 次）。
+           先跑本地品牌词/敏感词初筛（不发请求），再按需点「云端复核」看图。 -->
+      <h4 class="kh-sub">AI 审核（名称 / 图标）</h4>
+      <p class="kh-muted">判断应用名称与图标是否<b>蹭知名应用或品牌</b>、是否涉<b>赌博 / 色情 / 资金盘 / 诈骗 / 违规贷款</b>。默认走 <b>Cloudflare Workers AI</b> 的免费额度：不用登录、不用绑卡，免费额度用完当天自动停（UTC 0 点重置）。<b>本地词库那一步不联网</b>，云端那一步才会把名称和图标发出去。</p>
+      <div class="kh-form-row">
+        <div class="kh-form-fld kh-form-fld-wide">
+          <label class="kh-fld-label" for="aa-accountId">Cloudflare 账号 ID</label>
+          <input class="kh-input" id="aa-accountId" type="text" spellcheck="false" placeholder="在 Cloudflare 控制台地址里：dash.cloudflare.com/&lt;这一串&gt;/…">
+        </div>
+        <div class="kh-form-fld kh-form-fld-wide">
+          <label class="kh-fld-label" for="aa-token">API Token</label>
+          <input class="kh-input" id="aa-token" type="password" autocomplete="off" spellcheck="false" placeholder="Workers AI 的 Read 权限即可（只存本机）">
+        </div>
+      </div>
+      <div class="kh-form-row">
+        <div class="kh-form-fld">
+          <label class="kh-fld-label" for="aa-model">模型</label>
+          <select class="kh-input" id="aa-model"></select>
+        </div>
+        <div class="kh-form-fld">
+          <label class="kh-fld-label">范围</label>
+          <label class="kh-check"><input type="checkbox" id="aa-localOnly"> 只跑本地词库（不联网、不花额度）</label>
+        </div>
+      </div>
+      <div class="kh-form-row">
+        <div class="kh-form-fld">
+          <label class="kh-fld-label" for="aa-name">应用名称</label>
+          <input class="kh-input" id="aa-name" type="text" maxlength="120" placeholder="例如：省钱快报">
+        </div>
+        <div class="kh-form-fld">
+          <label class="kh-fld-label" for="aa-icon">图标（可选）</label>
+          <input class="kh-input" id="aa-icon" type="file" accept="image/*">
+        </div>
+        <div class="kh-form-fld">
+          <label class="kh-fld-label">操作</label>
+          <div class="kh-ai-actions">
+            <button class="kh-btn" id="aa-run" type="button">本地初筛</button>
+            <button class="kh-btn kh-btn-primary" id="aa-cloud" type="button">云端复核</button>
+          </div>
+        </div>
+      </div>
+      <div class="kh-aa-out" id="aa-out" hidden>
+        <div class="kh-aa-verdict" id="aa-verdict"></div>
+        <ul class="kh-aa-hits" id="aa-hits"></ul>
+        <div class="kh-aa-preview" id="aa-preview" hidden><img id="aa-icon-img" alt="图标预览"></div>
+        <p class="kh-muted" id="aa-note"></p>
+      </div>
     </section>
 
     <!-- ============================================================ 图片识别（OCR） -->
@@ -321,68 +460,24 @@
         </div>
       </details>
 
-      <!-- 软著一致性核对：抓取到的「开发者 / 备案主体」与软著图里的「著作权人」一次性比对。
-           开关默认关（关着＝零涂色、零额外计算，行为与没有这个功能时完全一样）。 -->
-      <details class="kh-adv" id="ocr-adv-soft">
-        <summary>🧾 软著一致性核对</summary>
+      <!-- 【2.0.8.6 需求①】图文合并：抓取字段的图片 + OCR 动态词命中 ⇒ 卡片里多一行「自定义标题 ｜ 值」。
+           勾「默认不展示」的行先收着（卡片底部一个开关展开），不改现有图字段的展示。 -->
+      <details class="kh-adv" id="ocr-adv-merge">
+        <summary>🧩 图文合并（自定义标题）</summary>
         <div class="kh-adv-body">
           <p class="kh-muted">
-            开了之后，每张重要笔记卡片会用<strong>同一条规则抓到的「开发者」/「备案主体」</strong>与该规则<strong>识别出来的图片</strong>里的「著作权人」比对一次，
-            结论直接涂在<strong>开发者那一行的值格</strong>上：🟩 绿底＝对得上，🟧 橙底＝对不上（鼠标停在格子上看具体原因），灰白＝缺数据没判。
+            一行配一个抓取字段。当这个字段的图片被识别、且它的<strong>图片动态词</strong>（「图片动态关键词」里写这个字段名的那条）命中时，
+            重要笔记卡片里会多一行：<strong>你填的标题 ｜ 该字段抓到的值</strong>，和「进表」用的是同一张表格，不另开卡片。
+            勾了「默认不展示」的行先收着，卡片底部点「显示 N 条合并行」才展开。
           </p>
-          <p class="kh-muted">
-            <strong>三种通过方式：</strong>① 著作权人＝开发者；② 著作权人＝备案主体；③ 有授权书，且授权书里的<strong>授权人＝著作权人、被授权人＝开发者</strong>。<br>
-            <strong>判定有多严：</strong>只做两件事——去掉空格/全角半角/首尾标点后<strong>整串相等</strong>，或者<strong>整串减去末尾的「…有限公司 / 有限责任公司 / 股份有限公司 / 公司 / 集团」后相等</strong>。<br>
-            <strong>不做模糊匹配：</strong>不比编辑距离、不做包含、不猜拼音、不认简称。名字只要差一个字就算对不上（宁可让你多看一眼，也不给你一个假的绿底）。
-          </p>
-          <div class="kh-form-row">
-            <div class="kh-form-fld">
-              <label class="kh-check"><input type="checkbox" id="soft-on"> 开启一致性核对</label>
-            </div>
-            <div class="kh-form-fld">
-              <label class="kh-fld-label" for="soft-compare">比对谁</label>
-              <select class="kh-input" id="soft-compare">
-                <option value="both">开发者或备案主体，任一一致即可 —— 默认</option>
-                <option value="dev">只比开发者</option>
-                <option value="subject">只比备案主体</option>
-              </select>
-            </div>
+          <div class="kh-merge-rows" id="merge-rows"></div>
+          <div class="kh-ai-actions">
+            <button class="kh-mini-btn" type="button" id="merge-add">+ 添加一行</button>
+            <span class="kh-muted" id="merge-state"></span>
           </div>
-          <div class="kh-form-row">
-            <div class="kh-form-fld">
-              <label class="kh-fld-label" for="soft-dev">开发者字段名</label>
-              <input class="kh-input" id="soft-dev" type="text" placeholder="开发者,开发公司,开发主体" autocomplete="off">
-            </div>
-            <div class="kh-form-fld">
-              <label class="kh-fld-label" for="soft-subject">备案主体字段名</label>
-              <input class="kh-input" id="soft-subject" type="text" placeholder="备案主体,主体公司,备案公司" autocomplete="off">
-            </div>
-          </div>
-          <div class="kh-form-row">
-            <div class="kh-form-fld">
-              <label class="kh-fld-label" for="soft-owner">著作权人字段名</label>
-              <input class="kh-input" id="soft-owner" type="text" placeholder="著作权人,软件著作权人" autocomplete="off">
-            </div>
-            <div class="kh-form-fld">
-              <label class="kh-fld-label" for="soft-auth">授权书关键词</label>
-              <input class="kh-input" id="soft-auth" type="text" placeholder="授权书,授权委托书,授权说明" autocomplete="off">
-            </div>
-          </div>
-          <div class="kh-form-row">
-            <div class="kh-form-fld">
-              <label class="kh-fld-label" for="soft-grantor">授权人字段名</label>
-              <input class="kh-input" id="soft-grantor" type="text" placeholder="授权人,授权方,许可人,授权公司" autocomplete="off">
-            </div>
-            <div class="kh-form-fld">
-              <label class="kh-fld-label" for="soft-grantee">被授权人字段名</label>
-              <input class="kh-input" id="soft-grantee" type="text" placeholder="被授权人,被授权方,被许可人,被授权公司" autocomplete="off">
-            </div>
-          </div>
-          <p class="kh-muted">
-            字段名都用<strong>逗号分隔</strong>，多个名字是"或"的关系（表格里叫「开发公司」也能认）。每个行业叫法不同，照自己网站的实际表头填；留空＝用占位符里的默认值。
-          </p>
         </div>
       </details>
+
     </section>
 
     <!-- ============================================================ 站点规则 -->
@@ -557,7 +652,7 @@
             <li>词条多了点这两格标题行右侧的<strong>「批量」按钮</strong>：列出全部词条，可按词 / <code>@</code> / <code>#表</code> 过滤、全选反选，一次把勾中的改成通用或某个字段、加 / 去 <code>#表</code>、或删除 —— 只改勾中的，没改就不写回（见 <strong>Q22</strong>）。</li>
             <li>长截图<strong>分段识别</strong>，跨分块的同一条物理行自动去重；列数超过 4 的表会退回纯文本（宁可给你可读的文字，也不把被切碎的字排成 5 列）—— 见 <strong>Q20 / Q23</strong>。</li>
             <li><strong>右键网页上任意一张图</strong>可识别这一张（只读你点的那张、不写白名单）；<strong>PDF 也能命中</strong>，在面板里是枚占位牌，<span title="识别中">蓝</span>＝正在读 / <span title="无命中">绿</span>＝没命中或没抽到字 / <span title="命中">红</span>＝命中（见 <strong>Q15</strong>）。</li>
-            <li><strong>🧾 软著一致性核对</strong>（开在「图片识别 → 🧾 软著一致性核对」里，<strong>默认关</strong>、关着就零涂色零额外计算）：把抓到的<strong>开发者 / 备案主体</strong>与软著图里的<strong>著作权人</strong>比一遍，三种算通过 —— 著作权人＝开发者、著作权人＝备案主体、有授权书且授权人＝著作权人（同时被授权人＝开发者）；通过<strong>绿底</strong>、不通过<strong>橙底</strong>、<strong>缺数据不涂色</strong>（配法、严格度与前提见 <strong>Q21</strong>）。</li>
+            
           </ul>
         </div>
 
@@ -662,12 +757,6 @@
         <h4>Q20：长截图很长，会不会重复或者漏掉？</h4>
         <p><strong>去重只认两种情形</strong>：① 删掉空白后<strong>完全相同</strong>的行；② 同一物理行（竖直差 ≤8px）里<strong>很像但不完全相同</strong>的行（水平偏移 ≤16px）。②里<strong>长句</strong>按相似度 ≥0.8 判、且两次识别的<strong>置信度相差 ≥4 分</strong>才合并；<strong>短句（不足 6 字）</strong>改按单字相似度判（≥1/3 即同一行）。谁更可信由<strong>置信度</strong>决定，但不再因为「分不出高下」而两条都留；置信度咬得很近的长句仍然都会留下 —— 宁可让你看到一条重复，也不猜着删掉真实内容。原图里本来就重复的内容不会被吃掉。</p>
         <p><strong>上限是 40 块</strong>（约 7 万像素高）：只有超过这个高度才会截断，<strong>超出部分不会被识别</strong>（是内容缺失，不是重复）。1080 宽的长图要到 14321px 才可能触发；真触发时面板会如实标注覆盖范围。</p>
-        <h4>Q21：软著一致性核对怎么配？要满足什么前提？</h4>
-        <p><strong>先满足前提</strong>：软著图必须由<strong>同一条规则</strong>的图片识别扫到（自动扫描或右键识别都算），而且这条规则同时抓了「开发者」或「备案主体」。缺任何一边就不判 —— 著作权人没读到、或开发者 / 备案主体没抓到，都<strong>不涂色、不出徽标</strong>（不猜、不假绿）。</p>
-        <p><strong>打开与配置</strong>：「图片识别 → 🧾 软著一致性核对」里勾「开启一致性核对」（<strong>默认关</strong>，关着就是零涂色、零额外计算，行为与上一版完全一致）。「比对谁」三档：开发者或备案主体任一一致即可（默认）/ 只比开发者 / 只比备案主体。六个「字段名」文本框（开发者、备案主体、著作权人、授权书关键词、授权人、被授权人）都能填多个别名，<strong>逗号分隔、多个名字是「或」的关系</strong>，<strong>留空＝用占位符里的默认值</strong>。</p>
-        <p><strong>三种算通过</strong>：① 著作权人＝开发者；② 著作权人＝备案主体；③ 有授权书，且<strong>授权人＝著作权人、被授权人＝开发者</strong>。</p>
-        <p><strong>判定很严格</strong>（这才是它可靠的原因）：只做两件事 —— 去掉空格、全角折半角、忽略大小写、去掉首尾标点后<strong>整串相等</strong>；或者<strong>整串减掉末尾</strong>的「股份有限公司 / 有限责任公司 / 有限公司 / 公司 / 集团」后<strong>整串相等</strong>。<strong>不做</strong>编辑距离、包含、拼音、简称 —— 差一个字就算对不上（宁可漏判，也不给你一个假的绿）。</p>
-        <p><strong>怎么看结果</strong>：通过 ⇒ 目标值格<strong>绿底</strong>（左侧还有一条绿条），表后跟一行 <code>✅ 一句话原因</code>；不通过 ⇒ <strong>橙底</strong> + <code>⚠️ 原因</code>（原因里写明两家公司的全名，方便你直接比对）；缺数据 ⇒ 不判、不涂色。已知上限：同一张表里<strong>同名字段出现多行</strong>时，只判<strong>第一行</strong>。</p>
         <h4>Q22：词条太多，怎么批量改作用域和 <code>#表</code>？</h4>
         <p><strong>入口</strong>：「图片命中关键词」和「图片动态关键词」这两格的<strong>标题行右侧各有一枚「批量」按钮</strong>（另外两个框没有）。点开弹窗标题是「<strong>&lt;字段名&gt; · 批量管理</strong>」，里面列出<strong>该格全部词条</strong>，每条后面带着作用域徽标（<code>通用</code> 或 <code>@截图</code>）和 <code>#表</code> 徽标。</p>
         <p><strong>怎么选</strong>：顶部过滤框按<strong>词、<code>@</code>、<code>#表</code></strong>都能筛；「全选」「反选」只作用于<strong>当前过滤结果</strong>；旁边显示「共 N 个词，已选 M 个」。</p>
@@ -804,6 +893,7 @@
   <script src="../src/ui/components/data-table.js"></script>
   <script src="../src/ui/components/keyword-editor.js"></script>
   <script src="../src/ui/changelog.js"></script>
+  <script src="../src/features/ai-audit.js"></script>
   <script src="options.js"></script>
 </body>
 </html>

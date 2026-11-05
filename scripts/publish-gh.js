@@ -490,7 +490,12 @@ async function api(method, url, body) {
    * 而本地一切正常、日志全是 ✓。appid 是其中最致命的一项（2026-10-04 实测事故）。 */
   log('\n通道自检（线上）：');
   try {
-    execFileSync(process.execPath, [path.join(ROOT, 'scripts', 'check-channels.js'), '--live', '--deep'], { stdio: 'inherit', cwd: ROOT });
+    /* 【必须有超时】这一步只是**事后提示**（推送已经完成），但 `check-channels.js --live`
+     * 会对 Pages CDN 发几次串行 fetch，而 fetch 默认不设超时 —— 2026-11-03 实测在
+     * 一个网络受限的终端上，线上自检卡在第一个 ✓ 之后就再也不返回，整个发版进程挂着不走，
+     * 人看到的是"推完了但脚本不结束"，还会以为没推成功。给足 120s，超时就按下面的
+     * ⚠️ 分支放行（产物此时已经在 gh-pages 上）。 */
+    execFileSync(process.execPath, [path.join(ROOT, 'scripts', 'check-channels.js'), '--live', '--deep'], { stdio: 'inherit', cwd: ROOT, timeout: 120000 });
   } catch (e) {
     log('  ⚠️ 线上通道自检未通过（见上）。注意 CDN 缓存；稍后可重跑：node scripts/check-channels.js --live --deep');
   }

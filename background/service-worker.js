@@ -15,7 +15,7 @@
  */
 'use strict';
 
-importScripts('../src/core/protocol.js', 'tab-disabled.js', 'ocr.js');
+importScripts('../src/core/protocol.js', '../src/core/config.js', 'tab-disabled.js', 'ocr.js', 'entity.js', 'ai.js');
 
 const MSG = self.KH.MSG;
 /* 【2.0.7.2 需求⑤】标签页级临时禁用的状态机（storage.session 读写 + 关标签页清键）在旁边的模块里，
@@ -211,6 +211,31 @@ const HANDLERS = {
     return { ok: true, tabId, disabled: next };
   },
 
+  /* ---- 【2.0.8.4 需求④】AI 对话助手：内容脚本 / 设置页 → background（请求在这里发） ----
+   * 只做转发，不在这里拼提示词（"纯自由对话，不带页面内容"的口径由面板那边只发用户输入保证）。 */
+  [MSG.AI_CHAT]: (msg) => self.KhAi.chat(msg || {}),
+  /* 【2.0.8.7 需求②】AI 审核（名称/图标）：多模态一条独立通道，见 background/ai.js 的 AI.audit。 */
+  [MSG.AI_AUDIT]: (msg) => self.KhAi.audit(msg || {}),
+
+  /* ---- 【2.0.8.8 需求③】查法定代表人（免费免登陆：爱企查 → 必应，见 background/entity.js）----
+   * 只读查询：失败一律回 `{ok:false,error}`，面板据此保持原底色（用户口径：未查明不改色）。 */
+  [MSG.ENTITY_LOOKUP]: (msg) => self.KH.Entity.lookup(msg || {}),
+
+  /* ---- 【2.0.8.5】网页对话（免 Key）：面板 → 后台 → chat.deepseek.com 上的 content/web-chat.js ----
+   * 这三条都是"开标签页 / 自检 / 开新对话"，真正的提问走长连接（见文件末尾的 onConnect）。 */
+  [MSG.AI_WEB_OPEN]: () => self.KhAi.openWeb(),
+  [MSG.AI_WEB_PROBE]: () => self.KhAi.probeWeb(),
+  [MSG.AI_WEB_NEW]: () => self.KhAi.newWebChat(),
+
+  /* 网页侧推回来的增量：按 requestId 交给 KhAi，它会转给发起这次提问的那条长连接。 */
+  [MSG.WEB_CHUNK || 'kh:web:chunk']: (msg) => { self.KhAi.onWebChunk(msg); return { ok: true }; },
+
+  /* 面板在"还没配置"时给的一键入口：内容脚本调 chrome.runtime.openOptionsPage 不可靠（老内核没有）。 */
+  [MSG.AI_OPEN_OPTIONS]: async () => {
+    try { await chrome.runtime.openOptionsPage(); return { ok: true }; }
+    catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
+  },
+
   /* ---- ocr：内容脚本/设置页 → background → offscreen 文档（引擎在那里跑） ---- */
   [MSG.OCR_IMAGE]: (msg, sender) => self.OcrHost.submitImage(msg, sender),
   /* PDF 抽文字：与图片共用一套路由与看门狗，只是 offscreen 那边不跑引擎 */
@@ -246,6 +271,49 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     .then(sendResponse)
     .catch(err => sendResponse({ ok: false, error: String(err && err.message || err) }));
   return true; // 异步响应
+});
+
+/* ---------------- 【2.0.8.5】AI 助手长连接（流式回包） ----------------
+ * 为什么不用 sendMessage：`sendMessage` 只能"一问一答"一次回执，而网页对话是**边生成边出字**，
+ * 面板要一行行地显示出来（否则要等十几秒才蹦出整段，体验差）。
+ * 约定：面板 connect({name:'kh:ai'}) 后发
+ *   { action:'ask', mode:'web'|'api', messages:[…] }
+ * 后台回
+ *   { type:'chunk', text }         —— 追加/覆盖的**全量**文本（面板直接覆盖最后一条）
+ *   { type:'done',  text }         —— 成功结束（text 是最终全文）
+ *   { type:'error', error, needLogin }
+ * 同一条连接上可以连续问多轮；面板关掉（port 断开）时把没结束的请求标记为放弃。 */
+chrome.runtime.onConnect.addListener((port) => {
+  if (!port || port.name !== ((MSG && MSG.AI_PORT) || 'kh:ai')) return;
+  let busy = false;
+  port.onDisconnect.addListener(() => { busy = false; });
+
+  port.onMessage.addListener((msg) => {
+    const m = msg || {};
+    if (m.action === 'new') {
+      Promise.resolve()
+        .then(() => self.KhAi.newWebChat())
+        .then((r) => { try { port.postMessage({ type: 'newChat', ok: !!(r && r.ok) }); } catch (e) { /* 面板已关 */ } })
+        .catch(() => {});
+      return;
+    }
+    if (m.action !== 'ask') return;
+    if (busy) { try { port.postMessage({ type: 'error', error: '上一条还在回，等它说完' }); } catch (e) {} return; }
+    busy = true;
+    const post = (obj) => { try { port.postMessage(obj); } catch (e) { /* 页面关了 */ } };
+    const mode = (m.mode === 'api') ? 'api' : 'web';
+    const run = (mode === 'api')
+      ? Promise.resolve().then(() => self.KhAi.chat({ messages: m.messages }))
+        .then((r) => (r && r.ok ? { ok: true, text: r.text } : { ok: false, error: (r && r.error) || '请求失败' }))
+      : self.KhAi.askWeb({ messages: m.messages, onChunk: (text) => post({ type: 'chunk', text: text }) });
+    Promise.resolve(run)
+      .then((r) => {
+        busy = false;
+        if (r && r.ok) post({ type: 'done', text: String(r.text || '') });
+        else post({ type: 'error', error: String((r && r.error) || '请求失败'), needLogin: !!(r && r.needLogin) });
+      })
+      .catch((err) => { busy = false; post({ type: 'error', error: String((err && err.message) || err) }); });
+  });
 });
 
 /* 标签页关闭 → 丢掉它在排队的识别任务（免得为一个已经不存在的页面白烧 CPU）；

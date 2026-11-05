@@ -905,44 +905,113 @@
 .kh-cand-texttip { color: var(--text-3); }
 .kh-cand-texttip[hidden] { display: none; }
 
-/* ==== 【需求】「图片命中关键词 / 图片动态关键词」的**批量管理**弹窗（`.kh-kvb-*`）
- * 用户原话：「这个词多时候不会管理。最好能够批量处理（批量改通用，还是针对某个字段抓取到的图片。
- * #表，也是最好能批量修改。）」——一行一个词：勾选框 / 词 / 作用域徽标 / `#表` 徽标；
- * 词多时靠顶部过滤框与全选/反选收窄，改完点「应用」只写回勾中的那几条。
- * 颜色一律走 tokens 变量（`meta-check` 的 CSS 硬编码色值红线）。 */
-.kh-kvb { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-.kh-kvb-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
-.kh-kvb-filter { flex: 1 1 150px; min-width: 0; }
-.kh-kvb-count { flex: 0 0 auto; color: var(--text-3); font-size: var(--fs-sm); }
-.kh-kvb-op { flex: 0 0 auto; }
-.kh-kvb-sel { flex: 0 1 128px; min-width: 0; }
-.kh-kvb-sel.is-empty { opacity: .55; }
-/* 列表定高滚动：几十个词也不能把弹窗撑长，滚的是这一块 */
-.kh-kvb-list {
-  flex: 1 1 auto; min-width: 0; max-height: 46vh; overflow: auto;
-  border: 1px solid var(--border); border-radius: var(--r-sm);
-  padding: 4px;
+
+/* ============================================================================
+ * 「修改」列表弹窗（2026-11-03 · 五个候选框共用，原「批量」并进来）
+ * ----------------------------------------------------------------------------
+ * 三种行型共用一套骨架：勾选框 / 条目名 / 右侧操作（指向、#表、后缀、删除）。
+ *   · 普通词（核心词 / 标题词）：只有名字；
+ *   · 图片命中词 / 图片动态词：+ 指向（可搜索多选面板）+ #表；
+ *   · 抓取后续字段：+ 后缀（结构化编辑器，含「原文 → 取到」预览）。
+ * 颜色一律走 tokens 变量（`meta-check` 的 CSS 硬编码色值红线）。
+ * ========================================================================= */
+/* 标题行里的「修改」：**不许**撑高这一行（标签行只有 17px，`.kh-mini-btn` 是 24px）。
+ * 撑高的后果不是好看不好看，而是同一行里「标题关键词」的盒子比「组合方向」高 8px，
+ * `.kh-editor-sec-body` 又是靠底边对齐 ⇒ 两者顶边差 8px（e2e 行对齐用例量的就是这个）。 */
+.kh-fld-labelrow .kh-list-btn { height: 16px; line-height: 14px; padding: 0 6px; font-size: 11px; border-radius: 4px; }
+.kh-list-box { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.kh-list-toolbar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
+.kh-list-filter { flex: 1 1 160px; min-width: 0; }
+.kh-list-addbar { display: flex; align-items: center; gap: 6px; }
+.kh-list-addbar .kh-list-add { flex: 1 1 auto; min-width: 0; }
+.kh-list-addbtn { flex: 0 0 auto; }
+.kh-list-ops { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.kh-list-rows {
+  display: flex; flex-direction: column; gap: 6px; min-width: 0;
+  max-height: 46vh; overflow: auto; padding: 2px;
 }
-.kh-kvb-row {
-  display: flex; align-items: center; gap: 8px; min-width: 0;
-  padding: 4px 6px; border-radius: var(--r-sm); cursor: pointer;
+/* 一行＝一张小卡：名字占满，操作按钮收在右侧；指向/后缀展开后是行内下一行 */
+.kh-lrow {
+  display: flex; flex-direction: column; gap: 6px; min-width: 0;
+  padding: 6px; border: 1px solid var(--border); border-radius: var(--r-sm);
+  background: var(--card-2);
 }
-.kh-kvb-row:hover { background: var(--overlay-ink-4); }
-.kh-kvb-cb { flex: 0 0 auto; margin: 0; }
-/* 词本身可以折行，但不许把整行顶宽（超长词一律 anywhere 折） */
-.kh-kvb-name { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; word-break: break-word; }
-/* 作用域徽标：通用＝灰（低调），`@字段`＝品牌色 —— 这才是"只对某字段的图生效"的信号 */
-.kh-kvb-scope {
-  flex: 0 0 auto; font-size: var(--fs-xs); line-height: 16px;
-  padding: 0 6px; border-radius: var(--r-pill);
-  color: var(--text-3); background: var(--overlay-ink-6);
+/* 【2.0.8.7 修复·搜索框看着无效】`applyFilter()` 一直在给行设 `hidden`，但上面这条
+ * `display:flex` 是**作者样式**，会压过浏览器默认的 `[hidden]{display:none}`
+ * ⇒ 行根本没被藏起来，搜索看着一点作用都没有。这里补一条兜底。 */
+.kh-lrow[hidden] { display: none; }
+.kh-lrow-main { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.kh-list-cb { flex: 0 0 auto; margin: 0; }
+.kh-lrow-main .kh-list-val { flex: 1 1 auto; min-width: 0; }
+.kh-lrow-scope {
+  flex: 0 0 auto; max-width: 180px; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
 }
-.kh-kvb-scope.is-scoped { color: var(--brand-deep); background: var(--brand-soft); }
-.kh-kvb-mark {
-  flex: 0 0 auto; font-size: var(--fs-xs); line-height: 16px;
-  padding: 0 6px; border-radius: var(--r-pill);
-  color: var(--success-strong); background: var(--success-soft);
+.kh-lrow-scope:hover { color: var(--brand-deep); }
+/* 【2.0.8.7 需求②】「进表」勾选列：勾没勾要一眼看得出来（框面胶囊不显示进表状态，
+ * 所以这里必须自己把状态画清楚：空心=不进表，实心绿=进表）。 */
+.kh-lrow-mark {
+  display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto;
+  font-size: 11px; line-height: 16px; padding: 2px 7px 2px 5px;
+  border: 1px solid var(--border); border-radius: 999px;
+  background: var(--card-2); color: var(--text-3); cursor: pointer;
+  user-select: none;
 }
-.kh-kvb-empty { padding: 10px 8px; color: var(--text-3); font-size: var(--fs-sm); }
-/* 批量入口按钮本身：与「展开」同尺寸，不参与标题行挤压 */
-.kh-kv-batch-btn { flex: 0 0 auto; }
+.kh-lrow-mark:hover { border-color: var(--brand); color: var(--brand-deep); }
+.kh-lrow-mark-cb { width: 12px; height: 12px; margin: 0; cursor: pointer; }
+.kh-lrow-mark.is-on { color: var(--success-strong); background: var(--success-soft); border-color: var(--success-strong); }
+.kh-lrow-mark.is-on .kh-lrow-mark-t { font-weight: 600; }
+.kh-lrow-suffix {
+  flex: 0 0 auto; max-width: 220px; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+.kh-lrow-suffix.is-open { color: var(--brand-deep); background: var(--brand-soft); }
+.kh-list-del { flex: 0 0 auto; }
+.kh-lrow-detail {
+  display: flex; flex-direction: column; gap: 8px; min-width: 0;
+  padding: 8px; border-radius: var(--r-sm); background: var(--overlay-ink-4);
+}
+.kh-lrow-detail[hidden] { display: none; }
+
+/* 后缀编辑器：四组「标签 + 控件」，窄屏自动两列/一列 */
+.kh-sfx-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; }
+.kh-sfx-group { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.kh-sfx-label { font-size: 12px; color: var(--text-3); }
+.kh-sfx-group .kh-input { width: 100%; min-width: 0; }
+.kh-sfx-num { max-width: 96px; }
+.kh-sfx-check { display: flex; align-items: center; gap: 6px; font-size: var(--fs-sm); color: var(--text-2); }
+.kh-sfx-preview { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.kh-sfx-preview .kh-sfx-sample { flex: 1 1 220px; min-width: 0; }
+.kh-sfx-out { flex: 0 1 auto; font-size: var(--fs-sm); color: var(--text-2); overflow-wrap: anywhere; }
+.kh-sfx-out.is-empty { color: var(--text-4); }
+
+/* 指向面板：搜索框 + 「全部字段」 + 字段多选，单行与批量共用 */
+.kh-scope-panel {
+  display: flex; flex-direction: column; gap: 8px; min-width: 0;
+  padding: 8px; border: 1px solid var(--border); border-radius: var(--r-sm);
+  background: var(--card-2);
+}
+.kh-scope-panel[hidden] { display: none; }
+.kh-scope-head { display: flex; align-items: center; gap: 8px; }
+.kh-scope-title {
+  flex: 1 1 auto; min-width: 0; font-size: var(--fs-sm); color: var(--text-2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.kh-scope-close { flex: 0 0 auto; }
+.kh-scope-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.kh-scope-search { flex: 1 1 180px; min-width: 0; }
+.kh-scope-all { flex: 0 0 auto; }
+.kh-scope-list {
+  display: flex; align-items: center; gap: 4px 12px; flex-wrap: wrap;
+  max-height: 22vh; overflow: auto;
+}
+.kh-scope-opt { display: flex; align-items: center; gap: 4px; font-size: var(--fs-sm); color: var(--text-2); }
+.kh-scope-opt[hidden] { display: none; }
+.kh-scope-foot { display: flex; align-items: center; gap: 8px; }
+.kh-scope-hint { flex: 1 1 auto; font-size: 12px; color: var(--text-4); }
+.kh-scope-op[hidden] { display: none; }
+
+.kh-list-count { flex: 0 0 auto; color: var(--text-3); font-size: var(--fs-sm); }
+.kh-list-empty { padding: 10px 2px; color: var(--text-4); font-size: 12px; }
+.kh-list-foot { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; font-size: 12px; color: var(--text-3); }
+.kh-list-tip { flex: 1 1 auto; }

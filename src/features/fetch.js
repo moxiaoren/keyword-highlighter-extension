@@ -555,6 +555,8 @@
   const STRIP_SUFFIX_RE = /\s*!\s*$/;
   const ANCHOR_SUFFIX_RE = /\^\s*([^\^%!@#]+)$/;
   const SLICE_SUFFIX_RE = /%\s*([^%!@#^]*)$/;
+  /* 【2.0.8.8 需求④】`~` = 该字段内容格**不完整展示**（只裁显示，值不变）。放最后匹配，不影响既有后缀。 */
+  const CLIP_SUFFIX_RE = /~\s*$/;
 
   function parseLabelSpec(t) {
     let s = String(t == null ? '' : t).trim();
@@ -566,7 +568,17 @@
     let stripSpace = false;
     let anchor = '';
     let sliceSpec = '';
+    let clip = false;
     for (let guard = 0; guard < 6; guard++) {
+      /* `~` 必须**最先**剥：其它后缀的正则都允许"尾巴上还有别的字符"，
+       * 最后剥的话 `%20~` 会被切片正则整串吃成 `20~`、`@2~` 变成非法位置。
+       * 它只是显示选项（值一个字不改），先剥掉不影响任何取值语义。 */
+      const mc = CLIP_SUFFIX_RE.exec(s);
+      if (mc) {
+        clip = true;
+        s = s.slice(0, mc.index).replace(/^[ 　]+|[ 　]+$/g, '');
+        continue;
+      }
       const mi = IMG_SUFFIX_RE.exec(s);
       if (mi) {
         /* `#` 后必须是「图 / 仅图 / 数字 / 空白」才算图片选项（正则已锚定 `$`），
@@ -616,7 +628,7 @@
       }
       break;
     }
-    return { label: s, simple: simple, imgOnly: imgOnly, imgLimit: imgLimit, noImg: noImg, offset: offset, offsetInvalid: isOffsetInvalid(offset), stripSpace: stripSpace, anchor: anchor, sliceSpec: sliceSpec };
+    return { label: s, simple: simple, imgOnly: imgOnly, imgLimit: imgLimit, noImg: noImg, offset: offset, offsetInvalid: isOffsetInvalid(offset), stripSpace: stripSpace, anchor: anchor, sliceSpec: sliceSpec, clip: clip };
   }
 
   /**
@@ -637,6 +649,7 @@
     if (it.stripSpace) out.push('!');
     if (it.anchor) out.push('^' + it.anchor);
     if (it.sliceSpec) out.push('%' + it.sliceSpec);
+    if (it.clip) out.push('~');
     return out.join(' ');
   }
 
@@ -1698,6 +1711,20 @@
      * 空卡片两种形态都在此收口：① 文本分支的空壳表（原先两条 continue 后仍拼 `</table>`）；
      * ② grid 分支的「有 label 表头 + 空 `<td>`」（原先根本没有字段级判空）。
      * ⚠️ 判空**不许**二次调用 `applyImgPolicy`（`it.budget` 跨格累计有状态，跑两遍会吃掉「前 N 张」预算）。 */
+    /* 【2.0.8.8 需求④】内容格「不完整展示」（后缀 `~`）：**只裁显示**，抓到的值一个字不改。
+     * 必须多包一层 div：直接对 `td` 用 max-height / line-clamp 在真浏览器里不生效
+     * （表格单元格的 display 被规整成 table-cell，clamp 只认 -webkit-box 子元素）。
+     * 悬停 `title` 给全文（去掉图片占位符、空白折成一格，避免多行塞进属性）。 */
+    const clipOn = (it) => !!(it && it.opt && it.opt.clip);
+    const valInner = (it, raw) => {
+      const html = escHtml(raw);
+      if (!clipOn(it)) return html;
+      const full = stripImgPlaceholders(raw).replace(/\s+/g, ' ').trim();
+      return '<div class="kh-val-box" title="' + escHtml(full) + '">' + html + '</div>';
+    };
+    const valCell = (it, attrs, raw) =>
+      '<td' + (attrs || '') + (clipOn(it) ? ' class="kh-val-clip"' : '') + '>' + valInner(it, raw) + '</td>';
+
     let body = '';
     for (const it of merged) {
       if (it.grid) {
@@ -1721,7 +1748,7 @@
             if (fieldHasImg && !/\u0001KHIMG\u0001/.test(String(c.t)) && /^\s*\d+\s*$/.test(String(c.t))) val = '';
             /* 判空只看**最终写入的 val**（已过 applyImgPolicy + 上面的纯数字抑制）—— 本格只算一次 */
             if (String(val).trim()) anyVal = true;
-            cells += '<td' + attrs + '>' + escHtml(val) + '</td>';
+            cells += valCell(it, attrs, val);
           }
           buf += '<tr>' + (firstInBlock && it.label != null ? labelHtml(it, ' rowspan="' + total + '"') : '') + cells + '</tr>';
           firstInBlock = false;
@@ -1786,14 +1813,14 @@
             if (!cap) {
               // ④ 无二级标题：内容跨「二级标题 + 内容」两列
               buf += '<tr>' + labelCell() +
-                '<td colspan="' + afterLabelColspan + '">' + escHtml(s.lines[i]) + '</td></tr>';
+                valCell(it, ' colspan="' + afterLabelColspan + '"', s.lines[i]) + '</tr>';
             } else if (i === 0) {
               // ③ 首行：二级标题 rowspan + 内容
               buf += '<tr>' + labelCell() +
-                '<td rowspan="' + n + '">' + escHtml(cap) + '</td><td>' + escHtml(s.lines[i]) + '</td></tr>';
+                '<td rowspan="' + n + '">' + escHtml(cap) + '</td>' + valCell(it, '', s.lines[i]) + '</tr>';
             } else {
               // ③ 续行：只写内容格（第 1、2 列已被两个 rowspan 占住）
-              buf += '<tr><td>' + escHtml(s.lines[i]) + '</td></tr>';
+              buf += '<tr>' + valCell(it, '', s.lines[i]) + '</tr>';
             }
           }
         }
@@ -1941,6 +1968,10 @@
     cellsForHit, valueCellsOf, splitLabelTokens, findLabelCell,
     /* 【2.0.2.4 需求④】后缀语法的两个只读口子：编辑器（options 页）用它画「字段胶囊」预览 ——
      * options 页**不加载**本文件之外任何抓取实现，语法必须只有这一份，所以直接从这儿取。 */
-    parseLabelSpec, suffixTextOf
+    parseLabelSpec, suffixTextOf,
+    /* 「原文 → 取到」预览：编辑器不让用户手敲后缀了，结构化设置完要能当场看见取到什么。
+     * `modText` 是 `!`/`^`/`%` 的唯一实现（图片选项由 `applyImgPolicy` 管，这里不碰），
+     * 所以预览必须走它 —— 界面另写一份就会和真实抓取二次漂移。 */
+    previewValue: (t, it) => modText(String(t == null ? '' : t), it)
   };
 })();

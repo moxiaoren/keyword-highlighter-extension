@@ -364,7 +364,8 @@
          * 是 `align-items: flex-end`（components.css，靠**底边**对齐），盒高不等就会让「标题词」
          * 比旁边的「组合方向」低一截（真机回归量盒顶就是这个）。 */
         const ph = h('span', { class: 'kh-cand-ph', text: spec.placeholder || '' });
-        const frame = h('div', { class: 'kh-cand-field' }, [prev, ph, addBtn]);
+        /* 列表模式的框面**没有 `+`**：录入改走「修改」弹窗（用户 2026-11-02 口径） */
+        const frame = h('div', { class: 'kh-cand-field' }, spec.listEdit ? [prev, ph] : [prev, ph, addBtn]);
         /* 【2.0.2.16 需求②】文本态：点框面**空白处** ⇒ 胶囊还原成**一整串文本**（`|` 分隔），
          * 回车 / 点框外再收成胶囊。为什么要有这条路：常态是胶囊，想整体改（粘贴一串、大改顺序、
          * 把已有的串原样看一遍）就只能一段一段在浮层里敲。顺带把"原文本里的 `|` 到底算不算分词"
@@ -376,6 +377,14 @@
           text: '| 是分隔符：这里的每个 | 都会拆成多个候选（不是正则的「或」）。回车或点框外收起为胶囊。'
         });
         const labelEl = h('label', { class: 'kh-fld-label', text: spec.label + (spec.required ? ' *' : ''), for: id });
+        /* 【2026-11-02 需求】五个候选框的录入改成**弹窗列表**：标题行挂「修改」，框面只做只读展示，
+         * 不再挂 `+`、也不画后缀徽标 —— 后缀只在这个列表里按原文回显与编辑。
+         * 为什么不做成"每个词一个浮层"：这五个字段要管的是"这一格有哪些条目"，
+         * 逐条点开浮层在几十条时没法总览，也没法一眼看出漏了哪个。 */
+        const listBtn = spec.listEdit ? h('button', {
+          class: 'kh-mini-btn kh-list-btn', type: 'button', text: '修改',
+          title: '在弹窗里按行管理这一格的所有条目（可增、删、改）'
+        }) : null;
         const kids = [inp, ta, frame, tip, textTip];
         /* 【2.0.2.11 票 #63】「抓取后续字段」沿用候选词的手感，但**默认不长大**：单行裁切，
          * 词多到看不全时点「展开」占整行（用户口径 m01713：「宽度高度都默认不变，超出隐藏超出部分，
@@ -398,21 +407,12 @@
             clampBtn.textContent = on ? '收起' : '展开';
             clampBtn.hidden = false;
           });
-          headEl = h('div', { class: 'kh-fld-labelrow' }, [labelEl, clampBtn]);
+          headEl = h('div', { class: 'kh-fld-labelrow' }, [labelEl, listBtn, clampBtn].filter(Boolean));
         }
-        /* 【需求】批量入口：词攒到几十个以后，逐个点胶囊去改「作用域」与 `#表` 是不现实的
-         * （用户原话：这个词多时候不会管理）。按钮长在标题行右侧，与「展开」同一尺寸。
-         * 只有声明了 `kvBatch` 的两个字段挂它 —— 别的候选框（核心词 / 标题词）没有作用域这回事。 */
-        let batchBtn = null;
-        if (spec.kvBatch) {
-          batchBtn = h('button', {
-            class: 'kh-mini-btn kh-kv-batch-btn', type: 'button', text: '批量',
-            title: '词多了不好管：按作用域（通用 / @某个抓取字段）与 #表 批量改，只动勾选的词'
-          });
-          if (headEl === labelEl) headEl = h('div', { class: 'kh-fld-labelrow' }, [labelEl, batchBtn]);
-          else headEl.appendChild(batchBtn);
-        }
-        if (spec.token) kids.push(legendEl());
+        /* 没有「展开」「批量」的候选框（核心词 / 标题词）：只有「修改」时也要单独起标题行 */
+        if (headEl === labelEl && listBtn) headEl = h('div', { class: 'kh-fld-labelrow' }, [labelEl, listBtn]);
+        /* 后缀图例跟着「修改」弹窗走：添加关键词的弹窗里不重复展示后缀相关内容 */
+        if (spec.token && !spec.listEdit) kids.push(legendEl());
         const boxCls = fldCls + ' kh-cand-box'
           + (spec.clamp ? ' kh-cand-clamp' : '')
           + (spec.token ? ' kh-cand-token' : '');
@@ -501,10 +501,16 @@
              * 一个"能改取值"的后缀却画成名字的一部分，用户没法判断自己到底配了什么。
              * 分支已删：现在只有"画徽标"一种口径，不再有第二个开关。 */
             const tok = tok0;
+            /* 【2026-11-03 需求 m00625】图片命中词 / 图片动态词在「添加关键词」里**只显示词条名**：
+             * `@指向字段` 与后缀都只在「修改」弹窗里看。`labelSegs` 的 kv 分支只剥 `#表`，
+             * `一对一@应用名称` 这种会整串当名字 ⇒ 这里再把 `@字段` 与后缀剥掉，只留 label。 */
+            const chipName = (spec.listEdit && spec.kvBatch) ? kvDisplayName(list[i]) : tok.name;
             prev.appendChild(labelChip({
-              name: tok.name,
-              suffix: tok.suffix,
-              chipTitle: '点一下改这一个候选',
+              name: chipName,
+              /* 【2026-11-02 需求】列表模式：框面只显示条目名，**不画后缀徽标** ——
+               * 后缀内容一律进「修改」弹窗看（否则这一格看起来还是一堆 "#图3 / @截图"）。 */
+              suffix: spec.listEdit ? '' : tok.suffix,
+              chipTitle: spec.listEdit ? '点一下打开列表管理' : '点一下改这一个候选',
               delTitle: '删掉这个候选：' + list[i],
               onDelete: () => {
                 /* 先 commit（把待定文本并进 `raw`）再按序号删：段序号才是稳的 */
@@ -515,6 +521,8 @@
                 draw(); st.notify();
               },
               onClick: () => {
+                /* 列表模式：点胶囊＝打开列表（不再逐段弹小浮层） */
+                if (spec.listEdit) { openList(); return; }
                 st.commit();
                 const arr = st.parts();
                 if (i >= arr.length) return;   // 上面那次 commit 把候选并掉了：没得改
@@ -588,6 +596,593 @@
           draw();
         };
         const openPop = attachPop(addBtn, inp, box, () => draw(), startNew);
+        /**
+         * 【2026-11-02 需求】「修改」弹窗：把这一格的条目摊成**按行的列表**，整批查看 / 增 / 删 / 改。
+         * · 写回只改这一格自己的整串（仍是 `|` 连接的原文），存储格式与字段语义都不变；
+         * · 后缀不拆控件，直接按原文显示在行里 —— 这五个字段的后缀语法本来就各不相同，
+         *   在这里重造一套表单只会和 `fetch.js` 的解析口径二次漂移；
+         * · `dirty` 为假时**不写回**：打开看一眼再点保存，绝不能把原串的空格/分隔符归一掉。
+         */
+        let listModal = null;
+        /**
+         * 【2026-11-03 需求】「修改」弹窗 = 这一格**唯一的管理入口**（原「批量」并进来，用户口径
+         * 「这是一个东西」）。三种行型各管各的：
+         *   · 普通词（核心词 / 标题词）：每行一个词，只增删改；
+         *   · 图片命中词 / 图片动态词（`kvBatch`）：每行还要管 `@指向` 与 `#表`。指向不再把
+         *     `@截图@名称` 摊在行里（字段一多就读不动），改成「可搜索 + 多选」的面板，行里只显示摘要；
+         *   · 抓取后续字段（`token`）：后缀不再手敲，行里点「后缀：…」展开结构化编辑器
+         *     （取哪一格 / 值格位置 / 取什么内容 / 怎么清理），并能拿一段原文试「取到」什么。
+         * 写回：没动过的行一个字节都不碰（原串的空格与分隔符原样保留）；只有新增行时才整串重排。
+         */
+        const openList = () => {
+          exitText();
+          st.commit();
+          const F = KH.Fetch || {};
+          const known = knownFields();
+          const isKv = !!spec.kvBatch;
+          const isTok = !!spec.token;
+          /* 图片动态关键词（`suffixChip`）的条目 = 字段名 + 取值后缀 + @指向 + #表：
+           * 后缀也要结构化编辑，所以这里的行同时带「指向」与「后缀」两件。 */
+          const hasSuffix = isTok || (isKv && !!spec.suffixChip);
+          const specOf = (raw) => {
+            if (typeof F.parseLabelSpec === 'function') {
+              try { return F.parseLabelSpec(raw); } catch (e) { /* 退回裸名 */ }
+            }
+            return {
+              label: String(raw == null ? '' : raw), simple: false, imgOnly: false, imgLimit: 0,
+              noImg: false, offset: '', offsetInvalid: false, stripSpace: false, anchor: '', sliceSpec: '', clip: false
+            };
+          };
+          const origRaw = String(st.raw == null ? '' : st.raw);
+          const origRows = isKv ? kvRows(origRaw, known) : split(origRaw).map((raw) => ({ raw: raw }));
+          const rows = [];
+          for (let i = 0; i < origRows.length; i++) {
+            const o = origRows[i];
+            const row = { orig: i, gone: false, dirty: false, isNew: false, picked: false, el: null };
+            if (isKv) {
+              row.name = o.name;
+              row.scopes = (o.scopes || []).slice();
+              row.mark = !!o.mark;
+              if (spec.suffixChip) { row.spec = specOf(row.name); row.name = row.spec.label; }
+            } else if (isTok) { row.name = specOf(o.raw).label; row.spec = specOf(o.raw); }
+            else row.name = String(o.raw == null ? '' : o.raw);
+            rows.push(row);
+          }
+          let dirty = false;
+
+          const listEl = h('div', { class: 'kh-list-rows' });
+          const countEl = h('span', { class: 'kh-list-count' });
+          const filter = h('input', {
+            class: 'kh-input kh-list-filter', type: 'search',
+            placeholder: isKv ? '按词、字段名或 #表 过滤' : '按词过滤'
+          });
+          const addInp = h('input', {
+            class: 'kh-input kh-list-add', type: 'text',
+            placeholder: isKv ? '输入新词，回车添加（可写 @字段 #表）'
+              : isTok ? '输入新字段名，回车添加（后缀在行里设置）' : '输入后回车添加'
+          });
+
+          const alive = () => rows.filter((r) => !r.gone);
+          const pickedRows = () => alive().filter((r) => r.picked);
+          const scopeLabel = (row) => {
+            const n = (row.scopes || []).length;
+            if (!n) return '全部字段';
+            if (n <= 2) return row.scopes.join('、');
+            return row.scopes[0] + ' 等 ' + n + ' 个';
+          };
+          const syncCount = () => {
+            countEl.textContent = '共 ' + alive().length + ' 条，已选 ' + pickedRows().length + ' 条';
+          };
+          const rowText = (row) => isKv
+            ? (row.name + ' ' + (row.scopes || []).join(' ') + ' ' + (row.scopes && row.scopes.length ? '' : '全部字段') + (row.mark ? ' #表' : ''))
+            : hasSuffix ? (row.name + ' ' + (row.spec ? (typeof F.suffixTextOf === 'function' ? F.suffixTextOf(row.spec) : '') : '')) : row.name;
+
+          /* ---------- 指向面板：可搜索 + 多选；行里与「批量」共用这一份 ---------- */
+          const scopePanel = h('div', { class: 'kh-scope-panel', hidden: true });
+          const scopeTitle = h('span', { class: 'kh-scope-title' });
+          const scopeClose = h('button', { class: 'kh-mini-btn kh-scope-close', type: 'button', text: '×', title: '收起' });
+          const scopeSearch = h('input', {
+            class: 'kh-input kh-scope-search', type: 'search',
+            placeholder: '搜索抓取字段（没配置就去「抓取后续字段」里加）'
+          });
+          const scopeAll = h('input', { type: 'checkbox' });
+          const scopeListEl = h('div', { class: 'kh-scope-list' });
+          const scopeHint = h('span', { class: 'kh-scope-hint', text: '勾选即时生效' });
+          const bulkReplace = h('button', { class: 'kh-btn kh-btn-primary kh-scope-op', type: 'button', text: '替换选中' });
+          const bulkAppend = h('button', { class: 'kh-btn kh-scope-op', type: 'button', text: '追加到选中' });
+          let scopeMode = 'single';        // single = 改某一行；bulk = 改勾选的所有行
+          let scopeTarget = null;
+          const scopeBoxes = [];
+          const scopeChecked = () => scopeBoxes.filter((b) => b.cb.checked).map((b) => b.name);
+          const scopeApply = (targets, mode2) => {
+            let n = 0;
+            for (const row of targets) {
+              const next = scopeAll.checked ? [] : scopeChecked();
+              if (mode2 === 'append') {
+                const uniq = (row.scopes || []).slice();
+                for (const v of next) if (uniq.indexOf(v) < 0) uniq.push(v);
+                row.scopes = uniq;
+              } else {
+                row.scopes = next.slice();
+              }
+              row.dirty = true;
+              if (row._scopeBtn) row._scopeBtn.textContent = scopeLabel(row);
+              n += 1;
+            }
+            if (n) dirty = true;
+            syncCount();
+            return n;
+          };
+          const refreshScopeBoxes = (cur) => {
+            scopeAll.checked = !(cur && cur.length);
+            for (const b of scopeBoxes) b.cb.checked = !!(cur && cur.indexOf(b.name) >= 0);
+          };
+          const openScope = (target) => {
+            scopeMode = target === 'bulk' ? 'bulk' : 'single';
+            scopeTarget = target;
+            scopeTitle.textContent = scopeMode === 'bulk'
+              ? ('指向 · 已选 ' + pickedRows().length + ' 条')
+              : ('指向 · ' + (target.name || '（未命名）'));
+            refreshScopeBoxes(scopeMode === 'bulk' ? [] : (target.scopes || []));
+            scopeSearch.value = '';
+            for (const b of scopeBoxes) b.el.hidden = false;
+            scopeHint.hidden = scopeMode === 'bulk';
+            bulkReplace.hidden = scopeMode !== 'bulk';
+            bulkAppend.hidden = scopeMode !== 'bulk';
+            scopePanel.hidden = false;
+          };
+          scopePanel.appendChild(h('div', { class: 'kh-scope-head' }, [scopeTitle, scopeClose]));
+          scopePanel.appendChild(h('div', { class: 'kh-scope-tools' }, [scopeSearch,
+            h('label', { class: 'kh-scope-opt kh-scope-all' }, [scopeAll, h('span', { text: '全部字段（不限定）' })])]));
+          scopePanel.appendChild(scopeListEl);
+          scopePanel.appendChild(h('div', { class: 'kh-scope-foot' }, [scopeHint, bulkReplace, bulkAppend]));
+          for (const k of known) {
+            const cb = h('input', { type: 'checkbox' });
+            const lab = h('label', { class: 'kh-scope-opt' }, [cb, h('span', { text: k })]);
+            cb.addEventListener('change', () => {
+              if (cb.checked) scopeAll.checked = false;
+              if (scopeMode === 'single' && scopeTarget) scopeApply([scopeTarget], 'replace');
+              /* 最后一个字段也取消勾选 ⇒ 语义回到「全部字段」：把复选框同步成勾上，
+               * 否则行摘要写「全部字段」、面板却一个勾都没有，看着像坏了。 */
+              if (!scopeChecked().length) scopeAll.checked = true;
+            });
+            scopeBoxes.push({ cb: cb, name: k, el: lab });
+            scopeListEl.appendChild(lab);
+          }
+          if (!known.length) {
+            scopeListEl.appendChild(h('div', { class: 'kh-list-empty', text: '还没配置「抓取后续字段」，现在只能设为全部字段。' }));
+          }
+          scopeAll.addEventListener('change', () => {
+            if (!scopeAll.checked) {
+              /* 取消「全部字段」但一个字段都没选 ⇒ 视为仍不限定，避免落到"永远不命中"的怪状态 */
+              scopeAll.checked = true;
+              return;
+            }
+            for (const b of scopeBoxes) b.cb.checked = false;
+            if (scopeMode === 'single' && scopeTarget) scopeApply([scopeTarget], 'replace');
+          });
+          scopeSearch.addEventListener('input', () => {
+            const q = String(scopeSearch.value == null ? '' : scopeSearch.value).trim().toLowerCase();
+            for (const b of scopeBoxes) b.el.hidden = !!q && b.name.toLowerCase().indexOf(q) < 0;
+          });
+          scopeClose.addEventListener('click', () => { scopePanel.hidden = true; });
+          bulkReplace.addEventListener('click', () => {
+            const list = pickedRows();
+            if (!list.length) { D().toast('先勾选要改的条目'); return; }
+            scopeApply(list, 'replace');
+            scopePanel.hidden = true;
+          });
+          bulkAppend.addEventListener('click', () => {
+            const list = pickedRows();
+            if (!list.length) { D().toast('先勾选要改的条目'); return; }
+            scopeApply(list, 'append');
+            scopePanel.hidden = true;
+          });
+
+          /* ---------- 抓取字段后缀：结构化编辑（不再手敲 #图3 / ^[复制] / %1-3） ---------- */
+          const buildSuffix = (row) => {
+            const sp = row.spec;
+            const detail = h('div', { class: 'kh-lrow-detail', hidden: true });
+            const modeSel = h('select', { class: 'kh-input kh-sfx-mode' }, [
+              h('option', { value: 'default', text: '右邻这一格' }),
+              h('option', { value: '#1', text: '右邻一格（#1）' }),
+              h('option', { value: '#图', text: '只要图片（#图）' }),
+              h('option', { value: '#图N', text: '图片，最多 N 张（#图N）' }),
+              h('option', { value: '#N', text: '图上文字与图，最多 N 张（#N）' }),
+              h('option', { value: '#0', text: '不要图片（#0）' })
+            ]);
+            const imgN = h('input', { class: 'kh-input kh-sfx-num', type: 'number', min: '1', step: '1', value: String(sp.imgLimit || 2) });
+            const offsetInp = h('input', { class: 'kh-input kh-sfx-offset', type: 'text', value: String(sp.offset || ''), placeholder: '留空＝右邻；如 2 或 1-3' });
+            const anchorInp = h('input', { class: 'kh-input kh-sfx-anchor', type: 'text', value: String(sp.anchor || ''), placeholder: '如 [复制]：只取它之前的文字' });
+            const sliceMode = h('select', { class: 'kh-input kh-sfx-slice' }, [
+              h('option', { value: 'none', text: '不截取' }),
+              h('option', { value: 'first', text: '取前 N 字' }),
+              h('option', { value: 'range', text: '取第 a–b 字' })
+            ]);
+            const sliceA = h('input', { class: 'kh-input kh-sfx-num', type: 'number', min: '1', step: '1', value: '1' });
+            const sliceB = h('input', { class: 'kh-input kh-sfx-num', type: 'number', min: '1', step: '1', value: '3' });
+            const stripCb = h('input', { type: 'checkbox' });
+            stripCb.checked = !!sp.stripSpace;
+            /* 【2.0.8.8 需求④】内容格「不完整展示」：只影响卡片里的显示（折 3 行、悬停看全文），
+             * 抓到的值一个字不改。存进字段串的 `~` 后缀里，老配置没有它 ⇒ 默认完整展示。 */
+            const clipCb = h('input', { type: 'checkbox' });
+            clipCb.checked = !!sp.clip;
+            const sampleInp = h('input', { class: 'kh-input kh-sfx-sample', type: 'text', placeholder: '粘贴一格真实文字，试一下取到的是什么' });
+            const previewOut = h('span', { class: 'kh-sfx-out is-empty', text: '取到的值会显示在这里' });
+            /* 初始态：storage 里的后缀 → 表单控件 */
+            let mode = 'default';
+            if (sp.noImg) mode = '#0';
+            else if (sp.imgOnly) mode = sp.imgLimit ? '#图N' : '#图';
+            else if (sp.imgLimit) mode = '#N';
+            else if (sp.simple) mode = '#1';
+            modeSel.value = mode;
+            const sm = /^\s*(\d+)\s*-\s*(\d+)\s*$/.exec(String(sp.sliceSpec || ''));
+            const sf = /^\s*(\d+)\s*$/.exec(String(sp.sliceSpec || ''));
+            if (sm) { sliceMode.value = 'range'; sliceA.value = sm[1]; sliceB.value = sm[2]; }
+            else if (sf) { sliceMode.value = 'first'; sliceA.value = sf[1]; }
+            const group = (label, kids) => h('div', { class: 'kh-sfx-group' }, [
+              h('div', { class: 'kh-sfx-label', text: label })
+            ].concat(kids));
+            const paintPreview = () => {
+              const sample = String(sampleInp.value == null ? '' : sampleInp.value);
+              if (!sample) {
+                previewOut.textContent = '取到的值会显示在这里';
+                previewOut.className = 'kh-sfx-out is-empty';
+                return;
+              }
+              const it = Object.assign({}, sp, { label: row.name });
+              const val = (typeof F.previewValue === 'function') ? F.previewValue(sample, it) : sample;
+              previewOut.textContent = '原文 → ' + (String(val) === '' ? '（空）' : String(val));
+              previewOut.className = 'kh-sfx-out';
+            };
+            const syncNums = () => {
+              const m = modeSel.value;
+              imgN.hidden = !(m === '#图N' || m === '#N');
+              const sm2 = sliceMode.value;
+              sliceA.hidden = sm2 === 'none';
+              sliceB.hidden = sm2 !== 'range';
+            };
+            const compose = () => {
+              const m = String(modeSel.value || 'default');
+              sp.noImg = m === '#0';
+              sp.imgOnly = (m === '#图' || m === '#图N');
+              sp.simple = m === '#1';
+              const n = Math.max(0, parseInt(imgN.value, 10) || 0);
+              sp.imgLimit = (m === '#图N' || m === '#N') ? n : 0;
+              sp.offset = String(offsetInp.value == null ? '' : offsetInp.value).replace(/\s+/g, '');
+              sp.offsetInvalid = false;
+              sp.stripSpace = !!stripCb.checked;
+              sp.clip = !!clipCb.checked;
+              sp.anchor = String(anchorInp.value == null ? '' : anchorInp.value).trim();
+              const sm3 = sliceMode.value;
+              sp.sliceSpec = sm3 === 'none' ? '' : sm3 === 'first'
+                ? String(sliceA.value == null ? '' : sliceA.value).trim()
+                : (String(sliceA.value == null ? '' : sliceA.value).trim() + '-' + String(sliceB.value == null ? '' : sliceB.value).trim());
+              row.dirty = true;
+              dirty = true;
+              syncNums();
+              paintPreview();
+              if (row._suffixBtn) row._suffixBtn.textContent = '后缀：' + ((typeof F.suffixTextOf === 'function' ? F.suffixTextOf(sp) : '') || '无');
+            };
+            modeSel.addEventListener('change', compose);
+            imgN.addEventListener('input', compose);
+            offsetInp.addEventListener('input', compose);
+            anchorInp.addEventListener('input', compose);
+            sliceMode.addEventListener('change', compose);
+            sliceA.addEventListener('input', compose);
+            sliceB.addEventListener('input', compose);
+            stripCb.addEventListener('change', compose);
+            clipCb.addEventListener('change', compose);
+            sampleInp.addEventListener('input', paintPreview);
+            syncNums();
+            paintPreview();
+            detail.appendChild(h('div', { class: 'kh-sfx-grid' }, [
+              group('取哪一格', [modeSel, imgN]),
+              group('值格位置 @', [offsetInp]),
+              group('取什么内容', [anchorInp, sliceMode, sliceA, sliceB,
+                h('label', { class: 'kh-sfx-check' }, [clipCb, h('span', { text: '内容格不完整展示（折 3 行，悬停看全文）' })])
+              ]),
+              group('怎么清理', [h('label', { class: 'kh-sfx-check' }, [stripCb, h('span', { text: '去掉内部空白（包名这类用）' })])])
+            ]));
+            detail.appendChild(h('div', { class: 'kh-sfx-preview' }, [sampleInp, previewOut]));
+            return detail;
+          };
+
+          /* ---------- 行 ---------- */
+          function buildRow(row) {
+            const cb = h('input', { class: 'kh-list-cb', type: 'checkbox' });
+            cb.checked = !!row.picked;
+            cb.addEventListener('change', () => { row.picked = !!cb.checked; syncCount(); });
+            row._cb = cb;
+            const nameInp = h('input', {
+              class: 'kh-input kh-list-val', type: 'text', value: row.name,
+              placeholder: isTok ? '字段名' : '词条'
+            });
+            nameInp.addEventListener('input', () => {
+              row.name = String(nameInp.value == null ? '' : nameInp.value);
+              if (row.spec) row.spec.label = row.name;
+              row.dirty = true;
+              dirty = true;
+            });
+            nameInp.addEventListener('keydown', (ev) => {
+              if (!ev) return;
+              if (ev.key === 'Enter') {
+                if (typeof ev.preventDefault === 'function') ev.preventDefault();
+                addRow(null, row);
+              } else if (ev.key === 'Backspace' && !nameInp.value) {
+                /* 空行退格＝删掉这一行（表格控件的老手感，省得去够右边的 ✕） */
+                if (typeof ev.preventDefault === 'function') ev.preventDefault();
+                dropRow(row);
+              }
+            });
+            const main = h('div', { class: 'kh-lrow-main' }, [cb, nameInp]);
+            if (isKv) {
+              const scopeBtn = h('button', { class: 'kh-mini-btn kh-lrow-scope', type: 'button', text: scopeLabel(row) });
+              scopeBtn.title = '这个词对哪些抓取字段的图生效（可多选）';
+              scopeBtn.addEventListener('click', () => openScope(row));
+              row._scopeBtn = scopeBtn;
+              /* 【2.0.8.7 需求②】「进表」不再是一颗只在弹窗里的小 `#表` 按钮，改成明面上的勾选列：
+               * 每行一个 `进表` 勾选框，勾没勾一眼可见、批量也走同一份状态（用户原话：
+               * 「图片命中词、图片动态命中词，进表与否似乎不能修改（全部默认填的进表，而且不能修改）」）。
+               * 存储口径不变：勾上 = 词尾写 `#表`，见 `kvPatch`。 */
+              const markCb = h('input', { class: 'kh-lrow-mark-cb', type: 'checkbox' });
+              markCb.checked = !!row.mark;
+              const markLab = h('label', { class: 'kh-lrow-mark' + (row.mark ? ' is-on' : '') }, [
+                markCb, h('span', { class: 'kh-lrow-mark-t', text: '进表' })
+              ]);
+              markLab.title = '勾上：图里「这个词：值」会并进重要笔记的抓取表；不勾：只做命中判定';
+              const paintMark = () => {
+                if (markCb.checked !== !!row.mark) markCb.checked = !!row.mark;
+                markLab.classList.toggle('is-on', !!row.mark);
+              };
+              markCb.addEventListener('change', () => {
+                row.mark = !!markCb.checked;
+                row.dirty = true;
+                dirty = true;
+                paintMark();
+              });
+              row._markCb = markCb;
+              row._markLab = markLab;
+              row._paintMark = paintMark;
+              main.appendChild(scopeBtn);
+              main.appendChild(markLab);
+            }
+            let detail = null;
+            if (hasSuffix) {
+              const sfxBtn = h('button', {
+                class: 'kh-mini-btn kh-lrow-suffix', type: 'button',
+                text: '后缀：' + ((typeof F.suffixTextOf === 'function' ? F.suffixTextOf(row.spec) : '') || '无')
+              });
+              sfxBtn.title = '点开展开后缀设置（不用手敲 # 与 %）';
+              detail = buildSuffix(row);
+              row._suffixBtn = sfxBtn;
+              sfxBtn.addEventListener('click', () => {
+                detail.hidden = !detail.hidden;
+                sfxBtn.classList.toggle('is-open', !detail.hidden);
+              });
+              main.appendChild(sfxBtn);
+            }
+            const del = h('button', { class: 'kh-mini-btn kh-list-del', type: 'button', text: '×', title: '删掉这一条' });
+            del.addEventListener('click', () => dropRow(row));
+            main.appendChild(del);
+            return h('div', { class: 'kh-lrow' + (isTok ? ' kh-lrow-tok' : '') }, detail ? [main, detail] : [main]);
+          }
+
+          function renderAll() {
+            listEl.textContent = '';
+            for (const row of rows) {
+              if (row.gone) continue;
+              row.el = buildRow(row);
+              listEl.appendChild(row.el);
+            }
+            if (!alive().length) {
+              listEl.appendChild(h('div', { class: 'kh-list-empty', text: '还没有条目，在下面输入后回车添加' }));
+            }
+            applyFilter();
+            syncCount();
+          }
+
+          function addRow(data, afterRow) {
+            const row = Object.assign({
+              orig: -1, gone: false, dirty: true, isNew: true, picked: false, el: null, name: ''
+            }, data || {});
+            if (isKv) {
+              row.scopes = (row.scopes || []).slice();
+              row.mark = !!row.mark;
+              if (spec.suffixChip && !row.spec) row.spec = specOf(row.name || '');
+            }
+            if (isTok && !row.spec) row.spec = specOf(row.name || '');
+            const at = afterRow ? rows.indexOf(afterRow) : rows.length - 1;
+            rows.splice(at + 1, 0, row);
+            row.el = buildRow(row);
+            if (afterRow && afterRow.el && afterRow.el.parentNode) {
+              afterRow.el.parentNode.insertBefore(row.el, afterRow.el.nextSibling);
+            } else {
+              listEl.appendChild(row.el);
+            }
+            const empty = listEl.querySelector ? listEl.querySelector('.kh-list-empty') : null;
+            if (empty && empty.parentNode) empty.parentNode.removeChild(empty);
+            dirty = true;
+            applyFilter();
+            syncCount();
+            const focusInp = row.el.querySelector ? row.el.querySelector('.kh-list-val') : null;
+            if (focusInp && typeof focusInp.focus === 'function') { try { focusInp.focus(); } catch (e) { /* 隐藏时忽略 */ } }
+            return row;
+          }
+
+          function dropRow(row) {
+            if (!row || row.gone) return;
+            row.gone = true;
+            row.dirty = true;
+            dirty = true;
+            if (row.el && row.el.parentNode) row.el.parentNode.removeChild(row.el);
+            if (!alive().length) renderAll();
+            syncCount();
+          }
+
+          function applyFilter() {
+            const q = String(filter.value == null ? '' : filter.value).trim().toLowerCase();
+            for (const row of rows) {
+              if (!row.el) continue;
+              row.el.hidden = !!row.gone || (!!q && rowText(row).toLowerCase().indexOf(q) < 0);
+            }
+          }
+
+          const pick = (mode2) => {
+            for (const row of rows) {
+              if (row.gone || (row.el && row.el.hidden)) continue;
+              row.picked = mode2 === 'inv' ? !row.picked : true;
+              if (row._cb) row._cb.checked = row.picked;
+            }
+            syncCount();
+          };
+          const mkBtn = (label, onClick, title) => {
+            const b = h('button', { class: 'kh-mini-btn kh-list-op', type: 'button', text: label });
+            if (title) b.title = title;
+            b.addEventListener('click', onClick);
+            return b;
+          };
+          const dropPicked = () => {
+            const list = pickedRows();
+            if (!list.length) { D().toast('先勾选要删的条目'); return; }
+            for (const row of list) { row.gone = true; row.dirty = true; }
+            dirty = true;
+            renderAll();
+            if (!scopePanel.hidden) scopePanel.hidden = true;
+          };
+          const forPicked = (fn) => {
+            const list = pickedRows();
+            if (!list.length) { D().toast('先勾选要改的条目'); return; }
+            for (const row of list) fn(row);
+            dirty = true;
+            syncCount();
+          };
+          const ops = [mkBtn('删除选中', dropPicked, '只删勾选的条目，其他条目不受影响')];
+          if (isKv) {
+            ops.unshift(mkBtn('指向…', () => {
+              if (!pickedRows().length) { D().toast('先勾选要改的条目'); return; }
+              openScope('bulk');
+            }, '给勾选的词设置 @指向：可搜索、可多选，也可以设为全部字段'));
+            ops.unshift(mkBtn('设为全部字段', () => {
+              forPicked((row) => {
+                row.scopes = [];
+                if (row._scopeBtn) row._scopeBtn.textContent = scopeLabel(row);
+              });
+            }, '去掉 @指向：这些词对抓到的所有图都算命中'));
+            ops.unshift(mkBtn('取消进表', () => {
+              forPicked((row) => { row.mark = false; if (row._paintMark) row._paintMark(); });
+            }));
+            ops.unshift(mkBtn('设为进表', () => {
+              forPicked((row) => { row.mark = true; if (row._paintMark) row._paintMark(); });
+            }, '勾上后：图里「这个词：值」会并进重要笔记的抓取表'));
+          }
+          const opsBar = h('div', { class: 'kh-list-ops' }, ops);
+
+          const addFromInput = () => {
+            const v = String(addInp.value == null ? '' : addInp.value).trim();
+            if (!v) { D().toast('先输入要添加的条目'); return; }
+            if (isKv) {
+              const add = kvRows(v, known);
+              if (!add.length) { D().toast('这个词读不出名字'); return; }
+              for (const o of add) {
+                if (spec.suffixChip) {
+                  const sp = specOf(o.name);
+                  addRow({ name: sp.label, spec: sp, scopes: o.scopes, mark: o.mark });
+                } else addRow({ name: o.name, scopes: o.scopes, mark: o.mark });
+              }
+            } else if (isTok) {
+              for (const one of split(v)) { const sp = specOf(one); addRow({ name: sp.label, spec: sp }); }
+            } else {
+              for (const one of split(v)) addRow({ name: one });
+            }
+            addInp.value = '';
+            try { addInp.focus(); } catch (e) { /* 垫片没有 focus */ }
+          };
+          addInp.addEventListener('keydown', (ev) => {
+            if (!ev || ev.key !== 'Enter') return;
+            if (typeof ev.preventDefault === 'function') ev.preventDefault();
+            addFromInput();
+          });
+          filter.addEventListener('input', applyFilter);
+
+          const addBtn2 = h('button', { class: 'kh-btn kh-list-addbtn', type: 'button', text: '添加' });
+          addBtn2.addEventListener('click', addFromInput);
+
+          const serialize = (row) => {
+            const name = String(row.name == null ? '' : row.name).trim();
+            if (!name) return '';
+            if (isKv) {
+              /* 存储顺序：字段名 + 取值后缀 + @指向 + #表（`splitScope` 先剥 #表、再从末尾剥 @，
+               * 剩下的整段才交给 `parseLabelSpec` —— 写成别的顺序就读不回来）。 */
+              const full = name + (row.spec ? suffixOf(row.spec) : '');
+              const t = kvPatch({ name: full, scopes: row.scopes, mark: row.mark }, { scopes: row.scopes, mark: row.mark });
+              return t == null ? '' : t;
+            }
+            if (isTok) return name + suffixOf(row.spec);
+            return name;
+          };
+
+          const tip = isKv
+            ? '每行一条；「指向」用可搜索多选设置，#表 表示命中后并入抓取表。没改过的条目保存时原样保留。'
+            : isTok
+              ? '每行一个抓取字段；后缀点「后缀」展开设置，不用手敲 #图3 / ^[复制] / %1-3；勾「不完整展示」= 内容格折 3 行。'
+              : '每行一条，保存时用 | 连接。';
+          const body = h('div', { class: 'kh-list-box' }, [
+            h('div', { class: 'kh-list-toolbar' }, [
+              filter,
+              mkBtn('全选', () => pick('all')),
+              mkBtn('反选', () => pick('inv')),
+              countEl
+            ]),
+            h('div', { class: 'kh-list-addbar' }, [addInp, addBtn2]),
+            scopePanel,
+            opsBar,
+            listEl,
+            h('div', { class: 'kh-list-foot' }, [h('span', { class: 'kh-list-tip', text: tip })]),
+            isTok ? legendEl() : null
+          ]);
+          renderAll();
+          listModal = ui.Modal.open({
+            title: spec.label + ' · 修改',
+            body,
+            size: 'md',
+            /* 页面里的「快速添加」把编辑器挂在 ShadowRoot 上：列表弹窗必须跟着挂进去，
+             * 否则会落到 document.body 上、拿不到组件样式（被页面样式冲掉）。 */
+            mount: (() => {
+              try {
+                const r = (typeof box.getRootNode === 'function') ? box.getRootNode() : null;
+                return (r && r !== document && r.host) ? r : null;
+              } catch (e) { return null; }
+            })(),
+            saveLabel: '保存',
+            onSave: () => {
+              if (!dirty) return true;                 // 没动过 ⇒ 不写回，原串一个字节都不碰
+              const live = alive();
+              const hasNew = live.some((r) => r.isNew);
+              let out;
+              if (hasNew) {
+                /* 有新增行 ⇒ 顺序只能整串重排（新增行按当前显示顺序插进末尾段） */
+                out = live.map(serialize).filter(Boolean).join('|');
+              } else {
+                const next = rows.map((r) => {
+                  if (r.orig < 0) return null;
+                  if (r.gone) return '';
+                  return r.dirty ? serialize(r) : null;
+                });
+                out = kvApply(origRaw, origRows, next);
+                /* `kvApply` 找不到原片段时退回 `join('|')`：这里再兜一道，别把空段写进存储 */
+                if (/(^|[|｜])\s*([|｜]|$)/.test(out) && live.length) out = live.map(serialize).filter(Boolean).join('|');
+              }
+              st.raw = out;
+              st.editIdx = -1;
+              inp.value = '';
+              draw();
+              st.notify();
+              return true;
+            }
+          });
+          return listModal;
+        };
         /** 已配置的抓取字段裸名 —— 作用域的**唯一合法取值**（取同表单「抓取后续字段」控件现算）。
          *  查找必须落在**控件自己的根**上：页面编辑器的弹窗挂在 Shadow DOM 里，
          *  `document.getElementById` 在那边永远找不到（那会让 `@字段` 全被当成普通词）。
@@ -624,151 +1219,10 @@
             return out;
           } catch (e) { return []; }
         };
-        /**
-         * 【需求】批量管理弹窗：列出这一格的**全部词条**（词 / 作用域徽标 / `#表`），勾选后整批改。
-         * 写回走 `kvApply`：**只换勾选的那几条，别的词一个字不动**（分隔符与空格原样保留）。
-         * @returns `ui.Modal` 实例（单测靠它拿节点）
-         */
-        const openBatch = () => {
-          exitText();                 // 文本态里正在打的整串先落盘，否则下面那次 commit 会把它丢掉
-          st.commit();
-          const known = knownFields();
-          const rows = kvRows(st.raw, known);
-          if (!rows.length) { D().toast('这一格还没有词，先加几个再来批量管理'); return null; }
-          const picked = rows.map(() => false);
-          let vis = [];
-          const filter = h('input', {
-            class: 'kh-input kh-kvb-filter', type: 'search',
-            placeholder: '按词或字段名过滤（如 截图、@、#表）'
-          });
-          const countEl = h('span', { class: 'kh-kvb-count' });
-          const listEl = h('div', { class: 'kh-kvb-list' });
-          const scopeSel = h('select', { class: 'kh-input kh-kvb-sel' },
-            [h('option', { value: '', text: '选一个抓取字段…' })].concat(
-              known.map((k) => h('option', { value: k, text: k }))
-            ));
-          if (!known.length) {
-            scopeSel.disabled = true;
-            scopeSel.title = '还没配置「抓取后续字段」，没法按字段限定作用域';
-            scopeSel.className = 'kh-input kh-kvb-sel is-empty';
-          }
-          const alive = () => rows.map((r, i) => i).filter((i) => !rows[i].gone);
-          const selIdx = () => alive().filter((i) => picked[i]);
-          const syncCount = () => {
-            countEl.textContent = '共 ' + alive().length + ' 个词，已选 ' + selIdx().length + ' 个';
-          };
-          /** 重画列表：过滤只影响"看得见哪些"，勾选状态跟着行号走，不受过滤影响 */
-          const paint = () => {
-            listEl.textContent = '';
-            const q = String(filter.value == null ? '' : filter.value).trim().toLowerCase();
-            vis = [];
-            for (const i of alive()) {
-              const r = rows[i];
-              const tag = r.scopes.length ? '@' + r.scopes.join('@') : '通用';
-              if (q && (r.name + ' ' + tag).toLowerCase().indexOf(q) < 0) continue;
-              vis.push(i);
-              const cb = h('input', { class: 'kh-kvb-cb', type: 'checkbox' });
-              cb.checked = !!picked[i];
-              cb.addEventListener('change', () => { picked[i] = !!cb.checked; syncCount(); });
-              listEl.appendChild(h('label', { class: 'kh-kvb-row' }, [
-                cb,
-                h('span', { class: 'kh-kvb-name', text: r.name }),
-                h('span', { class: 'kh-kvb-scope' + (r.scopes.length ? ' is-scoped' : ''), text: tag }),
-                r.mark ? h('span', { class: 'kh-kvb-mark', text: '#表' }) : null
-              ]));
-            }
-            if (!vis.length) listEl.appendChild(h('div', { class: 'kh-kvb-empty', text: '没有匹配的词' }));
-            syncCount();
-          };
-          /** 对选中的词逐条改写：`fn(词条)` 返回要 patch 的键（返回 null ＝ 这条跳过） */
-          const each = (fn) => {
-            let n = 0;
-            for (const i of selIdx()) {
-              const r = rows[i];
-              const cur = (r.next == null) ? r : (kvRows(r.next, known)[0] || r);
-              const pt = fn(cur);
-              if (!pt) continue;
-              const t = kvPatch(cur, pt);
-              if (t == null) continue;                    // 解析不出名字的怪词条：不动它
-              rows[i].next = t;
-              const view = kvRows(t, known)[0];
-              if (view) { rows[i].name = view.name; rows[i].scopes = view.scopes; rows[i].mark = view.mark; }
-              n += 1;
-            }
-            return n;
-          };
-          const run = (fn) => {
-            if (!selIdx().length) { D().toast('先勾选要改的词'); return; }
-            const n = fn();
-            if (!n) { D().toast('选中的词里没有能这样改的'); return; }
-            paint();
-          };
-          const btn = (label, extra, onClick, tip) => {
-            const b = h('button', { class: 'kh-btn kh-kvb-op' + (extra ? ' ' + extra : ''), type: 'button', text: label });
-            if (tip) b.title = tip;
-            b.addEventListener('click', onClick);
-            return b;
-          };
-          const pickBtn = (label, mode) => {
-            const b = h('button', { class: 'kh-mini-btn kh-kvb-op', type: 'button', text: label });
-            b.addEventListener('click', () => {
-              for (const i of vis) picked[i] = (mode === 'inv') ? !picked[i] : true;
-              paint();
-            });
-            return b;
-          };
-          const barTop = h('div', { class: 'kh-kvb-bar' }, [filter, pickBtn('全选', 'all'), pickBtn('反选', 'inv'), countEl]);
-          const barOps = h('div', { class: 'kh-kvb-bar' }, [
-            btn('设为通用', '', () => run(() => each(() => ({ scopes: [] }))),
-              '去掉 @字段名：这些词对所有抓图都算命中'),
-            btn('设为该字段', 'kh-btn-primary', () => {
-              const target = String(scopeSel.value == null ? '' : scopeSel.value).trim();
-              if (!target) { D().toast('先在右边选一个抓取字段'); return; }
-              run(() => each(() => ({ scopes: [target] })));
-            }, '只在抓到「选定字段」的图上算命中'),
-            btn('追加该字段', '', () => {
-              const target = String(scopeSel.value == null ? '' : scopeSel.value).trim();
-              if (!target) { D().toast('先在右边选一个抓取字段'); return; }
-              run(() => each((cur) => {
-                const list = (cur.scopes || []).concat([target]);
-                const uniq = [];
-                for (const v of list) if (v && uniq.indexOf(v) < 0) uniq.push(v);
-                return { scopes: uniq };
-              }));
-            }, '保留已有作用域、再**加一个**：一个词可以同时管多个字段的图（词尾写成 词@截图@名称）'),
-            scopeSel,
-            btn('加 #表', '', () => run(() => each(() => ({ mark: true }))),
-              '命中后把图上的键值行并进重要笔记的抓取表'),
-            btn('去 #表', '', () => run(() => each(() => ({ mark: false })))),
-            btn('删除选中', 'kh-btn-danger', () => {
-              let n = 0;
-              for (const i of selIdx()) { rows[i].gone = true; rows[i].next = ''; n += 1; }
-              if (!n) { D().toast('先勾选要删的词'); return; }
-              paint();
-            }, '只删勾选的词，其他词不受影响')
-          ]);
-          filter.addEventListener('input', () => paint());
-          const modal = ui.Modal.open({
-            title: spec.label + ' · 批量管理',
-            body: h('div', { class: 'kh-kvb' }, [barTop, barOps, listEl]),
-            size: 'md',
-            saveLabel: '应用',
-            onSave: () => {
-              const next = rows.map((r) => (r.next == null ? null : r.next));
-              let moved = false;
-              for (const v of next) { if (v != null) { moved = true; break; } }
-              /* 一条都没改 ⇒ 直接关，**不写回**：这样"打开看一眼再应用"绝不会动到原串格式 */
-              if (moved) { st.raw = kvApply(st.raw, rows, next); draw(); st.notify(); }
-              return true;
-            }
-          });
-          paint();
-          return modal;
-        };
-        if (batchBtn) {
-          batchBtn.addEventListener('click', (ev) => {
+        if (listBtn) {
+          listBtn.addEventListener('click', (ev) => {
             if (ev && typeof ev.stopPropagation === 'function') ev.stopPropagation();
-            openBatch();
+            openList();
           });
         }
         /* 框面本身也可点（像真输入框那样"点哪儿都能开始录入"）；胶囊与 `+` 各自有主，别抢它们的活。
@@ -780,6 +1234,8 @@
           if (inNode(ev.target, 'kh-lbl-chip') || inNode(ev.target, 'kh-cand-add')) return;
           /* 禁用态（`setDisabled` 只把 input 设成 disabled，不像富文本那样有点击拦截）：进去也打不了字 ⇒ 不进 */
           if (box.classList.contains('is-disabled')) return;
+          /* 列表模式：点框面任意位置（含胶囊）＝打开「修改」弹窗；不再有行内文本态 */
+          if (spec.listEdit) { openList(); return; }
           /* 【2.0.2.16 需求②】点框面空白处 = **还原成文本**（不再是"新录一个候选"）：
            * 常态胶囊适合逐个改，整串改（粘贴、看全、调顺序）需要一行能直接编辑的文本。
            * 新录一个候选仍然有入口 —— 右边那颗 `+`。 */
@@ -817,8 +1273,8 @@
           key: spec.key,
           /* 供外层（关键词弹窗）把「正则」开关的真值告诉它，并在开关翻动时重画 */
           _repaint: (on) => { if (typeof on === 'boolean') modeOn = on; draw(); },
-          /* 批量管理入口（`kvBatch` 字段才有；别的候选框是 null） */
-          _batch: spec.kvBatch ? openBatch : null
+          /* 列表修改入口（`listEdit` 的五个候选框才有；原来是「修改」+「批量」两个弹窗） */
+          _list: spec.listEdit ? openList : null
         };
       }
       default: {
@@ -871,6 +1327,26 @@
    *
    * @returns {Array<{i:number, raw:string, name:string, suffix:string}>} `i` = 原始段序号（删段用）
    */
+  /** 「添加关键词」里 kv 词条的**显示名**：去掉 `@指向字段`、`#表` 与后缀，只留词条本身。
+   *  存储串一个字节不动 —— 这是纯展示口径（用户 m00625：指向只在「修改」弹窗里看）。 */
+  function kvDisplayName(raw) {
+    let s = String(raw == null ? '' : raw).trim();
+    s = s.replace(/(?:#|＃)\s*(?:表|kv)\s*$/i, '').trim();
+    for (;;) {
+      const m = /@\s*([^@\s]+)$/.exec(s);
+      if (!m) break;
+      s = s.slice(0, m.index).trim();
+    }
+    const F = KH.Fetch;
+    if (F && typeof F.parseLabelSpec === 'function') {
+      try {
+        const sp = F.parseLabelSpec(s);
+        if (sp && sp.label) return String(sp.label).trim();
+      } catch (e) { /* 退回裸串 */ }
+    }
+    return s;
+  }
+
   function labelSegs(raw, opts) {
     const F = KH.Fetch;
     const s = raw == null ? '' : String(raw);
@@ -1035,6 +1511,25 @@
   }
 
   /**
+   * 抓取字段后缀 → **落盘语法**（`suffixTextOf` 拼的是给人看的展示串，两者一一对应）。
+   * 按 `parseLabelSpec` 剥离顺序倒着写（`#` → `@` → `!` → `^` → `%`）：解析端从末尾逐个剥，
+   * 所以这个顺序写出来能被原样读回。空串＝这个字段不写任何后缀。
+   */
+  function suffixOf(it) {
+    if (!it) return '';
+    let s = '';
+    if (it.noImg) s = '#0';
+    else if (it.imgOnly) s = it.imgLimit ? '#图' + it.imgLimit : '#图';
+    else if (it.imgLimit) s = '#' + it.imgLimit;
+    else if (it.simple) s = '#1';
+    if (it.offset) s += '@' + it.offset;
+    if (it.stripSpace) s += '!';
+    if (it.anchor) s += '^' + it.anchor;
+    if (it.sliceSpec) s += '%' + it.sliceSpec;
+    return s;
+  }
+
+  /**
    * 【2.0.2.7】后缀胶囊的**唯一渲染实现**：`名字 [+ 后缀徽标] [+ ✕]`。
    *
    * 两处都用它：字段控件的「可编辑胶囊列表」（`case 'labels'`）与设置页「重要笔记置顶」
@@ -1091,7 +1586,7 @@
       h('summary', { text: '后缀怎么写（点开看全部）' }),
       h('div', {
         text: '后缀：#1 右邻一格 / #图 仅图片 / #3 最多 3 张 / #图3 仅图片且最多 3 张 / #0 该字段不要图 / @2 值格 / ! 去空白 / ^锚文本 只取锚点之前 / %4 前 4 字；'
-          + '一次写多个字段用 | 或 ｜（例：名称^[复制]|备注#图）；回车把这一段收成胶囊，点胶囊改那一段'
+          + '一次写多个字段用 | 或 ｜（例：名称^[复制]|备注#图）；在「修改」弹窗里每行一条，回车添加下一条'
       })
     ]);
   }
@@ -1188,5 +1683,5 @@
 
   /* `kv*` 三件套外露给单测：批量管理的解析/写回是纯函数，钉口径用，
    * 与 `KH.ImgOcr` 的 `scopedRaw / stripKvMarks / kvWords` 对账（见 tests/specs/imgkw-batch.test.js）。 */
-  ui.Fields = { create, layout, labelChip, kvChips, kvRows, kvPatch, kvApply };
+  ui.Fields = { create, layout, labelChip, kvChips, kvRows, kvPatch, kvApply, suffixOf };
 })();

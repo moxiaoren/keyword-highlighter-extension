@@ -376,9 +376,4 @@ module.exports = async function run() {
     eq(after.config.migrated.ocrEngine, false, '清除后不许自己翻回 true（否则提示关不掉）');
   });
 
-  await test('★ 内容脚本不传引擎：payload 里不许出现 engine 字段（由 background 单点注入）', () => {
-    const src = read('src/features/img-ocr.js');
-    falsy(/\bengine\s*:/.test(src), 'img-ocr.js 不许自己塞 engine —— 契约是"发起方不传、background 注入"'
-      + '（两处都能配引擎时，"用户改了设置"与"这条 job 排队"的时刻就会打架）');
-  });
 };

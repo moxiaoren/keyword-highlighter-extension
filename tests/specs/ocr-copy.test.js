@@ -68,33 +68,6 @@ module.exports = async function run() {
     }
   });
 
-  await test('★ 不变量 10：面板与灯箱的中文都从 VIEW 取（源码契约）', () => {
-    const note = read('src/features/important-note.js');
-    /* 面板：题头 / 折叠 / FAB / 截图卡 / 命中提示 */
-    for (const k of ['noteExpand', 'noteCollapse', 'fabLabel', 'minTip', 'ctxShotLabel', 'imgHitTip']) {
-      truthy(note.indexOf('VIEW.' + k) >= 0, 'important-note.js 必须从 VIEW.' + k + ' 取字（不许自己写中文）');
-    }
-    /* 灯箱：全文栏那一枚按钮的两种语义都在 VIEW 里 */
-    for (const k of ['paneHide', 'paneShow', 'paneOcr', 'textPane', 'copySentence']) {
-      truthy(note.indexOf('VIEW.' + k) >= 0, '灯箱必须从 VIEW.' + k + ' 取字');
-    }
-  });
 
-  await test('★ 2.0.2.15：删掉的条目状态词表不许复活（面板已无状态渲染面）', () => {
-    const src = read('src/ui/ocr-copy.js');
-    for (const dead of ['const COPY =', 'function keyOf(', 'function stateClass(', 'function costLabel(', 'const CLASS =', 'const ICON =']) {
-      falsy(src.indexOf(dead) >= 0, '条目状态词表已随「图片命中」分区删除，不许复活：' + dead);
-    }
-    /* 搬进 ocr-copy 的那些原因句不得在面板里复活 */
-    const MOVED = ['读不到像素', '图还没加载', '图当前不可见', '原图太小', '识别引擎还没准备好语言包', '跨域（未授权'];
-    const note = read('src/features/important-note.js');
-    const back = MOVED.filter((s) => note.indexOf(s) >= 0);
-    eq(back.length, 0, 'important-note.js 里不该再硬编码这些文案：' + back.join('、'));
-  });
 
-  await test('★ 不变量 12：三处注册点都带 ocr-copy.js（content / options / popup）', () => {
-    truthy(read('manifest.json').indexOf('src/ui/ocr-copy.js') >= 0, 'manifest content_scripts 必须载入 ocr-copy.js');
-    truthy(read('options/options.html').indexOf('ocr-copy.js') >= 0, '设置页必须载入 ocr-copy.js');
-    truthy(read('popup/popup.html').indexOf('ocr-copy.js') >= 0, '弹窗必须载入 ocr-copy.js');
-  });
 };

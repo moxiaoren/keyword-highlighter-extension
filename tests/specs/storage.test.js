@@ -358,7 +358,14 @@ module.exports = async function run() {
      * imgOcr 含跨域站点授权（本机性质）；pageFingerprintIntervalMs 是内部兜底参数；
      * migrated 是"本机还有一次性提示没告知过"的状态（S2 的档位迁移）—— 跟着导出走只会让
      * 换机器/恢复备份的人莫名收到一条"你以前的档位没了"的提示，而他其实压根没设过档位。 */
-    const EXPLICIT_SKIP = ['keywords', 'groups', 'siteRules', 'siteDisabledMap', 'imgOcr', 'pageFingerprintIntervalMs', 'migrated'];
+    /* `ai`（2.0.8.4 需求④）：AI 助手的接口配置里有 **apiKey** —— 凭据不进可分享的导出文件，
+     * 所以整块不随导出走（换机器/恢复备份后重新填一次 Key）。这是刻意取舍：
+     * 宁可多填一次，也不让一份"给别的用户参考"的备份里躺着别人的 Key。 */
+    const EXPLICIT_SKIP = ['keywords', 'groups', 'siteRules', 'siteDisabledMap', 'imgOcr',
+      'pageFingerprintIntervalMs', 'migrated', 'ai',
+      /* `aiAudit`（2.0.8.7 需求②）：审核通道的 Cloudflare 账号 ID + API Token 是**凭据**，
+       * 与 `ai` 同一取舍 —— 可分享的导出文件里不带别人的 Token，换机器后重填一次。 */
+      'aiAudit'];
     const listed = S.STYLE_KEYS.concat(S.GLOBAL_KEYS).concat(EXPLICIT_SKIP);
     const missing = Object.keys(KH.Config.defaults).filter((k) => listed.indexOf(k) < 0);
     deepEq(missing, [], '这些配置项既不在 STYLE_KEYS / GLOBAL_KEYS，也不在"明确不导出"清单里 —— 新加的配置项别只改一处（决定它跟不跟导出走，然后登记到相应的清单）');

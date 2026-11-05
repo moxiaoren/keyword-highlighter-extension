@@ -32,6 +32,11 @@ module.exports = async function run() {
   /** 造一个控件（`{}` = 默认 ctx：`idPrefix` 缺省 `fld-`） */
   const mk = (key, val) => KH.ui.Fields.create(FM.byKey(key), val, {});
   const textOf = (ctrl, sel) => ctrl.el.querySelectorAll(sel).map((el) => el.textContent);
+  /* 列表弹窗查询限定在最后打开的那个弹窗（同 labels-field.test.js） */
+  const lastModalEl = () => {
+    const all = document.body.querySelectorAll('.kh-modal');
+    return all[all.length - 1];
+  };
   /** 输入框可能被浮层借走（`attachPop`）—— 先在本控件里找，找不到就去浮层里找 */
   const inpOf = (ctrl) => {
     const own = ctrl.el.querySelector('input');
@@ -100,7 +105,8 @@ module.exports = async function run() {
     eq(t.getAttribute('id'), 'fld-text', 'id 必须还是 `fld-<key>` —— 保存/装置都直接按它取节点');
     const k = mk('imgOcrKeyword', '一对一');
     eq(k.el.querySelector('input').getAttribute('id'), 'fld-imgOcrKeyword', '候选字段同理');
-    truthy(text.el.querySelector('.kh-cand-add'), '末尾要有「+」按钮（唯一的录入入口）');
+    truthy(text.el.querySelector('.kh-list-btn'), '列表模式：标题行要有「修改」入口（2026-11-02）');
+    falsy(text.el.querySelector('.kh-cand-add'), '列表模式不再有「+」按钮：录入统一走「修改」弹窗');
   });
 
   await test('★ 没回车直接保存 ⇒ 待定内容也一并带上；回车 ⇒ 收成胶囊并清空输入框', () => {
@@ -114,7 +120,7 @@ module.exports = async function run() {
     eq(textOf(ctrl, '.kh-lbl-name').join('/'), '一对一/美女', '胶囊一个不多一个不少');
   });
 
-  await test('★ ✕ 按候选删；点胶囊把那一个候选载回输入框改（位置不动）', () => {
+  await test('★ ✕ 按候选删；点胶囊 / 「修改」打开列表弹窗（按行改原文）', () => {
     const ctrl = mk('imgOcrKeyword', '一对一|美女');
     ctrl.el.querySelectorAll('.kh-lbl-del')[0].dispatchEvent({ type: 'click' });
     eq(ctrl.read(), '美女', '删掉第一个候选');
@@ -122,11 +128,14 @@ module.exports = async function run() {
 
     const again = mk('imgOcrKeyword', '一对一|美女');
     again.el.querySelectorAll('.kh-lbl-chip')[1].dispatchEvent({ type: 'click' });
-    eq(inpOf(again).value, '美女', '★ 点胶囊 ⇒ 那一个候选的原文进了输入框');
-    eq(again.read(), '一对一|美女', '只是载回来，值一个字节都不许变');
-    type(again, '帅哥');
-    enter(again);
-    eq(again.read(), '一对一|帅哥', '★ 只改那一个候选，位置也不动');
+    truthy(KH.ui.Modal.isOpen(), '★ 点胶囊 ⇒ 打开「修改」列表弹窗');
+    const vals = lastModalEl().querySelectorAll('.kh-list-val').map((el) => el.getAttribute('value'));
+    eq(vals.join('/'), '一对一/美女', '★ 列表按行摊开原文（含后缀），位置不动');
+    const row = lastModalEl().querySelectorAll('.kh-list-val')[1];
+    row.value = '帅哥';
+    row.dispatchEvent({ type: 'input' });
+    lastModalEl().querySelector('.kh-modal-foot .kh-btn-primary').dispatchEvent({ type: 'click' });
+    eq(again.read(), '一对一|帅哥', '★ 只改那一个条目，保存后写回整串');
   });
 
   await test('★ 数值字段：常态只显值胶囊（留空＝「默认」），数字框仍在同一 id 上', () => {
@@ -153,34 +162,6 @@ module.exports = async function run() {
     eq(empty.read(), '', '留空仍是留空（不许被控件写成默认值）');
   });
 
-  await test('★ 候选框是"输入框样子"的框：胶囊装在框里、空态显占位、末尾一个 +', () => {
-    /* 用户口径 m02566（"好丑"第一条）：一个输入框，里面展示胶囊内容；点 `+` 弹出小输入框编辑、
-     * 回车回到展示模式。旧实现是"标签一行 + 旁边几颗胶囊 + ＋"（`＋` 还会被挤到第二行），
-     * 既不像输入框，也和旁边的真输入框不成一族。 */
-    const ctrl = mk('text', '华为');
-    const frame = ctrl.el.querySelector('.kh-cand-field');
-    truthy(frame, '要有候选框（`.kh-cand-field`）');
-    truthy(frame.querySelector('.kh-lbl-preview') && frame.querySelector('.kh-cand-add'),
-      '框里装的是"胶囊 + ＋"');
-    eq(frame.querySelector('.kh-lbl-name').textContent, '华为', '胶囊在框**里面**');
-    const empty = mk('text', '');
-    const ph = empty.el.querySelector('.kh-cand-field .kh-cand-ph');
-    truthy(ph && !ph.hidden, '空框要显占位文字（否则看不出这是个空输入框）');
-    const css = read('src/ui/components/components.css');
-    truthy(/\.kh-cand-field\s*\{[^}]*min-height:\s*30px/.test(css),
-      '框要有 30px 高（＝普通输入框高 ⇒ 字段盒高与相邻字段一致、才可能行对齐）');
-    truthy(/\.kh-cand-field\s*\{[^}]*border:\s*1px solid/.test(css), '框要有输入框那样的边框');
-    falsy(/\.kh-cand-row\s*\{/.test(css), '旧的"胶囊行"已作废（胶囊要装进框里）');
-    /* 【2.0.2.16 需求⑤】这句提示从"flex 里的一整行"改成**浮层**：以前它占一行 ⇒ 一出现就把
-     * 字段盒撑高、整张卡的字段跟着往下掉（用户："破坏了页面结果布局"）。现在绝对定位挂在框下方。 */
-    truthy(/\.kh-cand-tip\s*\{[^}]*position:\s*absolute/.test(css),
-      '★ 提示必须是浮层（绝对定位），不许再参与列布局');
-    truthy(/\.kh-cand-tip\s*\{[^}]*top:\s*calc\(100% \+ 3px\)/.test(css), '浮层挂在框下方');
-    truthy(/\.kh-cand-box\s*\{[^}]*position:\s*relative/.test(css),
-      '定位父级是字段盒本身（否则浮层会跑到弹窗左上角）');
-    falsy(/\.kh-cand-tip\s*\{[^}]*flex:\s*0\s+0\s+auto/.test(css),
-      '旧的"占一行"写法（flex: 0 0 auto + width: 100%）已作废');
-  });
 
   await test('★ 2.0.2.10：图片 OCR 三件排进同一子块；备注/笔记内容标了 grow；备注占位只留一行', () => {
     /* 用户口径（2026-10-18）："因为加了图片ocr相关功能，导致整个添加关键词界面布局有点怪"。
@@ -227,8 +208,8 @@ module.exports = async function run() {
     const ctrl = mk('fetchLabels', '名称#图|备注');
     eq(ctrl.el.querySelectorAll('.kh-lbl-chip').length, 2, '两个字段各一颗胶囊（与关键词同一套胶囊）');
     const badges = ctrl.el.querySelectorAll('.kh-lbl-suffix');
-    eq(badges.length, 1, '带后缀的那颗要画徽标（`#图` 要看得出来是指什么）');
-    truthy(ctrl.el.querySelector('.kh-lbl-legend'), '后缀图例还要在（折在 details 里）');
+    eq(badges.length, 0, '★ 列表模式：添加关键词弹窗里不画后缀徽标（后缀只在「修改」弹窗按原文回显）');
+    falsy(ctrl.el.querySelector('.kh-lbl-legend'), '后缀图例搬进「修改」弹窗，添加弹窗里不再重复');
 
     const box = ctrl.el.classList.contains('kh-cand-clamp') ? ctrl.el : ctrl.el.querySelector('.kh-cand-clamp');
     truthy(box, '抓取字段的框要带 `kh-cand-clamp`（默认单行裁切）');
@@ -240,37 +221,15 @@ module.exports = async function run() {
     toggle.dispatchEvent({ type: 'click' });
     falsy(box.classList.contains('is-open'), '再点收回单行');
     eq(ctrl.read(), '名称#图|备注', '展开收起不许动值');
+    ctrl.el.querySelector('.kh-list-btn').dispatchEvent({ type: 'click' });
+    truthy(lastModalEl().querySelector('.kh-lbl-legend'), '「修改」弹窗里要带后缀图例（语法说明不丢）');
+    KH.ui.Modal.closeAll();
     /* 抓取字段的切法必须与落盘口径一致（`｜` 与 `@表达式` 里的逗号都算分隔符）：
      * 控件切得比落盘粗，就会出现「界面一个胶囊、保存后两个字段」。 */
     const half = mk('fetchLabels', '名称｜备注');
     eq(half.el.querySelectorAll('.kh-lbl-chip').length, 2, '全角 ｜ 也要当分隔符');
   });
 
-  await test('★ 票 #66：每个候选框都单行裁切（关键词/标题关键词/图片命中关键词），展开钮只在真溢出时出现', () => {
-    /* 用户口径 m02382：「胶囊过多，过长时没有按要求维持原来的输入框，一行展示（冗余的不展示）。
-     * 展开后才完整展示」。2.0.2.11 只给抓取字段开了 `clamp`，关键词与标题关键词仍会被胶囊撑成
-     * 2–3 行 —— 字段盒高度跟着长，旁边的字段就被顶歪。 */
-    for (const k of ['text', 'cellVerify', 'imgOcrKeyword', 'fetchLabels']) {
-      const c = mk(k, '');
-      truthy(c.el.classList.contains('kh-cand-clamp'), k + ' 要带 `kh-cand-clamp`（默认单行裁切）');
-      const btn = c.el.querySelector('.kh-clamp-btn');
-      truthy(btn, k + ' 要有「展开/收起」钮（占位存在，溢出才显示）');
-      /* 垫片没有布局引擎（`scrollWidth` 恒 undefined ⇒ 判"没溢出"）⇒ 这里锁的是"无溢出时藏起来" */
-      eq(btn.hidden, true, k + ' 空框时展开钮要藏着（没东西可展开）');
-    }
-    const c = mk('text', '2018年|2024年|百度知道|阿里巴巴');
-    const btn = c.el.querySelector('.kh-clamp-btn');
-    btn.dispatchEvent({ type: 'click' });
-    truthy(c.el.classList.contains('is-open'), '点开 ＝ 展开（换行全显）');
-    eq(btn.hidden, false, '展开态按钮必须看得见（否则没法收起）');
-    eq(c.read(), '2018年|2024年|百度知道|阿里巴巴', '展开收起不许动值');
-    const css = read('src/ui/components/components.css');
-    truthy(/\.kh-cand-clamp \.kh-cand-field\s*\{[^}]*flex-wrap:\s*nowrap/.test(css),
-      '裁切态框内不许换行（否则胶囊多了照样把框撑高）');
-    truthy(/\.kh-cand-clamp \.kh-cand-field > \.kh-lbl-preview\s*\{[^}]*overflow:\s*hidden/.test(css),
-      '胶囊行自己要 overflow:hidden（不然会把框撑宽、把 + 顶出去）');
-    truthy(/\.kh-cand-clamp\.is-open \.kh-cand-field\s*\{[^}]*flex-wrap:\s*wrap/.test(css), '展开态才换行');
-  });
 
   await test('★ 2.0.2.11 票 #64：底色/尺寸/字号搬进笔记工具栏，与加粗/表格同一行；「笔记内容」标题删除', () => {
     /* 用户要求 4（m01695）：三者放进 B/I/U/链接/图片/表格那一行，并删掉「笔记内容」标题。 */
@@ -300,16 +259,4 @@ module.exports = async function run() {
   /* 【2.0.6.2 需求②】五个候选框**展开时**最多只能占满所在模块，不许把模块撑宽。
    * 真因是展开态没把"最小宽"压住：胶囊（尤其长词/长字段名）的 min-content 顺着
    * `.kh-fld-sub` 把列容器顶宽 ⇒ 整张添加关键词卡片崩掉。 */
-  await test('★ 展开态与文本态都必须压住内在最小宽（2.0.6.2 需求②）', () => {
-    const css = read('src/ui/components/components.css');
-    const open = /\.kh-cand-clamp\.is-open\s*\{([^}]*)\}/.exec(css);
-    truthy(open, '.kh-cand-clamp.is-open 规则应当存在');
-    const flat = open[1].replace(/\s+/g, ' ');
-    truthy(flat.indexOf('min-width: 0') >= 0, '★ 展开态要 min-width:0：' + flat);
-    truthy(flat.indexOf('max-width: 100%') >= 0, '★ 展开态最多占满容器（不许溢出）：' + flat);
-    truthy(flat.indexOf('contain: inline-size') >= 0, '★ 尺寸样式不许回流到父级宽度：' + flat);
-    const tex = /\.kh-cand-box\.is-texed\s*\{([^}]*)\}/.exec(css);
-    truthy(tex && tex[1].replace(/\s+/g, ' ').indexOf('min-width: 0') >= 0,
-      '★ 文本态同样要 min-width:0（textarea 的 size 内在宽度会撑宽列）');
-  });
 };

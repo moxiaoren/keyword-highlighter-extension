@@ -66,6 +66,39 @@
      * 挤进去只会塌成一列（用户实测："实现方式很奇怪，我设想的是直接在当前页一比一复刻"）。 */
     EDITOR_OPEN: 'kh:editor:open',
 
+    /* ---- ai（【2.0.8.4 需求④】重要笔记面板的 AI 对话助手）----
+     * 为什么必须经 background 转发：内容脚本里的 fetch 按**页面来源**走 CORS，
+     * 各家 API 不会给任意网站放行；service worker 是扩展来源 + `host_permissions: <all_urls>`，
+     * 才发得出去。设置页的「测试连接」也走这一条（只有一份实现，测的就是真正跑的那条路）。
+     * payload: { messages:[{role,content}], override?:{baseUrl,apiKey,model,maxTokens,system,provider} }
+     * 回执:   { ok:true, text } | { ok:false, error }
+     * AI_OPEN_OPTIONS：面板没配置时的一键入口（内容脚本自己不能稳定地开设置页）。 */
+    AI_CHAT: 'kh:ai:chat',
+    /* 【2.0.8.7 需求②】AI 审核（应用名称 / 图标）。与 AI_CHAT 分开的原因：这条要带图片，
+     * 走多模态 content 数组（AI_CHAT 只发纯文本），且默认通道是 Cloudflare 免费额度。
+     * payload: { name, image?:dataURL, override? } → { ok:true, audit:{...} } | { ok:false, error } */
+    AI_AUDIT: 'kh:ai:audit',
+    AI_OPEN_OPTIONS: 'kh:ai:openOptions',
+    /* ---- entity（【2.0.8.8 需求③】查「开发者 / 核准主体」的法定代表人）----
+     * payload: { name } → { ok:true, rep, source } | { ok:false, error }
+     * 为什么必须经 background：内容脚本里的 fetch 按页面来源走 CORS，企业信息站不会给任意
+     * 商店页放行；service worker 有 `host_permissions:<all_urls>`，且查询结果能落
+     * `chrome.storage.local` 缓存（同一家公司在很多卡片里重复出现）。
+     * 通道顺序（用户拍板）：爱企查 → 必应搜索摘要 → 都失败就标「未查明」（面板不改底色）。 */
+    ENTITY_LOOKUP: 'kh:entity:lookup',
+    /* 【2.0.8.5】网页对话：面板要求打开/聚焦对话页、以及对对话页做一次自检（选择器是否还认得出）。 */
+    AI_WEB_OPEN: 'kh:ai:webOpen',
+    AI_WEB_PROBE: 'kh:ai:webProbe',
+    AI_WEB_NEW: 'kh:ai:webNew',
+    /* 流式回包走长连接：面板 `chrome.runtime.connect({name:'kh:ai'})`，后台按 requestId 推 chunk/done。 */
+    AI_PORT: 'kh:ai',
+    /* 后台 → 网页对话内容脚本（chat.deepseek.com 上的 content/web-chat.js）。 */
+    WEB_PING: 'kh:web:ping',
+    WEB_ASK: 'kh:web:ask',
+    WEB_NEW: 'kh:web:new',
+    WEB_STOP: 'kh:web:stop',
+    WEB_CHUNK: 'kh:web:chunk',
+
     /* ---- ocr（图片文字识别；内容脚本 ↔ background ↔ offscreen 文档三段中转） ----
      * 【为什么必须有 offscreen 这一层】MV3 的内容脚本不能建扩展本地 worker（要跨源 + 页面 CSP
      * 会拦 wasm），后台 service worker 又不能建 worker（且 30s 空闲即被杀）——

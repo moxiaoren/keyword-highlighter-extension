@@ -38,6 +38,11 @@ function walk(dir, filter, out) {
   if (!fs.existsSync(abs)) return out;
   for (const name of fs.readdirSync(abs)) {
     if (name === 'node_modules' || name === '.git' || name === 'dist' || name === 'vendor') continue;
+    /* e2e/ 是装置不是交付物（package.js 的 EXCLUDE_DIRS 里也有它）：真机跑完会在
+     * e2e/_profiles 下留一份浏览器 profile，里面有第三方扩展的 ES module 包与临时清单，
+     * 拿「版本号字面量 / 语法检查」去扫它们只会几百条假红（2026-11-03 实测踩到）。
+     * 装置自身的断言由 `node e2e/run.js` 负责，不归这里管。 */
+    if (dir === '.' && name === 'e2e') continue;
     const rel = dir === '.' ? name : dir + '/' + name;
     const st = fs.statSync(rel2abs(rel));
     if (st.isDirectory()) walk(rel, filter, out);

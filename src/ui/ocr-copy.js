@@ -66,6 +66,73 @@
      * 是缩写，完整语义挂同一元素的 title。 */
     fabLabel: '重要笔记（{n} 条）',
     minTip: '收起为小按钮',
+    /* ---- 【2026-11-03 需求】重要笔记四态（贴边条 → 摘要列 → 手风琴 → 浮窗）----
+     * 用户原话：「重要笔记悬浮窗优化（还是之前说的内容过多，主次不分明，遮挡页面等问题）」。
+     * 面板里一个中文都不许自己写：条数、钉住、浮窗、贴边、定位、复制、空态全在这里。 */
+    railLabel: '重要笔记（{n} 条）',
+    railTip: '悬停看摘要，点击钉住（{n} 条）',
+    drawerTitle: '重要笔记',
+    drawerCount: '{n} 条',
+    pin: '钉住',
+    pinned: '已钉住',
+    sideTip: '换到另一边',
+    floatBtn: '浮窗',
+    collapseBtn: '贴边',
+    collapseTip: '收成贴边条（Esc / [）',
+    locate: '定位',
+    locateTip: '在页面里定位第一个命中词',
+    copyAll: '复制这几条',
+    copied: '已复制',
+    rowsEmpty: '还没有笔记',
+    ctxSub: '右键识别的图',
+    rowCount: '{n} 处',
+    /* 【2.0.8.4 需求③】浮窗单卡收起/展开：非贴边模式里逐卡折叠，只留标签行。
+     * 箭头是装饰，真实语义挂在这两句悬停说明上（读屏靠 title / aria-expanded）。 */
+    cardCollapse: '收起这张卡片',
+    cardExpand: '展开这张卡片',
+    /* 【2.0.8.6 需求①】图文合并里「默认不展示」的那几行：卡片底部一个开关，{n} = 几条。 */
+    mergeMore: '显示 {n} 条合并行',
+    mergeLess: '收起合并行',
+    /* ----【2.0.8.4 需求④】AI 对话助手（面板里的第二个页签，贴边与浮窗共用）----
+     * 口径：纯自由对话 —— 不把页面标题 / URL / 笔记内容发出去（用户 2026-11-03 拍板），
+     * 占位符里把这句话写清楚，免得用户以为助手"能看见页面"。 */
+    tabNote: '笔记',
+    tabAi: 'AI 助手',
+    aiSend: '发送',
+    aiSendTip: '发送（Enter 发送，Shift+Enter 换行）',
+    aiPlaceholder: '问点什么…（纯自由对话，不会带上页面内容）',
+    aiThinking: '正在回复…',
+    aiNeedKey: '当前是 API 模式但还没配好：去设置页「样式 → AI 助手」填接口地址和 Key；想免 Key 就在那里把模式切回「网页对话」。',
+    aiOpenOptions: '去设置',
+    aiClear: '清空',
+    aiClearTip: '清空对话（网页模式会同时在对话页开一个新对话）',
+    /* ----【2.0.8.7 需求②】审核入口：查应用名称 / 图标是否蹭知名品牌、是否涉敏感内容。
+     * 口径：本地词库先筛（免费、不上传），云端只复核"看图"这件事，走 Cloudflare 免费额度。 */
+    aiAudit: '审核',
+    aiAuditTip: '查应用名称 / 图标：有没有蹭知名品牌、有没有涉赌博色情资金盘诈骗（本地词库免费，云端走 Cloudflare 免费额度）',
+    aiAuditName: '应用名称（可留空）',
+    aiAuditPick: '选图标',
+    aiAuditPickDone: '换一张',
+    aiAuditRun: '开始审核',
+    aiAuditRunning: '审核中…',
+    aiAuditNeed: '先填一个应用名称，或选一张图标。',
+    aiAuditLocalOnly: '只跑了本地词库（不上传任何东西）。',
+    aiAuditNoKey: '还没填 Cloudflare 账号 ID / Token，云端那步跳过了；要复核去设置页「AI 审核」填一下。',
+    aiAuditFail: '云端审核失败',
+    aiAuditEmptyName: '（未填名称）',
+    aiEmpty: '还没有对话',
+    /* ----【2.0.8.5】网页对话（默认免 Key）：状态带 / 头像 / 开场白 / 去登录 ---- */
+    aiModeWeb: 'DeepSeek 网页对话',
+    aiModeWebTip: '走 chat.deepseek.com 的登录态，免 Key；会有一个对话页标签页在后台替你发消息',
+    aiModeApi: 'API 模式',
+    aiModeApiTip: '走设置页里填的 OpenAI 兼容接口',
+    aiNotReady: '未配置',
+    aiAvMe: '我',
+    aiCopy: '复制',
+    aiGoLogin: '去登录',
+    aiSeed1: '用一句话解释什么是 CSS Highlight',
+    aiSeed2: '帮我把这段话改得更简洁',
+    aiSeed3: '给我三个起名思路',
     /* 【2.0.2.7 用户 m00292】卡片里那张图被 OCR 命中了（红框 + 悬停说出命中的是哪个词）。 */
     imgHitTip: '这张图里出现了「{matched}」',
     /* ---- 【2.0.6.1 需求⑧】图片 OCR 边框三态（蓝=识别中 / 红=命中 / 绿=无命中）----

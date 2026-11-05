@@ -454,6 +454,172 @@
     if (file) await importAnyFile(file);
   });
 
+  /* ===================== 【2.0.8.4 需求⑤】推荐词（在线表格） =====================
+   * 需求原话：「高亮词管理界面增加一个推荐词模式，支持配置在线表格（格式需符合导出的 excel），
+   *   给予其他用户参考。」
+   * 读法：贴一个**公开可访问**的表格链接（插件导出的 .xls 直链，或同列头的 .csv）→ 解析 →
+   *   预览勾选 → 只导入勾选的那些（重复的自动跳过，走的是与「批量导入」同一条 importCSV）。
+   * 不做"猜格式"：列数 / 首列不对就直说缺什么（列头唯一真源 = KH.Store.CSV_HEADERS）。
+   * 链接本身存 storage.local 的 `khRecoUrl` —— **不是配置项**：不进配置签名、不随导出走。
+   * ============================================================================ */
+  const RECO_SRC_KEY = 'khRecoUrl';
+  let recoRecords = null;      // 解析出的原始行（含表头）；null = 还没读过
+  let recoPicked = [];         // 与数据行一一对应的勾选状态
+
+  function recoSetState(text) {
+    const el = $('reco-state');
+    if (el) el.textContent = String(text || '');
+  }
+
+  /** HTML（插件导出的 .xls 本质就是一张表）→ 二维文本数组 */
+  function recoHtmlToRecords(text) {
+    const doc = new DOMParser().parseFromString(text, 'text/html');
+    const table = doc.querySelector('table');
+    if (!table) throw new Error('这个链接里没有表格（可能不是直链，或页面需要登录）');
+    const rows = [];
+    for (let i = 0; i < table.rows.length; i++) {
+      const tr = table.rows[i];
+      const cells = [];
+      for (let j = 0; j < tr.cells.length; j++) cells.push(String(tr.cells[j].textContent || '').trim());
+      if (cells.some((c) => c !== '')) rows.push(cells);
+    }
+    return rows;
+  }
+
+  /** 表头校验（格式必须符合「导出 → Excel」：18 列，旧版 17 列也认；首列必须是「关键词」） */
+  function recoValidate(records) {
+    const want = KH.Store.CSV_HEADERS;
+    const header = (records[0] || []).map((x) => String(x).trim());
+    if (header.length !== want.length && header.length !== 17) {
+      throw new Error('列数不符：需要与「导出 → Excel」一致的 ' + want.length + ' 列（旧版 17 列也认），实际 ' + header.length + ' 列');
+    }
+    if (header[0] !== want[0]) {
+      throw new Error('表头第一列应是「' + want[0] + '」，实际是「' + (header[0] || '空') + '」—— 请用与导出 Excel 同款的列头');
+    }
+    return header;
+  }
+
+  function recoSyncImportBtn() {
+    const btn = $('reco-import');
+    if (!btn) return;
+    const rows = recoRecords ? recoRecords.slice(1) : [];
+    let n = 0;
+    for (let i = 0; i < rows.length; i++) if (recoPicked[i]) n++;
+    btn.disabled = !n;
+    btn.textContent = n ? ('导入勾选的词（' + n + '）') : '导入勾选的词';
+  }
+
+  /** 预览列表：一行一个词（勾选 + 词 + 分组/备注/「已有」），已有的默认不勾且不可勾。 */
+  function recoRender() {
+    const box = $('reco-list');
+    if (!box) return;
+    box.innerHTML = '';
+    const rows = recoRecords ? recoRecords.slice(1) : [];
+    const have = new Set((cfg.keywords || []).map((k) => String(k.text || '').trim().toLowerCase()));
+    if (!rows.length) {
+      box.hidden = true;
+      recoSyncImportBtn();
+      return;
+    }
+    box.hidden = false;
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i] || [];
+      const text = String(r[0] || '').trim();
+      /* 与 importCSV 同一条判据：首列为空的「仅抓取」词也是有效行（第 12 列=是 且第 13 列非空） */
+      const comboOnly = String(r[11] || '').trim() === '是' && !!String(r[12] || '').trim();
+      if (!text && !comboOnly) continue;
+      const dup = !!text && have.has(text.toLowerCase());
+      const row = document.createElement('label');
+      row.className = 'kh-reco-row' + (dup ? ' is-dup' : '');
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = !dup && recoPicked[i] !== false;
+      cb.disabled = dup;
+      cb.addEventListener('change', () => {
+        recoPicked[i] = cb.checked;
+        recoSyncImportBtn();
+      });
+      const name = document.createElement('span');
+      name.className = 'kh-reco-name';
+      name.textContent = text || ('（仅抓取）' + String(r[12] || ''));
+      const meta = document.createElement('span');
+      meta.className = 'kh-reco-meta';
+      const bits = [];
+      if (String(r[2] || '').trim()) bits.push('分组：' + String(r[2]).trim());
+      if (String(r[1] || '').trim()) bits.push(String(r[1]).trim());
+      if (String(r[9] || '').trim() === '是') bits.push('重要');
+      if (dup) bits.push('已有');
+      meta.textContent = bits.join(' · ');
+      row.appendChild(cb);
+      row.appendChild(name);
+      row.appendChild(meta);
+      box.appendChild(row);
+    }
+    recoSyncImportBtn();
+  }
+
+  /** 只把勾选的行拼回 CSV（保留原表头，交给 importCSV 走同一条导入/去重路径）。 */
+  async function recoImport() {
+    if (!recoRecords) return;
+    const header = (recoRecords[0] || []).map((x) => String(x));
+    const rows = recoRecords.slice(1);
+    const out = [header];
+    let n = 0;
+    for (let i = 0; i < rows.length; i++) {
+      if (!recoPicked[i]) continue;
+      out.push(rows[i]);
+      n++;
+    }
+    if (!n) { recoSetState('没有勾选任何词'); return; }
+    const csv = out.map((r) => r.map((c) => {
+      const s = String(c == null ? '' : c);
+      return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    }).join(',')).join('\r\n');
+    await importCSVText(csv);
+    recoRender();                       // 导入后"已有"标记与勾选状态跟着变
+    recoSetState('已提交导入 ' + n + ' 条（重复的会自动跳过）');
+  }
+
+  $('reco-fetch').addEventListener('click', async () => {
+    const url = String($('reco-url').value || '').trim();
+    if (!url) { recoSetState('先贴一个表格链接'); return; }
+    if (!/^https?:\/\//i.test(url)) { recoSetState('链接必须以 http:// 或 https:// 开头'); return; }
+    const btn = $('reco-fetch');
+    btn.disabled = true;
+    recoSetState('正在读取…');
+    try {
+      /* 设置页是扩展自己的来源，配合 host_permissions: <all_urls> 可直接跨域取（不走页面 CORS）。 */
+      const res = await fetch(url, { credentials: 'omit', cache: 'no-store' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const text = await res.text();
+      const trimmed = text.replace(/^\uFEFF/, '').trim();
+      const records = /^</.test(trimmed) ? recoHtmlToRecords(trimmed) : KH.Store.parseCSV(trimmed);
+      if (!records.length) throw new Error('表里没有任何行');
+      recoValidate(records);
+      recoRecords = records;
+      recoPicked = records.slice(1).map(() => true);
+      try { await chrome.storage.local.set({ [RECO_SRC_KEY]: url }); } catch (e) { /* 存不上不影响这次导入 */ }
+      recoRender();
+      recoSetState('读到 ' + Math.max(0, records.length - 1) + ' 行，确认后点「导入勾选的词」');
+    } catch (err) {
+      recoRecords = null;
+      recoPicked = [];
+      recoRender();
+      recoSetState('读取失败：' + String((err && err.message) || err));
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  $('reco-import').addEventListener('click', async () => { await recoImport(); });
+
+  /* 上次用过的链接就留在框里（只是本机记录，不是配置项）。 */
+  try {
+    chrome.storage.local.get(RECO_SRC_KEY, (r) => {
+      if (r && r[RECO_SRC_KEY] && $('reco-url') && !$('reco-url').value) $('reco-url').value = r[RECO_SRC_KEY];
+    });
+  } catch (e) { /* 老内核 / 无 storage：跳过 */ }
+
   /* ---------------- 批量栏 ---------------- */
 
   const batchIds = () => Array.from(selection);
@@ -762,6 +928,75 @@
     const next = {};
     for (const k of Object.keys(patch)) next[k] = Object.assign({}, cfg[k] || {}, patch[k]);
     await mutate(() => KH.Store.patch(next));
+  }
+
+  /* ===================== 【2.0.8.4 需求④】AI 助手（重要笔记面板） =====================
+   * 面板里那块对话界面的**唯一配置入口**。口径（用户 2026-11-03 拍板）：
+   *   默认 DeepSeek 官方；协议是 OpenAI 兼容（换别家/中转只改地址与模型）；
+   *   纯自由对话（不携带页面内容）；Key 只存本机，不进导出。
+   * 归一只有 `KH.Config.normalizeAi` 一处（读路径、后台请求前校验、这里的回显三处共用）。
+   * ================================================================================== */
+  function renderAiForm() {
+    const C = KH.Config;
+    const ai = C.normalizeAi(cfg && cfg.ai);
+    /* 【2.0.8.5】先定"走哪条路"：网页对话（免 Key，默认）/ API。选了哪种就把另一种的字段藏起来 ——
+     * 省空间第一（设计偏好），也免得用户以为两个都要填。 */
+    const modeSel = $('ai-mode');
+    if (modeSel) {
+      modeSel.innerHTML = '';
+      const modes = C.AI_MODES || [];
+      for (let i = 0; i < modes.length; i++) {
+        const opt = document.createElement('option');
+        opt.value = modes[i].id;
+        opt.textContent = modes[i].label;
+        modeSel.appendChild(opt);
+      }
+      modeSel.value = ai.mode || C.AI_MODE_DEFAULT || 'web';
+    }
+    applyAiMode(ai.mode || C.AI_MODE_DEFAULT || 'web');
+    const sel = $('ai-provider');
+    if (sel) {
+      sel.innerHTML = '';
+      const list = C.AI_PRESET_LIST || [];
+      for (let i = 0; i < list.length; i++) {
+        const opt = document.createElement('option');
+        opt.value = list[i].id;
+        opt.textContent = list[i].label;
+        sel.appendChild(opt);
+      }
+      sel.value = ai.provider;
+    }
+    $('ai-baseUrl').value = ai.baseUrl || '';
+    $('ai-model').value = ai.model || '';
+    $('ai-apiKey').value = ai.apiKey || '';
+    $('ai-system').value = ai.system || '';
+    $('ai-maxTokens').value = String(ai.maxTokens || C.AI_MAX_DEFAULT);
+    limitInput($('ai-maxTokens'), C.AI_MAX_MIN, C.AI_MAX_MAX);
+    $('ai-enabled').checked = ai.enabled !== false;
+    /* 每次回显都清掉上一次的测试结论：配置变了，"刚才测通了"就不再算数。 */
+    const st = $('ai-test-state');
+    if (st) st.textContent = '';
+  }
+
+  /** 按模式切显隐（web：藏掉 API 那几行；api：藏掉网页那两个按钮的说明）。 */
+  function applyAiMode(mode) {
+    const web = (mode !== 'api');
+    const box = $('ai-api-fields');
+    if (box) box.hidden = web;
+    const open = $('ai-web-open');
+    const probeBtn = $('ai-web-probe');
+    if (open) open.hidden = !web;
+    if (probeBtn) probeBtn.hidden = !web;
+    const tip = $('ai-mode-tip');
+    if (tip) {
+      tip.textContent = web
+        ? '网页模式下，扩展会在后台保留一个 chat.deepseek.com 标签页（可以最小化）替你发消息；第一次用请先在那个页面登录一次，之后一直有效。'
+        : 'API 模式走设置里填的 OpenAI 兼容接口：请求由扩展后台发出，需要填 Key（只有填了才会带 Authorization 头）。';
+    }
+    const label = $('ai-web-label');
+    if (label) label.textContent = web ? '网页对话的连通性' : '连通性';
+    const testBtn = $('ai-test');
+    if (testBtn) testBtn.hidden = web;
   }
 
   function renderHighlightStyle() {
@@ -1162,6 +1397,107 @@
     $('pf-notePanelWidth').value = cfg.notePanelWidth;
     /* 置顶排序（2.0.2.6 需求②）：候选与回显都要重建（关键词表变了候选就得跟着变）。 */
     renderPinOrder();
+    /* 【2.0.8.4 需求④】AI 助手的接口配置（与上面那块"重要笔记"同属样式/配置页）。 */
+    renderAiForm();
+    /* 【2.0.8.6 需求①】图文合并的标题表（字段 → 自定义标题 + 默认不展示）。 */
+    renderMergeForm();
+    /* 【2.0.8.7 需求②】AI 审核：账号 / Token / 模型 / 只跑本地 的回显（图标与结论区不持久化）。 */
+    aaLoad(cfg);
+  }
+
+  /* ---- 【2.0.8.6 需求①】图文合并 ----
+   * 用户口径：抓取字段的图片 + 它的 OCR 动态词命中 ⇒ 卡片里多一行「自定义标题 ｜ 该字段的值」，
+   * 并且能配「默认不展示」。所以这里只做一件事：维护 `imgMerge.rows = [{field,title,hidden}]`。
+   * 归一的真源是 `KH.Config.normalizeImgMerge`（保存前归一、回显也走它），本文件不另写一套口径。 */
+  let mergeWired = false;
+  function mergeRowsOf() {
+    const n = KH.Config.normalizeImgMerge;
+    const cur = (typeof n === 'function') ? n(cfg.imgMerge) : (cfg.imgMerge || { rows: [] });
+    return cur.rows || [];
+  }
+
+  function mergeRowEl(row) {
+    const box = document.createElement('div');
+    box.className = 'kh-merge-row';
+    const mk = (tag, cls, attrs) => {
+      const el = document.createElement(tag);
+      if (cls) el.className = cls;
+      Object.keys(attrs || {}).forEach((k) => {
+        if (k === 'text') el.textContent = attrs[k];
+        else el.setAttribute(k, attrs[k]);
+      });
+      return el;
+    };
+    const field = mk('input', 'kh-input', { type: 'text', placeholder: '抓取字段名（如：登记号）' });
+    field.value = row.field || '';
+    const title = mk('input', 'kh-input', { type: 'text', placeholder: '卡片里的标题（留空＝字段名）' });
+    title.value = row.title || '';
+    const wrap = mk('label', 'kh-check');
+    const hid = mk('input', '', { type: 'checkbox' });
+    hid.checked = row.hidden === true;
+    wrap.appendChild(hid);
+    wrap.appendChild(document.createTextNode(' 默认不展示'));
+    const del = mk('button', 'kh-mini-btn', { type: 'button', text: '删掉' });
+    box.appendChild(field);
+    box.appendChild(title);
+    box.appendChild(wrap);
+    box.appendChild(del);
+    const collect = () => {
+      const rows = [];
+      const all = $('merge-rows').querySelectorAll('.kh-merge-row');
+      for (let i = 0; i < all.length; i++) {
+        const ins = all[i].querySelectorAll('input');
+        const f = ins[0] ? String(ins[0].value || '').trim() : '';
+        if (!f) continue;
+        rows.push({
+          field: f,
+          title: ins[1] ? String(ins[1].value || '').trim() : '',
+          hidden: !!(ins[2] && ins[2].checked)
+        });
+      }
+      return rows;
+    };
+    const save = () => saveNested({ imgMerge: { on: true, rows: collect() } }).then(renderMergeForm);
+    field.addEventListener('change', save);
+    title.addEventListener('change', save);
+    hid.addEventListener('change', save);
+    del.addEventListener('click', () => saveNested({ imgMerge: { on: true, rows: collect().filter((r) => r.field !== field.value.trim()) } }).then(renderMergeForm));
+    return box;
+  }
+
+  function renderMergeForm() {
+    const box = $('merge-rows');
+    if (!box) return;
+    if (!mergeWired) { mergeWired = true; wireMergeForm(); }
+    box.innerHTML = '';
+    const rows = mergeRowsOf();
+    if (!rows.length) {
+      const empty = document.createElement('div');
+      empty.className = 'kh-muted';
+      empty.textContent = '还没配。点「+ 添加一行」，字段名写「抓取后续字段」里的名字（例如：登记号）。';
+      box.appendChild(empty);
+      return;
+    }
+    for (let i = 0; i < rows.length; i++) box.appendChild(mergeRowEl(rows[i]));
+  }
+
+  function wireMergeForm() {
+    const add = $('merge-add');
+    if (!add) return;
+    add.addEventListener('click', () => {
+      const rows = mergeRowsOf().concat([{ field: '', title: '', hidden: false }]);
+      /* 空字段不会落盘（归一函数会丢掉），所以这里只把空行画出来给用户填：
+       * 用 DOM 直接追加一行，input 的 change 会带着 collect() 一起保存。 */
+      const box = $('merge-rows');
+      if (!box) return;
+      const empty = box.querySelector('.kh-muted');
+      if (empty && !box.querySelector('.kh-merge-row')) box.innerHTML = '';
+      box.appendChild(mergeRowEl({ field: '', title: '', hidden: false }));
+      const ins = box.querySelectorAll('.kh-merge-row');
+      const last = ins[ins.length - 1];
+      if (last) { const f = last.querySelector('input'); if (f) f.focus(); }
+      void rows;
+    });
   }
 
   for (const k of ['defaultCaseSensitive', 'defaultWholeWord', 'defaultUseRegex']) {
@@ -1215,6 +1551,342 @@
     $('pf-notePanelWidth').value = w;
     await mutate(() => KH.Store.patch({ notePanelWidth: w }));
   });
+
+  /* ---- 【2.0.8.4 需求④】AI 助手：保存与「测试连接」 ----
+   * 全部走 `saveNested`（它按子键合并，写半截不会丢兄弟键 —— 尤其是 apiKey）。
+   * 改了任一项都清掉上一次的测试结论：配置变了，"刚才测通了"就不再算数。 */
+  function aiChanged() {
+    const st = $('ai-test-state');
+    if (st) st.textContent = '';
+  }
+
+  /* 换"对话来源"：网页对话（免 Key，默认）/ API。两个都只是偏好，切换不动 key。 */
+  $('ai-mode').addEventListener('change', async () => {
+    aiChanged();
+    const mode = ($('ai-mode').value === 'api') ? 'api' : 'web';
+    applyAiMode(mode);
+    await saveNested({ ai: { mode: mode } });
+    D.toast(mode === 'web' ? '已切到「网页对话」（免 Key）' : '已切到「API 模式」', 'ok');
+  });
+
+  /* 网页模式：把对话页切到前台（第一次登录 / 想亲眼看看它回了什么）。 */
+  $('ai-web-open').addEventListener('click', async () => {
+    const state = $('ai-test-state');
+    if (state) state.textContent = '打开对话页…';
+    try {
+      const res = await chrome.runtime.sendMessage({ type: KH.MSG.AI_WEB_OPEN });
+      if (state) state.textContent = (res && res.ok) ? '对话页已打开（登录后回来即可）' : ('打开失败：' + ((res && res.error) || '未知原因'));
+    } catch (err) {
+      if (state) state.textContent = '打开失败：' + String((err && err.message) || err);
+    }
+  });
+
+  /* 网页模式自检：把页面侧认到的输入框/回复块报回来 —— 改版时这一行就是诊断。 */
+  $('ai-web-probe').addEventListener('click', async () => {
+    const btn = $('ai-web-probe');
+    const state = $('ai-test-state');
+    if (btn) btn.disabled = true;
+    if (state) state.textContent = '正在检查对话页…';
+    try {
+      const res = await chrome.runtime.sendMessage({ type: KH.MSG.AI_WEB_PROBE });
+      if (state) {
+        if (!res || !res.ok) state.textContent = '自检失败：' + ((res && res.error) || '对话页没响应');
+        else {
+          const p = res.probe || {};
+          state.textContent = (res.loggedIn ? '已登录' : '未登录')
+            + '；输入框 ' + (p.composer || '没认出')
+            + '；回复块 ' + (p.blocks == null ? '?' : p.blocks) + ' 个';
+        }
+      }
+    } catch (err) {
+      if (state) state.textContent = '自检失败：' + String((err && err.message) || err);
+    }
+    if (btn) btn.disabled = false;
+  });
+
+  /* 换服务商 = 把该家的推荐地址/模型填上（用户仍可逐项改）；只选了自定义就保留用户已填的值。 */
+  $('ai-provider').addEventListener('change', async () => {
+    aiChanged();
+    const p = KH.Config.aiPreset($('ai-provider').value);
+    const patch = { provider: p.id };
+    if (p.baseUrl) { $('ai-baseUrl').value = p.baseUrl; patch.baseUrl = p.baseUrl; }
+    if (p.model) { $('ai-model').value = p.model; patch.model = p.model; }
+    await saveNested({ ai: patch });
+    D.toast('已切到「' + p.label + '」', 'ok');
+  });
+
+  $('ai-baseUrl').addEventListener('change', async () => {
+    aiChanged();
+    const v = KH.Config.normalizeAi({
+      provider: $('ai-provider').value,
+      baseUrl: $('ai-baseUrl').value,
+      model: $('ai-model').value
+    }).baseUrl;
+    $('ai-baseUrl').value = v;
+    await saveNested({ ai: { baseUrl: v } });
+  });
+
+  $('ai-model').addEventListener('change', async () => {
+    aiChanged();
+    await saveNested({ ai: { model: String($('ai-model').value || '').trim() } });
+  });
+
+  /* Key 是凭据：输入框用 password，保存后只回显原值（本机 storage），不写日志、不进导出。 */
+  $('ai-apiKey').addEventListener('change', async () => {
+    aiChanged();
+    const v = String($('ai-apiKey').value || '').trim();
+    $('ai-apiKey').value = v;
+    await saveNested({ ai: { apiKey: v } });
+    D.toast(v ? 'Key 已保存（只在本机）' : 'Key 已清空', 'ok');
+  });
+
+  $('ai-system').addEventListener('change', async () => {
+    aiChanged();
+    await saveNested({ ai: { system: String($('ai-system').value || '').trim() } });
+  });
+
+  $('ai-maxTokens').addEventListener('change', async () => {
+    aiChanged();
+    const n = parseInt($('ai-maxTokens').value, 10);
+    const v = KH.Config.normalizeAi({ maxTokens: isFinite(n) ? n : NaN }).maxTokens;
+    $('ai-maxTokens').value = String(v);
+    await saveNested({ ai: { maxTokens: v } });
+  });
+
+  $('ai-enabled').addEventListener('change', async (e) => {
+    aiChanged();
+    await saveNested({ ai: { enabled: !!e.target.checked } });
+  });
+
+  /* 「测试连接」用**页面上还没保存**的值去试：先存再测会把坏配置留在 storage 里，
+   * 用户还得改回去。请求走的是与面板完全相同的那条后台通路（`KH.MSG.AI_CHAT`）。 */
+  $('ai-test').addEventListener('click', async () => {
+    const btn = $('ai-test');
+    const state = $('ai-test-state');
+    const n = parseInt($('ai-maxTokens').value, 10);
+    const override = {
+      provider: $('ai-provider').value,
+      baseUrl: String($('ai-baseUrl').value || '').trim(),
+      model: String($('ai-model').value || '').trim(),
+      apiKey: String($('ai-apiKey').value || '').trim(),
+      system: String($('ai-system').value || '').trim(),
+      maxTokens: isFinite(n) ? n : KH.Config.AI_MAX_DEFAULT,
+      enabled: true
+    };
+    btn.disabled = true;
+    state.textContent = '正在试…';
+    try {
+      const res = await new Promise((resolve) => {
+        chrome.runtime.sendMessage({
+          type: KH.MSG.AI_CHAT,
+          messages: [{ role: 'user', content: '你好' }],
+          override: override
+        }, (r) => {
+          void chrome.runtime.lastError;
+          resolve(r || { ok: false, error: '后台没有响应' });
+        });
+      });
+      state.textContent = (res && res.ok)
+        ? ('通了：' + String(res.text || '').replace(/\s+/g, ' ').slice(0, 40))
+        : ('失败：' + String((res && res.error) || '未知错误'));
+    } catch (err) {
+      state.textContent = '失败：' + String((err && err.message) || err);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+  /* ==========================================================================
+   * 【2.0.8.7 需求②】AI 审核（名称 / 图标）
+   * --------------------------------------------------------------------------
+   * 两段式：本地词库初筛（`KH.AiAudit.screen`，零成本、不联网）→ 按需「云端复核」
+   * （`KH.MSG.AI_AUDIT`，走后台的 Cloudflare Workers AI 免费额度）。
+   * 图标先缩到 512px 再发：一张图约 5~9 neurons，免费额度因此能撑 1000+ 次。
+   * ======================================================================== */
+  let aaImage = '';
+  let aaLocal = null;
+  let aaWired = false;
+
+  /** 读成 dataURL 并等比缩到 512px 以内（PNG 透明底保留）。 */
+  function readIconFile(file) {
+    return new Promise((resolve, reject) => {
+      const fr = new FileReader();
+      fr.onerror = () => reject(new Error('读不了这个文件'));
+      fr.onload = () => {
+        const src = String(fr.result || '');
+        const img = new Image();
+        img.onerror = () => reject(new Error('这不是一张能打开的图片'));
+        img.onload = () => {
+          try {
+            const max = 512;
+            const w0 = img.naturalWidth || img.width;
+            const h0 = img.naturalHeight || img.height;
+            if (!w0 || !h0) { resolve(src); return; }
+            const k = Math.min(1, max / Math.max(w0, h0));
+            const w = Math.max(1, Math.round(w0 * k));
+            const h = Math.max(1, Math.round(h0 * k));
+            const cv = document.createElement('canvas');
+            cv.width = w; cv.height = h;
+            const ctx = cv.getContext('2d');
+            if (!ctx) { resolve(src); return; }
+            ctx.drawImage(img, 0, 0, w, h);
+            resolve(cv.toDataURL('image/png'));
+          } catch (e) { resolve(src); }
+        };
+        img.src = src;
+      };
+      fr.readAsDataURL(file);
+    });
+  }
+
+  function aaRender(local, cloud) {
+    const out = $('aa-out');
+    if (!out) return;
+    const L = local || { level: 0, hits: [] };
+    out.hidden = false;
+    const v = $('aa-verdict');
+    const level = (cloud && cloud.risk === 'risky') ? 2
+      : (cloud && cloud.risk === 'suspect') ? 1
+        : (cloud && cloud.risk === 'safe') ? 0 : L.level;
+    if (v) {
+      v.className = 'kh-aa-verdict' + (level >= 2 ? ' is-bad' : (level === 1 ? ' is-warn' : ' is-ok'));
+      v.textContent = KH.AiAudit.describe(L, cloud);
+    }
+    const ul = $('aa-hits');
+    if (ul) {
+      ul.innerHTML = '';
+      const rows = [];
+      for (let i = 0; i < L.hits.length; i++) {
+        const h = L.hits[i];
+        rows.push(h.kind === 'brand' ? '品牌 · ' + h.why : '敏感（' + h.tag + '）· ' + h.why);
+      }
+      if (cloud) {
+        const bs = Array.isArray(cloud.brands) ? cloud.brands : [];
+        for (let i = 0; i < bs.length; i++) rows.push('云端·品牌 · ' + (bs[i].name || '') + (bs[i].why ? '：' + bs[i].why : ''));
+        const ss = Array.isArray(cloud.sensitive) ? cloud.sensitive : [];
+        for (let i = 0; i < ss.length; i++) rows.push('云端·敏感（' + (ss[i].tag || '?') + '）· ' + (ss[i].why || ''));
+      }
+      for (let i = 0; i < rows.length; i++) {
+        const li = document.createElement('li');
+        li.textContent = rows[i];
+        ul.appendChild(li);
+      }
+      ul.hidden = rows.length === 0;
+    }
+    const pv = $('aa-preview');
+    if (pv) pv.hidden = !aaImage;
+    const im = $('aa-icon-img');
+    if (im && aaImage) im.src = aaImage;
+    const note = $('aa-note');
+    if (note) {
+      note.textContent = cloud
+        ? '结论来自云端模型（' + ($('aa-model') ? $('aa-model').value : '') + '）；图标仿冒判断以云端为准，最终是否上架仍请人工确认。'
+        : '本地词库没联网，只按名称匹配品牌词/敏感词；图标层面看不出来 —— 需要时点「云端复核」。';
+    }
+  }
+
+  async function aaLoad(cfg) {
+    const C = KH.Config;
+    const a = C.normalizeAiAudit(cfg && cfg.aiAudit);
+    const ms = $('aa-model');
+    if (ms) {
+      ms.innerHTML = '';
+      const list = C.AI_AUDIT_MODEL_LIST || [];
+      for (let i = 0; i < list.length; i++) {
+        const opt = document.createElement('option');
+        opt.value = list[i];
+        opt.textContent = list[i];
+        ms.appendChild(opt);
+      }
+      if (list.indexOf(a.model) < 0) {
+        const opt = document.createElement('option');
+        opt.value = a.model;
+        opt.textContent = a.model;
+        ms.appendChild(opt);
+      }
+      ms.value = a.model;
+    }
+    if ($('aa-accountId')) $('aa-accountId').value = a.accountId || '';
+    if ($('aa-token')) $('aa-token').value = a.token || '';
+    if ($('aa-localOnly')) $('aa-localOnly').checked = a.localOnly === true;
+    if (!aaWired) { aaWired = true; aaWire(); }
+  }
+
+  function aaWire() {
+    const ms = $('aa-model');
+    if (ms) ms.addEventListener('change', () => saveNested({ aiAudit: { model: String(ms.value || '') } }));
+    ['aa-accountId', 'aa-token'].forEach((id) => {
+      const el = $(id);
+      if (!el) return;
+      el.addEventListener('change', async () => {
+        const v = String(el.value || '').trim();
+        el.value = v;
+        await saveNested({ aiAudit: id === 'aa-accountId' ? { accountId: v } : { token: v } });
+        if (id === 'aa-token') D.toast(v ? 'Token 已保存（只在本机）' : 'Token 已清空', 'ok');
+      });
+    });
+    const lo = $('aa-localOnly');
+    if (lo) lo.addEventListener('change', () => saveNested({ aiAudit: { localOnly: !!lo.checked } }));
+
+    const icon = $('aa-icon');
+    if (icon) {
+      icon.addEventListener('change', async () => {
+        const f = icon.files && icon.files[0];
+        aaImage = '';
+        if (!f) { aaRender(aaLocal, null); return; }
+        try {
+          aaImage = await readIconFile(f);
+          aaRender(aaLocal, null);
+        } catch (err) {
+          D.toast(String((err && err.message) || err), 'err');
+        }
+      });
+    }
+
+    const runLocal = () => {
+      const name = $('aa-name') ? $('aa-name').value : '';
+      if (!String(name || '').trim() && !aaImage) { D.toast('先填名称或选一张图标', 'err'); return; }
+      aaLocal = KH.AiAudit.screen(name);
+      aaRender(aaLocal, null);
+    };
+    if ($('aa-run')) $('aa-run').addEventListener('click', runLocal);
+
+    if ($('aa-cloud')) {
+      $('aa-cloud').addEventListener('click', async () => {
+        const btn = $('aa-cloud');
+        const name = $('aa-name') ? String($('aa-name').value || '').trim() : '';
+        if (!name && !aaImage) { D.toast('先填名称或选一张图标', 'err'); return; }
+        aaLocal = KH.AiAudit.screen(name);
+        btn.disabled = true;
+        aaRender(aaLocal, null);
+        if ($('aa-note')) $('aa-note').textContent = '正在云端复核…（模型看图需要几秒，免费额度大约 1000+ 次/天）';
+        try {
+          const res = await new Promise((resolve) => {
+            chrome.runtime.sendMessage({
+              type: KH.MSG.AI_AUDIT,
+              name: name,
+              image: aaImage || ''
+            }, (r) => {
+              void chrome.runtime.lastError;
+              resolve(r || { ok: false, error: '后台没有响应' });
+            });
+          });
+          if (!res || !res.ok) {
+            if ($('aa-note')) $('aa-note').textContent = '云端复核失败：' + String((res && res.error) || '未知错误');
+          } else if (!res.audit) {
+            aaRender(aaLocal, null);
+            if ($('aa-note')) $('aa-note').textContent = '模型没按 JSON 回，原文：' + String(res.text || '').slice(0, 300);
+          } else {
+            aaRender(aaLocal, res.audit);
+          }
+        } catch (err) {
+          if ($('aa-note')) $('aa-note').textContent = '云端复核失败：' + String((err && err.message) || err);
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    }
+  }
+
   /* 置顶排序（2.0.2.6 需求②）：**选中即追加到末位**（顺序 = 选择先后），要换位置先 ✕ 掉再选。
    * 口径（trim / 丢空 / 去重 / 最多 3 个）只由 `KH.Config.normalizePinOrder` 一处判，这里不抄。
    * 落盘走嵌套子键 `importantNote.pinOrder`（不新增顶层键 ⇒ 导出/导入、字段单源、UI_ONLY_KEYS 都不用动）。 */
@@ -1701,50 +2373,6 @@
     renderOcrLangs();
     renderOcrSites();
     renderOcrAdv();
-    renderSoftCheck();
-  }
-
-  /* ---- 软著一致性核对（开关 + 六个字段名）：嵌套配置整份写，空值靠归一化回落默认 ---- */
-  let softWired = false;
-  const SOFT_TEXT_IDS = {
-    devFields: 'soft-dev', subjectFields: 'soft-subject', ownerLabels: 'soft-owner',
-    authKeywords: 'soft-auth', grantorLabels: 'soft-grantor', granteeLabels: 'soft-grantee'
-  };
-
-  function softCfg() {
-    const n = KH.Config.normalizeSoftCheck;
-    return (typeof n === 'function') ? n(cfg.softCheck) : Object.assign({}, cfg.softCheck || {});
-  }
-
-  function renderSoftCheck() {
-    if (!$('ocr-adv-soft')) return;
-    if (!softWired) { softWired = true; wireSoftCheck(); }
-    const sc = softCfg();
-    const on = $('soft-on');
-    if (on) on.checked = sc.on === true;
-    const cmp = $('soft-compare');
-    if (cmp) cmp.value = sc.compareTo;
-    for (const k of Object.keys(SOFT_TEXT_IDS)) {
-      const input = $(SOFT_TEXT_IDS[k]);
-      if (input) input.value = sc[k] || '';
-    }
-  }
-
-  function wireSoftCheck() {
-    const on = $('soft-on');
-    if (on) on.addEventListener('change', (e) => saveNested({ softCheck: { on: e.target.checked === true } }));
-    const cmp = $('soft-compare');
-    if (cmp) cmp.addEventListener('change', (e) => saveNested({ softCheck: { compareTo: String(e.target.value || '') } }));
-    for (const k of Object.keys(SOFT_TEXT_IDS)) {
-      const input = $(SOFT_TEXT_IDS[k]);
-      if (!input) continue;
-      input.addEventListener('change', (e) => {
-        const patch = {};
-        patch[k] = String(e.target.value || '').trim();
-        /* 存的是"用户原文"（清空就存空串，归一化时回落默认值），回显一律按真正生效的值 */
-        return saveNested({ softCheck: patch }).then(renderSoftCheck);
-      });
-    }
   }
 
   function wireOcr() {

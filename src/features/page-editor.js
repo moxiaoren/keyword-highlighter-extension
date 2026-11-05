@@ -27,6 +27,21 @@
 
   const HOST_ID = 'kh-page-editor-host';
   const CSS_FILES = ['src/ui/tokens.css', 'src/ui/components/components.css'];
+  /** 单份样式最多等多久。扩展自有资源正常是毫秒级；**缺文件时 Chrome 的 fetch 可能挂着不 reject**
+   *  （2.0.8.7 全量回归实测两次：缺一份 CSS 时 `tokens.css` 立刻 TypeError，`components.css` 一直不结算
+   *  ⇒ `ensureCss` 永远不返回 ⇒ 网页里留一个没样式的白板宿主，正是 C7 O-5 要防的那个坑）。 */
+  const CSS_FETCH_TIMEOUT_MS = 4000;
+
+  /** 给「可能永远不结算」的 Promise 加一个上限；超时按失败处理（样式缺失）。 */
+  function withTimeout(promise, ms) {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('等待超时 ' + ms + 'ms')), ms);
+      promise.then(
+        (v) => { clearTimeout(timer); resolve(v); },
+        (e) => { clearTimeout(timer); reject(e); }
+      );
+    });
+  }
 
   /** 最近一次 consume 拿到的配置（编辑器要用它做默认值与分组下拉） */
   let latestCfg = null;
@@ -51,6 +66,16 @@
     return host;
   }
 
+  /** 撤掉宿主。写法刻意"父子两可"：真浏览器有 `Element.remove()`，
+   * 但单测的 DOM 垫片只有 `removeChild` —— 只写 `host.remove()` 会被 catch 吞掉，
+   * 宿主留在 body 里（z-index 最大的一层空壳），单测也就抓不到。 */
+  function removeHost(host) {
+    try {
+      if (host.parentNode && typeof host.parentNode.removeChild === 'function') host.parentNode.removeChild(host);
+      else if (typeof host.remove === 'function') host.remove();
+    } catch (err) { /* 忽略 */ }
+  }
+
   /** 读样式。返回 **true = 两份样式都到手**（含命中缓存）；false = 有缺失，且**不缓存半份**。
    *
    * C7 O-5：旧写法把每一份的失败都吞成 `console.warn`，照样拼出 `cssText` 并把结果当成功
@@ -68,9 +93,9 @@
     const missing = [];
     for (const rel of CSS_FILES) {
       try {
-        const res = await fetch(chrome.runtime.getURL(rel));
+        const res = await withTimeout(fetch(chrome.runtime.getURL(rel)), CSS_FETCH_TIMEOUT_MS);
         if (res && res.ok === false) throw new Error('HTTP ' + res.status);
-        parts.push(await res.text());
+        parts.push(await withTimeout(res.text(), CSS_FETCH_TIMEOUT_MS));
       } catch (err) {
         missing.push(rel);
         console.warn('[KH] 编辑器样式读取失败：', rel, err);
@@ -119,24 +144,23 @@
     /* 样式不全就**别开**（C7 O-5）：撤掉刚建的宿主并返回 false，
      * popup 收到 `{ok:false}` 自然退回独立窗口 —— 用户看到的仍是那个编辑器，
      * 而不是一个没有样式的白板。 */
-    if (!(await ensureCss(host._shadow))) {
-      /* 撤掉刚建的宿主。写法刻意"父子两可"：真浏览器有 `Element.remove()`，
-       * 但单测的 DOM 垫片只有 `removeChild` —— 只写 `host.remove()` 会被下面的
-       * catch 吞掉，宿主留在 body 里（z-index 最大的一层空壳），单测也就抓不到。*/
-      try {
-        if (host.parentNode && typeof host.parentNode.removeChild === 'function') host.parentNode.removeChild(host);
-        else if (typeof host.remove === 'function') host.remove();
-      } catch (err) { /* 忽略 */ }
-      return false;
+    let ok = false;
+    try {
+      if (!(await ensureCss(host._shadow))) return false;
+      if (modalInst) { try { modalInst.close(); } catch (err) { /* 忽略 */ } }
+      modalInst = KH.ui.openEditor({
+        keyword: keyword || null,
+        cfg: cfg,
+        mount: host._shadow,               // 挂在页面里的 ShadowRoot 上（不在 popup 内联）
+        onSaved: () => { modalInst = null; } // 保存后由 storage.onChanged 触发全页重建
+      });
+      ok = true;
+      return true;
+    } finally {
+      /* 任何失败（样式缺失 / 读样式超时 / openEditor 自己抛）都必须把宿主撤掉：
+       * 留着就是一层 z-index 最大的空壳。放在 finally 里，就不靠每条 return 各自记得清。 */
+      if (!ok) removeHost(host);
     }
-    if (modalInst) { try { modalInst.close(); } catch (err) { /* 忽略 */ } }
-    modalInst = KH.ui.openEditor({
-      keyword: keyword || null,
-      cfg: cfg,
-      mount: host._shadow,               // 挂在页面里的 ShadowRoot 上（不在 popup 内联）
-      onSaved: () => { modalInst = null; } // 保存后由 storage.onChanged 触发全页重建
-    });
-    return true;
   }
 
   KH.features.register('page-editor', {

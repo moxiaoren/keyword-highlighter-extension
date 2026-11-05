@@ -233,7 +233,23 @@
       const verdict = (KH.Relevance && typeof KH.Relevance.classify === 'function')
         ? KH.Relevance.classify(recs, this._config)
         : 'full';
-      if (verdict === 'skip') return;
+      /* 【2.0.8.4 需求①】判「与命中无关」时，**面板正开着就兜底重跑一次 Consume**。
+       * 病根：笔记卡片里的抓取字段是从页面上"另一块区域"读来的（fetch 的多层抓取），页面
+       *   提交/局部刷新那块区域时，改动既没碰到命中节点、也没落在命中所在的表格里 ⇒ Relevance
+       *   判 'skip' ⇒ 连 Consume 都不跑，面板一直显示提交前的旧值（用户实测："提交内容页面
+       *   变化后，贴边模式没有自动重建"）。
+       * 代价可控：Consume 不扫描/不匹配，而且只在面板**开着**（摘要列展开或浮窗展开）时才补跑；
+       *   静默窗口已经把这一阵的 N 条记录并成一批，所以每批最多补一次。
+       * 拿不到面板（老内核 / 单测替身）就维持原行为：什么都不做。 */
+      if (verdict === 'skip') {
+        const panel = (KH.ImportantNote && KH.ImportantNote.panel) || null;
+        if (panel && typeof panel.isOpen === 'function' && panel.isOpen() &&
+            typeof KH.consumeOnly === 'function') {
+          try { KH.consumeOnly('mutation-panel'); }
+          catch (err) { /* 兜底刷新失败：保留旧内容即可，不打断页面 */ }
+        }
+        return;
+      }
       if (verdict === 'consume' && typeof KH.consumeOnly === 'function') {
         try { KH.consumeOnly('mutation'); }
         catch (err) { console.error('[KH] 仅消费失败，回退整页重建:', err); this.request('mutation'); }

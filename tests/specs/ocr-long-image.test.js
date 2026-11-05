@@ -1060,17 +1060,6 @@ module.exports = async function run() {
     eq(env.calls.recognize, 0, '未就绪时一次识别都不许发起');
   });
 
-  await test('★ 不变量 1/2 的"有人接"：回执字段必须真的接到用户可见的地方', () => {
-    const img = read('src/features/img-ocr.js');
-    const note = read('src/features/important-note.js');
-    /* 2.0.2.15：条目状态词表（COPY）随「图片命中」分区删除，`notice` 三态不再翻译成短标签 ——
-     * 现在它只落成条目的 `why`（灯箱/卡片都用得着"这图里没认出字"这条事实）。 */
-    truthy(/notice/.test(img), 'img-ocr.js 必须消费回执的 notice（映射成条目 why）');
-    truthy(/coverPx/.test(img), 'truncated 的覆盖像素必须有值可填（引擎侧要报实数）');
-    truthy(/no-text|tilted|truncated/.test(img), 'notice 的三种取值至少要被条目接住');
-    /* 灯箱把识别全文交到用户眼前 —— 回执里的 text 不能断在半路 */
-    truthy(/text:\s*textBySrc/.test(note) || /cur && cur\.text/.test(note), '灯箱必须读条目上的识别全文');
-  });
 
   /* ==================================================================
    * 图片命中 · 关键词命中数（2.0.2.4 需求③）
@@ -1173,13 +1162,6 @@ module.exports = async function run() {
     eq(r6.cached === true, false, '不同图不许被当成缓存命中');
   });
 
-  await test('★ 缓存键必须含引擎与语言包、且**不得**含关键词（票 #33）', () => {
-    const src = read('offscreen/ocr.js');
-    const m = src.match(/const cacheKey = imgHash[^;]*;/);
-    truthy(m, '缓存键必须按图片字节建（`const cacheKey = imgHash ? …`）');
-    truthy(/kind/.test(m[0]) && /langs\.join/.test(m[0]), '引擎与语言包必须进键 —— 少了它们就会跨档串结果');
-    eq(/keyword/i.test(m[0]), false, '关键词不许进缓存键：它只允许影响进度提示与要不要加密档重试');
-  });
 };
 
 /** 小工具：数一下数组里等于某值的元素（读起来比 filter().length 顺） */

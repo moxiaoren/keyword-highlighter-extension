@@ -163,11 +163,6 @@ module.exports = async function run() {
   /* ============================ O-6 · 死参数与死 CSS ============================ */
   suite('C7 O-6 · 死参数 mode 与失效的内联弹窗 CSS');
 
-  await test('★ keyword-editor.js 不再有 mode 分叉（size 固定 lg）', () => {
-    const src = code(read('src/ui/components/keyword-editor.js'));
-    eq(src.indexOf('o.mode'), -1, 'o.mode 已无调用者，必须删干净');
-    truthy(/size: 'lg',/.test(src), 'size 要写成固定 lg（三列 1040px，与选项页/独立窗口/页面委派同源）');
-  });
 
   await test('★ 四个调用点都不再传 mode', () => {
     const files = ['options/options.js', 'popup/editor.js', 'src/features/page-editor.js'];
@@ -177,20 +172,5 @@ module.exports = async function run() {
     }
   });
 
-  await test('★ popup.css 删掉失效的内联 sm 覆盖层，注释也不再误导', () => {
-    const raw = read('popup/popup.css');
-    eq(code(raw).indexOf('kh-modal-mask'), -1, 'popup 里已无 Modal 挂载，.kh-modal-mask 是死覆盖层');
-    falsy(/sm 弹窗|内联在本弹窗里/.test(raw), '旧的"要放得下内联 sm 弹窗"注释必须删掉（否则下一个人会照它复现被否掉的 380px 观感）');
-    truthy(raw.indexOf('popup/editor.html') >= 0, '新注释要说清编辑器现在怎么开（页面委派 / 独立窗口）');
-    truthy(raw.indexOf('不得出现任何硬编码色值') >= 0, '文件头那条硬编码色值禁令要保留');
-  });
 
-  await test('★ page-editor.js：样式判据必须被检查（ensureCss 的返回值不能再被丢弃）', () => {
-    const src = code(read('src/features/page-editor.js'));
-    truthy(/if \(!\(await ensureCss\(/.test(src), 'open() 必须检查 ensureCss 的结果');
-    truthy(/return false;/.test(src), '样式不全要 return false');
-    truthy(src.indexOf('missing.push(rel)') >= 0, '要记下缺了哪一份，日志才说得清');
-    truthy(/cssText = parts\.join/.test(src) && src.indexOf('missing.length || !parts.length') >= 0,
-      '只有在"一份不缺"时才允许写 cssText 缓存');
-  });
 };

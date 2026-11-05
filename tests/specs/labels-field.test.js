@@ -35,6 +35,12 @@ module.exports = async function run() {
    */
   const mk = (val) => KH.ui.Fields.create(FM.byKey('fetchLabels'), val, {});
   const textOf = (ctrl, sel) => ctrl.el.querySelectorAll(sel).map((el) => el.textContent);
+  /* 列表弹窗的查询**限定在最后打开的那个弹窗**里：前面用例失败时可能留下没关的弹窗，
+   * 全 document 查会把别人的行读进来（本轮实测踩到）。 */
+  const lastModalEl = () => {
+    const all = document.body.querySelectorAll('.kh-modal');
+    return all[all.length - 1];
+  };
   /* 【2.0.2.11 票 #63】控件换成 `cands` ⇒ 输入框常态在框里、**点胶囊编辑时会被搬进浮层**，
    * 所以要两步找：先在控件里找，找不到就到浮层里找（与 `cands-int-field.test.js` 同一手法）。 */
   const inpOf = (ctrl) => {
@@ -69,15 +75,21 @@ module.exports = async function run() {
     truthy(iFetch < iFields, '★ 抓取实现必须排在字段控件**之前** —— 否则加载期 KH.Fetch 还没有，胶囊会静默退化');
   });
 
-  await test('★ 两段 ⇒ 两个胶囊（名字 + 后缀徽标分开写），read() 仍是整串原文', () => {
+  await test('★ 两段 ⇒ 两个胶囊（只写名字），read() 仍是整串原文', () => {
     const raw = '名称^[复制]|备注#图';
     const ctrl = mk(raw);
-    eq(textOf(ctrl, '.kh-lbl-name').join('/'), '名称/备注', '胶囊里只放**字段名**（后缀单独一节）');
-    eq(textOf(ctrl, '.kh-lbl-suffix').join('/'), '^[复制]/#图', '后缀要原样摊开给用户看');
+    eq(textOf(ctrl, '.kh-lbl-name').join('/'), '名称/备注', '胶囊里只放**字段名**');
+    eq(textOf(ctrl, '.kh-lbl-suffix').join('/'), '', '★ 2026-11-02：添加关键词弹窗里不展示后缀内容');
     eq(textOf(ctrl, '.kh-lbl-chip').length, 2, '两段两个胶囊');
     eq(ctrl.read(), raw, '★ read() 必须回整串原文（分隔符/后缀一个字都不许被控件归一）');
     const del = ctrl.el.querySelectorAll('.kh-lbl-del')[0];
     truthy(del && del.getAttribute('title'), '删除按钮要有 title（说清删的是哪一段）');
+    ctrl.el.querySelector('.kh-list-btn').dispatchEvent({ type: 'click' });
+    eq(lastModalEl().querySelectorAll('.kh-list-val').map((el) => el.getAttribute('value')).join('/'),
+      '名称/备注', '★ 行里只放名字（后缀不再要求手敲）');
+    eq(lastModalEl().querySelectorAll('.kh-lrow-suffix').map((el) => el.textContent).join('/'),
+      '后缀：^[复制]/后缀：#图', '★ 后缀在行按钮上摘要回显，点开才是结构化设置');
+    KH.ui.Modal.closeAll();
   });
 
   await test('★ ✕ 按**段序号**删（重复段只少一个），不是"按文本删全部"', () => {
@@ -104,13 +116,12 @@ module.exports = async function run() {
     }
   });
 
-  await test('★ 后缀图例默认收起、点开能查到（`!` / `%` / `^` 不许再是"只有更新日志里才知道"的功能）', () => {
+  await test('★ 后缀图例搬进「修改」弹窗：默认收起、点开能查到（`!` / `%` / `^` 不许再是"只有更新日志里才知道"的功能）', () => {
     const ctrl = mk('名称');
-    const legend = ctrl.el.querySelectorAll('.kh-lbl-legend')[0];
-    truthy(legend, '要有一处后缀图例');
-    /* 【2.0.2.10 票 #58】改 `<details>` 默认收起：常驻时这段 151 字的说明实测 83px / 5 行，
-     * 把「字段」控件撑到 135px。信息不删，只是折叠 —— 所以下面仍逐字核对内容。
-     * 判据用 DOM 形状（首个子元素是 `summary` + 没有 `open` 属性），不依赖 shim 是否实现了 `.open`。 */
+    falsy(ctrl.el.querySelector('.kh-lbl-legend'), '添加弹窗里不再挂图例（后缀内容整体搬进列表弹窗）');
+    ctrl.el.querySelector('.kh-list-btn').dispatchEvent({ type: 'click' });
+    const legend = lastModalEl().querySelectorAll('.kh-lbl-legend')[0];
+    truthy(legend, '「修改」弹窗里要有一处后缀图例');
     eq(String(legend.firstElementChild && legend.firstElementChild.tagName).toLowerCase(), 'summary',
       '收起态要为 `<details><summary>后缀怎么写…`（点 summary 展开，原生行为）');
     falsy(legend.getAttribute && legend.getAttribute('open'), '默认收起（没有 open 属性）');
@@ -118,9 +129,9 @@ module.exports = async function run() {
     for (const key of ['#图', '#0', '@', '!', '^锚文本', '%']) {
       truthy(t.indexOf(key) >= 0, '图例里要提到 ' + key + '：' + t);
     }
-    /* 反向：图例别把语法写成"仅图片 / 前 N 张"之外的东西 —— 语法真源在 Fetch.parseLabelSpec */
-    falsy(/\bundefined\b/.test(t), '图例文案不许出现 undefined');
-    truthy(t.indexOf('回车') >= 0, '图例要说清"回车收成胶囊"（否则用户不知道框为什么空着）');
+    falsy(/undefined/.test(t), '图例文案不许出现 undefined');
+    truthy(t.indexOf('回车') >= 0, '图例要说清"回车添加下一条"（否则用户不知道加完怎么接着加）');
+    KH.ui.Modal.closeAll();
   });
 
   await test('★ 回车把这一段收成胶囊，输入框不留内容（2.0.2.6 升级：接着录下一段）', () => {
@@ -136,30 +147,28 @@ module.exports = async function run() {
     eq(textOf(ctrl, '.kh-lbl-name').join('/'), '名称/备注', '顺序仍是录入顺序');
   });
 
-  await test('★ 点胶囊把那一段的原文载回输入框改，改完位置不动（2.0.2.6 升级）', () => {
+  await test('★ 点胶囊打开「修改」弹窗：整串按行摊开，改一行后位置不动（2026-11-02）', () => {
     const ctrl = mk('名称^[复制]|备注#图');
     ctrl.el.querySelectorAll('.kh-lbl-chip')[0].dispatchEvent({ type: 'click' });
-    eq(inpOf(ctrl).value, '名称^[复制]', '★ 点胶囊 ⇒ 这一段原文进了输入框');
-    eq(ctrl.read(), '名称^[复制]|备注#图', '只是载回来，值一个字节都不许变');
-    truthy(inpOf(ctrl).classList.contains('is-editing'), '输入框要标出"正在改这一段"');
-
-    type(ctrl, '标题^[复制]');
-    enter(ctrl);
-    eq(ctrl.read(), '标题^[复制]|备注#图', '★ 只改那一段，位置也不动');
+    truthy(KH.ui.Modal.isOpen(), '★ 点胶囊 ⇒ 打开列表弹窗');
+    const vals = lastModalEl().querySelectorAll('.kh-list-val');
+    eq(vals.map((el) => el.getAttribute('value')).join('/'), '名称/备注',
+      '行里只有名字，后缀与名字分开（不再整串摊在输入框里）');
+    vals[0].value = '标题';
+    vals[0].dispatchEvent({ type: 'input' });
+    lastModalEl().querySelector('.kh-modal-foot .kh-btn-primary').dispatchEvent({ type: 'click' });
+    eq(ctrl.read(), '标题^[复制]|备注#图', '★ 只改名字，原后缀自动保留；位置也不动');
     eq(textOf(ctrl, '.kh-lbl-name').join('/'), '标题/备注', '预览跟着重画');
-    falsy(inpOf(ctrl).classList.contains('is-editing'), '改完退出编辑态');
-
-    /* 点第二段改：下标必须按**原始段序号**，别被上一轮编辑串位 */
-    ctrl.el.querySelectorAll('.kh-lbl-chip')[1].dispatchEvent({ type: 'click' });
-    eq(inpOf(ctrl).value, '备注#图', '点第二段载回的是第二段');
   });
 
-  await test('★ 编辑中把输入框清空再回车 = 删掉那一段（不是留个空段）', () => {
+  await test('★ 在「修改」弹窗里清空一行再保存 = 删掉那一条（不留空条目）', () => {
     const ctrl = mk('名称|备注');
     ctrl.el.querySelectorAll('.kh-lbl-chip')[0].dispatchEvent({ type: 'click' });
-    type(ctrl, '');
-    enter(ctrl);
-    eq(ctrl.read(), '备注', '清空那一段就是把它删掉');
+    const vals = lastModalEl().querySelectorAll('.kh-list-val');
+    vals[0].value = '';
+    vals[0].dispatchEvent({ type: 'input' });
+    lastModalEl().querySelector('.kh-modal-foot .kh-btn-primary').dispatchEvent({ type: 'click' });
+    eq(ctrl.read(), '备注', '清空那一条就是把它删掉');
     eq(textOf(ctrl, '.kh-lbl-name').join('/'), '备注', '预览里也不留空胶囊');
   });
 
@@ -203,52 +212,26 @@ module.exports = async function run() {
     }
   });
 
-  await test('★ 门禁：候选框实现与共享样式只许有一份（复制粘贴第二套就红）', () => {
-    const fieldsSrc = read('src/ui/components/fields.js');
-    eq((fieldsSrc.match(/case 'cands':/g) || []).length, 1, '`cands` 只许有一个实现分支');
-    const css = read('src/ui/components/components.css');
-    for (const sel of ['.kh-cand-field', '.kh-cand-clamp', '.kh-lbl-preview', '.kh-cand-texttip']) {
-      truthy(css.indexOf(sel) >= 0, sel + ' 必须在共享样式里定义（四个框共用一份）');
-    }
-    /* 文本态的三条规则必须挂在 `.kh-cand-box` 作用域下 —— 否则会波及设置页的「置顶排序」胶囊 */
-    eq((css.match(/\.kh-cand-box\.is-texed/g) || []).length >= 3, true, '文本态规则要成组（文本域/藏框面/占整行）');
-    /* 2.0.2.17 需求③：文本态从单行 `input` 换成 textarea（内容长了自己长高），仍只许有一份 */
-    eq((css.match(/\.kh-cand-box\.is-texed > \.kh-cand-ta \{/g) || []).length, 1, '文本态的文本域规则只许有一份');
-    eq((css.match(/\.kh-cand-box\.is-texed > \.kh-cand-field/g) || []).length, 1, '文本态藏起框面的规则只许有一份');
-    /* 旧口径不许留：单行 input 撑满文本态的那条规则已经作废（会与 textarea 同显两个框） */
-    eq((css.match(/\.kh-cand-box\.is-texed > \.kh-input/g) || []).length, 0, '单行 input 的文本态规则必须删净');
-    /* 【2.0.2.18 真机修·门禁】「文本态按内容长高」在真机上被两条 CSS 卡死过，这里钉住：
-     *   ① `.kh-input` 的 `height: 30px` 会把 textarea 压成恒定一行 ⇒ 必须显式 `height: auto`；
-     *   ② `font: inherit` 是简写，会重置 `line-height`（实测 23.1px）⇒ `line-height` 必须写在它后面。 */
-    const taRule = (css.match(/\.kh-cand-box\.is-texed > \.kh-cand-ta \{([\s\S]*?)\}/) || [])[1] || '';
-    truthy(/height:\s*auto/.test(taRule), '文本域必须显式 height:auto（否则被 .kh-input 的 30px 压成一行）');
-    const iFont = taRule.indexOf('font:');
-    const iLH = taRule.indexOf('line-height');
-    truthy(iLH >= 0, '文本域必须写 line-height（JS 按它算行数）');
-    truthy(iFont < 0 || iLH > iFont, 'line-height 必须写在 font 简写之后（简写会把它重置掉）');
-    /* JS 侧同样不许硬编码行高：行高/内边距要从计算样式里量（真机是 23.1px，不是 20px） */
-    truthy(/getComputedStyle/.test(fieldsSrc), '行高要实测，不许硬编码');
-  });
 
   /* 【2.0.2.17 需求③】用户原话："这四个输入框，点击空白后变成文本内容支持批量修改已实现。
    * 但是当内容过长时，输入框并不能完全展示这些内容。改成过长时，默认展开输入框。"
    * 做法 = 文本态换成 textarea，行数按内容算（上限 9 行，再多滚动）。
    * 真浏览器的高矮由 `_e2e/ui.test.js` 量；这里锁"是文本域、值全在、回车收回、存储契约不变"。 */
-  await test('★ 需求③：文本态用 textarea（整串全显，不是单行横向滚动），回车收回值不变', () => {
+  await test('★ 需求③：文本态改由「修改」列表弹窗承担（整串按行摊开，保存后仍是原文）', () => {
     const ctrl = mk('包名|截图#图|资质类型@1|icon');
     const box = ctrl.el;
     const ta = box.querySelector('.kh-cand-ta');
-    truthy(ta, '文本态要有一块自己的 textarea（单行 input 装不下一整串）');
-    truthy(ta.hidden, '常态藏起来（不许与胶囊同显）');
+    truthy(ta, 'textarea 节点还在（列表模式下不再露面，但控件与保存路径不动）');
+    truthy(ta.hidden, '常态藏起来');
     box.querySelector('.kh-cand-field').dispatchEvent({ type: 'click' });
-    truthy(box.classList.contains('is-texed'), '点框面空白 ⇒ 进文本态');
-    eq(ta.hidden, false, '文本态要露出 textarea');
-    eq(ta.value, '包名|截图#图|资质类型@1|icon', '整串原样摊开（`|` 与后缀都保留）');
-    ta.value = '包名|截图#图|资质类型@1|icon|新词';
-    ta.dispatchEvent({ type: 'keydown', key: 'Enter' });
-    eq(ctrl.read(), '包名|截图#图|资质类型@1|icon|新词', '回车把改动收回胶囊，读出来仍是整串原文');
-    falsy(box.classList.contains('is-texed'), '回了胶囊态');
-    truthy(ta.hidden, 'textarea 再藏起来');
+    truthy(KH.ui.Modal.isOpen(), '★ 点框面 ⇒ 打开「修改」列表弹窗（2026-11-02 口径）');
+    const vals = lastModalEl().querySelectorAll('.kh-list-val').map((el) => el.getAttribute('value'));
+    eq(vals.join('|'), '包名|截图|资质类型|icon', '整串按行摊开（名字与后缀分开，`|` 位置不变）');
+    const row = lastModalEl().querySelectorAll('.kh-list-val')[3];
+    row.value = '新词';
+    row.dispatchEvent({ type: 'input' });
+    lastModalEl().querySelector('.kh-modal-foot .kh-btn-primary').dispatchEvent({ type: 'click' });
+    eq(ctrl.read(), '包名|截图#图|资质类型@1|新词', '保存后仍是整串原文（只换那一行，位置不变）');
     /* 行数按内容算：上限 9 行（再多走滚动），且不许写成固定行数——固定行数 = 长内容又看不全 */
     const src = read('src/ui/components/fields.js');
     truthy(/ta\.rows = Math\.max\(1, Math\.min\(9,/.test(src), '行数要按内容算，并封顶 9 行');
@@ -271,13 +254,17 @@ module.exports = async function run() {
     });
   });
 
-  await test('★ 胶囊 = 名字 + 后缀徽标：`开发者 ! ^高价` ⇒ 名字「开发者」、徽标画 `! ^高价`', () => {
+  await test('★ 胶囊只画名字（不画后缀徽标）；后缀在「修改」弹窗里按原文回显', () => {
     const ctrl = mkNeed('开发者 ! ^高价');
-    eq(textOf(ctrl, '.kh-lbl-name').join('/'), '开发者', '★ 用户担心的「后缀也参与命中」在界面上就看得见不成立');
-    eq(textOf(ctrl, '.kh-lbl-suffix').join('/'), '! ^高价',
-      '【2.0.7.2 需求④】后缀现在是**真生效**的取值修饰（`^高价` ⇒ 抓 `a公司 高价值` 得到 `a公司`）'
-      + '⇒ 必须像「抓取字段」一样画成徽标，让"名字是名字、修饰是修饰"看得见');
+    eq(textOf(ctrl, '.kh-lbl-name').join('/'), '开发者', '名字仍是名字');
+    eq(textOf(ctrl, '.kh-lbl-suffix').join('/'), '', '★ 2026-11-02：添加关键词弹窗里不展示后缀内容');
     eq(ctrl.read(), '开发者 ! ^高价', '★ read() 仍回整串原文（存储契约不变）');
+    ctrl.el.querySelector('.kh-list-btn').dispatchEvent({ type: 'click' });
+    const vals = lastModalEl().querySelectorAll('.kh-list-val').map((el) => el.getAttribute('value'));
+    eq(vals.join('/'), '开发者', '★ 行里只放字段名（后缀进结构化面板）');
+    eq(String(lastModalEl().querySelector('.kh-lrow-suffix').textContent), '后缀：! ^高价',
+      '★ 后缀在行按钮上摘要回显');
+    KH.ui.Modal.closeAll();
   });
 
   await test('★ 不弹「普通匹配按字面找词…」（历史错位文案）；别的候选框照旧弹', () => {

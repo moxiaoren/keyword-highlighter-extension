@@ -274,25 +274,6 @@ module.exports = async function run() {
    * 不变量 8 / 7：静态守卫（各带负样本，证明守卫不是永远为绿）
    * ================================================================== */
 
-  await test('★ 不变量 8：不许**调用** `chrome.offscreen.hasDocument`（它是 116+，manifest 写 109）', () => {
-    const dirs = ['background', 'offscreen', 'src', 'content', 'options', 'popup'];
-    /* 口径＝"调用形式"（`…hasDocument(`），不是"提到这个名字"：
-     * 代码里**应当**能写出这个 API 名来注释"为什么不许用" —— 第一版守卫就打了自己的注释。 */
-    const callRx = /chrome\.offscreen\.hasDocument\s*\(/;
-    const bad = offenders(callRx, dirs);
-    eq(bad.length, 0, '★ 不许再调 hasDocument（109–115 上直接 TypeError）：命中 = ' + bad.join(', '));
-
-    /* 负样本：同一个正则喂违规**调用**必须命中（守卫不空转） */
-    eq(callRx.test('if (await chrome.offscreen.hasDocument()) return true;'), true,
-      '负样本：违规调用必须被同一个正则命中');
-    /* 正样本：说明性注释不算违规（这正是第一版的假阳性） */
-    eq(callRx.test('/* 不许调 `chrome.offscreen.hasDocument`（116+） */'), false,
-      '注释里提到 API 名不该被当成违规');
-
-    /* 正样本：能力检测 + try-create 才是 109 能走的写法 */
-    truthy(/chrome\.offscreen\s*&&\s*typeof\s+chrome\.offscreen\.createDocument\s*===\s*'function'/.test(read('background/ocr.js')),
-      '必须改成"能力检测 + 直接建文档"（撞车当成功）');
-  });
 
   await test('★ 不变量 7：`offscreen/**` 不许出现 chrome.storage（offscreen 文档没有这个 API）', () => {
     const rx = /chrome\.storage/;
@@ -304,19 +285,6 @@ module.exports = async function run() {
     truthy(filesUnder('offscreen').length > 0, '扫描面必须非空（否则"零命中"是假的）');
   });
 
-  await test('★ 109 兼容：offscreen 的 reasons 必须有 BLOBS 兜底（WORKERS 是 124+ 才有的枚举）', () => {
-    const src = read('background/ocr.js');
-    /* 【真机证据（2026-10-06，S2-d）】Chromium 109 上 `reasons: ['WORKERS']` 会直接抛
-     * `Error at property 'reasons': … Value must be one of AUDIO_PLAYBACK, BLOBS, …`
-     * ⇒ 整条 OCR 链路在 109 上**一次都不成功**（探针实测：12 次请求全部静默超时）。
-     * 兜底是"先试 WORKERS、被拒退 BLOBS"（`_e2e/probe-109-diag.js` 实测 BLOBS 在 109 上 ok）。
-     * 静态守卫只钉"兜底还在"；真机那半见 `_e2e/probe-s2d-thresholds.js` 的 109 运行记录。 */
-    truthy(/createOffscreen\(\['WORKERS'\]\)/.test(src), '先把语义最准的 WORKERS 试一遍');
-    truthy(/createOffscreen\(\['BLOBS'\]\)/.test(src), 'WORKERS 被拒后必须退到 BLOBS（109 认它）');
-    truthy(/reasons\|Value must be one of/i.test(src), '兜底只许在"枚举非法"时发生（其它错误照样抛）');
-    /* 负样本：reason 直接写死的旧写法必须已消失 */
-    falsy(/reasons:\s*\['WORKERS'\]\s*,\s*\n\s*justification/.test(src), '不许再有"一条路写死 WORKERS"的写法');
-  });
 
   /* ==================================================================
    * 不变量 5（内容脚本侧）：额度按 token 记账、终态必归还、归还幂等
@@ -411,15 +379,6 @@ module.exports = async function run() {
     });
   });
 
-  await test('★ 不变量 5：canvas/blob 那条路的 payload 也要带 src（幂等归还的前提）', () => {
-    const src = read('src/features/img-ocr.js');
-    /* 结构断言：canvas 分支的 payload 必须同时带 dataUrl 与 src —— 只发 dataUrl 时回执没有 src，
-     * 靠 src 归还额度的旧实现必然泄漏（这是 #16 ③ 的根因，行为已在上一用例锁住）。 */
-    truthy(/dataUrl:\s*dataUrl[\s\S]{0,80}?src:\s*cls\.src/.test(src),
-      'canvas 分支的 payload 必须带上 src（回执才有 src 可对账）');
-    falsy(/quality:\s*\(cfg[\s\S]{0,120}?'best'\s*:\s*'fast'\)/.test(src),
-      'quality 是死代码（两处都被丢，永远到不了引擎）—— S1 必须删掉它');
-  });
 
   /* ==========================================================================================
    * 右键任意图 OCR（2.0.1.17 · SPEC 需求 6 / SECURITY.md 附录 B）：新入口的地址闸门

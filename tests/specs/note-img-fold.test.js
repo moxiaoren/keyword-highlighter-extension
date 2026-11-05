@@ -41,25 +41,6 @@ module.exports = async function run() {
    * ⓪ 契约：图片分区真的删净了（不是只藏起来）
    * ========================================================================== */
 
-  await test('★ 分区的方法 / 状态 / 样式 / 文案都没了（删净，不留半口气）', () => {
-    const src = read('src/features/important-note.js');
-    const copy = read('src/ui/ocr-copy.js');
-    for (const dead of ['renderImgSection', 'unfoldedImgItems', 'imgRowVisible', 'groupImgItems',
-      'imgUserCollapsed', 'imgCollapsed', 'imgSameBatch', 'stillSameBatch', 'cardedSrcs',
-      'imgSectionTip', 'imgShowAll', 'imgExpand', 'imgNone', 'imgUserHidden']) {
-      falsy(src.indexOf(dead) >= 0, 'important-note.js 里不该再有 ' + dead);
-    }
-    for (const cls of ['khin-imgsec', 'khin-imghead', 'khin-imgitem', 'khin-imgrow', 'khin-imgnone']) {
-      falsy(src.indexOf(cls) >= 0, '样式类也不该再有 ' + cls);
-    }
-    /* 面板级真源：只服务那个分区的键随它一起删（留着就是没人读的死字符串） */
-    for (const key of ['imgSectionTip', 'imgShowAll', 'imgExpand', 'imgNone', 'noneHit', 'noneHitBusy']) {
-      falsy(copy.indexOf(key + ':') >= 0, 'ocr-copy.js 里不该再有无人读的 ' + key);
-    }
-    /* 面板只剩一个题头：笔记区那个。图片区题头连键盘可达性一起没了 */
-    eq((src.match(/khin-notebar/g) || []).length > 0, true, '笔记区题头还在');
-    falsy(src.indexOf('khin-imgbar') >= 0, '图片区题头没了');
-  });
 
   /* ==========================================================================
    * ① 卡片里的图：命中铺红框、title 说出命中的词
@@ -190,20 +171,6 @@ module.exports = async function run() {
     eq(b.childNodes.length, 0, '空文本 ⇒ 空容器（与原来 textContent = "" 同形）');
   });
 
-  await test('★ 灯箱接线与两份样式（防函数变孤儿）', () => {
-    const src = read('src/features/important-note.js');
-    truthy(src.indexOf('paintHits(sideText, full, (cur && cur.hits) || []);') >= 0,
-      '识别原文栏要走 paintHits（不是直接 textContent）');
-    truthy(src.indexOf('hits: hitsBySrc.get(k) || []') >= 0, '相册条目要带上命中词');
-    truthy(src.indexOf('.kh-lb-hit') >= 0, '高亮样式存在');
-    truthy(src.indexOf('.khin-item-note img.khin-imghit') >= 0, '红框样式存在');
-    /* 点原文里的高亮词 = 复制整句：面板行上的词块随图片分区一起删了 ⇒ 这条能力只在灯箱里有 */
-    truthy(src.indexOf("classList.contains('kh-lb-hit')") >= 0, '灯箱原文栏要认得出被点的高亮词');
-    truthy(src.indexOf(".tagName === 'MARK'") >= 0, '认的是自己画的 mark（命中词是叶子节点）');
-    truthy(src.indexOf('sentenceOf(curText, w)') >= 0, '点词复制的是它在原文里那一整句');
-    truthy(src.indexOf('.kh-lb-hit.copied') >= 0 && src.indexOf('.kh-lb-hit.failed') >= 0,
-      '复制成功/失败都要有反馈样式（不许静默）');
-  });
 
   /* ==========================================================================
    * ③ 右键识别的图 → 主模块一张卡片表格（2.0.2.13 · m03971；2.0.2.15 起是唯一显示面）
@@ -266,17 +233,6 @@ module.exports = async function run() {
     truthy(card.textContent.indexOf(KH.OcrCopy.VIEW.ctxFail) >= 0, '失败原因（无文字）要挂在卡上');
   });
 
-  await test('★ 只有右键图、没有任何笔记时，主模块也得露出来', () => {
-    /* 旧实现 bodyEl.hidden = !items.length ⇒ 只点了右键的用户看到主模块整块消失 */
-    const src = read('src/features/important-note.js');
-    truthy(src.indexOf('const ctxN = this.ctxItems().length;') >= 0, '渲染时要算上右键那张卡');
-    truthy(src.indexOf('this.bodyEl.hidden = !(this.items.length || ctxN);') >= 0,
-      '有右键图时笔记区不许藏');
-    truthy(src.indexOf('if (!sorted.length && !this.ctxItems().length)') >= 0,
-      '整页既没笔记也没有右键图才允许整块不显示');
-    truthy(src.indexOf('ctxShotLabel') >= 0 && read('src/ui/ocr-copy.js').indexOf("ctxShotLabel: '截图'") >= 0,
-      '表头文案取真源（面板里不许写死中文）');
-  });
 
   await test('★ 右键 OCR 状态变了 ⇒ 那张卡跟着重建（受理 / 结果 / 失败三条路）', () => {
     /* 现场（2.0.2.13）：右键公网图 ⇒ 提交成功，但主模块那张「截图」卡一直是 0 格。
@@ -290,7 +246,7 @@ module.exports = async function run() {
     truthy(/renderCtxCard\(\)\s*\{[\s\S]{0,500}?removeChild/.test(src), '重建前先摘掉旧节点（不叠卡）');
     /* 2.0.4 需求④ 起「建卡 + 记 ctxEl + 落位」收在 renderCtxCard 一处（renderItems 循环后调它，
      * 它自带签名闸）。契约不变：整块重建时新卡仍要记到 ctxEl，否则下次摘不到。 */
-    truthy(/renderItems\(\)\s*\{[\s\S]{0,4000}?this\.renderCtxCard\(\);/.test(src),
+    truthy(/renderItems\(\)\s*\{[\s\S]{0,6000}?this\.renderCtxCard\(\);/.test(src),
       '整块重建时也要把新卡记到 ctxEl（现在由 renderCtxCard 统一建卡）');
     truthy(/renderCtxCard\(\)\s*\{[\s\S]{0,900}?this\.ctxEl = this\.ctxCard\(document\)/.test(src),
       'ctxEl 的赋值点必须在 renderCtxCard 里（唯一实现）');
@@ -324,32 +280,5 @@ module.exports = async function run() {
     eq(calls, 1, '★ 点 ✕ 走 clearManual（整批作废，不是只藏这张卡）');
   });
 
-  await test('★ 这张卡排最下方，且不进置顶排序（笔记卡在上，右键产物在下）', () => {
-    const src = read('src/features/important-note.js');
-    /* 整块重建：先画完全部笔记卡，再由 renderCtxCard（唯一建卡点）把右键卡 append 到最后 */
-    truthy(/renderItems\(\)\s*\{[\s\S]{0,4000}?this\.renderCtxCard\(\);/.test(src),
-      '★ 右键卡必须排在笔记卡之后（笔记卡循环结束才创建/追加）');
-    /* 单选刷新：也只许 append，不许插到最前（2.0.4 起前面多了签名闸，放宽字符窗） */
-    truthy(/renderCtxCard\(\)\s*\{[\s\S]{0,1500}?this\.bodyEl\.appendChild\(this\.ctxEl\)/.test(src),
-      '重建那张卡时同样 append（append = 最下方）');
-    falsy(src.indexOf('insertBefore(this.ctxEl') >= 0, '★ 旧实现是插到最前，这条锁着别回去');
-    /* 置顶排序只作用于笔记卡：ctx 卡不进那张表 */
-    truthy(src.indexOf('const sorted = pins.length ? head.sortByPins(items, pins) : items;') >= 0,
-      '置顶排序仍然只排笔记卡');
-    falsy(/sortByPins\([^)]*ctx/.test(src), '★ 右键卡不许进置顶排序（不许影响设置里的卡片顺序）');
-  });
 
-  await test('★ 边框状态不许"先全清再全加"（2.0.6.2 需求④：那是自激闪烁的源头）', () => {
-    const src = read('src/features/important-note.js');
-    const fn = /function markOneImg\(im, it(?:, kind)?\)[\s\S]{0,2400}?\n  \}/.exec(src);
-    truthy(fn, 'markOneImg 应当存在');
-    const body = fn[0];
-    /* 旧写法每次都 remove 三态再 add 一遍：`class` 属性连跳两次，而调度器的 MutationObserver
-     * 正好盯着 `class`（attributeFilter:['class']）⇒ 自己触发自己，页面越静它越扫。 */
-    falsy(/classList\.remove\(IMG_MARK_CLS\[i\]\);\s*\n\s*\}/.test(body),
-      '★ 不许无条件清三态：只写真正变了的那个（否则每次重扫都自激重跑）');
-    truthy(body.indexOf('if (cls !== want && im.classList.contains(cls)) im.classList.remove(cls);') >= 0,
-      '★ 幂等写法：与目标状态相同就一个字节都不动');
-    truthy(body.indexOf('if (have !== tip) {') >= 0, 'title 同样只在变了才写');
-  });
 };

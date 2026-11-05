@@ -49,24 +49,19 @@ const specs = [
   /* K71「抓取后续字段」模块启用：编译层的门 / 迁移规则 / 清理清单在声明层的判定 */
   './specs/k71-fetch-enabled.test.js',
   /* K71 返工复验（R4 独立）：脏值共用函数 / CSV-JSON 口径 / 正文按模块归属 / 门未被动过 */
-  './specs/k71-r4-recheck.test.js',
   /* K72 升级兼容与文案收口：A1 导入不丢仅抓取词 / B5 导出即规范形状 / B6 废弃键剔除 / B9 方向单源 / A2·A3·B8 文案 */
   './specs/k72-upgrade-compat.test.js',
   /* K72 复验（R4 独立）：换夹具与写法再判一遍 + B6 落盘对象边界 + B9 运行期哨兵证明单源 */
-  './specs/k72-r4-recheck.test.js',
   /* K74 嵌套表格抓取范围：分层抓取 / 行级优先 / 五值生效 / 取图同源 / 缓存不串味 */
   './specs/k74-nested-fetch-scope.test.js',
   /* K74 复验（R4 独立）：自造三层装置 + 自造 rowspan/colspan 形状 + 归一单源哨兵 + 性能修复等价性 */
-  './specs/k74-r4-recheck.test.js',
   /* K75 复验（R4 独立）：自造三种假表格形状 × 两种落点 + imgAnchors 不消费 + 默认关的三条路
    * （R3 的 K75 用例加在既有 spec 里：fetch / img-ocr / combo-cell-offset / k71-fetch-enabled） */
-  './specs/k75-r4-recheck.test.js',
   /* K76 扫描剪枝口径：`display:contents`（无盒但子树渲染）与 `visibility`（只跳自己）——
    * 旧实现把原生 `checkVisibility` 的布尔值当成"整棵子树不渲染"，于是词在页面上却完全不高亮 */
   './specs/k76-contents-prune.test.js',
   /* K76 复验（R4 独立·红队）：换装置（忠实计算样式/祖先语义 checkVisibility）与角度再判一遍
    * —— 嵌套 contents / 行内与块级标签 / 隐藏祖先的负例 / 退化路径 / 快路径计数哨兵 / 边界持仓 */
-  './specs/k76-r4-recheck.test.js',
   /* K77「命中要符合视觉」：折叠内容算数（闭合 `<details>` 正文 / `content-visibility:hidden`）+ 视觉连续不断词
    * （行内判据从**标签名**改为**计算后的 display**）—— 用户 2026-09-22 口径 */
   './specs/k77-visual-flow.test.js',
@@ -78,7 +73,6 @@ const specs = [
   './specs/k79-fetch-layers.test.js',
   /* K79 复验（R4 独立·红队）：另造装置（三层/深层嵌套/th·colspan/同格两表/N 张嵌表/假表格）
    * 与另写判据，逐面拷打内层归属长尾、skipNestedTables 误伤面、旧值逐字等价、仅抓取锚点层判定 */
-  './specs/k79-r4-recheck.test.js',
   /* C7 F-1 回归（存储写失败不许被吞）：补上"三个入口 0 行为级测试"之外的最小诚实性网
    * —— 平台写入口行为级 + popup/options 源码契约；真机证据见
    * `_stage/wayfinder-kh-ui/probe-f1-postfix.js`（注入配额失败） */
@@ -166,13 +160,32 @@ const specs = [
   './specs/scan-style-memo.test.js',
   /* 2.0.8「文案跳转」：设置页正文里的指路文案改成真链接（`<a href="#sec-help" data-hspan="about">`），
    * 走 `options.js` 的 `goSection()` 通道 —— 这里对账分区 id / 二级 Tab id / 欢迎页路径三处资产 */
-  './specs/copy-jumps.test.js'
+  './specs/copy-jumps.test.js',
+  /* 2.0.8.4 五条用户需求：贴边重建（调度 skip 兜底）/ 钉住不跳（脏判据 + 顶边锚定 + 行指纹）/
+   * 浮窗单卡收起 / AI 对话助手（后台唯一出口 + 默认 DeepSeek + 纯自由对话）/ 推荐词（列头拿
+   * CSV_HEADERS 判、导入复用批量导入）。口径见 tests/specs/v2084.test.js 头部 */
+  './specs/v2084.test.js',
+  /* 2.0.8.5 三条：AI 助手改走 DeepSeek 网页对话（免 Key）+ AI 分页重做 + 重要笔记无感重建。
+   * 口径见 tests/specs/v2085.test.js 头部 */
+  './specs/v2085.test.js',
+  /* 2.0.8.6：软著核对整块移除 → 换成「图文合并」；贴边默认钉住置顶第一个词并展开；
+   * 贴边条可上下拖、AI 页签更宽一档。口径见 tests/specs/v2086.test.js 头部 */
+  './specs/v2086.test.js',
+  /* 2.0.8.7：图文合并的命中闸门（图这次真命中才出行）、AI 审核的本地词库初筛与配置归一。
+   * 口径见 tests/specs/v2087.test.js 头部 */
+  './specs/v2087.test.js',
+  /* 2.0.8.8：贴边底色复用卡片原色、隐私政策行校验（名/开徽标 + 浅绿/浅黄）、
+   * 开发者与核准主体的同法人判定、法人名解析。口径见 tests/specs/note-check.test.js 头部 */
+  './specs/note-check.test.js'
 ];
 
 (async () => {
+  const TIMING = process.env.KH_TIMING === '1';
   for (const rel of specs) {
+    const t0 = Date.now();
     try {
       await require(rel)();
+      if (TIMING) console.error('  [timing] ' + String(Date.now() - t0).padStart(7) + 'ms  ' + rel);
     } catch (err) {
       console.error('\n✗ 加载 ' + rel + ' 失败：' + (err && err.message));
       console.error(err && err.stack);
@@ -198,4 +211,9 @@ const specs = [
   } else {
     console.log('\n✓ README 的单测数字与实测一致（共 ' + m[1] + ' 项：' + m[2] + ' 通过 + ' + m[3] + ' 跳过）');
   }
+
+  /* 【测试提速】用例跑完立刻退出。仓库里若干模块会挂常驻定时器（调度轮询 / OCR 队列 /
+   * AI 网页对话心跳），不显式 exit 时 Node 要等它们自然结束 —— 实测 97s 里有 88s 在空等，
+   * 真正跑用例只有 8s。setTimeout(0) 让 stdout 先刷干净再退（管道输出不会被截断）。 */
+  setTimeout(() => process.exit(process.exitCode || 0), 0);
 })();

@@ -226,63 +226,34 @@
   const EDITOR_WIN_W = EDITOR_W + EDITOR_WIN_PAD * 2;   // = 1100
   const EDITOR_WIN_H = 500;
 
-  /* ---- 软著一致性核对（用户 m00001 需求②：「软著里的著作权人必须与开发者一致，不一致就要授权书」）----
-   * 用户原话还点了「还有其他的比对需求」⇒ **比对对象、标签名、关键词全部可配**，代码里不写死某个行业的
-   * 字段名（换行业只改设置，不改代码）。六个列表都是「逗号分隔的名字」：
-   *   分隔符与 `pinOrderKeys` 一致（`,` `，` `、` 与换行），另收分号 —— 用户从文档里粘字段名常带 `;`；
-   *   去空、大小写不敏感去重、**不设上限**（比对对象越全判得越准；判定本身不做任何模糊匹配）。
-   * 真源是这里的 `SOFT_LISTS`（`Config.defaults.softCheck` 与归一函数都从它取，不再抄第二份）。 */
-  const SOFT_LISTS = {
-    /** 抓取字段里的「开发者」候选名（比对基准之一） */
-    devFields: '开发者,开发公司,开发主体',
-    /** 「备案主体公司」候选名（比对基准之二） */
-    subjectFields: '备案主体,主体公司,备案公司',
-    /** 软著图里「著作权人」的字段名候选 */
-    ownerLabels: '著作权人,软件著作权人',
-    /** 图里命中任一即判为「授权书」 */
-    authKeywords: '授权书,授权委托书,授权说明',
-    /** 授权书里的「授权人」（= 著作权人）候选名 */
-    grantorLabels: '授权人,授权方,许可人,授权公司',
-    /** 授权书里的「被授权人」（= 开发者）候选名 */
-    granteeLabels: '被授权人,被授权方,被许可人,被授权公司'
-  };
-  /** 比对基准枚举：`dev`=只比开发者、`subject`=只比备案主体、`both`=任一一致即通过 */
-  const SOFT_COMPARE = ['dev', 'subject', 'both'];
-  const SOFT_COMPARE_DEFAULT = 'both';
-
-  /** 字段名列表文本 → 数组（非字符串/非数组一律当空，由调用者回默认） */
-  function softList(value) {
-    let parts;
-    if (typeof value === 'string') parts = value.split(/[,，、;；\r\n]+/);
-    else if (Array.isArray(value)) parts = value;
-    else return [];
-    const out = [];
+  /* ---- 【2.0.8.6 需求①】图文合并：图片抓取字段 + OCR 命中 ⇒ 一条「自定义标题 | 值」行 ----
+   * 用户口径（原话）：「抓取字段图片-ocr动态词（指向一个文本抓取自动内容），如果命中，则出现一个
+   * 自定义标题，内容就是那个抓取字段抓取到的内容」+「增加默认不展示的配置」。
+   * 每条规则一张表：`field` = 抓取字段裸名（与 `imgOcrNeed` 同一套名字）、`title` = 卡片里
+   * 显示的标题（留空就用字段名）、`hidden` = 默认收着（面板里点一下才展开）。
+   * 归一的口径与其它配置一致：坏值回默认、去空、字段名大小写不敏感去重、标题截到 24 字。
+   * 真源是本函数（设置页回显 / 读路径消费共用一份）。 */
+  const MERGE_TITLE_MAX = 24;
+  function normalizeImgMerge(raw) {
+    const src = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
+    const list = Array.isArray(src.rows) ? src.rows : [];
+    const out = { on: src.on !== false, rows: [] };
     const seen = new Set();
-    for (let i = 0; i < parts.length; i++) {
-      const s = String(parts[i] == null ? '' : parts[i]).trim();
-      if (!s) continue;
-      const low = s.toLowerCase();
+    for (let i = 0; i < list.length; i++) {
+      const r = list[i] || {};
+      const field = String(r.field == null ? '' : r.field).trim();
+      if (!field) continue;
+      const low = field.toLowerCase();
       if (seen.has(low)) continue;
       seen.add(low);
-      out.push(s);
+      out.rows.push({
+        field: field,
+        title: String(r.title == null ? '' : r.title).trim().slice(0, MERGE_TITLE_MAX),
+        hidden: r.hidden === true
+      });
     }
     return out;
   }
-
-  /** 软著核对的**唯一归一**（设置页回显/落盘、读路径消费、导入旧备份三处共用一份口径）：
-   *  坏值/缺项一律回落默认（`on` 只认 `true` —— 脏值当没开，绝不"看起来开了却乱涂色"）。 */
-  function normalizeSoftCheck(raw) {
-    const src = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
-    const out = { on: src.on === true };
-    for (const k of Object.keys(SOFT_LISTS)) {
-      const list = softList(src[k]);
-      out[k] = list.length ? list.join(',') : SOFT_LISTS[k];
-    }
-    const cmp = (typeof src.compareTo === 'string') ? src.compareTo.trim().toLowerCase() : '';
-    out.compareTo = SOFT_COMPARE.indexOf(cmp) >= 0 ? cmp : SOFT_COMPARE_DEFAULT;
-    return out;
-  }
-
   /**
    * 面板图片尺寸 / 正文字号的**唯一归一函数**（读路径 `important-note.js` 与设置页共用）。
    * 取数口径两条一致：
@@ -307,6 +278,98 @@
     const n = intOrNaN(value);
     if (!isFinite(n) || n < NOTE_FONT_MIN || n > NOTE_FONT_MAX) return NOTE_FONT_DEFAULT;
     return Math.round(n);
+  }
+
+  /* ============================================================================
+   * 【2.0.8.4 需求④】重要笔记面板里的「AI 助手」——接口配置的**唯一归一**
+   * ----------------------------------------------------------------------------
+   * 用户原话：「重要笔记悬浮窗，新增一个 ai 对话助手模块（兼容悬浮模式和贴边模式，
+   *   api 在设置界面配置）」；口径补充：「支持各类 api，默认接入 deepseek 的官网 ai 对话」。
+   *
+   * 因此这里只认 **OpenAI 兼容的 /chat/completions 协议**（DeepSeek / OpenAI / 硅基流动 /
+   * 各类中转都是这一套），并把 DeepSeek 官方作为默认值。`provider` 只当"预设名"用：
+   * 换预设会把 baseUrl/model 填成该家的推荐值，用户仍可逐项改（`custom` = 全手填）。
+   *
+   * **上下文口径（用户 2026-11-03 拍板）**：纯自由对话，不带页面标题/URL/笔记内容 ——
+   * 面板发出去的只有用户自己打的那几句话。
+   *
+   * 归一规则（读路径 = 设置页回显 = 后台请求前校验，三处共用这一个函数）：
+   *   · 未知 provider → deepseek；
+   *   · baseUrl 去掉尾部斜杠；空 → 该预设的默认地址；
+   *   · model 空 → 该预设的默认模型；
+   *   · apiKey 去首尾空白（**不验证格式**：各家 key 形状不同，填错由请求错误如实回传）；
+   *   · maxTokens 越界夹到 128–4000、坏值回 800。
+   * ========================================================================= */
+  const AI_PRESET_LIST = [
+    { id: 'deepseek', label: 'DeepSeek 官方（默认）', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
+    { id: 'openai', label: 'OpenAI', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
+    { id: 'custom', label: '自定义（OpenAI 兼容）', baseUrl: '', model: '' }
+  ];
+  /* 两条通路（用户 2026-11-03 拍板：默认走**网页版对话**，界面还是我们自己的 AI 分页）：
+   *   web —— 复用 chat.deepseek.com 的登录态，免 Key；扩展开一个后台标签页替用户发消息、读回复
+   *   api —— OpenAI 兼容 HTTP 接口，需要 Key（旧口径，保留给要自接模型的用户）*/
+  const AI_MODES = [
+    { id: 'web', label: 'DeepSeek 网页对话（免 Key）' },
+    { id: 'api', label: 'API Key（OpenAI 兼容）' }
+  ];
+  const AI_MODE_DEFAULT = 'web';
+  const AI_WEB_ORIGIN = 'https://chat.deepseek.com/';
+  const AI_PROVIDERS = AI_PRESET_LIST.map((p) => p.id);
+  const AI_MAX_MIN = 128;
+  const AI_MAX_MAX = 4000;
+  const AI_MAX_DEFAULT = 800;
+
+  function aiPreset(id) {
+    const key = AI_PROVIDERS.indexOf(String(id || '')) >= 0 ? String(id) : 'deepseek';
+    for (let i = 0; i < AI_PRESET_LIST.length; i++) if (AI_PRESET_LIST[i].id === key) return AI_PRESET_LIST[i];
+    return AI_PRESET_LIST[0];
+  }
+
+  function normalizeAi(raw) {
+    const src = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
+    const preset = aiPreset(src.provider);
+    const url = (typeof src.baseUrl === 'string') ? src.baseUrl.trim().replace(/\/+$/, '') : '';
+    const model = (typeof src.model === 'string') ? src.model.trim() : '';
+    const key = (typeof src.apiKey === 'string') ? src.apiKey.trim() : '';
+    const n = intOrNaN(src.maxTokens);
+    return {
+      enabled: src.enabled !== false,
+      mode: (src.mode === 'api') ? 'api' : AI_MODE_DEFAULT,
+      provider: preset.id,
+      baseUrl: url || preset.baseUrl,
+      model: model || preset.model,
+      apiKey: key,
+      system: (typeof src.system === 'string') ? src.system.trim() : '',
+      maxTokens: (isFinite(n) && n > 0) ? Math.min(AI_MAX_MAX, Math.max(AI_MAX_MIN, Math.round(n))) : AI_MAX_DEFAULT
+    };
+  }
+
+  /* ---- 【2.0.8.7 需求②】AI 审核的免登录通道（Cloudflare Workers AI）----
+   * 为什么要单开一段配置，而不是复用 `ai`：两者的请求形态不一样 —— `ai` 是纯文本对话
+   * （后台 `cleanMessages` 会把 content 压成字符串），审核要带**图片**，走的是多模态
+   * `content:[{type:'text'},{type:'image_url'}]`，所以另有一条通道与另一份配置。
+   * 免费额度口径（2026-11 核实）：10,000 neurons/天，一张 512px 图标约 5~9 neurons。
+   * `accountId` 在官方控制台的 URL 里（`dash.cloudflare.com/<accountId>/...`），token 只存本机。 */
+  const AI_AUDIT_MODEL_DEFAULT = '@cf/meta/llama-3.2-11b-vision-instruct';
+  const AI_AUDIT_MODEL_LIST = [
+    '@cf/meta/llama-3.2-11b-vision-instruct',
+    '@cf/meta/llama-4-scout-17b-16e-instruct'
+  ];
+  const AI_AUDIT_NAME_MAX = 120;
+
+  function normalizeAiAudit(raw) {
+    const src = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
+    const accountId = (typeof src.accountId === 'string') ? src.accountId.trim() : '';
+    const token = (typeof src.token === 'string') ? src.token.trim() : '';
+    const model = (typeof src.model === 'string') ? src.model.trim() : '';
+    return {
+      enabled: src.enabled !== false,
+      accountId: accountId,
+      token: token,
+      model: model || AI_AUDIT_MODEL_DEFAULT,
+      /* 只跑本地词库：不花额度、也不把图标发出去（公司内网/不想外传时用） */
+      localOnly: src.localOnly === true
+    };
   }
 
   const Config = {
@@ -360,6 +423,16 @@
        *  `normalizePanelWidth`；设置页数字输入的 min/max 也从这个常量取。 */
       notePanelWidth: PANEL_WIDTH_DEFAULT,
 
+      /* ---- 【2.0.8.4 需求④】重要笔记面板的「AI 助手」接口配置 ----
+       * 默认 DeepSeek 官方（用户口径："默认接入 deepseek 的官网 ai 对话"），但协议是通用的
+       * OpenAI 兼容格式，设置页可换成任意兼容服务（含中转）。归一只有 `normalizeAi` 一份。
+       * ⚠️ `apiKey` 只存本机 storage，不随导出分享（见 storage 的导出白名单）。 */
+      ai: normalizeAi({ provider: 'deepseek' }),
+
+      /* 【2.0.8.7 需求②】AI 审核（名称/图标是否蹭品牌、是否涉敏感内容）。
+       * 默认开：本地词库初筛零成本、不发任何请求；云端那一步要 token，没配就只出本地结论。 */
+      aiAudit: normalizeAiAudit({}),
+
       /* ---- 图片文字识别（OCR）----
        * `defaultMax`：每个锚点最多识别几张图（关键词上可单独覆盖，留空即用这个默认）
        * `crossOriginSites`：{'example.com': true} 允许扩展代为读取该站点的跨域图片。
@@ -375,20 +448,9 @@
         engine: 'auto'
       },
 
-      /* ---- 软著一致性核对（用户 m00001 需求②）----
-       * 「软著图里的著作权人必须与开发者一致，不一致就需要授权书；通过时给开发者所在单元格加绿底」。
-       * 默认 `on:false`：**没开就零涂色、零额外计算**（面板行为与上一版逐字节一致）。
-       * 六个列表 + 一个枚举的归一见 `normalizeSoftCheck`；判定与展示见 `src/features/softcheck.js`。 */
-      softCheck: {
-        on: false,
-        devFields: SOFT_LISTS.devFields,
-        subjectFields: SOFT_LISTS.subjectFields,
-        ownerLabels: SOFT_LISTS.ownerLabels,
-        authKeywords: SOFT_LISTS.authKeywords,
-        grantorLabels: SOFT_LISTS.grantorLabels,
-        granteeLabels: SOFT_LISTS.granteeLabels,
-        compareTo: SOFT_COMPARE_DEFAULT
-      },
+      /* 【2.0.8.6 需求①】图文合并：一行「抓取字段 → 自定义标题」，可默认收起。
+       * 默认开、空表 ⇒ 与没有这个功能时逐字节一致（不产生任何额外行）。 */
+      imgMerge: normalizeImgMerge({}),
 
       /** 一次性迁移标记（S2）：`ocrEngine` = "存量档位已回落成 `engine`，还没告知过用户"。
        *  由 `normalize` 在**发现存量 `imgOcr.quality` 时**置真；设置页提示过一次后写回假。
@@ -448,6 +510,9 @@
 
     /** 面板默认宽度的唯一归一 + 它的边界常量（设置页 / 面板 / 读路径共用一份；见文件顶部） */
     normalizePanelWidth,
+    /** 【2.0.8.6 需求①】图文合并的唯一归一（设置页回显 / 读路径消费共用一份） */
+    normalizeImgMerge,
+    MERGE_TITLE_MAX,
     PANEL_WIDTH_MIN,
     PANEL_WIDTH_MAX,
     PANEL_WIDTH_DEFAULT,
@@ -467,12 +532,21 @@
     NOTE_FONT_MAX,
     NOTE_FONT_DEFAULT,
 
-    /** 软著一致性核对的唯一归一 + 比对基准枚举（设置页 / `softcheck.js` 共用一份；见本文件上部） */
-    normalizeSoftCheck,
-    softList,
-    SOFT_COMPARE,
-    SOFT_COMPARE_DEFAULT,
-    SOFT_LISTS,
+    /** 【2.0.8.4 需求④ / 2.0.8.5 网页对话】AI 助手的接口配置归一    /** 【2.0.8.4 需求④ / 2.0.8.5 网页对话】AI 助手的接口配置归一 + 预设清单（设置页 / 后台请求共用一份） */
+    normalizeAi,
+    aiPreset,
+    AI_PRESET_LIST,
+    /* 【2.0.8.7 需求②】审核通道的配置归一与预设模型（设置页 / 后台共用一份） */
+    normalizeAiAudit,
+    AI_AUDIT_MODEL_LIST,
+    AI_AUDIT_MODEL_DEFAULT,
+    AI_AUDIT_NAME_MAX,
+    AI_MODES,
+    AI_MODE_DEFAULT,
+    AI_WEB_ORIGIN,
+    AI_MAX_MIN,
+    AI_MAX_MAX,
+    AI_MAX_DEFAULT,
 
     /* 【票 #48】编辑器几何（真值 + 派生），与 `.kh-modal-lg` 的 CSS 由单测对齐。 */
     EDITOR_W,
@@ -561,17 +635,22 @@
         if (pw !== cfg.notePanelWidth) { cfg.notePanelWidth = pw; changed.invalid.push('notePanelWidth'); }
       }
 
-      /* ②f 软著一致性核对（用户 m00001 需求②）：六个字段名列表 + 比对基准的**读路径**脏值归一。
-       * 存储里可能直接躺着缺项 / 空串 / 非法枚举（手改 storage、旧备份）——回默认，绝不让
-       * "字段名列表是空的"把核对静默变成永远 skip（用户会以为功能坏了，却看不到原因）。
-       * 归一**不丢用户已填内容**：只补缺项、只清洗分隔符，合法名字原样保留。 */
+      /* ②e2 【2.0.8.6 需求①】图文合并的读路径归一：坏值回默认、字段去重、标题截断。 */
       {
-        const sc = normalizeSoftCheck(cfg.softCheck);
-        const old = cfg.softCheck || {};
-        for (const k of Object.keys(sc)) {
-          if (sc[k] !== old[k]) changed.invalid.push('softCheck.' + k);
+        const mg = normalizeImgMerge(cfg.imgMerge);
+        if (JSON.stringify(mg) !== JSON.stringify(cfg.imgMerge || null)) {
+          cfg.imgMerge = mg;
+          changed.invalid.push('imgMerge');
         }
-        cfg.softCheck = sc;
+      }
+
+      /* ②e2b 【2.0.8.7 需求②】AI 审核配置的读路径归一。 */
+      {
+        const aa = normalizeAiAudit(cfg.aiAudit);
+        if (JSON.stringify(aa) !== JSON.stringify(cfg.aiAudit || null)) {
+          cfg.aiAudit = aa;
+          changed.invalid.push('aiAudit');
+        }
       }
 
       // ③ 关键词字段补齐（不改语义、不翻转）

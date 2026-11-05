@@ -255,6 +255,32 @@ body {
 .kh-form-fld { display: flex; flex-direction: column; gap: 3px; min-width: 150px; }
 /* 置顶排序的下拉框独占一行（候选名字带分组前缀 + 组合词的 × 标题，150px 放不下） */
 .kh-pin-fld { flex: 1 1 320px; }
+/* 【2.0.8.4 需求④】AI 助手里那几个长值（接口地址 / 系统提示词）给宽档：150px 放不下一个 URL，
+   一进去就被截断成「https://api.deep…」，改一个字得先横向拖。 */
+.kh-form-fld-wide { flex: 1 1 420px; }
+.kh-ai-actions { display: flex; align-items: center; gap: 8px; min-height: 32px; }
+/* 【2.0.8.6 需求①】图文合并的标题表：一行 = 字段 + 标题 + 默认不展示 + 删掉。
+   与设置页其它行同一套紧凑档（32px 高），窄屏自动换行，不出现横向滚动条。 */
+.kh-merge-rows { display: flex; flex-direction: column; gap: 6px; margin: 6px 0; }
+.kh-merge-row {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+}
+.kh-merge-row .kh-input { flex: 1 1 180px; min-width: 0; height: 32px; }
+.kh-merge-row .kh-check { white-space: nowrap; font-size: 12px; }
+/* 【2.0.8.4 需求⑤】推荐词预览：一行一个词（勾选 + 词 + 分组/备注/重复标记），限高内部滚动，
+   避免一张大表把整页顶成几米长（省空间第一）。 */
+.kh-reco-list {
+  display: flex; flex-direction: column; gap: 2px; margin-top: 6px;
+  max-height: 260px; overflow-y: auto; border: 1px solid var(--border-2);
+  border-radius: var(--r-md); padding: 6px 8px; background: var(--card-2);
+}
+.kh-reco-row {
+  display: flex; align-items: center; gap: 8px; padding: 3px 2px;
+  font-size: 12px; color: var(--text-2); cursor: pointer; min-height: 22px;
+}
+.kh-reco-row.is-dup { opacity: .55; cursor: default; }
+.kh-reco-name { flex: 0 1 auto; color: var(--text); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kh-reco-meta { flex: 1 1 auto; color: var(--text-4); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kh-checks { display: flex; flex-wrap: wrap; gap: 10px 20px; margin: 6px 0; }
 .kh-checks-col { flex-direction: column; gap: 6px; }
 .kh-checks-col.is-disabled { opacity: .5; }
@@ -495,3 +521,26 @@ body {
 .kh-foot a { color: var(--brand); text-decoration: none; }
 .kh-foot a:hover { text-decoration: underline; }
 .kh-foot-sep { color: var(--text-5); }
+
+/* ---------------------------------------------------------------- AI 审核（2.0.8.7 需求②）
+   结论区：一条结论 + 命中依据列表 + 图标预览。三档配色用语义色，不新增主题变量。 */
+.kh-aa-out {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-2);
+  border-radius: var(--r-md);
+  background: var(--card-2);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.kh-aa-verdict { font-size: var(--fs-md); font-weight: 600; line-height: 1.5; }
+.kh-aa-verdict.is-ok { color: var(--success-strong); }
+.kh-aa-verdict.is-warn { color: var(--warning); }
+.kh-aa-verdict.is-bad { color: var(--danger); }
+.kh-aa-hits { margin: 0 0 0 18px; color: var(--text-2); font-size: var(--fs-sm); line-height: 1.7; }
+.kh-aa-preview { display: flex; align-items: center; gap: 10px; }
+.kh-aa-preview img {
+  width: 72px; height: 72px; object-fit: contain;
+  border: 1px solid var(--border-2); border-radius: var(--r-sm); background: var(--bg);
+}

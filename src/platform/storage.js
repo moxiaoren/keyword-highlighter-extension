@@ -639,12 +639,11 @@
       /* K78·① 折叠内容的扫描开关：也是"行为档位"（换机器/恢复备份后应当跟着走） */
       'scanCollapsedCustom',
       'pageRebuildSilentMs', 'pageRebuildGapMs', 'notePanelWidth',
+      /* 【2.0.8.6 需求①】图文合并的标题表：用户配的"行为档位"，换机器/恢复备份要跟着走。 */
+      'imgMerge',
       /* K58 变更处理方式：这是用户选的"行为档位"，换台机器/恢复备份后应该跟着走
        * （与 globalEnabled / shadowDOMEnabled 这类"本机开关"不同）。 */
-      'changeHandling',
-      /* 软著一致性核对：开关与字段名都是用户配的"行为档位"（换机器/恢复备份后要跟着走，
-       * 否则到新机器上要么白涂色、要么核对的是别人的字段名）。 */
-      'softCheck'
+      'changeHandling'
     ],
 
     /** 只有完整备份才携带的全局开关 */

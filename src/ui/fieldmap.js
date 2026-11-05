@@ -124,7 +124,7 @@
     /* 【2.0.2.7 需求①】`cands` = 常态只显胶囊、点末尾的 `+` 才出输入框（2.0.2.6 的交互下沉成控件）。
      * `regexKey` 指**兄弟开关**：只有正则模式下 `|` 才是"或"（普通模式整串转义，写 `A|B` 匹配的是
      * 字面量 `A|B`）—— 所以普通模式整串一个胶囊，勾了「正则」才按 `|` 摊开。 */
-    { key: 'text', label: '关键词', type: 'cands', sec: 'basic', csv: 1, required: true, clamp: true,
+    { key: 'text', label: '关键词', type: 'cands', sec: 'basic', csv: 1, required: true, clamp: true, listEdit: true,
       regexKey: 'useRegex',
       def: () => '' },
     { key: 'groupId', label: '分组', type: 'select', sec: 'basic', csv: 3, groupSource: true, def: () => null },
@@ -164,7 +164,7 @@
      * ⚠️ **只改显示文案与挂载位置**：key / csv 列序 / 判定逻辑 / id 一律不动。 */
     { key: 'cellVerifyEnabled', label: '启用', type: 'bool', sec: 'combo', csv: 12, chip: true, head: true, def: () => false },
     /* 同上（`cands`）：标题词也有自己的「正则」开关，切分口径跟着它走。 */
-    { key: 'cellVerify', label: '标题关键词(左格)', type: 'cands', sec: 'combo', csv: 13, clamp: true,
+    { key: 'cellVerify', label: '标题关键词(左格)', type: 'cands', sec: 'combo', csv: 13, clamp: true, listEdit: true,
       regexKey: 'cellVerifyUseRegex', def: () => '' },
     { key: 'comboAxis', label: '组合方向', type: 'select', sec: 'combo', csv: 0,
       options: [{ v: 'lr', t: '左右格' }, { v: 'tb', t: '上下格' }], def: () => 'lr' },
@@ -199,7 +199,7 @@
      *     「宽度高度都默认不变，超出隐藏超出部分，但支持手动展开/收起」）。
      * 存储契约一个字没变（仍是整串原文）。 */
     { key: 'fetchLabels', label: '字段', type: 'cands', sec: 'fetch', csv: 17, width: 2,
-      token: true, clamp: true,
+      token: true, clamp: true, listEdit: true,
       placeholder: '如：名称｜备注',
       /* C1：模块标题已经叫「抓取后续字段」，正文里的 label 再写一遍就是冗余 → 缩成「字段」。
        * `@表达式` 的语义写准：它是**按标签格所在行**从右数第几格（与组合方向零耦合），
@@ -264,7 +264,7 @@
     /* 同上（`cands`）。`regexAlways: true`：图片命中词**恒为正则**（`img-ocr.js` 固定
      * `useRegex: true`，没有开关），所以它按 `|` 切分永远是对的。 */
     { key: 'imgOcrKeyword', label: '图片命中关键词', type: 'cands', sec: 'fetch', csv: 0, sub: 'ocr', clamp: true,
-      width: 2, regexAlways: true, kvSuffix: true, kvBatch: true, placeholder: '如：一对一',
+      width: 2, regexAlways: true, kvSuffix: true, kvBatch: true, listEdit: true, placeholder: '如：一对一',
       /* 【2.0.4 需求①】词尾 `#表`（或 `#kv`）是**逐词**的入表标记：只有带标记的词，图里
        * 「词+分隔符+值」才会并进重要笔记表格。旧版对**所有词**生效，结果「一对一时间选择范围
        * 11:30.」被拆成 键=一对一时间选择范围 / 值=11:30. 塞进卡片（用户原话）⇒ 收严成点名制。
@@ -294,11 +294,12 @@
      *   图片命中关键词（图里要有的**词**）→ 图上须有的字段值（图里要有的**值**）。
      * 【2.0.7.2 需求④】`suffixHide` 摘掉：后缀**现在是真生效的**（`开发者^高价` ⇒ 抓 `a公司 高价值`
      * 得到 `a公司`），所以要像「抓取字段」一样把 `^高价` 画成徽标，让"名字是名字、修饰是修饰"看得见。
-     * 【2.0.7.2 需求①】`kvBatch` 保留（真版 2.0.7.2 的「批量」按钮）：作用域仍写在词尾 `@字段名`，
+     * 【2.0.7.2 需求①】`kvBatch` 保留（2026-11-03 起「批量」并进「修改」弹窗，不再单独挂按钮）：
+     * 作用域仍写在词尾 `@字段名`，
      * 本轮修的是那个弹窗**认不出已配字段**（下拉框灰掉、`@` 被当普通词）的 bug —— 见
      * `src/ui/components/fields.js` 的 `knownFields()`。 */
     { key: 'imgOcrNeed', label: '图上须有的字段值', type: 'cands', sec: 'fetch', csv: 0, sub: 'ocr',
-      clamp: true, width: 2, csvSplit: true, suffixChip: true, kvBatch: true,
+      clamp: true, width: 2, csvSplit: true, suffixChip: true, kvBatch: true, listEdit: true,
       placeholder: '如：开发者^高价',
       /* 【2.0.7.1 需求③⑤】命中判定是**或**：这些字段抓到的值里，任一个出现在图上就算命中；命中几个都展示。
        * 【2.0.7.2 需求④】后缀**与「抓取字段」同一套、同一份实现**（`Fetch.extractFor`）：

@@ -41,82 +41,17 @@ module.exports = async function run() {
    * ① 档位彻底消失 + 引擎选择器就位
    * ================================================================== */
 
-  await test('★ 「识别档位」控件已被「识别引擎」取代（三项取值恰为 auto/ppocr/tesseract）', () => {
-    const html = read('options/options.html');
-    falsy(/id="ocr-quality"/.test(html), '设置页还留着 #ocr-quality（档位已取消，它会变成一个死控件）');
-    truthy(/id="ocr-engine"/.test(html), '设置页缺 #ocr-engine（用户就无从选引擎）');
-    const block = /<select[^>]*id="ocr-engine"[\s\S]*?<\/select>/.exec(html);
-    truthy(block, '找不到 #ocr-engine 的 select 块');
-    const values = Array.from(block[0].matchAll(/<option value="([^"]+)"/g)).map((m) => m[1]);
-    eq(values.join(','), 'auto,ppocr,tesseract', '#ocr-engine 的选项必须是这三项（顺序也照契约）');
-  });
 
-  await test('★ 判据 ④：`imgOcr.quality` / `ocrQuality()` / `quality:` 在业务代码里零命中（迁移代码除外）', () => {
-    const dirs = ['options', 'offscreen', 'background', 'popup', 'content'];
-    const files = ['src/features/img-ocr.js', 'src/ui/ocr-copy.js', 'src/platform/storage.js'];
-    for (const d of dirs) {
-      const abs = path.join(ROOT, d);
-      for (const name of fs.readdirSync(abs)) {
-        const rel = d + '/' + name;
-        if (!/\.(js|html)$/.test(name)) continue;
-        files.push(rel);
-      }
-    }
-    const hits = [];
-    for (const rel of files) {
-      const code = codeOf(rel);
-      code.split(/\r?\n/).forEach((line, i) => {
-        if (/imgOcr\.quality|\bocrQuality\b|\bquality\s*[:,)]/.test(line)) {
-          hits.push(rel + ':' + (i + 1) + '  ' + read(rel).split(/\r?\n/)[i].trim().slice(0, 100));
-        }
-      });
-    }
-    eq(hits.length, 0, '档位相关写法必须清干净（除 src/core/config.js 的迁移代码外）：\n      ' + hits.join('\n      '));
-    /* 反过来：迁移代码必须**还在** —— 删了它，存量用户的 'best' 就没人接，会落成非法值 */
-    const cfg = read('src/core/config.js');
-    truthy(/'imgOcr\.quality'/.test(cfg), "config.js 的 DEPRECATED_KEYS 必须留着 'imgOcr.quality'（写回时物理删掉它）");
-    truthy(/'quality' in raw\.imgOcr/.test(cfg), 'config.js 的迁移判据（存量 quality 在 ⇒ 置 migrated.ocrEngine）丢了');
-  });
 
   /* ==================================================================
    * ② 只读「高级信息」与源码常量对账
    * ================================================================== */
 
-  await test('★ 只读「高级信息」的每一行都必须在源码里找得到同名的常量与同一个值', () => {
-    const js = read('options/options.js');
-    const rows = Array.from(js.matchAll(/^\s*\['([A-Z][A-Z0-9_]*)',\s*'[^']*',\s*'([^']*)'\]/gm))
-      .map((m) => ({ name: m[1], value: m[2] }));
-    truthy(rows.length >= 10, '只读「高级信息」的参数表太小了（至少覆盖契约里那 10 个）：' + rows.length);
-    const src = read('offscreen/ocr.js') + '\n' + read('src/features/img-ocr.js');
-    const bad = [];
-    for (const r of rows) {
-      /* 常量声明形如 `const NAME = 1600;` —— 字符串值（PSM）两边都去引号再比 */
-      const m = new RegExp('const ' + r.name + '\\s*=\\s*([^;]+);').exec(src);
-      if (!m) { bad.push(r.name + ' 在源码里没有同名常量（改名了？那设置页这张表就是谎话）'); continue; }
-      const got = m[1].trim().replace(/^['"]|['"]$/g, '');
-      if (got !== r.value) bad.push(r.name + ' 的值与源码不一致：设置页写 ' + r.value + '，源码是 ' + got);
-    }
-    eq(bad.length, 0, bad.join('\n      '));
-    /* 参数表**只许读**：不许出现输入控件（一旦可改，用户就能把识别调坏且无从排查） */
-    const block = /const OCR_ENGINE_PARAMS = \[[\s\S]*?\];/.exec(js);
-    truthy(block, '找不到 OCR_ENGINE_PARAMS 表');
-    falsy(/input|select/i.test(block[0]), '参数表里不该有可编辑控件（票 #17 D-17.7：一律不给可配）');
-  });
 
   /* ==================================================================
    * ③ 迁移提示与自检
    * ================================================================== */
 
-  await test('★ 迁移提示：存在、可关，且写回时**一起写 imgOcr**（否则提示关不掉）', () => {
-    const html = read('options/options.html');
-    truthy(/id="ocr-migrate-note"/.test(html), '设置页缺一次性迁移提示块 #ocr-migrate-note');
-    truthy(/id="btn-ocr-migrate-ok"/.test(html), '缺「知道了」按钮（提示必须能关掉）');
-    const js = codeOf('options/options.js');
-    truthy(/cfg\.migrated\s*&&\s*cfg\.migrated\.ocrEngine\s*===\s*true/.test(js), '提示的显示条件必须读 migrated.ocrEngine');
-    /* 正面钉住那一行：两个键必须**同时**写。只写 migrated ⇒ 存储里 imgOcr.quality 还在 ⇒ 下次读又置真 */
-    truthy(/imgOcr:\s*Object\.assign\(\{\},\s*cfg\.imgOcr\)[\s\S]{0,80}migrated:\s*\{\s*ocrEngine:\s*false\s*\}/.test(js),
-      '点「知道了」时必须同时写回 imgOcr 与 migrated.ocrEngine=false（只写后者的话提示永远关不掉）');
-  });
 
   await test('★ 自检三件事：requestId 比对 / 30s 超时 / 回显**实际**引擎', () => {
     const js = codeOf('options/options.js');

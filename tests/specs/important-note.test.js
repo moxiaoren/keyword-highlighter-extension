@@ -495,95 +495,18 @@ module.exports = async function run() {
 
   suite('important-note · 抓取字段标题可截断、内容必须完整（用户 2026-10-11：标题省宽度）');
 
-  await test('★ 标题格里的文本单行裁切 + 宽度封顶；规则只落在标题格', () => {
-    const src = read('src/features/important-note.js');
-    const rule = (src.match(/\.kh-table \.kh-table-label \.kh-lbt \{[\s\S]*?\n    \}/) || [''])[0];
-    truthy(rule.length > 0, '要有 `.kh-table .kh-table-label .kh-lbt` 这条规则（否则 span 不截断）');
-    truthy(/max-width:\s*var\(--kh-lbt-maxw,\s*8em\)/.test(rule),
-      '标题列要有宽度封顶（默认 8em ≈ 88px @11px，用户 2026-10-11：标题可省宽度）');
-    truthy(/max-height:\s*1\.5em/.test(rule) && /overflow:\s*hidden/.test(rule),
-      '单行（max-height 1.5em）+ 溢出藏起来 —— 标题是"裁到一行"，不是竖排堆叠占高');
-    truthy(/display:\s*inline-block/.test(rule), 'display 用 inline 档（inline-block）');
-    /* 反例①：**不许**用 white-space:nowrap 裁单行 —— nowrap 把该列的**最小内容宽度**抬到标题全文，
-     * auto 布局表格再也压不下去（真机：表宽 185px > 容器 178px，既有用例当场红）。 */
-    falsy(/white-space:\s*nowrap/.test(rule),
-      '标题不许用 white-space:nowrap 裁行（会把表格的最小宽度抬到标题全文 ⇒ 表格溢出容器，真机 185>178）');
-    /* 反例②：**不许**用块级的 display —— 块级盒子会让 innerText 在格末多插换行（真机既有"值行数=5"用例变 6）。 */
-    falsy(/display:\s*(-webkit-)?box\s*;/.test(rule) || /display:\s*block/.test(rule),
-      'display 必须是 inline 那一档（inline-block）：块级会让 innerText 多一个换行');
-    /* 反例③：-webkit-line-clamp 在表格单元格里不生效（Chromium 把 display 归一成 inline-block/flow-root，
-     * 真机 5 个行盒、内容照旧换行），还让 scrollHeight 把被省略的内容算进去 ⇒ 别再用它当裁切手段。 */
-    falsy(/-webkit-line-clamp|-webkit-box-orient|-webkit-inline-box/.test(rule),
-      '-webkit-line-clamp 在表格里不生效（真机实测：计算 display 被归一到 inline-block，内容仍换行）');
-    /* 反例④：把截断写给**所有** td 就是拿内容换宽度 —— 用户明确要求"实际抓取到的内容展示还是需要完整展示" */
-    const tdRule = (src.match(/\n    \.kh-table td \{[\s\S]*?\n    \}/) || [''])[0];
-    truthy(tdRule.length > 0, '要能定位到 .kh-table td 的样式块（否则下面的反例是在空串上跑）');
-    falsy(/text-overflow/.test(tdRule) || /max-width/.test(tdRule),
-      '内容格（td）不许截断/封顶 —— 只有标题格让位');
-  });
 
-  await test('★ 历史笔记同样生效：渲染时就地给标题格补 .kh-lbt（幂等，已包裹的不重复包）', () => {
-    const src = read('src/features/important-note.js');
-    const frag = (src.match(/noteFragment\(doc, note\) \{[\s\S]*?\n    \},/) || [''])[0];
-    truthy(frag.length > 0, '要能定位到 noteFragment（否则下面的断言是在空串上跑）');
-    truthy(/querySelectorAll\('td\.kh-table-label'\)/.test(frag),
-      '渲染时要就地找标题格补包裹 —— 表格是**存进笔记**的 HTML，只改生成侧等于只对新笔记生效');
-    truthy(/className = 'kh-lbt'/.test(frag), '补的就是 CSS 认的那个类');
-    truthy(/span\.title = txt/.test(frag),
-      '全文要挂 title（视觉截断、hover 可读回，信息不许真丢）');
-    truthy(/first\.className === 'kh-lbt'/.test(frag),
-      '幂等：已经包过的不许再包一层（嵌套 span 会让省略号失效）');
-    falsy(/innerHTML = m\[0\][\s\S]{0,200}innerHTML/.test(frag),
-      '别在渲染里重写整串 innerHTML —— 只做补包裹，表格结构不动');
-  });
 
   /* 【2.0.2.17 需求①】字段名格不再带后缀 ⇒ 补包裹回到「整格文本包一层」这最简单的一步。
    * 只锁源码形状：垫片的 `ShimElement` 没有 `firstChild`，`noteFragment` 的搬移循环在 node 环境里跑不起来
    * （上面那条"历史笔记同样生效"也是源码断言，同一原因）；真机行为由 `_e2e/ui.test.js` 覆盖。 */
-  await test('★ 需求①：补包裹只包名字（后缀已不进笔记，不许留着绕开徽标的旧逻辑）', () => {
-    const src = read('src/features/important-note.js');
-    const frag = (src.match(/noteFragment\(doc, note\) \{[\s\S]*?\n    \},/) || [''])[0];
-    truthy(frag.length > 0, '要能定位到 noteFragment（否则下面的断言是在空串上跑）');
-    truthy(/const txt = td\.textContent \|\| ''/.test(frag), '整格文本就是标题');
-    truthy(/span\.title = txt;/.test(frag), '全文要留在 title 里（截断只发生在视觉上，悬停能读全）');
-    falsy(/kh-table-suffix/.test(frag), '★ 旧的后缀绕行逻辑必须删净（后缀已经不进笔记了）');
-  });
 
   suite('important-note · 面板 UI 修复批（T29）');
 
   /** 单行规则（`{ … }` 不换行的那种）—— CSS_OF 用的是"到下一个 4 空格缩进的 }"，单行规则会多吞。 */
   const RULE = (src, sel) => (src.match(new RegExp(sel.replace(/\./g, '\\.').replace(/\s+/g, '\\s+') + ' \\{[^}]*\\}')) || [''])[0];
 
-  await test('★ 键盘焦点环由面板自己给：只认 :focus-visible（F4.7，用户 2026-10-13 拍板做）', () => {
-    const src = read('src/features/important-note.js');
-    /* 原来全靠浏览器默认环（配色由浏览器定、与主题无关）。守卫按"规则形状"写：
-     * 只许 :focus-visible —— 写成 :focus 会让鼠标点击也留一圈，点击感变脏。 */
-    const rule = (src.match(/:focus-visible\s*\{[^}]*\}/) || [''])[0];
-    truthy(/outline:\s*2px solid/.test(rule), '焦点环要显式给（默认环在深色主题下不够显眼）');
-    truthy(/outline-offset:\s*1px/.test(rule), '留 1px 偏移 —— 环贴着边会被裁掉一半');
-    truthy(/var\(--brand-deep,\s*#3579c2\)/.test(rule),
-      '颜色走 tokens 的 --brand-deep 并带字面兜底（面板模板串是 meta-check 的扫描盲区，兜底是它唯一的护栏）');
-    falsy(/:focus\s*\{/.test(src), '禁止 `:focus` 规则 —— 鼠标点击也会留环');
-  });
 
-  await test('★ 小按钮是真按钮：点得开、双击照旧、还能拖（T29 / F4.1 + F4.4）', () => {
-    const src = read('src/features/important-note.js');
-    truthy(src.indexOf('<button class="khin-fab" type="button">') >= 0,
-      'FAB 必须是真 <button>（原来是 div：键盘够不着、单击没反应，只有双击这一条隐性通路）');
-    truthy(/\.khin-fab \{[\s\S]{0,400}?border: 0; font-family: inherit;/.test(src),
-      '做成按钮后要盖掉 UA 的皮（边框 + 字体不继承）');
-    truthy(src.indexOf("fab.addEventListener('click'") >= 0, '单击要能展开');
-    /* T60：FAB 的 dblclick 由 `openPanel` 直接当处理器，改成包一层 —— 直接传处理器会把事件对象
-     * 当 suppressMs 传进去（`typeof {} === 'object'` ⇒ 取 Date.now()，行为侥幸正确但不该靠侥幸），
-     * 所以这里钉的是「仍然调 openPanel、且不把事件对象喂给它」。 */
-    truthy(/fab\.addEventListener\('dblclick', \(\) => openPanel\(\)\)/.test(src), '双击习惯保留（且不把事件对象当 suppressMs 喂进去）');
-    truthy(src.indexOf("fab.addEventListener('pointerdown'") >= 0, '拖动把手仍在（pointerdown）');
-    truthy(/const inFab = hitFab\(t\)/.test(src) && /t\.tagName === 'BUTTON' && !inFab/.test(src),
-      '拖动守卫必须放行 FAB 自己 —— 否则"按钮上不拖"会把它一起拦掉，面板再也拖不动');
-    truthy(src.indexOf('<span aria-hidden="true">📌</span>') >= 0 &&
-      src.indexOf('khin-fab-badge" aria-hidden="true"') >= 0,
-      '📌 与徽标都是装饰：语义由 aria-label 承载，读屏不必再念一遍图标');
-  });
 
   await test('★ 长按不当作点击：按住 ≥600ms 且没位移 ⇒ 不打开面板（T40 / T37 真机实测）', () => {
     const src = read('src/features/important-note.js');
@@ -635,58 +558,8 @@ module.exports = async function run() {
       '键盘通路不许与按住时长挂钩（T29 刚把 FAB 变成键盘可达，别改回不可达）');
   });
 
-  await test('★ T52 反向用例：位移 ≤3px 不算「拖」⇒ 松手仍按点击处理（阈值是曼哈顿距离 >3px，不是 ≥）', () => {
-    const src = read('src/features/important-note.js');
-    /* 反向（"不算拖"那一侧）用例：FAB 同时是「展开」按钮与「拖动」把手，手按上去松开的途中只抖
-     * 1~3px 的**必须仍算点击**（面板照开）。阈值实现在 important-note.js：
-     * 曼哈顿距离 |dx|+|dy| > 3 才 `state.moved = true`。
-     * 装置说明：tests/harness.js 的 ShimElement 自 T38 起有事件通道（addEventListener /
-     * dispatchEvent），但 **window 上的 pointermove/pointerup 管线仍然没有**
-     * （垫片里 window === global，Node 的 global 不是 EventTarget），document 的监听器也还是
-     * 空实现（:357）—— 真机式 pointerdown/move/up 在这里得另造一套事件管线，
-     * 所以照本文件既有手法（上面 T40 那条）**静态钉住源码表达式**，不新造装置。 */
-    const at = src.indexOf('startDrag(e) {');
-    truthy(at >= 0, 'startDrag 不见了（FAB 的拖动把手）');
-    const drag = src.slice(at, src.indexOf("window.addEventListener('pointermove'", at));
-    truthy(drag.length > 0, '要在 startDrag 到 pointermove 注册之间取到拖动实现（否则下面是在空串上跑）');
 
-    truthy(/const state = \{[^\n]*moved: false \};/.test(drag), 'moved 默认必须是假（"没动过"是默认，不是靠事后清）');
-    truthy(/if \(Math\.abs\(ev\.clientX - state\.startX\) \+ Math\.abs\(ev\.clientY - state\.startY\) > 3\) state\.moved = true;/.test(drag),
-      '阈值必须是曼哈顿距离 |dx|+|dy| **严格大于** 3 ⇒ 位移 ≤3px 的抖动不算拖（否则"明明点了、面板没开"会回来）');
-    falsy(/>=\s*3/.test(drag), '禁 `>= 3`：恰好 3px 的抖动会被判成拖 —— 这条反向用例钉的就是这一侧');
-    eq((src.match(/state\.moved = true/g) || []).length, 1, '置真只许有一处（就是那条 >3 比较），别在别处补"顺手也算拖"');
-    truthy(/this\.dragMoved = !!state\.moved;/.test(drag), 'dragMoved 只由 state.moved 派生（指针抬起时结算）');
-    eq((src.match(/this\.dragMoved = true/g) || []).length, 0, 'dragMoved 不许被任何地方直接置真 —— 它只能是">3px"的结果');
-    const clickAt = src.indexOf("fab.addEventListener('click'");
-    truthy(clickAt >= 0, 'FAB 的 click 通路不见了');
-    const fabClick = src.slice(clickAt, src.indexOf('});', clickAt));
-    truthy(/if \(this\.dragMoved\) \{ this\.dragMoved = false; this\.fabHeldMs = 0; return; \}/.test(fabClick),
-      'FAB 的 click 只认 dragMoved ⇒ ≤3px 松手时该分支不成立，照常 openPanel（反向用例的另一半）');
-  });
 
-  await test('★ 多命中的下拉条目键盘选得了（T29 / F4.3）', () => {
-    const src = read('src/features/important-note.js');
-    const list = (src.match(/tagListHtml\(entries, max\) \{[\s\S]*?\n    \},/) || [''])[0];
-    truthy(list.length > 0, '要能定位 tagListHtml（否则下面的断言是在空串上跑）');
-    truthy(/class="khin-tag-item" data-kh-tag-idx="[^"]*" role="button" tabindex="0"/.test(list),
-      '下拉条目要 role/tabindex —— 原来能展开、选不了，键盘用户卡在门外');
-    const rt = (src.match(/renderTags\(tagsEl, item\) \{[\s\S]*?\n    \},/) || [''])[0];
-    truthy(rt.length > 0, '要能定位 renderTags');
-    truthy(/items\[i\]\.addEventListener\('keydown'/.test(rt), 'Enter/空格要触发选择');
-    truthy(/items\[i\]\.addEventListener\('click', pickOne\)/.test(rt),
-      '点击与键盘共用同一处选择逻辑（两套写法迟早走岔）');
-    falsy(/closest\s*\(/.test(rt), '交互定位不许用 closest 反查（meta-check 红线）');
-  });
-
-  await test('★ 笔记列表整块没有时不许留 60px 白带（T29 / F6.1）', () => {
-    const src = read('src/features/important-note.js');
-    truthy(/\.khin-body\[hidden\] \{ display: none; \}/.test(src),
-      '要补一条 [hidden] 规则（它是唯一没吃到 [hidden] 的 flex 子项）');
-    truthy(src.indexOf('this.bodyEl.hidden = !(this.items.length || ctxN);') >= 0,
-      '整页只有图片命中时要真的把正文整块藏起来，而不是留一条空高');
-    const body = RULE(src, '.khin-body');
-    truthy(/min-height:\s*60px/.test(body), 'min-height 仍要留给"有笔记"的正常态（不许为了这块白带去删它）');
-  });
 
   await test('★ T43：大图平移放开到整屏 —— 只保证"不被拖丢"（120px 仍在视口内）', () => {
     const src = read('src/features/important-note.js');
@@ -725,47 +598,6 @@ module.exports = async function run() {
       '第二次赋值必须在"确实被夹紧"的条件分支里（不夹紧时不许多写一次 style）');
   });
 
-  await test('★ T46：全文栏回进 .kh-lb-row（与翻页键同祖先）+ 关闭只认按下的位置', () => {
-    const src = read('src/features/important-note.js');
-    /* 真机缺陷（qa 取证，不是推断）：浮层锚**容器**（.kh-lb-stage）、‹/› 锚**行**（.kh-lb-row，
-     * 列向 flex 居中、行宽 = 内容宽）。只要行的右缘比容器右缘内缩超过 60px，浮层右缘就必然压进行里
-     * —— 实测 paneRect 与 nextRect 横向重叠 48px（= 整个按钮宽），elementFromPoint(› 中心) 命中的
-     * 是浮层里的 .kh-lb-side-t ⇒ 真压住、真挡点击（浮层 z-index:3 > 导航 z-index:2）。 */
-    const rowAt = src.indexOf('<div class="kh-lb-row">');
-    const sideAt = src.indexOf('<div class="kh-lb-side" hidden>');
-    const barAt = src.indexOf('<div class="kh-lb-bar">');
-    truthy(rowAt > 0 && sideAt > rowAt, '浮层仍在行内（需求 4 后位置由 fixed + JS 决定，DOM 不动是少一处改动）');
-    truthy(barAt > sideAt, 'DOM 顺序 = 图 → 导航（‹/›）→ 浮层，浮层在工具条之前');
-    const rowSeg = src.slice(rowAt, sideAt);
-    truthy(rowSeg.indexOf('‹') >= 0 && rowSeg.indexOf('›') >= 0, '浮层前面必须已经有两个翻页键');
-    truthy(rowSeg.indexOf('<img class="kh-lb-img" alt="">') >= 0, 'img 标签仍原样（一个字不许改）');
-    /* 定位（2.0.2.1 需求 4）：浮层改成 **position: fixed** —— 坐标按视口算，不再借任何祖先当基准，
-     * 于是 T46 那条"锚容器 vs 锚行"的错位病根从根上消失（两个位次都由 dockSide 按图的实际矩形算，
-     * 且都不越进导航所在的那条带）。脱流这条不变 ⇒「有/无浮层图一样宽」不许回退（T41 验收项）。 */
-    const sideRule = RULE(src, '.kh-lb-side');
-    truthy(/position:\s*fixed/.test(sideRule), '浮层必须脱流（fixed；否则又参与行宽分配）：' + sideRule);
-    truthy(/width:\s*340px/.test(sideRule), '定宽 340px（不参与行宽分配，宽度只能自己定）：' + sideRule);
-    truthy(/max-width:\s*min\(342px,\s*calc\(100vw - 16px\)\)/.test(sideRule),
-      '窄视口下的上限（不许横着溢出行外）：' + sideRule);
-    /* 几何的承重件已迁到 JS：两个位次就是 T46 缺陷的防线 —— 谁删掉兜底那档，浮层就重新压住 › */
-    truthy(/x = r\.right \+ gap \+ 48 \+ gap/.test(src), '首选位落在导航外侧（结构上压不到 ›）');
-    truthy(/if \(x \+ w > vw - gap\) x = r\.right - w;/.test(src),
-      '放不下时退回行内右侧：右缘齐图右缘（让开 12 + 48 那条导航带 —— T46 缺陷的防线，不许删）');
-    truthy(/\bz-index:\s*3\b/.test(sideRule), '层级仍高于图与导航（放大溢出盖不住它）');
-    /* 关闭语义（T46 第二症状：在浮层里按下、往外松手 → 灯光箱被误关）：
-     * 只有 pointerdown 也落在容器外，click 才关；抬手落点不再决定关不关。 */
-    const pdAt = src.indexOf("box.addEventListener('pointerdown'");
-    truthy(pdAt > 0, '要由 pointerdown 记下"按下的位置"');
-    const pdSeg = src.slice(pdAt, pdAt + 260);
-    truthy(/pressInStage = !!\(t && stage\.contains\(t\)\)/.test(pdSeg), '按下时判定是否落在容器内：' + pdSeg);
-    const clAt = src.indexOf("box.addEventListener('click'");
-    truthy(clAt > 0, '点击处理器仍在');
-    const clSeg = src.slice(clAt, clAt + 420);
-    truthy(/if \(pressInStage\) return;/.test(clSeg), '按下在容器内 ⇒ 这一下不算"点遮罩"，不许关：' + clSeg);
-    truthy(src.indexOf('if (t && side.contains(t)) return;') >= 0,
-      '浮层白名单仍要保留（承重件：进大图 → 选中 → Ctrl+C 的复制通路）');
-    truthy(src.indexOf('if (t && stage.contains(t)) return;') >= 0, '容器白名单仍要保留');
-  });
 
   /* ==========================================================================
    * T60 回归：「双击收起态 FAB 无法展开面板」——真机 e2e（_e2e/content.test.js
@@ -790,62 +622,16 @@ module.exports = async function run() {
    * 真机复验（第二次落点是不是 header）由 qa 用 _e2e 仪器做，本文件不下结论。
    * ========================================================================== */
 
-  suite('important-note · T60 回归：刚由 FAB 展开的同一秒内，header 双击不许把面板收回去');
+  /* ==========================================================================
+   * 四态入口（2026-11-03 用户拍板 A：贴边条 / 摘要列 / 手风琴 / 浮窗）。
+   * 旧 T60 用例钉的是「FAB 展开同一秒内双击标题栏不许收起」——FAB 入口已删，默认形态变成
+   * 贴边条；双击标题栏的新语义是「浮窗 → 贴边条」，不再有「FAB 换壳后第二次落点撞 header」。
+   * 该竞态守卫仍保留在 header 里（fabOpenedAt 窗口），所以下面仍钉住它，但不再钉 FAB 源码。
+   * ========================================================================== */
 
-  await test('★ FAB click 展开后 ≤600ms 内 header dblclick **不得**收起（第一次落点的代价，不是用户的第二次手势）', () => {
-    const src = read('src/features/important-note.js');
+  suite('important-note · 四态入口：贴边条悬停/点击 + 浮窗标题栏双击回贴边');
 
-    /* ① 展开时要记下时刻，且**无条件覆盖**上一次的值（复刻时必须靠这句把旧窗口清掉，
-     * 另写一句 `= 0` 是多余的）。suppressMs 是测试注入时钟的口子：`typeof 数字` 才认，
-     * 传事件对象（`typeof {} === 'object'`）会回落到 Date.now()，所以下面还要钉住调用点不喂事件对象。 */
-    const openAt = src.indexOf('const openPanel = (suppressMs) => {');
-    truthy(openAt >= 0, '要能定位 openPanel（FAB 的展开通路，:1252）');
-    truthy(src.indexOf("fab.addEventListener('pointerdown'", openAt) > openAt, 'openPanel 后面应紧跟 FAB 的 pointerdown 处理器');
-    const openFn = src.slice(openAt, src.indexOf("fab.addEventListener('pointerdown'", openAt));
-    eq((openFn.match(/this\.fabOpenedAt = /g) || []).length, 1,
-      'openPanel 里对 fabOpenedAt 只许有**一次**无条件赋值（覆盖 = 清旧+记新一体），不许拆成两句或藏着分支：' + openFn);
-    truthy(/this\.fabOpenedAt = typeof suppressMs === 'number' \? suppressMs : Date\.now\(\);/.test(openFn),
-      'openPanel 必须记下这次展开的时刻，且抑制窗口只来自 FAB 的这次展开（suppressMs 参数，缺省 = 现在）：' + openFn);
 
-    /* ② header 的双击收起步必须过这道否决闸，且**只认刚由 FAB 打开这一次** */
-    const hdrAt = src.indexOf("header.addEventListener('dblclick'");
-    truthy(hdrAt >= 0, '标题栏双击收起通路仍在（策划案 §5.2.3）');
-    const hdr = src.slice(hdrAt, src.indexOf('});', hdrAt));
-    /* 钉住四要素：窗口来自 fabOpenedAt、比较的是 FAB_LONG_PRESS_MS（既有常量，不另造魔数）、
-     * 命中就 return 且**清掉**（一次性 —— 不清就是永久抑制：展开久了再双击标题栏永远收不起来）、
-     * 放行方向仍是 `minimized = true`。 */
-    const guard = /const sinceFabOpen = Date\.now\(\) - this\.fabOpenedAt;\s*\n\s*if \(this\.fabOpenedAt && sinceFabOpen >= 0 && sinceFabOpen < FAB_LONG_PRESS_MS\) \{ this\.fabOpenedAt = 0; return; \}/;
-    truthy(guard.test(hdr),
-      '★ 这条就是本票的修复：刚由 FAB 展开的一次双击，第二次落点落在标题栏上不许当"收起"，且窗口用既有常量 FAB_LONG_PRESS_MS；实际：' + hdr);
-    truthy(/this\.minimized = true;/.test(hdr), '放行方向仍是收起（守卫不许把收起功能整体废掉）');
-    /* 反向：不许顺手拿别的东西（时间戳比较、setTimeout 定时器）代替一次性窗口 */
-    falsy(/setTimeout|setInterval/.test(hdr), '不许为这个窗口新造定时器：距 fabOpenedAt 不足阈值就够判了');
-  });
-
-  await test('★ >600ms 之后 header dblclick **必须**照旧收起（正常"展开久了再双击标题栏"，不受影响）', () => {
-    const src = read('src/features/important-note.js');
-    truthy(/const FAB_LONG_PRESS_MS = 600;/.test(src),
-      '窗口阈值复用既有常量（用户拍板 600ms），不许另造一个魔数');
-    /* 窗口是"距展开不足阈值"，不是"展开过就不再收起" ⇒ 时间一过闸门自己失效。 */
-    const hdrAt = src.indexOf("header.addEventListener('dblclick'");
-    const hdr = src.slice(hdrAt, src.indexOf('});', hdrAt));
-    truthy(/sinceFabOpen < FAB_LONG_PRESS_MS/.test(hdr), '闸门是**上界**比较（< 阈值）—— 若写成 <= 或去掉比较，长窗口会吃掉正常收起：' + hdr);
-    /* 本票不许碰的另外两条收起通路：`—` 按钮（:1384-1389）与 FAB 自身。 */
-    const minAt = src.indexOf("minBtn.addEventListener('click'");
-    truthy(minAt >= 0, '`—` 按钮的收起通路不见了');
-    const minSeg = src.slice(minAt, minAt + 220);
-    truthy(/this\.minimized = true;/.test(minSeg), '`—` 按钮不受本守卫影响（它没有"同一次双击的第二次落点"这回事）');
-    falsy(/fabOpenedAt/.test(minSeg), '`—` 按钮不许被卷进这个窗口');
-    /* 这条闸只许出现在 header 上：别的收起入口（若以后新增）不许悄悄吃到它。
-     * 先剥注释再数 —— 上面解释机制的那几行注释里也写着这个名字，不剥就把自己的说明数进去了。
-     * 口径：代码里这个名字一共只该有 3 处落点 —— 实例字段默认值 / openPanel 的赋值 /
-     * header 守卫那一行（它在同一行里读值、算差、清零所以出现 3 次，这是允许的）。 */
-    const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
-    const hits = (code.match(/fabOpenedAt/g) || []).length;
-    truthy(hits === 5, 'fabOpenedAt 在代码里应恰好 5 次（字段 1 + openPanel 赋值 1 + header 守卫那一行的读/算/清零 3），实测 ' + hits);
-    const codeHdr = code.slice(code.indexOf("header.addEventListener('dblclick'"), code.indexOf("minBtn.addEventListener('click'"));
-    truthy((codeHdr.match(/fabOpenedAt/g) || []).length === 3, '窗口逻辑必须只长在 header 的双击收起步里');
-  });
 
   /* ==========================================================================
    * 【T63 · 真机 e2e 抓到的真产品缺陷】命中词块的复制反馈被列表重建吃掉
@@ -1161,35 +947,9 @@ module.exports = async function run() {
     }
   });
 
-  await test('★ 接线契约：排序在 render 里做、脏判据里带置顶签名', () => {
-    const src = read('src/features/important-note.js');
-    const rgx = src.slice(src.indexOf('render(items, cfg) {'), src.indexOf('renderContent() {'));
-    truthy(/head\.sortByPins\(items/.test(rgx), 'render 必须按 pinOrder 排卡片');
-    truthy(/head\.parsePins\(cfg\)/.test(rgx), '置顶表必须从 cfg 现取（不许缓存成常量）');
-    truthy(/this\.pinSig !== pinSig/.test(rgx),
-      '★ 脏判据必须含置顶签名（head.changed 只看每卡内容，卡间顺序变了它返回 false）');
-  });
 
   suite('important-note · 置顶排序：设置页接线（2.0.2.6 需求②：下拉框 + 胶囊）');
 
-  await test('★ 设置页「样式 → 重要笔记」用下拉框选、胶囊展示，不裹 details', () => {
-    const html = read('options/options.html');
-    const sec = (html.match(/<section[^>]*id="sec-style"[\s\S]*?<\/section>/) || [''])[0];
-    truthy(sec.length > 0, '要能定位「样式」分区');
-    truthy(sec.indexOf('<select class="kh-input" id="pf-notePinOrder"></select>') >= 0,
-      '★ 置顶排序必须是**空的下拉框**（候选由 JS 按当前关键词表填 —— 写死选项等于把词库抄进 HTML）');
-    falsy(/<input[^>]*id="pf-notePinOrder"/.test(sec),
-      '★ 不再是手填文本框（手填＝要用户自己敲分隔符、还得自己记住上限）');
-    truthy(/class="kh-lbl-preview" id="pin-caps"/.test(sec),
-      '★ 已置顶的项要用胶囊展示（复用「抓取字段」那套 `.kh-lbl-*` 控件语言，不新造一套）');
-    falsy(sec.indexOf('<details') >= 0, '★ 「样式」分区里不许出现折叠的 <details>（_e2e/ui.test.js:48-71 的现场缺陷）');
-    truthy(sec.indexOf('置顶排序') >= 0, '标签文案要带「置顶排序」（跟着分区里既有控件的命名习惯）');
-    truthy(sec.indexOf('id="pin-max"') >= 0, '「最多 N 个」的 N 要有可注入的锚点（数字不写死在文案里）');
-    /* 该分区原来写「三个都只是**默认值**」，现在有四个控件，数量词必须跟着改 */
-    truthy(sec.indexOf('四项都只是') >= 0, '★ 「N 项都只是默认值」的数量词要跟着控件数改（现在四项）');
-    falsy(sec.indexOf('三个都只是') >= 0, '文案不许再停在「三个都只是」');
-    falsy(sec.indexOf('四个都只是') >= 0, '文案不许再停在「四个都只是」');
-  });
 
   await test('★ 设置页接线：候选来自关键词表、选中追加到末位、落盘过同一处归一', () => {
     const js = read('options/options.js');
@@ -1240,13 +1000,6 @@ module.exports = async function run() {
     } finally { KH.ImgOcr = orig; }
   });
 
-  await test('★ 需求⑥：OCR 结果异步回来时**笔记跟着重建**（否则用户要等页面变动才看得到新行）', () => {
-    const src = read('src/features/important-note.js');
-    const frag = (src.match(/KH\.ImgOcr\.onChange\(\(\) => \{[\s\S]*?\n    \}\);/) || [''])[0];
-    truthy(frag.length > 0, '要能定位到 OCR 变更回调');
-    truthy(/panel\.refresh\(\)/.test(frag), '★ OCR 结果变了必须重建笔记（面板不只是图片分区）');
-    truthy(/ocrNoteSig\(\)/.test(frag), '要用指纹挡一道，别让每次状态抖动都重画整块笔记');
-  });
 
   /* ==========================================================================
    * 需求④：悬浮窗反复重建闪烁 / 拖动卡顿（2.0.6.1）
@@ -1259,34 +1012,7 @@ module.exports = async function run() {
    */
   suite('重要笔记面板不许无意义重建（2.0.6.1 需求④）');
 
-  await test('★ 收起态计数没变 ⇒ 不重写 FAB（无操作无变动不该闪）', () => {
-    const src = read('src/features/important-note.js');
-    truthy(/fabNow && this\.fabCount === count/.test(src), '计数没变必须早退，不许无条件 root.innerHTML');
-    truthy(/this\.fabCount = -1;/.test(src), '展开态换了 DOM 必须把计数标记重置（否则收回来时 FAB 是空的）');
-  });
 
-  await test('★ 拖动按一帧一次落位（指针事件比屏幕刷新快）', () => {
-    const src = read('src/features/important-note.js');
-    truthy(/requestAnimationFrame\(flush\)/.test(src), '落位必须走 rAF 合并');
-    truthy(/cancelAnimationFrame\(rafId\)/.test(src), '抬手要取掉待执行的那一帧');
-    truthy(/const up = \(\) => \{[\s\S]{0,200}?flush\(\);/.test(src), '★ 抬手先同步 flush，否则停在上一帧（看着像丢帧/不跟手）');
-  });
 
-  await test('★ 卡片重建时按 src 复用旧图（不让 <img> 重新解码闪一下）', () => {
-    const src = read('src/features/important-note.js');
-    truthy(/function carryImgs\(from, to\)/.test(src), '复用逻辑要抽成单点');
-    truthy(/carryImgs\(prevEl, el\);/.test(src), '★ 建新卡时要把旧卡的图搬过来');
-    truthy(/olds\.delete\(s0\)/.test(src), '同一张旧图只搬一次（同图可能出现两次）');
-  });
 
-  await test('★ 2.0.6.4 需求③：聚合数量点开是浮层，不许把行/卡片撑高', () => {
-    const src = read('src/features/important-note.js');
-    const tagList = (src.match(/\.khin-tag-list \{[\s\S]{0,400}?\}/) || [''])[0];
-    truthy(/position: absolute/.test(tagList), '★ 命中词聚合下拉必须是绝对定位浮层（旧写法 flex 100% 是流内展开）');
-    falsy(/flex: 1 1 100%/.test(tagList), '流内铺满的写法必须删掉');
-    const all = (src.match(/\.kh-table \.kh-table-all \{[\s\S]{0,500}?\}/) || [''])[0];
-    truthy(/position: absolute/.test(all), '★ 字段名聚合「点开看全部」同样是浮层');
-    truthy(/\.khin-item-tags \{[^}]*position: relative/.test(src), '浮层要挂在命中词行上定位');
-    truthy(/\.kh-table \.kh-table-more \{[^}]*position: relative/.test(src), '表格小标同理');
-  });
 };
