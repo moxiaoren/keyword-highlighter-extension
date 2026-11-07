@@ -204,11 +204,32 @@
     },
 
     /**
+     * 这一组「上一轮写下的东西」是否**还在页面注册表里原样躺着**。
+     *
+     * 幂等判断不能只比签名：`CSS.highlights` 是**页面与扩展共享**的一张表，网页自己
+     * `CSS.highlights.clear()`（或同名覆盖）就能把我们的组抹掉，而我们的签名还留着。
+     * 只比签名就会"以为画面还在"，于是清掉之后再也不重写 —— 真机回归 7g 实测：
+     * 页面 clear() 后重扫一次，高亮组数仍是 0（自愈失效）。
+     * 所以签名相同**且**注册表里的对象还是我们上次放进去的那个，才算"没变"。
+     * @param {string} name
+     * @param {string} sig
+     */
+    _stillLive(name, sig) {
+      if (!supportsHighlights) return false;
+      if (this._groupSigs.get(name) !== sig) return false;
+      const ours = this._groups.get(name);
+      if (!ours) return false;
+      let cur = null;
+      try { cur = CSS.highlights.get ? CSS.highlights.get(name) : null; } catch (err) { cur = null; }
+      return cur === ours;
+    },
+
+    /**
      * 写入 / 覆盖一个视觉组。
      * **全库唯一允许调用 `CSS.highlights.set(` 的地方**（UN-03 / meta-check #5）；
      * Rebuilder 的局部清理也必须经由此方法，不允许自己直接调 API。
      *
-     * 【幂等】同一组内容与上次完全一致 ⇒ 直接返回 false，**不调 API**。
+     * 【幂等】同一组内容与上次完全一致、且页面注册表里还是我们那份 ⇒ 直接返回 false，**不调 API**。
      * 这一个判断就是"重建不再闪烁"的关键：`CSS.highlights.set()` 每次调用都会让浏览器把
      * 这一组重新绘制，哪怕 ranges 一个字都没变（真机实测：静止页面上每次重建都会闪一下）。
      *
@@ -227,7 +248,7 @@
         return had;
       }
       const s = (sig != null) ? sig : this.signatureOf(ranges);
-      if (this._groupSigs.get(name) === s) return false;
+      if (this._stillLive(name, s)) return false;
       const hl = new Highlight(...ranges);
       this._groups.set(name, hl);
       this._groupSigs.set(name, s);
@@ -347,10 +368,11 @@
         for (const [name, g] of groups) {
           this._ensureGroupStyle(name, g.style, g.variant, g.forced);
           keep.add(name);
-          /* 与上次签名一致 ⇒ 这一组的画面本来就是对的：**连 setGroup 都不调**。
-           * 真浏览器里 `CSS.highlights.set()` 会触发重新绘制，静止页面上的"莫名闪烁"就是这么来的。 */
+          /* 与上次签名一致**且注册表里还是我们那份** ⇒ 这一组的画面本来就是对的：连 setGroup 都不调。
+           * 真浏览器里 `CSS.highlights.set()` 会触发重新绘制，静止页面上的"莫名闪烁"就是这么来的。
+           * 反过来说：签名对、组却已被页面清掉，就必须重写（`_stillLive` 负责把这层分辨开）。 */
           const sig = this.signatureOf(g.ranges);
-          if (this._groupSigs.get(name) === sig) continue;
+          if (this._stillLive(name, sig)) continue;
           // 单点写入：批量、按色分组（经 setGroup 统一收口，UN-03 唯一实现）
           this.setGroup(name, g.ranges, sig);
         }

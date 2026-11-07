@@ -36,10 +36,15 @@ module.exports = async function run() {
   test('渲染幂等：同组内容签名没变就不调 CSS.highlights.set', () => {
     truthy(renderer.includes('_groupSigs'), 'renderer 必须保留每组的上次写入签名');
     truthy(renderer.includes('signatureOf(ranges)'), '必须有内容签名函数');
-    truthy(/if \(this\._groupSigs\.get\(name\) === s\) return false;/.test(renderer),
-      'setGroup 必须在签名相同时早退（否则每次重建都会重新绘制）');
-    truthy(/if \(this\._groupSigs\.get\(name\) === sig\) continue;/.test(renderer),
+    truthy(/if \(this\._stillLive\(name, s\)\) return false;/.test(renderer),
+      'setGroup 必须在「签名相同 + 注册表里还是我们那份」时早退（否则每次重建都会重新绘制）');
+    truthy(/if \(this\._stillLive\(name, sig\)\) continue;/.test(renderer),
       'render 批量路径也要按签名跳过（这是"静止页面不闪"的关键）');
+    /* 光比签名不够：页面自己 CSS.highlights.clear() 会把组抹掉而签名还在，
+     * 只比签名就"以为画面还在"，自愈失效（e2e 7g 实测组数恒为 0）。 */
+    truthy(/_stillLive\(name, sig\)/.test(renderer) && /CSS\.highlights\.get\(name\)/.test(renderer)
+      && /cur === ours/.test(renderer),
+      '_stillLive 必须核对注册表里的对象身份（页面清空后要能重写，即自愈）');
   });
 
   test('不清视觉的代价必须自己补：prune 撤掉本轮没出现的旧组', () => {

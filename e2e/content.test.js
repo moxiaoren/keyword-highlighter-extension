@@ -1005,31 +1005,50 @@ module.exports = async function runContent(ctx) {
     }
   });
 
-  await test('四态默认：**贴边条**贴左缘居中（不遮挡正文）；浮窗仍回左上角（v1.52.0 口径）', async () => {
+  await test('四态默认：**悬窗**常驻左上（2.0.8.9 需求②）；贴边条退为备选', async () => {
     /* 【必须自己起页】同第 2 组：本组依赖"页面上有重要笔记内容"，
      * 不能依赖前一组（第 4 组）留下的页面 —— 否则单独跑 interact 方面会假红。 */
-    await fresh('list.html', { float: false });
-    /* 2026-11-03 用户拍板 A（四态）：默认只露 8px 贴边条，正文不被遮；
-     * 点条 → 摘要列 → 「浮窗」才回到旧的 250px 卡片（那时仍是左上角）。 */
+    await fresh('list.html');
+    /* 2026-11-07 用户拍板（需求②原话：「贴边模式优化（请改成默认悬窗，贴边模式才应该是备选）」）
+     * —— 与 2026-11-03 的「默认只露 8px 贴边条」相反，那条口径随需求作废。
+     * 现在默认就是左上角悬窗（.khin-panel），贴边条要用户自己切（双击标题栏 / 头部按钮 / `[`）。 */
+    const box = await page.locator('#kh-important-note-host').evaluate((h) => {
+      const sr = h.shadowRoot;
+      const p = sr.querySelector('.khin-panel');
+      if (!p) return null;
+      const r = p.getBoundingClientRect();
+      return {
+        left: Math.round(r.left), top: Math.round(r.top), width: Math.round(r.width),
+        rail: !!sr.querySelector('.khin-rail'),
+        rows: sr.querySelectorAll('.khin-row').length,
+        items: sr.querySelectorAll('.khin-item').length
+      };
+    });
+    truthy(box, '默认形态应是悬窗（.khin-panel）');
+    falsy(box.rail, '默认不该再出贴边条（贴边是备选），实际 ' + JSON.stringify(box));
+    truthy(box.left < 100 && box.top < 100, '悬窗默认停在左上角（v1.52.0 口径不变），实际 ' + JSON.stringify(box));
+    truthy(box.width >= KHConfig.PANEL_WIDTH_MIN,
+      '悬窗宽度应达到最小可读宽度 ' + KHConfig.PANEL_WIDTH_MIN + 'px，实际 ' + box.width);
+    truthy(box.items > 0, '默认悬窗展开态应直接给出全部条目（不必先点贴边条）');
+
+    /* 备选路径不能坏：双击标题栏仍应切回贴边条（下一条专门测「再点回悬窗」） */
+    const hx = await page.locator('#kh-important-note-host').evaluate((h) => {
+      const e = h.shadowRoot.querySelector('.khin-header');
+      const r = e.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    });
+    await page.mouse.dblclick(hx.x, hx.y);
+    await page.waitForTimeout(350);
     const rail = await page.locator('#kh-important-note-host').evaluate((h) => {
       const b = h.shadowRoot.querySelector('.khin-rail');
       if (!b) return null;
       const r = b.getBoundingClientRect();
-      return { left: r.left, width: r.width, top: r.top, vh: window.innerHeight,
-        drawerHidden: (h.shadowRoot.querySelector('.khin-drawer') || {}).hidden };
+      return { left: Math.round(r.left), width: Math.round(r.width), top: Math.round(r.top), vh: window.innerHeight };
     });
-    truthy(rail, '默认形态应是贴边条（.khin-rail）');
+    truthy(rail, '双击标题栏后应能切回贴边条（备选路径可用）');
     truthy(rail.left < 2, '贴边条应贴左缘，left=' + rail.left);
     truthy(rail.width <= 12, '贴边条要窄（8px），实际 ' + rail.width);
     truthy(Math.abs(rail.top - rail.vh * 0.42) < rail.vh * 0.15, '贴边条在左缘中段（约 42% 视口高），实际 top=' + rail.top);
-    truthy(rail.drawerHidden !== false, '摘要列默认收起（悬停/点击才滑出）');
-    await openFloat();
-    const box = await page.locator('#kh-important-note-host').evaluate((h) => {
-      const w = h.shadowRoot.querySelector('.khin-panel');
-      const r = w.getBoundingClientRect();
-      return { left: r.left, top: r.top };
-    });
-    truthy(box.left < 100 && box.top < 100, '浮窗仍回到左上角（v1.52.0 口径），实际 ' + JSON.stringify(box));
   });
 
   await test('★ 双击标题栏 = 回贴边条；点条再滑出摘要列（四态，不再收成 FAB）', async () => {
@@ -1132,18 +1151,30 @@ module.exports = async function runContent(ctx) {
         if (o < 0.999) { if (!inDip) { dipEvents++; inDip = true; } } else inDip = false;
         if (performance.now() - t0 < 900) requestAnimationFrame(loop);
       };
+      const countRanges = () => {
+        let n = 0;
+        try { if (CSS && CSS.highlights) CSS.highlights.forEach((hl) => { for (const _ of hl) n++; }); } catch (e) { n = -1; }
+        return n;
+      };
+      const hlBefore = countRanges();
       document.getElementById('tail').appendChild(document.createTextNode(' x'));   // 与笔记内容无关的页面变更
       requestAnimationFrame(loop);
       await new Promise((res) => setTimeout(res, 950));
       headObs.disconnect(); shadowObs.disconnect();
       return {
         hlStyleTouched, hiddenFlips, bodyChildMutations, dipEvents, minOpacity,
-        itemNodeReused: firstItem === sr.querySelector('.khin-item')
+        itemNodeReused: firstItem === sr.querySelector('.khin-item'),
+        hlBefore, hlAfter: countRanges(), pageTextChanged: document.getElementById('tail').textContent.slice(-2) === ' x'
       };
     });
     console.log('        面板重建观测: ' + JSON.stringify(r));
     truthy(!r.missingHost, '面板结构应齐全（.khin-wrap / .khin-panel / .khin-body / .khin-item）');
-    truthy(r.hlStyleTouched > 0, '前置：这次变更应真的触发过重建，否则下面的断言是空的');
+    /* 【前置口径已改】旧版要求"style 节点被删/重注过"来证明真的重建过 —— 那正是本版要消灭的
+     * 抖动：2.0.8.9 起重建按内容签名幂等，样式节点一动不动。所以前置改成两条更强的：
+     * 页面确实变了（变更真实发生）＋ 高亮仍然在（重建/幂等路径没把视觉丢掉）。 */
+    truthy(r.pageTextChanged, '前置：这次变更是真的发生了（#tail 末尾多了 " x"）');
+    truthy(r.hlBefore > 0 && r.hlAfter > 0, '前置：变更前后高亮都应在（不许为了"不闪"把视觉丢掉），实际 ' + r.hlBefore + ' → ' + r.hlAfter);
+    eq(r.hlStyleTouched, 0, '重建不许重注 ::highlight 样式节点（那是刷新的底层来源，2.0.8.9 起应当为 0）');
     eq(r.hiddenFlips, 0, '重建期间面板不许被隐藏（.khin-wrap[hidden] → display:none）');
     eq(r.bodyChildMutations, 0, '内容没变就不许清空重建 .khin-body');
     truthy(r.itemNodeReused, '内容没变时条目 DOM 节点必须复用');
@@ -1391,21 +1422,22 @@ module.exports = async function runContent(ctx) {
     await shot(page, '14-blank-hover-no-tooltip');
   });
 
-  await test('★ 重要笔记四态默认是贴边条（不是旧左上角常驻面板）', async () => {
-    await fresh('list.html', { float: false });
+  await test('★ 重要笔记默认是悬窗（2.0.8.9 需求②；旧的「默认贴边条」口径已作废）', async () => {
+    await fresh('list.html');
     const r = await page.evaluate(() => {
       const host = document.getElementById('kh-important-note-host');
       const sr = host && host.shadowRoot;
+      const p = sr && sr.querySelector('.khin-panel');
       const rail = sr && sr.querySelector('.khin-rail');
-      if (!rail) return null;
-      const b = rail.getBoundingClientRect();
-      const drawer = sr.querySelector('.khin-drawer');
-      return { left: Math.round(b.left), width: Math.round(b.width), vw: window.innerWidth,
-        drawerHidden: drawer ? drawer.hidden : null, panel: !!sr.querySelector('.khin-panel') };
+      if (!p) return null;
+      const b = p.getBoundingClientRect();
+      return { left: Math.round(b.left), top: Math.round(b.top), width: Math.round(b.width),
+        rail: !!rail, rows: sr.querySelectorAll('.khin-row').length, items: sr.querySelectorAll('.khin-item').length };
     });
-    truthy(r, '应有重要笔记贴边条（配置里 k1/k3 带重要笔记）');
-    truthy(r.left < 2 && r.width <= 12, '贴边条贴左缘、宽 8px，实际 ' + JSON.stringify(r));
-    truthy(r.drawerHidden !== false && !r.panel, '默认不铺开摘要列、也不常驻浮窗，实际 ' + JSON.stringify(r));
+    truthy(r, '应有重要笔记悬窗（配置里 k1/k3 带重要笔记）');
+    falsy(r.rail, '默认不该出现贴边条（贴边是备选），实际 ' + JSON.stringify(r));
+    truthy(r.left < 100 && r.top < 100, '悬窗停左上角，实际 ' + JSON.stringify(r));
+    truthy(r.items > 0, '默认悬窗应直接给全条目，实际 ' + JSON.stringify(r));
   });
 
   await test('★ 拖动面板到浏览器边界后松开，不得冒出备注卡片（坐标判据的补发 click）', async () => {
