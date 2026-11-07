@@ -45,15 +45,20 @@
     /**
      * 唯一的清理出口。
      * @param {Node|null} root
-     * @param {{visual?: boolean, registry?: boolean, reason?: string}} [opts]
-     *   opts.visual   —— 是否清视觉（默认 true）
+     * @param {{visual?: boolean, registry?: boolean, features?: boolean, reason?: string}} [opts]
+     *   opts.visual   —— 是否清视觉（默认 true；**重建路径传 false**：视觉差异交给 Renderer.render
+     *                    的签名 diff + prune，避免"清空→重加"之间那一帧可见空窗，见 core/index.js）
      *   opts.registry —— 是否清命中表（默认清；局部清理时只清 root 内的）
-     *   opts.reason   —— 触发原因：'rebuild'（每次重建前的清底）/ 'destroy'（全量下线）
+     *   opts.features —— 是否调 features 的 clear 钩子（默认 true）。
+     *                    传 false 的场合只有一个：**页面上有活选区**（用户正在选字/复制）——
+     *                    此时宁可这一轮不碰笔记面板与卡片 DOM（见 core/index.js 的取舍注释）。
+     *   opts.reason   —— 触发原因：'rebuild'（每次重建前的清底）/ 'rebuild-selection'（有选区时的重建）/
+     *                    'destroy'（全量下线）
      *                    features 的 clear(root, {reason}) 据此区分"重建前清底"与"彻底拆除"：
      *                    前者应保留宿主外壳（避免闪一下白），后者必须连宿主一起移除。
      */
     clear(root, opts) {
-      const o = Object.assign({ visual: true, registry: true, reason: 'rebuild' }, opts || {});
+      const o = Object.assign({ visual: true, registry: true, features: true, reason: 'rebuild' }, opts || {});
 
       /* ---- ① 视觉 ---- */
       if (o.visual && KH.Renderer) {
@@ -105,7 +110,7 @@
       }
 
       /* ---- ④ feature 侧清理钩子（统一注册，禁止各自监听 rebuild） ---- */
-      if (KH.features && KH.features.entries) {
+      if (o.features !== false && KH.features && KH.features.entries) {
         for (const [label, feat] of KH.features.entries()) {
           if (!feat || typeof feat.clear !== 'function') continue;
           try { feat.clear(root, o); } catch (err) { console.error('[KH] feature clear 异常:', label, err); }

@@ -27,6 +27,21 @@
   const supportsHighlights = (typeof CSS !== 'undefined' && CSS && CSS.highlights &&
     typeof Highlight !== 'undefined');
 
+  /* 【组内容签名：为什么用"端点 + 序号"而不是 Range 对象】
+   * 每次重建都会给同一批命中 `new Range()`，对象身份必然不同 —— 拿 Range 对象比"是不是同一份"永远判不同，
+   * 于是每次都重设 `CSS.highlights`，浏览器就把这一段重新画一遍：用户看到的就是"页面静止也闪一下"。
+   * 真正决定画面的是四个端点（startContainer/startOffset/endContainer/endOffset），所以签名只拼这四个值；
+   * 端点，也就是节点的身份 → WeakMap 发一个只增不减的序号（同一节点跨轮同号，节点被回收时条目自动消失，
+   * 不占内存、也不需要给 DOM 打标记）。 */
+  const nodeIds = new WeakMap();
+  let nodeSeq = 0;
+  function nodeId(node) {
+    if (!node) return '0';
+    let id = nodeIds.get(node);
+    if (id === undefined) { id = ++nodeSeq; nodeIds.set(node, id); }
+    return String(id);
+  }
+
   const plugins = KH.createRegistry ? KH.createRegistry('RendererPlugin') : null;
 
   /* ==========================================================================
@@ -126,6 +141,11 @@
     _styleNodes: new Map(),
     /** 已建立的 highlight 对象（名称 -> Highlight），用于 after 阶段精确 delete */
     _groups: new Map(),
+    /** 每个组**上次真正写进 CSS.highlights 时的内容签名**（名称 -> 签名字符串）。
+     *  它是"渲染幂等"的唯一判据：签名没变 ⇒ 这组画面就是对的，一个像素都不用重设。
+     *  注意它必须与 `_groups` 同生共死（setGroup/removeGroup/clear 都要同步），
+     *  否则会出现"以为自己写过了、其实组早被删了"的假幂等。 */
+    _groupSigs: new Map(),
 
     /**
      * 颜色标准化 → 组名。同色必须同组，否则 ::highlight 规则会互相打架。
@@ -167,27 +187,84 @@
     },
 
     /**
+     * 一组 Range 的内容签名（顺序敏感：同一批命中的顺序变了也当"变了"，因为 ranges 顺序会进 Highlight，
+     * 而 Highlight 是集合语义、顺序无关 —— 但重排说明命中集合本身动了，宁可多写一次也不能漏写）。
+     * @param {Range[]} ranges
+     * @returns {string}
+     */
+    signatureOf(ranges) {
+      if (!ranges || !ranges.length) return '';
+      let s = '';
+      for (let i = 0; i < ranges.length; i++) {
+        const r = ranges[i];
+        s += nodeId(r.startContainer) + '@' + r.startOffset + '-' +
+             nodeId(r.endContainer) + '@' + r.endOffset + ';';
+      }
+      return s;
+    },
+
+    /**
      * 写入 / 覆盖一个视觉组。
      * **全库唯一允许调用 `CSS.highlights.set(` 的地方**（UN-03 / meta-check #5）；
      * Rebuilder 的局部清理也必须经由此方法，不允许自己直接调 API。
+     *
+     * 【幂等】同一组内容与上次完全一致 ⇒ 直接返回 false，**不调 API**。
+     * 这一个判断就是"重建不再闪烁"的关键：`CSS.highlights.set()` 每次调用都会让浏览器把
+     * 这一组重新绘制，哪怕 ranges 一个字都没变（真机实测：静止页面上每次重建都会闪一下）。
+     *
+     * @param {string} name
+     * @param {Range[]} ranges 空数组 = 撤销该组
+     * @param {string} [sig] 调用方已算好的签名（render 批量时省一次遍历）
+     * @returns {boolean} 是否真的改了注册表（true = 画面可能变化）
      */
-    setGroup(name, ranges) {
-      if (!supportsHighlights) return;
+    setGroup(name, ranges, sig) {
+      if (!supportsHighlights) return false;
       if (!ranges || !ranges.length) {
+        const had = this._groups.has(name);
         CSS.highlights.delete(name);
         this._groups.delete(name);
-        return;
+        this._groupSigs.delete(name);
+        return had;
       }
+      const s = (sig != null) ? sig : this.signatureOf(ranges);
+      if (this._groupSigs.get(name) === s) return false;
       const hl = new Highlight(...ranges);
       this._groups.set(name, hl);
+      this._groupSigs.set(name, s);
       CSS.highlights.set(name, hl);
+      return true;
     },
 
-    /** 移除一个视觉组 */
+    /** 移除一个视觉组（连带它的签名，避免下次"假幂等"） */
     removeGroup(name) {
       if (!supportsHighlights) return;
       try { CSS.highlights.delete(name); } catch (err) { /* 已被外部清掉，忽略 */ }
       this._groups.delete(name);
+      this._groupSigs.delete(name);
+    },
+
+    /**
+     * 删掉本轮没有出现的旧组。
+     *
+     * 【为什么需要它】重建路径不再"先清后建"（见 core/index.js 的 run），视觉差异完全交给 diff：
+     *   render 负责把这一轮该有的组写进去，**"上一轮有、这一轮没有"的组就必须有人显式撤掉** ——
+     *   否则删掉一个关键词之后，页面上的旧高亮永远不会消失（这就是"不清视觉"必须付的代价）。
+     * 只删注册表里的组，不动 style 节点：style 节点没有配套的 highlight 时没有任何视觉效果，
+     * 留着还能让"同一个颜色去而复返"时免掉一次 DOM 插入。
+     *
+     * @param {Set<string>|string[]} keepNames 本轮仍然有效的组名
+     * @returns {number} 撤掉的组数
+     */
+    prune(keepNames) {
+      if (!supportsHighlights) return 0;
+      const keep = (keepNames instanceof Set) ? keepNames : new Set(keepNames || []);
+      let removed = 0;
+      for (const name of Array.from(this._groups.keys())) {
+        if (keep.has(name)) continue;
+        this.removeGroup(name);
+        removed++;
+      }
+      return removed;
     },
 
     /** 建立 Range。`node` 缺失或已脱离文档时返回 null（不抛错，不阻塞其它命中）
@@ -218,7 +295,8 @@
     },
 
     /**
-     * 渲染（全量）。调用方保证已先 Clear（renderer 不做清理）。
+     * 渲染（全量）。调用方**不再需要**先清视觉：本方法自己按内容签名做差异，
+     * 并在末尾用 `prune()` 撤掉本轮没出现的旧组（等价于"先清后建"的结果，但没有那一帧空窗）。
      * @param {object[]} hits 来自 Registry 的命中（调用方应已过滤 visual）
      * @returns {{rendered:number, skipped:number}}
      */
@@ -265,11 +343,19 @@
       }
 
       if (supportsHighlights) {
+        const keep = new Set();
         for (const [name, g] of groups) {
           this._ensureGroupStyle(name, g.style, g.variant, g.forced);
+          keep.add(name);
+          /* 与上次签名一致 ⇒ 这一组的画面本来就是对的：**连 setGroup 都不调**。
+           * 真浏览器里 `CSS.highlights.set()` 会触发重新绘制，静止页面上的"莫名闪烁"就是这么来的。 */
+          const sig = this.signatureOf(g.ranges);
+          if (this._groupSigs.get(name) === sig) continue;
           // 单点写入：批量、按色分组（经 setGroup 统一收口，UN-03 唯一实现）
-          this.setGroup(name, g.ranges);
+          this.setGroup(name, g.ranges, sig);
         }
+        /* 不先清后建的代价：本轮没出现的组必须自己撤掉（删词/换页时旧高亮才会消失） */
+        this.prune(keep);
       }
 
       // 扩展点③：交给 RendererPlugin 做 ::highlight 之外的视觉
@@ -295,6 +381,8 @@
         if (el && el.parentNode) el.parentNode.removeChild(el);
       }
       this._styleNodes.clear();
+      // 签名必须跟着组一起清：留着就会在下次 render 时误判"这组已经写过"，实际注册表里早没了
+      this._groupSigs.clear();
 
       if (plugins) {
         for (const [label, plugin] of plugins.entries()) {

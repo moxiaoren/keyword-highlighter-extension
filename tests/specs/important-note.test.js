@@ -1013,6 +1013,49 @@ module.exports = async function run() {
   suite('重要笔记面板不许无意义重建（2.0.6.1 需求④）');
 
 
+  /* ==========================================================================
+   * 2.0.8.9 需求②③（源码契约，行为由真机 e2e 覆盖）
+   * ==========================================================================
+   * ② 用户原话：「请改成默认悬窗，贴边模式才应该是备选」「贴标模式展开后，不需要那个
+   *    缩略内容了，无端的占位置」。
+   * ③ 用户原话：「只有贴边模式有？以及需要优化，疑似不生效（隐私政策里面有，但是出现
+   *    小标提示没有。而且有时候底色变绿了，还是有小标且说没有）」。
+   *    ⇒ 两条根因：徽标写进左列污染字段名；浮窗复用旧卡时压根不跑 decorateChecks。
+   */
+  suite('2.0.8.9 默认悬窗 / 展开收掉缩略 / 合规小标（需求②③）');
+
+  await test('默认形态是 float（悬窗），贴边退为备选', () => {
+    const src = read('src/features/important-note.js');
+    truthy(/mode:\s*'float'/.test(src), '`panel.mode` 的默认值必须是 float');
+    falsy(/mode:\s*'rail',/.test(src), '不许再把 rail 写回默认值');
+  });
+
+  await test('展开态隐藏缩略内容（.khin-row-sub），收起态照旧显示', () => {
+    const src = read('src/features/important-note.js');
+    truthy(/\.khin-row-head\[aria-expanded="true"\]\s+\.khin-row-sub\s*\{\s*display:\s*none;?\s*\}/.test(src),
+      '靠 head 的 aria-expanded 收掉 sub：addRow 与 patchRow 两路都会同步这个属性');
+    truthy(/\.khin-row-sub\s*\{/.test(src), '收起态那行还得留着（没展开时要看摘要）');
+  });
+
+  await test('浮窗复用旧卡也要跑合规校验（否则「只有贴边有」会复发）', () => {
+    const src = read('src/features/important-note.js');
+    /* renderItems 里 decorateMerge 与 decorateChecks 必须成对出现——旧写法只有 buildCardEl 那边调 */
+    const at = src.indexOf('renderItems() {');
+    truthy(at > 0, '找不到 renderItems 定义');
+    const seg = src.slice(at, at + 6000);
+    truthy(seg.indexOf('this.decorateMerge(el, item)') >= 0, '合并行每轮对齐');
+    truthy(seg.indexOf('this.decorateChecks(el, item)') >= 0,
+      '★ 复用分支必须补跑 decorateChecks：旧代码只在新建卡片时跑 ⇒ 悬窗永远没有小标');
+  });
+
+  await test('字段名一律走 labelText（徽标不许污染 readFields / rowOfField）', () => {
+    const nc = read('src/features/note-check.js');
+    const src = read('src/features/important-note.js');
+    truthy(nc.indexOf('NoteCheck.labelText') >= 0, 'note-check 要导出 labelText');
+    truthy(/NoteCheck\.fieldKey\(NoteCheck\.labelText\(tds\[0\]\)\)/.test(nc), 'readFields 用 labelText 取字段名');
+    truthy(/NC\.labelText\(tds\[0\]\)/.test(src), 'rowOfField 也必须用 labelText，否则找不回 policy 行');
+    falsy(/NoteCheck\.fieldKey\(tds\[0\]\.textContent\)/.test(nc), '不许再直接读 textContent');
+  });
 
 
 };

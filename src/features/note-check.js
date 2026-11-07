@@ -70,6 +70,32 @@
    * 跳过合并行（`tr.kh-merge-row` 的左列是自定义标题，可能正好叫「开发者」之类的同名字段）。
    * @returns {{title:string, dev:string, entity:string, link:string, policy:string}}
    */
+  /**
+   * 取单元格里「字段名」的纯文本，**跳过我们自己插进去的小标**（`.kh-policy-flag`）。
+   *
+   * 2.0.8.9 修：`paintPolicy` 会把「名」「开」两枚徽标 append 进左列，之后再读
+   * `td.textContent` 就变成「隐私政策名开」，`fieldKey` 的全等匹配必然落空 ⇒ 该行从
+   * `fields` 里凭空消失 ⇒ 已经涂绿的卡片下一轮被判成「没有」、或者干脆不涂色。
+   * 用户报的「隐私政策里明明有，小标却说没有；有时候底色变绿了还说没有」就是这条。
+   * 所以字段名一律从这里取，不要直接读 `textContent`。
+   *
+   * ⚠️ 只能**从末尾按徽标逆序剥**，不能 `split(text).join('')` 全局删：
+   *   字段名本身就可能含「名」（`应用名称` / `软件名称`）。全局删会把字吃掉、字段又丢一次 ——
+   *   那正是这条修复要根治的现象，换成另一个入口复发而已。
+   *   徽标是 append 进去的，所以一定是**后缀**；不是后缀（结构被动过）就不动，宁可这条不认。
+   */
+  NoteCheck.labelText = function (td) {
+    if (!td) return '';
+    let s = String(td.textContent || '');
+    const flags = td.querySelectorAll ? td.querySelectorAll('.kh-policy-flag') : [];
+    for (let i = flags.length - 1; i >= 0; i--) {
+      const t = String(flags[i].textContent || '');
+      if (!t) continue;
+      if (s.slice(-t.length) === t) s = s.slice(0, -t.length);
+    }
+    return s;
+  };
+
   NoteCheck.readFields = function (tableEl) {
     const out = { title: '', dev: '', entity: '', link: '', policy: '' };
     if (!tableEl || !tableEl.querySelectorAll) return out;
@@ -79,7 +105,7 @@
       if (String(tr.className || '').indexOf('kh-merge-row') >= 0) continue;
       const tds = tr.querySelectorAll('td');
       if (!tds.length) continue;
-      const key = NoteCheck.fieldKey(tds.length ? tds[0].textContent : '');
+      const key = NoteCheck.fieldKey(NoteCheck.labelText(tds[0]));
       if (!key || out[key]) continue;
       out[key] = tds.length > 1 ? String(tds[1].textContent || '').trim() : '';
     }

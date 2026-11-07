@@ -176,7 +176,10 @@ const specs = [
   './specs/v2087.test.js',
   /* 2.0.8.8：贴边底色复用卡片原色、隐私政策行校验（名/开徽标 + 浅绿/浅黄）、
    * 开发者与核准主体的同法人判定、法人名解析。口径见 tests/specs/note-check.test.js 头部 */
-  './specs/note-check.test.js'
+  './specs/note-check.test.js',
+  /* 2.0.8.9：闪烁根治（渲染签名幂等 + prune）与复制保护窗口（有选区不动 features DOM）。
+   * 口径见 tests/specs/v2089.test.js 头部 */
+  './specs/v2089.test.js'
 ];
 
 (async () => {

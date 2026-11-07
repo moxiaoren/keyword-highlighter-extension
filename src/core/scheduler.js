@@ -26,6 +26,16 @@
    * 几毫秒就到；等不到（后台没跑/老版本）就按旧口径只清视觉，绝不把本页状态清空去赌。 */
   const VIS_CLEAR_DELAY = 1200;
 
+  /* 【复制保护窗口】Ctrl+C / 右键"复制" / 剪切的那一刻，浏览器要等**这一轮事件派发结束**才真正
+   * 去读选区（`document.getSelection()`）。如果重建正好挤在这中间（重建会换掉笔记面板/卡片的 DOM），
+   * 读到的选区就已经随节点一起没了 —— 用户看到"一复制，选中就没了"。
+   * 所以：命中复制类事件时把"别重建"推到 now+1200ms。1200ms 是"人手完成一次复制"的宽松上限：
+   * 短了护不住（用户选中→移动鼠标→右键菜单→点复制 可以跨几百毫秒），长了会把正常内容更新拖到
+   * 用户能感知（复制之后再改内容，高亮/面板要晚 1.2 秒才跟上）。
+   * ⚠️ 这**不是**第二把重建锁：它只延后"什么时候重建"，`Rebuilder.inRebuildWindow` 的语义、
+   *    时机与配对完全不变（重建真的开始/结束时仍然只有 enterRebuild/exitRebuild 在动它）。 */
+  const COPY_GUARD_MS = 1200;
+
   const Scheduler = {
     _observer: null,
     /** 观察参数（唯一一份，主文档与各 ShadowRoot 共用）
@@ -45,7 +55,7 @@
     },
     /** 已挂上观察器的 ShadowRoot 集合（teardown 时随 disconnect 一起失效） */
     _shadowRoots: null,
-    _timers: { silent: null, poll: null, fingerprint: null, growth: null, trailing: null, shadow: null, ocrYield: null },
+    _timers: { silent: null, poll: null, fingerprint: null, growth: null, trailing: null, shadow: null, ocrYield: null, copyGuard: null },
     _lastMutationAt: 0,
     /** ⏳ 延迟裁决的**上限**（ms）：静默窗口最多只能把裁决顺延这么久，到点必须判一次。
      *  【为什么必须有上限】静默窗口的判据是"距最后一次变动 ≥ silentMs"，而页面上源源不断的
@@ -78,6 +88,14 @@
     _lastRebuildAt: 0,
     /** 限频窗口内被合并的尾随请求来源（见 request() 注释） */
     _pendingSource: null,
+    /** 复制保护窗口的截止时间（epoch ms；0 = 不在保护期，见 COPY_GUARD_MS） */
+    _copyGuardUntil: 0,
+    /** 诊断：命中过几次复制类事件 / 有几轮重建被排到窗口结束 */
+    _copyGuardCount: 0,
+    _copyDeferCount: 0,
+    _copyGuardReason: '',
+    /** document 上的复制保护监听（setup 时整体换、teardown 时整体摘） */
+    _copyGuardHandlers: null,
     _lastHref: '',
     /** URL 变化的回调与分发器（只挂一次事件，但回调每次 setup 都刷新 —— 见 setupUrlWatcher） */
     _urlOnChange: null,
@@ -87,6 +105,12 @@
 
     /** 真正执行重建（唯一出口；限频与尾随合并都在 request 里判定） */
     _fire(source) {
+      /* 复制保护：尾随计时器/OCR 复检/直接调用都可能绕过 request 直达这里，
+       * 所以在唯一出口再挡一次（见 COPY_GUARD_MS 注释）。挡住 ≠ 丢弃：来源会留在队列里。 */
+      if (this._copyGuardActive()) {
+        this._deferForCopy(source);
+        return false;
+      }
       if (this._deferToOcr(source)) return false;
       this._lastRebuildAt = Date.now();
       /* 记下"这一轮重建看到的文本总量"：之后若文本量暴涨（内容长出来了），
@@ -151,6 +175,12 @@
      */
     request(source, opts) {
       const o = opts || {};
+      /* 【复制保护】窗口内一律不重建（含 `gap: 0` 的立即重建），只排队 ——
+       * 复制类事件之后浏览器还要读选区，这一两秒里任何 DOM 替换都可能把选区搞丢。 */
+      if (this._copyGuardActive()) {
+        this._deferForCopy(source);
+        return false;
+      }
       const cfg = this._config || {};
       // 【必须用 != null，不能用 ||】显式传入的 `0` 是**合法值**：
       //   测试注入（`pageRebuildSilentMs:0, pageRebuildGapMs:0`）与"可见性恢复立即重建"
@@ -173,6 +203,88 @@
         if (src) this._fire(src);
       }, gap - since);
       return false;
+    },
+
+    /* ---------------- 0 复制保护窗口 ---------------- */
+
+    /** 是否处于复制保护期（任何复制类事件之后的 COPY_GUARD_MS 内） */
+    _copyGuardActive() {
+      return this._copyGuardUntil > 0 && this._copyGuardUntil > Date.now();
+    },
+
+    /** 命中复制类事件：把保护截止时间推到 now+COPY_GUARD_MS。
+     *  多个事件（右键菜单→点复制）连续命中时取较晚者；若正好有排队的重建，顺手把清空计时器排上。 */
+    _pushCopyGuard(reason) {
+      this._copyGuardUntil = Math.max(this._copyGuardUntil, Date.now() + COPY_GUARD_MS);
+      this._copyGuardCount++;
+      this._copyGuardReason = reason;
+      if (this._pendingSource || this._timers.trailing) this._scheduleCopyFlush();
+    },
+
+    /** 保护期内收到的重建请求：不丢弃，记成尾随来源，等窗口结束再补跑（保留原 source） */
+    _deferForCopy(source) {
+      this._pendingSource = source;
+      this._copyDeferCount++;
+      this._scheduleCopyFlush();
+      return false;
+    },
+
+    /** 在保护截止点排一个"清空计时器"（已有就不重排；截止时间被 _pushCopyGuard 推后时会自动顺延） */
+    _scheduleCopyFlush() {
+      if (this._timers.copyGuard) return;
+      const wait = Math.max(0, this._copyGuardUntil - Date.now());
+      this._timers.copyGuard = setTimeout(() => {
+        this._timers.copyGuard = null;
+        this._tickCopyGuard();
+      }, wait);
+    },
+
+    /** 保护窗口走完：清状态，把排队中的尾随来源真正提交（gap:0 立即重建） */
+    _tickCopyGuard() {
+      if (this._copyGuardActive()) {         // 窗口被 _pushCopyGuard 续过：重新暂停
+        this._scheduleCopyFlush();
+        return;
+      }
+      this._copyGuardUntil = 0;
+      const src = this._pendingSource;
+      this._pendingSource = null;
+      if (src) this.request(src, { gap: 0 });   // 走 request 而不是 _fire：保住限频语义
+    },
+
+    /** 挂复制保护监听（捕获阶段、不 preventDefault；copy/cut 之外连"右键菜单"也护住）。
+     *  这是**额外**的一层：只延后重建时间，不碰 Rebuilder 的 enter/exitRebuild 配对。 */
+    setupCopyGuard(cfg) {
+      if (this._copyGuardHandlers) {             // 热更新（applyConfig）时整体换掉旧监听
+        for (const [type, fn] of this._copyGuardHandlers) {
+          if (document.removeEventListener) document.removeEventListener(type, fn, true);
+        }
+        this._copyGuardHandlers = null;
+      }
+      if (cfg && cfg.pageRebuildOnChange === false) {   // 内容重建整条关闭时，保护窗口也没意义
+        this._copyGuardUntil = 0;
+        this._copyGuardReason = '';
+        return;
+      }
+      const push = (reason) => this._pushCopyGuard(reason);
+      const handlers = [];
+      const add = (type, fn) => { handlers.push([type, fn]); if (document.addEventListener) document.addEventListener(type, fn, true); };
+      add('copy', () => push('copy'));
+      add('cut', () => push('cut'));
+      add('contextmenu', () => push('contextmenu'));
+      /* 剪贴板动作也可能走 beforeinput（contenteditable/输入框内复制剪切）或纯键盘：
+       * keydown 必须自己判 ctrl/meta+c、ctrl/meta+x（不是只挂 copy 事件 —— 浏览器
+       * 把复制动作推迟到 keyup 之后派发，那时候重建可能已经开始了）。 */
+      add('beforeinput', (e) => {
+        const it = e && e.inputType;
+        if (it === 'deleteByCut' || it === 'insertFromPaste' || it === 'insertFromPasteAsQuotation') push('beforeinput:' + it);
+      });
+      add('keydown', (e) => {
+        if (!e) return;
+        const mod = e.ctrlKey || e.metaKey;
+        if (mod && (e.key === 'c' || e.key === 'C' || e.key === 'x' || e.key === 'X')) push('keydown:' + e.key);
+        else if (e.shiftKey && e.key === 'F10') push('keydown:Shift+F10');   // 无键盘右键菜单
+      });
+      this._copyGuardHandlers = handlers;
     },
 
     /* ---------------- ① MutationObserver ---------------- */
@@ -710,14 +822,27 @@
       clearInterval(this._timers.growth);
       clearTimeout(this._timers.trailing);
       clearTimeout(this._timers.ocrYield);
+      clearTimeout(this._timers.copyGuard);
       this._timers.poll = null;
       this._timers.fingerprint = null;
       this._timers.growth = null;
       this._timers.trailing = null;
       this._timers.ocrYield = null;
+      this._timers.copyGuard = null;
       this._pendingSource = null;
       this._ocrYieldSince = 0;
       this._lastRebuildAt = 0;
+      /* 复制保护状态一并归零（计时器已清；只剩监听需要摘） */
+      this._copyGuardUntil = 0;
+      this._copyGuardCount = 0;
+      this._copyDeferCount = 0;
+      this._copyGuardReason = '';
+      if (this._copyGuardHandlers) {
+        for (const [type, fn] of this._copyGuardHandlers) {
+          if (document.removeEventListener) document.removeEventListener(type, fn, true);
+        }
+        this._copyGuardHandlers = null;
+      }
       if (this._pageClickHandler) {
         document.removeEventListener('click', this._pageClickHandler, true);
         this._pageClickHandler = null;

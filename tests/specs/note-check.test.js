@@ -83,6 +83,53 @@ module.exports = async function run() {
     eq(f.entity, '', '没这一行就是空串');
   });
 
+  /* 【2.0.8.9 需求③】用户报的「隐私政策里明明有，小标却说没有；底色变绿了还说没有」。
+   * 根因：paintPolicy 把「名」「开」两枚徽标 append 进左列（字段名单元格），下一轮读
+   * `td.textContent` 就变成「隐私政策名开」⇒ fieldKey 全等失配 ⇒ 该行从 fields 里消失。
+   * 这条锁住：左列带徽标时字段名照样认得出来、判定结论不翻转。 */
+  await test('readFields：左列带「名」「开」徽标时仍认得出字段（否则绿底也会被判成没有）', () => {
+    const flag = (t, hit) => H.el('span', { class: 'kh-policy-flag ' + (hit ? 'is-hit' : 'is-miss'), title: t }, [t]);
+    const t = table([
+      row('主标题', '某某清理大师'),
+      row('开发者', '北京某某科技有限公司'),
+      H.el('tr', {}, [
+        H.el('td', { class: 'kh-table-label' }, ['隐私政策', flag('名', true), flag('开', false)]),
+        H.el('td', {}, ['本隐私政策由某某清理大师提供。'])
+      ])
+    ]);
+    const f = NC.readFields(t);
+    eq(f.policy, '本隐私政策由某某清理大师提供。', '徽标不得污染字段名');
+    const v = NC.policyVerdict(f);
+    truthy(v, '有正文就该给判定，不能因为徽标而变 null');
+    eq(v.items.map((i) => i.key).join(','), 'title,dev', '主标题 / 开发者都要参与判定');
+    truthy(v.items[0].hit, '主标题在正文里 ⇒ 命中');
+    falsy(v.items[1].hit, '这家公司不在正文里 ⇒ 没命中（该黄就黄，不能假绿）');
+  });
+
+  await test('labelText：只剥徽标文本，字段名本身一个字不动', () => {
+    const td = H.el('td', {}, ['隐私政策', H.el('span', { class: 'kh-policy-flag' }, ['名'])]);
+    eq(NC.labelText(td), '隐私政策');
+    eq(NC.labelText(null), '');
+  });
+
+  /* 同一个坑的第二个入口：徽标文字「名」本身也是字段名的一部分。
+   * 「应用名称」+「名」+「开」⇒ 只能从末尾剥两个后缀，全局删会把字段名改成「应用称」，
+   * 等于把「字段丢了所以报没有」换个入口复发。 */
+  await test('labelText：字段名含「名」时不被徽标吃掉（应用名称 / 软件名称）', () => {
+    const flags = () => [H.el('span', { class: 'kh-policy-flag' }, ['名']), H.el('span', { class: 'kh-policy-flag' }, ['开'])];
+    const td = H.el('td', {}, ['应用名称'].concat(flags()));
+    eq(td.textContent, '应用名称名开', '前提：徽标是 append 到末尾的');
+    eq(NC.labelText(td), '应用名称', '只剥后缀');
+    eq(NC.fieldKey(NC.labelText(td)), 'title', '剥完仍是 title 字段');
+    /* 连读两轮也不许越读越少（paintPolicy 每轮都会重贴徽标） */
+    eq(NC.labelText(td), '应用名称');
+    const td2 = H.el('td', {}, ['软件名称', H.el('span', { class: 'kh-policy-flag' }, ['名'])]);
+    eq(NC.labelText(td2), '软件名称');
+    /* 结构被动过（徽标不在末尾）时宁可不动，也不乱删 */
+    const odd = H.el('td', {}, [H.el('span', { class: 'kh-policy-flag' }, ['名']), '隐私政策']);
+    eq(NC.labelText(odd), '名隐私政策', '不是后缀就不剥（宁可这条认不出，也不能改字）');
+  });
+
   suite('note-check · 子串口径');
 
   await test('contains：忽略空白与换行（政策正文常把公司名断行）', () => {

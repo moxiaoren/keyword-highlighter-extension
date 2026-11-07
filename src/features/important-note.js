@@ -353,6 +353,11 @@
       font-size: 11px; color: #64748b; flex: 1 1 auto; min-width: 0;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
+    /* 【2.0.8.9 需求②】展开态不再显示缩略内容：正文卡片就在下面，摘要再占一行只是白占位置
+     * （用户原话：「展开后不需要那个缩略内容了，无端的占位置」）。
+     * 挂在 head 的 aria-expanded 上是因为它只有展开/收起这一处会变，patchRow 就地更新时
+     * 也会同步改它 —— 两边都跟着走，不会出现「卡片开着、摘要还赖着」的错位。 */
+    .khin-row-head[aria-expanded="true"] .khin-row-sub { display: none; }
     .khin-row-n { font-size: 10px; color: #3579c2; background: #eaf1fb; border-radius: 8px; padding: 0 5px; flex: 0 0 auto; }
     .khin-row-btn { border: 0; background: none; color: #8a8a8a; cursor: pointer; font-size: 12px; padding: 1px 3px; border-radius: 4px; flex: 0 0 auto; font-family: inherit; }
     .khin-row-btn:hover { color: #333; background: rgba(0,0,0,.05); }
@@ -1884,7 +1889,7 @@
       if (String(tr.className || '').indexOf('kh-merge-row') >= 0) continue;
       const tds = tr.querySelectorAll('td');
       if (!tds.length) continue;
-      if (NC.fieldKey(tds[0].textContent) === key) return tr;
+      if (NC.fieldKey(NC.labelText ? NC.labelText(tds[0]) : tds[0].textContent) === key) return tr;
     }
     return null;
   }
@@ -1921,8 +1926,13 @@
      * `railSide` = 贴边条停哪一侧；`shellMode` 记录当前外壳是 rail 还是 float（避免每轮重播动画）。
      * 【2.0.8.7 需求③】`expandKey`（单值手风琴）改成 `expandKeys`（Set）：用户要同时看好几张卡，
      * 「同时只开一张」是为省遮挡想出来的，反而成了限制。列本身仍 60vh 封顶、内部滚动，
-     * 多开几张不会更挡页面。 */
-    mode: 'rail',
+     * 多开几张不会更挡页面。
+     * 【2.0.8.9 需求②】默认形态改成 **float（悬窗）**，贴边（rail）退为备选。
+     * 用户原话：「贴边模式优化（请改成默认悬窗，贴边模式才应该是备选）」—— 贴边条要先把
+     * 鼠标挪到边上、再点一下才看得到内容，悬窗直接给全貌；所以首次打开就是悬窗，
+     * 想要贴边用头部按钮或 `[` 切，切过去之后本次会话内保持（不写配置，避免旧用户被静默改设置）。
+     * 注意 setMode() 仍接受 'rail'/'list'/'float' 三值，默认值只影响首屏。 */
+    mode: 'float',
     pinned: false,
     expandKeys: null,
     pinDefaultDone: false,
@@ -4237,6 +4247,11 @@
         /* 【2.0.8.6 需求①】合并行也每轮对一遍：字段值可能后到（异步抓取/OCR），
          * 幂等实现（先摘旧的再贴），不会叠行。 */
         this.decorateMerge(el, item);
+        /* 【2.0.8.9 需求③】合规小校验（隐私政策 / 同法人）每轮都补一遍。
+         * 旧代码只在"新建卡片"那条路上调 `decorateChecks`，浮窗复用旧卡时永远不跑 ⇒
+         * 用户报的「只有贴边模式有这个小标」正是它：贴边展开每次都是新卡，浮窗是复用卡。
+         * 内部按字段值签名早退，内容没变不会重画，也不会闪。 */
+        this.decorateChecks(el, item);
         els.push(el);
         notes.push(note);
         /* 落位：同一位置已经是对的元素就跳过，避免无谓的 DOM 移动（移动即重排） */

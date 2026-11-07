@@ -357,6 +357,35 @@
       return out;
     },
 
+    /**
+     * 当前页面上有没有"真的选中了东西"的选区（不是光标）。
+     *
+     * 【为什么要问这一句】重建会走 `Render` + `features.consume`，其中笔记面板/命中小卡片是**真的
+     * 在页面上重建 DOM** 的（不是 CSS 高亮）。用户 Ctrl+C / 右键复制的那一刻，浏览器读的是
+     * `document.getSelection()`；如果这中间我们把选中文字所在的节点换掉，选区就塌掉 ——
+     * 用户看到的就是"复制了一下，选中变没选中"。所以重建前必须先问一句。
+     *
+     * 判据：`rangeCount > 0` 且**不是折叠的**（折叠 = 只是一个光标位置，没有选中任何东西，
+     * 不能因为用户随手点了一下页面就永久跳过 features 更新）。
+     * 拿不到 `collapsed`（老内核/单测替身）时退回"能不能取到文本"。
+     * @returns {boolean}
+     */
+    _hasTextSelection() {
+      let sel = null;
+      try {
+        sel = (typeof document !== 'undefined' && typeof document.getSelection === 'function')
+          ? document.getSelection() : null;
+      } catch (err) { return false; }          // 拿不到就当"没选中"：宁可多更新一次，不能卡死
+      if (!sel || !sel.rangeCount) return false;
+      try {
+        const r = (typeof sel.getRangeAt === 'function') ? sel.getRangeAt(0) : null;
+        if (r && r.collapsed === true) return false;
+        if (r && typeof r.toString === 'function' && r.toString()) return true;
+        if (r && r.collapsed === false) return true;   // 取不到文字（老内核/空元素内的选区）
+        return false;
+      } catch (err) { return false; }
+    },
+
     /** 全量重建：唯一入口 */
     rebuild(opts) {
       return KH_API.run(opts && opts.root ? opts.root : document.body, (opts && opts.source) || 'manual');
@@ -437,6 +466,8 @@
       if (typeof KH.Scheduler.setupGrowthWatcher === 'function') KH.Scheduler.setupGrowthWatcher(normalized);
       KH.Scheduler.setupPageClickWatcher(normalized);
       KH.Scheduler.setupVisibilityWatcher(normalized);
+      /* 复制保护窗口也是"可选能力"：老内核/单测替身没有它就跳过，别把热更新整条打断 */
+      if (typeof KH.Scheduler.setupCopyGuard === 'function') KH.Scheduler.setupCopyGuard(normalized);
       const r = this.rebuild({ source: 'config' });
       r.siteEnabled = true;
       this.markState(true);
@@ -457,10 +488,31 @@
       state.lastRebuildSource = source || '';
       state.mutationRebuildCount = (state.mutationRebuildCount || 0) + ((source === 'mutation') ? 1 : 0);
 
-      // ⑧ Clear（先清后建，方案 §4.2）—— 抑制窗口覆盖整个重建过程
+      // ⑧ Clear —— **不再"先清视觉后重建"**（闪烁根治，见下方注释）—— 抑制窗口覆盖整个重建过程
       KH.Rebuilder.enterRebuild();
+      let keepSelection = false;
       try {
-        KH.Rebuilder.clear(null, { reason: 'rebuild' });
+        /* 【为什么不再先清视觉】
+         * 旧实现每次重建都先 `Renderer.clear()` 再整体重画：哪怕页面上的命中一个都没变，
+         * 也会出现"全页高亮消失 → 同一帧后再出现"的可见空窗。调度侧本来就会因为大量
+         * 与命中无关的增量触发重建，于是用户看到的现象是"页面完全静止也会莫名闪一下"。
+         * 现在视觉差异全部交给 `Renderer.render` 的签名 diff（+ 末尾 `prune()` 撤掉消失的组）：
+         * 命中集合没变 ⇒ 一个 `CSS.highlights.set` 都不发生 ⇒ 画面一个像素都不动。
+         *
+         * 【为什么"有选区"时连 feature 的 clear/consume 也跳过】
+         * 笔记面板与命中卡片是**真 DOM**（不是 CSS 高亮）。这一轮若照常 clear + consume，
+         * 面板会被拆掉重建；用户 Ctrl+C / 右键复制时浏览器正要读 `document.getSelection()`，
+         * 选区一旦落在被替换的节点上就直接塌掉 —— 现象就是"复制一下，选中变没选中"。
+         * 取舍：宁可这一轮**不更新笔记面板**（最多晚一次重建；用户松手后的下一次重建会补上，
+         * 视觉高亮本身照常按 diff 更新），也不在用户正选字的这一两秒里动任何 DOM。
+         * 丢一次面板刷新的代价，远小于"复制时选中莫名其妙消失"。 */
+        keepSelection = KH_API._hasTextSelection();
+        KH.Rebuilder.clear(null, {
+          visual: false,                 // 视觉不清：差异交给 Renderer.render 的 diff + prune
+          registry: true,                // 命中表照常重建（统计/几何/features 都读它）
+          features: !keepSelection,      // 有选区：连 feature 的 clear 钩子一起跳过（不动面板 DOM）
+          reason: keepSelection ? 'rebuild-selection' : 'rebuild'
+        });
 
         // ③ Scan
         // `shadow` 来自配置 `shadowDOMEnabled`（旧版默认 true）：开启时扫描器会逐层进入
@@ -525,7 +577,8 @@
         const rendered = KH.Renderer.render(visual);
 
         // ⑦ Consume（feature 统一消费，禁止各自监听 DOM）
-        if (features) {
+        // 有活选区时整块跳过：理由见上面 ⑧ Clear 处的取舍注释（不动面板/卡片 DOM，保住选区）
+        if (features && !keepSelection) {
           for (const [label, feat] of features.entries()) {
             if (!feat || typeof feat.consume !== 'function') continue;
             try { feat.consume(KH.registry.all(), state.config, scanCtx); }
@@ -536,6 +589,15 @@
         KH.registry.emit(KH.EVENTS.HITS_CHANGED, { total: KH.registry.size, rendered: rendered.rendered, source });
         KH.registry.emit(KH.EVENTS.REBUILD_DONE, { source, ms: (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0 });
         return { total: KH.registry.size, rendered: rendered.rendered, skipped: rendered.skipped, source };
+      } catch (err) {
+        /* 【异常兜底：不留脏组】
+         * 不清视觉之后，"这轮写到一半就炸了"会留下**半新半旧**的组（部分新组已写入、旧组还没 prune），
+         * 页面上就会显示一份和命中表对不上的高亮。这种状态比"什么都没有"更糟（用户会以为高亮坏了）。
+         * 所以异常时整体撤干净：下一次重建会重新画上；旧实现异常时本来也是空的，观感一致。 */
+        try {
+          if (KH.Renderer && typeof KH.Renderer.prune === 'function') KH.Renderer.prune(new Set());
+        } catch (err2) { /* 兜底本身失败也不能盖住原始异常 */ }
+        throw err;
       } finally {
         KH.Rebuilder.exitRebuild(60);
       }
@@ -975,6 +1037,7 @@
       if (typeof KH.Scheduler.setupGrowthWatcher === 'function') KH.Scheduler.setupGrowthWatcher(config);
       KH.Scheduler.setupPageClickWatcher(config);
       KH.Scheduler.setupVisibilityWatcher(config);
+      if (typeof KH.Scheduler.setupCopyGuard === 'function') KH.Scheduler.setupCopyGuard(config);
 
       this.rebuild({ source: 'boot' });
       this.markState(true);
