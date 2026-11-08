@@ -39,10 +39,14 @@ module.exports = function run() {
     /* 这四处是用户最容易当真的：删除、批量启停、重置、导入 */
     const guards = [
       'if (!await mutate(() => KH.Store.removeKeywords(ids))) return;',
-      'if (!await mutate(() => KH.Store.patchKeywords(batchIds(), () => ({ enabled: true })))) return;',
+      /* 批量启停从 2.0.8.12 起改走 patchBatchEnabled（大数量分批），护栏跟着搬进函数体：
+       * 小批量那一路必须有返回值检查，分批那一路必须把失败的批抛出去。 */
+      'if (!await mutate(() => KH.Store.patchKeywords(ids, () => ({ enabled: enabled })))) return;',
       'if (!await mutate(() => KH.Store.reset(sc, cfg))) return;',
     ];
     for (const g of guards) truthy(src.includes(g), '缺少失败护栏：' + g);
+    truthy(src.includes("if (!ok2) throw new Error('第 ' + (i + 1) + ' 批写入失败');"),
+      '分批启停在某一批写失败时必须抛错（否则会报"已停用 N 条"）');
     /* 不能出现「mutate 之后紧跟成功 toast」的老写法 */
     falsy(/await mutate\([^;]*\);\n\s*D\.toast\('已删除'/.test(src),
       'removeKeywords 仍可能在写失败后报「已删除」');

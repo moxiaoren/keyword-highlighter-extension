@@ -359,6 +359,55 @@ module.exports = async function run() {
     eq(html.indexOf('kh-val-clip'), -1);
   });
 
+  suite('fetch · 内容格做成超链接（2.0.8.12 需求① · 字段后缀 *）');
+
+  await test('后缀 * 被解析成 link：模板可选，展示串带 *', () => {
+    const plain = F.parseLabelSpec('应用包名*');
+    eq(plain.label, '应用包名');
+    eq(plain.link, true);
+    eq(plain.linkTpl, '');
+    eq(F.suffixTextOf(plain), '*');
+    const tpl = F.parseLabelSpec('应用包名*https://x.test/?q={v}');
+    eq(tpl.label, '应用包名');
+    eq(tpl.linkTpl, 'https://x.test/?q={v}');
+    truthy(F.suffixTextOf(tpl).indexOf('*https://x.test/?q={v}') >= 0);
+    const both = F.parseLabelSpec('应用包名~*https://x.test/?q={v}');
+    eq(both.clip, true, '~ 与 * 可以并写');
+    eq(both.linkTpl, 'https://x.test/?q={v}');
+    eq(F.parseLabelSpec('开发者').link, false, '没写 * 就不做链接');
+  });
+
+  const oneCell = (spec, value) => F.rowsToTableHtml([
+    { label: spec.label, rows: [[{ t: value, rs: 1, cs: 1 }]], opt: spec }
+  ]);
+
+  await test('值是网址 → 直接当 href；值不是网址又没模板 → 只显示文字', () => {
+    const url = oneCell(F.parseLabelSpec('隐私政策*'), 'https://example.com/privacy');
+    truthy(url.indexOf('class="kh-val-link"') >= 0, url);
+    truthy(url.indexOf('href="https://example.com/privacy"') >= 0, url);
+    const bare = oneCell(F.parseLabelSpec('应用包名*'), 'com.foo.real');
+    eq(bare.indexOf('kh-val-link'), -1, '不是网址就不该有链接：' + bare);
+    truthy(bare.indexOf('com.foo.real') >= 0, '值本身照旧显示');
+  });
+
+  await test('写了模板 → {v} 换成 URL 编码后的值', () => {
+    const html = oneCell(F.parseLabelSpec('应用包名*https://x.test/?q={v}'), 'com.foo real');
+    truthy(html.indexOf('href="https://x.test/?q=com.foo%20real"') >= 0, html);
+    truthy(html.indexOf('>com.foo real<') >= 0, '显示的是原值不带编码：' + html);
+  });
+
+  await test('★ 只放行 http/https：javascript: / data: 模板一律不生成链接', () => {
+    for (const bad of ['javascript:alert(1)', 'data:text/html,x', 'ftp://x.test/a']) {
+      const html = oneCell(F.parseLabelSpec('字段*' + bad), 'v');
+      eq(html.indexOf('kh-val-link'), -1, bad + ' 不该生成链接：' + html);
+    }
+  });
+
+  await test('内容格里有图片占位符 → 不做链接（避免把 <img> 包进 <a> 里变形）', () => {
+    const html = oneCell(F.parseLabelSpec('截图*'), '\u0001KHIMG\u0001');
+    eq(html.indexOf('kh-val-link'), -1, html);
+  });
+
   suite('fetch · 用户真实样例：审测一体审核结果描述（多行合并）');
 
   /** 把生成的 HTML 拆成"每行有多少格"，用于断言列对齐 */

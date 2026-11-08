@@ -219,3 +219,8 @@ body {
 .kh-stat-label { font-size: var(--fs-xs); color: var(--text-3); letter-spacing: .2px; }
 .kh-stat-value { font-size: var(--fs-xl); font-weight: 700; color: var(--brand-strong); }
 
+/*【2.0.8.12】两张信息卡现在能点（深链接到设置页对应分区）：给可点的卡加手型与悬停反馈，
+   不改变卡片本身的布局 —— 只加 pointer/hover，图标与数字位置不变。*/
+.kh-stat-card.is-link { cursor: pointer; }
+.kh-stat-card.is-link:hover { border-color: var(--brand-strong); box-shadow: var(--sh-sm); }
+.kh-stat-card.is-link:focus-visible { outline: 2px solid var(--brand-strong); outline-offset: 2px; }

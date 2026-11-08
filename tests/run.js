@@ -180,6 +180,7 @@ const specs = [
   /* 2.0.8.9：闪烁根治（渲染签名幂等 + prune）与复制保护窗口（有选区不动 features DOM）。
    * 口径见 tests/specs/v2089.test.js 头部 */
   './specs/v2089.test.js',
+  './specs/v20812.test.js',
   /* 2.0.8.11：体检 E1「失败谎报成功」（mutate 返回布尔 + 调用方护栏）与 C4「本站开关
    * 把扩展 id 写进 siteDisabledMap」。口径见 tests/specs/v20811.test.js 头部 */
   './specs/v20811.test.js'

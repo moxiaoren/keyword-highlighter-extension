@@ -625,6 +625,9 @@
       const interval = (this._config.pageFingerprintIntervalMs != null) ? this._config.pageFingerprintIntervalMs : 1000;
       this._lastFingerprint = this.fingerprint();
 
+      /*【2.0.8.12】配置变更（改扫描间隔）会重新进这里。旧实现直接覆盖变量、不停旧 interval，
+         于是下一次配置变更就多出一条并行的扫描计时器（跑久了会成倍扫页）。先停旧的再起新的。*/
+      clearInterval(this._timers.fingerprint);
       this._timers.fingerprint = setInterval(() => {
         if (document.hidden) return;
         if (KH.Rebuilder && KH.Rebuilder.inRebuildWindow) return;
@@ -671,6 +674,7 @@
       const interval = (this._config.pageFingerprintIntervalMs != null) ? this._config.pageFingerprintIntervalMs : 1000;
       this._scanTextLen = this.textLen();
 
+      clearInterval(this._timers.growth);   /*【2.0.8.12】同上：配置变更不许叠出第二条增长计时器 */
       this._timers.growth = setInterval(() => {
         if (document.hidden) return;
         if (KH.Rebuilder && KH.Rebuilder.inRebuildWindow) return;

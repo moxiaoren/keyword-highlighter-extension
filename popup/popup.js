@@ -656,21 +656,33 @@
     });
   }
 
-  // 帮助：跳到设置页「帮助与隐私」分区（v1 曾出现点击无效，这里保证绑定 + 可测）
-  $('btn-help').addEventListener('click', () => {
+  /* 【2.0.8.12 需求·弹窗深链接】设置页的 `goSection()` 早就在，但弹窗只会打开首页 ——
+   *  从「关键词数」或「当前站点」点过去，还要自己再找分区。这里统一走一个入口：
+   *  带 `#sec-<id>` 打开，设置页 `renderTabs()` 读 hash 直接落到那一节。
+   *  走 `chrome.tabs.create` 而不是 `openOptionsPage()`：后者不接受锚点。 */
+  function openOptions(section, failText) {
+    const url = chrome.runtime.getURL('options/options.html' + (section ? '#sec-' + section : ''));
     try {
-      chrome.tabs.create({ url: chrome.runtime.getURL('options/options.html#sec-help') });
+      chrome.tabs.create({ url });
       window.close();
-    } catch (e) { toast('打开帮助失败', 'error'); }
-  });
+    } catch (e) { toast(failText || '打开设置页失败', 'error'); }
+  }
 
-  // 完整设置
-  $('btn-options').addEventListener('click', () => {
-    try {
-      chrome.runtime.openOptionsPage();
-      window.close();
-    } catch (e) { toast('打开设置页失败', 'error'); }
-  });
+  // 帮助：跳到设置页「帮助与隐私」分区（v1 曾出现点击无效，这里保证绑定 + 可测）
+  $('btn-help').addEventListener('click', () => openOptions('help', '打开帮助失败'));
+
+  // 完整设置：落回默认分区（关键词管理）
+  $('btn-options').addEventListener('click', () => openOptions('keywords'));
+
+  // 两张信息卡也是入口：关键词数 → 关键词管理；当前站点 → 站点规则
+  for (const [id, section] of [['card-keywords', 'keywords'], ['card-site', 'sites']]) {
+    const card = $(id);
+    if (!card) continue;
+    card.addEventListener('click', () => openOptions(section));
+    card.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openOptions(section); }
+    });
+  }
 
   // 外部变更（background 广播 / 其它弹窗页 / 内容脚本）→ 实时同步
   chrome.storage.onChanged.addListener((changes, area) => {

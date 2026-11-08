@@ -559,10 +559,24 @@
      * 必须多包一层块级 div —— 真机实测直接对 td 用 -webkit-line-clamp 会被 Chromium 归一到
      * table-cell，clamp 不生效（同上一条注释里被淘汰的写法②）。值本身一个字不改，只裁显示。 */
     .kh-table td.kh-val-clip { vertical-align: top; }
+    /* 【2.0.8.12 需求②】截断口径从「折 3 行」改成「**只显示一行**」：用户实测原口径下，
+     *  两三行的值本来就整段显示出来了，看着像"省略没生效"。现在固定一行 + 末尾省略号，
+     *  悬停 title 读全文（值本身一个字不改，抄走/进表都还是全文）。 */
     .kh-table .kh-val-box {
-      display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3;
-      overflow: hidden; white-space: pre-line; word-break: break-word; cursor: help;
+      display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1;
+      overflow: hidden; text-overflow: ellipsis;
+      white-space: pre-line; word-break: break-word; cursor: help;
     }
+    /* 【2.0.8.12 需求①】抓取字段做成链接时的样式：跟正文同字号，只加下划线暗示可点。 */
+    .kh-table .kh-val-link { color: #1a73e8; text-decoration: underline; text-underline-offset: 2px; }
+    /* 定位落点提示（2.0.8.12）：给页面元素临时描边，1.4s 后由 JS 摘掉。 */
+    .kh-locate-mark {
+      outline: 2px solid #2f6fb5 !important;
+      outline-offset: 2px !important;
+      border-radius: 3px;
+      transition: outline-color .2s ease;
+    }
+    .kh-table .kh-val-link:hover { color: #0b57d0; }
     /* 【2.0.6.1 需求⑥】同值字段合并后的抬头：只写最短那个名字，后面跟一个「共 N 个」的小标，
      * 点开（原生 details 元素，无需 JS）列出全部字段名。老笔记里没有它，就照旧只显示 .kh-lbt。 */
     .kh-table .kh-table-more { position: relative; display: inline-block; margin-left: 3px; vertical-align: bottom; }
@@ -1079,6 +1093,66 @@
      *   · 它表达的口径（图给全文栏让位）也已被用户否决：全文栏是浮层，大图尺寸不变。
      * 所以是**删除**，不是改选择器。注释里不留旧规则的数值，免得看着像还有这条规则。 */
   `;
+
+  /**
+   * 【2.0.8.12 需求·卡头定位原文】把用户送到**这一条笔记对应那一处**，而不是全文第一个匹配。
+   *
+   * 旧实现只有 `window.find(kw)`：它永远从文档开头找，同一个词在页面上出现十次时，
+   * 点下面九张卡都会跳回第一处 —— 看着像"定位没反应"。
+   *
+   * 现在的判据：高亮本身就是我们注册的 Range（`CSS.highlights` 各分组里），
+   * 所以不猜 DOM，直接在这些 Range 里筛：
+   *   ① 文本等于这个关键词的优先，其次才认「包含」；
+   *   ② 再用这张卡自己抓到的值（`hints`）当指纹 —— 同一个词出现在两处时，
+   *      哪一处所在的表格行/段落里带着这张卡的值，就是它。
+   * 都找不到才退回 `window.find`（例如页面把高亮组清空、或词在 shadow 里）。
+   * @returns {boolean} 是否定位成功
+   */
+  function locateInPage(kw, hints) {
+    const doc = document;
+    const key = String(kw || '').trim();
+    if (!key) return false;
+    const wanted = (hints || []).map((t) => String(t == null ? '' : t).trim()).filter((t) => t.length >= 2);
+    const cands = [];
+    const store = (typeof CSS !== 'undefined' && CSS && CSS.highlights) ? CSS.highlights : null;
+    if (store && typeof store.forEach === 'function') {
+      store.forEach((hl) => {
+        const list = hl && typeof hl[Symbol.iterator] === 'function' ? Array.from(hl) : [];
+        for (const r of list) {
+          let text = '';
+          try { text = String(r.toString()); } catch (err) { text = ''; }
+          if (text.indexOf(key) < 0) continue;
+          const node = r.startContainer;
+          const el = node && (node.nodeType === 1 ? node : node.parentElement);
+          if (!el) continue;
+          cands.push({ exact: text.trim() === key, el });
+        }
+      });
+    }
+    const blockOf = (el) => (el.closest ? (el.closest('td,th,li,tr,p,section,article,div') || el) : el);
+    let best = null;
+    let bestScore = -1;
+    for (const c of cands) {
+      const block = blockOf(c.el);
+      const text = String((block && block.textContent) || '');
+      let score = c.exact ? 2 : 0;
+      for (const h of wanted) if (text.indexOf(h) >= 0) { score += 3; break; }
+      if (score > bestScore) { bestScore = score; best = block || c.el; }
+    }
+    if (!best) {
+      if (typeof window.find === 'function') {
+        try { return window.find(key, false, false, true, false, false, false); } catch (err) { return false; }
+      }
+      return false;
+    }
+    try { best.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (err) { /* 老浏览器忽略参数 */ }
+    /* 闪一下标出落点：加类 → 1.4s 后摘掉。类名带前缀，避免和页面自己的样式撞车。 */
+    try {
+      best.classList.add('kh-locate-mark');
+      setTimeout(() => { try { best.classList.remove('kh-locate-mark'); } catch (err) { /* 节点已卸载 */ } }, 1400);
+    } catch (err) { /* 页面上是非元素节点 */ }
+    return true;
+  }
 
   /** 打开灯箱。`gallery`/`index` 为同一单元格内的相册（省略即单张）。返回是否打开成功 */
   function openLightbox(src, alt, gallery, index) {
@@ -2695,7 +2769,18 @@
           loc.addEventListener('click', (e) => {
             e.stopPropagation();
             const kw = String((entries[0] && entries[0].kw) || '');
-            if (kw && typeof window.find === 'function') { try { window.find(kw, false, false, true, false, false, false); } catch (err) { /* 页面不让找 */ } }
+            /* 指纹：这张卡表里除字段名外的值（最多取 6 个），用来在图里、表格里挑对那一处 */
+            const hints = [];
+            const body = row && row.querySelector ? row.querySelector('.khin-row-body') : null;
+            if (body) {
+              for (const td of body.querySelectorAll('td')) {
+                if (td.classList && td.classList.contains('kh-table-label')) continue;
+                const t = String(td.textContent || '').trim();
+                if (t && hints.indexOf(t) < 0) hints.push(t);
+                if (hints.length >= 6) break;
+              }
+            }
+            locateInPage(kw, hints);
           });
           head.appendChild(loc);
         }
@@ -3027,7 +3112,15 @@
           api.runtime.sendMessage({ type: MSG.ENTITY_LOOKUP, name: key }, (res) => {
             if (api.runtime.lastError) { resolve(''); return; }
             const rep = (res && res.ok && res.rep) ? String(res.rep) : '';
-            if (rep) this._entCache.set(key, rep);
+            if (rep) {
+              /*【2.0.8.12 性能】缓存原来无上限：一天里翻几十张网页面，公司名会一条条攒着不释放。
+                留最近 200 条足够（同一张卡内的重复查询都落在最近几十条里），超了就把最早的删掉。*/
+              this._entCache.set(key, rep);
+              if (this._entCache.size > 200) {
+                const first = this._entCache.keys().next();
+                if (!first.done) this._entCache.delete(first.value);
+              }
+            }
             resolve(rep);
           });
         } catch (e) { resolve(''); }

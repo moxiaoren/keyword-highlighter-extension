@@ -283,6 +283,13 @@
       for (const name of Array.from(this._groups.keys())) {
         if (keep.has(name)) continue;
         this.removeGroup(name);
+        /*【2.0.8.12 性能】组删了，为它注入的 ::highlight 样式节点也要一起删。
+          原来只有 clear() 统一删，页面来回切样式（换高亮色）时这些节点会一条条留在 <head> 里。*/
+        const styleEl = this._styleNodes.get(name);
+        if (styleEl) {
+          if (styleEl.parentNode) styleEl.parentNode.removeChild(styleEl);
+          this._styleNodes.delete(name);
+        }
         removed++;
       }
       return removed;

@@ -566,3 +566,110 @@ body {
 
 /* 2.0.8.11：页脚分隔符原本用装饰色 --text-5 当正文（1.65:1），改为可读的 --text-4 */
 .kh-foot-sep { color: var(--text-4); }
+
+/* ==========================================================================
+   2.0.8.12 美化 · 侧栏分组 / 空态三步引导 / 长任务进度
+   —— 只加类不改名：7 个 .kh-tab 的结构与 data-tab 原样保留，组标题只是视觉分层。
+   ========================================================================== */
+
+.kh-nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 10px;
+}
+
+.kh-nav-group:first-child { margin-top: 2px; }
+
+.kh-nav-group-title {
+  padding: 2px 10px;
+  color: var(--text-4);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: .06em;
+}
+
+/* 空态：图标 + 标题 + 三步引导。字号跟正文，不使用装饰色当文字色。 */
+.kh-empty-guide {
+  padding: 22px 20px;
+  color: var(--text-3);
+  line-height: var(--lh-loose);
+}
+
+.kh-empty-guide-icon {
+  display: block;
+  font-size: 22px;
+  line-height: 1.2;
+  margin-bottom: 6px;
+}
+
+.kh-empty-guide-title {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--text-2);
+  font-weight: 600;
+}
+
+.kh-empty-guide-steps {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--text-3);
+  font-size: var(--fs-base);
+}
+
+.kh-empty-guide-steps li { margin: 3px 0; }
+
+.kh-empty-guide-kbd {
+  padding: 1px 5px;
+  border: 1px solid var(--border-2);
+  border-radius: 4px;
+  background: var(--card-2);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+}
+
+/* 长任务进度：浮在页面右下，可取消；不用 modal，避免打断继续浏览 */
+.kh-progress {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: var(--z-toast);
+  width: 268px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--card);
+  box-shadow: var(--sh-md);
+}
+
+.kh-progress-label {
+  color: var(--text-2);
+  font-size: var(--fs-base);
+  font-weight: 600;
+}
+
+.kh-progress-bar {
+  height: 6px;
+  margin: 8px 0 6px;
+  border-radius: 3px;
+  background: var(--bg-2);
+  overflow: hidden;
+}
+
+.kh-progress-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 3px;
+  background: var(--brand-strong);
+  transition: width .18s linear;
+}
+
+.kh-progress-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--text-3);
+  font-size: var(--fs-sm);
+}

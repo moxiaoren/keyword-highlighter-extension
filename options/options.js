@@ -404,7 +404,69 @@
       table.setRows(filtered);
       table.setSelected(selection);
     }
+    toggleKeywordGuide(total === 0);
     syncBatchBar();
+  }
+
+  /**
+   * 【2.0.8.12 需求·长任务的进度与取消】
+   *
+   * 批量删 300 条、批量改 300 条时，旧实现是一次性丢给 Store，页面在几秒里没有任何反馈，
+   * 用户只能等（还以为卡死），也没法中途停手。
+   *
+   * 这里把「可分批」的写操作切成小批，右下角显示「已处理 N/M」，随时可以点取消：
+   *   · 取消后**已经写进去的批次保留**（写操作不可回滚，硬说"已撤销"才是骗人），
+   *     文案如实写「已取消：完成 N 条，剩余未处理」；
+   *   · 单批失败不中断整体，最后把第一处错误原文报出来（不吞异常）。
+   * 返回 { done, failed, cancelled, error }，调用方据此决定 toast 文案。
+   */
+  async function runLongTask(label, total, step) {
+    const bar = h('div', { class: 'kh-progress-fill' });
+    const num = h('span', { text: '0/' + total });
+    const cancelBtn = h('button', { class: 'kh-btn', type: 'button', text: '取消' });
+    const box = h('div', { class: 'kh-progress', role: 'status', 'aria-live': 'polite' }, [
+      h('div', { class: 'kh-progress-label', text: label }),
+      h('div', { class: 'kh-progress-bar' }, [bar]),
+      h('div', { class: 'kh-progress-foot' }, [num, cancelBtn])
+    ]);
+    let cancelled = false;
+    let busy = false;
+    cancelBtn.addEventListener('click', () => {
+      if (busy) return;                 // 正在写的那一批要让它写完，半批写一半更糟
+      cancelled = true;
+      cancelBtn.disabled = true;
+      cancelBtn.textContent = '正在停止…';
+    });
+    document.body.appendChild(box);
+    let done = 0;
+    let failed = 0;
+    let firstErr = null;
+    for (let i = 0; i < total && !cancelled; i++) {
+      busy = true;
+      try { await step(i); done++; } catch (err) { failed++; if (!firstErr) firstErr = err; }
+      busy = false;
+      bar.style.width = Math.round((i + 1) / total * 100) + '%';
+      num.textContent = (i + 1) + '/' + total;
+      /* 让出一帧：否则整段同步跑完，进度条和取消按钮都来不及画出来 */
+      await new Promise((r) => setTimeout(r, 0));
+    }
+    box.remove();
+    return { done: done, failed: failed, cancelled: cancelled, error: firstErr };
+  }
+
+  /** 关键词表为空时的三步引导。表体自带一句短提示，这里补「怎么真正开始」，
+   *  两条并排会重复 ⇒ 短提示只在「有数据但筛空了」时出现（`emptyText` 已按 total 分支）。 */
+  function toggleKeywordGuide(empty) {
+    const host = $('kw-table');
+    if (!host) return;
+    const old = host.querySelector('.kh-empty-guide');
+    if (!empty) { if (old) old.remove(); return; }
+    if (old) return;
+    host.appendChild(emptyGuide('📝', '还没有关键词', [
+      '点筛选栏右侧「＋ 添加」，填一个词（例如「审核不通过」）。',
+      '同一个词在表格里可以改：匹配方式、颜色、分组、备注，都是逐条生效。',
+      '想一次加很多：把表格粘进「从在线表格导入」，或到「导入导出」批量导入 JSON/CSV。'
+    ]));
   }
 
   function syncBatchBar() {
@@ -439,6 +501,26 @@
   async function removeKeywords(ids, label) {
     const ok = await D.confirmBox('确定删除 ' + label + '？\n此操作不可撤销。', { title: '删除确认', danger: true, saveLabel: '删除' });
     if (!ok) return;
+    /* 超过 20 条才分批：小批量一次写完更省事，也没必要为它弹进度条 */
+    if (ids.length > 20) {
+      const CHUNK = 25;
+      const chunks = [];
+      for (let i = 0; i < ids.length; i += CHUNK) chunks.push(ids.slice(i, i + CHUNK));
+      let wroteAnything = false;
+      const res = await runLongTask('删除关键词', chunks.length, async (i) => {
+        const ok2 = await mutate(() => KH.Store.removeKeywords(chunks[i]));
+        if (!ok2) throw new Error('第 ' + (i + 1) + ' 批删除失败');
+        wroteAnything = true;
+        for (const id of chunks[i]) selection.delete(id);
+      });
+      syncBatchBar();
+      const deleted = chunks.slice(0, res.done).reduce((n, c) => n + c.length, 0);
+      if (res.error) D.toast('删除中断：' + res.error.message + '（已删 ' + deleted + ' 条）', 'error');
+      else if (res.cancelled) D.toast('已取消：删除 ' + deleted + ' 条，剩余 ' + (ids.length - deleted) + ' 条未处理', 'ok');
+      else D.toast('已删除 ' + ids.length + ' 条', 'ok');
+      if (!wroteAnything) return;
+      return;
+    }
     if (!await mutate(() => KH.Store.removeKeywords(ids))) return;   /* 写失败已 toast，别再说"已删除" */
     for (const id of ids) selection.delete(id);
     syncBatchBar();
@@ -635,16 +717,29 @@
 
   const batchIds = () => Array.from(selection);
 
-  $('batch-enable').addEventListener('click', async () => {
-    const n = selection.size;
-    if (!await mutate(() => KH.Store.patchKeywords(batchIds(), () => ({ enabled: true })))) return;
-    D.toast('已启用 ' + n + ' 条', 'ok');
-  });
-  $('batch-disable').addEventListener('click', async () => {
-    const n = selection.size;
-    if (!await mutate(() => KH.Store.patchKeywords(batchIds(), () => ({ enabled: false })))) return;
-    D.toast('已停用 ' + n + ' 条', 'ok');
-  });
+  /** 批量启用/停用：数量大时同样分批 + 进度 + 取消（取消后已处理的那批保留） */
+  async function patchBatchEnabled(enabled) {
+    const ids = batchIds();
+    const CHUNK = 50;
+    if (ids.length > 100) {
+      const chunks = [];
+      for (let i = 0; i < ids.length; i += CHUNK) chunks.push(ids.slice(i, i + CHUNK));
+      const res = await runLongTask((enabled ? '启用' : '停用') + '关键词', chunks.length, async (i) => {
+        const ok2 = await mutate(() => KH.Store.patchKeywords(chunks[i], () => ({ enabled: enabled })));
+        if (!ok2) throw new Error('第 ' + (i + 1) + ' 批写入失败');
+      });
+      const n = chunks.slice(0, res.done).reduce((m, c) => m + c.length, 0);
+      if (res.error) D.toast('操作中断：' + res.error.message + '（已处理 ' + n + ' 条）', 'error');
+      else if (res.cancelled) D.toast('已取消：处理 ' + n + ' 条，剩余 ' + (ids.length - n) + ' 条未处理', 'ok');
+      else D.toast((enabled ? '已启用 ' : '已停用 ') + ids.length + ' 条', 'ok');
+      return;
+    }
+    if (!await mutate(() => KH.Store.patchKeywords(ids, () => ({ enabled: enabled })))) return;
+    D.toast((enabled ? '已启用 ' : '已停用 ') + ids.length + ' 条', 'ok');
+  }
+
+  $('batch-enable').addEventListener('click', () => patchBatchEnabled(true));
+  $('batch-disable').addEventListener('click', () => patchBatchEnabled(false));
   $('batch-clear').addEventListener('click', () => { table.clearSelection(); });
 
   /**
@@ -841,12 +936,29 @@
 
   /* ==================================================================== ② 分组 */
 
+  /** 空态三步引导（2.0.8.12）：图标 + 一句标题 + 三条「从这里开始」。
+   *  为什么不用 innerHTML：步骤文案里有 `＋ 添加` 这类会被当成标签的字符，
+   *  走元素拼装才不会把界面写坏；同类空态共用这一处，措辞只维护一份。 */
+  function emptyGuide(icon, title, steps) {
+    const box = h('div', { class: 'kh-empty-guide' });
+    box.appendChild(h('span', { class: 'kh-empty-guide-icon', text: icon, 'aria-hidden': 'true' }));
+    box.appendChild(h('span', { class: 'kh-empty-guide-title', text: title }));
+    const ol = h('ol', { class: 'kh-empty-guide-steps' });
+    for (const step of steps) ol.appendChild(h('li', { text: step }));
+    box.appendChild(ol);
+    return box;
+  }
+
   function renderGroups() {
     const box = $('group-list');
     clear(box);
     const groups = cfg.groups || [];
     if (!groups.length) {
-      box.appendChild(h('div', { class: 'kh-empty', text: '还没有分组。分组可统一配色，并整组标记「重要」。' }));
+      box.appendChild(emptyGuide('📁', '还没有分组', [
+        '点下面的「＋ 添加分组」，给它起个名字（例如「客户」「合同条款」）。',
+        '选一个底色：同一分组的关键词会用这个颜色高亮。',
+        '需要整组提醒时勾上「重要」，被高亮的词会自动生成重要笔记卡片。'
+      ]));
       return;
     }
     for (const g of groups) {
@@ -1094,7 +1206,11 @@
     clear(box);
     const rules = cfg.siteRules || [];
     if (!rules.length) {
-      box.appendChild(h('div', { class: 'kh-empty', text: '还没有站点规则：默认所有网站都会高亮。' }));
+      box.appendChild(emptyGuide('🌐', '还没有站点规则：默认所有网站都会高亮', [
+        '只想在某几个站生效 → 加一条「白名单」，写上域名。',
+        '某个站太吵想关掉 → 加一条「黑名单」，写上域名。',
+        '规则按域名匹配；不确定时就先留空，默认全站生效。'
+      ]));
     } else {
       for (const r of rules) {
         const isWhite = r.type === 'whitelist';
