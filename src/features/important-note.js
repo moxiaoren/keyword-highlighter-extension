@@ -563,9 +563,16 @@
      *  两三行的值本来就整段显示出来了，看着像"省略没生效"。现在固定一行 + 末尾省略号，
      *  悬停 title 读全文（值本身一个字不改，抄走/进表都还是全文）。 */
     .kh-table .kh-val-box {
+      display: block;
+      white-space: pre-line; word-break: break-word; cursor: help;
+    }
+    /* 【2.0.8.13 需求①】省略口径改成**自适应**：一行的放不下才收。
+     *  2.0.8.12 固定 clamp 1，短值也被切掉尾巴（用户反馈"够短的也省略了"）。
+     *  现在默认整段显示，只有脚本量出「超出一行」才加 .kh-val-tight 收成一行 + 省略号。
+     *  量高度前必须先移除 .kh-val-tight，否则 scrollHeight 是被裁过的，永远判成"放得下"。 */
+    .kh-table .kh-val-box.kh-val-tight {
       display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1;
       overflow: hidden; text-overflow: ellipsis;
-      white-space: pre-line; word-break: break-word; cursor: help;
     }
     /* 【2.0.8.12 需求①】抓取字段做成链接时的样式：跟正文同字号，只加下划线暗示可点。 */
     .kh-table .kh-val-link { color: #1a73e8; text-decoration: underline; text-underline-offset: 2px; }
@@ -1152,6 +1159,31 @@
       setTimeout(() => { try { best.classList.remove('kh-locate-mark'); } catch (err) { /* 节点已卸载 */ } }, 1400);
     } catch (err) { /* 页面上是非元素节点 */ }
     return true;
+  }
+
+  /** 【2.0.8.13 需求①】把「超出一行」的内容格收成一行（自适应省略）。
+   *  规则：先摘 .kh-val-tight 量真实高度，超过一行 1.35 倍才加回去。
+   *  必须在元素进入文档之后量（未挂载时 scrollHeight 恒为 0 ⇒ 永远判"放得下"）。 */
+  function clipValueBoxes(root) {
+    if (!root || !root.querySelectorAll) return;
+    const boxes = root.querySelectorAll('.kh-table .kh-val-box');
+    for (let i = 0; i < boxes.length; i++) {
+      const el = boxes[i];
+      el.classList.remove('kh-val-tight');
+      if (!el.isConnected) continue;
+      let cs;
+      try { cs = window.getComputedStyle(el); } catch (e) { continue; }
+      const fs = parseFloat(cs.fontSize) || 12;
+      const lh = parseFloat(cs.lineHeight) || fs * 1.6;
+      if (el.scrollHeight > lh * 1.35) el.classList.add('kh-val-tight');
+    }
+  }
+  /** 下一帧再量（卡片刚插进 DOM，样式与换行还没落定；双 rAF 是稳妥写法）。 */
+  function scheduleClip(root) {
+    if (!root) return;
+    const run = () => clipValueBoxes(root);
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => requestAnimationFrame(run));
+    else setTimeout(run, 16);
   }
 
   /** 打开灯箱。`gallery`/`index` 为同一单元格内的相册（省略即单张）。返回是否打开成功 */
@@ -2807,6 +2839,7 @@
           /* 展开后把这张卡滚进视野（列本身限高，不能指望用户自己找）。 */
           const mine = this.rowEls && this.rowEls.get(key);
           const body = (mine && mine.querySelector) ? mine.querySelector('.khin-row-body:not([hidden])') : null;
+          if (body) scheduleClip(body);
           if (body && body.scrollIntoView) { try { body.scrollIntoView({ block: 'nearest' }); } catch (e) { /* 老内核 */ } }
         };
         head.addEventListener('click', toggle);
@@ -2821,6 +2854,7 @@
           const card = spec.ctx ? this.ctxCard(doc) : this.buildCardEl(spec.item);
           if (card) { body.appendChild(card); this.applyImgMarksToEl(card); }
         }
+        if (open) scheduleClip(body);
         row.appendChild(head);
         row.appendChild(body);
         this.rowsEl.appendChild(row);
@@ -4365,6 +4399,8 @@
       /* 【2.0.2.16 需求⑦】右键「截图」卡排**最下方**，由 renderCtxCard 收尾追加；
        * 它自己也带签名闸，没变化就不重建。 */
       this.renderCtxCard();
+      /* 【2.0.8.13 需求①】整块重排之后统一量一次：超出一行的内容格才收成一行。 */
+      scheduleClip(this.rowsEl || this.root || null);
     },
 
     /**

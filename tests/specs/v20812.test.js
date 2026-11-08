@@ -84,10 +84,11 @@ module.exports = function run() {
     truthy(css.includes('.kh-progress-fill'), '进度条要有填充样式');
   });
 
-  test('省略真是一行；链接样式存在', () => {
+  test('省略口径：超出一行才收（2.0.8.13 改自适应）；链接样式存在', () => {
     const src = read('src/features/important-note.js');
-    const box = src.slice(src.indexOf('.kh-table .kh-val-box'), src.indexOf('.kh-table .kh-val-box') + 600);
-    truthy(/-webkit-line-clamp:\s*1;/.test(box), '内容格只显示一行（旧口径 3 行 = 用户看到"没省略"）');
+    const box = src.slice(src.indexOf('.kh-table .kh-val-box'), src.indexOf('.kh-table .kh-val-box') + 900);
+    truthy(/\.kh-val-tight/.test(box), '裁剪规则挂在 .kh-val-tight 上（默认整段显示，超一行才收）');
+    truthy(/-webkit-line-clamp:\s*1;/.test(box), '收起来的时候是一行（旧口径 3 行 = 用户看到"没省略"）');
     truthy(/text-overflow:\s*ellipsis/.test(box), '一行也要有省略号，否则像被截断');
     truthy(src.includes('.kh-table .kh-val-link'), '超链接要有独立的链接样式');
   });
