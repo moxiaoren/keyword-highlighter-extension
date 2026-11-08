@@ -60,7 +60,7 @@
      * 默认环的配色由浏览器定、与面板的蓝紫主题无关，深色主题下不够显眼。只认 :focus-visible
      * —— 鼠标点击不留环；色走 tokens 的 --brand-deep（本项目面板模板是门禁的扫描盲区，
      * 这里按同文件既有写法给字面兜底）。 */
-    :focus-visible { outline: 2px solid var(--brand-deep, #3579c2); outline-offset: 1px; }
+    :focus-visible { outline: 2px solid var(--brand-deep, #2f6fb5); outline-offset: 1px; }
     .khin-wrap {
       /* 面板默认宽度的**唯一真源**（T26 / 用户 2026-10-12：200 → 250）。
        * 设置页选了别的值 ⇒ panel.render() 把同一个变量写成这一元素上的**内联**样式（内联压过本行）
@@ -77,7 +77,7 @@
      * 边框，以及表单控件不继承字体 —— 二者都得显式盖掉，否则圆里多一圈框、字号变默认。 */
     .khin-fab {
       width: 48px; height: 48px; border-radius: 50%;
-      background: linear-gradient(135deg, #3579c2, #5fb0ee); color: #fff;
+      background: linear-gradient(135deg, #2f6fb5, #5fb0ee); color: #fff;
       display: flex; align-items: center; justify-content: center;
       font-size: 22px; cursor: move; position: relative;
       border: 0; font-family: inherit;
@@ -152,7 +152,7 @@
       display: flex; align-items: center; justify-content: center;
       font-size: 9px; line-height: 1; color: #fff; background: #94a3b8; user-select: none;
     }
-    .khin-chat-row.is-me .khin-chat-av { background: #3579c2; }
+    .khin-chat-row.is-me .khin-chat-av { background: #2f6fb5; }
     .khin-chat-bubble {
       font-size: 11px; line-height: 1.55; padding: 6px 9px; border-radius: 10px;
       white-space: pre-wrap; word-break: break-word; max-width: calc(100% - 26px);
@@ -166,7 +166,7 @@
     .khin-chat-row.is-err .khin-chat-av { background: #f59e0b; }
     .khin-chat-caret {
       display: inline-block; width: 2px; height: 11px; margin-left: 1px; vertical-align: -1px;
-      background: #3579c2; animation: khin-caret 1s steps(1) infinite;
+      background: #2f6fb5; animation: khin-caret 1s steps(1) infinite;
     }
     .khin-chat-tools { display: flex; gap: 4px; margin-top: 3px; }
     .khin-chat-link {
@@ -186,8 +186,8 @@
     }
     .khin-chat-in:focus-visible { outline: none; border-color: #9dbcf0; box-shadow: 0 0 0 2px rgba(99,140,220,.18); }
     .khin-chat-send {
-      flex: 0 0 auto; width: 30px; height: 30px; border-radius: 9px; border: 1px solid #3579c2;
-      background: #3579c2; color: #fff; font: inherit; font-size: 13px; line-height: 1;
+      flex: 0 0 auto; width: 30px; height: 30px; border-radius: 9px; border: 1px solid #2f6fb5;
+      background: #2f6fb5; color: #fff; font: inherit; font-size: 13px; line-height: 1;
       cursor: pointer; display: flex; align-items: center; justify-content: center;
     }
     .khin-chat-send[disabled] { background: #e2e8f0; border-color: #e2e8f0; color: #94a3b8; cursor: default; }
@@ -220,7 +220,7 @@
     .khin-audit-prev[hidden] { display: none; }
     @keyframes khin-pulse { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
     @keyframes khin-caret { 0%,49% { opacity: 1 } 50%,100% { opacity: 0 } }
-    .khin-chat-btn.is-primary { background: #3579c2; border-color: #3579c2; color: #fff; }
+    .khin-chat-btn.is-primary { background: #2f6fb5; border-color: #2f6fb5; color: #fff; }
     .khin-chat-btn:hover { border-color: #b9cff0; }
     .khin-chat-btn.is-primary:hover { background: #2f6bb0; }
     .khin-panel {
@@ -239,8 +239,8 @@
       border-bottom: 1px solid #eef1f6; cursor: move; flex-shrink: 0;
     }
     .khin-header-icon { font-size: 16px; }
-    .khin-header-title { font-size: 14px; font-weight: 600; color: #3579c2; flex: 1; }
-    .khin-header-count { font-size: 12px; color: #3579c2; background: #eaf1fb; border-radius: 10px; padding: 1px 8px; }
+    .khin-header-title { font-size: 14px; font-weight: 600; color: #2f6fb5; flex: 1; }
+    .khin-header-count { font-size: 12px; color: #2f6fb5; background: #eaf1fb; border-radius: 10px; padding: 1px 8px; }
     .khin-header-btn {
       background: none; border: none; cursor: pointer; font-size: 15px;
       color: #8a8a8a; padding: 2px 4px; border-radius: 4px; line-height: 1;
@@ -283,7 +283,7 @@
     .khin-rail-count {
       position: absolute; top: -3px; left: 5px; min-width: 17px; height: 17px;
       box-sizing: border-box; padding: 0 4px; border-radius: 9px;
-      background: #3579c2; color: #fff; font-size: 10px; font-weight: 600;
+      background: #2f6fb5; color: #fff; font-size: 10px; font-weight: 600;
       line-height: 17px; text-align: center; font-style: normal;
       box-shadow: 0 0 0 2px #fff;
     }
@@ -315,14 +315,14 @@
       display: flex; align-items: center; gap: 6px; padding: 8px 10px; flex: 0 0 auto;
       background: linear-gradient(180deg, #fff, #eaf1fb); border-bottom: 1px solid #eef1f6;
     }
-    .khin-dh-title { font-size: 13px; font-weight: 600; color: #3579c2; flex: 1; white-space: nowrap; }
-    .khin-dh-count { font-size: 11px; color: #3579c2; background: #eaf1fb; border-radius: 9px; padding: 0 6px; }
+    .khin-dh-title { font-size: 13px; font-weight: 600; color: #2f6fb5; flex: 1; white-space: nowrap; }
+    .khin-dh-count { font-size: 11px; color: #2f6fb5; background: #eaf1fb; border-radius: 9px; padding: 0 6px; }
     .khin-dh-btn {
       border: 0; background: none; color: #8a8a8a; cursor: pointer; font-size: 12px;
       padding: 2px 5px; border-radius: 4px; line-height: 1.2; font-family: inherit;
     }
     .khin-dh-btn:hover { color: #333; background: rgba(0,0,0,.05); }
-    .khin-dh-btn.is-on { color: #3579c2; background: #eaf1fb; }
+    .khin-dh-btn.is-on { color: #2f6fb5; background: #eaf1fb; }
     .khin-rows { flex: 1 1 auto; overflow: auto; }
     .khin-row { border-bottom: 1px solid #f0f3f7; }
     .khin-row:last-child { border-bottom: 0; }
@@ -344,7 +344,7 @@
     }
     .khin-row-head { display: flex; align-items: center; gap: 6px; padding: 7px 8px; cursor: pointer; min-height: 36px; }
     .khin-row-head:hover { background: #f7faff; }
-    .khin-row-dot { width: 8px; height: 8px; border-radius: 2px; flex: 0 0 auto; background: #3579c2; }
+    .khin-row-dot { width: 8px; height: 8px; border-radius: 2px; flex: 0 0 auto; background: #2f6fb5; }
     .khin-row-t {
       font-size: 12px; font-weight: 600; color: #1f2937; max-width: 96px;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 0 auto;
@@ -358,7 +358,7 @@
      * 挂在 head 的 aria-expanded 上是因为它只有展开/收起这一处会变，patchRow 就地更新时
      * 也会同步改它 —— 两边都跟着走，不会出现「卡片开着、摘要还赖着」的错位。 */
     .khin-row-head[aria-expanded="true"] .khin-row-sub { display: none; }
-    .khin-row-n { font-size: 10px; color: #3579c2; background: #eaf1fb; border-radius: 8px; padding: 0 5px; flex: 0 0 auto; }
+    .khin-row-n { font-size: 10px; color: #2f6fb5; background: #eaf1fb; border-radius: 8px; padding: 0 5px; flex: 0 0 auto; }
     .khin-row-btn { border: 0; background: none; color: #8a8a8a; cursor: pointer; font-size: 12px; padding: 1px 3px; border-radius: 4px; flex: 0 0 auto; font-family: inherit; }
     .khin-row-btn:hover { color: #333; background: rgba(0,0,0,.05); }
     .khin-row-body { max-height: calc(60vh - 96px); overflow: auto; padding: 0 8px 8px; }
@@ -369,7 +369,7 @@
       border: 1px solid #e3e8f0; background: #fff; color: #475569; cursor: pointer;
       font-size: 12px; padding: 3px 10px; border-radius: 6px; font-family: inherit;
     }
-    .khin-df-btn:hover { background: #f7faff; color: #3579c2; }
+    .khin-df-btn:hover { background: #f7faff; color: #2f6fb5; }
     /* 整页只有图片命中时这份列表是空的，但它仍占着 min-height:60px 的 flex 槽位
      * ⇒ 面板顶部白出一条 60px 的带子（T29 / F6.1）。它必须和别的分区一样有自己的
      * [hidden] 兜底：display:none 才不参与 flex 布局（visibility/opacity 都不行）。 */
@@ -396,7 +396,7 @@
      * （- 62px ≈ 卡片外边距 12 + 边框 2 + 内边距 20 + 关闭按钮与间隙 28），250px 面板下 ≈ 188px ——
      * 面板宽度一改它自己跟着走，不留会过期的字面量；卡片内边距一改也必须回来改这个减数。 */
     .khin-item-kw {
-      font-size: 11px; font-weight: 600; color: #3579c2; background: #eaf1fb;
+      font-size: 11px; font-weight: 600; color: #2f6fb5; background: #eaf1fb;
       border-radius: 4px; padding: 1px 6px; max-width: calc(var(--khin-panel-w) - 62px);
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0;
     }
@@ -418,7 +418,7 @@
       font-size: 11px; padding: 2px 4px; border-radius: 4px; line-height: 1; flex-shrink: 0;
       font-family: inherit;
     }
-    .khin-item-fold:hover { color: #3579c2; background: #eaf1fb; }
+    .khin-item-fold:hover { color: #2f6fb5; background: #eaf1fb; }
     .khin-item.khin-folded .khin-item-note { display: none; }
     /* [2.0.8.7 口径 A1] 合并行并进「进表」那张表：靠一条虚线分隔，不再另起一张表 */
     .kh-table-fetch tr.kh-merge-first > td { border-top: 1px dashed #dbe2ec; }
@@ -427,14 +427,14 @@
     .khin-row-body.is-merge-open .kh-table-fetch tr.kh-merge-hidden { display: table-row; }
     .kh-merge-more {
       margin: 2px 0 0; padding: 0 2px; border: 0; background: none; cursor: pointer;
-      font: inherit; font-size: 10px; line-height: 16px; color: #3579c2;
+      font: inherit; font-size: 10px; line-height: 16px; color: #2f6fb5;
     }
     .kh-merge-more:hover { text-decoration: underline; }
     /* 命中计数小标：一张卡命中多个时才出现（N>1），点了在下面铺开下拉。 */
     .khin-tag-more {
       flex: 0 0 auto; font-size: 10px; font-weight: 600; line-height: 15px; padding: 0 5px;
       border: 1px solid rgba(53,121,194,.45); border-radius: 8px;
-      background: #eaf1fb; color: #3579c2; cursor: pointer;
+      background: #eaf1fb; color: #2f6fb5; cursor: pointer;
     }
     .khin-tag-more:hover { background: #d8e7fa; }
     /* 下拉：**浮在卡片之上的独立小面板**（绝对定位），点开不许把整行/整张卡撑高。
@@ -453,7 +453,7 @@
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
     .khin-tag-item:hover { background: #f1f5f9; }
-    .khin-tag-item.khin-tag-on { background: #eaf1fb; color: #3579c2; font-weight: 600; }
+    .khin-tag-item.khin-tag-on { background: #eaf1fb; color: #2f6fb5; font-weight: 600; }
     /* 内容 / 标签可选中复制；外壳保持 user-select:none 仅避免误选 */
     .khin-item-note, .khin-item-tags, .khin-item-kw, .khin-item-adj, .kh-table,
     .khin-tag-list-h, .khin-tag-item {
@@ -464,7 +464,7 @@
      * 字号走 CSS 变量（2026-10-09 用户裁决：默认比上一版再小一号，并在设置页可配）。
      * 变量由 panel.render() 从 config.importantNote.fontSize 写到 host 上（同 --kh-img-size 手法）。 */
     .khin-item-note {
-      font-size: var(--kh-note-fs, 11px); line-height: 1.45; color: #333;
+      font-size: var(--kh-note-fs, 11px); line-height: 1.55; color: #333;
       white-space: pre-line; word-break: break-word; overflow-wrap: break-word;
     }
     .khin-item-note a { color: #1a73e8; text-decoration: none; }
@@ -1029,7 +1029,7 @@
       flex: 1 1 auto; overflow: auto; padding: 10px 12px 12px;
       white-space: pre-wrap; word-break: break-word;
       user-select: text; -webkit-user-select: text; cursor: text;
-      font-size: 12.5px; line-height: 1.7;
+      font-size: 12px; line-height: 1.7;
       scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.28) transparent;
     }
     .kh-lb-side-t::-webkit-scrollbar { width: 9px; }
@@ -1052,7 +1052,7 @@
      * 缩进会被原样放大，列宽全被空格吃掉。 */
     .kh-ocr-table {
       border-collapse: collapse; white-space: normal; width: 100%;
-      font-size: 12.5px; line-height: 1.6;
+      font-size: 12px; line-height: 1.6;
     }
     .kh-ocr-table td {
       padding: 1px 8px 1px 0; vertical-align: top; border-bottom: 1px solid rgba(255,255,255,.10);

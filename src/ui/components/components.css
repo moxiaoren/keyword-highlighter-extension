@@ -9,9 +9,13 @@
 /* ==== 以下内容由 tools/build.js 从 src/ui/tokens.css 注入，请勿手工修改 ==== */
 :root {
   /* ---- 品牌 ---- */
-  --brand: #4a90d9;
+  --brand: #2f6fb5;         /* 2.0.8.11：原 #4a90d9 上压白字只有 3.34 */
   --brand-2: #5fb0ee;
-  --brand-deep: #3579c2;
+  --brand-deep: #2b6cb0;    /* 2.0.8.11：浅品牌底上的正文色，4.77 */
+  /* 2.0.8.11 观感校准：白字压在上面要过 4.5（#3579c2 只有 4.50 边缘，#4a90d9 只有 3.34） */
+  --brand-strong: #2f6fb5;
+  /* 品牌浅底（--brand-soft）上的正文色：4.77 */
+  --brand-on-soft: #2b6cb0;
   --brand-soft: #eaf1fb;
   --brand-softer: #f4f8fd;
 
@@ -24,6 +28,8 @@
   --danger-soft: #fdeceb;
   --warning: #b45309;
   --warning-soft: #fef5e7;
+  /* 警告文案落在 --warning-soft 底上的墨色：6.38 */
+  --warn-ink: #9a3412;
   --info: #1565c0;
   --info-soft: #e7f0fc;
   --purple: #7b1fa2;
@@ -32,9 +38,9 @@
   /* ---- 文本层级 ---- */
   --text: #1f2937;
   --text-2: #4b5563;
-  --text-3: #6b7280;
-  --text-4: #9aa3b2;
-  --text-5: #c3cad6;
+  --text-3: #5f6b7a;   /* 2.0.8.11：原 #6b7280 落在 --bg 上只有 4.47 */
+  --text-4: #66707e;   /* 2.0.8.11：原 #9aa3b2 对白底只有 2.54；现 5.02（白）/4.64（--bg） */
+  --text-5: #a7b0be;   /* 2.0.8.11：仅限装饰（分割线/图标），禁止再用作正文色 */
 
   /* ---- 背景 / 边框 ---- */
   --bg: #f4f6fb;
@@ -55,7 +61,7 @@
   --sh-sm: 0 1px 2px rgba(16, 24, 40, .05);
   --sh-md: 0 2px 8px rgba(16, 24, 40, .06), 0 1px 2px rgba(16, 24, 40, .04);
   --sh-lg: 0 14px 34px rgba(16, 24, 40, .14);
-  --sh-brand: 0 4px 14px rgba(74, 144, 217, .32);
+  --sh-brand: 0 4px 14px rgba(47, 111, 181, .32);
 
   /* ---- 过渡 ---- */
   --tr: .18s cubic-bezier(.4, 0, .2, 1);
@@ -67,6 +73,11 @@
   --fs-md: 14px;
   --fs-lg: 16px;
   --fs-xl: 20px;
+  --fs-lg2: 18px;      /* 页头标题（不新增 12.5px 这类半档字号） */
+  /* ---- 行高（此前散落在各组件里写 1.6/1.7/1.75） ---- */
+  --lh-tight: 1.35;
+  --lh-base: 1.6;
+  --lh-loose: 1.8;
 
   /* ---- 页内组件（注入到被访问页面时使用，前缀 --kh-） ---- */
   --kh-brand: #4a90d9;
@@ -91,8 +102,8 @@
      唯一豁免：本文件（tokens.css）自身。 */
   --white: #ffffff;
   --ink: #333333;
-  --overlay-brand-12: rgba(74, 144, 217, .12);
-  --overlay-brand-10: rgba(74, 144, 217, .10);
+  --overlay-brand-12: rgba(47, 111, 181, .12);
+  --overlay-brand-10: rgba(47, 111, 181, .10);
   --overlay-ink-4: rgba(0, 0, 0, .04);
   --overlay-ink-6: rgba(0, 0, 0, .06);
   --overlay-ink-10: rgba(0, 0, 0, .10);
@@ -101,7 +112,7 @@
   --border-hairline: rgba(0, 0, 0, .08);
   --sh-note-pinned: 0 10px 32px rgba(16, 24, 40, .24);
   --sh-tip: 0 4px 14px rgba(0, 0, 0, .14);
-  --sh-brand-inset: 0 0 0 2px rgba(74, 144, 217, .35);
+  --sh-brand-inset: 0 0 0 2px rgba(47, 111, 181, .35);
 }
 
 /* ---------------------------------------------------------------- 按钮 */
@@ -125,6 +136,9 @@
 .kh-btn:hover { border-color: var(--brand); color: var(--brand-deep); background: var(--brand-softer); }
 .kh-btn:disabled { opacity: .45; cursor: not-allowed; color: var(--text-4); }
 .kh-btn:disabled:hover { border-color: var(--border-2); background: var(--card); color: var(--text-4); }
+/* 2.0.8.11：主按钮禁用态原为 opacity .45 + 深色字压品牌底（1.41:1），改为中性底 */
+.kh-btn-primary:disabled { background: var(--bg-2); border-color: var(--border-2); color: var(--text-3); opacity: 1; }
+.kh-btn-primary:disabled:hover { background: var(--bg-2); border-color: var(--border-2); color: var(--text-3); }
 .kh-btn-primary { background: var(--brand); border-color: var(--brand); color: var(--white); }
 .kh-btn-primary:hover { background: var(--brand-deep); border-color: var(--brand-deep); color: var(--white); }
 .kh-btn-danger { background: var(--danger); border-color: var(--danger); color: var(--white); }
@@ -518,6 +532,7 @@
 .kh-table-grid th {
   position: sticky; top: 0; z-index: 1;
   padding: 8px 8px;
+  font-size: var(--fs-sm);
   border-bottom: 1px solid var(--border-2);
   background: var(--card-2);
   color: var(--text-2);
@@ -528,10 +543,10 @@
 .kh-table-grid th.is-sortable { cursor: pointer; user-select: none; }
 .kh-table-grid th.is-sortable:hover { color: var(--brand-deep); }
 .kh-sort-mark { margin-left: 4px; color: var(--text-4); font-size: var(--fs-xs); }
-.kh-table-grid td { padding: 7px 8px; border-bottom: 1px solid var(--border); color: var(--text); vertical-align: middle; }
+.kh-table-grid td { padding: 9px 8px; line-height: var(--lh-base); border-bottom: 1px solid var(--border); color: var(--text); vertical-align: middle; }
 .kh-table-grid tbody tr:hover { background: var(--brand-softer); }
 .kh-table-grid tbody tr.is-selected { background: var(--brand-soft); }
-.kh-table-empty { padding: 28px 8px; color: var(--text-4); text-align: center; }
+.kh-table-empty { padding: 30px 8px; color: var(--text-3); text-align: center; line-height: var(--lh-loose); }
 
 .kh-pager { display: flex; align-items: center; gap: 6px; font-size: var(--fs-sm); color: var(--text-3); }
 .kh-pager-info { white-space: nowrap; }

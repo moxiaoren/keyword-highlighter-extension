@@ -209,3 +209,13 @@ body {
   font-variant-numeric: tabular-nums;
   user-select: none;
 }
+
+/* ============================================================================
+ * 2.0.8.11 美化 · P2 工具栏弹窗（只追加覆盖）
+ * ========================================================================= */
+.kh-pop-head { background: var(--brand-strong); }
+.kh-pop-title { font-size: var(--fs-md); color: var(--white); }   /* components.css:292 的同名类会把标题染成 --text-2，那是对浮层标题的设定，这里必须显式改回白 */
+.kh-pop-subtitle { color: var(--white); opacity: .92; }
+.kh-stat-label { font-size: var(--fs-xs); color: var(--text-3); letter-spacing: .2px; }
+.kh-stat-value { font-size: var(--fs-xl); font-weight: 700; color: var(--brand-strong); }
+

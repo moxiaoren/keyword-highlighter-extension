@@ -24,7 +24,10 @@ function start(port) {
       res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-store' });
       res.end(fs.readFileSync(file));
     });
-    server.listen(port, '127.0.0.1', () => resolve({ server, origin: 'http://127.0.0.1:' + port }));
+    server.listen(port, '127.0.0.1', () => {
+      const p = server.address().port;  /* port=0 时由系统分配，必须回读真实端口 */
+      resolve({ server, origin: 'http://127.0.0.1:' + p });
+    });
   });
 }
 

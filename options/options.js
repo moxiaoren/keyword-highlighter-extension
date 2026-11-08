@@ -61,9 +61,11 @@
       await fn();
       cfg = await KH.Store.load();
       renderAll();
+      return true;
     } catch (err) {
       D.toast('保存失败：' + ((err && err.message) || err), 'error');
       try { cfg = await KH.Store.load(); renderAll(); } catch (e2) { /* 读也失败：保持现状 */ }
+      return false;
     } finally {
       updating = false;
     }
@@ -112,6 +114,14 @@
       ? '本站开关（当前页不适用）'
       : (siteOn ? '本站：高亮中' + (tag ? ' · ' + tag : '')
                 : '本站：已禁用' + (tag ? ' · ' + tag : ''));
+    /* 2.0.8.11 C4 真 bug 修复：这一页没有内容脚本时按钮**必须真的禁用**。
+     * 旧写法只改文案、按钮仍可点 —— 点了 SITE_TOGGLE 会走到后台用 `sender.tab.url`
+     * 兜底，而在设置页里那正是 options.html（chrome-extension://…），于是把
+     * **扩展自己的 id 写进 siteDisabledMap**，等于给自己加了一条永远无关的"禁用站点"。 */
+    btn.disabled = (siteOn === null);
+    btn.title = siteOn === null
+      ? '当前页不是可高亮的网页（新标签页、扩展页面、chrome:// 等），没有本站开关'
+      : (siteOn ? '点一下禁用本站高亮' : '点一下恢复本站高亮');
   }
 
   $('btn-toggle-global').addEventListener('click', async () => {
@@ -122,6 +132,7 @@
   });
 
   $('btn-site-toggle').addEventListener('click', async () => {
+    if ($('btn-site-toggle').disabled) return;   /* 兜底：按钮已在 updateSiteButton 里真禁用 */
     const res = await chrome.runtime.sendMessage({ type: KH.MSG.SITE_TOGGLE });
     if (res && res.ok) D.toast(res.disabled ? ('已临时禁用 ' + res.host) : ('已恢复 ' + res.host), 'ok');
     else D.toast('无法解析当前标签页地址', 'error');
@@ -428,7 +439,7 @@
   async function removeKeywords(ids, label) {
     const ok = await D.confirmBox('确定删除 ' + label + '？\n此操作不可撤销。', { title: '删除确认', danger: true, saveLabel: '删除' });
     if (!ok) return;
-    await mutate(() => KH.Store.removeKeywords(ids));
+    if (!await mutate(() => KH.Store.removeKeywords(ids))) return;   /* 写失败已 toast，别再说"已删除" */
     for (const id of ids) selection.delete(id);
     syncBatchBar();
     D.toast('已删除', 'ok');
@@ -626,12 +637,12 @@
 
   $('batch-enable').addEventListener('click', async () => {
     const n = selection.size;
-    await mutate(() => KH.Store.patchKeywords(batchIds(), () => ({ enabled: true })));
+    if (!await mutate(() => KH.Store.patchKeywords(batchIds(), () => ({ enabled: true })))) return;
     D.toast('已启用 ' + n + ' 条', 'ok');
   });
   $('batch-disable').addEventListener('click', async () => {
     const n = selection.size;
-    await mutate(() => KH.Store.patchKeywords(batchIds(), () => ({ enabled: false })));
+    if (!await mutate(() => KH.Store.patchKeywords(batchIds(), () => ({ enabled: false })))) return;
     D.toast('已停用 ' + n + ' 条', 'ok');
   });
   $('batch-clear').addEventListener('click', () => { table.clearSelection(); });
@@ -784,12 +795,13 @@
       const hasTitle = Object.keys(titlePatch).length > 0 && comboIds.length > 0;
       if (!hasCore && !hasTitle) { D.toast('请先点选要应用的匹配项', 'info'); return; }
       if (pop) pop.close();
-      await mutate(() => KH.Store.patchKeywords(ids, (kw) => {
+      const wrote = await mutate(() => KH.Store.patchKeywords(ids, (kw) => {
         // 每次 patch 都重新算：标题词只给"当前这条确实是组合词"的行
         const p = Object.assign({}, corePatch);
         if (kw && kw.cellVerifyEnabled && kw.cellVerify) Object.assign(p, titlePatch);
         return p;
       }));
+      if (!wrote) return;
       D.toast('已更新 ' + ids.length + ' 条匹配方式', 'ok');
     });
     panel.appendChild(h('div', { class: 'kh-pop-actions' }, [applyBtn]));
@@ -819,7 +831,7 @@
         if (v.setNote) patch.note = v.note || '';
         if (v.setImp) patch.importantNote = v.importantNote || '';
         if (!Object.keys(patch).length) { D.toast('请先勾选要修改的字段', 'info'); return false; }
-        await mutate(() => KH.Store.patchKeywords(batchIds(), () => patch));
+        if (!await mutate(() => KH.Store.patchKeywords(batchIds(), () => patch))) return false;
         D.toast('已更新', 'ok');
       }
     });
@@ -1025,7 +1037,7 @@
   }
 
   $('btn-hl-reset').addEventListener('click', async () => {
-    await mutate(() => KH.Store.patch({ highlightStyle: KH.Config.defaults.highlightStyle }));
+    if (!await mutate(() => KH.Store.patch({ highlightStyle: KH.Config.defaults.highlightStyle }))) return;
     D.toast('已恢复默认高亮色', 'ok');
   });
 
@@ -1067,7 +1079,7 @@
   }
 
   $('btn-nc-reset').addEventListener('click', async () => {
-    await mutate(() => KH.Store.patch({ noteCardStyle: KH.Config.defaults.noteCardStyle }));
+    if (!await mutate(() => KH.Store.patch({ noteCardStyle: KH.Config.defaults.noteCardStyle }))) return;
     D.toast('已恢复默认卡片样式', 'ok');
   });
 
@@ -1220,7 +1232,8 @@
     if (!ok) return;
     try {
       let stats = null;
-      await mutate(async () => { stats = await KH.Store.importJSON(text, { include: sc, mode }, cfg); });
+      const wrote = await mutate(async () => { stats = await KH.Store.importJSON(text, { include: sc, mode }, cfg); });
+      if (!wrote) return;
       D.toast('导入完成：新增关键词 ' + stats.keywords + ' 条 / 分组 ' + stats.groups + ' 个 / 站点规则 ' + stats.siteRules + ' 条', 'ok');
     } catch (err) {
       D.toast('导入失败：' + err.message, 'error');
@@ -1231,7 +1244,8 @@
   async function importCSVText(text) {
     try {
       let stats = null;
-      await mutate(async () => { stats = await KH.Store.importCSV(text, cfg); });
+      const wrote = await mutate(async () => { stats = await KH.Store.importCSV(text, cfg); });
+      if (!wrote) return;
       D.toast('CSV 导入完成：新增 ' + stats.added + ' 条，跳过重复 ' + stats.skipped + ' 条'
         + (stats.groupsCreated ? '，新建分组 ' + stats.groupsCreated + ' 个' : ''), 'ok');
     } catch (err) {
@@ -1276,7 +1290,7 @@
       { title: '重置数据', danger: true, saveLabel: '确认重置' }
     );
     if (!ok) return;
-    await mutate(() => KH.Store.reset(sc, cfg));
+    if (!await mutate(() => KH.Store.reset(sc, cfg))) return;
     D.toast('已重置', 'ok');
   });
 

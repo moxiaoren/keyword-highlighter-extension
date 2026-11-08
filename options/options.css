@@ -544,3 +544,25 @@ body {
   width: 72px; height: 72px; object-fit: contain;
   border: 1px solid var(--border-2); border-radius: var(--r-sm); background: var(--bg);
 }
+
+/* ============================================================================
+ * 2.0.8.11 美化 · P1 设置页（只追加覆盖：不改 DOM、不改类名、不重排既有规则）
+ * 观测依据：docs/ui-v3/audit/2026-11-08/MEASURE.md
+ * ========================================================================= */
+.kh-page-head h1 { font-size: var(--fs-lg2); font-weight: 700; letter-spacing: .2px; }
+.kh-version { color: var(--text-3); }
+.kh-tab.is-active {
+  color: var(--brand-on-soft);
+  border-left-color: var(--brand-strong);
+  box-shadow: inset 0 0 0 1px var(--overlay-brand-10);
+}
+.kh-sidebar-version { color: var(--text-4); }
+.kh-dim { color: var(--text-4); }
+.kh-sec-lead { line-height: var(--lh-loose); }
+/* 空态：原来只有一句 2.54 对比度灰字，改为「说明 + 下一步」两层 */
+.kh-empty { padding: 22px 18px; color: var(--text-3); line-height: var(--lh-loose); }
+.kh-empty strong { color: var(--text); }
+.kh-empty .kh-empty-next { display: block; margin-top: 6px; font-size: var(--fs-sm); color: var(--text-4); }
+
+/* 2.0.8.11：页脚分隔符原本用装饰色 --text-5 当正文（1.65:1），改为可读的 --text-4 */
+.kh-foot-sep { color: var(--text-4); }
