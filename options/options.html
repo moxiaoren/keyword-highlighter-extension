@@ -18,13 +18,27 @@
       <span class="kh-sidebar-name">高亮助手</span>
     </div>
     <nav class="kh-tabs" id="tabs" aria-label="设置分区">
-      <a class="kh-tab" href="#sec-keywords" data-tab="keywords"><span class="kh-nav-icon">📝</span>关键词管理</a>
-      <a class="kh-tab" href="#sec-groups" data-tab="groups"><span class="kh-nav-icon">📁</span>分组管理</a>
-      <a class="kh-tab" href="#sec-style" data-tab="style"><span class="kh-nav-icon">🎨</span>样式</a>
-      <a class="kh-tab" href="#sec-ocr" data-tab="ocr"><span class="kh-nav-icon">🖼</span>图片识别</a>
-      <a class="kh-tab" href="#sec-sites" data-tab="sites"><span class="kh-nav-icon">🌐</span>站点规则</a>
-      <a class="kh-tab" href="#sec-data" data-tab="data"><span class="kh-nav-icon">📦</span>导入导出</a>
-      <a class="kh-tab" href="#sec-help" data-tab="help"><span class="kh-nav-icon">❓</span>帮助与隐私</a>
+      <!-- 2.0.8.12：七个分区按「内容 / 外观 / 站点与数据 / 帮助」分组，组标题只是视觉分层，
+           不参与切换（data-tab 仍只挂在 .kh-tab 上，脚本与测试的口径不变）。 -->
+      <div class="kh-nav-group" role="presentation">
+        <span class="kh-nav-group-title">内容</span>
+        <a class="kh-tab" href="#sec-keywords" data-tab="keywords"><span class="kh-nav-icon">📝</span>关键词管理</a>
+        <a class="kh-tab" href="#sec-groups" data-tab="groups"><span class="kh-nav-icon">📁</span>分组管理</a>
+      </div>
+      <div class="kh-nav-group" role="presentation">
+        <span class="kh-nav-group-title">外观</span>
+        <a class="kh-tab" href="#sec-style" data-tab="style"><span class="kh-nav-icon">🎨</span>样式</a>
+        <a class="kh-tab" href="#sec-ocr" data-tab="ocr"><span class="kh-nav-icon">🖼</span>图片识别</a>
+      </div>
+      <div class="kh-nav-group" role="presentation">
+        <span class="kh-nav-group-title">站点与数据</span>
+        <a class="kh-tab" href="#sec-sites" data-tab="sites"><span class="kh-nav-icon">🌐</span>站点规则</a>
+        <a class="kh-tab" href="#sec-data" data-tab="data"><span class="kh-nav-icon">📦</span>导入导出</a>
+      </div>
+      <div class="kh-nav-group" role="presentation">
+        <span class="kh-nav-group-title">帮助</span>
+        <a class="kh-tab" href="#sec-help" data-tab="help"><span class="kh-nav-icon">❓</span>帮助与隐私</a>
+      </div>
     </nav>
     <div class="kh-sidebar-foot">
       <!-- 版本徽标必须动态读 manifest（单一真源铁律），不写死字面量 -->

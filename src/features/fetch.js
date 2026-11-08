@@ -557,6 +557,10 @@
   const SLICE_SUFFIX_RE = /%\s*([^%!@#^]*)$/;
   /* 【2.0.8.8 需求④】`~` = 该字段内容格**不完整展示**（只裁显示，值不变）。放最后匹配，不影响既有后缀。 */
   const CLIP_SUFFIX_RE = /~\s*$/;
+  /* 【2.0.8.12 需求①】`*` = 该字段内容格**做成超链接**（值本身是网址就直链，否则按模板拼）。
+   *  `*` 后面紧跟的是可选的链接模板（`{v}` 会被替换成 URL 编码后的值）；只放行 http/https，
+   *  其它协议（javascript: / data: …）一律不生成链接 —— 笔记里的值来自任意网页，不能当可执行入口。 */
+  const LINK_SUFFIX_RE = /\*(\S*)\s*$/;
 
   function parseLabelSpec(t) {
     let s = String(t == null ? '' : t).trim();
@@ -569,7 +573,9 @@
     let anchor = '';
     let sliceSpec = '';
     let clip = false;
-    for (let guard = 0; guard < 6; guard++) {
+    let link = false;
+    let linkTpl = '';
+    for (let guard = 0; guard < 7; guard++) {
       /* `~` 必须**最先**剥：其它后缀的正则都允许"尾巴上还有别的字符"，
        * 最后剥的话 `%20~` 会被切片正则整串吃成 `20~`、`@2~` 变成非法位置。
        * 它只是显示选项（值一个字不改），先剥掉不影响任何取值语义。 */
@@ -577,6 +583,14 @@
       if (mc) {
         clip = true;
         s = s.slice(0, mc.index).replace(/^[ 　]+|[ 　]+$/g, '');
+        continue;
+      }
+      /* `*` 与 `~` 同族：都只是**显示选项**，先剥掉不影响任何取值语义。 */
+      const mlk = LINK_SUFFIX_RE.exec(s);
+      if (mlk) {
+        link = true;
+        linkTpl = mlk[1] || '';
+        s = s.slice(0, mlk.index).replace(/^[ 　]+|[ 　]+$/g, '');
         continue;
       }
       const mi = IMG_SUFFIX_RE.exec(s);
@@ -628,7 +642,7 @@
       }
       break;
     }
-    return { label: s, simple: simple, imgOnly: imgOnly, imgLimit: imgLimit, noImg: noImg, offset: offset, offsetInvalid: isOffsetInvalid(offset), stripSpace: stripSpace, anchor: anchor, sliceSpec: sliceSpec, clip: clip };
+    return { label: s, simple: simple, imgOnly: imgOnly, imgLimit: imgLimit, noImg: noImg, offset: offset, offsetInvalid: isOffsetInvalid(offset), stripSpace: stripSpace, anchor: anchor, sliceSpec: sliceSpec, clip: clip, link: link, linkTpl: linkTpl };
   }
 
   /**
@@ -650,6 +664,7 @@
     if (it.anchor) out.push('^' + it.anchor);
     if (it.sliceSpec) out.push('%' + it.sliceSpec);
     if (it.clip) out.push('~');
+    if (it.link) out.push('*' + (it.linkTpl || ''));
     return out.join(' ');
   }
 
@@ -1716,11 +1731,30 @@
      * （表格单元格的 display 被规整成 table-cell，clamp 只认 -webkit-box 子元素）。
      * 悬停 `title` 给全文（去掉图片占位符、空白折成一格，避免多行塞进属性）。 */
     const clipOn = (it) => !!(it && it.opt && it.opt.clip);
+    /* 【2.0.8.12 需求①】`*`：把这一格的内容做成超链接。两条路径：
+     *  ① 值本身是 http(s) 网址 → 直接当 href；
+     *  ② 写了模板（`*https://x/?q={v}`）→ 用 URL 编码后的值替换 `{v}`。
+     * 其余情况（不是网址、也没模板、值里带图片占位符）**照原样显示成文字**，绝不生成 href ——
+     * 宁可点不动，也不把一段任意网页文字变成可点击的 javascript:/data: 入口。 */
+    const hrefOf = (it, raw) => {
+      const opt = (it && it.opt) || null;
+      if (!opt || !opt.link) return '';
+      if (String(raw).indexOf('\u0001KHIMG\u0001') >= 0) return '';
+      const v = String(raw == null ? '' : raw).trim();
+      if (!v) return '';
+      const tpl = String(opt.linkTpl || '').trim();
+      const url = tpl ? tpl.split('{v}').join(encodeURIComponent(v)) : v;
+      return /^https?:\/\//i.test(url) ? url : '';
+    };
     const valInner = (it, raw) => {
       const html = escHtml(raw);
-      if (!clipOn(it)) return html;
+      const href = hrefOf(it, raw);
+      const body = href
+        ? '<a class="kh-val-link" href="' + escHtml(href) + '" target="_blank" rel="noopener noreferrer">' + html + '</a>'
+        : html;
+      if (!clipOn(it)) return body;
       const full = stripImgPlaceholders(raw).replace(/\s+/g, ' ').trim();
-      return '<div class="kh-val-box" title="' + escHtml(full) + '">' + html + '</div>';
+      return '<div class="kh-val-box" title="' + escHtml(full) + '">' + body + '</div>';
     };
     const valCell = (it, attrs, raw) =>
       '<td' + (attrs || '') + (clipOn(it) ? ' class="kh-val-clip"' : '') + '>' + valInner(it, raw) + '</td>';

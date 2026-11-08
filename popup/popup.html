@@ -36,7 +36,8 @@
 
   <!-- ② 信息行：当前站点卡片（站点名/域名 + 生效/失效徽标）+ 关键词数卡（配置项计数） -->
   <div class="kh-pop-info">
-    <div class="kh-pop-card kh-site-card">
+    <div class="kh-pop-card kh-site-card is-link" id="card-site" role="button" tabindex="0"
+         title="打开设置页的「站点规则」">
       <span class="kh-site-icon" aria-hidden="true">🌐</span>
       <div class="kh-site-meta">
         <span class="kh-site-label">当前站点</span>
@@ -44,7 +45,8 @@
       </div>
       <span class="kh-site-badge" id="site-badge">生效中</span>
     </div>
-    <div class="kh-pop-card kh-stat-card" title="已配置的关键词条数（含已停用的条目）">
+    <div class="kh-pop-card kh-stat-card is-link" id="card-keywords" role="button" tabindex="0"
+         title="已配置的关键词条数（含已停用的条目）；点开设置页的「关键词管理」">
       <span class="kh-stat-label"><span class="kh-stat-icon" aria-hidden="true">📌</span>关键词数</span>
       <span class="kh-stat-value" id="keyword-count">0</span>
     </div>

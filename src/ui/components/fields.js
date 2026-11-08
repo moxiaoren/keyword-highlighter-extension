@@ -807,6 +807,16 @@
              * 抓到的值一个字不改。存进字段串的 `~` 后缀里，老配置没有它 ⇒ 默认完整展示。 */
             const clipCb = h('input', { type: 'checkbox' });
             clipCb.checked = !!sp.clip;
+            /* 【2.0.8.12 需求①】内容格做成超链接：`*` 后缀。值本身是网址就直链；
+             * 想拼成别的地址（例如包名 → 应用市场页）就在模板里写 `{v}`，值会被 URL 编码后填进去。 */
+            const linkCb = h('input', { type: 'checkbox' });
+            linkCb.checked = !!sp.link;
+            const linkTplInp = h('input', {
+              class: 'kh-input kh-sfx-link', type: 'text',
+              value: String(sp.linkTpl || ''),
+              placeholder: '可选：https://example.com/?q={v}'
+            });
+            linkTplInp.hidden = !sp.link;
             const sampleInp = h('input', { class: 'kh-input kh-sfx-sample', type: 'text', placeholder: '粘贴一格真实文字，试一下取到的是什么' });
             const previewOut = h('span', { class: 'kh-sfx-out is-empty', text: '取到的值会显示在这里' });
             /* 初始态：storage 里的后缀 → 表单控件 */
@@ -853,6 +863,9 @@
               sp.offsetInvalid = false;
               sp.stripSpace = !!stripCb.checked;
               sp.clip = !!clipCb.checked;
+              sp.link = !!linkCb.checked;
+              sp.linkTpl = String(linkTplInp.value == null ? '' : linkTplInp.value).trim();
+              linkTplInp.hidden = !sp.link;
               sp.anchor = String(anchorInp.value == null ? '' : anchorInp.value).trim();
               const sm3 = sliceMode.value;
               sp.sliceSpec = sm3 === 'none' ? '' : sm3 === 'first'
@@ -873,6 +886,8 @@
             sliceB.addEventListener('input', compose);
             stripCb.addEventListener('change', compose);
             clipCb.addEventListener('change', compose);
+            linkCb.addEventListener('change', compose);
+            linkTplInp.addEventListener('input', compose);
             sampleInp.addEventListener('input', paintPreview);
             syncNums();
             paintPreview();
@@ -880,7 +895,9 @@
               group('取哪一格', [modeSel, imgN]),
               group('值格位置 @', [offsetInp]),
               group('取什么内容', [anchorInp, sliceMode, sliceA, sliceB,
-                h('label', { class: 'kh-sfx-check' }, [clipCb, h('span', { text: '内容格不完整展示（折 3 行，悬停看全文）' })])
+                h('label', { class: 'kh-sfx-check' }, [clipCb, h('span', { text: '内容格只显示一行（悬停看全文）' })]),
+                h('label', { class: 'kh-sfx-check' }, [linkCb, h('span', { text: '内容格做成超链接（值是网址就直链；也可在下面写模板）' })]),
+                linkTplInp
               ]),
               group('怎么清理', [h('label', { class: 'kh-sfx-check' }, [stripCb, h('span', { text: '去掉内部空白（包名这类用）' })])])
             ]));

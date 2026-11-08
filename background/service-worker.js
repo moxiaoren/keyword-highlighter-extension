@@ -182,8 +182,15 @@ const HANDLERS = {
   [MSG.SITE_TOGGLE]: async (msg, sender) => {
     const url = (msg.url || (sender && sender.tab && sender.tab.url) || '');
     let host = '';
-    try { host = new URL(url).hostname; } catch (e) { return { ok: false, error: '无法解析主机名' }; }
+    let proto = '';
+    try { const u = new URL(url); host = u.hostname; proto = u.protocol; } catch (e) { return { ok: false, error: '无法解析主机名' }; }
     if (!host) return { ok: false, error: '无法解析主机名' };
+    /* 2.0.8.11 C4：只接受普通网页。设置页/弹窗发这条消息时 `sender.tab` 指向扩展自己的页面，
+     * 旧逻辑会把 `chrome-extension://<扩展 id>` 的 hostname（=扩展 id）写进 siteDisabledMap，
+     * 从此用户永远看不到"这条规则是哪来的"。非 http(s) 一律拒绝且不落盘。 */
+    if (proto !== 'http:' && proto !== 'https:') {
+      return { ok: false, error: '当前页不是普通网页，没有本站开关' };
+    }
 
     const { siteDisabledMap = {} } = await chrome.storage.local.get('siteDisabledMap');
     const next = !siteDisabledMap[host];
