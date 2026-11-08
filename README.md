@@ -98,7 +98,7 @@
 ## 自检与开发
 
 ```bash
-node tests/run.js                 # 单元测试（共 973 项：972 通过 + 1 跳过，始终全跑）
+node tests/run.js                 # 单元测试（共 977 项：976 通过 + 1 跳过，始终全跑）
                                   #   注：`_tools/`、`_MIGRATION_CHECKLIST.md`、`_e2e/` 属**工作区仓**；
                                   #   只 clone 公开扩展仓时这几条检查会**明红并说出修法**（票 #47，不静默跳过）
 node scripts/meta-check.js        # 机械红线（55 项：纯视觉不改 DOM / 单源字段 / 私钥不入包 …）
