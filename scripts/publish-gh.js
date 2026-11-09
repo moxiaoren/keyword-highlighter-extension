@@ -130,7 +130,7 @@ async function api(method, url, body) {
   const skip = all.filter((f) => FORBIDDEN_RE.test(f));
   /* 只上传"站点真正需要"的文件（白名单）：清单、update.xml、包。
    * 其余（PUBLISH.md 等）留在本地 —— 免得把说明文档也传上站点。 */
-  const SITE_FILE_RE = /^(latest(-beta)?\.json|update(-beta)?\.xml|index\.html|kh-autoupdate\.bat|.+\.(zip|crx))$/i;   // 站点首页 + 一键安装脚本也一起发布   // update-beta.xml 也要能发（独立测试版的自动更新源）
+  const SITE_FILE_RE = /^(latest(-beta)?\.json|update(-beta)?\.xml|index\.html|kh-autoupdate\.bat|notes\/[A-Za-z0-9.\-]+\.html|.+\.(zip|crx))$/i;   // 站点首页 + 一键安装脚本 + 每版说明页（notes/v<ver>.html）也一起发布   // update-beta.xml 也要能发（独立测试版的自动更新源）
   /* 只上传**当前版本**的安装包。
    * 【为什么要收这一刀】release/ 里会一直堆着历史测试版包（实测已经 19 个版本的 crx+zip ≈ 10MB），
    * 每次发版都重传一遍：又慢又会撞上 API 抽风（实测在传第 26 个 blob 时拿到一次 Bad credentials）。
@@ -397,11 +397,31 @@ async function api(method, url, body) {
     die('读取分支失败：' + ref.text.slice(0, 200));
   }
 
-  /* ③ 逐文件建 blob */
+  /* ③ 逐文件建 blob —— **只传变了的**。
+   * 【为什么必须跳过没变的】gh-pages 的 tree 用 `base_tree` 合并，没传的文件原地保留；
+   * 而历史包有 240 多个（每个 6 MB），全量重传要上千 MB 的 base64，网络一抖就 "fetch failed"，
+   * 整次发布白跑、什么都没提交。这里先取远端 tree，用 git blob sha1 比对，相同就跳过。 */
+  const gitBlobSha1 = (buf) => crypto.createHash('sha1')
+    .update('blob ' + buf.length + '\0')
+    .update(buf)
+    .digest('hex');
+  const remoteSha = new Map();
+  try {
+    const rt = await api('GET', '/repos/' + OWNER + '/' + REPO + '/git/trees/' + parentSha + '?recursive=1');
+    if (rt.ok && rt.json && !rt.json.truncated) {
+      for (const it of (rt.json.tree || [])) if (it.type === 'blob') remoteSha.set(it.path, it.sha);
+    } else {
+      log('⚠ 远端 tree 过大或读取失败，本次退回全量上传');
+    }
+  } catch (e) {
+    log('⚠ 读取远端 tree 失败（' + (e && e.message) + '），退回全量上传');
+  }
   const tree = [];
+  let skipped = 0;
   for (const e of entries) {
     const abs = e.local;
     const buf = fs.readFileSync(abs);
+    if (remoteSha.get(e.remote) === gitBlobSha1(buf)) { skipped++; continue; }
     const sha256 = crypto.createHash('sha256').update(buf).digest('hex').toUpperCase();
     log('  ' + e.remote.padEnd(38) + (buf.length / 1024).toFixed(1).padStart(7) + ' KB   sha256=' + sha256.slice(0, 12) + '…');
     if (DRY) continue;
@@ -426,6 +446,7 @@ async function api(method, url, body) {
     if (!blob.ok) die('上传 blob 失败（' + e.remote + '）HTTP ' + blob.status + '：' + String(blob.text || '').slice(0, 300));
     tree.push({ path: e.remote, mode: '100644', type: 'blob', sha: blob.json.sha });
   }
+  if (skipped) log('  未变的 ' + skipped + ' 个文件跳过上传（远端已有相同内容，base_tree 会原地保留）');
   if (DRY) { log('\n--dry：以上为将发布的内容，未做任何提交。'); return; }
 
   /* ④ 一个 commit 提交全部文件（避免"传了一半"的中间态） */

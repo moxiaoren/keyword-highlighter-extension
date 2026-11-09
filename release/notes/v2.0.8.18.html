@@ -1,0 +1,37 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>高亮词助手 2.0.8.18 更新说明</title><style>
+:root{--bg:#f7f8fa;--card:#fff;--fg:#1b1f24;--muted:#5b6672;--line:#e3e7ec;
+--fix:#c0392b;--new:#1f7a4d;--chg:#1f5fa8;--gate:#6b5bd2;--other:#6b7684;}
+@media (prefers-color-scheme:dark){:root{--bg:#14171a;--card:#1c2024;--fg:#e6e9ec;--muted:#9aa5b1;--line:#2b3138;
+--fix:#ff8b80;--new:#6fd39b;--chg:#7fb6f5;--gate:#b3a8ff;--other:#9aa5b1;}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif}
+.wrap{max-width:820px;margin:0 auto;padding:40px 20px 64px}
+header .ver{font-size:34px;font-weight:700;letter-spacing:-.5px}
+header .meta{color:var(--muted);font-size:14px;margin-top:6px}
+.badge{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:600;margin-left:8px;vertical-align:3px}
+.badge.beta{background:#fff0d6;color:#8a5a00}
+.badge.stable{background:#e2f4e8;color:#1f7a4d}
+@media (prefers-color-scheme:dark){.badge.beta{background:#3a2b12;color:#ffc86b}.badge.stable{background:#14301f;color:#6fd39b}}
+ul.items{list-style:none;padding:0;margin:28px 0 0}
+.item{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--other);border-radius:10px;
+padding:14px 16px;margin-bottom:12px}
+.item-fix{border-left-color:var(--fix)}.item-new{border-left-color:var(--new)}
+.item-chg{border-left-color:var(--chg)}.item-gate{border-left-color:var(--gate)}
+.tag{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:6px;margin-bottom:8px;
+color:var(--muted);background:rgba(127,127,127,.12)}
+.item-fix .tag{color:var(--fix)}.item-new .tag{color:var(--new)}.item-chg .tag{color:var(--chg)}.item-gate .tag{color:var(--gate)}
+.item-body p{margin:0 0 8px}.item-body p:last-child{margin-bottom:0}
+code{font:13px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;background:rgba(127,127,127,.14);
+padding:1px 5px;border-radius:5px}
+a{color:var(--chg)}
+.gates{margin-top:28px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 18px}
+.gates h2{font-size:15px;margin:0 0 10px;color:var(--muted);font-weight:600}
+.gates dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px 18px;margin:0}
+.gates dl>div{margin:0}
+.gates dt{font-size:12px;color:var(--muted)}.gates dd{margin:2px 0 0;font-weight:600;font-variant-numeric:tabular-nums}
+footer{margin-top:36px;color:var(--muted);font-size:14px;border-top:1px solid var(--line);padding-top:16px}
+footer a{margin-right:16px}
+table.list{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+table.list th,table.list td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);font-size:14px}
+table.list th{color:var(--muted);font-weight:600}table.list tr:last-child td{border-bottom:0}
+</style></head><body><div class="wrap"><header><div class="ver">高亮词助手 2.0.8.18</div><div class="meta">2026-11-09 · 测试版<span class="badge beta">测试版</span></div><div class="meta">这一版改了什么、为什么改；条目与扩展内「更新日志」同源。</div></header><ul class="items"><li class="item item-fix"><span class="tag">修复·图上明明有、却判成没有</span><div class="item-body">OCR 常把 abc1234 读成全角 ａｂｃ１２３４，或者把一段值拆成带空格的多段；以前页面抓取值按原样比、OCR 值只剔空白，全角、空格、零宽字符这些明明同一个值也会被判成不一致。现在比较统一走一套口径：去空白 → 全角折半角（逐字符 1:1、不改长度）→ 去零宽字符 → 小写；显示仍是原值，一个字都不改。</div></li><li class="item item-fix"><span class="tag">修复·短值到处误命中</span><div class="item-body">抓取值只有 12 时，图上 2024-12-31 也被当成命中；abc1234 也会命中 abc12345。现在英文数字要求左右不是字母数字，并且「纯 ASCII 少于 4 位」的值一律算太短：不参与相等判定，也不报「找不到」，只标注判不准（如 12、abc）。</div></li><li class="item item-fix"><span class="tag">修复·两边值不同时被静默吞掉</span><div class="item-body">同一字段既有页面抓取值、又有图上 OCR 值时，以前先到先得，另一个悄悄消失；页面抓取值取不到时整行直接不见。现在两个值都留着：默认显示页面值，鼠标停在该行能看到「图片上的值 / 页面抓取值」两行，行上标了一致性结论；取不到页面值时改为显示 OCR 值，不再整行消失。</div></li><li class="item item-new"><span class="tag">新增·动态词可以取另一张图进表的值</span><div class="item-body">图片 1 命中「登记号」进表得 abfx，图片 2 把「登记号」配成动态词时，图片 2 上出现 abfx 也算命中——以前动态词的判据值只来自当前页面抓取，取不到就一律判缺。现在页面抓不到时回落到本轮其它图片已进表的同名字段值（只读上一轮结果，不会互相回灌、不会成环）。</div></li><li class="item item-new"><span class="tag">新增·发版说明网页</span><div class="item-body">每个版本都会生成一页 HTML 说明（与更新日志同源，附门禁数字），随版本上线；Release 说明与这一页同源，便于直接看懂改了什么。</div></li><li class="item item-gate"><span class="tag">自检</span><div class="item-body">单测 1018 项（1017 通过 + 1 跳过）：新增 text-norm 9 条（判定分级、全角区间映射、ASCII 边界、短值、中文两字）；meta-check 61 项（新增 6 条防回退红线）；真机 UI 回归 150 项全过。</div></li></ul><section class="gates"><h2>门禁</h2><dl><div><dt>单元测试</dt><dd>1017 / 1018</dd></div><div><dt>meta-check（机械红线）</dt><dd>61 项</dd></div><div><dt>真机 UI 回归</dt><dd>150 项</dd></div></dl></section><footer><a href="https://moxiaoren.github.io/keyword-highlighter-extension/notes/">全部版本说明</a><a href="https://github.com/moxiaoren/keyword-highlighter-extension/releases">Releases</a><a href="https://moxiaoren.github.io/keyword-highlighter-extension/">项目主页</a></footer></div></body></html>
