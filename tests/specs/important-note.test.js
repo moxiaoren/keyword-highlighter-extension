@@ -1073,9 +1073,9 @@ module.exports = async function run() {
     truthy(tip.indexOf('北京某某科技有限公司') >= 0, '★ 悬停要写出开发者抓到的原文（合并行被吞时这里会是空的）');
     truthy(tip.indexOf('找到了') >= 0, '要写命中结论');
     truthy(tip.indexOf('正文') >= 0, '要写正文字数口径');
-    const flags = policyTr.querySelectorAll('.kh-policy-flag');
-    eq(flags.map((f) => f.textContent).join(''), '名开',
-      '★ 主标题与开发者两枚徽标都要在（旧代码合并行只剩「名」）');
+    /* 【2.0.8.17】全中 ⇒ 只留绿底，不插「名」「开」小标（用户原话：找到的情况不需要小标） */
+    eq(policyTr.querySelectorAll('.kh-policy-flag').length, 0,
+      '全中时不许再挂「名」「开」小标：底色变绿已经说明命中');
     /* 合并出来的标签格自带 title，悬停时它会盖住 td 的 —— 说明必须拼在它后面 */
     const lbt = cells[0].querySelector('.kh-lbt');
     truthy(lbt, '隐私政策 / 隐私政策内容同值应合并成带 .kh-lbt 的标签');
@@ -1086,6 +1086,24 @@ module.exports = async function run() {
     eq(devTr.querySelectorAll('td')[0].style.background, '#e6f4ea', '同值合并行要铺浅绿');
     truthy(String(devTr.querySelectorAll('td')[0].getAttribute('title') || '').indexOf('名字完全相同') >= 0,
       '悬停要写清「为什么算同一主体」');
+  });
+
+  await test('悬停说明：有缺时只给缺的那项挂一枚「开」小标（不挂命中的「名」）', () => {
+    const div = H.el('div', {}, []);
+    div.innerHTML = KH.Fetch.rowsToTableHtml([
+      { label: '主标题', rows: [[{ t: '某某清理大师' }]], opt: null },
+      { label: '开发者', rows: [[{ t: '北京某某科技有限公司' }]], opt: null },
+      /* 正文只有主标题，没有公司名 ⇒ 开发者没找到 */
+      { label: '隐私政策', rows: [[{ t: '某某清理大师隐私政策：我们重视你的隐私。' }]], opt: null }
+    ]);
+    const panel = shadowPanel();
+    panel.decorateChecks(div, {});
+    const trs = div.querySelectorAll('tr');
+    const policyTr = trs[trs.length - 1];
+    const flags = policyTr.querySelectorAll('.kh-policy-flag');
+    eq(flags.map((f) => f.textContent).join(''), '开', '只给没找到的「开发者」挂小标');
+    truthy(flags[0].classList.contains('is-miss'), '缺项小标是 miss 态（橙色）');
+    eq(policyTr.querySelectorAll('td')[0].style.background, '#fdf3d7', '有缺 ⇒ 行底色仍是浅黄');
   });
 
   await test('字段名一律走 labelText / fieldKeysOf（徽标与合并标签不许污染 readFields / rowOfField）', () => {

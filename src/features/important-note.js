@@ -3234,10 +3234,14 @@
       for (let i = 0; i < v.items.length; i++) {
         const it = v.items[i];
         lines.push(lineOf(it));
-        if (!labelCell || (it.key !== 'title' && it.key !== 'dev')) continue;
+        /* 【2.0.8.17】全中时不再插「名」「开」小标：底色已经变绿，小标只剩噪音（用户原话
+         * 「找到的情况…这是不需要的，底色标绿就够了」）。只有「有缺」时才给缺的那项挂一行
+         * 橙色小标，指明是谁没找到；命中的那一项有绿底行就够，也不挂。 */
+        if (!labelCell || v.ok || it.hit) continue;
+        if (it.key !== 'title' && it.key !== 'dev') continue;
         const doc = tr.ownerDocument || document;
         const flag = doc.createElement('span');
-        flag.className = 'kh-policy-flag ' + (it.hit ? 'is-hit' : 'is-miss');
+        flag.className = 'kh-policy-flag is-miss';
         flag.textContent = it.key === 'title' ? '名' : '开';
         flag.title = lineOf(it);
         labelCell.appendChild(flag);
