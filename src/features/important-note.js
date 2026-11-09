@@ -231,6 +231,53 @@
       overflow: hidden; display: flex; flex-direction: column;
       resize: both; animation: khin-in .16s ease-out;
     }
+
+    /* ======================= 2.0.8.13 需求④ · 深色主题 =======================
+     * 只覆盖"主要面"（面板底、标题栏、卡、行、表格、次要字、链接）。
+     * **不覆盖**用户自己的高亮配色与页面内容 —— 那是内容层，插件无权替用户改。
+     * 靠 :host([data-kh-theme="dark"]) 的属性选择器提高权重，因此不必关心本块位置。
+     * ======================================================================= */
+    :host([data-kh-theme="dark"]) {
+      color-scheme: dark;
+      /* 面板自己的两条语义变量也在这里落值：样式里大量 var(--kh-text, #1f2937) /
+       * var(--kh-brand-soft, #eaf1fb) 的兜底都是"浅色世界"的值，深色下必须换掉兜底，
+       * 否则字段名格与正文会变成深字压深底（实测整张抓取表读不出来）。 */
+      --kh-text: #e6ebf2;
+      --kh-brand-soft: #1d2c40;
+    }
+    :host([data-kh-theme="dark"]) .khin-panel {
+      background: #1a212b; border-color: #2a333f;
+      box-shadow: 0 8px 28px rgba(0, 0, 0, .55);
+    }
+    :host([data-kh-theme="dark"]) .khin-header {
+      background: linear-gradient(180deg, #1f2734, #161c25);
+      border-bottom-color: #2a333f;
+    }
+    :host([data-kh-theme="dark"]) .khin-header-title,
+    :host([data-kh-theme="dark"]) .khin-header-count { color: #9ecdf6; }
+    :host([data-kh-theme="dark"]) .khin-header-count { background: #1d2c40; }
+    :host([data-kh-theme="dark"]) .khin-header-btn { color: #8592a2; }
+    :host([data-kh-theme="dark"]) .khin-header-btn:hover { color: #e6ebf2; background: rgba(255, 255, 255, .08); }
+    :host([data-kh-theme="dark"]) .khin-notebar { color: #e6ebf2; }
+    :host([data-kh-theme="dark"]) .khin-notebar .khin-notecount,
+    :host([data-kh-theme="dark"]) .khin-notebar .khin-notearrow { color: #9aa7b6; }
+    :host([data-kh-theme="dark"]) .khin-row { border-bottom-color: #2a333f; }
+    :host([data-kh-theme="dark"]) .khin-row-head:hover { background: #1f2734; }
+    :host([data-kh-theme="dark"]) .khin-row-sub { color: #9aa7b6; }
+    :host([data-kh-theme="dark"]) .khin-row.has-tint .khin-row-sub { color: #c2cbd7; }
+    :host([data-kh-theme="dark"]) .khin-item { background: #1f2734; border-color: #2a333f; }
+    :host([data-kh-theme="dark"]) .khin-item-note { color: #dbe3ec; }
+    :host([data-kh-theme="dark"]) .khin-item-note a { color: #8ec2f2; }
+    :host([data-kh-theme="dark"]) .kh-table td {
+      border-color: #2a333f; color: #dbe3ec;
+      /* 基础规则把单元格写成白底（浅色世界的假设），深色下要跟着卡片走，否则整张表是一块白板 */
+      background: #1f2734;
+    }
+    :host([data-kh-theme="dark"]) .kh-table .kh-table-label { background: #24303f; color: #c2cbd7; }
+    :host([data-kh-theme="dark"]) .kh-table .kh-val-box { color: #e6ebf2; }
+    :host([data-kh-theme="dark"]) .kh-table .kh-val-link { color: #8ec2f2; }
+    :host([data-kh-theme="dark"]) .khin-empty,
+    :host([data-kh-theme="dark"]) .khin-hint { color: #9aa7b6; }
     .khin-wrap[hidden] { display: none !important; }
     @keyframes khin-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
     .khin-header {
@@ -384,13 +431,15 @@
      * 间隔由 margin 提供（分隔线退场），面板白底上一眼能数清几条。
      * 内边距是**派生宽度的另一半契约**：这里改数值，.khin-item-kw/.khin-item-adj 的减数必须同步改。 */
     .khin-item {
-      margin: 0 6px 6px; padding: 7px 10px;
+      /* 【2.0.8.13 需求③】首屏想多露出一张卡：只收**垂直**留白（6→5 / 7→5），
+       * 水平内边距 10 与 .khin-item-kw 的 -62px 派生宽度是同一个契约，**不许动**。 */
+      margin: 0 6px 5px; padding: 5px 10px;
       background: #f8fafc; border: 1px solid #eef1f6; border-radius: 8px;
     }
     .khin-item:last-child { margin-bottom: 0; }
     /* 摘要列展开区里的卡片沿用同一张卡，但外层已经给了 padding 与底色，这里只剥掉重复的边距/边框。 */
     .khin-row-body .khin-item { margin: 0; box-shadow: none; border: 0; }
-    .khin-item-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; margin-bottom: 3px; }
+    .khin-item-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; margin-bottom: 2px; }
     .khin-item-tags { position: relative; display: flex; flex-wrap: wrap; gap: 4px; flex: 1; min-width: 0; }
     /* 命中词块的上限是**派生的**：一个词块不许超过面板里那一行的可用宽度
      * （- 62px ≈ 卡片外边距 12 + 边框 2 + 内边距 20 + 关闭按钮与间隙 28），250px 面板下 ≈ 188px ——
@@ -464,7 +513,7 @@
      * 字号走 CSS 变量（2026-10-09 用户裁决：默认比上一版再小一号，并在设置页可配）。
      * 变量由 panel.render() 从 config.importantNote.fontSize 写到 host 上（同 --kh-img-size 手法）。 */
     .khin-item-note {
-      font-size: var(--kh-note-fs, 11px); line-height: 1.55; color: #333;
+      font-size: var(--kh-note-fs, 11px); line-height: 1.45; color: #333;
       white-space: pre-line; word-break: break-word; overflow-wrap: break-word;
     }
     .khin-item-note a { color: #1a73e8; text-decoration: none; }
@@ -2342,6 +2391,16 @@
       this.host.style.setProperty('--kh-img-size', imgSize + 'px');
       const noteFs = KH.Config.normalizeNoteFontSize(cfg && cfg.importantNote && cfg.importantNote.fontSize);
       this.host.style.setProperty('--kh-note-fs', noteFs + 'px');
+
+      /* 界面主题（2.0.8.13 需求④）：面板跑在**别人的页面**里，绝不能改宿主文档的属性 ——
+       * 主题只落在自己的 shadow host 上，深色样式写在注入样式的 `:host([data-kh-theme="dark"])`。
+       * 面板不加载 `src/ui/theme.js`（那是设置页/弹窗/欢迎页用的），这里按同一口径就地解析：
+       * `dark` 恒深、`light` 恒浅、`auto` 跟系统（matchMedia 取不到就按浅色，绝不给用户黑屏）。 */
+      const themeMode = String((cfg && cfg.uiTheme) || 'auto');
+      const themeDark = themeMode === 'dark' || (themeMode === 'auto' &&
+        !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches));
+      if (themeDark) this.host.setAttribute('data-kh-theme', 'dark');
+      else this.host.removeAttribute('data-kh-theme');
 
       /* 面板默认宽度（T26 / 用户 2026-10-12：200 → 250，且设置页可调）：同 imgSize 手法写成 CSS
        * 变量。写在 this.root（= .khin-wrap，变量定义处也在那条规则里 ⇒ 内联压过规则里的默认值），

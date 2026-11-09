@@ -10,6 +10,7 @@ const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 
 const SRC = 'src/features/important-note.js';
 
+module.exports = function run() {
 test('量高度前先摘掉裁剪类（否则 scrollHeight 是被裁过的，永远判"放得下"）', () => {
   const src = read(SRC);
   const i = src.indexOf('function clipValueBoxes');
@@ -24,7 +25,8 @@ test('量高度前先摘掉裁剪类（否则 scrollHeight 是被裁过的，永
 
 test('默认整段显示：基础规则不是 clamp', () => {
   const src = read(SRC);
-  const i = src.indexOf('.kh-table .kh-val-box {');
+  /* 行首锚定：深色主题块里有同名选择器的颜色覆盖，indexOf 会先抓到它 */
+  const i = src.search(/\n    \.kh-table \.kh-val-box \{/);
   const seg = src.slice(i, i + 220);
   truthy(/display:\s*block/.test(seg), '默认 block（不裁剪）');
   truthy(!/-webkit-line-clamp/.test(seg), '基础规则里不能再有 clamp');
@@ -46,3 +48,4 @@ test('量不出来就不裁（未挂载元素 scrollHeight=0，不能被当成"�
   truthy(/isConnected/.test(seg), '未挂载直接跳过');
   truthy(/if \(el\.scrollHeight > lh \* 1\.35\) el\.classList\.add\('kh-val-tight'\);/.test(seg), '只有真的超一行才加类');
 });
+};

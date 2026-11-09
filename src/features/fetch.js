@@ -668,6 +668,30 @@
     return out.join(' ');
   }
 
+  /**
+   * 【2.0.8.13 需求①】后缀 → **人话**（给字段行上的按钮用；`suffixTextOf` 仍然是落盘语法）。
+   * 用户不该为了看懂"这字段怎么取值"去记 `@2#图3!`；按钮上直接写「右数第 2 格 · 图最多 3 张 · 去空格」，
+   * 真要抄语法就看 `title`（那里放 `suffixTextOf` 的原串）。
+   * 空配置返回 ''（调用方显示「默认：右邻这一格」）。
+   */
+  function describeSuffix(it) {
+    if (!it) return '';
+    const out = [];
+    const off = String(it.offset || '').trim();
+    if (off) out.push(it.offsetInvalid ? ('值格 @' + off + '（无效）') : ('值格：右数第 ' + off + ' 格'));
+    if (it.noImg) out.push('不要图片');
+    else if (it.imgOnly) out.push(it.imgLimit ? ('只留图（最多 ' + it.imgLimit + ' 张）') : '只留图');
+    else if (it.imgLimit) out.push('图最多 ' + it.imgLimit + ' 张');
+    else if (it.simple) out.push('只读右邻一格');
+    if (it.stripSpace) out.push('去空格');
+    if (it.anchor) out.push('截到「' + it.anchor + '」之前');
+    const sp = String(it.sliceSpec || '');
+    if (sp) out.push(/^\d+\s*-\s*\d+$/.test(sp) ? ('取第 ' + sp.replace(/\s*-\s*/, '–') + ' 个字') : ('取前 ' + sp + ' 个字'));
+    if (it.clip) out.push('只显示一行');
+    if (it.link) out.push(it.linkTpl ? '做成链接（用模板）' : '做成链接');
+    return out.join(' · ');
+  }
+
   /* `^` 对**单段文本**做「锚点之前」截取。
    *  锚点找不到（或本身为空）→ **保留全文**（`@`/`%` 同款容错：绝不报错、绝不变空值）。
    *  锚点在开头 → 结果是空串（前面确实什么都没有，这是真实结果，不是容错分支）。 */
@@ -2002,7 +2026,7 @@
     cellsForHit, valueCellsOf, splitLabelTokens, findLabelCell,
     /* 【2.0.2.4 需求④】后缀语法的两个只读口子：编辑器（options 页）用它画「字段胶囊」预览 ——
      * options 页**不加载**本文件之外任何抓取实现，语法必须只有这一份，所以直接从这儿取。 */
-    parseLabelSpec, suffixTextOf,
+    parseLabelSpec, suffixTextOf, describeSuffix,
     /* 「原文 → 取到」预览：编辑器不让用户手敲后缀了，结构化设置完要能当场看见取到什么。
      * `modText` 是 `!`/`^`/`%` 的唯一实现（图片选项由 `applyImgPolicy` 管，这里不碰），
      * 所以预览必须走它 —— 界面另写一份就会和真实抓取二次漂移。 */

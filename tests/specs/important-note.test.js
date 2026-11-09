@@ -394,8 +394,10 @@ module.exports = async function run() {
     truthy(/max-width:\s*calc\(var\(--khin-panel-w\) - 62px\)/.test(kw),
       '命中词块上限必须跟着面板宽度变量走，且减数 = 卡片外边距 12 + 边框 2 + 内边距 20 + 关闭按钮 28：' + kw);
     /* 卡片化的那一半契约：减数改了，卡片的内边距/外边距也得是那个口径 —— 两边漂了会截字或溢出。 */
-    const item = (src.match(/\.khin-item \{[\s\S]*?\n    \}/) || [''])[0];
-    truthy(/margin:\s*0 6px 6px/.test(item) && /padding:\s*7px 10px/.test(item) && /border:\s*1px/.test(item),
+    /* 2.0.8.13 需求③：垂直留白收窄（外 6→5、内 7→5）以露出更多首屏卡片；
+     * **水平仍是 10**，与 -62px 减数同源。行首锚定是为了跳过深色主题里的 :host(...) .khin-item 规则。 */
+    const item = (src.match(/(?:^|\n)    \.khin-item \{[\s\S]*?\n    \}/) || [''])[0];
+    truthy(/margin:\s*0 6px 5px/.test(item) && /padding:\s*5px 10px/.test(item) && /border:\s*1px/.test(item),
       '卡片口径（外边距 6 / 内边距 10 / 1px 边框）必须与上面那条减数对得上：' + item);
     truthy(/border-radius:\s*8px/.test(item), '条目的圆角（需求 3：卡片化）：' + item);
     const ap = (src.match(/applyPosition\([^)]*\)\s*\{[\s\S]*?\n    \}/) || [''])[0];
