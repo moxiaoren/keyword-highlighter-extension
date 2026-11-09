@@ -34,10 +34,15 @@
       .toLowerCase();
   }
 
-  /** 正文归一：去所有空白（含全角空格）+ 小写 —— 隐私政策常把公司名断行写。 */
+  /** 正文归一：去所有空白（含全角空格）+ 零宽字符，全角 ASCII 折成半角，再小写。
+   *  隐私政策常把公司名断行写；也常把括号/字母写成全角（`ＡＢＣ（中国）`），
+   *  只比原样字符会「明明有却说没有」——先折平再比。 */
   function flat(s) {
     return String(s == null ? '' : s)
-      .replace(/[\u00a0\u3000\u200b]/g, ' ')
+      /* 零宽与方向控制：肉眼看不见，却会让 indexOf 直接失配 */
+      .replace(/[\u00a0\u3000\u200b-\u200f\u2060\ufeff]/g, ' ')
+      /* 全角 ASCII（！＂＃…～）折半角：全角/半角混写不该改变结论 */
+      .replace(/[\uff01-\uff5e]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xfee0))
       .replace(/\s+/g, '')
       .toLowerCase();
   }
@@ -178,6 +183,28 @@
   };
 
   /* ---------- ① 隐私政策校验 ---------- */
+
+  /** 这个值看起来是一条 http(s) 链接吗？
+   *  抓取表里「隐私政策」那一格有时抓到的不是正文，而是链接本身（用户实测：
+   *  打开链接明明是正文，判定却说没有 —— 因为那一格只有 URL）。 */
+  NoteCheck.looksLikeUrl = function (s) {
+    return /^https?:\/\/\S+$/i.test(String(s == null ? '' : s).trim());
+  };
+
+  /**
+   * 这张卡能从哪儿取到「隐私政策链接」：
+   *   ① 抓取值本身就是 URL（抓到的就是链接）；
+   *   ② 另有「隐私政策链接」字段是 URL。
+   * 返回 `{url, from:'policy'|'link'}` 或 `null`。只做选取，不发请求。
+   */
+  NoteCheck.policySource = function (fields) {
+    const f = fields || {};
+    const p = String(f.policy || '').trim();
+    if (NoteCheck.looksLikeUrl(p)) return { url: p, from: 'policy' };
+    const l = String(f.link || '').trim();
+    if (NoteCheck.looksLikeUrl(l)) return { url: l, from: 'link' };
+    return null;
+  };
 
   /**
    * 子串判定：正文与目标都归一后比较；目标不足 2 个字符不判（单字人名/单字母会全员命中，

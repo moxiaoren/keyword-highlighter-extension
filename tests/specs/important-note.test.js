@@ -1153,4 +1153,48 @@ module.exports = async function run() {
     truthy(String(tagsEl.textContent).indexOf('另一个词') >= 0, '重建后要是新内容');
   });
 
+  /* 【2.0.8.15】用户实测：打开链接明明是正文，判定却说没有 —— 因为「隐私政策」那一格抓到的只是链接。
+   * 现在这一格是链接时必须找后台抓正文，抓回来按正文重判（不许拿 URL 本身去比命中词）。 */
+  suite('重要笔记 · 隐私政策改为跟链接抓正文（2.0.8.15 需求）');
+
+  await test('★ 隐私政策那一格是链接：后台抓回正文后自动重判，悬停写明正文来源', async () => {
+    const calls = [];
+    const div = H.el('div', {}, []);
+    div.innerHTML = KH.Fetch.rowsToTableHtml([
+      { label: '主标题', rows: [[{ t: '某某清理大师' }]], opt: null },
+      { label: '开发者', rows: [[{ t: '北京某某科技有限公司' }]], opt: null },
+      /* 抓取表里「隐私政策」这一格只有链接本身 —— 旧代码直接拿这条 URL 去比命中词 */
+      { label: '隐私政策', rows: [[{ t: 'https://a.test/p' }]], opt: null }
+    ]);
+    /* 垫片的 isConnected 要求挂到 document 上；真实页面里抓取表本来就在文档里 */
+    if (document.body) document.body.appendChild(div);
+    try {
+      const panel = shadowPanel();
+      panel._policyCache = new Map();
+      panel._policyPending = new Set();
+      /* 注入发送函数：真环境走 chrome.runtime.sendMessage；单测改全局 chrome 会与并发用例抢 */
+      panel._policySend = (url, done) => {
+        calls.push({ url: url });
+        setTimeout(() => done({
+          ok: true,
+          text: '某某清理大师隐私政策：本应用由北京某某科技有限公司运营，详见 https://a.test/p 。',
+          len: 46
+        }), 0);
+      };
+      panel.decorateChecks(div, {});
+      await new Promise((r) => setTimeout(r, 30));
+      const trs = div.querySelectorAll('tr');
+      const tr = trs[trs.length - 1];
+      const tip = String(tr.querySelectorAll('td')[0].getAttribute('title') || '');
+      eq(calls.length, 1, '★ 必须把链接发给后台抓正文');
+      eq(calls[0].url, 'https://a.test/p', '发出去的必须就是这一格的链接');
+      truthy(tip.indexOf('抓回的正文') >= 0, '悬停要写明正文来源（链接抓回）');
+      truthy(tip.indexOf('北京某某科技有限公司') >= 0, '按正文重判要能找到开发者原文');
+      truthy(tip.indexOf('找到了') >= 0, '正文里明明有 ⇒ 必须判命中，不许说没有');
+      eq(tr.querySelectorAll('td')[0].style.background, '#e6f4ea', '三项都在正文里 ⇒ 浅绿');
+    } finally {
+      if (div.parentNode) div.parentNode.removeChild(div);
+    }
+  });
+
 };

@@ -86,6 +86,10 @@
      * `chrome.storage.local` 缓存（同一家公司在很多卡片里重复出现）。
      * 通道顺序（用户拍板）：爱企查 → 必应搜索摘要 → 都失败就标「未查明」（面板不改底色）。 */
     ENTITY_LOOKUP: 'kh:entity:lookup',
+    /* 【2.0.8.15 需求①】把「隐私政策链接」的正文抓回来（内容脚本 CORS 发不出去，只能走后台）。
+     * payload: { url } → { ok:true, text, len, cached?, url } | { ok:false, reason, url }
+     * 只读：抓不到就如实失败，面板退回卡片抓取值并在悬停里写明原因。 */
+    POLICY_TEXT: 'kh:policy:text',
     /* 【2.0.8.5】网页对话：面板要求打开/聚焦对话页、以及对对话页做一次自检（选择器是否还认得出）。 */
     AI_WEB_OPEN: 'kh:ai:webOpen',
     AI_WEB_PROBE: 'kh:ai:webProbe',

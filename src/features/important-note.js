@@ -3182,7 +3182,30 @@
     paintPolicy(table, fields, NC) {
       const tr = rowOfField(table, 'policy');
       if (!tr) return;
-      const sig = [fields.title, fields.dev, fields.link, fields.policy].join('\u0001');
+      /* 链接正文缓存：同一份政策很多卡共用，抓一次就够（url → {ok,text,len,reason,at,cached}）。 */
+      const cache = this._policyCache || (this._policyCache = new Map());
+      const src = (typeof NC.policySource === 'function') ? NC.policySource(fields) : null;
+      const got = src ? cache.get(src.url) : null;
+      const cardBody = String(fields.policy || '');
+      const flatLen = (t) => String(t || '').replace(/\s+/g, '').length;
+      /* 【2.0.8.15】判定优先用「链接抓回来的正文」：卡片那一格常常只有链接 / 按钮文字 / 摘要，
+       * 拿它去比必然说「没有」，而用户打开链接明明看得到。链接没抓到才退回卡片抓取值。 */
+      let body = cardBody;
+      let sourceLine = '正文来源：卡片抓取值（' + flatLen(cardBody) + ' 字）';
+      if (got && got.ok) {
+        body = String(got.text || '');
+        sourceLine = '正文来源：隐私政策链接抓回的正文（' + flatLen(body) + ' 字' + (got.cached ? '，7 天缓存' : '') + '）';
+      } else if (got && !got.ok) {
+        sourceLine = '正文来源：卡片抓取值（' + flatLen(cardBody) + ' 字）；链接正文没抓到（' + (got.reason || '未知原因') + '）';
+      } else if (src) {
+        sourceLine = '正文来源：卡片抓取值（' + flatLen(cardBody) + ' 字）；正在抓取链接正文…';
+        this.requestPolicyText(src.url, table, fields, NC);
+      }
+      const eff = { title: fields.title, dev: fields.dev, link: fields.link, entity: fields.entity, policy: body };
+      /* 签名只放正文长度 + 抽样哈希：正文可能有 12 万字符，整段塞进属性会把 DOM 撑肿。 */
+      let bh = 0;
+      for (let bi = 0; bi < body.length; bi += 37) bh = (bh * 31 + body.charCodeAt(bi)) | 0;
+      const sig = [fields.title, fields.dev, fields.link, body.length, bh, sourceLine].join('\u0001');
       if (tr.getAttribute('data-kh-policy-sig') === sig) return;
       tr.setAttribute('data-kh-policy-sig', sig);
       const labelCell = tr.querySelector('td');
@@ -3192,8 +3215,12 @@
       }
       tintRow(tr, '');
       let v = null;
-      try { v = NC.policyVerdict(fields); } catch (e) { v = null; }
-      if (!v) { setCheckTip(tr, ''); return; }
+      try { v = NC.policyVerdict(eff); } catch (e) { v = null; }
+      if (!v) {
+        /* 正文还没有（链接在途 / 抓不到且卡片那格不是正文）：如实说「先不判定」，不许装成「没有」。 */
+        setCheckTip(tr, src ? ('隐私政策校验：暂时判不了\n' + sourceLine + '\n展开链接后会自动重判；也可以把正文直接抓成字段。') : '');
+        return;
+      }
       tintRow(tr, v.ok ? NC.COLOR_OK : NC.COLOR_BAD);
       const labelOf = { title: '主标题', dev: '开发者', content: '隐私政策链接' };
       const lineOf = (it) => {
@@ -3220,7 +3247,42 @@
         lines.push((labelOf[k] || k) + '：这张卡没抓到，不参与校验');
       }
       setCheckTip(tr, '隐私政策校验（正文 ' + v.len + ' 字；忽略空格后按原文找）\n'
-        + lines.join('\n') + '\n链接整串找不到时只比域名。');
+        + sourceLine + '\n' + lines.join('\n') + '\n链接整串找不到时只比域名。');
+    },
+
+    /**
+     * 【2.0.8.15】把隐私政策链接的正文抓回来（发给 background，CORS 只有后台发得出去）。
+     * 回来后就地重画这一行；同 URL 失败也只抓一次（会话内缓存失败原因，不反复打站点）。
+     */
+    requestPolicyText(url, table, fields, NC) {
+      const pending = this._policyPending || (this._policyPending = new Set());
+      if (pending.has(url)) return;
+      pending.add(url);
+      const done = (res) => {
+        pending.delete(url);
+        const cache = this._policyCache || (this._policyCache = new Map());
+        const r = (res && res.ok)
+          ? { ok: true, text: String(res.text || ''), len: res.len || String(res.text || '').replace(/\s+/g, '').length, reason: '', cached: !!res.cached, at: Date.now() }
+          : { ok: false, text: '', len: 0, reason: String((res && res.reason) || '后台没有回执'), at: Date.now() };
+        cache.set(url, r);
+        if (!table || !table.isConnected) return;
+        try { this.paintPolicy(table, fields, NC); } catch (e) { /* 下一轮重算 */ }
+      };
+      /* 单测注入点：不改全局 chrome（并发用例会互相抢），面板自己的发送函数优先。 */
+      if (typeof this._policySend === 'function') {
+        try { this._policySend(url, done); } catch (e) { done({ ok: false, reason: String((e && e.message) || e) }); }
+        return;
+      }
+      let api = null;
+      try { api = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) ? chrome : null; } catch (e) { api = null; }
+      if (!api) { done({ ok: false, reason: '当前上下文没有后台通道' }); return; }
+      try {
+        const type = (KH.MSG && KH.MSG.POLICY_TEXT) || 'kh:policy:text';
+        api.runtime.sendMessage({ type: type, url: url }, (res) => {
+          void (chrome.runtime && chrome.runtime.lastError);
+          done(res);
+        });
+      } catch (e) { done({ ok: false, reason: String((e && e.message) || e) }); }
     },
 
     /** 需求③：开发者 / 核准主体 两边查法定代表人，再判断是否同一人。 */

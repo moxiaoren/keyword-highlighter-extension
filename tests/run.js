@@ -177,6 +177,9 @@ const specs = [
   /* 2.0.8.8：贴边底色复用卡片原色、隐私政策行校验（名/开徽标 + 浅绿/浅黄）、
    * 开发者与核准主体的同法人判定、法人名解析。口径见 tests/specs/note-check.test.js 头部 */
   './specs/note-check.test.js',
+  /* 2.0.8.15：隐私政策那一格常常只有链接 / 按钮文字，判定改为后台抓链接正文
+   * （background/policy.js + policySource + 全角零宽归一）。口径见 tests/specs/policy.test.js 头部 */
+  './specs/policy.test.js',
   /* 2.0.8.9：闪烁根治（渲染签名幂等 + prune）与复制保护窗口（有选区不动 features DOM）。
    * 口径见 tests/specs/v2089.test.js 头部 */
   './specs/v2089.test.js',
