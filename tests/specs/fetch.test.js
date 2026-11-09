@@ -408,6 +408,45 @@ module.exports = async function run() {
     eq(html.indexOf('kh-val-link'), -1, html);
   });
 
+  suite('fetch · 后缀任意顺序混写（2.0.8.14 需求① · @ 不许吞掉 ~ ! *）');
+
+  await test('★ `名称@2~!*`：@2 仍然是指向表达式，`!`/`~`/`*` 各自生效（旧代码整串失效）', () => {
+    const p = F.parseLabelSpec('名称@2~!*');
+    eq(p.label, '名称');
+    eq(p.offset, '2', '★ @ 后面的字符类不许吃掉 ~ ! *');
+    eq(p.offsetInvalid, false, '★ 2~! 不能再被当成非法表达式');
+    eq(p.stripSpace, true);
+    eq(p.clip, true);
+    eq(p.link, true);
+  });
+
+  await test('★ `名称*~@2`：`*` 先出现也不许把 `~@2` 吞进链接模板', () => {
+    const p = F.parseLabelSpec('名称*~@2');
+    eq(p.label, '名称');
+    eq(p.link, true);
+    eq(p.linkTpl, '', '★ 模板不能是 ~@2');
+    eq(p.clip, true);
+    eq(p.offset, '2');
+  });
+
+  await test('`%` / `^` 与 `~` / `*` 并写：各自的字符类互不吃', () => {
+    const a = F.parseLabelSpec('名称%3~');
+    eq(a.sliceSpec, '3');
+    eq(a.clip, true);
+    const b = F.parseLabelSpec('名称^[复制]*');
+    eq(b.anchor, '[复制]');
+    eq(b.link, true);
+    const c = F.parseLabelSpec('名称@2*https://x.test/?v={v}');
+    eq(c.offset, '2');
+    eq(c.linkTpl, 'https://x.test/?v={v}', '真模板照旧整串收下');
+  });
+
+  await test('展示串 `suffixTextOf` 与解析对得上（~ 与 * 都在）', () => {
+    const p = F.parseLabelSpec('名称@2~*');
+    const txt = F.suffixTextOf(p);
+    truthy(txt.indexOf('@2') >= 0 && txt.indexOf('~') >= 0 && txt.indexOf('*') >= 0, txt);
+  });
+
   suite('fetch · 用户真实样例：审测一体审核结果描述（多行合并）');
 
   /** 把生成的 HTML 拆成"每行有多少格"，用于断言列对齐 */

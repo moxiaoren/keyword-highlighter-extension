@@ -278,4 +278,41 @@ module.exports = async function run() {
     truthy(kwTip && /普通匹配按字面找词/.test(String(kwTip.textContent || '')),
       '关键词框照旧提醒（那里 `*` `.` 真是字面量）');
   });
+
+  /* 【2.0.8.14 需求①】交互面板勾的「只显示一行（~）」「做成超链接（*）」保存时整条丢失：
+   * 根因是落盘函数 `suffixOf` 只拼到 `%` 就收工。这里用「构造 spec → suffixOf → parseLabelSpec
+   * 读回」的往返把五个取值修饰与两个显示修饰一起钉住（只有手打生效的现象不许再回来）。 */
+  suite('抓取字段后缀 · 交互态落盘往返（2.0.8.14 需求①）');
+
+  await test('★ suffixOf 必须把 ~ 与 * 写进落盘串，且能被 parseLabelSpec 原样读回', () => {
+    const spec = {
+      noImg: false, imgOnly: false, imgLimit: 0, simple: false,
+      offset: '2', stripSpace: true, anchor: '', sliceSpec: '',
+      clip: true, link: true, linkTpl: 'https://x.test/?q={v}'
+    };
+    const s = KH.ui.Fields.suffixOf(spec);
+    eq(s, '@2!~*https://x.test/?q={v}', '★ `~` 必须在 `*` 之前（解析端先剥 *，它一直吃到行尾）');
+    const back = KH.Fetch.parseLabelSpec('字段' + s);
+    eq(back.offset, '2');
+    eq(back.stripSpace, true);
+    eq(back.clip, true, '★ 勾选「只显示一行」保存后必须还在');
+    eq(back.link, true, '★ 勾选「做成超链接」保存后必须还在');
+    eq(back.linkTpl, 'https://x.test/?q={v}');
+  });
+
+  await test('★ 没勾 ~ / * 时落盘串不变（历史数据一个字节都不动）', () => {
+    eq(KH.ui.Fields.suffixOf({ offset: '2', stripSpace: true }), '@2!');
+    eq(KH.ui.Fields.suffixOf({ noImg: true }), '#0');
+    eq(KH.ui.Fields.suffixOf({}), '');
+  });
+
+  await test('★ `名称@2~!*` 这种混写：落盘串的每一段都能各自读回（不互相误读）', () => {
+    const p = KH.Fetch.parseLabelSpec('名称' + KH.ui.Fields.suffixOf({ offset: '2', stripSpace: true, clip: true, link: true }));
+    eq(p.label, '名称');
+    eq(p.offset, '2');
+    eq(p.stripSpace, true);
+    eq(p.clip, true);
+    eq(p.link, true);
+    eq(p.linkTpl, '');
+  });
 };

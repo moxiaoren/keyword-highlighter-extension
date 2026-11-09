@@ -106,6 +106,45 @@ module.exports = async function run() {
     falsy(v.items[1].hit, '这家公司不在正文里 ⇒ 没命中（该黄就黄，不能假绿）');
   });
 
+  /* 【2.0.8.14】用户报的「校验应用名称和开发者是否一致似乎还是有问题」。
+   * 根因：抓取表会把**值完全相同**的字段合并成一行（fetch.js rowsToTableHtml），标签格变成
+   *   `<span class="kh-lbt">开发者</span><details>2 … 开发者 / 核准主体名称</details>`
+   * 旧 labelText 读 textContent 得到「开发者2开发者核准主体名称」⇒ fieldKey 失配 ⇒ 「开发者」
+   * 被静默吞掉，只剩主标题参与判定 ⇒ 主标题在正文里就涂绿（假绿），同法人校验也整条跳过。
+   * 这两条用**真的渲染函数**造表，锁住「合并行里的每个字段都要读出来」。 */
+  const mergedTable = () => {
+    const html = KH.Fetch.rowsToTableHtml([
+      { label: '主标题', rows: [[{ t: '某某清理大师' }]], opt: null },
+      { label: '开发者', rows: [[{ t: '北京某某科技有限公司' }]], opt: null },
+      { label: '核准主体名称', rows: [[{ t: '北京某某科技有限公司' }]], opt: null },
+      { label: '隐私政策', rows: [[{ t: '某某清理大师由北京某某科技有限公司运营。' }]], opt: null }
+    ]);
+    const div = H.el('div', {}, []);
+    div.innerHTML = html;
+    return div.querySelector('table');
+  };
+
+  await test('labelsOf / fieldKeysOf：合并标签要把全部字段名拆出来，labelText 只给最短那个', () => {
+    const tds = mergedTable().querySelectorAll('tr')[1].querySelectorAll('td');
+    eq(NC.labelText(tds[0]), '开发者', '合并行取 .kh-lbt 的短名，不再带着「2 + 全部字段名」');
+    eq(NC.labelsOf(tds[0]).join('/'), '开发者/核准主体名称');
+    eq(NC.fieldKeysOf(tds[0]).join(','), 'dev,entity', '两个字段都要认出来');
+  });
+
+  await test('readFields：开发者与核准主体同值合并 ⇒ 两个字段都读到，判定里不许只剩主标题（假绿回归）', () => {
+    const t = mergedTable();
+    const f = NC.readFields(t);
+    eq(f.dev, '北京某某科技有限公司', '合并行里的「开发者」不许被吞');
+    eq(f.entity, '北京某某科技有限公司');
+    const v = NC.policyVerdict(f);
+    eq(v.items.map((i) => i.key).join(','), 'title,dev', '开发者必须参与判定');
+    truthy(v.ok);
+    /* 反例：正文只有主标题没有公司名 ⇒ 必须变黄（旧代码这里会绿） */
+    const v2 = NC.policyVerdict({ title: '某某清理大师', dev: '北京某某科技有限公司', policy: '某某清理大师隐私政策正文，我们重视您的隐私。' });
+    falsy(v2.ok, '开发者不在正文里就不能涂绿');
+    eq(v2.items.filter((i) => !i.hit).map((i) => i.key).join(','), 'dev');
+  });
+
   await test('labelText：只剥徽标文本，字段名本身一个字不动', () => {
     const td = H.el('td', {}, ['隐私政策', H.el('span', { class: 'kh-policy-flag' }, ['名'])]);
     eq(NC.labelText(td), '隐私政策');

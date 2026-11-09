@@ -1050,14 +1050,107 @@ module.exports = async function run() {
       '★ 复用分支必须补跑 decorateChecks：旧代码只在新建卡片时跑 ⇒ 悬窗永远没有小标');
   });
 
-  await test('字段名一律走 labelText（徽标不许污染 readFields / rowOfField）', () => {
+  /* 【2.0.8.14】用户要的「悬停展示会校验什么关键词」。
+   * 真浏览器里 tag 标题太小看不清，所以判定结论和**实际拿去匹配的原文**都挂在悬停里；
+   * 这里用真的表格渲染 + 真的 paintPolicy 跑一遍 DOM，锁住文案里必须有抓到的内容。 */
+  await test('悬停说明：写出实际匹配的主标题 / 开发者原文，合并行也照常校验', () => {
+    const div = H.el('div', {}, []);
+    div.innerHTML = KH.Fetch.rowsToTableHtml([
+      { label: '主标题', rows: [[{ t: '某某清理大师' }]], opt: null },
+      { label: '开发者', rows: [[{ t: '北京某某科技有限公司' }]], opt: null },
+      { label: '核准主体名称', rows: [[{ t: '北京某某科技有限公司' }]], opt: null },
+      /* 隐私政策与「隐私政策内容」同值 ⇒ 合并行，顺带验证合并标签上的悬停也不丢 */
+      { label: '隐私政策', rows: [[{ t: '某某清理大师由北京某某科技有限公司运营。' }]], opt: null },
+      { label: '隐私政策内容', rows: [[{ t: '某某清理大师由北京某某科技有限公司运营。' }]], opt: null }
+    ]);
+    const panel = shadowPanel();
+    panel.decorateChecks(div, {});
+    const trs = div.querySelectorAll('tr');
+    const policyTr = trs[trs.length - 1];
+    const cells = policyTr.querySelectorAll('td');
+    const tip = cells[0].getAttribute('title') || cells[0].title;
+    truthy(tip.indexOf('某某清理大师') >= 0, '悬停要写出主标题抓到的原文');
+    truthy(tip.indexOf('北京某某科技有限公司') >= 0, '★ 悬停要写出开发者抓到的原文（合并行被吞时这里会是空的）');
+    truthy(tip.indexOf('找到了') >= 0, '要写命中结论');
+    truthy(tip.indexOf('正文') >= 0, '要写正文字数口径');
+    const flags = policyTr.querySelectorAll('.kh-policy-flag');
+    eq(flags.map((f) => f.textContent).join(''), '名开',
+      '★ 主标题与开发者两枚徽标都要在（旧代码合并行只剩「名」）');
+    /* 合并出来的标签格自带 title，悬停时它会盖住 td 的 —— 说明必须拼在它后面 */
+    const lbt = cells[0].querySelector('.kh-lbt');
+    truthy(lbt, '隐私政策 / 隐私政策内容同值应合并成带 .kh-lbt 的标签');
+    truthy(String(lbt.title).indexOf('隐私政策校验') >= 0, '合并标签的 title 里也要有校验说明');
+    /* 开发者与核准主体同名被并成一行 ⇒ 同一主体，这行要按「同法人」染绿并写明依据
+     * （旧代码 devTr === entTr 直接 return，这条口径永远走不到）。 */
+    const devTr = trs[1];
+    eq(devTr.querySelectorAll('td')[0].style.background, '#e6f4ea', '同值合并行要铺浅绿');
+    truthy(String(devTr.querySelectorAll('td')[0].getAttribute('title') || '').indexOf('名字完全相同') >= 0,
+      '悬停要写清「为什么算同一主体」');
+  });
+
+  await test('字段名一律走 labelText / fieldKeysOf（徽标与合并标签不许污染 readFields / rowOfField）', () => {
     const nc = read('src/features/note-check.js');
     const src = read('src/features/important-note.js');
     truthy(nc.indexOf('NoteCheck.labelText') >= 0, 'note-check 要导出 labelText');
-    truthy(/NoteCheck\.fieldKey\(NoteCheck\.labelText\(tds\[0\]\)\)/.test(nc), 'readFields 用 labelText 取字段名');
-    truthy(/NC\.labelText\(tds\[0\]\)/.test(src), 'rowOfField 也必须用 labelText，否则找不回 policy 行');
+    /* 2.0.8.14：读字段名从「单名」升级成「一行可能有多个名称」（开发者/核准主体名称同值会合并）。
+     * 入口是 fieldKeysOf ⇒ labelsOf ⇒ labelText，三层都必须走，任何一层绕过就会重新吞字段。 */
+    truthy(/NoteCheck\.fieldKeysOf\(tds\[0\]\)/.test(nc), 'readFields 用 fieldKeysOf 取字段名（合并行一个都不许漏）');
+    truthy(/NoteCheck\.fieldsOf|NoteCheck\.fieldKeysOf[\s\S]{0,400}NoteCheck\.fieldKey\(labels\[/.test(nc), 'fieldKeysOf 内部把每个名称都过一遍 fieldKey');
+    truthy(/if \(!out\.length\) push\(NoteCheck\.labelText\(td\)\)/.test(nc), 'labelsOf 兜底也要走 labelText');
+    truthy(/NC\.fieldKeysOf\(tds\[0\]\)/.test(src), 'rowOfField 也必须用 fieldKeysOf，否则合并行找不回 policy/dev 行');
     falsy(/NoteCheck\.fieldKey\(tds\[0\]\.textContent\)/.test(nc), '不许再直接读 textContent');
+    falsy(/NC\.fieldKey\(tds\[0\]\.textContent\)/.test(src), '面板层同样不许直接读 textContent');
+  });
+  /* 【2.0.8.14 需求②】用户仍报「重要笔记悬窗无端闪烁」。上一版修的是"重建时 hide→show 重播动画"，
+   * 这一版补两条独立的残留成因：入场动画本身挂在"可见"上（任何 hidden 翻转都重播），
+   * 以及标签区每轮 render 都 innerHTML 重造（hover 态与展开中的下拉当场消失）。 */
+  suite('重要笔记 · 悬窗不闪（2.0.8.14 需求②）');
+
+  await test('★ 入场动画只挂在 .khin-enter 上：显示/隐藏不许重播（面板与摘要列都要）', () => {
+    const src = read('src/features/important-note.js');
+    const ruleOf = (sel) => {
+      const re = new RegExp(sel.replace(/\./g, '\\.') + ' \\{[\\s\\S]*?\\n    \\}');
+      const m = src.match(re);
+      return m ? m[0] : '';
+    };
+    const panelRule = ruleOf('.khin-panel');
+    const drawerRule = ruleOf('.khin-drawer');
+    truthy(panelRule && !/animation\s*:/.test(panelRule), '★ .khin-panel 基础规则里不许再有 animation（否则每次显示都重播）');
+    truthy(drawerRule && !/animation\s*:/.test(drawerRule), '★ .khin-drawer 基础规则里不许再有 animation（hover 开合一次就闪一次）');
+    truthy(/\.khin-panel\.khin-enter \{ animation: khin-in/.test(src), '动画改挂到 .khin-panel.khin-enter');
+    truthy(/\.khin-drawer\.khin-enter \{ animation: khin-in/.test(src), '动画改挂到 .khin-drawer.khin-enter');
+    truthy(/function playEnter\(el\)/.test(src), '要有一个只播一次的工具函数');
+    truthy(/playEnter\(this\.panelEl\)/.test(src), '浮窗造壳后要播一次');
+    truthy(/playEnter\(this\.drawerEl\)/.test(src), '摘要列造壳后要播一次');
+    truthy(/addEventListener\('animationend', stop/.test(src) && /setTimeout\(stop, 400\)/.test(src),
+      'animationend 与兜底定时器都要能摘类（被提前隐藏时 animationend 不派发）');
   });
 
+  await test('★ 标签区：签名没变就不重建（否则每轮重扫都把胶囊与下拉换新）', () => {
+    const src = read('src/features/important-note.js');
+    const i = src.indexOf('renderTags(tagsEl, item) {');
+    truthy(i >= 0, '要有 renderTags');
+    const seg = src.slice(i, i + 1800);
+    const guard = seg.indexOf('__khTagSig');
+    const write = seg.indexOf('tagsEl.innerHTML = head.tagHtml');
+    truthy(guard >= 0 && write > guard, '签名判等必须早于 innerHTML 重建');
+    truthy(/return;/.test(seg.slice(guard, write)), '签名一致要直接 return（一个子节点都不动）');
+  });
+
+  await test('★ 标签区 DOM：同一份命中重复 render 要复用原节点，内容变了才换', () => {
+    const tagsEl = H.el('div', { class: 'khin-item-tags' }, []);
+    const panel = shadowPanel();
+    panel.pickedTags = new Map();
+    panel.expandedTags = new Set();
+    const item = { note: 'n1', entries: [{ kw: '高亮词', adj: '' }, { kw: '关键词', adj: '标题' }] };
+    panel.renderTags(tagsEl, item);
+    const first = tagsEl.children[0];
+    truthy(first, '第一轮要渲染出节点');
+    panel.renderTags(tagsEl, item);
+    truthy(tagsEl.children[0] === first, '★ 同一份命中再 render 必须复用节点（旧代码每轮都换新）');
+    panel.renderTags(tagsEl, { note: 'n1', entries: [{ kw: '另一个词', adj: '' }] });
+    truthy(tagsEl.children[0] !== first, '命中变了要重建');
+    truthy(String(tagsEl.textContent).indexOf('另一个词') >= 0, '重建后要是新内容');
+  });
 
 };

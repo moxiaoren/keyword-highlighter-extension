@@ -86,6 +86,15 @@
    */
   NoteCheck.labelText = function (td) {
     if (!td) return '';
+    /* 合并行（2.0.8.14 修）：`fetch.js` 把「值完全相同」的字段并成一行，标签格长这样
+     *   `<span class="kh-lbt">开发者</span><details>2 + 开发者 / 核准主体名称</details>`
+     * 直接读 textContent 会得到「开发者2开发者核准主体名称」，`fieldKey` 全等匹配必然落空
+     * ⇒ 该行被当成不认识的字段 ⇒ `readFields` 里 dev / entity 是空 ⇒ 只校验主标题就涂绿
+     * （假绿），同法人校验也整条跳过。用户报的「应用名称和开发者是否一致似乎还是有问题」
+     * 就是这条：开发者与核准主体名称同值时**必然**走到。
+     * 所以合并行取 `.kh-lbt` 的文本（最短的那个字段名），展开区交给 `labelsOf`。 */
+    const lbt = td.querySelector ? td.querySelector('.kh-lbt') : null;
+    if (lbt) return String(lbt.textContent || '');
     let s = String(td.textContent || '');
     const flags = td.querySelectorAll ? td.querySelectorAll('.kh-policy-flag') : [];
     for (let i = flags.length - 1; i >= 0; i--) {
@@ -93,7 +102,61 @@
       if (!t) continue;
       if (s.slice(-t.length) === t) s = s.slice(0, -t.length);
     }
+    /* 徽标排在展开区后面，所以先剥徽标、再剥展开区（<details> 的计数与全部字段名）。 */
+    const more = td.querySelector ? td.querySelector('.kh-table-more') : null;
+    if (more) {
+      const t = String(more.textContent || '');
+      if (t && s.slice(-t.length) === t) s = s.slice(0, -t.length);
+    }
     return s;
+  };
+
+  /**
+   * 一行左列里**所有**字段名（合并行会带回多个；普通行只有一个）。
+   * 来源两处，哪个在就用哪个：
+   *   · `.kh-lbt[title]` —— `fetch.js` 用 `/` 把全部字段名连起来（用户字段名极少数才含 `/`，
+   *     所以这条只当粗线索，真正的准绳是下面那条）；
+   *   · `.kh-table-all` 的子节点 —— 字段名之间是 `<br>`，逐段收不会把名字粘在一起。
+   * @returns {string[]} 原文（未归一），可能为空
+   */
+  NoteCheck.labelsOf = function (td) {
+    const out = [];
+    const push = (s) => {
+      const t = String(s == null ? '' : s).trim();
+      if (t && out.indexOf(t) < 0) out.push(t);
+    };
+    if (!td) return out;
+    const lbt = td.querySelector ? td.querySelector('.kh-lbt') : null;
+    if (lbt) {
+      const title = lbt.getAttribute ? String(lbt.getAttribute('title') || '') : '';
+      if (title) title.split('/').forEach(push);
+      push(lbt.textContent);
+    }
+    const all = td.querySelector ? td.querySelector('.kh-table-all') : null;
+    if (all && all.childNodes) {
+      let buf = '';
+      for (let i = 0; i < all.childNodes.length; i++) {
+        const n = all.childNodes[i];
+        /* 真 DOM 里 br 的 nodeName / tagName 都是 BR；单测垫片只给 tagName。两处都认。 */
+        const tag = String((n && (n.tagName || n.nodeName)) || '').toUpperCase();
+        if (n && n.nodeType === 1 && tag === 'BR') { push(buf); buf = ''; continue; }
+        buf += String((n && n.textContent) || '');
+      }
+      push(buf);
+    }
+    if (!out.length) push(NoteCheck.labelText(td));
+    return out;
+  };
+
+  /** 一行左列可能是哪几个字段 key（合并行 ⇒ 多个）；读值统一走 `readFields`。 */
+  NoteCheck.fieldKeysOf = function (td) {
+    const out = [];
+    const labels = NoteCheck.labelsOf(td);
+    for (let i = 0; i < labels.length; i++) {
+      const k = NoteCheck.fieldKey(labels[i]);
+      if (k && out.indexOf(k) < 0) out.push(k);
+    }
+    return out;
   };
 
   NoteCheck.readFields = function (tableEl) {
@@ -105,9 +168,11 @@
       if (String(tr.className || '').indexOf('kh-merge-row') >= 0) continue;
       const tds = tr.querySelectorAll('td');
       if (!tds.length) continue;
-      const key = NoteCheck.fieldKey(NoteCheck.labelText(tds[0]));
-      if (!key || out[key]) continue;
-      out[key] = tds.length > 1 ? String(tds[1].textContent || '').trim() : '';
+      const keys = NoteCheck.fieldKeysOf(tds[0]);
+      if (!keys.length) continue;
+      const val = tds.length > 1 ? String(tds[1].textContent || '').trim() : '';
+      /* 合并行里几个字段共用一个值 —— 它们本来就是因为值完全相同才被并到一起的。 */
+      for (let j = 0; j < keys.length; j++) if (!out[keys[j]]) out[keys[j]] = val;
     }
     return out;
   };
@@ -161,7 +226,12 @@
     const lh = linkHit(policy, f.link);
     if (lh !== null) items.push({ key: 'content', needle: String(f.link || '').trim(), hit: lh });
     if (!items.length) return null;
-    return { ok: items.every((it) => it.hit), items: items };
+    /* `missing` 给悬停文案用：没抓到的项不出结论，但要让用户看见「这一项没校验」，
+     * 而不是以为「已经校验过并且通过了」。 */
+    const missing = [];
+    if (!String(f.title || '').trim()) missing.push('title');
+    if (!String(f.dev || '').trim()) missing.push('dev');
+    return { ok: items.every((it) => it.hit), items: items, missing: missing, len: flat(policy).length };
   };
 
   /* ---------- ② 同法人校验 ---------- */

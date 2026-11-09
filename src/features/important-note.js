@@ -229,8 +229,13 @@
       border: 1px solid #e3e8f0; border-radius: 12px;
       box-shadow: 0 8px 28px rgba(0,0,0,.18);
       overflow: hidden; display: flex; flex-direction: column;
-      resize: both; animation: khin-in .16s ease-out;
+      resize: both;
     }
+    /* 【2.0.8.14 需求②】入场动画**只在造壳那一下**播（见 playEnter）：
+     * 旧写法把 animation: khin-in 挂在 .khin-panel 本身上，元素只要经历一次
+     * display:none → 显示（空结果 hide 再 show、贴边开合、浮窗↔贴边换形态）就重播
+     * 一遍「opacity 0 + 下移 6px」，用户看到的就是无端闪一下。 */
+    .khin-panel.khin-enter { animation: khin-in .16s ease-out; }
 
     /* ======================= 2.0.8.13 需求④ · 深色主题 =======================
      * 只覆盖"主要面"（面板底、标题栏、卡、行、表格、次要字、链接）。
@@ -350,8 +355,10 @@
       width: 300px; max-width: calc(100vw - 24px); max-height: 45vh; transition: width .14s ease-out;
       background: #fff; border: 1px solid #e3e8f0; border-radius: 12px;
       box-shadow: 0 8px 28px rgba(0,0,0,.18); display: flex; flex-direction: column;
-      overflow: hidden; animation: khin-in .14s ease-out;
+      overflow: hidden;
     }
+    /* 同上：摘要列的入场动画也只在造壳时播一次（hover 开合 / 自动收起都会翻转 hidden）。 */
+    .khin-drawer.khin-enter { animation: khin-in .14s ease-out; }
     .khin-drawer[data-side="right"] { left: auto; right: calc(100% + 6px); }
     .khin-drawer[hidden] { display: none !important; }
     /* 展开（手风琴）时高度上限 45vh → 60vh：顶边上移差额的一半，中心点不动 ⇒ 展开这一下不"跳"。 */
@@ -1210,6 +1217,27 @@
     return true;
   }
 
+  /** 【2.0.8.14 需求②】入场动画只播一次（造壳那一刻），此后无论显示多少次都直接呈现。
+   *  用户反复报「悬窗无端闪烁」，其中一条独立成因就是这里：`.khin-panel` / `.khin-drawer`
+   *  都把 `animation: khin-in` 挂在自己身上，而 `hidden` 一翻转（空结果 hide→show、
+   *  贴边条 hover 开合、浮窗↔贴边换形态）`display:none → block` 就会让动画从头重播：
+   *  opacity 0 → 1 再叠一个 translateY(-6px) → 0，肉眼就是"整个窗闪一下"。
+   *  改成按类名播一次、`animationend`（或兜底 400ms）立刻摘类 —— 动画与"显示"解耦。 */
+  function playEnter(el) {
+    if (!el || !el.classList || typeof el.addEventListener !== 'function') return;
+    el.classList.add('khin-enter');
+    let done = false;
+    const stop = () => {
+      if (done) return;
+      done = true;
+      try { el.classList.remove('khin-enter'); } catch (e) { /* 节点已卸载 */ }
+    };
+    el.addEventListener('animationend', stop, { once: true });
+    /* 兜底：动画播放途中被隐藏时浏览器取消动画、不派 `animationend`；
+     * 垫片环境也没有动画事件。到点一律摘掉，保证下一次显示绝不重播。 */
+    setTimeout(stop, 400);
+  }
+
   /** 【2.0.8.13 需求①】把「超出一行」的内容格收成一行（自适应省略）。
    *  规则：先摘 .kh-val-tight 量真实高度，超过一行 1.35 倍才加回去。
    *  必须在元素进入文档之后量（未挂载时 scrollHeight 恒为 0 ⇒ 永远判"放得下"）。 */
@@ -1218,12 +1246,21 @@
     const boxes = root.querySelectorAll('.kh-table .kh-val-box');
     for (let i = 0; i < boxes.length; i++) {
       const el = boxes[i];
-      el.classList.remove('kh-val-tight');
+      /* 未挂载时 scrollHeight 恒为 0（量不出真实高度），此时连类名都别动。 */
       if (!el.isConnected) continue;
+      const txt = String(el.textContent || '');
+      const w = el.clientWidth;
+      /* 文字与可用宽度都没变、上次已经判过"要收" ⇒ 这一轮一个字都不动。
+       * 旧写法每轮都先摘 `.kh-val-tight` 再量：摘下的那一瞬就是"完全展开"的样式，
+       * 新卡更是在双 rAF 之前先绘出一两帧展开态 —— 用户看到的就是那一闪。 */
+      if (el.classList.contains('kh-val-tight') && el.__khClipTxt === txt && el.__khClipW === w) continue;
+      el.classList.remove('kh-val-tight');
       let cs;
       try { cs = window.getComputedStyle(el); } catch (e) { continue; }
       const fs = parseFloat(cs.fontSize) || 12;
       const lh = parseFloat(cs.lineHeight) || fs * 1.6;
+      el.__khClipTxt = txt;
+      el.__khClipW = w;
       if (el.scrollHeight > lh * 1.35) el.classList.add('kh-val-tight');
     }
   }
@@ -2044,9 +2081,39 @@
       if (String(tr.className || '').indexOf('kh-merge-row') >= 0) continue;
       const tds = tr.querySelectorAll('td');
       if (!tds.length) continue;
-      if (NC.fieldKey(NC.labelText ? NC.labelText(tds[0]) : tds[0].textContent) === key) return tr;
+      /* 合并行里一行可能是「开发者 / 核准主体名称」两个字段，`fieldKey(单名)` 只认得出一个，
+       * 所以这里问「这一行有没有这个 key」而不是「这一行叫什么」。 */
+      const keys = NC.fieldKeysOf ? NC.fieldKeysOf(tds[0]) : [NC.fieldKey(NC.labelText ? NC.labelText(tds[0]) : tds[0].textContent)];
+      if (keys.indexOf(key) >= 0) return tr;
     }
     return null;
+  }
+
+  /**
+   * 把一段校验说明挂到整行上。
+   * 光设 `td.title` 不够：标签格里 `.kh-lbt`（合并行的「全部字段名」）和值格里
+   * `.kh-val-box`（被截断时给的全文）各自带 title，悬停时子元素的 title 会盖住 td 的，
+   * 用户根本看不到校验说明 —— 所以这两个自带 title 的元素改成「底文案 + 校验说明」。
+   * 底文案只存一次（`data-kh-base-title`），重复画不会越叠越长。
+   */
+  function setCheckTip(row, tip) {
+    if (!row || !row.querySelectorAll) return;
+    const tds = row.querySelectorAll('td');
+    for (let i = 0; i < tds.length; i++) {
+      const td = tds[i];
+      td.title = tip;
+      const kids = td.querySelectorAll ? td.querySelectorAll('.kh-lbt, .kh-val-box') : [];
+      for (let j = 0; j < kids.length; j++) {
+        const k = kids[j];
+        if (!k.getAttribute || !k.setAttribute) continue;
+        if (k.getAttribute('data-kh-base-title') === null) {
+          k.setAttribute('data-kh-base-title', k.getAttribute('title') || '');
+        }
+        const base = k.getAttribute('data-kh-base-title') || '';
+        /* tip 传空串 = 还原（结论撤销时不能把上一轮的说明留在悬停里）。 */
+        k.title = !tip ? base : (base ? base + '\n\n' + tip : tip);
+      }
+    }
   }
 
   /** 整行（两个单元格）铺一层底色；传空串就还原。 */
@@ -2622,6 +2689,7 @@
          * 脏判据 `!panelEl` 一直是"外壳建没建过"的唯一信号（单测也按这个桩写），
          * 贴边模式下让它恒为 null 就等于每轮都判脏。 */
         this.panelEl = this.drawerEl;
+        playEnter(this.drawerEl);   // 【2.0.8.14 需求②】摘要列也只播这一次（hover 开合不重播）
         this.rowsEl = this.root.querySelector('.khin-rows');
         this.drawerCountEl = this.root.querySelector('.khin-dh-count');
         this.pinBtnEl = this.root.querySelector('[data-act="pin"]');
@@ -2917,6 +2985,8 @@
         row.appendChild(head);
         row.appendChild(body);
         this.rowsEl.appendChild(row);
+        /* 【2.0.8.14 需求②】展开态刚挂进文档就同步量一次（双 rAF 之前不许先绘展开态）。 */
+        if (open) clipValueBoxes(row);
         if (this.rowEls) this.rowEls.set(key, row);
         if (this.rowList) this.rowList.push(row);
       };
@@ -2971,7 +3041,7 @@
           if (row.__cardSig !== csig || !body.firstChild) {
             body.innerHTML = '';
             const card = spec.ctx ? this.ctxCard(document) : this.buildCardEl(spec.item);
-            if (card) { body.appendChild(card); this.applyImgMarksToEl(card); }
+            if (card) { body.appendChild(card); this.applyImgMarksToEl(card); clipValueBoxes(card); }
             row.__cardSig = csig;
           } else {
             this.applyImgMarksToEl(body.firstChild);
@@ -3108,7 +3178,7 @@
       this.paintEntity(el, table, fields, NC);
     },
 
-    /** 需求②：隐私政策行底色 + 「名」「开」徽标。 */
+    /** 需求②：隐私政策行底色 + 「名」「开」徽标；悬停说明「拿什么去正文里找、找没找到」。 */
     paintPolicy(table, fields, NC) {
       const tr = rowOfField(table, 'policy');
       if (!tr) return;
@@ -3123,24 +3193,34 @@
       tintRow(tr, '');
       let v = null;
       try { v = NC.policyVerdict(fields); } catch (e) { v = null; }
-      if (!v) return;
+      if (!v) { setCheckTip(tr, ''); return; }
       tintRow(tr, v.ok ? NC.COLOR_OK : NC.COLOR_BAD);
       const labelOf = { title: '主标题', dev: '开发者', content: '隐私政策链接' };
-      const tips = [];
+      const lineOf = (it) => {
+        const name = labelOf[it.key] || it.key;
+        const needle = String(it.needle || '').replace(/\s+/g, ' ').trim();
+        const shown = needle.length > 90 ? needle.slice(0, 90) + '…' : needle;
+        return name + '「' + shown + '」' + (it.hit ? '：在隐私政策正文里找到了' : '：正文里没有这段文字');
+      };
+      const lines = [];
       for (let i = 0; i < v.items.length; i++) {
         const it = v.items[i];
-        tips.push((labelOf[it.key] || it.key) + (it.hit ? '：有' : '：没有'));
+        lines.push(lineOf(it));
         if (!labelCell || (it.key !== 'title' && it.key !== 'dev')) continue;
         const doc = tr.ownerDocument || document;
         const flag = doc.createElement('span');
         flag.className = 'kh-policy-flag ' + (it.hit ? 'is-hit' : 'is-miss');
         flag.textContent = it.key === 'title' ? '名' : '开';
-        flag.title = (labelOf[it.key] || it.key) + (it.hit ? '：在隐私政策里找到' : '：隐私政策里没找到');
+        flag.title = lineOf(it);
         labelCell.appendChild(flag);
       }
-      const tip = '隐私政策校验 · ' + tips.join(' · ');
-      const tds = tr.querySelectorAll('td');
-      for (let i = 0; i < tds.length; i++) tds[i].title = tip;
+      /* 没抓到的项也要写出来：不写的话用户会以为「这一项校验过并且通过了」。 */
+      for (let i = 0; i < (v.missing || []).length; i++) {
+        const k = v.missing[i];
+        lines.push((labelOf[k] || k) + '：这张卡没抓到，不参与校验');
+      }
+      setCheckTip(tr, '隐私政策校验（正文 ' + v.len + ' 字；忽略空格后按原文找）\n'
+        + lines.join('\n') + '\n链接整串找不到时只比域名。');
     },
 
     /** 需求③：开发者 / 核准主体 两边查法定代表人，再判断是否同一人。 */
@@ -3151,8 +3231,23 @@
       const dev = String(fields.dev || '').trim();
       const ent = String(fields.entity || '').trim();
       if (!dev || !ent) return;
-      /* 同一行？字段名撞车时（比如表里两行都叫「开发者」）不做二次涂色，交给上面那条。 */
-      if (devTr === entTr) return;
+      /* 同一行有两种来法，不能一律跳：
+       *   ① 两边名字一字不差 ⇒ 抓取表把它们合并成了一行（见 fetch.js 的「同值合行」）。
+       *      名字相同就是同一主体，不用联网 —— 直接按「同法人」染绿，悬停写清依据。
+       *      旧代码在这里直接 return，「两边名字完全相同也算同一主体」那条口径根本走不到。
+       *   ② 字段名撞车（表里两行都叫「开发者」）⇒ 值不同，下不了结论，不做二次涂色。 */
+      if (devTr === entTr) {
+        if (dev === ent) {
+          const sigSame = dev + '\u0001' + ent;
+          if (devTr.getAttribute('data-kh-ent-sig') !== sigSame) {
+            devTr.setAttribute('data-kh-ent-sig', sigSame);
+            tintRow(devTr, NC.COLOR_OK);
+            setCheckTip(devTr, '同法人校验：两边名字完全相同 ⇒ 同一主体（不联网）\n'
+              + '开发者「' + dev + '」\n核准主体「' + ent + '」');
+          }
+        }
+        return;
+      }
       const sig = dev + '\u0001' + ent;
       if (entTr.getAttribute('data-kh-ent-sig') === sig) return;
       entTr.setAttribute('data-kh-ent-sig', sig);
@@ -3166,24 +3261,22 @@
         if (el && el.isConnected === false) return;
         if (table && table.isConnected === false) return;
         const verdict = NC.sameLegalRep({ name: dev, rep: reps[0] }, { name: ent, rep: reps[1] });
+        const sides = '开发者「' + dev + '」→ ' + (reps[0] || '未查到法人') + '\n'
+          + '核准主体「' + ent + '」→ ' + (reps[1] || '未查到法人');
         if (verdict === 'unknown') {
           /* 未查明：不改底色，只在悬停里如实说一句（不猜法人名）。 */
-          const tip = '同法人校验：未查明（开发者 ' + (reps[0] || '?') + ' / 核准主体 ' + (reps[1] || '?') + '）';
-          [devTr, entTr].forEach((r) => {
-            const tds = r.querySelectorAll('td');
-            for (let i = 0; i < tds.length; i++) tds[i].title = tip;
-          });
+          const tip = '同法人校验：未查明（不改底色）\n' + sides;
+          setCheckTip(devTr, tip);
+          setCheckTip(entTr, tip);
           return;
         }
         const color = verdict === 'same' ? NC.COLOR_OK : NC.COLOR_BAD;
         tintRow(devTr, color);
         tintRow(entTr, color);
-        const tip = (verdict === 'same' ? '同法人：' : '法人不同：')
-          + '开发者 ' + (reps[0] || '?') + ' / 核准主体 ' + (reps[1] || '?');
-        [devTr, entTr].forEach((r) => {
-          const tds = r.querySelectorAll('td');
-          for (let i = 0; i < tds.length; i++) tds[i].title = tip;
-        });
+        const tip = '同法人校验：' + (verdict === 'same' ? '同一个法定代表人' : '不是同一个法定代表人')
+          + '\n' + sides;
+        setCheckTip(devTr, tip);
+        setCheckTip(entTr, tip);
       }).catch(() => { /* 查询失败 = 未查明，保持原样 */ });
     },
 
@@ -3472,6 +3565,7 @@
             '<div class="khin-ai" hidden></div>' +
           '</div>';
         this.panelEl = this.root.querySelector('.khin-panel');
+        playEnter(this.panelEl);   // 【2.0.8.14 需求②】入场动画只播这一次
         this.bodyEl = this.root.querySelector('.khin-body');
         this.countEl = this.root.querySelector('.khin-header-count');
         this.noteBarEl = this.root.querySelector('.khin-notebar');
@@ -4199,6 +4293,16 @@
       const list = head.tagEntries(entries);
       const picked = this.pickedTags.get(item.note);
       const open = this.expandedTags.has(item.note);
+      /* 【2.0.8.14 需求②】签名没变就**不重建**。旧写法每次 render 都 `innerHTML=` 重造一遍：
+       * 复用的卡片每轮（每次重扫/异步抓取值回来）都把命中胶囊、计数小标连监听器一起换新 ——
+       * 鼠标正悬在小标上时 hover 高亮当场消失，展开中的下拉也跟着收掉，看起来就是"标签区在闪"。 */
+      const pickIdx = (typeof picked === 'number' && picked >= 0) ? picked : -1;
+      let sig = (open ? '1' : '0') + '|' + pickIdx + '|' + list.length;
+      for (let i = 0; i < list.length; i++) sig += '|' + list[i].kw + '\u0001' + list[i].adj;
+      /* `firstChild` 在老内核/测试垫片上不一定实现，两种口径都认，避免"签名一致但空节点也早退"。 */
+      const hasKids = !!(tagsEl.firstChild || (tagsEl.children && tagsEl.children.length));
+      if (tagsEl.__khTagSig === sig && hasKids) return;
+      tagsEl.__khTagSig = sig;
       tagsEl.innerHTML = head.tagHtml(entries, picked);
       if (open) tagsEl.insertAdjacentHTML('beforeend', head.tagListHtml(entries));
       const more = tagsEl.querySelector('[data-kh-tag-more]');
@@ -4458,8 +4562,13 @@
       /* 【2.0.2.16 需求⑦】右键「截图」卡排**最下方**，由 renderCtxCard 收尾追加；
        * 它自己也带签名闸，没变化就不重建。 */
       this.renderCtxCard();
-      /* 【2.0.8.13 需求①】整块重排之后统一量一次：超出一行的内容格才收成一行。 */
-      scheduleClip(this.rowsEl || this.root || null);
+      /* 【2.0.8.13 需求①】整块重排之后统一量一次：超出一行的内容格才收成一行。
+       * 【2.0.8.14 需求②】先**同步**量一次：旧写法只挂双 rAF，新卡会先按"未收行"的展开态
+       * 绘一到两帧、半拍后再收成一行，看起来就是内容先铺开又缩回去的一闪。同步量完再补一帧
+       * 等字体/换行落定（函数内按「文字 + 可用宽度」缓存，没变化就什么都不做）。 */
+      const clipRoot = this.rowsEl || this.root || null;
+      clipValueBoxes(clipRoot);
+      scheduleClip(clipRoot);
     },
 
     /**
