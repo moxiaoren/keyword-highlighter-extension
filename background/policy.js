@@ -123,6 +123,76 @@
     });
   }
 
+  /* ---------------- 兜底：后台标签页读「渲染后的正文」 ----------------
+   * 为什么需要：有些站点的 WAF / 证书链 / 只认真实导航，service worker 的 fetch 会直接
+   * 抛 `failed to fetch`（用户 2026-11-09 实测就是这个），但用标签页打开一切正常；
+   * 另外 JS 渲染出来的正文只有真导航之后才存在。
+   * 代价：会短暂开一张后台标签页（active:false），读完立刻关掉；
+   * 不抢前台、不改用户当前页。 */
+  function readViaTab(url) {
+    return new Promise((resolve) => {
+      const tabs = (typeof chrome !== 'undefined' && chrome.tabs) || null;
+      const scripting = (typeof chrome !== 'undefined' && chrome.scripting) || null;
+      if (!tabs || !tabs.create || !scripting || !scripting.executeScript) {
+        resolve({ ok: false, reason: '这个浏览器不支持后台标签页读取（缺 tabs/scripting 能力）' });
+        return;
+      }
+      let tabId = 0;
+      let done = false;
+      let timer = 0;
+      const finish = (out) => {
+        if (done) return;
+        done = true;
+        if (timer) clearTimeout(timer);
+        try { tabs.onUpdated.removeListener(onUpdated); } catch (e) { /* ignore */ }
+        if (tabId) {
+          try {
+            const r = tabs.remove(tabId);
+            if (r && typeof r.catch === 'function') r.catch(() => {});
+          } catch (e) { /* 已经关了 */ }
+        }
+        resolve(out);
+      };
+      const grab = () => {
+        let p;
+        try {
+          p = scripting.executeScript({
+            target: { tabId: tabId },
+            func: function () { return (document.body && document.body.innerText) || ''; }
+          });
+        } catch (e) {
+          finish({ ok: false, reason: '后台标签页读取失败：' + String((e && e.message) || e) });
+          return;
+        }
+        Promise.resolve(p).then((res) => {
+          const text = (res && res[0] && typeof res[0].result === 'string') ? res[0].result : '';
+          if (text.replace(/\s/g, '').length < 40) {
+            finish({ ok: false, reason: '后台标签页打开后也没读到正文（可能需要登录，或正文是图片/PDF）' });
+            return;
+          }
+          finish({ ok: true, text: text.slice(0, MAX_TEXT), len: text.length });
+        }, (e) => {
+          finish({ ok: false, reason: '后台标签页读不到正文（' + String((e && e.message) || e) + '）' });
+        });
+      };
+      const onUpdated = (id, info) => {
+        if (id !== tabId || !info) return;
+        if (info.status === 'complete') grab();
+      };
+      try { tabs.onUpdated.addListener(onUpdated); } catch (e) { finish({ ok: false, reason: '监听标签页失败：' + String((e && e.message) || e) }); return; }
+      timer = setTimeout(() => finish({ ok: false, reason: '后台标签页 15 秒没加载完' }), 15000);
+      try {
+        const created = tabs.create({ url: url, active: false });
+        Promise.resolve(created).then((tab) => {
+          if (!tab || typeof tab.id !== 'number') { finish({ ok: false, reason: '后台标签页没建起来' }); return; }
+          tabId = tab.id;
+        }, (e) => finish({ ok: false, reason: '后台标签页没建起来：' + String((e && e.message) || e) }));
+      } catch (e) {
+        finish({ ok: false, reason: '后台标签页没建起来：' + String((e && e.message) || e) });
+      }
+    });
+  }
+
   /**
    * @param {string} url 隐私政策链接
    * @returns {Promise<{ok:boolean, text?:string, len?:number, reason?:string, cached?:boolean, url:string}>}
@@ -133,9 +203,10 @@
     const cache = await loadCache();
     const hit = cache[u];
     if (hit && hit.at && (Date.now() - hit.at) < TTL_MS) {
-      return { ok: !!hit.ok, text: hit.text || '', len: hit.len || 0, reason: hit.reason || '', cached: true, url: u };
+      return { ok: !!hit.ok, text: hit.text || '', len: hit.len || 0, reason: hit.reason || '', cached: true, url: u, via: hit.via || 'fetch' };
     }
     let out;
+    let via = 'fetch';
     try {
       const page = await getPage(u);
       if (page.type.indexOf('pdf') >= 0) {
@@ -149,11 +220,21 @@
           : { ok: false, reason: '页面里没读到正文（可能需要登录或脚本渲染）' };
       }
     } catch (err) {
-      out = { ok: false, reason: String((err && err.message) || err) };
+      /* 直接抓取失败（典型的 `failed to fetch`：WAF / 证书 / 只认真实导航）——
+       * 退回后台标签页真导航一次，读完立刻关。两边的失败原因都如实返回。 */
+      const direct = String((err && err.message) || err);
+      const tab = await readViaTab(u);
+      if (tab.ok) {
+        out = { ok: true, text: tab.text, len: tab.len };
+        via = 'tab';
+      } else {
+        out = { ok: false, reason: direct + '；' + (tab.reason || '后台标签页也没读到') };
+        via = 'tab';
+      }
     }
-    cache[u] = { at: Date.now(), ok: !!out.ok, text: out.text || '', len: out.len || 0, reason: out.reason || '' };
+    cache[u] = { at: Date.now(), ok: !!out.ok, text: out.text || '', len: out.len || 0, reason: out.reason || '', via: via };
     saveCache(cache);
-    return Object.assign({ url: u, cached: false }, out);
+    return Object.assign({ url: u, cached: false, via: via }, out);
   };
 
   self.KH = self.KH || {};

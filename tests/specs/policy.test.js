@@ -19,9 +19,9 @@ const ROOT = path.join(__dirname, '..', '..');
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 
 /** 后台模块用独立沙盒加载；fetch 由每条用例替换。 */
-function loadPolicy(fetchImpl) {
+function loadPolicy(fetchImpl, extraChrome) {
   const mem = {};
-  const chrome = {
+  const chrome = Object.assign({
     storage: {
       local: {
         /* background/policy.js 走回调式 chrome.storage（单测沙箱两种都要给，只给 Promise 会永远 await 住） */
@@ -37,7 +37,7 @@ function loadPolicy(fetchImpl) {
         }
       }
     }
-  };
+  }, extraChrome || {});
   const sandbox = {
     console: console,
     chrome: chrome,
@@ -142,5 +142,56 @@ module.exports = async function run() {
     });
     truthy(v && v.ok, '三项都在正文里 ⇒ 绿');
     eq(v.items.length, 3, 'title / dev / 链接 三项都参与（链接只比域名，正文里有它就更稳）');
+  });
+
+  suite('policy · 直接抓取失败时退回后台标签页（2.0.8.16 · failed to fetch 兜底）');
+
+  /** 造一套最小的 tabs/scripting 桩：建页 → complete → 注入读文本 → 关页。 */
+  function tabStub(text, opts) {
+    const o = opts || {};
+    const calls = { created: [], removed: [], injected: [] };
+    const listeners = [];
+    const tabs = {
+      create: (arg) => { calls.created.push(arg); return Promise.resolve({ id: 7 }); },
+      remove: (id) => { calls.removed.push(id); return Promise.resolve(); },
+      onUpdated: {
+        addListener: (fn) => listeners.push(fn),
+        removeListener: (fn) => { const i = listeners.indexOf(fn); if (i >= 0) listeners.splice(i, 1); }
+      }
+    };
+    const scripting = {
+      executeScript: (arg) => {
+        calls.injected.push(arg);
+        if (o.injectError) return Promise.reject(new Error(o.injectError));
+        return Promise.resolve([{ result: text }]);
+      }
+    };
+    /* 建页后的下一拍触发 complete（真实浏览器里是导航完成事件） */
+    const kick = () => setTimeout(() => { listeners.slice().forEach((fn) => { try { fn(7, { status: 'complete' }); } catch (e) { /* ignore */ } }); }, 0);
+    const orig = tabs.create;
+    tabs.create = (arg) => { const p = orig(arg); kick(); return p; };
+    return { tabs, scripting, calls };
+  }
+
+  await test('failed to fetch 时：真导航一次、读 innerText、读完立刻关页，返回 via=tab', async () => {
+    const stub = tabStub('某某清理大师隐私政策\n开发者：北京某某科技有限公司\n我们重视您的隐私，完整正文就在这里，请仔细阅读以下全部条款内容。');
+    const { Policy } = loadPolicy(async () => { throw new TypeError('failed to fetch'); }, { tabs: stub.tabs, scripting: stub.scripting });
+    const r = await Policy.fetchText('https://blocked.test/privacy');
+    truthy(r.ok, '标签页兜底要能成功：' + JSON.stringify(r));
+    eq(r.via, 'tab');
+    truthy(String(r.text).indexOf('北京某某科技有限公司') >= 0, '读到的要是渲染后的正文');
+    eq(stub.calls.created.length, 1, '只开一次后台标签页');
+    eq(stub.calls.created[0].active, false, '不许抢前台');
+    eq(stub.calls.removed.join(','), '7', '读完必须关掉');
+  });
+
+  await test('标签页也读不到时：两边原因都写出来，不许假装成功', async () => {
+    const stub = tabStub('登录后可见');
+    const { Policy } = loadPolicy(async () => { throw new TypeError('failed to fetch'); }, { tabs: stub.tabs, scripting: stub.scripting });
+    const r = await Policy.fetchText('https://blocked.test/short');
+    falsy(r.ok, '空壳页不许判成功');
+    truthy(String(r.reason).indexOf('failed to fetch') >= 0, '直接抓取的原因要保留：' + r.reason);
+    truthy(String(r.reason).indexOf('没读到正文') >= 0, '标签页的原因也要写：' + r.reason);
+    eq(stub.calls.removed.join(','), '7', '失败也要关页');
   });
 };

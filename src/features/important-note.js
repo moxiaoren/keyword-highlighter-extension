@@ -3194,7 +3194,8 @@
       let sourceLine = '正文来源：卡片抓取值（' + flatLen(cardBody) + ' 字）';
       if (got && got.ok) {
         body = String(got.text || '');
-        sourceLine = '正文来源：隐私政策链接抓回的正文（' + flatLen(body) + ' 字' + (got.cached ? '，7 天缓存' : '') + '）';
+        sourceLine = '正文来源：' + (got.via === 'tab' ? '后台标签页读到的正文' : '隐私政策链接抓回的正文')
+          + '（' + flatLen(body) + ' 字' + (got.cached ? '，7 天缓存' : '') + '）';
       } else if (got && !got.ok) {
         sourceLine = '正文来源：卡片抓取值（' + flatLen(cardBody) + ' 字）；链接正文没抓到（' + (got.reason || '未知原因') + '）';
       } else if (src) {
