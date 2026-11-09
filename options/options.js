@@ -1356,17 +1356,134 @@
     }
   }
 
-  /** CSV 导入 —— 同上，唯一实现（列数 17/18 兼容由 Store.importCSV 负责） */
-  async function importCSVText(text) {
+  /* ---------------- CSV 导入：预览 → 写盘 → 可撤销（2.0.8.13 需求②） ----------------
+   * 旧版选完文件就直接写，导错一次只能重置或手工删。现在三件事：
+   *   ① 预览：新增 / 重复跳过 / 无法解析三类计数 + 前 20 行明细（坏行标红给原因）；
+   *   ② 确认才写，写之前把 keywords/groups 快照进 `chrome.storage.session`；
+   *   ③ 十分钟内可「撤销上次导入」，一键回滚到导入前。
+   * 判据只有一份：`KH.Store.previewCSV` 与 `KH.Store.importCSV` 共用 `planCSV`，
+   * 否则"预览说 12 条、进去 9 条"这种漂移迟早会出现。 */
+  const UNDO_KEY = 'kh.importUndo';
+  const UNDO_TTL_MS = 10 * 60 * 1000;
+
+  function sessionArea() {
+    try { return (chrome.storage && chrome.storage.session) ? chrome.storage.session : null; } catch (e) { return null; }
+  }
+
+  async function putUndo(snap) {
+    const area = sessionArea();
+    if (!area) return false;
+    try { await area.set({ [UNDO_KEY]: snap }); return true; } catch (e) { return false; }
+  }
+
+  async function getUndo() {
+    const area = sessionArea();
+    if (!area) return null;
     try {
-      let stats = null;
-      const wrote = await mutate(async () => { stats = await KH.Store.importCSV(text, cfg); });
-      if (!wrote) return;
-      D.toast('CSV 导入完成：新增 ' + stats.added + ' 条，跳过重复 ' + stats.skipped + ' 条'
-        + (stats.groupsCreated ? '，新建分组 ' + stats.groupsCreated + ' 个' : ''), 'ok');
-    } catch (err) {
-      D.toast('CSV 导入失败：' + err.message, 'error');
+      const got = await area.get(UNDO_KEY);
+      const snap = got && got[UNDO_KEY];
+      if (!snap || !Array.isArray(snap.keywords)) return null;
+      if (Date.now() - Number(snap.at || 0) > UNDO_TTL_MS) { await area.remove(UNDO_KEY); return null; }
+      return snap;
+    } catch (e) { return null; }
+  }
+
+  async function clearUndo() {
+    const area = sessionArea();
+    if (!area) return;
+    try { await area.remove(UNDO_KEY); } catch (e) { /* 清不掉不影响主流程 */ }
+  }
+
+  /** 撤销行：有快照才出现；显示"刚才导入了什么、还剩几分钟" */
+  async function refreshUndoRow() {
+    const row = $('undo-row');
+    if (!row) return;
+    const snap = await getUndo();
+    row.hidden = !snap;
+    if (snap) {
+      const hint = $('undo-hint');
+      const mins = Math.max(1, Math.ceil((UNDO_TTL_MS - (Date.now() - Number(snap.at || 0))) / 60000));
+      if (hint) {
+        hint.textContent = '上一次导入：新增 ' + Number(snap.added || 0) + ' 条、跳过重复 '
+          + Number(snap.skipped || 0) + ' 条（' + mins + ' 分钟内可撤销）';
+      }
     }
+  }
+
+  /** 预览表：三类计数 + 前 20 行（坏行标红并写原因） */
+  function csvPreviewBody(plan) {
+    const st = plan.stats || {};
+    const wrap = h('div', { class: 'kh-csv-prev' });
+    wrap.appendChild(h('div', { class: 'kh-csv-prev-sum' }, [
+      h('span', { class: 'kh-csv-badge is-add', text: '新增 ' + (st.added || 0) }),
+      h('span', { class: 'kh-csv-badge is-dup', text: '重复跳过 ' + (st.skipped || 0) }),
+      h('span', { class: 'kh-csv-badge is-bad', text: '无法解析 ' + (st.bad || 0) })
+    ]));
+    if (st.groupsCreated) {
+      wrap.appendChild(h('p', { class: 'kh-dim', text: '会顺带新建分组 ' + st.groupsCreated + ' 个（按 CSV 里的组名）' }));
+    }
+    const rows = (plan.rows || []).slice(0, 20);
+    const table = h('table', { class: 'kh-csv-table' });
+    table.appendChild(h('thead', {}, [h('tr', {}, [
+      h('th', { text: '行' }), h('th', { text: '关键词' }), h('th', { text: '分组' }), h('th', { text: '结果' })
+    ])]));
+    const tb = h('tbody');
+    for (const r of rows) {
+      const cls = r.action === 'bad' ? 'is-bad' : (r.action === 'dup' ? 'is-dup' : '');
+      tb.appendChild(h('tr', { class: cls }, [
+        h('td', { text: String(r.line) }),
+        h('td', { text: r.kwText || '（空）' }),
+        h('td', { text: r.group || '—' }),
+        h('td', { text: r.action === 'add' ? '新增' : (r.action === 'dup' ? '跳过：重复' : String(r.reason || '无法解析')) })
+      ]));
+    }
+    table.appendChild(tb);
+    wrap.appendChild(table);
+    if ((plan.rows || []).length > rows.length) {
+      wrap.appendChild(h('p', { class: 'kh-dim', text: '只列出前 ' + rows.length + ' 行，文件里共 ' + plan.rows.length + ' 行' }));
+    }
+    return wrap;
+  }
+
+  async function importCSVText(text) {
+    let plan = null;
+    try { plan = KH.Store.previewCSV(text, cfg); }
+    catch (err) { D.toast('CSV 导入失败：' + err.message, 'error'); return; }
+
+    const st = plan.stats || {};
+    const added = Number(st.added || 0);
+    if (!added) {
+      D.toast('这份 CSV 没有可导入的新关键词（重复 ' + (st.skipped || 0) + ' 条、无法解析 ' + (st.bad || 0) + ' 条）', 'error');
+      return;
+    }
+
+    const ok = await new Promise((resolve) => {
+      KH.ui.Modal.open({
+        title: '导入 CSV 预览',
+        body: csvPreviewBody(plan),
+        size: 'md',
+        saveLabel: '导入 ' + added + ' 条',
+        onSave: () => { resolve(true); return true; },
+        onClose: () => resolve(false)
+      });
+    });
+    if (!ok) return;
+
+    const snap = {
+      keywords: (cfg.keywords || []).slice(),
+      groups: (cfg.groups || []).slice(),
+      at: Date.now(),
+      added: added,
+      skipped: Number(st.skipped || 0)
+    };
+    const hasUndo = await putUndo(snap);
+    let stats = null;
+    const wrote = await mutate(async () => { stats = await KH.Store.importCSV(text, cfg); });
+    if (!wrote) { await clearUndo(); return; }
+    await refreshUndoRow();
+    D.toast('CSV 导入完成：新增 ' + stats.added + ' 条，跳过重复 ' + stats.skipped + ' 条'
+      + (stats.groupsCreated ? '，新建分组 ' + stats.groupsCreated + ' 个' : '')
+      + (hasUndo ? '。可在「导入导出」撤销这次导入' : ''), 'ok');
   }
 
   /**
@@ -1391,6 +1508,35 @@
     const file = e.target.files && e.target.files[0];
     if (file) await importCSVText(await file.text());
   });
+
+  const uiThemeSel = $('ui-theme');
+  if (uiThemeSel) {
+    uiThemeSel.addEventListener('change', async () => {
+      const next = uiThemeSel.value;
+      const ok = await mutate(() => KH.Store.patch({ uiTheme: next }));
+      if (!ok) { syncTheme(); return; }
+      syncTheme();
+      D.toast('外观已切换：' + (next === 'auto' ? '跟随系统' : (next === 'dark' ? '深色' : '浅色')), 'ok');
+    });
+  }
+
+  const undoImportBtn = $('btn-undo-import');
+  if (undoImportBtn) {
+    undoImportBtn.addEventListener('click', async () => {
+      const snap = await getUndo();
+      if (!snap) { D.toast('撤销窗口已过期（只保留 10 分钟）', 'error'); await refreshUndoRow(); return; }
+      const ok = await D.confirmBox(
+        '撤销会把这期间的关键词与分组回滚到导入前（导入后你手动改过的也会一起回滚）。确定撤销？',
+        { title: '撤销上次导入', danger: true, saveLabel: '撤销' }
+      );
+      if (!ok) return;
+      const wrote = await mutate(() => KH.Store.patch({ keywords: snap.keywords, groups: snap.groups }));
+      if (!wrote) return;
+      await clearUndo();
+      await refreshUndoRow();
+      D.toast('已撤销上次导入', 'ok');
+    });
+  }
 
   $('btn-reset').addEventListener('click', async () => {
     const sc = {
@@ -2215,7 +2361,20 @@
     showSection(SECTIONS.indexOf(fromHash) >= 0 ? fromHash : 'keywords');
   }
 
+  /** 界面主题：把 cfg.uiTheme 落到 <html> 上，并让下拉框回显。
+   *  读不到主题模块（旧包/测试垫片）时**静默跳过** —— 主题不该成为页面起不来的原因。 */
+  function syncTheme() {
+    const t = (KH.ui && KH.ui.theme) ? KH.ui.theme : null;
+    const mode = cfg && cfg.uiTheme ? cfg.uiTheme : 'auto';
+    if (t && typeof t.apply === 'function') {
+      try { t.apply(mode); } catch (e) { /* 主题失败不影响页面 */ }
+    }
+    const sel = $('ui-theme');
+    if (sel) sel.value = (t && typeof t.normMode === 'function') ? t.normMode(mode) : mode;
+  }
+
   function renderAll() {
+    syncTheme();
     renderHeader();
     renderKeywordTable();
     renderGroups();
@@ -2771,7 +2930,8 @@
     }
   }
 
-  reload().then(() => { renderChangelog(); renderTabs(); renderShortcuts(); }).catch(err => {
+  if (KH.ui && KH.ui.theme && KH.ui.theme.boot) KH.ui.theme.boot();
+  reload().then(() => { renderChangelog(); renderTabs(); renderShortcuts(); refreshUndoRow(); }).catch(err => {
     console.error('[KH] 设置页初始化失败', err);
     D.toast('初始化失败：' + (err && err.message), 'error');
   });

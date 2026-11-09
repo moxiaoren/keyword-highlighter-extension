@@ -55,9 +55,9 @@ module.exports = function run() {
   test('导入失败不再把 Cannot read properties of null 原文抛给用户', () => {
     const src = read('options/options.js');
     const at = src.indexOf('async function importJSONText');
-    const body = src.slice(at, at + 2200);
-    truthy(/if \(!wrote\) return;/.test(body), 'JSON 导入失败后必须停下，不能再拿 stats.keywords 拼成功文案');
-    truthy(/if \(!wrote\) return;/.test(src.slice(src.indexOf('async function importCSVText'), src.indexOf('async function importCSVText') + 1600)),
+    const body = src.slice(at, at + 3200);
+    truthy(/if \(!wrote\)/.test(body), 'JSON 导入失败后必须停下，不能再拿 stats.keywords 拼成功文案');
+    truthy(/if \(!wrote\)/.test(src.slice(src.indexOf('async function importCSVText'), src.indexOf('async function importCSVText') + 2600)),
       'CSV 导入同理');
   });
 

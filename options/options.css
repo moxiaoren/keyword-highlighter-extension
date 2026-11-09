@@ -673,3 +673,28 @@ body {
   color: var(--text-3);
   font-size: var(--fs-sm);
 }
+
+/* ============================================================================
+ * 2.0.8.13 · CSV 导入预览（需求②）
+ * 预览表只做"看清这份文件会干什么"：三类计数 + 前 20 行 + 坏行标红。
+ * 表体滚动交给 .kh-modal-body，这里不另起滚动条（避免双层滚动）。
+ * ========================================================================= */
+.kh-csv-prev { display: flex; flex-direction: column; gap: 10px; }
+.kh-csv-prev-sum { display: flex; flex-wrap: wrap; gap: 8px; }
+.kh-csv-badge {
+  padding: 3px 10px; border-radius: 999px; font-size: var(--fs-sm); font-weight: 600;
+  background: var(--bg-2); color: var(--text-2);
+}
+.kh-csv-badge.is-add { background: var(--success-soft); color: var(--success); }
+.kh-csv-badge.is-dup { background: var(--bg-2); color: var(--text-3); }
+.kh-csv-badge.is-bad { background: var(--warning-soft); color: var(--warn-ink); }
+.kh-csv-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+.kh-csv-table th, .kh-csv-table td {
+  padding: 5px 8px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top;
+}
+.kh-csv-table th { color: var(--text-3); font-weight: 600; white-space: nowrap; }
+.kh-csv-table td:nth-child(2) { word-break: break-word; }
+.kh-csv-table tr.is-dup td { color: var(--text-3); }
+.kh-csv-table tr.is-bad td { color: var(--warn-ink); }
+#undo-row { align-items: center; }
+#undo-row .kh-dim { font-size: var(--fs-sm); }

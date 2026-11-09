@@ -126,6 +126,43 @@
   --sh-tip: 0 4px 14px rgba(0, 0, 0, .14);
   --sh-brand-inset: 0 0 0 2px rgba(47, 111, 181, .35);
 }
+/* ============================================================================
+ * 2.0.8.13 · 深色主题（需求④）
+ * 只做「令牌换值」：组件样式一律 var(--token)，于是深色不需要改任何组件 CSS。
+ * 触发条件是 <html data-kh-theme="dark">（由 src/ui/theme.js 按 config.uiTheme 解析后写入；
+ * `auto` 也在 JS 里先落成 light/dark —— 样式侧只认最终两态，不写第二份浅色值，避免两套漂移）。
+ * `color-scheme: dark` 顺带让原生控件（滚动条、下拉、日期选择）跟着变深，不改浏览器默认观感。
+ * ========================================================================= */
+:root[data-kh-theme="dark"] {
+  color-scheme: dark;
+  --bg: #10151c;
+  --bg-2: #161c25;
+  --card: #1a212b;
+  --card-2: #1f2734;
+  --border: #2a333f;
+  --border-2: #364150;
+  --text: #e6ebf2;
+  --text-2: #c2cbd7;
+  --text-3: #9aa7b6;
+  --text-4: #8592a2;
+  --text-5: #6b7889;
+  /* 品牌色在深底上要提亮：原 #2f6fb5 压深底只有 2.4，提亮后正文/边框都还认得出来 */
+  --brand: #5b9be0;
+  --brand-2: #7db4ec;
+  --brand-deep: #8ec2f2;
+  --brand-strong: #4a8ad0;
+  --brand-soft: #1d2c40;
+  --brand-softer: #172334;
+  --brand-on-soft: #9ecdf6;
+  --success: #4ec38a;
+  --danger: #f27c7c;
+  --warning: #f0b463;
+  --info: #7cb6f0;
+  --sh-sm: 0 1px 2px rgba(0, 0, 0, .4);
+  --sh-md: 0 4px 14px rgba(0, 0, 0, .45);
+  --sh-lg: 0 10px 30px rgba(0, 0, 0, .5);
+}
+
 /* @inject:tokens:end */
 
 /* ---- 排版单源：四端 body 统一使用，禁止各自写 font-family ---- */
@@ -138,4 +175,3 @@
 /* ---- 批次九死代码扫描：`.kh-visually-hidden`（无障碍隐藏基元，9 行）已删除 ——
  * 全库（含 tests / _e2e / options / popup / welcome / content）零引用，没有任何元素带这个类。
  * 真要用时再按同样写法加回来即可。 */
-/* @inject:tokens:end */

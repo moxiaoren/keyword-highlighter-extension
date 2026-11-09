@@ -875,7 +875,12 @@
               dirty = true;
               syncNums();
               paintPreview();
-              if (row._suffixBtn) row._suffixBtn.textContent = '后缀：' + ((typeof F.suffixTextOf === 'function' ? F.suffixTextOf(sp) : '') || '无');
+              if (row._suffixBtn) {
+                row._suffixBtn.textContent = (typeof F.describeSuffix === 'function')
+                  ? ('取值：' + (F.describeSuffix(sp) || '默认（右邻这一格）'))
+                  : ('后缀：' + ((typeof F.suffixTextOf === 'function' ? F.suffixTextOf(sp) : '') || '无'));
+                row._suffixBtn.title = '当前写法：' + ((typeof F.suffixTextOf === 'function' ? F.suffixTextOf(sp) : '') || '无');
+              }
             };
             modeSel.addEventListener('change', compose);
             imgN.addEventListener('input', compose);
@@ -968,7 +973,8 @@
             if (hasSuffix) {
               const sfxBtn = h('button', {
                 class: 'kh-mini-btn kh-lrow-suffix', type: 'button',
-                text: '后缀：' + ((typeof F.suffixTextOf === 'function' ? F.suffixTextOf(row.spec) : '') || '无')
+                text: (typeof F.describeSuffix === 'function' ? ('取值：' + (F.describeSuffix(row.spec) || '默认（右邻这一格）')) : ('后缀：' + ((typeof F.suffixTextOf === 'function' ? F.suffixTextOf(row.spec) : '') || '无'))),
+                title: '展开设置取值方式（当前写法：' + ((typeof F.suffixTextOf === 'function' ? F.suffixTextOf(row.spec) : '') || '无') + '）'
               });
               sfxBtn.title = '点开展开后缀设置（不用手敲 # 与 %）';
               detail = buildSuffix(row);

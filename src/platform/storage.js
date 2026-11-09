@@ -549,9 +549,16 @@
       return records.filter(r => !(r.length === 1 && r[0].trim() === ''));
     },
 
-    /** CSV 导入：按组名回建分组（否则关键词脱离分组、分组配色丢失） */
-    async importCSV(text, config) {
-      const cfg = config || await this.load();
+    /**
+     * 【2.0.8.13 需求②】CSV → **计划**（纯计算，不写盘）。
+     * 导入预览与真正的导入必须共用这一份判据 —— 否则"预览说新增 12 条、进去只有 9 条"这种漂移迟早出现。
+     * 返回 { keywords, groups, rows, stats }：
+     *   rows[i] = { line, kwText, group, action: 'add'|'dup'|'bad', reason }
+     *   stats   = { added, skipped, bad, groupsCreated }
+     * 调用方必须自己给已加载的 config（预览发生在写盘之前，这里不碰 storage）。
+     */
+    planCSV(text, config) {
+      const cfg = config || {};
       const records = this.parseCSV(text);
       if (records.length < 2) throw new Error('CSV 格式无效：至少需要表头 + 1 行数据');
 
@@ -569,7 +576,8 @@
       for (const g of groups) if (g && g.name) byName.set(g.name, g);
 
       const keySet = new Set(keywords.map(keyOf));
-      const stats = { added: 0, skipped: 0, groupsCreated: 0 };
+      const stats = { added: 0, skipped: 0, bad: 0, groupsCreated: 0 };
+      const rows = [];
 
       for (let i = 1; i < records.length; i++) {
         const v = records[i];
@@ -578,7 +586,11 @@
          * 导出时第 1 列本来就是空的。判据照契约 §四.2：「单元格组合」列（第 12 列，
          * 下标 11）＝`是` 且「标题关键词(左格)」（第 13 列，下标 12）非空，就不许跳过。 */
         const comboOnlyRow = (str(v[11]).trim() === '是') && !!str(v[12]).trim();
-        if (!str(v[0]).trim() && !comboOnlyRow) continue;
+        if (!str(v[0]).trim() && !comboOnlyRow) {
+          stats.bad++;
+          rows.push({ line: i, kwText: '', group: str(v[2]).trim(), action: 'bad', reason: '关键词为空，这一行会被跳过' });
+          continue;
+        }
 
         const groupName = str(v[2]).trim();
         let groupId = null;
@@ -615,13 +627,31 @@
         }, cfg);
 
         const key = keyOf(kw);
-        if (keySet.has(key)) { stats.skipped++; continue; }   // 前格+后格组合去重（旧版行为）
+        if (keySet.has(key)) {
+          stats.skipped++;
+          rows.push({ line: i, kwText: String(kw.text || ''), group: groupName, action: 'dup', reason: '与已有关键词重复（前格+后格同）' });
+          continue;
+        }
         keySet.add(key);
         keywords.push(kw);
         stats.added++;
+        rows.push({ line: i, kwText: String(kw.text || ''), group: groupName, action: 'add', reason: '' });
       }
 
-      await this.patch({ keywords, groups });
+      return { keywords, groups, rows, stats };
+    },
+
+    /** 导入预览：只算不写。`rows` 原样给 UI（它自己截前 N 行展示）。 */
+    previewCSV(text, config) {
+      return this.planCSV(text, config);
+    },
+
+    /** CSV 导入：按组名回建分组（否则关键词脱离分组、分组配色丢失） */
+    async importCSV(text, config) {
+      const cfg = config || await this.load();
+      const plan = this.planCSV(text, cfg);
+      const stats = { added: plan.stats.added, skipped: plan.stats.skipped, groupsCreated: plan.stats.groupsCreated };
+      await this.patch({ keywords: plan.keywords, groups: plan.groups });
       return stats;
     },
 
@@ -643,7 +673,10 @@
       'imgMerge',
       /* K58 变更处理方式：这是用户选的"行为档位"，换台机器/恢复备份后应该跟着走
        * （与 globalEnabled / shadowDOMEnabled 这类"本机开关"不同）。 */
-      'changeHandling'
+      'changeHandling',
+      /* 【2.0.8.13 需求④】界面主题：用户选的外观档位，换机器/恢复备份应当跟着走
+       * （不是凭据、也不是本机专有状态，所以进 STYLE_KEYS 而不是"不导出"）。 */
+      'uiTheme'
     ],
 
     /** 只有完整备份才携带的全局开关 */

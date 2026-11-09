@@ -88,7 +88,7 @@ module.exports = async function run() {
     eq(lastModalEl().querySelectorAll('.kh-list-val').map((el) => el.getAttribute('value')).join('/'),
       '名称/备注', '★ 行里只放名字（后缀不再要求手敲）');
     eq(lastModalEl().querySelectorAll('.kh-lrow-suffix').map((el) => el.textContent).join('/'),
-      '后缀：^[复制]/后缀：#图', '★ 后缀在行按钮上摘要回显，点开才是结构化设置');
+      '取值：截到「[复制]」之前/取值：只留图', '★ 行按钮用「取值：…」人话回显，点开才是结构化设置');
     KH.ui.Modal.closeAll();
   });
 
@@ -262,8 +262,8 @@ module.exports = async function run() {
     ctrl.el.querySelector('.kh-list-btn').dispatchEvent({ type: 'click' });
     const vals = lastModalEl().querySelectorAll('.kh-list-val').map((el) => el.getAttribute('value'));
     eq(vals.join('/'), '开发者', '★ 行里只放字段名（后缀进结构化面板）');
-    eq(String(lastModalEl().querySelector('.kh-lrow-suffix').textContent), '后缀：! ^高价',
-      '★ 后缀在行按钮上摘要回显');
+    eq(String(lastModalEl().querySelector('.kh-lrow-suffix').textContent), '取值：去空格 · 截到「高价」之前',
+      '★ 行按钮用「取值：…」人话回显');
     KH.ui.Modal.closeAll();
   });
 

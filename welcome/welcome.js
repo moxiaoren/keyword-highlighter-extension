@@ -13,6 +13,11 @@
 (function () {
   'use strict';
 
+  /* 界面主题（2.0.8.13 需求④）：先上色再渲染，避免首帧白屏闪一下 */
+  /* 注意：下面紧接着有 `const KH = window.KH`，同作用域里 `KH` 还在 TDZ —— 这里必须走 window.KH，
+   * 否则整个 IIFE 在启动时直接 ReferenceError（弹窗会卡在「读取中…」、版本徽标变成 v—）。 */
+  if (window.KH && window.KH.ui && window.KH.ui.theme && window.KH.ui.theme.boot) window.KH.ui.theme.boot();
+
   const $ = (id) => document.getElementById(id);
   const manifest = chrome.runtime.getManifest();
   const version = manifest.version;

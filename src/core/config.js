@@ -38,6 +38,8 @@
     'siteRules[].scope': ['domain', 'url'],
     /* 变更处理方式（K58）：smart = 相关性预筛（省资源，默认）；always = 任何变动都整页重建（旧行为，最保守） */
     'changeHandling': ['smart', 'always'],
+    /* 界面主题（2.0.8.13 需求④）：auto 跟随系统，light/dark 显式选；坏值回 auto */
+    'uiTheme': ['auto', 'light', 'dark'],
     /* 图片识别引擎（S2 / #12 裁决）：`auto` = 主引擎 PP-OCR 失败时按会话回落兼容引擎（默认）；
      *  `ppocr` = 只用主引擎（失败如实报错，不偷偷退回）；`tesseract` = 只用兼容引擎。 */
     'imgOcr.engine': ['auto', 'ppocr', 'tesseract']
@@ -423,6 +425,11 @@
        *  `normalizePanelWidth`；设置页数字输入的 min/max 也从这个常量取。 */
       notePanelWidth: PANEL_WIDTH_DEFAULT,
 
+      /** 【2.0.8.13 需求④】界面主题：`auto`（跟随系统，默认）/ `light` / `dark`。
+       *  真值只在这里；页面侧由 `src/ui/theme.js` 读它并写 `<html data-kh-theme>`，
+       *  样式侧只在 tokens.css 里做令牌覆盖（组件 CSS 不许出现主题分支）。 */
+      uiTheme: 'auto',
+
       /* ---- 【2.0.8.4 需求④】重要笔记面板的「AI 助手」接口配置 ----
        * 默认 DeepSeek 官方（用户口径："默认接入 deepseek 的官网 ai 对话"），但协议是通用的
        * OpenAI 兼容格式，设置页可换成任意兼容服务（含中转）。归一只有 `normalizeAi` 一份。
@@ -633,6 +640,12 @@
       {
         const pw = normalizePanelWidth(cfg.notePanelWidth);
         if (pw !== cfg.notePanelWidth) { cfg.notePanelWidth = pw; changed.invalid.push('notePanelWidth'); }
+      }
+
+      /* ②e1 【2.0.8.13 需求④】界面主题：非法值回 auto（不静默丢用户选择 —— light/dark 都保留） */
+      if (!ENUMS['uiTheme'].includes(cfg.uiTheme)) {
+        cfg.uiTheme = this.defaults.uiTheme;
+        changed.invalid.push('uiTheme');
       }
 
       /* ②e2 【2.0.8.6 需求①】图文合并的读路径归一：坏值回默认、字段去重、标题截断。 */
