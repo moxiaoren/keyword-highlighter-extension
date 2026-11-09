@@ -1005,6 +1005,41 @@ if (manifest && manifest.version) {
   else ok('面板文案单源（OCR 文案取自 KH.OcrCopy.VIEW）');
 }
 
+/* ------------------------------------------------ 值一致口径的唯一实现（票 #113 / 2.0.8.18 需求①）
+ * 为什么是红线而不是单测：单测只能证明"这一份实现对"，证明不了"别处没有第二份"。
+ * 而这批缺陷的成因恰恰是四份实现各自成立、彼此不一致（面板说没命中、表里却出了行）。
+ * 所以这里盯两件事：①新模块必须在 manifest 里（否则浏览器里根本没加载，单测却全绿）；
+ * ②四个判决点必须真的调它，不许回退成手写的 `indexOf` / 空白归一。
+ */
+{
+  // ① 模块必须在内容脚本清单里：不在 ⇒ 真机上 `KH.TextNorm` 是 undefined
+  const mf = read('manifest.json');
+  if (mf.indexOf('"src/core/text-norm.js"') < 0) {
+    bad('值一致口径的唯一实现必须进 manifest 的 content_scripts（否则真机不加载，单测却绿）');
+  } else ok('值一致口径单源（text-norm.js 已登记进 content_scripts）');
+
+  // ② 动态判据必须走 `findInText`（带边界 + 区间映射），不许回退成剔空白后 indexOf
+  const back = findIn(['src/features/img-ocr.js'], /flat\.indexOf\(needle\)/);
+  if (back.length) bad('图片动态判据回退成「剔空白 + indexOf」：必须走 KH.TextNorm.findInText（边界/全半角/区间映射）', back.join('\n      '));
+  else ok('图片动态判据无 indexOf 回退（走 KH.TextNorm.findInText）');
+
+  const callJudge = findIn(['src/features/img-ocr.js'], /TN\.findInText\(raw, needle, \{ boundary: true \}\)/);
+  if (callJudge.length !== 1) bad('`judgeInfo` 必须且只能有一处 `KH.TextNorm.findInText` 调用，实测 ' + callJudge.length + ' 处', callJudge.join('\n      '));
+  else ok('图片动态判据单源（judgeInfo 调 TextNorm.findInText）');
+
+  // ③ 合并/进表/命中三处的字段名与值比较，必须走 keyOf / verdict
+  const needCalls = [
+    ['ocrFieldHit 的字段名比较', /want = TN \? TN\.keyOf\(field\)/],
+    ['ocrExtraRows 的去重键', /const kLabel = TN \? TN\.keyOf\(label\)/],
+    ['decorateMerge 的冲突判定', /TN\.verdict\(fetchV, ocrV\)/]
+  ];
+  for (const [name, re] of needCalls) {
+    const hit = findIn(['src/features/important-note.js'], re);
+    if (hit.length !== 1) bad(name + ' 必须走 KH.TextNorm（keyOf/verdict），实测 ' + hit.length + ' 处', hit.join('\n      '));
+    else ok(name + ' 走 KH.TextNorm');
+  }
+}
+
 /* ------------------------------------------------------------------ 输出 */
 
 /* README 里的「机械红线（N 项）」必须就是本次实测条数 —— 手写数字一定会烂（票 #42）。

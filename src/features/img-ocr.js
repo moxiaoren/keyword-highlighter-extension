@@ -613,28 +613,38 @@
    */
   function judgeInfo(rule, text, need, field) {
     const raw = String(text || '');
-    const stat = matchedInText(rule, raw, field);
+    /* 【2.0.8.18 需求①】命中块带 `how` 说清它凭什么算命中：`stat` = 静态图片命中词，
+     * `found` = 动态判据值。合并与提醒要区分这两种（见 `docs/2.0.8.18-*` §3）。 */
+    const stat = matchedInText(rule, raw, field).map((h) => ({
+      start: h.start, end: h.end, text: h.text, how: 'stat'
+    }));
     const known = scopeKnown(rule);
     const hasStatic = !!stripKvMarks(scopedRaw(rule && rule.meta && rule.meta.imgOcrKeyword, field, known)).trim();
     const dyn = (need || []).filter(Boolean);
-    if (!dyn.length) return { hits: stat, missingValues: [], staticMiss: false };
-    const flat = raw.replace(WHITE_ALL, '').toLowerCase();
+    if (!dyn.length) return { hits: stat, missingValues: [], weakValues: [], staticMiss: false };
+    const TN = KH.TextNorm;
     const found = [];
     /* 【2.0.6.1 需求③】缺失的值**全收集**再返回：面板要把「图上找不到哪几个值」说出来，
      * 否则用户只看到"没命中"却不知道差在哪（这正是本批需求①报的现象）。 */
     const missingValues = [];
+    /* 【2.0.8.18】第三类状态：值本身太短，根本不足以当判据（`12` / `abc`）。
+     * 它与"图上没有"是两回事 —— 报成"找不到"会让用户去改图，报成"命中"就是假命中。 */
+    const weakValues = [];
     for (const v of dyn) {
-      /* `need` 通常已由 `needOf` 归一（小写 + 剔空白），这里再兜一次：判决点自己把两侧弄成同口径，
-       * 免得调用方（含单测与后续新入口）拿"原样大小写"的值进来就静默不命中。 */
-      const needle = String(v == null ? '' : v).replace(WHITE_ALL, '').toLowerCase();
-      if (!needle) continue;
-      const at = flat.indexOf(needle);
-      if (at < 0) { missingValues.push(String(v)); continue; }
-      /* 命中块要落在**原文**里（面板上的词块与"复制整句"靠它），所以映射回未剔空白的区间 */
-      const span = unshrinkRange(raw, at, at + needle.length);
-      found.push(span
-        ? { start: span.start, end: span.end, text: raw.slice(span.start, span.end) }
-        : { start: 0, end: 0, text: needle });
+      const needle = String(v == null ? '' : v);
+      if (!needle.trim()) continue;
+      /* 比较口径收敛到 `KH.TextNorm.findInText`（全工程唯一实现）：
+       * 空白 / 全半角 / 零宽 / 大小写 + 纯 ASCII 判据的**词边界**（`abc1234` 不许命中 `abc12345`）。
+       * 旧写法是"剔空白 + 小写 + `indexOf`"——没有边界、没有全半角折叠，
+       * 用户的现场（OCR 把 `abc1234` 认成 `ａｂｃ１２３４`）就是它造成的假不一致。 */
+      if (!TN) { missingValues.push(needle); continue; }
+      const hit = TN.findInText(raw, needle, { boundary: true });
+      if (hit) {
+        found.push({ start: hit.start, end: hit.end, text: hit.text, how: 'found', key: hit.key });
+        continue;
+      }
+      if (TN.isWeak(needle)) { weakValues.push(needle); continue; }
+      missingValues.push(needle);
     }
     /* 【2.0.6.2 需求①】静态词与动态值**各判各的，不再互相清零**。
      * 旧写法两处都是"一票否决"：`if (missingValues.length) return { hits: [] }`（缺一个动态值 ⇒ 连
@@ -649,6 +659,7 @@
     return {
       hits: stat.concat(found),
       missingValues: missingValues,
+      weakValues: weakValues,
       staticMiss: !!(hasStatic && !stat.length)
     };
   }
@@ -730,29 +741,59 @@
     const known = scopeKnown(rule);
     const specs = needSpecs(meta.imgOcrNeed, field, known);
     const want = specs.map((s) => s.label);
-    const info = { values: [], want: want, missing: [] };
+    const info = { values: [], want: want, missing: [], weak: [], fromExtra: [] };
     if (!want.length) return info;                    // 留空即旧行为：没有动态判据
     const Fetch = KH.Fetch || {};
-    if (typeof Fetch.extractFor !== 'function') { info.missing = want.slice(); return info; }
+    const TN = KH.TextNorm;
+    if (typeof Fetch.extractFor !== 'function' && !TN) { info.missing = want.slice(); return info; }
     const anchor = (hitOrCell && hitOrCell.cell) ? hitOrCell.cell : hitOrCell;
-    if (!anchor) { info.missing = want.slice(); return info; }
+    /* 【2.0.8.18 P0.5】DOM 取不到值时**不直接放弃**：同一张卡里别的图已经「进表」出来的值
+     * （用户在图片1 上命中「登记号」→ 进表 `登记号 | abfx`）也是这个字段的真实取值。
+     * 用户场景（m00152 ①）：图片2 的动态词指向「登记号」，图片2 上出现 `abfx` 也应算命中。
+     *
+     * 防环（为什么不会无限套）：`ocrExtraRows()` 只读 `KH.ImgOcr.items()` 里**上一轮**已算好的
+     * `matched`，它不回头调 `needInfo`；`build()` 也是先建 `next` 再整体替换。所以这里是一次性
+     * 读旧结果，不会形成 A→B→A。
+     * 取不到锚点不算错：静态进表这条路本来就不需要锚点。 */
+    const extraValues = () => {
+      const Note = KH.ImportantNote;
+      if (!Note || typeof Note.ocrExtraRows !== 'function') return [];
+      try { return Note.ocrExtraRows(meta) || []; } catch (e) { return []; }
+    };
     let entries = [];
     /* 【2.0.7.2 需求④】取值用**用户自己写的那份 spec**（`开发者^高价`），不再用 `meta.fetchLabels`
      * 的全局配置 —— 否则「图片动态关键词」里的后缀永远是死字，用户没法给判据单独裁值。
      * 一个字段写进 `extractFor` 的 labels 串，修饰由 `parseLabelSpec` 在那条链上统一施加
      * （`!`/`^`/`%` 与「抓取字段」是同一份实现）。 */
-    const labelsArg = specs.map((s) => s.raw).join('|');
-    try {
-      entries = Fetch.extractFor(anchor, labelsArg, meta.fetchScope, null) || [];
-    } catch (e) { info.missing = want.slice(); return info; }
+    if (anchor && typeof Fetch.extractFor === 'function') {
+      const labelsArg = specs.map((s) => s.raw).join('|');
+      try {
+        entries = Fetch.extractFor(anchor, labelsArg, meta.fetchScope, null) || [];
+      } catch (e) { entries = []; }
+    }
     const out = [];
+    const outKeys = [];
     const seen = [];
     const base = (typeof Fetch.baseLabelOf === 'function') ? Fetch.baseLabelOf : ((s) => s);
     /* 【2.0.7.1 需求①⑤】字段名格不是判据值：两列表/整块取值时，标签列可能被并进值格，
      * 于是「开发者」这个字段名本身变成 needle ⇒ 图上找不到它 ⇒ `missingValues` 误报
      * （面板看着像「连字段名都要图里有」，`#表` 又被这条误报整条拦掉）。这里把
      * 「整格就是一个已配置字段裸名」的格剔掉 —— 只比裸名，不比值。 */
-    const labelSet = known.map((n) => String(n).replace(WHITE_ALL, '').toLowerCase()).filter(Boolean);
+    const labelSet = known.map((n) => (TN ? TN.keyOf(n) : String(n).replace(WHITE_ALL, '').toLowerCase())).filter(Boolean);
+    const pushValue = (rawVal) => {
+      const src = String(rawVal == null ? '' : rawVal);
+      /* 【2.0.8.18】这里存的是**展示形**（去空白 + 小写，与笔记表显示的值同口径），不是折叠形：
+       * 面板要拿它显示「图上应有：北京星河科技（」，若把全角括号折成半角，用户就与图对不上。
+       * 判等与查找各自在 `judgeInfo` 里再折一次（`findInText` 自带区间映射）。 */
+      const shown = (TN ? TN.stripZero(TN.stripWs(src)) : src.replace(WHITE_ALL, '')).toLowerCase();
+      if (!shown || shown.length < NEED_MIN_LEN) return false;
+      const k = TN ? TN.keyOf(shown) : shown;
+      if (labelSet.indexOf(k) >= 0) return false;        // 字段名本身：不是值
+      if (outKeys.indexOf(k) >= 0) return false;         // 只按"是否同一个值"去重（全半角不算两个）
+      outKeys.push(k);
+      out.push(shown);
+      return true;
+    };
     for (const en of entries) {
       const label = String((en && en.label) || '').trim();
       if (!label) continue;
@@ -770,16 +811,38 @@
            * 只删开头那个标记会把 url 留在值里，值与 OCR 文本就永远对不上（真机抓到的红）。
            * 剥离实现只有一份，与 `#0`（不要图）共用。 */
           const plain = (typeof Fetch.stripImgPlaceholders === 'function') ? Fetch.stripImgPlaceholders(raw) : raw;
-          /* 逐格一个判据（沿用旧口径：格子里的值各自比）；空白/换行一律剔（与 `judge` 同口径） */
-          const t = plain.replace(WHITE_ALL, '').replace(/[\r\n]+/g, '').toLowerCase();
-          if (t.length < NEED_MIN_LEN) continue;
-          if (labelSet.indexOf(t) >= 0) continue;        // 字段名本身：不是值
-          if (out.indexOf(t) < 0) out.push(t);
+          pushValue(plain);
         }
       }
     }
-    info.values = out;
-    info.missing = want.filter((n) => seen.indexOf(n) < 0);
+    /* 【2.0.8.18 P0.5】DOM 与替代值合并：DOM 先占位（它是页面上的权威来源），
+     * 缺口按「已进表的同名字段」补齐。补齐只发生在**这个字段确实没取到值**时，不覆盖 DOM 值。 */
+    const gotNames = seen.map((n) => (TN ? TN.keyOf(n) : n.toLowerCase()));
+    const extra = extraValues();
+    for (const n of want) {
+      const k = TN ? TN.keyOf(n) : String(n).toLowerCase();
+      if (gotNames.indexOf(k) >= 0) continue;
+      for (const row of extra) {
+        const rl = String((row && row.label) || '');
+        if (!rl) continue;
+        const rk = TN ? TN.keyOf(rl) : rl.toLowerCase();
+        if (rk !== k) continue;
+        if (!pushValue(row.value)) continue;
+        if (info.fromExtra.indexOf(n) < 0) info.fromExtra.push(n);
+        gotNames.push(k);
+        break;
+      }
+    }
+    /* 判据太弱（`12`/`abc`）的值单列：它们不是"没取到"，也不是"图上没有" */
+    info.values = [];
+    for (const t of out) {
+      if (TN && TN.isWeak(t)) { info.weak.push(t); continue; }
+      info.values.push(t);
+    }
+    info.missing = want.filter((n) => {
+      const k = TN ? TN.keyOf(n) : String(n).toLowerCase();
+      return gotNames.indexOf(k) < 0;
+    });
     return info;
   }
 
@@ -1283,6 +1346,7 @@
         const ji = judgeInfo(it.rule, text, it.need, it.label);
         it.matched = ji.hits;
         it.needMissingValues = ji.missingValues;
+        it.needWeakValues = ji.weakValues || [];
         it.lineList = (it.kind === 'pdf') ? pdfLineList : (msg.lineList || []);
         it.ocrMs = msg.ocrMs || msg.ms;
         if (it.kind === 'pdf') {
@@ -1471,6 +1535,7 @@
           src: src, cls: cls, host: cls.host || '',
           state: 'idle', matched: [], text: '', conf: 0,
           need: nf.values, needWant: nf.want, needMissing: nf.missing,
+          needWeak: nf.weak || [], needFrom: nf.fromExtra || [],
           needMissingValues: [], lineList: [],
           cellText: String((anchor.cell && anchor.cell.textContent) || '').trim().slice(0, 120)
         };
@@ -1481,6 +1546,7 @@
           const ji = judgeInfo(rule, cached.text, item.need, label);
           item.matched = ji.hits;
           item.needMissingValues = ji.missingValues;
+          item.needWeakValues = ji.weakValues || [];
           item.lineList = cached.lineList || [];
           /* 【耗时徽标必须跟着缓存走】(K80 · 真机踩到) 条目表每次重建都从缓存重建，
            * 而 `ocrMs` 此前只活在**当时那个条目对象**上 ⇒ 页面一有变动（重建）耗时徽标就空了。
@@ -1517,6 +1583,7 @@
           label: label, src: src, cls: { ok: true, src: src }, host: hostOfSrc(src) || '',
           state: 'idle', matched: [], text: '', conf: 0,
           need: nf.values, needWant: nf.want, needMissing: nf.missing,
+          needWeak: nf.weak || [], needFrom: nf.fromExtra || [],
           needMissingValues: [], lineList: [],
           cellText: String((anchor.cell && anchor.cell.textContent) || '').trim().slice(0, 120)
         };
@@ -1527,6 +1594,7 @@
           const ji = judgeInfo(rule, cached.text, item.need, label);
           item.matched = ji.hits;
           item.needMissingValues = ji.missingValues;
+          item.needWeakValues = ji.weakValues || [];
           item.lineList = cached.lineList || [];
           item.ocrMs = cached.ocrMs;
         } else if (failSrc.has(src) && Date.now() - failSrc.get(src) < FAIL_MEMO_MS) {

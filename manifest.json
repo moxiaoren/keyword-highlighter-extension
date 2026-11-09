@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "update_url": "https://moxiaoren.github.io/keyword-highlighter-extension/update.xml",
   "name": "__MSG_extName__",
-  "version": "2.0.8.17",
+  "version": "2.0.8.18",
   "description": "__MSG_extDesc__",
   "default_locale": "zh_CN",
   "minimum_chrome_version": "109",
@@ -35,6 +35,7 @@
       "js": [
         "src/build-info.js",
         "src/core/protocol.js",
+        "src/core/text-norm.js",
         "src/core/config.js",
         "src/core/registry.js",
         "src/core/compiler.js",

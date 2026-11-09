@@ -1705,7 +1705,11 @@
      * OCR 值来自引擎的 `joinParts`（字距一宽就插空格）——`A公司` 与 `A 公司` 是同一个值，
      * 按原样比就永远合不上，这正是用户看到的「OCR 行和抓取行同值却不合并」。
      * 只压空白，不做别的模糊归一（大小写/标点仍算不同）：归一过度会把真不同的值并成一条。 */
-    const squashVal = (v) => String(v == null ? '' : v).replace(/[\s\u3000]+/g, '');
+    /* 【2.0.8.18】签字口径收敛到 `KH.TextNorm.stripWs`（全工程唯一实现）：
+     * 这里只要"压掉空白"，不要大小写/全半角折叠 —— 合并签名与"值一致判定"是两件事，
+     * 后者由 `KH.TextNorm.verdict` 负责（会区分 fold-ws / fold-width / fold-case）。
+     * 分开的原因：签名只回答"能不能并成一条"，把 `ABC` 与 `abc` 也并掉会改变既有版面。 */
+    const squashVal = (v) => KH.TextNorm.stripWs(v);
     const contentOf = (it) => (it.rows || []).map((line) => (line || []).map((c) => squashVal(c && c.t)));
     const imgPolicyOf = (opt) => [!!(opt && opt.imgOnly), (opt && opt.imgLimit) || 0, !!(opt && opt.noImg)];
     const sigOf = (it) => JSON.stringify([contentOf(it), it.ocr ? 'ocr' : imgPolicyOf(it.opt)]);

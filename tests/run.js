@@ -188,7 +188,10 @@ const specs = [
   './specs/v20813b.test.js',
   /* 2.0.8.11：体检 E1「失败谎报成功」（mutate 返回布尔 + 调用方护栏）与 C4「本站开关
    * 把扩展 id 写进 siteDisabledMap」。口径见 tests/specs/v20811.test.js 头部 */
-  './specs/v20811.test.js'
+  './specs/v20811.test.js',
+  /* 2.0.8.18 需求①：图片命中词/动态词的「值一致性」口径收敛到 `src/core/text-norm.js` 一份实现
+   * （空白/全半角/零宽/大小写分级折叠 + 纯 ASCII 词边界 + 短值不当判据）。口径见该 spec 头部 */
+  './specs/text-norm.test.js'
 ];
 
 (async () => {

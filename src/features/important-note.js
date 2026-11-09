@@ -1737,8 +1737,10 @@
   function mergeRowsFor(meta, cfg) {
     const mg = (cfg && cfg.imgMerge) || null;
     if (!mg || mg.on === false || !mg.rows || !mg.rows.length) return [];
+    const TN = KH.TextNorm;
+    const keyOf = (s) => (TN ? TN.keyOf(s) : String(s == null ? '' : s).replace(/\s+/g, '').toLowerCase());
     const need = String((meta && meta.imgOcrNeed) || '');
-    const have = need.split(/[,，、;；\s]+/).map(tagText).filter(Boolean).map((s) => s.toLowerCase());
+    const have = need.split(/[,，、;；\s]+/).map(tagText).filter(Boolean).map(keyOf);
     /* 【2.0.8.7 口径 B2】不在动态词表里的字段也能触发，但**必须真的进表出了值**：
      * 用户场景②是「图里命中『登记号』→ 进表（标题登记号，内容 abc1234）→ 合并」，
      * 这里的「登记号」是静态命中词，通常不会写进 `imgOcrNeed`。只按「图有命中」就出行会误报
@@ -1751,7 +1753,7 @@
       let rows = [];
       try { rows = ocrExtraRows(meta) || []; } catch (e) { rows = []; }
       for (let i = 0; i < rows.length; i++) {
-        const k = squashWs((rows[i] && rows[i].label) || '').toLowerCase();
+        const k = keyOf(rows[i] && rows[i].label);
         const v = String((rows[i] && rows[i].value) || '').trim();
         if (k && v && !staticMap.has(k)) staticMap.set(k, v);
       }
@@ -1764,12 +1766,18 @@
       if (!f) continue;
       const title = tagText(r.title) || f;
       const hidden = r.hidden === true;
-      if (have.indexOf(f.toLowerCase()) >= 0) {
-        out.push({ field: f, title: title, hidden: hidden, hit: ocrFieldHit(meta, f) });
+      /* 【2.0.8.18 需求①】两条触发路径都要把**另一路的值**一起带出去，合并层才能判冲突：
+       *   · 动态词路径：值来自 DOM 抓取（`decorateMerge` 现取），OCR 进表值可能另有其一；
+       *   · 静态进表路径：值就是 OCR 进表值，DOM 抓取值此时还不知道（同样在合并层取）。
+       * 旧实现只出一条路、另一条静默丢弃 —— 用户说的「不一致」正是这样被吞掉的。 */
+      if (have.indexOf(keyOf(f)) >= 0) {
+        const hit = ocrFieldHit(meta, f);
+        const ocrValue = staticValues().get(keyOf(f)) || '';
+        out.push({ field: f, title: title, hidden: hidden, hit: hit, ocrValue: ocrValue, from: 'need' });
         continue;
       }
-      const v = staticValues().get(squashWs(f).toLowerCase()) || '';
-      if (v) out.push({ field: f, title: title, hidden: hidden, hit: true, value: v });
+      const v = staticValues().get(keyOf(f)) || '';
+      if (v) out.push({ field: f, title: title, hidden: hidden, hit: true, value: v, ocrValue: v, from: 'table' });
     }
     return out;
   }
@@ -1788,7 +1796,8 @@
   function ocrFieldHit(meta, field) {
     const I = KH.ImgOcr;
     if (!I || typeof I.items !== 'function') return false;
-    const want = String(field == null ? '' : field).replace(/\s+/g, '').toLowerCase();
+    const TN = KH.TextNorm;
+    const want = TN ? TN.keyOf(field) : String(field == null ? '' : field).replace(/\s+/g, '').toLowerCase();
     if (!want) return false;
     const ruleId = String((meta && meta.pinId) || '');
     let list = [];
@@ -1796,10 +1805,15 @@
     for (let i = 0; i < list.length; i++) {
       const it = list[i] || {};
       if (ruleId && String(it.ruleId || '') !== ruleId) continue;
-      if (String(it.label == null ? '' : it.label).replace(/\s+/g, '').toLowerCase() !== want) continue;
+      const labelKey = TN ? TN.keyOf(it.label) : String(it.label == null ? '' : it.label).replace(/\s+/g, '').toLowerCase();
+      if (labelKey !== want) continue;
       if (it.state !== 'done' || !it.text) continue;
       const dyn = (it.need || []).filter(Boolean);
-      if (dyn.length) {
+      /* 【2.0.8.18 需求①】弱判据（`12`/`abc`）不算"动态要求"：它们在 `judgeInfo` 里已经被挡在
+       * `needMissingValues` 之外，若这里仍按"全齐"读，就会出现「面板也没说缺、却永远不命中」。
+       * 全是弱判据 ⇒ 退回静态命中，与"没配动态词"等价。 */
+      const weak = (it.needWeakValues || []).filter(Boolean);
+      if (dyn.length && dyn.length > weak.length) {
         if (!(it.needMissingValues || []).length) return true;
         continue;
       }
@@ -3405,9 +3419,10 @@
         if (table) table.removeAttribute('data-kh-merge-sig');
         return;
       }
-      const sq = (s) => String(s == null ? '' : s).replace(/\s+/g, '');
+      const TN = KH.TextNorm;
+      const keyOf = (s) => (TN ? TN.keyOf(s) : String(s == null ? '' : s).replace(/\s+/g, '').toLowerCase());
       const valueOf = (field) => {
-        const want = sq(field).toLowerCase();
+        const want = keyOf(field);
         if (!want) return '';
         const trs = table.querySelectorAll('tr');
         for (let i = 0; i < trs.length; i++) {
@@ -3415,7 +3430,9 @@
           if (String(trs[i].className || '').indexOf('kh-merge-row') >= 0) continue;
           const tds = trs[i].querySelectorAll('td');
           if (!tds.length) continue;
-          if (sq(tds[0].textContent).toLowerCase() !== want) continue;
+          /* 【2.0.8.18】字段名比较也走唯一口径：全半角/零宽/空白都折（旧写法按 `textContent` 精确比，
+           * 抓取表里「登记号」与配置里「登记 号」永远对不上 ⇒ 行被静默丢掉）。 */
+          if (keyOf(tds[0].textContent) !== want) continue;
           const v = tds.length > 1 ? String(tds[1].textContent || '').trim() : '';
           if (v) return v;
         }
@@ -3425,11 +3442,21 @@
       let hidden = 0;
       for (let i = 0; i < rows.length; i++) {
         const r = rows[i] || {};
-        /* 静态命中那条路在 `mergeRowsFor` 里已经把值算出来了（`ocrExtraRows` 的产出行），
-         * 优先用它：表里同名字段可能有多行，回头看表反而可能挑到别的行。 */
-        const v = String(r.value || '').trim() || valueOf(r.field);
+        /* 【2.0.8.18 需求①】两路的值**都保留**再判，别二选一：
+         *   `fetchV` = DOM 抓取值（动态词路径的权威来源；静态路径取到也用）
+         *   `ocrV`   = 图片进表值（静态路径的权威来源；动态路径可能另有）
+         * 旧写法 `r.value || valueOf(field)` 直接二选一，另一路被丢 —— 冲突因此永远不可见。 */
+        const fetchV = valueOf(r.field);
+        const ocrV = String(r.ocrValue || '').trim();
+        const v = fetchV || ocrV || String(r.value || '').trim();
+        /* 【D6 修复】三路全空才丢行。旧写法只认 `r.value || valueOf`，静态词已命中、
+         * 但抓取表里那个字段被合并改名时整行消失（用户看到「配了却不出现」）。 */
         if (!v) continue;
-        show.push({ title: r.title || r.field, value: v, hidden: r.hidden === true });
+        const verdict = TN ? TN.verdict(fetchV, ocrV) : 'none';
+        show.push({
+          title: r.title || r.field, value: v, hidden: r.hidden === true,
+          verdict: verdict, ocrValue: ocrV, fetchValue: fetchV
+        });
         if (r.hidden) hidden++;
       }
       if (!show.length) {
@@ -3440,7 +3467,8 @@
       /* 【2.0.8.7 需求④·闪烁根因③】内容一模一样就**不拆不建**：
        * 旧写法每轮先 `remove()` 再 `insertBefore()`（没变也重排），
        * 而且「显示 N 条」按钮是表的兄弟节点，`remove()` 只摘表 ⇒ 每轮留一颗孤儿按钮。 */
-      const sig = show.map((r) => r.title + '\u0001' + r.value + '\u0001' + (r.hidden ? '1' : '0')).join('\u0002');
+      const sig = show.map((r) => r.title + '\u0001' + r.value + '\u0001' + (r.hidden ? '1' : '0')
+        + '\u0001' + r.verdict + '\u0001' + r.ocrValue).join('\u0002');
       if (table.getAttribute('data-kh-merge-sig') === sig) return;
       clearRows();
       table.setAttribute('data-kh-merge-sig', sig);
@@ -3449,7 +3477,19 @@
       for (let i = 0; i < show.length; i++) {
         const r = show[i];
         const tr = doc.createElement('tr');
-        tr.className = 'kh-merge-row' + (i === 0 ? ' kh-merge-first' : '') + (r.hidden ? ' kh-merge-hidden' : '');
+        /* 【2.0.8.18 需求①】冲突不再静默：行上标 `data-kh-verdict`（same / fold-ws / fold-width /
+         * fold-zero / fold-case / conflict / only-a / only-b / weak），
+         * conflict 时给 `title` 把两路原值都摊开。视觉样式属于 P1（本轮只保证"信息不丢"，
+         * 不改既有版面；用户没确认配色前不擅自加颜色）。 */
+        const conflict = r.verdict === 'conflict';
+        tr.className = 'kh-merge-row' + (i === 0 ? ' kh-merge-first' : '')
+          + (r.hidden ? ' kh-merge-hidden' : '')
+          + (conflict ? ' kh-merge-conflict' : '');
+        tr.setAttribute('data-kh-verdict', r.verdict);
+        if (conflict) {
+          tr.title = '图片上的值：' + (r.ocrValue || '（无）')
+            + '\n页面抓取值：' + (r.fetchValue || '（无）');
+        }
         const a = doc.createElement('td');
         a.className = 'kh-table-label';
         a.textContent = r.title;
@@ -4934,15 +4974,29 @@
     try { list = KH.ImgOcr.items() || []; } catch (e) { return []; }
     const out = [];
     const seen = new Set();
-    const pushRow = (label, value) => {
+    const pushRow = (label, value, src) => {
       const v = String(value == null ? '' : value).trim();
       if (!v) return;
       /* 【2.0.6.2 需求⑧】去重键压掉空白：OCR 同一个值在不同图里可能一个带空格一个不带，
-       * 按原样比会把同一条信息记两遍（表格里就出现两行一样的）。 */
-      const sig = label + '\u0000' + squashWs(v);
+       * 按原样比会把同一条信息记两遍（表格里就出现两行一样的）。
+       * 【2.0.8.18】改用唯一口径 `keyOf`：全半角/零宽/大小写也一起折 —— 旧 `squashWs` 只挡空白，
+       * `abfx` 与 `ａｂｆｘ`（全角）会被记成两行，正是用户说的"同一个值出现两次"。 */
+      const TN = KH.TextNorm;
+      const kLabel = TN ? TN.keyOf(label) : squashWs(label);
+      const kValue = TN ? TN.keyOf(v) : squashWs(v);
+      const sig = kLabel + '\u0000' + kValue;
       if (seen.has(sig)) return;
       seen.add(sig);
-      out.push({ label: label, value: v });
+      /* 【2.0.8.18 P0.5】行上带来源：`from` 让"判定值来自哪张图的进表"可追溯，
+       * 也是 `needInfo` 回落取值的依据（只按 `label` 匹配，不按图；同卡多图取并集）。
+       * 用**不可枚举**属性：行的对外形状仍是 `{label, value}`（既有断言/深比较按这个形状写死，
+       * 加一个可枚举字段会把它们全变红，而它们守的是"进表规则"，不是"行有几个字段"）。 */
+      const row = { label: label, value: v };
+      Object.defineProperty(row, 'from', {
+        value: { src: String(src == null ? '' : src), label: label, kind: 'static' },
+        enumerable: false
+      });
+      out.push(row);
     };
     for (const it of list) {
       /* 【2.0.6.1 需求⑦】把「行」与「命中」拉回同一条判据：条目真没命中就不该往表里塞行
@@ -4978,19 +5032,19 @@
               parts.push(t);
             }
             const value = kvCutValue(parts.join(' '), matchers, mt.word);
-            if (value) { pushRow(mt.word, value); rowDone = true; }
+            if (value) { pushRow(mt.word, value, it.src); rowDone = true; }
           }
           if (rowDone) continue;
           /* ② 文本行：命中词 + 分隔符 + 值（**标题格必须是这个词**，值只取分隔符之后） */
           const seg = kvSegInLine(line, mt.re);
           if (!seg.hit) continue;
-          if (seg.value) { pushRow(mt.word, kvCutValue(seg.value, matchers, mt.word)); continue; }
+          if (seg.value) { pushRow(mt.word, kvCutValue(seg.value, matchers, mt.word), it.src); continue; }
           /* ③ 值被 OCR 换行拆到下面（图里是 `词：值`，识别成 `词：` / `值`）：
            * 只认「词后紧跟着分隔符」这一种（表格里词格后为空也算），其余一律不往下看。 */
           if (!seg.sep && vi < 0) continue;
           if (seg.sep && vi >= 0 && vi < cells.length - 1) continue; /* 后面有格但为空 ⇒ 不偷下一行 */
           const next = kvNextValue(rawLines, li + 1, mt.word, matchers);
-          if (next) pushRow(mt.word, kvCutValue(next, matchers, mt.word));
+          if (next) pushRow(mt.word, kvCutValue(next, matchers, mt.word), it.src);
         }
       }
     }

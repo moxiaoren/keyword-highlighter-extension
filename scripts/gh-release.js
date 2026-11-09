@@ -11,9 +11,11 @@
  *   node scripts/gh-release.js --prune-above=1.99.99.15   # 删掉版本号大于该值的 Release（含 tag）
  *   node scripts/gh-release.js --prune-test              # **删掉所有测试版 Release（四段版本号，含 tag）**
  *
- * 【用户口径（2026-09）】**线上 Release 只放稳定版**：测试版是内部迭代，不往 Releases 上堆（发完测试版
- * 不用动 Releases）；稳定版发布时，其说明 = **这一段测试版要点的汇总**（见 stableNotes），
- * 而不是把十几条测试版说明原样铺上去。
+ * 【用户口径（2026-11-09 更新）】**每个版本都建 Release**：测试版标 pre-release，稳定版标正式；
+ * 正文与 HTML 说明页（`release/notes/v<版本>.html`，随 gh-pages 发布）**同源**——都取自
+ * changelog.js，页尾再给一个「完整说明页」链接。稳定版正文仍是**这一段测试版要点的汇总**（见
+ * stableNotes），不把十几条测试版说明原样铺上去。
+ * （旧口径 2026-09「Release 只放稳定版」已作废；`--prune-test` 仅保留作清理用。）
  *
  * 设计要点：
  *   · **只给稳定版建 Release**：当前 manifest 是测试版（四段版本号）时直接跳过；
@@ -214,25 +216,27 @@ function assetsFor(version) {
   let created = 0, updated = 0, skipped = 0;
   for (const v of versions) {
     const tag = 'v' + v;
-    /* **线上 Release 只放稳定版**（用户口径）：测试版是内部迭代，发测试版时不动 Releases。 */
-    if (isTestVer(v)) { console.log('  ○ ' + tag + '：测试版 → 不建 Release（Release 只放稳定版）'); skipped++; continue; }
     const assets = assetsFor(v);
     if (!assets.length) { console.log('  ○ ' + tag + '：没有产物文件，跳过'); skipped++; continue; }
     if (DRY) { console.log('  · 将建/更新 ' + tag + '（附件 ' + assets.length + ' 个）'); continue; }
 
-    const body = stableNotes(v, cl) + '\n\n---\n安装：下载 `kh-autoupdate.bat`（见 [项目主页](https://' + OWNER + '.github.io/' + REPO + '/)）一键安装，' +
+    const notes = isTestVer(v) ? notesFor(v, cl) : stableNotes(v, cl);
+    const page = 'https://' + OWNER + '.github.io/' + REPO + '/notes/v' + v + '.html';
+    const body = notes + '\n\n---\n完整说明页（含门禁数字）：' + page +
+      '\n\n安装：下载 `kh-autoupdate.bat`（见 [项目主页](https://' + OWNER + '.github.io/' + REPO + '/)）一键安装，' +
       '或下载本页 zip/crx 手动加载。\n';
+    const pre = isTestVer(v);
     const exist = await api('GET', '/repos/' + OWNER + '/' + REPO + '/releases/tags/' + tag);
     let rel = null;
     if (exist.ok && exist.json && exist.json.id) {
       rel = (await api('PATCH', '/repos/' + OWNER + '/' + REPO + '/releases/' + exist.json.id, {
-        body: body, name: tag, draft: false, prerelease: false
+        body: body, name: tag, draft: false, prerelease: pre
       })).json || exist.json;
       updated++;
       console.log('  ↻ ' + tag + '：已存在 → 更新说明');
     } else {
       const made = await api('POST', '/repos/' + OWNER + '/' + REPO + '/releases', {
-        tag_name: tag, target_commitish: def, name: tag, body: body, draft: false, prerelease: false
+        tag_name: tag, target_commitish: def, name: tag, body: body, draft: false, prerelease: pre
       });
       if (!made.ok) { console.log('  ✗ ' + tag + ' 建 Release 失败（HTTP ' + made.status + '）：' + String(made.text).slice(0, 160)); continue; }
       rel = made.json;
