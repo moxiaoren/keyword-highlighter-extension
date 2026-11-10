@@ -161,6 +161,37 @@ async function api(method, url, body) {
   const OLD_PKG_ALLOW = [];
   const isAllowedOld = (f) => OLD_PKG_ALLOW.some((re) => re.test(f));
 
+  /* 【防线：绝不把线上通道降级】发布目录里装的很可能就是"旧版本"——典型场景：把历史 tag 指回
+   * 已有提交后 tag 工作流重跑一次。若照原样发布，latest-beta.json / update-beta.xml 会被覆写回旧号，
+   * 已升级的用户再也收不到更新（Chrome 只认更高版本号 ⇒ 等于永久卡住）。
+   * 判据：本地清单版本 < 线上清单版本 ⇒ 只校验、不发布（退出码 0，不让 CI 变红）。
+   * 反向不受限：线上探测失败（离线/超时）一律放行，正常发版零影响。 */
+  const cmpVer = (a, b) => {
+    const pa = String(a).split('.').map(Number), pb = String(b).split('.').map(Number);
+    for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+      const d = (pa[i] || 0) - (pb[i] || 0);
+      if (d) return d > 0 ? 1 : -1;
+    }
+    return 0;
+  };
+  const noDowngrade = async (name, local, isJson) => {
+    if (!local) return;
+    try {
+      const r = await fetch(SITE + '/' + name + '?t=' + Date.now(), { cache: 'no-store' });
+      if (!r.ok) return;
+      const live = isJson
+        ? ((await r.json()) || {}).version
+        : ((await r.text()).match(/<updatecheck[^>]*version=['"]([^'"]+)['"]/i) || [])[1];
+      if (!live) return;
+      if (cmpVer(local, live) < 0) {
+        log('⚠️ 本地 ' + name + ' 是 ' + local + '，线上已是 ' + live + ' —— 本次不发布（防止把通道降级）');
+        process.exit(0);
+      }
+    } catch (e) { log('  ' + name + ' 线上版本探测失败（忽略，按正常发布继续）：' + e.message); }
+  };
+  await noDowngrade('latest-beta.json', betaVersion, true);
+  await noDowngrade('latest.json', stableVersion, false);
+
   /* 首页里的**静态兜底链接**随清单自愈。
    * 首页的版本号与下载链接是 JS 按清单改写的，但 JS 被挡/清单读不到时就落到静态值上 ——
    * 实测漂过一次（静态还指着 v1.99.99.17，用户按静态值点就是旧包）。发布前对齐一次，永远不漂。 */
