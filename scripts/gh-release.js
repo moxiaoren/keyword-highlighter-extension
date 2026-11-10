@@ -22,7 +22,7 @@
  *   · **幂等**：Release 已存在就更新说明、只补缺的附件（不会重复上传、不会报错退出）；
  *   · **说明取自 changelog.js（唯一来源）**，与扩展内"更新日志"逐字一致，不另写一份；
  *   · 附件：zip + crx（手动安装用）；老版本只有 zip 也能补；
- *   · tag 用 `v<version>`，走 API 建在**发版时的默认分支 HEAD** 上——本脚本不读本地 git，
+ *   · tag 用 `v<version>`（测试版带 `-beta` 后缀，`release.yml` 靠它判通道），走 API 建在**发版时的默认分支 HEAD** 上——本脚本不读本地 git，
  *     仓库已经有完整历史（2026-10-29 之后），但 tag 指向哪个提交仍以 GitHub 上的 HEAD 为准；
  *     更精确的"版本 → 提交"由 `scripts/release-guard.js` 在出包成功后打的本地 tag 提供。
  * 凭据与 publish-gh.js 同一套（环境变量 GH_TOKEN / 工作区根目录 _gh_token.txt）。
@@ -41,7 +41,7 @@ const PRUNE_ARG = (process.argv.find((a) => a.indexOf('--prune-above=') === 0) |
 const PRUNE_TEST = process.argv.indexOf('--prune-test') >= 0;
 /** 测试版 = 四段版本号（1.99.99.17 这种；稳定版是 1.99.100 / 2.0.0 三段） */
 const IS_TEST_RE = /^\d+\.\d+\.\d+\.\d+$/;
-const isTestVer = (v) => IS_TEST_RE.test(String(v).replace(/^v/, ''));
+const isTestVer = (v) => IS_TEST_RE.test(String(v).replace(/^v/, '').replace(/-beta$/, ''));
 
 /** 版本号比较：`v1.99.99.15` 这类四段也支持；返回 -1/0/1 */
 function cmpVer(a, b) {
@@ -215,7 +215,9 @@ function assetsFor(version) {
 
   let created = 0, updated = 0, skipped = 0;
   for (const v of versions) {
-    const tag = 'v' + v;
+    /* 【2.0.8.21 修】测试版 tag 必须带 `-beta`：`release.yml` 靠它判定通道，
+     * 没后缀会被当成稳定版，四段版本号直接被拒（「拒绝把测试版当稳定版发」）。 */
+    const tag = isTestVer(v) ? 'v' + v + '-beta' : 'v' + v;
     const assets = assetsFor(v);
     if (!assets.length) { console.log('  ○ ' + tag + '：没有产物文件，跳过'); skipped++; continue; }
     if (DRY) { console.log('  · 将建/更新 ' + tag + '（附件 ' + assets.length + ' 个）'); continue; }
