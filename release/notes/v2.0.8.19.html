@@ -1,0 +1,37 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>高亮词助手 2.0.8.19 更新说明</title><style>
+:root{--bg:#f7f8fa;--card:#fff;--fg:#1b1f24;--muted:#5b6672;--line:#e3e7ec;
+--fix:#c0392b;--new:#1f7a4d;--chg:#1f5fa8;--gate:#6b5bd2;--other:#6b7684;}
+@media (prefers-color-scheme:dark){:root{--bg:#14171a;--card:#1c2024;--fg:#e6e9ec;--muted:#9aa5b1;--line:#2b3138;
+--fix:#ff8b80;--new:#6fd39b;--chg:#7fb6f5;--gate:#b3a8ff;--other:#9aa5b1;}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif}
+.wrap{max-width:820px;margin:0 auto;padding:40px 20px 64px}
+header .ver{font-size:34px;font-weight:700;letter-spacing:-.5px}
+header .meta{color:var(--muted);font-size:14px;margin-top:6px}
+.badge{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:600;margin-left:8px;vertical-align:3px}
+.badge.beta{background:#fff0d6;color:#8a5a00}
+.badge.stable{background:#e2f4e8;color:#1f7a4d}
+@media (prefers-color-scheme:dark){.badge.beta{background:#3a2b12;color:#ffc86b}.badge.stable{background:#14301f;color:#6fd39b}}
+ul.items{list-style:none;padding:0;margin:28px 0 0}
+.item{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--other);border-radius:10px;
+padding:14px 16px;margin-bottom:12px}
+.item-fix{border-left-color:var(--fix)}.item-new{border-left-color:var(--new)}
+.item-chg{border-left-color:var(--chg)}.item-gate{border-left-color:var(--gate)}
+.tag{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:6px;margin-bottom:8px;
+color:var(--muted);background:rgba(127,127,127,.12)}
+.item-fix .tag{color:var(--fix)}.item-new .tag{color:var(--new)}.item-chg .tag{color:var(--chg)}.item-gate .tag{color:var(--gate)}
+.item-body p{margin:0 0 8px}.item-body p:last-child{margin-bottom:0}
+code{font:13px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;background:rgba(127,127,127,.14);
+padding:1px 5px;border-radius:5px}
+a{color:var(--chg)}
+.gates{margin-top:28px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 18px}
+.gates h2{font-size:15px;margin:0 0 10px;color:var(--muted);font-weight:600}
+.gates dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px 18px;margin:0}
+.gates dl>div{margin:0}
+.gates dt{font-size:12px;color:var(--muted)}.gates dd{margin:2px 0 0;font-weight:600;font-variant-numeric:tabular-nums}
+footer{margin-top:36px;color:var(--muted);font-size:14px;border-top:1px solid var(--line);padding-top:16px}
+footer a{margin-right:16px}
+table.list{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+table.list th,table.list td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);font-size:14px}
+table.list th{color:var(--muted);font-weight:600}table.list tr:last-child td{border-bottom:0}
+</style></head><body><div class="wrap"><header><div class="ver">高亮词助手 2.0.8.19</div><div class="meta">2026-11-10 · 测试版<span class="badge beta">测试版</span></div><div class="meta">这一版改了什么、为什么改；条目与扩展内「更新日志」同源。</div></header><ul class="items"><li class="item item-chg"><span class="tag">优化·两边值不一致时不再只是悬停</span><div class="item-body">同一字段「页面抓取值」和「图上识别值」对不上时，这一行现在有明确的视觉：浅黄底、左侧橙色竖条、值后面一枚小感叹号，鼠标停上去分别写「图片上的值：…」「页面抓取值：…」。三种「只有一边有值」的情况也各有说明（图上没识别到 / 页面没抓到 / 这个值太短没参与判定），不会再把「读不出来」伪装成「一致」。复制和导出不受影响：感叹号是画出来的，不进文字。</div></li><li class="item item-new"><span class="tag">新增·每一行可以自己定冲突怎么办</span><div class="item-body">图文合并的每一行多了「冲突：标注 / 两值并列 / 取图上值 / 取页面值 / 不显示」五档。默认「标注」（值照常显示、只做提示），选「不显示」才整行收起；「两值并列」会显示成「页面值 ｜ 图上值」，不会替你挑一个。</div></li><li class="item item-new"><span class="tag">新增·软著三方比对（授权书核对）</span><div class="item-body">设置页新增「🔍 软著三方比对」：一行配一组「软著证明上的字段 = 授权书上的字段」（例如 开发者=被授权公司、著作权人=授权公司、登记号=登记号）。同一张卡片里出现右侧字段的那张图会被当成授权书；左边取页面抓取值，取不到再取图上识别到的值。对不上时表格下方多一行结论（写明图上是「甲」、授权书是「乙」）；缺授权书、缺字段、授权书里同一字段出现两个值，各有各的话；全部对得上就不显示，不占版面。</div></li><li class="item item-gate"><span class="tag">自检</span><div class="item-body">单测 1043 项（1042 通过 + 1 跳过）：新增 P1 冲突视觉 10 条（五档策略、改配置保留第一条、一致行不标冲突、文案单源）与软著比对 12 条（归一、授权书角色识别、缺授权书只报一条、弱值不参与判等、多条结论去重）；meta-check 61 项。</div></li></ul><section class="gates"><h2>门禁</h2><dl><div><dt>单元测试</dt><dd>1042 / 1043</dd></div><div><dt>meta-check（机械红线）</dt><dd>61 项</dd></div><div><dt>真机 UI 回归</dt><dd>150 项</dd></div></dl></section><footer><a href="https://moxiaoren.github.io/keyword-highlighter-extension/notes/">全部版本说明</a><a href="https://github.com/moxiaoren/keyword-highlighter-extension/releases">Releases</a><a href="https://moxiaoren.github.io/keyword-highlighter-extension/">项目主页</a></footer></div></body></html>
