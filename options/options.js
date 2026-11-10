@@ -1677,6 +1677,8 @@
     renderAiForm();
     /* 【2.0.8.6 需求①】图文合并的标题表（字段 → 自定义标题 + 默认不展示）。 */
     renderMergeForm();
+    /* 【2.0.8.19 需求①】软著三方比对：软著证明字段 ＝ 授权书字段。 */
+    renderCompareForm();
     /* 【2.0.8.7 需求②】AI 审核：账号 / Token / 模型 / 只跑本地 的回显（图标与结论区不持久化）。 */
     aaLoad(cfg);
   }
@@ -1714,8 +1716,24 @@
     wrap.appendChild(hid);
     wrap.appendChild(document.createTextNode(' 默认不展示'));
     const del = mk('button', 'kh-mini-btn', { type: 'button', text: '删掉' });
+    /* 【2.0.8.18 需求②·P1】两路值不一致时这一行怎么显示（默认最保守的「标注」：
+     * 值照常显示，悬停能看到另一路，绝不因为拿不准就吞掉整行）。 */
+    const pick = mk('select', 'kh-input kh-merge-conflict');
+    pick.title = '两路值不一致时这一行怎么显示';
+    [
+      ['mark', '冲突：标注'],
+      ['both', '冲突：两值并列'],
+      ['ocr', '冲突：取图上值'],
+      ['fetch', '冲突：取页面值'],
+      ['skip', '冲突：不显示']
+    ].forEach((pair) => {
+      const o = mk('option', '', { value: pair[0], text: pair[1] });
+      pick.appendChild(o);
+    });
+    pick.value = row.onConflict || 'mark';
     box.appendChild(field);
     box.appendChild(title);
+    box.appendChild(pick);
     box.appendChild(wrap);
     box.appendChild(del);
     const collect = () => {
@@ -1728,7 +1746,11 @@
         rows.push({
           field: f,
           title: ins[1] ? String(ins[1].value || '').trim() : '',
-          hidden: !!(ins[2] && ins[2].checked)
+          hidden: !!(ins[2] && ins[2].checked),
+          onConflict: (() => {
+            const sel = all[i].querySelector('.kh-merge-conflict');
+            return sel ? String(sel.value || 'mark') : 'mark';
+          })()
         });
       }
       return rows;
@@ -1736,6 +1758,7 @@
     const save = () => saveNested({ imgMerge: { on: true, rows: collect() } }).then(renderMergeForm);
     field.addEventListener('change', save);
     title.addEventListener('change', save);
+    pick.addEventListener('change', save);
     hid.addEventListener('change', save);
     del.addEventListener('click', () => saveNested({ imgMerge: { on: true, rows: collect().filter((r) => r.field !== field.value.trim()) } }).then(renderMergeForm));
     return box;
@@ -1755,6 +1778,92 @@
       return;
     }
     for (let i = 0; i < rows.length; i++) box.appendChild(mergeRowEl(rows[i]));
+  }
+
+  /* ---- 【2.0.8.19 需求①】软著三方比对 ----
+   * 只维护 `imgCompare.rows = [{left, right}]`；归一的真源是 `KH.Config.normalizeImgCompare`。
+   * 判定与结论行都在 `important-note.js`（compareOf / compareText），这里不做任何判定，
+   * 免得设置页和面板各说一套。 */
+  let cmpWired = false;
+  function compareRowsOf() {
+    const n = KH.Config.normalizeImgCompare;
+    const cur = (typeof n === 'function') ? n(cfg.imgCompare) : (cfg.imgCompare || { rows: [] });
+    return cur.rows || [];
+  }
+
+  function compareRowEl(row) {
+    const box = document.createElement('div');
+    box.className = 'kh-compare-row';
+    const mk = (tag, cls, attrs) => {
+      const el = document.createElement(tag);
+      if (cls) el.className = cls;
+      Object.keys(attrs || {}).forEach((k) => {
+        if (k === 'text') el.textContent = attrs[k];
+        else el.setAttribute(k, attrs[k]);
+      });
+      return el;
+    };
+    const left = mk('input', 'kh-input kh-cmp-left', { type: 'text', placeholder: '软著证明上的字段（如：著作权人）' });
+    left.value = row.left || '';
+    const arrow = mk('span', 'kh-cmp-arrow', { text: '＝' });
+    const right = mk('input', 'kh-input kh-cmp-right', { type: 'text', placeholder: '授权书上的字段（如：授权公司）' });
+    right.value = row.right || '';
+    const del = mk('button', 'kh-mini-btn', { type: 'button', text: '删掉' });
+    box.appendChild(left);
+    box.appendChild(arrow);
+    box.appendChild(right);
+    box.appendChild(del);
+    const collect = () => {
+      const rows = [];
+      const all = $('cmp-rows').querySelectorAll('.kh-compare-row');
+      for (let i = 0; i < all.length; i++) {
+        const l = all[i].querySelector('.kh-cmp-left');
+        const r = all[i].querySelector('.kh-cmp-right');
+        const lv = l ? String(l.value || '').trim() : '';
+        const rv = r ? String(r.value || '').trim() : '';
+        if (!lv && !rv) continue;
+        rows.push({ left: lv, right: rv });
+      }
+      return rows;
+    };
+    const save = () => saveNested({ imgCompare: { on: true, rows: collect() } }).then(renderCompareForm);
+    left.addEventListener('change', save);
+    right.addEventListener('change', save);
+    del.addEventListener('click', () => saveNested({
+      imgCompare: { on: true, rows: collect().filter((r) => !(r.left === left.value.trim() && r.right === right.value.trim())) }
+    }).then(renderCompareForm));
+    return box;
+  }
+
+  function renderCompareForm() {
+    const box = $('cmp-rows');
+    if (!box) return;
+    if (!cmpWired) { cmpWired = true; wireCompareForm(); }
+    box.innerHTML = '';
+    const rows = compareRowsOf();
+    if (!rows.length) {
+      const empty = document.createElement('div');
+      empty.className = 'kh-muted';
+      empty.textContent = '还没配。点「+ 添加一组」，左边写软著证明上的字段名，右边写授权书上的字段名（两边可以是同一个名字，例如都写「登记号」）。';
+      box.appendChild(empty);
+      return;
+    }
+    for (let i = 0; i < rows.length; i++) box.appendChild(compareRowEl(rows[i]));
+  }
+
+  function wireCompareForm() {
+    const add = $('cmp-add');
+    if (!add) return;
+    add.addEventListener('click', () => {
+      const box = $('cmp-rows');
+      if (!box) return;
+      const empty = box.querySelector('.kh-muted');
+      if (empty && !box.querySelector('.kh-compare-row')) box.innerHTML = '';
+      box.appendChild(compareRowEl({ left: '', right: '' }));
+      const rows = box.querySelectorAll('.kh-compare-row');
+      const last = rows[rows.length - 1];
+      if (last) { const f = last.querySelector('.kh-cmp-left'); if (f) f.focus(); }
+    });
   }
 
   function wireMergeForm() {

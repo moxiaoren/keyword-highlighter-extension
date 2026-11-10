@@ -267,6 +267,13 @@ body {
 }
 .kh-merge-row .kh-input { flex: 1 1 180px; min-width: 0; height: 32px; }
 .kh-merge-row .kh-check { white-space: nowrap; font-size: 12px; }
+/* 【2.0.8.18 需求②·P1】冲突处理选择：与其它控件同高（32px），窄屏跟着本行一起换行。 */
+.kh-merge-row .kh-merge-conflict { flex: 0 1 168px; min-width: 0; height: 32px; padding: 0 6px; }
+/* 【2.0.8.19 需求①】软著三方比对：左字段 ＝ 右字段，一行一组。 */
+.kh-compare-rows { display: flex; flex-direction: column; gap: 6px; margin: 6px 0; }
+.kh-compare-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.kh-compare-row .kh-input { flex: 1 1 200px; min-width: 0; height: 32px; }
+.kh-compare-row .kh-cmp-arrow { flex: 0 0 auto; color: var(--text-3); font-size: 13px; }
 /* 【2.0.8.4 需求⑤】推荐词预览：一行一个词（勾选 + 词 + 分组/备注/重复标记），限高内部滚动，
    避免一张大表把整页顶成几米长（省空间第一）。 */
 .kh-reco-list {

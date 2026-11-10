@@ -191,7 +191,13 @@ const specs = [
   './specs/v20811.test.js',
   /* 2.0.8.18 需求①：图片命中词/动态词的「值一致性」口径收敛到 `src/core/text-norm.js` 一份实现
    * （空白/全半角/零宽/大小写分级折叠 + 纯 ASCII 词边界 + 短值不当判据）。口径见该 spec 头部 */
-  './specs/text-norm.test.js'
+  './specs/text-norm.test.js',
+  /* 2.0.8.18 需求②（P1）：合并行冲突呈现 —— 每行 onConflict 五档（mark/both/ocr/fetch/skip），
+   * 策略只决定显示哪个值，另一路永远留在悬停里。口径见 tests/specs/v20818p1.test.js 头部 */
+  './specs/v20818p1.test.js',
+  /* 2.0.8.19 需求（P4）：软著三方比对 —— 开发者=被授权公司 / 著作权人=授权公司 / 两个登记号一致；
+   * 不一致且没有授权书时给一行结论。口径见 tests/specs/v20818p4.test.js 头部 */
+  './specs/v20818p4.test.js'
 ];
 
 (async () => {

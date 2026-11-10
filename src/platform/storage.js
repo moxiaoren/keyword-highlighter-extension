@@ -671,6 +671,9 @@
       'pageRebuildSilentMs', 'pageRebuildGapMs', 'notePanelWidth',
       /* 【2.0.8.6 需求①】图文合并的标题表：用户配的"行为档位"，换机器/恢复备份要跟着走。 */
       'imgMerge',
+      /* 【2.0.8.19 · P4】软著三方比对表（左右字段 + 最多 12 组）：同样是用户配的行为档位，
+       * 不是本机开关 —— 换台机器必须跟着走，否则换机后结论行整块消失。 */
+      'imgCompare',
       /* K58 变更处理方式：这是用户选的"行为档位"，换台机器/恢复备份后应该跟着走
        * （与 globalEnabled / shadowDOMEnabled 这类"本机开关"不同）。 */
       'changeHandling',

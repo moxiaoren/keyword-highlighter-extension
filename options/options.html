@@ -507,6 +507,26 @@
         </div>
       </details>
 
+      <!-- 【2.0.8.19 需求①】软著三方比对：左＝软著证明上的字段（页面抓取值或图上的值），
+           右＝软著授权书上的字段。配好之后，卡片表格下方多一行结论，只在真有问题时出现。 -->
+      <details class="kh-adv" id="ocr-adv-compare">
+        <summary>🔍 软著三方比对（授权书核对）</summary>
+        <div class="kh-adv-body">
+          <p class="kh-muted">
+            一行配一组「该对上」的字段：<strong>左边</strong>写软著证明上的字段名（例如：著作权人、登记号），
+            <strong>右边</strong>写授权书上的字段名（例如：授权公司、被授权公司、登记号）。
+            只要同一张卡片里出现右边这些字段的那张图，它就被当成授权书；左边取页面抓取值，取不到再取图上识别到的值。
+            对不上时，表格下方会出现一行结论（例如「⚠ 著作权人与授权公司不一致：图上是「甲公司」/ 授权书是「乙公司」」）；
+            全对得上就不显示。左填「开发者」、右填「被授权公司」就是最常见的用法。
+          </p>
+          <div class="kh-compare-rows" id="cmp-rows"></div>
+          <div class="kh-ai-actions">
+            <button class="kh-mini-btn" type="button" id="cmp-add">+ 添加一组</button>
+            <span class="kh-muted" id="cmp-state"></span>
+          </div>
+        </div>
+      </details>
+
     </section>
 
     <!-- ============================================================ 站点规则 -->

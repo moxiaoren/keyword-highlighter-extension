@@ -236,6 +236,47 @@
    * 归一的口径与其它配置一致：坏值回默认、去空、字段名大小写不敏感去重、标题截到 24 字。
    * 真源是本函数（设置页回显 / 读路径消费共用一份）。 */
   const MERGE_TITLE_MAX = 24;
+  /* 【2.0.8.18 需求②·P1】两路值不一致时这一行怎么处理。四档与调研里的四种策略一一对应
+   * （文档 §4.6）：mark＝标注但照常显示（默认，最保守）、both＝两个值并排、
+   * ocr/fetch＝偏向取图上值/页面值、skip＝这一行先不出现（当没命中）。
+   * 只影响**冲突**行；两侧一致的行无论选哪档都照常显示。 */
+  const MERGE_CONFLICT_KINDS = ['mark', 'both', 'ocr', 'fetch', 'skip'];
+  function normalizeMergeConflict(v) {
+    const s = String(v == null ? '' : v).trim().toLowerCase();
+    return MERGE_CONFLICT_KINDS.indexOf(s) >= 0 ? s : 'mark';
+  }
+  /**
+   * 【2.0.8.19 需求③·P4】软著三方比对：几组「左字段（软著证明侧）= 右字段（授权书侧）」。
+   *
+   * 用户业务（原话）：「软著版权证明，里面会有著作权者，登记号。需要拿来比对开发者。如果不一致，
+   * 那必须有软著授权书，这里会有授权公司，被授权公司和登记号。需要比对是否一一对的上
+   * （开发者是否和被授权公司一致，著作权人是否和授权公司一致，两个登记号是否一致）。」
+   *
+   * 文档角色**不新增存储**：由图片所属抓取字段（OCR 条目的 `label`）判定 ——
+   * 一张图里出现右侧字段（授权公司/被授权公司）就按授权书算（Q6 拍板）。
+   * 同一角色多张图取并集；同字段两个值不同则报「授权书内部不一致」（Q7 拍板）。
+   * 归一：空行丢掉、左右同名去重、最多 12 组（再多用户在设置页也看不过来）。
+   */
+  const COMPARE_MAX_ROWS = 12;
+  function normalizeImgCompare(raw) {
+    const src = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
+    const list = Array.isArray(src.rows) ? src.rows : [];
+    const out = { on: src.on !== false, rows: [] };
+    const seen = new Set();
+    for (let i = 0; i < list.length && out.rows.length < COMPARE_MAX_ROWS; i++) {
+      const r = list[i] || {};
+      const left = String(r.left == null ? '' : r.left).trim();
+      const right = String(r.right == null ? '' : r.right).trim();
+      if (!left || !right) continue;
+      /* 去重口径与判等一致：空白也算同一个字段名（"Reg No" 与 "reg  no" 是同一组），
+       * 否则设置页多敲一个空格就会多出一组永远对不上的配置。 */
+      const key = left.replace(/\s+/g, '').toLowerCase() + '\u0001' + right.replace(/\s+/g, '').toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.rows.push({ left: left, right: right });
+    }
+    return out;
+  }
   function normalizeImgMerge(raw) {
     const src = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
     const list = Array.isArray(src.rows) ? src.rows : [];
@@ -251,7 +292,8 @@
       out.rows.push({
         field: field,
         title: String(r.title == null ? '' : r.title).trim().slice(0, MERGE_TITLE_MAX),
-        hidden: r.hidden === true
+        hidden: r.hidden === true,
+        onConflict: normalizeMergeConflict(r.onConflict)
       });
     }
     return out;
@@ -458,6 +500,7 @@
       /* 【2.0.8.6 需求①】图文合并：一行「抓取字段 → 自定义标题」，可默认收起。
        * 默认开、空表 ⇒ 与没有这个功能时逐字节一致（不产生任何额外行）。 */
       imgMerge: normalizeImgMerge({}),
+      imgCompare: normalizeImgCompare({}),
 
       /** 一次性迁移标记（S2）：`ocrEngine` = "存量档位已回落成 `engine`，还没告知过用户"。
        *  由 `normalize` 在**发现存量 `imgOcr.quality` 时**置真；设置页提示过一次后写回假。
@@ -519,6 +562,7 @@
     normalizePanelWidth,
     /** 【2.0.8.6 需求①】图文合并的唯一归一（设置页回显 / 读路径消费共用一份） */
     normalizeImgMerge,
+    normalizeImgCompare,
     MERGE_TITLE_MAX,
     PANEL_WIDTH_MIN,
     PANEL_WIDTH_MAX,
@@ -651,6 +695,11 @@
       /* ②e2 【2.0.8.6 需求①】图文合并的读路径归一：坏值回默认、字段去重、标题截断。 */
       {
         const mg = normalizeImgMerge(cfg.imgMerge);
+        const mc = normalizeImgCompare(cfg.imgCompare);
+        if (JSON.stringify(mc) !== JSON.stringify(cfg.imgCompare || null)) {
+          cfg.imgCompare = mc;
+          changed.invalid.push("imgCompare");
+        }
         if (JSON.stringify(mg) !== JSON.stringify(cfg.imgMerge || null)) {
           cfg.imgMerge = mg;
           changed.invalid.push('imgMerge');

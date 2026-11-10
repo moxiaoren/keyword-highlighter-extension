@@ -478,6 +478,19 @@
     .khin-item.khin-folded .khin-item-note { display: none; }
     /* [2.0.8.7 口径 A1] 合并行并进「进表」那张表：靠一条虚线分隔，不再另起一张表 */
     .kh-table-fetch tr.kh-merge-first > td { border-top: 1px dashed #dbe2ec; }
+    /* 【2.0.8.18 需求②·P1】两路值不一致的行：左侧 3px 警示条 + 淡底 + 值尾一个圆点感叹号。
+     * 只用 CSS 伪元素做记号（不进 textContent ⇒ 复制/导出拿到的还是干净的值）。
+     * 颜色沿用设置页警告色（#b45309 / #fef5e7），与现有卡片底色同明度，不抢命中词的蓝。 */
+    .kh-table-fetch tr.kh-merge-conflict > td { background: #fef5e7; }
+    .kh-table-fetch tr.kh-merge-conflict > td.kh-table-label {
+      box-shadow: inset 3px 0 0 #b45309; color: #9a3412;
+    }
+    .kh-table-fetch tr.kh-merge-conflict > td:last-child { position: relative; padding-right: 16px; }
+    .kh-table-fetch tr.kh-merge-conflict > td:last-child::after {
+      content: '!'; position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+      width: 11px; height: 11px; border-radius: 50%; background: #b45309; color: #fff;
+      font-size: 8px; font-weight: 700; line-height: 11px; text-align: center;
+    }
     .kh-table-fetch tr.kh-merge-row.kh-merge-hidden { display: none; }
     .khin-item.is-merge-open .kh-table-fetch tr.kh-merge-hidden,
     .khin-row-body.is-merge-open .kh-table-fetch tr.kh-merge-hidden { display: table-row; }
@@ -486,6 +499,13 @@
       font: inherit; font-size: 10px; line-height: 16px; color: #2f6fb5;
     }
     .kh-merge-more:hover { text-decoration: underline; }
+    /* 【2.0.8.19 · P4】软著三方比对结论：表格下方一行。深浅色都读得清，
+     * 右边留一点内边距让长公司名换行时不顶到边框。 */
+    .kh-compare-line {
+      margin: 6px 0 0; padding: 6px 8px; border-radius: 6px;
+      background: #fef2f2; color: #b91c1c; box-shadow: inset 3px 0 0 #dc2626;
+      font-size: 12px; line-height: 1.55; word-break: break-word;
+    }
     /* 命中计数小标：一张卡命中多个时才出现（N>1），点了在下面铺开下拉。 */
     .khin-tag-more {
       flex: 0 0 auto; font-size: 10px; font-weight: 600; line-height: 15px; padding: 0 5px;
@@ -1766,6 +1786,7 @@
       if (!f) continue;
       const title = tagText(r.title) || f;
       const hidden = r.hidden === true;
+      const onConflict = r.onConflict || 'mark';
       /* 【2.0.8.18 需求①】两条触发路径都要把**另一路的值**一起带出去，合并层才能判冲突：
        *   · 动态词路径：值来自 DOM 抓取（`decorateMerge` 现取），OCR 进表值可能另有其一；
        *   · 静态进表路径：值就是 OCR 进表值，DOM 抓取值此时还不知道（同样在合并层取）。
@@ -1773,11 +1794,11 @@
       if (have.indexOf(keyOf(f)) >= 0) {
         const hit = ocrFieldHit(meta, f);
         const ocrValue = staticValues().get(keyOf(f)) || '';
-        out.push({ field: f, title: title, hidden: hidden, hit: hit, ocrValue: ocrValue, from: 'need' });
+        out.push({ field: f, title: title, hidden: hidden, hit: hit, ocrValue: ocrValue, from: 'need', onConflict: onConflict });
         continue;
       }
       const v = staticValues().get(keyOf(f)) || '';
-      if (v) out.push({ field: f, title: title, hidden: hidden, hit: true, value: v, ocrValue: v, from: 'table' });
+      if (v) out.push({ field: f, title: title, hidden: hidden, hit: true, value: v, ocrValue: v, from: 'table', onConflict: onConflict });
     }
     return out;
   }
@@ -1820,6 +1841,171 @@
       if ((it.matched || []).length) return true;
     }
     return false;
+  }
+
+  /* ================= 【2.0.8.19 · P4】软著三方比对 =================
+   * 用户业务（2026-11-09 原话）：软著证明里有著作权人、登记号，要与页面上的开发者比对；
+   * **不一致就必须有软著授权书**（授权公司、被授权公司、登记号）。三组要一一对上：
+   *   开发者 = 被授权公司、著作权人 = 授权公司、两个登记号一致。
+   *
+   * 为什么不做成"同名字段合并"：`imgMerge` 只按**同一个字段名**比较，而这六项是
+   * 两组不同名字（开发者↔被授权公司、著作权人↔授权公司）。所以 `imgCompare.rows`
+   * 由用户显式配「左边字段 / 右边字段」，这里只负责取值与判等。
+   *
+   * 角色怎么认（Q6 拍板：借 `it.label`，不新增存储）：
+   *   · 一张图的 OCR 进表行里出现了**右侧字段**（授权公司/被授权公司/登记号里的前两个），
+   *     这张图就是授权书；其余图（软著证明）算"自己的文档"。
+   *   · 登记号两边都有，所以「只出现在右侧、从不出现在左侧」的字段才是判角色的锚
+   *     （`rightOnly`）。全是双侧字段时退回「有右无左」。
+   *   · 同角色多张图取**并集**（Q7）；同一个字段在同一侧出现两个值 ⇒ 报「授权书内部不一致」。
+   */
+  function compareOf(rows, cfg) {
+    const ic = (cfg && cfg.imgCompare) || null;
+    if (!ic || ic.on === false || !ic.rows || !ic.rows.length) return null;
+    const TN = KH.TextNorm;
+    const keyOf = (s) => (TN ? TN.keyOf(s) : String(s == null ? '' : s).replace(/\s+/g, '').toLowerCase());
+    const leftKeys = new Set();
+    const rightKeys = new Set();
+    for (let i = 0; i < ic.rows.length; i++) {
+      const l = keyOf(ic.rows[i] && ic.rows[i].left);
+      const g = keyOf(ic.rows[i] && ic.rows[i].right);
+      if (l) leftKeys.add(l);
+      if (g) rightKeys.add(g);
+    }
+    const rightOnly = [];
+    rightKeys.forEach((k) => { if (!leftKeys.has(k)) rightOnly.push(k); });
+    const bySrc = new Map();
+    const loose = new Map();
+    const add = (map, k, v) => {
+      let a = map.get(k);
+      if (!a) { a = []; map.set(k, a); }
+      if (a.indexOf(v) < 0) a.push(v);
+    };
+    for (let i = 0; i < (rows || []).length; i++) {
+      const r = rows[i] || {};
+      const v = String(r.value == null ? '' : r.value).trim();
+      const k = keyOf(r.label);
+      if (!v || !k) continue;
+      const src = (r.from && r.from.src) || '';
+      if (!src) { add(loose, k, v); continue; }
+      let m = bySrc.get(src);
+      if (!m) { m = new Map(); bySrc.set(src, m); }
+      add(m, k, v);
+    }
+    const ownSrcs = [];
+    const docSrcs = [];
+    bySrc.forEach((m, src) => {
+      let isDoc = false;
+      if (rightOnly.length) {
+        for (let i = 0; i < rightOnly.length; i++) if (m.has(rightOnly[i])) { isDoc = true; break; }
+      } else {
+        let hasRight = false;
+        let hasLeft = false;
+        m.forEach((_v, k) => {
+          if (rightKeys.has(k)) hasRight = true;
+          if (leftKeys.has(k)) hasLeft = true;
+        });
+        isDoc = hasRight && !hasLeft;
+      }
+      (isDoc ? docSrcs : ownSrcs).push(src);
+    });
+    const collect = (srcList, key) => {
+      const out = [];
+      for (let i = 0; i < srcList.length; i++) {
+        const arr = (bySrc.get(srcList[i]) || new Map()).get(key);
+        if (!arr) continue;
+        for (let j = 0; j < arr.length; j++) if (out.indexOf(arr[j]) < 0) out.push(arr[j]);
+      }
+      return out;
+    };
+    const collectMap = (m, key) => {
+      const arr = m.get(key);
+      return arr ? arr.slice() : [];
+    };
+    const list = [];
+    for (let i = 0; i < ic.rows.length; i++) {
+      const r = ic.rows[i] || {};
+      const left = String(r.left || '').trim();
+      const right = String(r.right || '').trim();
+      if (!left || !right) continue;
+      const lk = keyOf(left);
+      const rk = keyOf(right);
+      list.push({
+        left: left, right: right,
+        /* 右侧（授权书侧）的值：同角色多张图取并集 */
+        rv: collect(docSrcs, rk),
+        /* 左侧值的图片来源：软著证明（非授权书图）优先 → 无来源行 → 授权书图兜底。
+         * 页面 DOM 抓取值由 `decorateMerge` 在渲染时补在最前面（那里才拿得到表格）。 */
+        lvOcr: collect(ownSrcs, lk).concat(collectMap(loose, lk)).concat(collect(docSrcs, lk))
+      });
+    }
+    return { rows: list, hasDoc: docSrcs.length > 0, docCount: docSrcs.length };
+  }
+
+  /** 一张卡的比对行从哪来：只在配置了比对、且有 OCR 进表行时才算（没配就是零成本）。 */
+  function compareRowsFor(meta, cfg) {
+    const ic = cfg && cfg.imgCompare;
+    if (!ic || ic.on === false || !ic.rows || !ic.rows.length) return [];
+    try { return ocrExtraRows(meta) || []; } catch (e) { return []; }
+  }
+
+  /**
+   * 判等 → 问题清单。`valueOf(field)` 是**渲染时**的 DOM 取数（可选：单测不传就只用 OCR 值）。
+   * 只报四类问题：两值不同 / 授权书缺字段 / 软著证明缺字段 / 授权书内部两个值。
+   * 弱值（<2 字或纯 ASCII<4，Q4）不参与判等，避免 `12` 撞上 `2024-12-31` 这类误报。
+   */
+  function compareProblems(cmp, valueOf) {
+    if (!cmp || !cmp.rows || !cmp.rows.length) return [];
+    /* 【2.0.8.19 Q6】没有授权书就没有"右侧"可言：这时不该逐组报「缺字段」三条
+     * （用户看到的会是三行噪音），而是一句话——**去补授权书**。 */
+    if (!cmp.hasDoc) return [{ kind: 'noDoc' }];
+    const TN = KH.TextNorm;
+    const out = [];
+    for (let i = 0; i < cmp.rows.length; i++) {
+      const r = cmp.rows[i];
+      let dom = '';
+      try { dom = valueOf ? String(valueOf(r.left) || '').trim() : ''; } catch (e) { dom = ''; }
+      const lv = dom || (r.lvOcr[0] || '');
+      if (r.rv.length > 1) {
+        out.push({ kind: 'docMulti', row: r, lv: lv, rv: r.rv.join(' / ') });
+        continue;
+      }
+      const rv = r.rv[0] || '';
+      if (lv && rv && TN && (TN.isWeak(lv) || TN.isWeak(rv))) continue;
+      const v = TN ? TN.verdict(lv, rv)
+        : (lv === rv ? 'same' : (lv && rv ? 'conflict' : (lv ? 'only-a' : (rv ? 'only-b' : 'none'))));
+      if (v === 'conflict') out.push({ kind: 'mismatch', row: r, lv: lv, rv: rv });
+      else if (v === 'only-a') out.push({ kind: 'missRight', row: r, lv: lv, rv: rv });
+      else if (v === 'only-b') out.push({ kind: 'missLeft', row: r, lv: lv, rv: rv });
+    }
+    return out;
+  }
+
+  /** 问题清单 → 表格下方那一行结论（无问题 ⇒ 空串 ⇒ 不渲染）。文案全部来自 `KH.OcrCopy.VIEW`。 */
+  function compareText(problems, hasDoc) {
+    if (!problems || !problems.length) return '';
+    const V = (KH.OcrCopy && KH.OcrCopy.VIEW) || {};
+    const R = (KH.OcrCopy && typeof KH.OcrCopy.render === 'function')
+      ? KH.OcrCopy.render
+      : (t, o) => String(t).replace(/\{(\w+)\}/g, (m, k) => (o && o[k] != null ? String(o[k]) : ''));
+    const msgs = [];
+    for (let i = 0; i < problems.length; i++) {
+      const p = problems[i];
+      if (p.kind === 'noDoc') {
+        msgs.push(V.cmpNoDoc || '');
+      } else if (p.kind === 'mismatch') {
+        msgs.push(R(V.cmpMismatch || '', { left: p.row.left, right: p.row.right, lv: p.lv, rv: p.rv }));
+      } else if (p.kind === 'docMulti') {
+        msgs.push(R(V.cmpDocMulti || '', { right: p.row.right, vals: p.rv }));
+      } else if (p.kind === 'missRight') {
+        msgs.push(R(V.cmpMissRight || '', { right: p.row.right }));
+      } else if (p.kind === 'missLeft') {
+        msgs.push(R(V.cmpMissLeft || '', { left: p.row.left }));
+      }
+    }
+    const out = [];
+    for (let i = 0; i < msgs.length; i++) if (msgs[i] && out.indexOf(msgs[i]) < 0) out.push(msgs[i]);
+    return out.join(V.cmpSep || '；');
   }
 
   const head = {
@@ -1937,6 +2123,9 @@
          * 两张卡本来就该合成一条记录（去重键是 note\0kw\0adj），拆开会让同一张卡上的词显示两遍。 */
         const pinId = String(h.meta.pinId || '').trim().toLowerCase();
         const merge = mergeRowsFor(h.meta, cfg);
+        /* 【2.0.8.19 · P4】比对行也按命中来源取：同 `note` 的多条规则要**合成一份**再判，
+         * 否则一张卡里两个词各自看到半张图，结论就只对了一半。 */
+        const cmpRows = compareRowsFor(h.meta, cfg);
         const key = note + '\u0000' + kw + '\u0000' + adj;
         const prev = rawMap.get(key);
         if (prev) {
@@ -1945,6 +2134,7 @@
             const p = prev.mergeMap.get(m.field);
             if (!p || (!p.hit && m.hit)) prev.mergeMap.set(m.field, m);
           });
+          if (cmpRows.length) prev.cmpRows = (prev.cmpRows || []).concat(cmpRows);
           continue;   // 去重（但把 pinId / 合并行收进来）
         }
         rawMap.set(key, {
@@ -1952,6 +2142,7 @@
           pinIds: new Set(pinId ? [pinId] : []),
           imgSize: h.meta.imgSize || '',
           mergeMap: new Map(merge.map((m) => [m.field, m])),
+          cmpRows: cmpRows,
           noteFontSize: h.meta.noteFontSize || '',
           bg: h.meta.impNoteBg || ''
         });
@@ -1960,7 +2151,8 @@
       const noteMap = new Map();    // note -> { note, imgSize, noteFontSize, bg, entrySet, pinIds }
       rawMap.forEach((r) => {
         let g = noteMap.get(r.note);
-        if (!g) { g = { note: r.note, imgSize: r.imgSize, noteFontSize: r.noteFontSize, bg: r.bg, entrySet: new Set(), pinIds: new Set(), mergeMap: new Map() }; noteMap.set(r.note, g); }
+        if (!g) { g = { note: r.note, imgSize: r.imgSize, noteFontSize: r.noteFontSize, bg: r.bg, entrySet: new Set(), pinIds: new Set(), mergeMap: new Map(), cmpRows: [] }; noteMap.set(r.note, g); }
+        if (r.cmpRows && r.cmpRows.length) g.cmpRows = g.cmpRows.concat(r.cmpRows);
         (r.mergeMap ? Array.from(r.mergeMap.values()) : []).forEach((m) => {
           /* 同一字段在多张卡上都有配置行 ⇒ 合成一行；这一轮真命中的那条优先
            * （否则可能被同字段的「没命中」覆盖掉，合并行就永远出不来）。 */
@@ -1981,7 +2173,7 @@
           const i = k.indexOf('\u0000');
           entries.push({ kw: k.slice(0, i), adj: k.slice(i + 1) });
         });
-        items.push({ note: g.note, entries, pinIds: Array.from(g.pinIds), imgSize: g.imgSize || '', noteFontSize: g.noteFontSize || '', bg: g.bg || '', mergeRows: Array.from(g.mergeMap.values()) });
+        items.push({ note: g.note, entries, pinIds: Array.from(g.pinIds), imgSize: g.imgSize || '', noteFontSize: g.noteFontSize || '', bg: g.bg || '', mergeRows: Array.from(g.mergeMap.values()), compare: compareOf(g.cmpRows, cfg) });
       });
       return items;
     },
@@ -2003,7 +2195,12 @@
         /* 【2.0.8.7 需求①】图文合并行的「这次命没命中」也算内容：OCR 结果一回来，
          * 该出现的合并行要出现、不该出现的要消失 —— 不把它放进指纹，面板会一直停在旧样子。 */
         '\u0004' + (it.mergeRows || []).map(r => (r.field || '') + ':' + (r.hit ? '1' : '0') + ':' +
-          (r.hidden ? '1' : '0') + ':' + (r.title || '') + ':' + (r.value || '')).join('\u0005');
+          (r.hidden ? '1' : '0') + ':' + (r.title || '') + ':' + (r.value || '')).join('\u0005') +
+        /* 【2.0.8.19 · P4】比对结论也算内容：OCR 值一变，结论行必须跟着变（否则停在旧结论上，
+         * 这比不显示更糟 —— 用户会拿一行过期结论去判断"要不要授权书"）。 */
+        '\u0006' + (it.compare ? (it.compare.rows || []).map(r => (r.left || '') + ':' + (r.right || '') +
+          ':' + (r.rv || []).join('/') + ':' + (r.lvOcr || []).join('/')).join('\u0005') +
+          ':' + (it.compare.hasDoc ? '1' : '0') : '');
       const oldKeys = new Set((oldItems || []).map(key));
       for (const it of newItems) if (!oldKeys.has(key(it))) return true;
       return false;
@@ -3414,9 +3611,15 @@
       /* 【2.0.8.7 需求①】只留**这次真的命中**的行：没命中的字段与没配一样，不留空壳。 */
       const rows = ((item && item.mergeRows) || []).filter((r) => r && r.hit);
       const table = el.querySelector('table.kh-table-fetch');
-      if (!rows.length || !table) {
+      /* 【2.0.8.19 · P4】结论行与合并行是两件事：比对只看「表里的值 vs 别的图/页面上的值」，
+       * 即使一条合并行都没配、表格里什么都没有，只要配了比对且有问题，这一行也必须出来。 */
+      const clearCmp = () => {
+        const old = el.querySelectorAll('.kh-compare-line');
+        for (let i = 0; i < old.length; i++) if (old[i].parentNode) old[i].parentNode.removeChild(old[i]);
+      };
+      if (!table) {
         clearRows();
-        if (table) table.removeAttribute('data-kh-merge-sig');
+        clearCmp();
         return;
       }
       const TN = KH.TextNorm;
@@ -3438,6 +3641,41 @@
         }
         return '';
       };
+      /* 【2.0.8.19 · P4】结论行贴在合并表下方（Q8）：一行说清「要不要授权书 / 哪一组对不上」。
+       * 签名用结论原文本身（文案已包含两路值）—— 文本没变就不重排。 */
+      const paintCmp = (text) => {
+        if (!text) { clearCmp(); return; }
+        const cur = el.querySelector('.kh-compare-line');
+        if (cur && cur.getAttribute('data-kh-cmp-sig') === text) return;
+        clearCmp();
+        const doc = el.ownerDocument || document;
+        const div = doc.createElement('div');
+        div.className = 'kh-compare-line';
+        div.setAttribute('data-kh-cmp-sig', text);
+        /* 读屏也要能听到结论：这是一条"必须让人看见"的提示，不能只靠颜色。 */
+        div.setAttribute('role', 'status');
+        div.textContent = text;
+        table.parentNode.insertBefore(div, table.nextSibling);
+      };
+      /* 【2.0.8.19】只有"这张卡真的出现了比对相关的内容"才出结论：否则每个配了比对的页面
+       * （没有软著证明、没有授权书）都会多一行红字，纯噪音。证据 = 左侧页面值 / 左侧图值 / 右侧授权书值。 */
+      const cmp = item && item.compare;
+      let cmpEvidence = false;
+      if (cmp && cmp.rows) {
+        for (let ci = 0; ci < cmp.rows.length; ci++) {
+          const cr = cmp.rows[ci] || {};
+          let dv = '';
+          try { dv = String(valueOf(cr.left) || '').trim(); } catch (e) { dv = ''; }
+          if (dv || (cr.lvOcr && cr.lvOcr.length) || (cr.rv && cr.rv.length)) { cmpEvidence = true; break; }
+        }
+      }
+      paintCmp(cmpEvidence ? compareText(compareProblems(cmp, valueOf), !!(cmp && cmp.hasDoc)) : '');
+      if (!rows.length) {
+        clearRows();
+        table.removeAttribute('data-kh-merge-sig');
+        return;
+      }
+      const V = (KH.OcrCopy && KH.OcrCopy.VIEW) || {};
       const show = [];
       let hidden = 0;
       for (let i = 0; i < rows.length; i++) {
@@ -3448,14 +3686,34 @@
          * 旧写法 `r.value || valueOf(field)` 直接二选一，另一路被丢 —— 冲突因此永远不可见。 */
         const fetchV = valueOf(r.field);
         const ocrV = String(r.ocrValue || '').trim();
-        const v = fetchV || ocrV || String(r.value || '').trim();
+        const fallback = String(r.value || '').trim();
+        const verdict = TN ? TN.verdict(fetchV, ocrV) : 'none';
+        const conflict = verdict === 'conflict';
+        /* 【2.0.8.18 需求②·P1】冲突行按用户配的策略显示；非冲突行不受策略影响。
+         * 无论哪一档，另一路的值都留在悬停里 —— 策略决定「显示哪个」，不决定「丢不丢信息」。 */
+        const policy = (r.onConflict === 'both' || r.onConflict === 'ocr'
+          || r.onConflict === 'fetch' || r.onConflict === 'skip') ? r.onConflict : 'mark';
+        let value = fetchV || ocrV || fallback;
+        if (conflict && policy === 'skip') continue;
+        if (conflict && policy === 'ocr') value = ocrV || value;
+        else if (conflict && policy === 'fetch') value = fetchV || value;
+        else if (conflict && policy === 'both') {
+          value = (fetchV || '（无）') + (V.conflictBothSep || ' ｜ ') + (ocrV || '（无）');
+        }
         /* 【D6 修复】三路全空才丢行。旧写法只认 `r.value || valueOf`，静态词已命中、
          * 但抓取表里那个字段被合并改名时整行消失（用户看到「配了却不出现」）。 */
-        if (!v) continue;
-        const verdict = TN ? TN.verdict(fetchV, ocrV) : 'none';
+        if (!value) continue;
+        let tip = '';
+        if (conflict) {
+          tip = (V.conflictTipOcr || '图片上的值：') + (ocrV || '（无）')
+            + '\n' + (V.conflictTipFetch || '页面抓取值：') + (fetchV || '（无）');
+          if (policy === 'both') tip += '\n' + (V.conflictTipBoth || '');
+        } else if (verdict === 'weak') tip = V.conflictTipWeak || '';
+        else if (verdict === 'only-a') tip = V.conflictTipOnlyA || '';
+        else if (verdict === 'only-b') tip = V.conflictTipOnlyB || '';
         show.push({
-          title: r.title || r.field, value: v, hidden: r.hidden === true,
-          verdict: verdict, ocrValue: ocrV, fetchValue: fetchV
+          title: r.title || r.field, value: value, hidden: r.hidden === true,
+          verdict: verdict, ocrValue: ocrV, fetchValue: fetchV, tip: tip
         });
         if (r.hidden) hidden++;
       }
@@ -3468,7 +3726,7 @@
        * 旧写法每轮先 `remove()` 再 `insertBefore()`（没变也重排），
        * 而且「显示 N 条」按钮是表的兄弟节点，`remove()` 只摘表 ⇒ 每轮留一颗孤儿按钮。 */
       const sig = show.map((r) => r.title + '\u0001' + r.value + '\u0001' + (r.hidden ? '1' : '0')
-        + '\u0001' + r.verdict + '\u0001' + r.ocrValue).join('\u0002');
+        + '\u0001' + r.verdict + '\u0001' + r.ocrValue + '\u0001' + r.tip).join('\u0002');
       if (table.getAttribute('data-kh-merge-sig') === sig) return;
       clearRows();
       table.setAttribute('data-kh-merge-sig', sig);
@@ -3486,10 +3744,8 @@
           + (r.hidden ? ' kh-merge-hidden' : '')
           + (conflict ? ' kh-merge-conflict' : '');
         tr.setAttribute('data-kh-verdict', r.verdict);
-        if (conflict) {
-          tr.title = '图片上的值：' + (r.ocrValue || '（无）')
-            + '\n页面抓取值：' + (r.fetchValue || '（无）');
-        }
+        /* 【2.0.8.18 需求②·P1】悬停里永远是两路原值 + 这一档的解释，不随策略裁剪。 */
+        if (r.tip) tr.title = r.tip;
         const a = doc.createElement('td');
         a.className = 'kh-table-label';
         a.textContent = r.title;
@@ -5147,6 +5403,9 @@
     panel, head, collectEffective, IMG_PROTOCOL_OK, paintHits, ocrExtraRows, markPdf: markOnePdf,
     /* 【2.0.8.7】合并闸门是「图这次真的 OCR 命中才出行」的判据所在 —— 纯函数 + 只读
      * `KH.ImgOcr.items()`，导出给单测，免得为了验一条判定去搭整块面板。 */
-    mergeRowsFor, ocrFieldHit, rowBgOf, catOf
+    mergeRowsFor, ocrFieldHit, rowBgOf, catOf,
+    /* 【2.0.8.19 · P4】三方比对是纯函数（输入=进表行+配置，输出=问题清单/结论文案），
+     * 导出给单测：判角色、并集、弱值、授权书内部冲突都能直接喂数据验，不必搭整块面板。 */
+    compareOf, compareProblems, compareText
   };
 })();

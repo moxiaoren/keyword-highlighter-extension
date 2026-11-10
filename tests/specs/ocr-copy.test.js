@@ -20,7 +20,9 @@ const ROOT = path.join(__dirname, '..', '..');
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 
 /* 允许出现的占位符（`render()` 在面板/灯箱里真正会传的字段） */
-const PLACEHOLDERS = ['n', 'host', 'matched'];
+const PLACEHOLDERS = ['n', 'host', 'matched',
+  /* 【2.0.8.19 · P4】软著比对结论行的字段名与两路原值（见 important-note.js 的 compareText） */
+  'left', 'right', 'lv', 'rv', 'vals'];
 
 module.exports = async function run() {
   const { KH } = require('../bootstrap');
@@ -28,7 +30,7 @@ module.exports = async function run() {
 
   suite('OCR 文案唯一真源（票 #17 D-17.1 / 不变量 9–12）');
 
-  await test('★ 不变量 10：VIEW 每条都是非空中文串，占位符只有 {n}/{host}', () => {
+  await test('★ 不变量 10：VIEW 每条都是非空中文串，占位符都在白名单里', () => {
     truthy(C && C.VIEW, '必须导出 VIEW');
     const bad = [];
     for (const [k, v] of Object.entries(C.VIEW)) {
