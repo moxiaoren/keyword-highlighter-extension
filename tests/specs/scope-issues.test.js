@@ -111,4 +111,42 @@ module.exports = async function run() {
     eq(I.scopeIssues('一对一@开发这', known).length, 1);
     eq(I.scopedRaw('一对一@开发这', '开发者', known), '一对一@开发这', '旧行为一个字不变');
   });
+
+  /* ---------- 2.0.8.21 缺陷③：名字配得上，但永远拿不到文字 ---------- */
+
+  await test('★ `#图` 字段：名字合法、只取图片 —— 当判据时要提示，别静默', () => {
+    const specs = KH.Scope.specsOf('开发者#图|登记号');
+    const r = KH.Scope.scopeIssues('一对一@开发者', ['开发者', '登记号'], { needText: true, specs: specs });
+    eq(r.length, 1);
+    eq(r[0].kind, 'noText');
+    eq(r[0].reason, 'image-only');
+  });
+
+  await test('★ `@0` 位置写坏：同样取不到格子，标成 offset-invalid', () => {
+    const specs = KH.Scope.specsOf('开发者@0');
+    const r = KH.Scope.scopeIssues('一对一@开发者', ['开发者'], { needText: true, specs: specs });
+    eq(r.length, 1);
+    eq(r[0].kind, 'noText');
+    eq(r[0].reason, 'offset-invalid');
+  });
+
+  await test('★ 不需要比文字的字段不报 —— 「图片命中词」只按字段名生效', () => {
+    const specs = KH.Scope.specsOf('开发者#图');
+    eq(KH.Scope.scopeIssues('一对一@开发者', ['开发者'], { needText: false, specs: specs }).length, 0);
+    /* 两个框一起诊断时，只有 imgOcrNeed 那一条会被标出来 */
+    const both = KH.Scope.scopeIssuesOf({
+      fetchLabels: '开发者#图',
+      imgOcrKeyword: '词@开发者',
+      imgOcrNeed: '一对一@开发者'
+    });
+    eq(both.length, 1, JSON.stringify(both));
+    eq(both[0].field, 'imgOcrNeed');
+    eq(both[0].kind, 'noText');
+  });
+
+  await test('★ 正常配置（默认取右邻格文字）不报 noText', () => {
+    const specs = KH.Scope.specsOf('开发者|登记号@2|著作权人^甲方');
+    eq(KH.Scope.scopeIssues('一对一@开发者|x@登记号|y@著作权人', ['开发者', '登记号', '著作权人'],
+      { needText: true, specs: specs }).length, 0);
+  });
 };

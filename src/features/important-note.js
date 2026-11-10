@@ -1874,6 +1874,23 @@
     }
     const rightOnly = [];
     rightKeys.forEach((k) => { if (!leftKeys.has(k)) rightOnly.push(k); });
+    /* 【2.0.8.21 缺陷①②】两件事都要先记下来，`compareProblems` 才知道该报哪一种问题：
+     *   · `rightNames` —— 实际配置的**右侧字段名原文**（不是 key；key 去空白、小写过，
+     *     直接拼进提示会变成 `abfx` 这种看不出是谁的东西）。`noDoc` 文案靠它拼，不再写死。
+     *   · `docAmbiguous` —— 一组"只在右侧出现"的字段都没有（典型：只配了 `登记号 ↔ 登记号`）。
+     *     这时角色判断只能退回「有右无左」，而任何一张软著证明图也会带同名字段 ⇒ 判不出授权书。
+     *     那是**配置问题**，不是"用户忘了放授权书"，报的话术必须不一样。 */
+    const rightNames = [];
+    if (rightOnly.length) {
+      for (let i = 0; i < ic.rows.length; i++) {
+        const r = ic.rows[i] || {};
+        const raw = String(r.right || '').trim();
+        if (!raw) continue;
+        if (rightOnly.indexOf(keyOf(raw)) < 0) continue;
+        if (rightNames.indexOf(raw) < 0) rightNames.push(raw);
+      }
+    }
+    const docAmbiguous = rightOnly.length === 0;
     const bySrc = new Map();
     const loose = new Map();
     const add = (map, k, v) => {
@@ -1939,7 +1956,13 @@
         lvOcr: collect(ownSrcs, lk).concat(collectMap(loose, lk)).concat(collect(docSrcs, lk))
       });
     }
-    return { rows: list, hasDoc: docSrcs.length > 0, docCount: docSrcs.length };
+    return {
+      rows: list,
+      hasDoc: docSrcs.length > 0,
+      docCount: docSrcs.length,
+      docAmbiguous: docAmbiguous,
+      rightNames: rightNames
+    };
   }
 
   /** 一张卡的比对行从哪来：只在配置了比对、且有 OCR 进表行时才算（没配就是零成本）。 */
@@ -1957,8 +1980,14 @@
   function compareProblems(cmp, valueOf) {
     if (!cmp || !cmp.rows || !cmp.rows.length) return [];
     /* 【2.0.8.19 Q6】没有授权书就没有"右侧"可言：这时不该逐组报「缺字段」三条
-     * （用户看到的会是三行噪音），而是一句话——**去补授权书**。 */
-    if (!cmp.hasDoc) return [{ kind: 'noDoc' }];
+     * （用户看到的会是三行噪音），而是一句话——**去补授权书**。
+     * 【2.0.8.21 缺陷①】但这句"补授权书"只在**能判断角色**时成立：两边字段同名时，
+     * 用户可能已经放了授权书、只是系统认不出，这时喊"没找到授权书"就是误导。
+     * 所以先看 `docAmbiguous`，分两种问题上报（`names` 带到文案里，不再写死字段名）。 */
+    if (!cmp.hasDoc) {
+      if (cmp.docAmbiguous) return [{ kind: 'noDocAmbig' }];
+      return [{ kind: 'noDoc', names: cmp.rightNames || [] }];
+    }
     const TN = KH.TextNorm;
     const out = [];
     for (let i = 0; i < cmp.rows.length; i++) {
@@ -1989,10 +2018,15 @@
       ? KH.OcrCopy.render
       : (t, o) => String(t).replace(/\{(\w+)\}/g, (m, k) => (o && o[k] != null ? String(o[k]) : ''));
     const msgs = [];
+    /* 【2.0.8.21 缺陷②】右侧字段名从配置里取，拼成「授权公司」「被授权公司」——
+     * 文案里不再出现用户没配过的字段名。 */
+    const namesOf = (arr) => (arr || []).map((n) => '「' + n + '」').join('');
     for (let i = 0; i < problems.length; i++) {
       const p = problems[i];
       if (p.kind === 'noDoc') {
-        msgs.push(V.cmpNoDoc || '');
+        msgs.push(R(V.cmpNoDoc || '', { names: namesOf(p.names) }));
+      } else if (p.kind === 'noDocAmbig') {
+        msgs.push(V.cmpNoDocAmbig || '');
       } else if (p.kind === 'mismatch') {
         msgs.push(R(V.cmpMismatch || '', { left: p.row.left, right: p.row.right, lv: p.lv, rv: p.rv }));
       } else if (p.kind === 'docMulti') {

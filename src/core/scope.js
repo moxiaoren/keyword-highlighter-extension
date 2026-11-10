@@ -111,9 +111,35 @@
     return bestD <= 1 ? best : '';
   }
 
+  /** 已配字段的**完整取值规格**（`fetchLabels` 解析结果，按 label 归一后索引）。
+   *  用来回答"这个字段到底能不能给出文字值"——`knownOf` 只给名字，回答不了。 */
+  function specsOf(raw) {
+    const m = new Map();
+    const F = KH.Fetch;
+    if (!F || typeof F.parseLabels !== 'function') return m;
+    try {
+      for (const it of (F.parseLabels(raw) || [])) {
+        if (!it || !it.label) continue;
+        const k = norm(it.label);
+        if (k && !m.has(k)) m.set(k, it);
+      }
+    } catch (e) { /* 解析失败就当没有规格：只少报一种提示，不影响判定 */ }
+    return m;
+  }
+
+  /** 这个字段的规格能不能产出**文字**：`''` = 能；否则是原因码。
+   *  · `image-only`：`#图` / `#仅图`，取到的是图片占位符，拿它去比 OCR 文字永远不中；
+   *  · `offset-invalid`：位置表达式写坏（`@0` 之类），连格子都定位不到。 */
+  function textLessReason(spec) {
+    if (!spec) return '';
+    if (spec.imgOnly) return 'image-only';
+    if (spec.offsetInvalid) return 'offset-invalid';
+    return '';
+  }
+
   /** 一条词 → 第一个生效不了的指向；没有就 `null`（与 splitScope 同构：只要有一个配不上，
    *  它后面（更靠左）的那些 `@` 也不再生效，所以只报**最靠右**的那个问题点） */
-  function issueOf(chip, known) {
+  function issueOf(chip, known, opts, specs) {
     let s = String(chip == null ? '' : chip).trim();
     const km = KV_MARK.exec(s);
     if (km) s = s.slice(0, km.index).trim();
@@ -122,8 +148,8 @@
       const m = /@([^@\s]+)$/.exec(s);
       if (!m) return null;
       const name = m[1].trim();
-      let hit = false;
-      for (const k of list) if (sameField(k, name)) { hit = true; break; }
+      let hit = '';
+      for (const k of list) if (sameField(k, name)) { hit = k; break; }
       if (!hit) {
         return {
           chip: String(chip == null ? '' : chip),
@@ -131,6 +157,22 @@
           kind: SUFFIX_RE.test(name) ? 'suffix' : 'unknown',
           suggest: suggestOf(name, list)
         };
+      }
+      /* 【2.0.8.21 缺陷③】名字**配得上**也可能永远拿不到值：指向的字段只取图片、或者取值位置
+       * 写坏了（`@0`）。这种"合法但无效"从前是静默的，用户只会觉得"配了没反应"。
+       * 只在**要比文字**的调用方（`imgOcrNeed`：拿字段值当判据）才报 —— 图片命中词那边
+       * 作用域只按字段名生效，报这一条就是误报。 */
+      if (opts && opts.needText) {
+        const why = textLessReason(specs && specs.get(norm(hit)));
+        if (why) {
+          return {
+            chip: String(chip == null ? '' : chip),
+            name: name,
+            kind: 'noText',
+            reason: why,
+            suggest: ''
+          };
+        }
       }
       s = s.slice(0, m.index).trim();
     }
@@ -140,26 +182,32 @@
    * 诊断一批词（`|` 分隔或数组）。
    * @param {string|string[]} raw 词串
    * @param {string[]} known 已配的抓取字段裸名（调用方给；不给自己从 `KH.Fetch` 推）
-   * @returns {Array<{chip:string,name:string,kind:'unknown'|'suffix',suggest:string}>}
+   * @param {{needText?:boolean, specs?:Map}} [opts] `needText` = 这些指向要拿来比文字
+   *        （只有「图上须有的字段值」是这种），`specs` = `specsOf(fetchLabels)` 的结果
+   * @returns {Array<{chip:string,name:string,kind:'unknown'|'suffix'|'noText',reason?:string,suggest:string}>}
    */
-  function scopeIssues(raw, known) {
+  function scopeIssues(raw, known, opts) {
     const list = Array.isArray(raw) ? raw : String(raw == null ? '' : raw).split(/[|｜\n]/);
     const out = [];
     for (const chip of list) {
       if (!String(chip == null ? '' : chip).trim()) continue;
-      const bad = issueOf(chip, known);
+      const bad = issueOf(chip, known, opts, opts && opts.specs);
       if (bad) out.push(bad);
     }
     return out;
   }
 
-  /** 一条关键词配置 → 两个指向字段的问题（`imgOcrKeyword` / `imgOcrNeed`），带 `field` 归属 */
+  /** 一条关键词配置 → 两个指向字段的问题（`imgOcrKeyword` / `imgOcrNeed`），带 `field` 归属。
+   *  两个框的判据不同：命中词只按**字段名**生效（报"取不到文字"是误报），
+   *  而「图上须有的字段值」是拿字段**值**去比文字 ⇒ 只有它需要 `needText`。 */
   function scopeIssuesOf(meta, known) {
     const m = meta || {};
     const kn = known || knownOf(m.fetchLabels);
+    const specs = specsOf(m.fetchLabels);
     const out = [];
     for (const field of ['imgOcrKeyword', 'imgOcrNeed']) {
-      for (const it of scopeIssues(m[field], kn)) out.push(Object.assign({ field: field }, it));
+      const opts = { needText: field === 'imgOcrNeed', specs: specs };
+      for (const it of scopeIssues(m[field], kn, opts)) out.push(Object.assign({ field: field }, it));
     }
     return out;
   }
@@ -169,6 +217,7 @@
     scopeIssuesOf: scopeIssuesOf,
     splitChip: splitChip,
     sameField: sameField,
-    knownOf: knownOf
+    knownOf: knownOf,
+    specsOf: specsOf
   };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

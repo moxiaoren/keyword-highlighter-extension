@@ -130,7 +130,11 @@ module.exports = async function run() {
     const probs = N.compareProblems(cmp, domOf({ 开发者: '丁公司' }));
     eq(probs.length, 1);
     eq(probs[0].kind, 'noDoc');
-    eq(N.compareText(probs, cmp.hasDoc), V.cmpNoDoc);
+    const text = N.compareText(probs, cmp.hasDoc);
+    /* 【2.0.8.21 缺陷②】文案点名的是这次**实际配的**右侧字段，不再写死三个字段名 */
+    truthy(text.indexOf('「被授权公司」') >= 0, text);
+    truthy(text.indexOf('「授权公司」') >= 0, text);
+    eq(text.indexOf('登记号'), -1, '同名的一组不能当成“授权书才有的字段”：' + text);
   });
 
   await test('★ 有授权书仍不一致 ⇒ 逐组报「图上是 X / 授权书是 Y」', () => {
@@ -179,5 +183,34 @@ module.exports = async function run() {
     const text = N.compareText(probs, cmp.hasDoc);
     truthy(text.indexOf(V.cmpSep) >= 0, text);
     eq(text.split(V.cmpSep).length, 2, '两组不一致 = 两条结论');
+  });
+
+  /* ---------- 2.0.8.21 缺陷①：只配同名一组时判不出授权书 ---------- */
+
+  await test('★ 只配同名字段：不报「未识别到授权书」，改报「判不出哪张是授权书」', () => {
+    const two = [
+      row('登记号', 'abc1234', 'pic1'),
+      row('登记号', 'abc1234', 'pic2')
+    ];
+    const cmp = N.compareOf(two, cfgOf([{ left: '登记号', right: '登记号' }]));
+    eq(cmp.hasDoc, false);
+    eq(cmp.docAmbiguous, true);
+    const probs = N.compareProblems(cmp, () => '');
+    eq(probs.length, 1);
+    eq(probs[0].kind, 'noDocAmbig');
+    truthy(N.compareText(probs, false).indexOf('无法判断哪张图是授权书') >= 0);
+  });
+
+  /* ---------- 2.0.8.21 缺陷②：文案里不能出现用户没配过的字段名 ---------- */
+
+  await test('★ 「未识别到授权书」只点名用户配的字段，不写死三个字段名', () => {
+    const only = [row('开发者', '甲公司', 'soft')];
+    const cmp = N.compareOf(only, cfgOf([{ left: '开发者', right: '被授权公司' }]));
+    eq(cmp.hasDoc, false);
+    eq(cmp.docAmbiguous, false);
+    const text = N.compareText(N.compareProblems(cmp, () => '甲公司'), false);
+    truthy(text.indexOf('「被授权公司」') >= 0, text);
+    eq(text.indexOf('「授权公司」'), -1, '没配的字段名不该出现在文案里：' + text);
+    eq(text.indexOf('登记号'), -1, '没配的字段名不该出现在文案里：' + text);
   });
 };

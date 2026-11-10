@@ -22,7 +22,9 @@ const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 /* 允许出现的占位符（`render()` 在面板/灯箱里真正会传的字段） */
 const PLACEHOLDERS = ['n', 'host', 'matched',
   /* 【2.0.8.19 · P4】软著比对结论行的字段名与两路原值（见 important-note.js 的 compareText） */
-  'left', 'right', 'lv', 'rv', 'vals'];
+  'left', 'right', 'lv', 'rv', 'vals',
+  /* 【2.0.8.21 缺陷②】未识别到授权书时点名的字段名（动态拼，不再写死三个） */
+  'names'];
 
 module.exports = async function run() {
   const { KH } = require('../bootstrap');

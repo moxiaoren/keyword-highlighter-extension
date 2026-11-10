@@ -1059,13 +1059,24 @@ if (manifest && manifest.version) {
   if (optNeed.length !== 1) bad('设置页必须加载 src/core/scope.js（否则写错的指向在设置页静默）', optNeed.join('\n      '));
   else ok('设置页加载指向诊断');
 
-  const useBatch = findIn(['src/ui/components/fields.js'], /scope\.scopeIssues\(rawAll, known\)/);
+  /* 【2.0.8.21 缺陷③】调用要带上第三参（`needText` + 值规格），否则「名字对得上但取不到文字」
+   * 那一种仍然静默；正则放宽到"必须传第三参"，但不写死 opts 的字面形状。 */
+  const useBatch = findIn(['src/ui/components/fields.js'], /scope\.scopeIssues\(rawAll, known, opts\)/);
   if (useBatch.length !== 1) bad('「修改」弹窗必须调用 KH.Scope.scopeIssues（写错的 @字段名 当场可见）', useBatch.join('\n      '));
   else ok('「修改」弹窗接上指向诊断');
 
   const useSave = findIn(['src/ui/components/keyword-editor.js'], /KH\.Scope\.scopeIssuesOf\(kw\)/);
   if (useSave.length !== 1) bad('保存成功后必须用 KH.Scope.scopeIssuesOf 提醒一次（静默失败的最后一道提示）', useSave.join('\n      '));
   else ok('保存时接上指向诊断');
+
+  /* 【2.0.8.21 缺陷③·回归】`fetchRawSeen` 必须声明在 `knownFields` 之前、且在 `control` 作用域里。
+   * 曾经误写进 `openList()`：`knownFields()` 先跑 ⇒ 赋值命中 TDZ ⇒ 抛错被 `catch(e){return []}`
+   * 吞掉 ⇒ `known` 恒空 ⇒ 所有 `@字段` 都被报成"没配过"、建议也消失。声明顺序就是这条红线的全部。 */
+  const fieldsSrc = read('src/ui/components/fields.js');
+  const seenAt = fieldsSrc.indexOf('let fetchRawSeen');
+  const knownAt = fieldsSrc.indexOf('const knownFields = () =>');
+  if (seenAt < 0 || knownAt < 0 || seenAt > knownAt) bad('fetchRawSeen 必须声明在 knownFields 之前（否则 known 恒空，所有 @字段 都被误报）', '见 src/ui/components/fields.js');
+  else ok('值规格缓存的声明顺序');
 }
 
 /* ------------------------------------------------------------------ 输出 */

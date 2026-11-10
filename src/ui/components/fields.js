@@ -657,6 +657,8 @@
           const listEl = h('div', { class: 'kh-list-rows' });
           /* 【#116】指向诊断条：写错的 `@字段名` 以前静默不生效，在这里当场列出来。 */
           const issueEl = h('div', { class: 'kh-issue-list', hidden: true });
+          /* 【2.0.8.21 缺陷③】`knownFields()` 读到的「抓取后续字段」原文，留给诊断去解析**值规格**：
+           * 名字对得上不代表拿得到文字（`#图` 只取图片、`@0` 位置写坏），这种也要提示。 */
           const countEl = h('span', { class: 'kh-list-count' });
           const filter = h('input', {
             class: 'kh-input kh-list-filter', type: 'search',
@@ -705,17 +707,29 @@
               return one;
             };
             const rawAll = alive().map(issueChip).join('|');
-            const list = scope.scopeIssues(rawAll, known) || [];
+            /* 只有「图上须有的字段值」是拿字段**值**去比文字；图片命中词那边作用域只按字段名
+             * 生效，跟"取不取得到文字"无关。 */
+            const opts = { needText: !!spec.suffixChip, specs: null };
+            if (opts.needText && typeof scope.specsOf === 'function') {
+              opts.specs = scope.specsOf(fetchRawSeen);
+            }
+            const list = scope.scopeIssues(rawAll, known, opts) || [];
             issueEl.textContent = '';
             if (!list.length) { issueEl.hidden = true; return; }
             issueEl.hidden = false;
             for (let i = 0; i < list.length; i++) {
               const it = list[i];
-              const text = it.kind === 'suffix'
-                ? '「@' + it.name + '」把取值后缀写进了指向，这样永远配不上 —— 后缀请写在「抓取后续字段」里，'
-                  + '这里只写字段名' + (it.suggest ? '（例如 @' + it.suggest + '）' : '')
-                : '「@' + it.name + '」不是已配的抓取字段，这条不会按字段生效'
-                  + (it.suggest ? ' —— 是不是「' + it.suggest + '」？' : '');
+              const text = it.kind === 'noText'
+                ? '「@' + it.name + '」这个字段'
+                  + (it.reason === 'image-only'
+                    ? '只取图片、不取文字，拿它当判据永远比不中'
+                    : '的取值位置写坏了（取不到格子），拿它当判据永远比不中')
+                  + ' —— 请把它改成能取文字的字段'
+                : it.kind === 'suffix'
+                  ? '「@' + it.name + '」把取值后缀写进了指向，这样永远配不上 —— 后缀请写在「抓取后续字段」里，'
+                    + '这里只写字段名' + (it.suggest ? '（例如 @' + it.suggest + '）' : '')
+                  : '「@' + it.name + '」不是已配的抓取字段，这条不会按字段生效'
+                    + (it.suggest ? ' —— 是不是「' + it.suggest + '」？' : '');
               issueEl.appendChild(h('div', { class: 'kh-issue-row', text: '⚠ ' + text }));
             }
           };
@@ -1257,6 +1271,11 @@
          *  `document.getElementById` 在那边永远找不到（那会让 `@字段` 全被当成普通词）。
          *  取不到（单测垫片没有真的 `getElementById` / 控件还没挂进表单）⇒ 空表 ⇒ 所有 `@…`
          *  都按普通词处理，正是"老配置零影响"要的行为，也保证这条路永不抛。 */
+        /* 【2.0.8.21 缺陷③】`knownFields()` 顺手把「抓取后续字段」的原始串留在这里，
+         * 供诊断条解析值规格（`#图` / `@0` 这类取不到文字的配置）。必须声明在 `knownFields`
+         * **之前**、且在 `control` 作用域里：写进 `openList` 会造成 TDZ / 隐式全局，
+         * 赋值抛错被 `catch` 吞掉 ⇒ `known` 恒空 ⇒ 所有 `@字段` 都被报成"没配过"。 */
+        let fetchRawSeen = '';
         const knownFields = () => {
           try {
             let root = document;
@@ -1278,6 +1297,8 @@
               const el = (root && typeof root.getElementById === 'function') ? root.getElementById(wantId) : null;
               if (el) raw = String(el.value == null ? '' : el.value);
             }
+            /* 【2.0.8.21 缺陷③】把原文留给诊断条去解析值规格（`#图` / `@0` 这类取不到文字的配置）。 */
+            fetchRawSeen = raw;
             const F = KH.Fetch;
             if (!raw || !F || typeof F.parseLabels !== 'function') return [];
             const out = [];
