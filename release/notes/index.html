@@ -1,37 +1,2623 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>高亮词助手 · 版本说明</title><style>
-:root{--bg:#f7f8fa;--card:#fff;--fg:#1b1f24;--muted:#5b6672;--line:#e3e7ec;
---fix:#c0392b;--new:#1f7a4d;--chg:#1f5fa8;--gate:#6b5bd2;--other:#6b7684;}
-@media (prefers-color-scheme:dark){:root{--bg:#14171a;--card:#1c2024;--fg:#e6e9ec;--muted:#9aa5b1;--line:#2b3138;
---fix:#ff8b80;--new:#6fd39b;--chg:#7fb6f5;--gate:#b3a8ff;--other:#9aa5b1;}}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif}
-.wrap{max-width:820px;margin:0 auto;padding:40px 20px 64px}
-header .ver{font-size:34px;font-weight:700;letter-spacing:-.5px}
-header .meta{color:var(--muted);font-size:14px;margin-top:6px}
-.badge{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:600;margin-left:8px;vertical-align:3px}
-.badge.beta{background:#fff0d6;color:#8a5a00}
-.badge.stable{background:#e2f4e8;color:#1f7a4d}
-@media (prefers-color-scheme:dark){.badge.beta{background:#3a2b12;color:#ffc86b}.badge.stable{background:#14301f;color:#6fd39b}}
-ul.items{list-style:none;padding:0;margin:28px 0 0}
-.item{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--other);border-radius:10px;
-padding:14px 16px;margin-bottom:12px}
-.item-fix{border-left-color:var(--fix)}.item-new{border-left-color:var(--new)}
-.item-chg{border-left-color:var(--chg)}.item-gate{border-left-color:var(--gate)}
-.tag{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:6px;margin-bottom:8px;
-color:var(--muted);background:rgba(127,127,127,.12)}
-.item-fix .tag{color:var(--fix)}.item-new .tag{color:var(--new)}.item-chg .tag{color:var(--chg)}.item-gate .tag{color:var(--gate)}
-.item-body p{margin:0 0 8px}.item-body p:last-child{margin-bottom:0}
-code{font:13px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;background:rgba(127,127,127,.14);
-padding:1px 5px;border-radius:5px}
-a{color:var(--chg)}
-.gates{margin-top:28px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 18px}
-.gates h2{font-size:15px;margin:0 0 10px;color:var(--muted);font-weight:600}
-.gates dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px 18px;margin:0}
-.gates dl>div{margin:0}
-.gates dt{font-size:12px;color:var(--muted)}.gates dd{margin:2px 0 0;font-weight:600;font-variant-numeric:tabular-nums}
-footer{margin-top:36px;color:var(--muted);font-size:14px;border-top:1px solid var(--line);padding-top:16px}
-footer a{margin-right:16px}
-table.list{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
-table.list th,table.list td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);font-size:14px}
-table.list th{color:var(--muted);font-weight:600}table.list tr:last-child td{border-bottom:0}
-</style></head><body><div class="wrap"><header><div class="ver">高亮词助手 · 版本说明</div><div class="meta">每个版本一页：改了什么、为什么改、门禁过没过。</div></header><table class="list"><thead><tr><th>版本</th><th>通道</th><th>条目</th><th>第一条</th></tr></thead><tbody><tr><td><a href="v2.0.8.21.html">2.0.8.21</a></td><td>测试版</td><td>4</td><td>【修复·只配同名字段时判不出授权书】软著三方比对如果只配一组同名字段（比如「登记号 ↔ 登记号」），以前永远显示「未识别…</td></tr><tr><td><a href="v2.0.8.20.html">2.0.8.20</a></td><td>测试版</td><td>4</td><td>【修复·指向写错不再静默】`@字段名` 打错一个字母（比如 `@开发这`）时，这条词以前会整段当普通词、看着配了实际不按…</td></tr><tr><td><a href="v2.0.8.19.html">2.0.8.19</a></td><td>测试版</td><td>4</td><td>【优化·两边值不一致时不再只是悬停】同一字段「页面抓取值」和「图上识别值」对不上时，这一行现在有明确的视觉：浅黄底、左侧…</td></tr><tr><td><a href="v2.0.8.18.html">2.0.8.18</a></td><td>测试版</td><td>6</td><td>【修复·图上明明有、却判成没有】OCR 常把 abc1234 读成全角 ａｂｃ１２３４，或者把一段值拆成带空格的多段；以…</td></tr><tr><td><a href="v2.0.8.17.html">2.0.8.17</a></td><td>测试版</td><td>2</td><td>【优化·全中不再挂「名」「开」小标】用户原话：「找到的情况，还是会有名、开的小标，这是不需要的。底色标绿就够了。」现在隐…</td></tr><tr><td>2.0.8.16</td><td>测试版</td><td>3</td><td>【修复·隐私政策链接抓不到正文：请求没发出去 / failed to fetch】有些站点（WAF、证书链、只认「真实导…</td></tr><tr><td>2.0.8.15</td><td>测试版</td><td>4</td><td>【修复·隐私政策「正文里明明有，却判成没有」】根因是扩展从来没打开过隐私政策链接：判定用的只是抓取表「隐私政策」那一格的…</td></tr><tr><td>2.0.8.14</td><td>测试版</td><td>7</td><td>【修复·隐私政策校验「明明有却说没有 / 不该绿却绿了」】抓取表会让「值完全相同」的字段共用一行（开发者与核准主体名称经…</td></tr><tr><td>2.0.8.13</td><td>测试版</td><td>7</td><td>抓取字段取值改人话摘要：行按钮/样式区直接显示「取值：值格：右数第 2 格 · 只显示一行」，点开仍是结构化面板，存储格…</td></tr><tr><td>2.0.8.12</td><td>测试版</td><td>8</td><td>【改动·设置页侧栏分组 + 空态三步引导】七项导航按「内容 / 外观 / 站点与数据 / 帮助」分成四组，每组一个灰色小…</td></tr><tr><td>2.0.8.11</td><td>测试版</td><td>5</td><td>【观感·全站对比度校准】把设计令牌里 4 个「本身就不达标」的取值改到位：品牌蓝 `#4a90d9 → #2f6fb5`…</td></tr><tr><td>2.0.8.10</td><td>测试版</td><td>2</td><td>【修复·高亮被页面清掉后能自己长回来】上一版为了「不闪」改成按内容签名做差异：签名没变就不重写视觉组。但 `CSS.hi…</td></tr><tr><td>2.0.8.9</td><td>测试版</td><td>5</td><td>【修复·重建不再闪、复制不再丢选中】根因有两条：①每次重建都先把全页高亮清掉再整体重画，命中一个没变也会出现一帧「高亮消…</td></tr><tr><td>2.0.8.8</td><td>测试版</td><td>5</td><td>【改动·贴边模式的整行底色直接复用卡片颜色】原来是把卡片色降到 10% 透明度再铺上去，实际看是灰蒙蒙一层，和旁边的浅色…</td></tr><tr><td>2.0.8.7</td><td>测试版</td><td>9</td><td>【修复·图文合并只在「图这次真认出来了」时才出行】上一版的判据是「这个字段写在图片动态词里」，于是一张没识别成功、或动态…</td></tr><tr><td>2.0.8.6</td><td>测试版</td><td>5</td><td>【改动·去掉「软著一致性核对」，换成「图文合并」】原来那张绿底/橙底的软著核对卡整块删了（设置页里的开关、六个字段名、面…</td></tr><tr><td>2.0.8.5</td><td>测试版</td><td>4</td><td>【重做·AI 助手默认走 DeepSeek 网页对话，不用再配 Key】上一版虽然写了「默认 DeepSeek」，但走的…</td></tr><tr><td>2.0.8.4</td><td>测试版</td><td>6</td><td>【修复·贴着边条时，页面内容变了摘要列不跟着变】根因在调度层：页面只是局部刷新了「给面板读数的位置」，没碰到高亮命中的那…</td></tr><tr><td>2.0.8.3</td><td>测试版</td><td>4</td><td>【改动·「修改」弹窗合并了「批量」】图片命中关键词、图上须有的字段值这两格不再有单独的「批量」按钮 —— 原来批量里的能…</td></tr><tr><td>2.0.8.2</td><td>测试版</td><td>3</td><td>【改动·五个候选框改成「修改」列表弹窗】关键词、标题关键词(左格)、字段、图片命中关键词、图上须有的字段值这五格的标题行…</td></tr><tr><td>2.0.8.1</td><td>测试版</td><td>7</td><td>【新增·隐私说明单列成页】README 里那两句「本地存储、不上传」扩成 `PRIVACY.md` 一页，逐条写清五件事…</td></tr><tr><td>2.0.8</td><td>稳定版</td><td>4</td><td>【性能·同一个元素的样式只读一次】高亮器判断「这段字该不该显示」时要问计算样式（`display` / `visibil…</td></tr><tr><td>2.0.7.3</td><td>测试版</td><td>7</td><td>【修复·图片词条的「批量管理」认不出已配字段（下拉框灰掉 / 显示「全部」）】根因一行：那个弹窗去读「抓取后续字段」输入…</td></tr><tr><td>2.0.7.2</td><td>测试版</td><td>9</td><td>【新增·图片词条的批量管理】`图片命中关键词` / `图片动态关键词` 两格的标题行多了「批量」按钮：一次列出这一格的全…</td></tr><tr><td>2.0.7.1</td><td>测试版</td><td>7</td><td>【修复·图片命中关键词「正文里明明有、却判未命中」】根因是命中词被**恒当正则**编译：`C++`、`A(B)` 这类写…</td></tr><tr><td>2.0.7</td><td>稳定版</td><td>5</td><td>【性能·重页面整页重建快约三成】2000 行 / 1.2 万节点的页面上，整页重建 3.10s → 2.17s，其中「重…</td></tr><tr><td>2.0.6.6</td><td>测试版</td><td>3</td><td>【修复·重要笔记输入框拖宽会把整个弹窗撑崩】原生拖动只写编辑区自己的行内宽度，2.0.6.5 给列加了宽度下限之后，一旦…</td></tr><tr><td>2.0.6.5</td><td>测试版</td><td>7</td><td>【新增·PDF 也能命中关键词】页面里引用到的 PDF（`&lt;a&gt;` 链接、`&lt;iframe&gt;` / `&lt;embed&gt;` …</td></tr><tr><td>2.0.6.4</td><td>测试版</td><td>5</td><td>【修复·图片命中关键词仍会撑破添加关键词弹窗】三个根因一起修：① 展开态只写了 flex 却没写 min-width，胶…</td></tr><tr><td>2.0.6.3</td><td>测试版</td><td>3</td><td>【修复·抓取值后面拖着相邻字段名】一行里排了多个字段的表（`授权方 | 合肥… | 被授权方 | 沈阳…`）在取「被授权…</td></tr><tr><td>2.0.6.2</td><td>测试版</td><td>7</td><td>【修复·图片命中关键词「加了词反而不生效」】判决以前是「一票否决」：静态词没判中，或者点名的动态值缺一个，都直接整条归零…</td></tr><tr><td>2.0.6.1</td><td>测试版</td><td>10</td><td>【修复·图片动态关键词「永远不命中」】点名之后却取不到值，判据以前会**静默整条作废** —— 点名的字段在抓取结果里没…</td></tr><tr><td>2.0.6</td><td>稳定版</td><td>4</td><td>【修复·宽图、长图边上的字被当「边框」整行丢掉】识别前会先看每个检测框占画布的多少 —— 占比过大的当装饰边框丢掉（这是…</td></tr><tr><td>2.0.5.1</td><td>测试版</td><td>2</td><td>【修复·图里明明是「词：值」一行，识别结果却排成上下两行】上一版是**在下游兜底**（值空了就往下一行接），这一版从**…</td></tr><tr><td>2.0.5</td><td>稳定版</td><td>2</td><td>【修复·图里「词：值」被 OCR 折成两行时，值就接不上了】上一版收严之后只认同一条线上的 `词：值`，而识别常把它拆成…</td></tr><tr><td>2.0.4</td><td>稳定版</td><td>6</td><td>【收严·图里的「词：值」不再随便进笔记表格，必须先给那个词点名】上一版凡是命中行里的 `X：Y` 都会并进抓取内容表格，…</td></tr><tr><td>2.0.3</td><td>稳定版</td><td>4</td><td>【改名·「还需图上有」现在叫「图片动态关键词」】名字改准：这一格填的是**抓取字段名**，命中判定时拿**抓到的值**去…</td></tr><tr><td>2.0.2.19</td><td>测试版</td><td>6</td><td>【修复·「中华人民共和国国家版权局」「证书号」「软件名称」「著作权人」那几行，整片认不出来】根子不在认字，在**归行**…</td></tr><tr><td>2.0.2.18</td><td>测试版</td><td>3</td><td>【修复·上一版说的「同值字段合并成一列」，真机上其实一次都没生效】判据把每个字段的图片选项整块拿去比较，而这块选项里带着…</td></tr><tr><td>2.0.2.17</td><td>测试版</td><td>7</td><td>【重要笔记不再显示抓取字段的后缀】字段名格从此只写名字：`截图`、`开发者`，不再跟上 `#图3`、`#0`、`!`、`…</td></tr><tr><td>2.0.2.16</td><td>测试版</td><td>7</td><td>【修复·候选框里的胶囊一长，就把整个框顶出卡片】上一版只给关键词、标题关键词、抓取字段三处上了裁切，图片命中关键词那格还…</td></tr><tr><td>2.0.2.15</td><td>测试版</td><td>6</td><td>【新增·大图里一键 OCR：任何进得了面板的图都能就地识别】看大图时工具条上多了一个按钮，位置就在原来「隐藏全文 / 显…</td></tr><tr><td>2.0.2.14</td><td>测试版</td><td>3</td><td>【修复·右键识别的图识别完了，主模块那张「截图」卡片却不出现】上一版加的卡片要等下一次页面变动才刷出来：识别结果回来时只…</td></tr><tr><td>2.0.2.13</td><td>测试版</td><td>4</td><td>【改进·右键识别的图现在进「重要笔记」主模块，一张卡片、左格固定「截图」、所有图塞进右边同一格】此前右键识别（菜单里的「…</td></tr><tr><td>2.0.2.12</td><td>测试版</td><td>4</td><td>【修复·候选框里的胶囊一多、一长，就把「一个输入框」撑成两三行】关键词、标题关键词、图片命中关键词此前只有抓取字段带裁切…</td></tr><tr><td>2.0.2.11</td><td>测试版</td><td>6</td><td>【改进·备注框占满基本信息整张卡，三列各有最小宽度、拖宽时一起变宽】此前备注框只有卡片一半宽（右半边一直空着），把弹窗手…</td></tr><tr><td>2.0.2.10</td><td>测试版</td><td>7</td><td>【改进·「添加关键词」弹窗整体梳理：后缀图例收起来、图片 OCR 三件并成一块、可写区吃满卡片】三张卡片此前各有各的浪费…</td></tr><tr><td>2.0.2.9</td><td>测试版</td><td>7</td><td>【修复·重要笔记「图片命中」分区里的缩略图，命中了也不铺红框】2.0.2.7 说过「命中的图统一铺红框」，但那道标红的扫…</td></tr><tr><td>2.0.2.8</td><td>测试版</td><td>5</td><td>【改进·关键词输入框改回「一个框里装胶囊」的样子】2.0.2.7 把核心词、标题词、图片命中词收成胶囊之后，胶囊与末尾的…</td></tr><tr><td>2.0.2.7</td><td>测试版</td><td>9</td><td>【改进·识别过的图不再在面板里重复占一行，命中的图直接铺红框】此前同一个抓取字段里的图会在面板的「图片命中」分区里再画一…</td></tr><tr><td>2.0.2.6</td><td>测试版</td><td>6</td><td>【改进·重要笔记的「置顶排序」改成从下拉框里挑词、挑中的用胶囊排在下面】此前要自己手打关键词，打错一个字这项就静默失效；…</td></tr><tr><td>2.0.2.5</td><td>测试版</td><td>8</td><td>【修复·一个词挂了多个抓取字段时，图片识别又能拉起来了】此前「张数」这个名额把**根本识别不了**的图也算进去：包名里的…</td></tr><tr><td>2.0.2.4</td><td>测试版</td><td>9</td><td>【新增·字段后面可以直接写「只取某个词之前的内容」了】抓取字段支持新后缀 `^锚文本`：写「应用名称^[复制]」就只取页…</td></tr><tr><td>2.0.2.3</td><td>测试版</td><td>3</td><td>【修复·点图片词块的「已复制」绿框不再偶发丢失】点一下命中图片的词块，若恰好在剪贴板写入完成之前发生了一次面板重画，绿框…</td></tr><tr><td>2.0.2.2</td><td>测试版</td><td>6</td><td>【修复·大图里的识别全文浮层现在会跟着窗口一起重摆】开大图期间改窗口大小，此前浮层停在旧坐标上（窗口变小可能被挤出视野）…</td></tr><tr><td>2.0.2.1</td><td>测试版</td><td>7</td><td>【改进·大图里的识别全文现在是独立浮层，默认就停在大图右侧并排显示】点开大图就能直接看到整篇识别文字，不必再点工具条上的…</td></tr><tr><td>2.0.2</td><td>稳定版</td><td>13</td><td>【说明·本版把最近三段测试版的内容一次性推给稳定通道】右键识别任意图、长截图不再截断、同一行不再重复 —— 这些此前只在…</td></tr><tr><td>2.0.1.17</td><td>测试版</td><td>6</td><td>【新增·右键任意一张图，直接用高亮词识别它】网页里任何一张图（包括别的站的图床）现在都能右键识别：菜单里多出「用高亮词识…</td></tr><tr><td>2.0.1.16</td><td>测试版</td><td>9</td><td>【改进·重要笔记面板的最小宽度 160 → 200px】面板被拖到 160px 时，正文一行只放得下十来个字，抓取来的驳…</td></tr><tr><td>2.0.1.15</td><td>测试版</td><td>14</td><td>【改进·灯箱里的识别全文改到右侧栏，带一键复制】点开大图后的整篇识别文字，此前贴在灯箱底部，图一大就被挤掉一截。现在收进…</td></tr><tr><td>2.0.1.14</td><td>测试版</td><td>5</td><td>【修复·识别图片时，页面重建不再抢走识别的主线程（重页识别窗口 27.5s → 0.4s）】真机装置（3000 行正文 …</td></tr><tr><td>2.0.1.13</td><td>测试版</td><td>7</td><td>【改进·两个外观默认值搬到「样式」分区】重要笔记的「图片尺寸」「正文字号」两项此前埋在「帮助与隐私 → ⚡ 性能 → 折…</td></tr><tr><td>2.0.1.12</td><td>测试版</td><td>4</td><td>【改进·重要笔记悬浮窗默认宽度收窄，少遮挡标题列】面板默认宽度 360→**300px**（窄视口仍受 `max-wid…</td></tr><tr><td>2.0.1.11</td><td>测试版</td><td>4</td><td>【改进·图片识别改成简约展示，不再把整段识别文字铺在面板里】命中图片的条目此前把整段 OCR 文字直接铺开，图一多面板就…</td></tr><tr><td>2.0.1.10</td><td>测试版</td><td>4</td><td>【修复·帮助与隐私里的「关于」面板不再整块空白】设置页「帮助与隐私」下的「ℹ️ 关于」此前点开是一片空白：版本信息、构建…</td></tr><tr><td>2.0.1.9</td><td>测试版</td><td>4</td><td>【改进·重要笔记条目多时收紧排版】条目一多，正文与标签占的地方就明显偏多、一屏看不了几条。本版把字号、行距与内边距各降一…</td></tr><tr><td>2.0.1.8</td><td>测试版</td><td>2</td><td>【修复·「显示全部」原来只进不出】上一版的图片复核入口是条单行道：点开「显示全部」后按钮会**当场消失** —— 它是拿…</td></tr><tr><td>2.0.1.7</td><td>测试版</td><td>3</td><td>【修复·同页第 5 张图起不再永远「排队中…」】一页里图片超过 4 张时，此前只有前 4 张会真的送去识别：并发额度用满…</td></tr><tr><td>2.0.1.6</td><td>测试版</td><td>7</td><td>【主引擎·换成 PP-OCRv6 tiny（本地 WASM）】图片文字识别的主引擎由 Tesseract 换成 PP-O…</td></tr><tr><td>2.0.1.5</td><td>测试版</td><td>4</td><td>【修复·设置页显示的语言包体积】设置页 → 图片识别里那份「高精度语言包」的体积一直是**照清单念的**，而清单这一栏记…</td></tr><tr><td>2.0.1.4</td><td>测试版</td><td>4</td><td>【变更·插件入口取消线上更新，只留通道切换】弹窗里的「检查更新」「更新提示条（带下载按钮）」「稍后提醒」整块撤掉：更新这…</td></tr><tr><td>2.0.1.3</td><td>测试版</td><td>8</td><td>【新增·诊断复制拆成两档】弹窗的「复制诊断」原来只有一档：标题写着已脱敏，实际会把**当前页面的完整网址、iframe …</td></tr><tr><td>2.0.1.2</td><td>测试版</td><td>9</td><td>【修复·一个会把词库覆盖掉的严重缺陷（P0）】在**暂停高亮 / 禁用本站 / 被网址规则禁掉**的页面上，用弹窗里的「…</td></tr><tr><td>2.0.1.1</td><td>测试版</td><td>2</td><td>【本版无功能变更·只补上「测试通道的自动更新」这最后一环】扩展功能、界面、抓取口径与 2.0.1 完全一致。此前测试通道…</td></tr><tr><td>2.0.1</td><td>稳定版</td><td>2</td><td>【本版无功能变更·只加固「发布与更新」这条链】扩展的功能、界面、抓取口径与 2.0.0 完全一致，一个字都没改。改的是*…</td></tr><tr><td>2.0.0.10</td><td>测试版</td><td>1</td><td>【本版无功能变更·只加固发版与更新链路】扩展的功能、界面、抓取口径与上一版（2.0.0.9）完全一致。改的是**发布链路…</td></tr><tr><td>2.0.0.9</td><td>测试版</td><td>4</td><td>【改造·「帮助与隐私」整块重构为内部标签分页】原来是一整条超长滚动，现在模块内部加了一排标签（🔒隐私 📖功能 💾数…</td></tr><tr><td>2.0.0.8</td><td>测试版</td><td>3</td><td>【新增·字段后缀 `!` 去内部空白】包名等连续标识符字段混入了网页**排版产生的空白**（例如包名被网页拆成 `com…</td></tr><tr><td>2.0.0.7</td><td>测试版</td><td>3</td><td>【修复·上一版新加的「内层」会让字段的「仅图片 / 前 N 张」失效】上一版给同名标签按层级加了「（内层）/（本层）/（…</td></tr><tr><td>2.0.0.6</td><td>测试版</td><td>7</td><td>【重做·「抓取范围」改成三个方向可选】上一版的档位（自动 / 只抓本层 / 只抓外层 / 只抓最外层 / 内外都抓）表述…</td></tr><tr><td>2.0.0.5</td><td>测试版</td><td>5</td><td>【新增·网站自己做的「展开 / 收起」现在也会命中】上一版修好的是浏览器**原生**折叠（`&lt;details&gt;`）。还有…</td></tr><tr><td>2.0.0.4</td><td>测试版</td><td>6</td><td>【更正·折叠起来的长内容**应当命中**（上一版方向弄反了）】页面上很多地方会把过长的内容**先收起来、点一下展开**（…</td></tr><tr><td>2.0.0.3</td><td>测试版</td><td>4</td><td>【修复·被 `display:contents` 包住的词现在会正常高亮】有一类页面写法是让一个容器**在布局上「消失」…</td></tr><tr><td>2.0.0.2</td><td>测试版</td><td>5</td><td>【修复·抓取不再「跑到整页去找」】命中词出现在**正文标题 / 段落**里时（根本不在任何一行里），以前会在整页范围里找…</td></tr><tr><td>2.0.0.1</td><td>测试版</td><td>5</td><td>【新增·嵌套表格可以选「抓哪一层」了】命中落在**单元格内部的表格**里时，以前抓取只会看它自己那张小表。现在「抓取后续…</td></tr><tr><td>2.0.0</td><td>稳定版</td><td>12</td><td>【正式版 2.0.0 · 重构后的第一个正式版，把过去四个多月的改动一次性交付】先说三件你最容易感觉到的：① **重要笔…</td></tr><tr><td>1.99.99.44</td><td>测试版</td><td>10</td><td>【修复·导出的配置文件再导入时会少掉「仅抓取」的关键词】那些「只有标题词、没有核心词、专门用来抓数据」的词，旧版导出→导…</td></tr><tr><td>1.99.99.43</td><td>测试版</td><td>6</td><td>【调整·「抓取后续字段」也有自己的「启用」了：四个模块各管各的】以前只有「单元格组合」和「重要笔记」能整块开关，抓取那边…</td></tr><tr><td>1.99.99.42</td><td>测试版</td><td>4</td><td>【调整·关键词编辑器：三颗胶囊统一叫「启用」，并都挪到各自模块的右上角】以前「单元格组合」和「重要笔记」那两颗（原来叫「…</td></tr><tr><td>1.99.99.41</td><td>测试版</td><td>4</td><td>【重构·图片命中改成「后续抓取字段」的一个分支（按你的口径）】以前图片识别是组合词专属、而且取哪些图由组合词自己算；现在…</td></tr><tr><td>1.99.99.40</td><td>测试版</td><td>2</td><td>【修复·图片命中之后，面板里那块「🖼 图片命中」还收着，得手动点开才看得到】现在**只要有命中的条目就自动展开**：分…</td></tr><tr><td>1.99.99.39</td><td>测试版</td><td>3</td><td>【修复·「容器把图显示得极小」不再被误判成「图当前不可见」】你报的这条是判据用错了对象：旧实现拿 `getBoundin…</td></tr><tr><td>1.99.99.38</td><td>测试版</td><td>5</td><td>【新增·左右组合词可以指定「取值格」了（右起，按视觉列数）】以前左右组合词写死了「标签格右边相邻那一格」—— 但很多表格…</td></tr><tr><td>1.99.99.37</td><td>测试版</td><td>3</td><td>【新增·识别精度可选：快速 / 高精度（你点名要的）】设置页 →「图片识别」多了「识别档位」：**快速**（小语言包，省…</td></tr><tr><td>1.99.99.36</td><td>测试版</td><td>3</td><td>【改进·把海报里的识别结果收拾成人能读的样子】你上一条里那些垃圾行（`Tory`、`rr i`、`Ve`、`Aes` 之…</td></tr><tr><td>1.99.99.35</td><td>测试版</td><td>3</td><td>【尝试修复·「一张营销海报里认不出字」】你给的那张图（1080×1920：紫色渐变 + 装饰大字 + 手机聊天截图 + …</td></tr><tr><td>1.99.99.34</td><td>测试版</td><td>4</td><td>【优化·识别准确率：给引擎喂图之前先做四步处理（本轮实测提升很大）】之前只有「图太大」才缩小，**小图原样**丢给引擎，…</td></tr><tr><td>1.99.99.33</td><td>测试版</td><td>3</td><td>【修复·跨域图片「明明授权了却还是提示未授权」】上一版让读不出像素的图也留在面板里并说清原因，于是你看到了「跨域（未授权…</td></tr><tr><td>1.99.99.32</td><td>测试版</td><td>4</td><td>【修复·图片识别「一点反应都没有」的真凶：读不出地址的图被**整条丢掉**】你的判断没错，问题就在「根本没抓图」这一步 …</td></tr><tr><td>1.99.99.31</td><td>测试版</td><td>3</td><td>【实测对照·智能档 vs 保守档的消耗（1500 行表格页，与你页面同量级的忙页面）】同一台机器、同一段时间，两个档位的…</td></tr><tr><td>1.99.99.30</td><td>测试版</td><td>4</td><td>【修复·「提交后不高亮、刷新一下才好」——本轮真凶：内容是被 CSS 动画显出来的，我们一条变动记录都收不到】你那份诊断…</td></tr><tr><td>1.99.99.29</td><td>测试版</td><td>4</td><td>【诊断·新增「逐规则命中明细」：哪个词命中了、哪个词一次都没命中，一眼看清】你反馈「某个格子该亮却不亮」，而诊断里只告诉…</td></tr><tr><td>1.99.99.28</td><td>测试版</td><td>4</td><td>【新增·「变更处理方式」可以切换了：智能 / 保守（你点名要的那个开关）】设置页「性能与稳定性」里多了一档选择：**智能…</td></tr><tr><td>1.99.99.27</td><td>测试版</td><td>3</td><td>【加强·自查把「词可能待的每一种地方」都查一遍（上一版只查了文本节点）】上一版的结论建立在「词在不在文本节点里」上，可有…</td></tr><tr><td>1.99.99.26</td><td>测试版</td><td>3</td><td>【新增·🩺 诊断里多一段「为什么一个都没命中」自查】现象是「规则 100 条、命中 0 条」：该重建的时候也重建了（诊…</td></tr><tr><td>1.99.99.25</td><td>测试版</td><td>3</td><td>【修复·点「提交」翻页后内容更新了，高亮却一直不回来、面板里的抓取字段也不刷新（本轮根因）】为了不被页面的高频变动拖住，…</td></tr><tr><td>1.99.99.24</td><td>测试版</td><td>3</td><td>【修复·勾选「识别图片文字」保存后再打开又变成没勾选】关键词在落盘前要过一道**字段清洗**（导入 JSON/CSV、旧…</td></tr><tr><td>1.99.99.23</td><td>测试版</td><td>2</td><td>【修复·装上新版本之后，还是提示「发现新版本」，而且版本号就是当前这个版本】检查更新在读缓存时，只把「当前版本」这一项换…</td></tr><tr><td>1.99.99.22</td><td>测试版</td><td>7</td><td>【新增·折叠/隐藏的内容显出来后会自动补上高亮】以前只观察「节点增删」和「文字改动」，而折叠面板展开、抽屉拉开、Tab …</td></tr><tr><td>1.99.99.21</td><td>测试版</td><td>7</td><td>【优化·无关的页面变动不再触发整页重建（省资源）】在此之前，页面上**任何**DOM 变动（时钟跳秒、动画、广告位、框架…</td></tr><tr><td>1.99.99.20</td><td>测试版</td><td>5</td><td>【新增·图片文字识别：图里的字也算命中（只对组合词开启）】有些表格的「值」就是一张截图（供应商名称、金额、结论…），文字…</td></tr><tr><td>1.99.99.19</td><td>测试版</td><td>2</td><td>【移除·命中统计（含文本关键词统计）】按你的口径把统计功能**整体去掉**：内容脚本侧的命中计数与落盘（`src/fea…</td></tr><tr><td>1.99.99.18</td><td>测试版</td><td>1</td><td>【优化·看大图的两处观感（你反馈的两点）】① **容器范围做了区分**：大图容器原来只有一圈很淡的圆角，和暗色遮罩混在一…</td></tr><tr><td>1.99.99.17</td><td>测试版</td><td>2</td><td>【修复·正则里有多个分支时，只有第一个分支能命中（你报的 `安.*车主|好.*车主|平.*车主` 多个不生效）】根因是上…</td></tr><tr><td>1.99.99.16</td><td>测试版</td><td>2</td><td>【修复·网页里**隐藏的容器**里的词也会被命中（页面上看不见却有高亮）】你反馈的「命中了一个页面上没有的词」确实是插件…</td></tr><tr><td>1.99.99.15</td><td>测试版</td><td>3</td><td>【优化·整体性能体检：扫描快一倍，重建快约四分之一（重表格页面上）】这轮把整条管线在 2000 行 / 1.2 万文本节…</td></tr><tr><td>1.99.99.14</td><td>测试版</td><td>1</td><td>【修复·点开网页自带大图后残留的计数文字（如 `1/5`）也被抓进字段】上一版只挡住了浮层里的**图片**，浮层里的**…</td></tr><tr><td>1.99.99.13</td><td>测试版</td><td>1</td><td>【修复·网页自己的「看大图」浮层被当成字段内容抓了下来】有些站点的看图器就是在单元格里**再加一个 div 容器**放大…</td></tr><tr><td>1.99.99.12</td><td>测试版</td><td>3</td><td>【新增·抓取支持「仅图片」与「只取前几张图」】在「抓取后续字段」里给字段名加后缀即可（**每个字段可以不一样**）：`截…</td></tr><tr><td>1.99.99.11</td><td>测试版</td><td>3</td><td>【修复·看大图：点图片不再退出，改成可以拖动；上一张/下一张挪到图片两侧】此前灯箱里**点图片本身就会退出**，想细看或…</td></tr><tr><td>1.99.99.10</td><td>测试版</td><td>3</td><td>【修复·一个单元格里的多张图片被识别成「一列多行单图」】真实站点的截图区常见结构是 `一格 = &lt;ul&gt; 里若干 &lt;li…</td></tr><tr><td>1.99.99.9</td><td>测试版</td><td>3</td><td>【底层·统一「普通词」与「组合词」的匹配实现】按你的要求把两者的处理逻辑收成一套：组合词**只是**在核心词上加了一个「…</td></tr><tr><td>1.99.99.8</td><td>测试版</td><td>4</td><td>【修复·组合词的核心词被页面拆开时命不中（同一个词，普通规则亮、组合规则不亮）】有些页面为了给半个词上色，会把一个词拆成…</td></tr><tr><td>1.99.99.7</td><td>测试版</td><td>3</td><td>【修复·大表格页面上插件会把主线程占住几十秒（浏览器报「页面无响应 / 加载失败」）】重要笔记在结算抓取内容时，对**每…</td></tr><tr><td>1.99.99.6</td><td>测试版</td><td>2</td><td>【修复·从「后退/前进缓存」回来的页面永久不高亮】浏览器把页面放进后退/前进缓存时会发一次 pagehide（此时页面只…</td></tr><tr><td>1.99.99.5</td><td>测试版</td><td>2</td><td>【兼容·晚挂的 Shadow DOM（自定义元素 / 微前端）】有些页面是在加载**之后**才把 Shadow DOM …</td></tr><tr><td>1.99.99.4</td><td>测试版</td><td>3</td><td>【修复·罕见字不能用于「单元格组合」】规格里早已写明「罕见字规则…也可作为「单元格组合」的核心词」，但一直没接上：罕见字…</td></tr><tr><td>1.99.99.3</td><td>测试版</td><td>3</td><td>【修复·多级表头的 el-table 上，上下格组合词整列失效】表头有两行（分组表头）的 el-table 里，上下格组…</td></tr><tr><td>1.99.99.2</td><td>测试版</td><td>1</td><td>【版本推进·1.99.99.2】按规程把测试版第四位 +1（1.99.99.1 → 1.99.99.2）：功能与上一版相…</td></tr><tr><td>1.99.99.1</td><td>测试版</td><td>1</td><td>【版本号换线·启用 1.99.x】按要求把测试版换到 1.99 线。比较结果（逐段数值）：1.99.99.1 大于线上稳…</td></tr><tr><td>2.2.4</td><td>稳定版</td><td>1</td><td>【测试版·验证线上自动更新】本版功能与 2.2.3 完全相同，只把版本号推到 2.2.4，用来验证「线上发版 → 浏览器…</td></tr><tr><td>2.2.3</td><td>稳定版</td><td>1</td><td>【新增·项目首页可一键安装与自动更新】① 设置页左下角版本号后面增加「项目主页 ↗」链接。② 项目首页新增下载区块：直接…</td></tr><tr><td>2.2.2</td><td>稳定版</td><td>1</td><td>【优化·检查更新失败时给出**具体原因**】原来只有一句笼统的「检查更新失败（无法连接更新源）」—— 分不清是「后台报错…</td></tr><tr><td>2.2.1</td><td>稳定版</td><td>1</td><td>【测试版·用于验证线上更新】本版只做一件事：把版本号从 2.2.0 推到 2.2.1，供「检查更新 → 发现新版本 → …</td></tr><tr><td>2.2.0</td><td>稳定版</td><td>1</td><td>【新增·导出为 Excel 表格 + CSV 改为 Excel 友好】用户实测要求：&quot;优化导出导入格式，采用表格形式的 …</td></tr><tr><td>v2.1.0</td><td>稳定版</td><td>54</td><td>【回补·多行抓取】抓取后续字段的完整能力回到 v1.52 语义：新增 `src/features/fetch.js` 作…</td></tr><tr><td>v2.0.0</td><td>稳定版</td><td>9</td><td>【架构换代】统一内核：匹配 / 定位 / 渲染 / 索引 / 清理收敛为单一 8 阶段管线（Load→Compile→S…</td></tr><tr><td>v1.52.0</td><td>稳定版</td><td>1</td><td>修复：上下格组合词在「标题行与内容同属一个 div/flex/grid 容器（非 &lt;table&gt;）时」不生效的问题。现支…</td></tr><tr><td>v1.51.0</td><td>稳定版</td><td>1</td><td>「抓取后续字段」支持在重要笔记中展示抓取到的图片：字段右侧单元格内的 &lt;img&gt; 会以缩略图形式出现在重要笔记（点击可查…</td></tr><tr><td>v1.50.0</td><td>稳定版</td><td>6</td><td>新增「上下格组合词」：在关键词编辑的「单元格组合」区新增&lt;strong&gt;组合方向&lt;/strong&gt;（左右格 / 上下格）…</td></tr><tr><td>v1.14.1</td><td>稳定版</td><td>2</td><td>修复「全词」匹配在页面把连续文本拆成相邻节点时的误命中：当目标串被拆成相邻文本节点/元素（如 【1、修复若干 B】+【s…</td></tr><tr><td>v1.14.0</td><td>稳定版</td><td>3</td><td>重要笔记聚合逻辑修复：先按笔记内容是否一致决定是否同卡（内容不一致的词不再被错误聚合到一张卡片，此前同一命中词命中多篇不…</td></tr><tr><td>v1.13.9</td><td>稳定版</td><td>1</td><td>代码梳理与清理（无功能变化）：①删除「仅抓取」中已不可达的&quot;回退抓标题右格/管道后段&quot;分支（该模式的触发本就要求配置了抓…</td></tr><tr><td>v1.13.8</td><td>稳定版</td><td>1</td><td>修复「全词」与「正则」同时勾选、且关键词含 | 时全词不生效的问题：如关键词 &quot;A|B|C&quot;，此前词边界只套在首/末分支…</td></tr><tr><td>v1.13.7</td><td>稳定版</td><td>1</td><td>修正「仅抓取」的触发判定（按用户澄清）：仅抓取模式（标题词如&quot;应用名称&quot; + 核心留空 + 抓取字段如&quot;包名&quot;）现在以【…</td></tr><tr><td>v1.13.6</td><td>稳定版</td><td>1</td><td>修复「仅抓取」抓取内容来源的空判断：按抓取字段(如&quot;包名&quot;)取到空内容时不回退抓标题右格（抓取内容判定）；触发判据见 v…</td></tr><tr><td>v1.13.5</td><td>稳定版</td><td>2</td><td>新增「页面变动自动整页重建」兜底机制，根治「多次提交/刷新后组合词偶发丢失高亮与重要笔记、且不恢复」的问题：此前组合词命…</td></tr><tr><td>v1.13.4</td><td>稳定版</td><td>1</td><td>完善「抓取字段」：此前抓取功能仅支持 HTML 表格（查找 &lt;table&gt; 后按标签定位右邻），当页面用 div/fle…</td></tr><tr><td>v1.13.3</td><td>稳定版</td><td>1</td><td>继续修复「多次提交/刷新后组合词偶发不命中、且不恢复」的问题：此前组合词一旦命中，引擎会把「该格+该词」记为已处理；当页…</td></tr><tr><td>v1.13.2</td><td>稳定版</td><td>1</td><td>修复组合词「重要笔记/命中聚合」的两处问题：①多个组合词命中同一个右侧单元格（如右格为「a b」同时被「应用名称→a」和…</td></tr><tr><td>v1.13.1</td><td>稳定版</td><td>1</td><td>修复「偶发性组合词不生效 / 刷新页面后组合词不命中」的真正根因：此前只要某组合词的右侧目标单元格被处理过一次（哪怕当时…</td></tr><tr><td>v1.13.0</td><td>稳定版</td><td>1</td><td>四项修复与优化：①修复组合词「核心关键词命中内容为超链接（&lt;a&gt;标签）时」不生效的问题——此前超链接被当作交互控件跳过导…</td></tr><tr><td>v1.12.0</td><td>稳定版</td><td>1</td><td>新增「罕见字检测」规则：在「添加关键词」输入 hjz# 即可添加一条罕见字检测规则（列表显示为「罕见字 (hjz#)」）…</td></tr><tr><td>v1.11.2</td><td>稳定版</td><td>1</td><td>修复跨节点组合词重要笔记展示两处问题：①重要笔记关键词标签只展示正则/包含实际命中的文本（如右格为「全民免费K歌唱 （3…</td></tr><tr><td>v1.11.1</td><td>稳定版</td><td>1</td><td>新增「匹配方式」快捷管理（关键词管理表格）：①表格「匹配方式」列改为只展示已勾选规则胶囊——核心词匹配（区分大小写/全词…</td></tr><tr><td>v1.11.0</td><td>稳定版</td><td>1</td><td>①组合词正则在「右格被页面自带标红/包裹元素拆成多个文本节点」时高亮失效的根治：此前验证用整格拼接文本（能跨节点匹配）、…</td></tr><tr><td>v1.10.18</td><td>稳定版</td><td>1</td><td>修复「悬浮备注/备注卡片内若包含关键词，会连备注里的词也一起被高亮」的问题：正常语义下插件自身弹出的 UI 内容（悬浮备…</td></tr><tr><td>v1.10.17</td><td>稳定版</td><td>1</td><td>修复 CSS Highlight 改造（v1.10.15/1.10.16）带来的两个交互问题：①普通词/组合词高亮由 s…</td></tr><tr><td>v1.10.16</td><td>稳定版</td><td>1</td><td>普通词高亮已在 v1.10.15 根治「翻页残留」；本次将【组合词右格核心高亮】也统一迁移到 CSS Custom Hi…</td></tr><tr><td>v1.10.15</td><td>稳定版</td><td>1</td><td>【根治性修复】普通关键词残留问题（翻页后内容不变/上一页高亮卡死）。根因：此前普通关键词高亮用「替换文本节点成高亮spa…</td></tr><tr><td>v1.10.14</td><td>稳定版</td><td>1</td><td>新增「翻页残留自动清扫」：针对部分网站翻页时 URL 不变、且框架不触发可见 DOM 事件、直接替换表格内容导致的旧高亮…</td></tr><tr><td>v1.10.13</td><td>稳定版</td><td>1</td><td>修复两处与组合词相关的问题：①重要笔记抓取字段时，右侧备注若用 flex 把多个内容并排放同一行（视觉上一行），会被错误…</td></tr><tr><td>v1.10.12</td><td>稳定版</td><td>1</td><td>再次修复组合词/重要笔记「已高亮后又自动消失」的问题（根因与 v1.10.11 不同）：当页面复用某行并改写组合词右格文…</td></tr><tr><td>v1.10.11</td><td>稳定版</td><td>1</td><td>修复「首次加载时组合词/重要笔记缺失，切换标签页再切回才恢复」的问题：根因是初始化顺序导致——此前先执行首扫(highl…</td></tr><tr><td>v1.10.10</td><td>稳定版</td><td>1</td><td>正式版修复「高亮/重要笔记先出现后又消失」：基于 v1.10.8 的增量架构（非回退），根因是 v1.10.8 用两个独…</td></tr><tr><td>v1.10.9</td><td>稳定版</td><td>1</td><td>临时过渡版（已由 v1.10.10 修复方案取代）：为急救「高亮/重要笔记先出现后又消失」，曾将动态监听逻辑回退为全量重…</td></tr><tr><td>v1.10.8</td><td>稳定版</td><td>1</td><td>补齐翻页残留与「值后到」场景的最后两处盲区：①同站点 URL 变化（如翻页 ?page=2、切 Tab、筛选）此前不触发…</td></tr><tr><td>v1.10.7</td><td>稳定版</td><td>1</td><td>修复两个动态页面问题：①重要笔记「抓取后续字段」在异步填入真实值后仍停在默认值/空值——重抓机制从「依赖高亮批次」改为「…</td></tr><tr><td>v1.10.6</td><td>稳定版</td><td>2</td><td>修复（v1.10.4 增量优化遗留盲区）：页面「复用节点/改写既有文本」（如异步刷新时把单元格文本从默认值改成真实值）新…</td></tr><tr><td>v1.10.5</td><td>稳定版</td><td>1</td><td>性能优化：新增「标签页隐藏时自动暂停高亮」（默认开启，可在 设置→高亮样式配置→性能优化 关闭）——后台标签页不再持续占…</td></tr><tr><td>v1.10.4</td><td>稳定版</td><td>1</td><td>修复高动态网页（实时刷新/无限滚动等）偶发整页卡顿、点击无响应的问题：高亮引擎由「每次全量重刷整页」改为「只增量处理新增…</td></tr><tr><td>v1.10.3</td><td>稳定版</td><td>1</td><td>导入/导出升级：①导出 JSON 可勾选范围（关键词与分组 / 站点规则 / 站点禁用状态 / 高亮样式），可只导出「站…</td></tr><tr><td>v1.10.2</td><td>稳定版</td><td>1</td><td>修复「快速添加」在部分浏览器(Chromium 内核)点击无反应：移除 type:popup 窗口下不兼容的 resiz…</td></tr><tr><td>v1.10.1</td><td>稳定版</td><td>1</td><td>小弹窗风格统一：重要笔记置顶聚合面板由旧橙色系改为品牌蓝；「快速添加」弹窗升级为沉浸式呈现（窗口更大、品牌渐变底、去除浏…</td></tr><tr><td>v1.10.0</td><td>稳定版</td><td>1</td><td>整体 UI/视觉/交互升级（v2 设计系统）：设置页、弹窗、欢迎页与网页内呈现统一为品牌蓝设计体系，风格更精致统一；修复…</td></tr><tr><td>v1.9.4</td><td>稳定版</td><td>1</td><td>分组管理的重要笔记全面对齐关键词：①「统一重要笔记」升级为所见即所得富文本编辑器（图片/加粗/表格/超链接与关键词一致）…</td></tr><tr><td>v1.9.3</td><td>稳定版</td><td>1</td><td>重要笔记组合词标签恢复「标题 → 关键词」排列：标题在前、箭头+关键词在后，箭头放关键词一侧（不放标题模块，因标题带 �…</td></tr><tr><td>v1.9.2</td><td>稳定版</td><td>1</td><td>重要笔记组合词标签排列微调（最终确定版见 v1.9.3「标题 → 关键词」）。</td></tr><tr><td>v1.9.1</td><td>稳定版</td><td>1</td><td>重要笔记底色改为铺满整张卡片（含标题/标签区）；单元格组合词在置顶笔记中的排列改为「标题关键词 → 关键词」（箭头随标题…</td></tr><tr><td>v1.9.0</td><td>稳定版</td><td>1</td><td>重要笔记新增「底色」：添加/编辑关键词时可在「重要」区勾选「使用底色」并选颜色（如提醒“优质”用浅绿、提醒“有风险”用浅…</td></tr><tr><td>v1.8.20</td><td>稳定版</td><td>1</td><td>重要笔记表格操作改为 Word/PPT 式右下角手柄：点击表格单元格后，右下角出现 ＋ － 浮层，＋ 可加行/加列，－ …</td></tr><tr><td>v1.8.18</td><td>稳定版</td><td>1</td><td>重要笔记的表格支持行列增删：点击表格里单元格后，用工具栏「上插行/下插行/删行/插列/删列/删表」即可增删行列或删除整表…</td></tr><tr><td>v1.8.17</td><td>稳定版</td><td>1</td><td>重要笔记工具栏新增「加粗 / 斜体 / 表格」——选中文字点 B/i 立即加粗/斜体、一键插入可填表格，真正所见即所得；…</td></tr><tr><td>v1.8.16</td><td>稳定版</td><td>1</td><td>重要笔记升级为「所见即所得」编辑：把 v1.8.15 的下方预览区去掉、与输入框合二为一——重要笔记直接在编辑框内显示最…</td></tr><tr><td>v1.8.15</td><td>稳定版</td><td>1</td><td>1) 重要笔记新增实时预览：在「添加/编辑关键词」弹窗填重要笔记时，下方实时显示渲染效果——填入 ![说明](图片网址)…</td></tr><tr><td>v1.8.14</td><td>稳定版</td><td>1</td><td>修复「取消/保存」按钮跟随滚动的问题：当添加/编辑关键词弹窗内容很多时，只有「基本信息/单元格组合/重要」三个模块在过长…</td></tr><tr><td>v1.8.13</td><td>稳定版</td><td>1</td><td>「添加/编辑关键词」界面优化：「重要笔记」输入框加宽、填满弹窗右侧空白，内容多时查看/修改更方便；编辑已有关键词时，「单…</td></tr><tr><td>v1.8.12</td><td>稳定版</td><td>1</td><td>修复重要笔记里 markdown 表格单元格内的图片（![说明](网址)）不显示的问题——此前表格先于图片解析，单元格里…</td></tr><tr><td>v1.8.11</td><td>稳定版</td><td>1</td><td>全插件文案大更新：梳理并重构了「功能说明」「版本介绍」「常见问题 Q&amp;A」以及各输入项的悬浮提示文字，让每项功能都讲得更…</td></tr><tr><td>v1.8.10</td><td>稳定版</td><td>1</td><td>修复「仅抓取」模式右侧备注中「编辑」等按钮文本仍冒出的问题：网页按钮内部常再包一层 &lt;span&gt; 等标签，导致按钮文本未…</td></tr><tr><td>v1.8.9</td><td>稳定版</td><td>1</td><td>修复「仅抓取」模式把右侧备注拆分成多行的问题：网页常用 flex 把多个元素排在同一行，但此前按「块=行」拆分导致同行内…</td></tr><tr><td>v1.8.8</td><td>稳定版</td><td>1</td><td>修复「仅抓取」模式右侧备注内容展示格式：由纯文本改为多行表格渲染（复用抓取字段表格）——左侧为该行标题（合并多行），右侧…</td></tr><tr><td>v1.8.7</td><td>稳定版</td><td>1</td><td>修复单元格组合匹配把右侧「编辑」等按钮文本误判为内容：判定与抓取时自动剔除按钮/链接/输入框等交互控件的文本，只有右侧真…</td></tr><tr><td>v1.8.6</td><td>稳定版</td><td>1</td><td>新增组合关键词「仅抓取」模式：关键词留空、在「单元格特别标注」填标题关键词(如 ^备注信息$)并填「抓取后续字段」后，当…</td></tr><tr><td>v1.8.5</td><td>稳定版</td><td>1</td><td>组合关键词的「标题关键词 / 右格核心」匹配支持 Unicode 属性类正则（如 \p{L} 匹配任意中文字母、\p{N…</td></tr><tr><td>v1.8.4</td><td>稳定版</td><td>1</td><td>1) 修复组合关键词迁移误翻与加载变慢：新增全局迁移完成标记，仅在首次自动迁移一次，之后绝不再翻转用户新建/编辑的组合关…</td></tr><tr><td>v1.8.3</td><td>稳定版</td><td>1</td><td>单元格组合关键词改为以「右侧单元格为核心」：在「关键词」位置填右格内容、在「标题关键词(左格)」填左格标题，命中=左格标…</td></tr><tr><td>v1.8.2</td><td>稳定版</td><td>1</td><td>重要笔记（及备注）内的图片改为缩略显示：限宽高约 180px、等比完整显示、不裁剪；点击图片在新标签页打开原图完整尺寸（…</td></tr><tr><td>v1.8.1</td><td>稳定版</td><td>1</td><td>修复普通关键词与「单元格组合关键词」（启用单元格验证）同时存在时的冲突：此前当普通关键词命中的正是组合关键词的期望值单元…</td></tr><tr><td>v1.8.0</td><td>稳定版</td><td>1</td><td>重要笔记与备注卡片新增图片显示：填入 ![说明](图片网址) 即可在笔记/备注中展示网络图片（支持 http(s)://…</td></tr><tr><td>v1.7.11</td><td>稳定版</td><td>1</td><td>左词与期望值高亮/互动样式统一：期望值片段改用与左侧关键词相同的 kh-highlight 样式（含悬停动效/过渡/内边…</td></tr><tr><td>v1.7.10</td><td>稳定版</td><td>1</td><td>组合关键词（启用单元格验证）的备注交互热区迁移到后期望值：鼠标放期望值出悬浮备注、点期望值出备注卡片；左侧关键词不再触发…</td></tr><tr><td>v1.7.9</td><td>稳定版</td><td>1</td><td>抓取后续字段优化：自动排除交互控件（按钮/链接/带 onclick 或交互 role/常见控件 class，如「编辑」「…</td></tr><tr><td>v1.7.8</td><td>稳定版</td><td>1</td><td>「抓取后续字段」新增简单模式:字段末尾加 #1(如 资质类型#1)则该字段只取右侧相邻一个单元格的值,展示为「字段|值」…</td></tr><tr><td>v1.7.7</td><td>稳定版</td><td>1</td><td>改进「抓取后续字段」合并：多个字段表格列数不一致时也合并为同一个表格，列数少的行尾部自动留空对齐（此前存在真实多列格或列…</td></tr><tr><td>v1.7.6</td><td>稳定版</td><td>1</td><td>改进「抓取后续字段」展示：配置多个字段（如 资质类型|应用功能类型）时，重要笔记中合并为同一个表格的多行展示（原拆成多个…</td></tr><tr><td>v1.7.5</td><td>稳定版</td><td>1</td><td>修复同一「重要」关键词在页面多个位置命中时（各位置所在表格不同、抓到的后续字段数不同），重要笔记面板会重复展示多个版本的…</td></tr><tr><td>v1.7.4</td><td>稳定版</td><td>1</td><td>修复「抓取后续字段」的表格分组归属：无 tab 的分组标记行（如 32位包:/64位包:）识别为分组标题行，在表格中占整…</td></tr><tr><td>v1.7.3</td><td>稳定版</td><td>1</td><td>修复「抓取后续字段」当左侧标签格只合并部分行、右侧内容纵向延伸超过 rowspan 时，超出部分（如 64位包 之后的 …</td></tr><tr><td>v1.7.2</td><td>稳定版</td><td>1</td><td>修复「抓取后续字段」单值列表格时出现冗余空白标题列（如 地址││地球东部）：仅当存在分组标题才渲染标题列，无标题的单值/…</td></tr><tr><td>v1.7.1</td><td>稳定版</td><td>1</td><td>「抓取后续字段」在重要笔记中的展示统一为表格形式：单值不再用&quot;标签：值&quot;纯文本，一律渲染成 标签(合并)+标题列+内容列…</td></tr><tr><td>v1.7.0</td><td>稳定版</td><td>1</td><td>① 修复 popup「帮助」「完整设置」按钮点击无效的问题；② 整体重构「添加/编辑关键词」弹窗：关键词与分组多列并排、…</td></tr><tr><td>v1.6.45</td><td>稳定版</td><td>1</td><td>修复「抓取后续字段」当网页数据不含 tab（标题独立成行）时第二列为空的问题：标题识别改为双通道——含 tab 的行、或…</td></tr><tr><td>v1.6.44</td><td>稳定版</td><td>1</td><td>修复「抓取后续字段」：网页数据为「标题后跟 tab、内容在下方多行」时，旧版把标题末尾 tab 误删导致标题与内容挤在同…</td></tr><tr><td>v1.6.43</td><td>稳定版</td><td>1</td><td>批量添加支持「单元格组合内容匹配」：勾选后可按“前格 | 后格期望值”批量导入，并统一设置重要笔记与后格匹配方式；同一前…</td></tr><tr><td>v1.6.29</td><td>稳定版</td><td>1</td><td>「添加/编辑关键词」弹窗：修复取消/保存随内容滚动的问题，按钮固定在底部、仅上方的配置区参与滚动。</td></tr><tr><td>v1.6.28</td><td>稳定版</td><td>1</td><td>「添加/编辑关键词」弹窗：取消/保存固定在底部不随内容滚动；匹配规则并入基本信息右侧，版面更紧凑。</td></tr><tr><td>v1.6.27</td><td>稳定版</td><td>1</td><td>「添加/编辑关键词」弹窗优化：按「基本信息/样式与状态/匹配规则/高级功能」分区卡片排布，说明文字改为「ⓘ + 悬浮气泡…</td></tr><tr><td>v1.6.26</td><td>稳定版</td><td>1</td><td>「添加关键词」弹窗界面优化：布局构图与排版更清晰，支持 Markdown 等说明文字改为「ⓘ + 悬浮气泡」展示，页面更…</td></tr><tr><td>v1.6.25</td><td>稳定版</td><td>1</td><td>右上角弹窗界面焕新：状态反馈更直观（全局开关实时提示、站点禁用态变绿色）、布局与交互优化；修复「帮助」按钮误跳欢迎页的问…</td></tr><tr><td>v1.6.24</td><td>稳定版</td><td>1</td><td>帮助页悬浮目录改为右侧竖排展示，内容过长自动省略、吸顶跟随滚动；窄屏（小于820px）时自动回落为顶部横排。</td></tr><tr><td>v1.6.23</td><td>稳定版</td><td>1</td><td>更新后自动打开欢迎页并弹窗展示近期更新；帮助与隐私新增悬浮目录；功能说明与常见问题补充「单元格组合关键词匹配」详解；关键…</td></tr><tr><td>v1.6.22</td><td>稳定版</td><td>1</td><td>关键词管理表格优化：长内容省略隐藏、支持表头拖拽调整列宽、点击状态列直接启用/禁用（移除操作列开关按钮）、颜色列只显示色…</td></tr><tr><td>v1.6.21</td><td>稳定版</td><td>1</td><td>批量操作新增「备注/重要笔记」：勾选多条后可批量设置统一备注、重要笔记（可选同时标记为重要），也可一键清空。</td></tr><tr><td>v1.6.20</td><td>稳定版</td><td>1</td><td>优化关键词管理表格展示：新增「后格期望值 / 重要笔记 / 高亮颜色」三列并调整列顺序，管理页一目了然。</td></tr><tr><td>v1.6.19</td><td>稳定版</td><td>4</td><td>前格相同、后格不同可并存：去重改为按「前格+后格」组合判断，可加多条同前词不同后格的规则。</td></tr><tr><td>v1.6.18</td><td>稳定版</td><td>2</td><td>新增「单元格特别标注」验证：关键词可独立勾选并填写“后一个单元格期望值”。命中后校验其横向右侧相邻格【包含】该值才生效（…</td></tr><tr><td>v1.6.17</td><td>稳定版</td><td>2</td><td>新增「相邻单元格特别标注」：命中重要关键词时，自动识别其横向右侧相邻单元格的值（HTML 表格 td，或 | / Tab…</td></tr><tr><td>v1.6.16</td><td>稳定版</td><td>1</td><td>修复导入数据丢失——JSON 导入恢复 globalEnabled 与 siteDisabledMap，并对分组颜色等字…</td></tr><tr><td>v1.6.15</td><td>稳定版</td><td>1</td><td>「检测更新」改为读取 crx 自动更新通道（update.xml），不再依赖 GitHub Releases API，国…</td></tr><tr><td>v1.6.14</td><td>稳定版</td><td>1</td><td>重要笔记聚合优化：同一页面命中多个关键词、笔记内容一致时合并为一条展示，并在条目标签中列举命中了哪些关键词。</td></tr><tr><td>v1.6.13</td><td>稳定版</td><td>2</td><td>分组可统一配置重要笔记展示文本：分组标记为「重要」后可填写统一说明，组内重要关键词命中时统一展示该文本（关键词自身已填写…</td></tr><tr><td>v1.6.12</td><td>稳定版</td><td>1</td><td>新增「原生一键更新」（方案B）：点「更新」可生成 kh-register-native.cmd，双击一次注册原生宿主，之…</td></tr><tr><td>v1.6.11</td><td>稳定版</td><td>1</td><td>点「更新」若未检测到本机自动更新服务，自动生成并下载 kh-auto-update.cmd，双击即可自动建目录+写脚本+…</td></tr><tr><td>v1.6.10</td><td>稳定版</td><td>1</td><td>修正常见问题 Q&amp;A 中站点规则判定顺序的描述（未命中取决于是否存在白名单）。</td></tr><tr><td>v1.6.9</td><td>稳定版</td><td>2</td><td>备注与重要笔记字段新增「ⓘ」格式说明小标（Markdown/换行说明）。</td></tr><tr><td>v1.6.8</td><td>稳定版</td><td>2</td><td>移除冗余且误导的「黑名单/白名单模式」单选，规则是否生效由每条规则自身类型决定。</td></tr><tr><td>v1.6.7</td><td>稳定版</td><td>1</td><td>修复「重要笔记误报」——页面隐藏元素（display:none 的菜单/模板/隐藏层）里含关键词时不再触发高亮与重要笔记…</td></tr><tr><td>v1.6.6</td><td>稳定版</td><td>3</td><td>新增「黑白名单详解」帮助板块并同步欢迎页宣传。</td></tr><tr><td>v1.6.5</td><td>稳定版</td><td>1</td><td>修复「检查更新无反应」——改为在弹窗内直接检测（不再依赖后台线程异步响应），并给网络请求加超时保护，失败或超时会有明确提…</td></tr><tr><td>v1.6.4</td><td>稳定版</td><td>3</td><td>快速添加关键词改为独立弹窗，空间更大不易挤压；重要笔记改为勾选后才展开。</td></tr><tr><td>v1.6.3</td><td>稳定版</td><td>1</td><td>修复站内分页切换后高亮残留（取消延迟高亮定时器）。</td></tr><tr><td>v1.6.2</td><td>稳定版</td><td>1</td><td>修复一键自动更新在部分 Windows 环境下解压失败；优化失败提示。</td></tr><tr><td>v1.6.1</td><td>稳定版</td><td>1</td><td>popup 新增当前版本号显示。</td></tr><tr><td>v1.6.0</td><td>稳定版</td><td>1</td><td>新增一键自动更新：配合本机辅助服务，点击更新自动完成下载→解压→覆盖→重载。</td></tr></tbody></table><footer><a href="https://moxiaoren.github.io/keyword-highlighter-extension/">项目主页</a><a href="https://github.com/moxiaoren/keyword-highlighter-extension/releases">Releases</a></footer></div></body></html>
+<!doctype html>
+<html lang="zh-CN" data-theme="paper" data-mode="auto" data-style="80">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-COhqkbaPOF+O1MeXzrrqyxS5JHiLZTzpFZpBTV1Hy4A=' 'sha256-lPqFPx9oza8AmRj6iqQLqEVdDcwxhxzQ3yQnVhy8ZDM='; style-src 'unsafe-inline'; img-src data:; font-src data:; media-src data:; connect-src 'self'; form-action 'none'; base-uri 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="Answer me with HTML 0.5.11">
+<title>更新说明</title>
+<style>
+html[data-theme="blueprint"], html[data-theme="blueprint"][data-mode="light"] {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --radius: 0px;
+  --shadow: none;
+  --bw: 1.5px;
+  --head-font: var(--font-sans);
+  --bg: #f6f6f3;
+  --paper: #ffffff;
+  --ink: #16181d;
+  --ink-2: #4b5260;
+  --ink-3: #8b929e;
+  --line: #1d2026;
+  --line-2: #d6dae1;
+  --fill: #f3f5f8;
+  --accent: #1d5fbf;
+  --accent-bg: #e4ecf8;
+  --ok: #1d5fbf;
+  --ok-bg: #e4ecf8;
+  --err: #c62828;
+  --err-bg: #fbeaea;
+  --warn: #a8620a;
+  --warn-bg: #fdf3e2;
+  --head-bg: #16181d;
+  --head-fg: #ffffff;
+}
+html[data-theme="blueprint"][data-mode="dark"] {
+  --bg: #081322;
+  --paper: #0d1c31;
+  --ink: #e6edf7;
+  --ink-2: #a9b8cc;
+  --ink-3: #6b7f99;
+  --line: #c9d6e8;
+  --line-2: #23385a;
+  --fill: #12253f;
+  --accent: #6ea8ff;
+  --accent-bg: #16305a;
+  --ok: #6ea8ff;
+  --ok-bg: #16305a;
+  --err: #ff7070;
+  --err-bg: #3b1620;
+  --warn: #f0b14a;
+  --warn-bg: #3a2a10;
+  --head-bg: #e6edf7;
+  --head-fg: #081322;
+}
+@media (prefers-color-scheme: dark) {
+html[data-theme="blueprint"][data-mode="auto"] {
+  --bg: #081322;
+  --paper: #0d1c31;
+  --ink: #e6edf7;
+  --ink-2: #a9b8cc;
+  --ink-3: #6b7f99;
+  --line: #c9d6e8;
+  --line-2: #23385a;
+  --fill: #12253f;
+  --accent: #6ea8ff;
+  --accent-bg: #16305a;
+  --ok: #6ea8ff;
+  --ok-bg: #16305a;
+  --err: #ff7070;
+  --err-bg: #3b1620;
+  --warn: #f0b14a;
+  --warn-bg: #3a2a10;
+  --head-bg: #e6edf7;
+  --head-fg: #081322;
+}
+}
+
+html[data-theme="shadcn"], html[data-theme="shadcn"][data-mode="light"] {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --radius: 8px;
+  --shadow: 0 1px 2px 0 rgba(0,0,0,0.05);
+  --bw: 1px;
+  --head-font: var(--font-sans);
+  --bg: #fafafa;
+  --paper: #ffffff;
+  --ink: #09090b;
+  --ink-2: #71717a;
+  --ink-3: #a1a1aa;
+  --line: #e4e4e7;
+  --line-2: #f0f0f2;
+  --fill: #f4f4f5;
+  --accent: #2563eb;
+  --accent-bg: #eff6ff;
+  --ok: #16a34a;
+  --ok-bg: #f0fdf4;
+  --err: #dc2626;
+  --err-bg: #fef2f2;
+  --warn: #d97706;
+  --warn-bg: #fffbeb;
+  --head-bg: #18181b;
+  --head-fg: #fafafa;
+}
+html[data-theme="shadcn"][data-mode="dark"] {
+  --bg: #09090b;
+  --paper: #121215;
+  --ink: #fafafa;
+  --ink-2: #a1a1aa;
+  --ink-3: #71717a;
+  --line: #27272a;
+  --line-2: #1c1c1f;
+  --fill: #18181b;
+  --accent: #60a5fa;
+  --accent-bg: #172554;
+  --ok: #4ade80;
+  --ok-bg: #052e16;
+  --err: #f87171;
+  --err-bg: #450a0a;
+  --warn: #fbbf24;
+  --warn-bg: #451a03;
+  --head-bg: #fafafa;
+  --head-fg: #18181b;
+}
+@media (prefers-color-scheme: dark) {
+html[data-theme="shadcn"][data-mode="auto"] {
+  --bg: #09090b;
+  --paper: #121215;
+  --ink: #fafafa;
+  --ink-2: #a1a1aa;
+  --ink-3: #71717a;
+  --line: #27272a;
+  --line-2: #1c1c1f;
+  --fill: #18181b;
+  --accent: #60a5fa;
+  --accent-bg: #172554;
+  --ok: #4ade80;
+  --ok-bg: #052e16;
+  --err: #f87171;
+  --err-bg: #450a0a;
+  --warn: #fbbf24;
+  --warn-bg: #451a03;
+  --head-bg: #fafafa;
+  --head-fg: #18181b;
+}
+}
+
+html[data-theme="paper"], html[data-theme="paper"][data-mode="light"] {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --font-serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Songti SC", "STSong", "Noto Serif CJK SC", "Source Han Serif SC", serif;
+  --radius: 2px;
+  --shadow: none;
+  --bw: 1px;
+  --head-font: var(--font-serif);
+  --bg: #f5f2ea;
+  --paper: #fdfbf6;
+  --ink: #1f1c17;
+  --ink-2: #57514a;
+  --ink-3: #8c867b;
+  --line: #cbc3b4;
+  --line-2: #e5dfd3;
+  --fill: #f3eee4;
+  --accent: #8c2f1e;
+  --accent-bg: #f5e5df;
+  --ok: #2e6a3b;
+  --ok-bg: #e4efe5;
+  --err: #a3251b;
+  --err-bg: #f7e3e0;
+  --warn: #7f5300;
+  --warn-bg: #f6ecd6;
+  --head-bg: #1f1c17;
+  --head-fg: #fdfbf6;
+}
+html[data-theme="paper"][data-mode="dark"] {
+  --bg: #15130f;
+  --paper: #1c1a15;
+  --ink: #ebe5d8;
+  --ink-2: #b5ad9e;
+  --ink-3: #7b7467;
+  --line: #4a443a;
+  --line-2: #2d2a24;
+  --fill: #242119;
+  --accent: #e59a7d;
+  --accent-bg: #3a2219;
+  --ok: #8cc79a;
+  --ok-bg: #1c3122;
+  --err: #f0928a;
+  --err-bg: #3a1d1a;
+  --warn: #e3b866;
+  --warn-bg: #352a13;
+  --head-bg: #ebe5d8;
+  --head-fg: #15130f;
+}
+@media (prefers-color-scheme: dark) {
+html[data-theme="paper"][data-mode="auto"] {
+  --bg: #15130f;
+  --paper: #1c1a15;
+  --ink: #ebe5d8;
+  --ink-2: #b5ad9e;
+  --ink-3: #7b7467;
+  --line: #4a443a;
+  --line-2: #2d2a24;
+  --fill: #242119;
+  --accent: #e59a7d;
+  --accent-bg: #3a2219;
+  --ok: #8cc79a;
+  --ok-bg: #1c3122;
+  --err: #f0928a;
+  --err-bg: #3a1d1a;
+  --warn: #e3b866;
+  --warn-bg: #352a13;
+  --head-bg: #ebe5d8;
+  --head-fg: #15130f;
+}
+}
+
+html:lang(zh-Hant)[data-theme][data-mode], html:lang(zh-TW)[data-theme][data-mode], html:lang(zh-HK)[data-theme][data-mode], html:lang(zh-MO)[data-theme][data-mode] {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", "Heiti TC", "Microsoft JhengHei", "Noto Sans CJK TC", "Noto Sans TC", "PingFang SC", "Microsoft YaHei", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+html:lang(ja)[data-theme][data-mode] {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Yu Gothic", Meiryo, "Noto Sans CJK JP", "Noto Sans JP", "PingFang SC", "Microsoft YaHei", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+html:lang(he)[data-theme][data-mode] {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans Hebrew", "Arial Hebrew", Arial, Roboto, "Helvetica Neue", sans-serif;
+}
+
+html {
+  --am-fs-title: calc(24px * var(--am-scale, 1));
+  --am-fs-stat: calc(17px * var(--am-scale, 1));
+  --am-fs-lead: calc(15.5px * var(--am-scale, 1));
+  --am-fs-heading: calc(15px * var(--am-scale, 1));
+  --am-fs-body: calc(14px * var(--am-scale, 1));
+  --am-fs-text: calc(13px * var(--am-scale, 1));
+  --am-fs-code: calc(12.5px * var(--am-scale, 1));
+  --am-fs-small: calc(12px * var(--am-scale, 1));
+  --am-fs-fine: calc(11.5px * var(--am-scale, 1));
+  --am-fs-label: calc(11px * var(--am-scale, 1));
+  --am-fs-tick: calc(10px * var(--am-scale, 1));
+  --am-fs-d-node: 13px;
+  --am-fs-d-field: 12px;
+  --am-fs-d-edge: 11.5px;
+  --am-fs-d-cluster: 11px;
+  --am-fs-d-step: 10px;
+  --am-fs-d-note: 12px;
+  --am-fs-d-badge: 11px;
+  --am-fs-d-chartCat: 12px;
+  --am-fs-d-chartTick: 11px;
+  --am-fs-d-chartVal: 11px;
+  --am-fs-d-chartLegend: 12px;
+  --am-fs-d-totalMin: 10px;
+  --am-fs-d-totalMax: 22px;
+  --am-fs-d-totalFit: 18px;
+  --am-fs-d-totalUnit: 12px;
+  --am-ln-annotPad: calc(14px * var(--am-scale, 1));
+  --am-ln-segLine: calc(16px * var(--am-scale, 1));
+  --am-ln-whenHeight: calc(24px * var(--am-scale, 1));
+  --am-ln-limitsTick: calc(16px * var(--am-scale, 1));
+  --am-ln-treeBadge: calc(15px * var(--am-scale, 1));
+}
+.am-toolbar, .am-lightbox-header {
+  --am-fs-title: 24px;
+  --am-fs-stat: 17px;
+  --am-fs-lead: 15.5px;
+  --am-fs-heading: 15px;
+  --am-fs-body: 14px;
+  --am-fs-text: 13px;
+  --am-fs-code: 12.5px;
+  --am-fs-small: 12px;
+  --am-fs-fine: 11.5px;
+  --am-fs-label: 11px;
+  --am-fs-tick: 10px;
+}
+
+/* Answer me with HTML base — uses theme variables only, never hard-coded colors (theme tokens and decorations: themes/<name>.js). Exception: the var() fallbacks of diagrams (flow / sequence) equal the blueprint light tokens, guarded by a test. */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-sans); font-size: var(--am-fs-body); line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+code, pre, kbd { font-family: var(--font-mono); }
+/* Korean is written with spaces between words, so break lines at the spaces, not between syllables. A word longer than the line still breaks. */
+:lang(ko) { word-break: keep-all; overflow-wrap: break-word; }
+:lang(ko) :is(pre, code, kbd), :is(pre, code, kbd):lang(ko) { word-break: normal; overflow-wrap: normal; }
+
+/* ── Toolbar ─────────────────────────────── */
+.am-toolbar {
+  position: fixed; top: 12px; inset-inline-end: 12px; z-index: 10; display: flex; gap: 6px;
+}
+.am-btn {
+  font: var(--am-fs-small)/1 var(--font-sans); color: var(--ink); background: var(--paper);
+  border: 1px solid var(--line-2); border-radius: var(--radius); padding: 7px 10px; cursor: pointer;
+}
+.am-btn:hover { border-color: var(--ink-3); }
+.am-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.am-toolbar .am-btn[aria-disabled="true"] { opacity: .5; cursor: default; }
+.am-toolbar .am-btn[aria-disabled="true"]:hover { border-color: var(--line-2); }
+/* Theme and mode lists: a label and a native select inside one button-like box */
+.am-pick {
+  display: flex; align-items: center; gap: 6px; font: var(--am-fs-small)/1 var(--font-sans); color: var(--ink-2); background: var(--paper);
+  border: 1px solid var(--line-2); border-radius: var(--radius); padding-block: 0; padding-inline: 10px 4px;
+}
+.am-pick:hover { border-color: var(--ink-3); }
+.am-pick:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.am-pick select {
+  font: inherit; color: var(--ink); background: transparent; border: 0; padding: 6px 2px; cursor: pointer; outline: none;
+}
+.am-pick option { color: var(--ink); background: var(--paper); }
+
+/* ── Header ───────────────────────────────── */
+.am-head { margin: 0 0 20px; padding-inline-end: 300px; }
+.am-head h1 { margin: 0; font-size: var(--am-fs-title); line-height: 1.25; letter-spacing: -0.01em; }
+.am-sub { margin: 4px 0 0; color: var(--ink-2); }
+.am-head-meta { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 10px; font-size: var(--am-fs-small); color: var(--ink-2); }
+.am-head-meta b { font-family: var(--font-mono); font-weight: 400; color: var(--ink-3); margin-inline-end: 6px; }
+.am-intro { margin-top: 12px; max-width: 80ch; }
+
+/* ── sheet template ────────────────────────── */
+.am-sheet { max-width: 1680px; margin: 0 auto; padding: 32px 28px 40px; }
+.am-frame { position: relative; }
+.am-grid {
+  display: grid; grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr));
+  gap: 20px; align-items: start;
+}
+.am-ruler { display: none; }
+.am-ruler span { flex: 1; display: flex; align-items: center; justify-content: center; }
+.am-ruler--top, .am-ruler--bottom { left: 18px; right: 18px; height: 18px; }
+.am-ruler--top { top: 0; }
+.am-ruler--bottom { bottom: 0; }
+.am-ruler--left, .am-ruler--right { top: 18px; bottom: 18px; width: 18px; flex-direction: column; }
+.am-ruler--left { left: 0; }
+.am-ruler--right { right: 0; }
+.am-ruler--top span + span, .am-ruler--bottom span + span { border-inline-start: 1px solid var(--line); }
+.am-ruler--left span + span, .am-ruler--right span + span { border-top: 1px solid var(--line); }
+
+/* ── Panels ───────────────────────────────── */
+.am-panel {
+  background: var(--paper); border: var(--bw) solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow); min-width: 0; overflow: hidden;
+}
+.am-panel-head {
+  display: flex; align-items: stretch; gap: 0; border-bottom: var(--bw) solid var(--line); min-height: 34px;
+}
+.am-panel-id {
+  display: flex; align-items: center; justify-content: center; min-width: 34px; padding: 0 8px;
+  background: var(--head-bg); color: var(--head-fg); font-weight: 600; font-size: var(--am-fs-body);
+}
+.am-panel-head h2 { margin: 0; padding: 7px 12px; font-size: var(--am-fs-heading); font-weight: 600; flex: 1; display: flex; align-items: center; }
+.am-panel-meta { align-self: center; padding: 0 12px; font: var(--am-fs-label)/1.3 var(--font-mono); color: var(--ink-2); text-align: end; }
+.am-panel-body { padding: 14px 16px 16px; }
+.am-panel-body > * + * { margin-top: 12px; }
+
+/* ── Markdown body ───────────────────────── */
+.am-md > :first-child { margin-top: 0; }
+.am-md > :last-child { margin-bottom: 0; }
+.am-md p { margin: 0 0 8px; }
+.am-md ul, .am-md ol { margin: 0 0 8px; padding-inline-start: 20px; }
+.am-md li + li { margin-top: 3px; }
+.am-md h3, .am-md h4 { margin: 14px 0 6px; font-size: var(--am-fs-text); }
+.am-md a { color: var(--accent); }
+.am-md blockquote { margin: 0 0 8px; padding: 2px 12px; border-inline-start: 3px solid var(--line-2); color: var(--ink-2); }
+.am-md :not(pre) > code { font-size: 0.9em; background: var(--fill); padding: 1px 5px; border-radius: 4px; }
+.am-md hr { border: 0; border-top: 1px solid var(--line-2); margin: 12px 0; }
+.am-md table { width: 100%; border-collapse: collapse; font-size: var(--am-fs-text); }
+.am-md th {
+  text-align: start; font: var(--am-fs-label)/1.3 var(--font-mono); color: var(--ink-2); font-weight: 400;
+  padding: 6px 10px; border-bottom: 1px solid var(--line-2);
+}
+/* th { text-align: start } outranks the align attribute from Markdown alignment, so restore right and center columns explicitly. */
+.am-md th[align="right"] { text-align: right; }
+.am-md th[align="center"] { text-align: center; }
+.am-md td { padding: 7px 10px; border-bottom: 1px solid var(--line-2); vertical-align: top; }
+.am-md tbody tr:nth-child(even) td { background: var(--fill); }
+.am-table-wrap { overflow-x: auto; }
+/* Images scale down to the panel and never past 70% of the window height, keeping their shape. */
+.am-md img { max-width: 100%; max-height: 70vh; height: auto; }
+.am-figure { margin: 0; text-align: center; }
+.am-figure img { display: block; margin: 0 auto; border: 1px solid var(--line-2); border-radius: var(--radius); }
+.am-figure figcaption { margin-top: 6px; font-size: var(--am-fs-small); line-height: 1.4; color: var(--ink-2); }
+.am-code {
+  margin: 0; padding: 12px 14px; background: var(--fill); border: 1px solid var(--line-2);
+  border-radius: var(--radius); overflow-x: auto; font-size: var(--am-fs-code); line-height: 1.5;
+}
+/* Ask: a decision the reader makes; the suggested option has a tag and starts unselected like the others */
+.am-ask { margin: 10px 0; padding: 10px 12px 8px; border: 1px solid var(--line-2); border-radius: var(--radius); background: var(--fill); min-width: 0; }
+/* The question floats inside the box, so a long question wraps like text instead of riding on the border */
+.am-ask-q { float: left; width: 100%; padding: 0; margin-bottom: 4px; font-weight: 600; }
+/* Two columns: the control, then the label, tag and note, which wrap under the label and never under the control */
+.am-ask-opt { clear: both; display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 8px; align-items: baseline; padding: 5px 2px; cursor: pointer; }
+.am-ask-opt input { margin: 0; accent-color: var(--accent); position: relative; top: 2px; }
+.am-ask-tag { display: inline-block; font-size: var(--am-fs-label); line-height: 1.5; color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: 0 6px; white-space: nowrap; }
+.am-ask-note { display: block; color: var(--ink-2); }
+/* Comment box under each panel, and the Reply sheet */
+.am-comment-btn {
+  display: flex; flex-shrink: 0; align-self: center; margin-block: 0; margin-inline: auto 6px; color: var(--ink-3); background: transparent;
+  border: 1px solid transparent; border-radius: var(--radius); padding: 3px; cursor: pointer;
+}
+.am-panel-meta + .am-comment-btn { margin-inline-start: 0; }
+.am-panel:hover .am-comment-btn, .am-comment-btn:focus-visible, .am-comment-btn[aria-expanded="true"] { border-color: var(--line-2); color: var(--ink-2); }
+.am-panel .am-comment-btn.am-comment-btn--on { color: var(--accent); border-color: var(--accent); }
+.am-panel--bare { position: relative; }
+.am-panel--bare > .am-comment-btn { position: absolute; top: 4px; inset-inline-end: 0; }
+.am-comment { padding: 0 14px 12px; }
+.am-comment textarea, .am-reply textarea {
+  width: 100%; font: var(--am-fs-text)/1.5 var(--font-sans); color: var(--ink); background: var(--paper);
+  border: 1px solid var(--line-2); border-radius: var(--radius); padding: 8px 10px; resize: vertical;
+}
+.am-comment textarea:focus-visible, .am-reply textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.am-btn--reply { color: var(--paper); background: var(--ink); border-color: var(--ink); }
+.am-btn--reply:hover { opacity: .88; }
+.am-reply {
+  width: min(640px, calc(100vw - 32px)); padding: 16px; color: var(--ink); background: var(--paper);
+  border: 1px solid var(--line-2); border-radius: var(--radius); box-shadow: 0 12px 40px rgba(0,0,0,.25);
+}
+.am-reply::backdrop { background: rgba(0,0,0,.35); }
+.am-reply-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin-bottom: 10px; }
+.am-reply-head span { color: var(--ink-2); font-size: var(--am-fs-text); }
+.am-reply textarea { font-family: var(--font-mono); font-size: var(--am-fs-code); }
+.am-reply-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+.am-reply .am-btn:disabled { opacity: .5; cursor: default; }
+/* The sheet shows the reply drawn (src/runtime/reply-view.js), each line in its own direction; the Markdown that Copy copies sits under a fold. */
+.am-reply-view {
+  max-height: min(60vh, 26em); overflow: auto; padding: 10px 12px; font: var(--am-fs-body)/1.6 var(--font-sans); color: var(--ink);
+  background: var(--paper); border: 1px solid var(--line-2); border-radius: var(--radius); overflow-wrap: anywhere;
+}
+.am-reply-view:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.am-reply-view > div { text-align: start; unicode-bidi: isolate; }
+.am-rv-gap { height: .5em; }
+.am-rv-h1 { font-weight: 700; font-size: var(--am-fs-heading); }
+.am-rv-h2 { font-weight: 700; color: var(--ink-2); margin-top: 2px; }
+.am-rv-tag {
+  display: inline-block; min-width: 1.6em; padding: 0 4px; font-size: var(--am-fs-small); line-height: 1.5; text-align: center;
+  color: var(--ink-2); border: 1px solid var(--line-2); border-radius: var(--radius);
+}
+.am-rv-a { padding-inline-start: 1.6em; }
+.am-rv-a em { color: var(--ink-2); }
+.am-rv-quote { margin-inline-start: 1em; padding-inline-start: 10px; border-inline-start: 3px solid var(--line-2); color: var(--ink-2); white-space: pre-wrap; }
+.am-reply-raw summary { margin-top: 10px; margin-bottom: 6px; font-size: var(--am-fs-small); color: var(--ink-2); cursor: pointer; }
+/* The bar at the bottom of the page: counts and one-click copy, so the reader need not go to the Reply button at the top. */
+.am-reply-bar {
+  position: fixed; inset-block-end: 16px; inset-inline: 0; margin-inline: auto; width: max-content; max-width: calc(100vw - 24px);
+  z-index: 10; display: flex; align-items: center; gap: 10px; padding-block: 8px; padding-inline: 14px 8px; font-size: var(--am-fs-text);
+  color: var(--ink); background: var(--paper); border: 1px solid var(--line-2); border-radius: var(--radius); box-shadow: 0 6px 24px rgba(0,0,0,.18);
+}
+.am-reply-bar[hidden] { display: none; }
+.am-reply-bar-count { color: var(--ink-2); }
+.am-reply-bar .am-btn { flex: none; white-space: nowrap; }
+body.am-has-reply-bar { padding-block-end: 72px; }
+@media (max-width: 480px) {
+  .am-reply-bar { inset-inline: 12px; width: auto; justify-content: space-between; }
+}
+/* Code block: a header (title or path:lines, language, copy), then one span per line; numbered blocks show the line number in a gutter */
+.am-codeblock { margin: 10px 0; min-width: 0; }
+.am-codeblock .am-code { border-top-left-radius: 0; border-top-right-radius: 0; padding: 10px 0; }
+.am-code-head {
+  display: flex; align-items: center; gap: 8px; padding: 5px 6px 5px 12px; font: var(--am-fs-small)/1.3 var(--font-sans); color: var(--ink-2);
+  background: var(--paper); border: 1px solid var(--line-2); border-bottom: 0; border-radius: var(--radius) var(--radius) 0 0;
+}
+.am-code-title { font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.am-code-lang { margin-left: auto; color: var(--ink-3); text-transform: lowercase; }
+.am-code-copy { font: var(--am-fs-small)/1 var(--font-sans); color: var(--ink-2); background: transparent; border: 1px solid var(--line-2); border-radius: var(--radius); padding: 4px 8px; cursor: pointer; margin-left: auto; }
+.am-code-lang + .am-code-copy { margin-left: 0; }
+.am-code-copy:hover { border-color: var(--ink-3); color: var(--ink); }
+.am-code-copy:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.am-code code { display: block; min-width: max-content; }
+.am-ln { display: block; padding: 0 14px; min-height: 1.5em; white-space: pre; }
+.am-ln--hl { background: var(--accent-bg); box-shadow: inset 3px 0 0 var(--accent); }
+.am-code--num .am-ln::before {
+  content: attr(data-n); display: inline-block; width: 3.5ch; margin-right: 12px; text-align: right; color: var(--ink-3);
+  user-select: none; -webkit-user-select: none;
+}
+
+/* ── Status badges ok / no / warn ──────────────── */
+/* A long note wraps beside its icon, so it does not push the table past a narrow panel; one long word breaks too (break-word, not anywhere, which would let a table squeeze its columns to one word per line). The note is one flex item, so the spaces around its inline tags stay. */
+.am-status { display: inline-flex; align-items: flex-start; max-width: 100%; font-weight: 500; }
+.am-status-icon { flex: none; }
+.am-status-text { min-width: 0; overflow-wrap: break-word; }
+.am-status--ok { color: var(--ok); }
+.am-status--no { color: var(--err); }
+.am-status--warn { color: var(--warn); }
+.am-status-icon { display: inline-block; width: 1.1em; font-weight: 700; }
+
+/* ── callout ─────────────────────────────── */
+.am-callout {
+  border: 1px solid var(--line-2); border-inline-start: 3px solid var(--accent); background: var(--accent-bg);
+  padding: 10px 14px; border-radius: var(--radius);
+}
+.am-callout--ok { border-inline-start-color: var(--ok); background: var(--ok-bg); }
+.am-callout--warn { border-inline-start-color: var(--warn); background: var(--warn-bg); }
+.am-callout--err { border-inline-start-color: var(--err); background: var(--err-bg); }
+.am-callout-title { font-weight: 600; margin-bottom: 4px; }
+
+/* ── kv title block ─────────────────────────── */
+.am-kv {
+  display: grid; grid-template-columns: repeat(var(--kv-cols, 2), minmax(0, 1fr)); margin: 0;
+  border-top: var(--bw) solid var(--line); border-inline-start: var(--bw) solid var(--line);
+}
+.am-kv-cell { border-inline-end: var(--bw) solid var(--line); border-bottom: var(--bw) solid var(--line); padding: 6px 10px 8px; min-width: 0; }
+.am-kv-cell--wide { grid-column: 1 / -1; }
+.am-kv dt { font: var(--am-fs-label)/1.4 var(--font-mono); color: var(--ink-2); }
+.am-kv dd { margin: 2px 0 0; font-size: var(--am-fs-body); font-weight: 500; overflow-wrap: anywhere; }
+.am-kv-cell--wide dd { font-size: var(--am-fs-stat); font-weight: 600; }
+
+/* ── timeline ────────────────────────────── */
+.am-timeline { list-style: none; margin: 0; padding: 0; }
+.am-timeline--h { display: grid; grid-template-columns: repeat(var(--n, 1), minmax(0, 1fr)); padding-top: 4px; }
+.am-timeline--h li { position: relative; text-align: center; padding: 0 6px; }
+.am-timeline--h li::before {
+  content: ""; position: absolute; top: calc(var(--am-ln-whenHeight) + 7px); left: 0; right: 0; border-top: var(--bw) solid var(--line);
+}
+.am-timeline--h li:first-child::before { inset-inline-start: 50%; }
+.am-timeline--h li:last-child::before { inset-inline-end: 50%; }
+.am-tl-when { display: block; font-size: var(--am-fs-heading); font-weight: 500; height: var(--am-ln-whenHeight); }
+.am-tl-dot {
+  position: relative; display: block; width: 11px; height: 11px; margin: 2px auto 8px;
+  border: var(--bw) solid var(--line); border-radius: 50%; background: var(--paper);
+}
+.am-tl-item--hi .am-tl-dot { background: var(--hi-stroke, var(--accent)); border-color: var(--hi-stroke, var(--accent)); }
+.am-tl-title { display: block; font-size: var(--am-fs-code); font-weight: 500; }
+.am-tl-text { display: block; font-size: var(--am-fs-small); color: var(--ink-2); line-height: 1.45; }
+.am-timeline--v li { position: relative; padding: 0 0 14px; padding-inline-start: 22px; }
+.am-timeline--v li::before { content: ""; position: absolute; inset-inline-start: 5px; top: 6px; bottom: -6px; border-inline-start: var(--bw) solid var(--line-2); }
+.am-timeline--v li:last-child::before { display: none; }
+.am-timeline--v .am-tl-dot { position: absolute; inset-inline-start: 0; top: 4px; margin: 0; }
+.am-timeline--v .am-tl-when { display: inline; height: auto; font: var(--am-fs-small) var(--font-mono); color: var(--ink-2); margin-inline-end: 8px; }
+.am-timeline--v .am-tl-title { display: inline; font-size: var(--am-fs-body); }
+.am-timeline--v .am-tl-text { margin-top: 2px; }
+/* .am-tl-wrap is the container (src/components/timeline.js): a horizontal timeline answers to the width it has, not to the width of the window, since a
+   sheet puts panels two or three to a row. Below 560 px (about 90 px for each of the six items a timeline has by default) its dates
+   wrap and the dots cover them, so it lays out like timeline v: line and dots at the start, text beside them. */
+.am-tl-wrap { container-type: inline-size; }
+@container (max-width: 560px) {
+  .am-timeline--h { display: block; padding-top: 0; }
+  .am-timeline--h li { text-align: start; padding: 0 0 14px; padding-inline-start: 22px; }
+  .am-timeline--h li::before, .am-timeline--h li:first-child::before {
+    top: 6px; bottom: -6px; inset-inline-start: 5px; inset-inline-end: auto; border-top: 0; border-inline-start: var(--bw) solid var(--line-2);
+  }
+  .am-timeline--h li:last-child::before { display: none; }
+  .am-timeline--h .am-tl-dot { position: absolute; inset-inline-start: 0; top: 4px; margin: 0; }
+  .am-timeline--h .am-tl-when { display: inline; height: auto; font: var(--am-fs-small) var(--font-mono); color: var(--ink-2); margin-inline-end: 8px; }
+  .am-timeline--h .am-tl-title { display: inline; font-size: var(--am-fs-body); }
+  .am-timeline--h .am-tl-text { margin-top: 2px; }
+}
+
+/* ── annot sentence notes ──────────────────────── */
+.am-annot + .am-annot { border-top: 1px solid var(--line-2); padding-top: 12px; }
+.am-annot-head { display: flex; justify-content: space-between; gap: 12px; font-size: var(--am-fs-text); font-weight: 600; margin-bottom: 8px; }
+.am-annot-meta { font: var(--am-fs-label) var(--font-mono); font-weight: 400; color: var(--ink-2); }
+.am-annot-scroll { overflow-x: auto; }
+.am-annot-line {
+  position: relative; display: inline-block; white-space: pre; font: var(--am-fs-body)/1.6 var(--font-mono);
+  padding-bottom: calc(var(--rows, 0) * (var(--am-ln-segLine) + 1px) + var(--am-ln-annotPad));
+}
+.am-annot-line--wrap { display: block; white-space: normal; padding-bottom: 10px; }
+.am-annot-line--wrap .am-seg { white-space: nowrap; }
+.am-seg { position: relative; }
+.am-seg::after {
+  content: ""; position: absolute; left: 1px; right: 1px; top: calc(100% + 1px); height: 5px;
+  border: 1px solid var(--accent); border-top: 0;
+}
+.am-seg-n {
+  position: absolute; inset-inline-start: 0; top: calc(100% + 8px + var(--row, 0) * (var(--am-ln-segLine) + 1px));
+  font: var(--am-fs-label)/var(--am-ln-segLine) var(--font-sans); color: var(--accent); white-space: nowrap;
+}
+.am-seg--err { color: var(--err); }
+.am-seg--err::after { border-color: var(--err); }
+.am-seg--err .am-seg-n { color: var(--err); }
+.am-annot-caption { font-size: var(--am-fs-small); color: var(--ink-2); }
+
+/* ── limits bars ───────────────────────── */
+.am-lim + .am-lim { margin-top: 14px; }
+.am-lim-head { display: flex; justify-content: space-between; gap: 12px; font-size: var(--am-fs-text); margin-bottom: 4px; }
+.am-lim-val { font: var(--am-fs-small) var(--font-mono); color: var(--accent); white-space: nowrap; }
+.am-lim-track { position: relative; height: 12px; border: 1px solid var(--line-2); background: var(--fill); border-radius: calc(var(--radius) / 2); }
+.am-lim-fill { position: absolute; inset-inline-start: 0; top: 0; bottom: 0; background: var(--accent-bg); border-inline-end: 1px solid var(--accent); }
+.am-lim-mark { position: absolute; top: -4px; bottom: -4px; border-left: 2px solid var(--accent); }
+.am-lim.is-over .am-lim-fill { background: var(--err-bg); border-inline-end-color: var(--err); }
+.am-lim.is-over .am-lim-val { color: var(--err); }
+.am-lim-ticks { position: relative; height: var(--am-ln-limitsTick); font: var(--am-fs-tick)/var(--am-ln-limitsTick) var(--font-mono); color: var(--ink-3); }
+.am-lim-ticks span { position: absolute; transform: translateX(-50%); }
+.am-lim-ticks span:first-child { transform: none; }
+.am-lim-note { font-size: var(--am-fs-label); color: var(--ink-2); margin-inline-start: 6px; }
+
+/* ── tree ─────────────────────────── */
+.am-tree { font-size: var(--am-fs-text); }
+.am-tree-root { display: flex; justify-content: center; position: relative; padding-bottom: 18px; }
+.am-tree-root::after { content: ""; position: absolute; bottom: 0; left: 50%; height: 18px; border-left: var(--bw) solid var(--line); }
+.am-tree-root--solo { padding-bottom: 12px; }
+.am-tree-root--solo::after { display: none; }
+.am-tree-box {
+  border: var(--node-width, var(--bw)) solid var(--node-stroke, var(--line)); background: var(--node-fill, var(--paper)); padding: 6px 14px; text-align: center;
+  border-radius: var(--node-radius, var(--radius)); font-weight: 600; color: var(--node-text, inherit); filter: var(--node-shadow, none);
+}
+.am-tree-box small { display: block; font-weight: 400; color: var(--ink-2); font-size: var(--am-fs-small); }
+/* The root box and a highlighted box are emphasis: they take the highlight tokens. With none set the root box keeps its accent tint and a highlighted box looks like any other. */
+.am-tree-box--root, .am-tree-box--hi { border-color: var(--hi-stroke, var(--node-stroke, var(--line))); color: var(--hi-text, var(--node-text, inherit)); }
+.am-tree-box--root { background: var(--hi-fill, var(--accent-bg)); }
+.am-tree-box--hi { background: var(--hi-fill, var(--node-fill, var(--paper))); }
+.am-tree-box--root small, .am-tree-box--hi small { color: var(--hi-text, var(--ink-2)); }
+.am-tree-box--root { font-size: var(--am-fs-heading); padding: 8px 28px; }
+.am-tree-cols { display: grid; grid-template-columns: repeat(var(--n, 1), minmax(0, 1fr)); }
+.am-tree-col { position: relative; padding: 18px 8px 0; min-width: 0; }
+.am-tree-col::before { content: ""; position: absolute; top: 0; left: 0; right: 0; border-top: var(--bw) solid var(--line); }
+.am-tree-col:first-child::before { inset-inline-start: 50%; }
+.am-tree-col:last-child::before { inset-inline-end: 50%; }
+.am-tree-col::after { content: ""; position: absolute; top: 0; left: 50%; height: 18px; border-left: var(--bw) solid var(--line); }
+.am-tree-list, .am-tree-list ul { list-style: none; margin: 0; padding: 0; }
+.am-tree-col > .am-tree-list { margin: 8px 0 0; margin-inline-start: 14px; }
+.am-tree-list ul { margin-inline-start: 16px; }
+.am-tree-list li { position: relative; padding: 3px 0; padding-inline-start: 18px; }
+.am-tree-list li::before { content: ""; position: absolute; inset-inline-start: 0; top: 0.95em; width: 12px; border-top: 1px solid var(--ink-3); }
+.am-tree-list li::after { content: ""; position: absolute; inset-inline-start: 0; top: 0; bottom: 0; border-inline-start: 1px solid var(--ink-3); }
+.am-tree-list li:last-child::after { bottom: auto; height: 0.95em; }
+.am-tree-tag { font: var(--am-fs-label) var(--font-mono); color: var(--ink-3); margin-inline-end: 4px; }
+.am-tree code { font: var(--am-fs-small) var(--font-mono); }
+.am-tree-sub { display: block; font-size: var(--am-fs-fine); color: var(--ink-2); }
+.am-tree-hi > .am-tree-label { color: var(--accent); font-weight: 600; }
+
+/* ── Diagrams (flow / sequence) ───────────────── */
+.am-diagram { margin: 0; overflow-x: auto; text-align: center; }
+/* Embedded previews can lose html[data-theme]; the fallbacks keep diagrams readable, and defined theme variables still win. */
+.am-diagram svg { max-width: 100%; height: auto; font-family: var(--font-sans, sans-serif); }
+.am-diagram text { fill: var(--ink, #16181d); font-size: var(--am-fs-d-node); }
+/* Diagram tokens (docs/reference.md, "Diagram tokens"): each painted part reads an optional token and falls back to the look it always had,
+   so a theme that sets none of them draws the same diagram. Font family, size and weight are not tokens: diagram text is measured for the sans font. */
+.am-node-shape { fill: var(--node-fill, var(--paper, #ffffff)); stroke: var(--node-stroke, var(--line, #1d2026)); stroke-width: var(--node-width, var(--bw, 1.5px)); filter: var(--node-shadow, none); }
+/* A cylinder is two shapes (body, then cap): only the body casts the shadow. */
+.am-node-shape ~ .am-node-shape { filter: none; }
+/* The corner radius is an SVG attribute (the fallback for Safari before 17.4, which ignores a CSS rx); the default here equals the attribute. A pill and a diamond keep their shape. */
+.am-node--rect .am-node-shape, .am-node--er .am-node-shape { rx: var(--node-radius, 3px); }
+.am-node--hi .am-node-shape { fill: var(--hi-fill, var(--accent-bg, #e4ecf8)); stroke: var(--hi-stroke, var(--accent, #1d5fbf)); }
+.am-diagram .am-node-text { fill: var(--node-text, var(--ink, #16181d)); }
+.am-node--hi text { fill: var(--hi-text, var(--accent, #1d5fbf)); font-weight: 600; }
+.am-diagram .am-node--hi .am-node-text { fill: var(--hi-text, var(--accent, #1d5fbf)); }
+.am-edge { fill: none; stroke: var(--edge-color, var(--ink-2, #4b5260)); stroke-width: var(--edge-width, 1.3); }
+.am-edge--dashed { stroke-dasharray: 5 4; }
+.am-arrow { fill: var(--edge-color, var(--ink-2, #4b5260)); }
+.am-edge-label rect { fill: var(--paper, #ffffff); }
+.am-diagram .am-edge-label text { fill: var(--edge-label, var(--accent, #1d5fbf)); font-size: var(--am-fs-d-edge); }
+.am-cluster { fill: var(--cluster-fill, var(--fill, #f3f5f8)); stroke: var(--cluster-stroke, var(--line-2, #d6dae1)); stroke-width: 1; stroke-dasharray: 4 3; }
+.am-diagram .am-cluster-label { fill: var(--ink-2, #4b5260); font: var(--am-fs-d-cluster) var(--font-mono, monospace); }
+/* The PK / FK / UK marks of an entity follow the node text, and the highlighted text in a highlighted entity, so they stay readable on the theme's fills. */
+.am-diagram .am-er-key { fill: var(--node-text, var(--ink-2, #4b5260)); }
+.am-diagram .am-node--hi .am-er-key { fill: var(--hi-text, var(--ink-2, #4b5260)); }
+.am-lifeline { stroke: var(--lifeline-color, var(--ink-3, #8b929e)); stroke-width: 1; stroke-dasharray: 4 4; }
+/* An actor (and the box of a divider) looks like a node unless the theme sets the actor tokens. */
+.am-actor { fill: var(--actor-fill, var(--node-fill, var(--paper, #ffffff))); stroke: var(--actor-stroke, var(--node-stroke, var(--line, #1d2026))); stroke-width: var(--node-width, var(--bw, 1.5px)); filter: var(--node-shadow, none); rx: var(--node-radius, 2px); }
+.am-diagram .am-actor-text { fill: var(--actor-text, var(--node-text, var(--ink, #16181d))); }
+.am-note { fill: var(--note-fill, var(--warn-bg, #fdf3e2)); stroke: var(--note-stroke, var(--warn, #a8620a)); stroke-width: var(--note-width, 1); rx: var(--note-radius, 2px); }
+.am-diagram .am-step { fill: var(--ink-3, #8b929e); font: var(--am-fs-d-step) var(--font-mono, monospace); }
+
+.am-diagram-expand {
+  /* In flow and sticky: it sits at the end edge (right on a left-to-right page) and stays in view when the diagram scrolls sideways.
+     It takes its own row above the drawing, so it never covers a node at the top-right corner of the drawing. */
+  position: sticky; inset-inline-start: calc(100% - 36px); z-index: 2;
+  display: flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; padding: 0; margin: 0 0 4px; margin-inline: auto 8px;
+  color: var(--ink-2); background: var(--paper);
+  border: var(--bw, 1px) solid var(--line-2); border-radius: var(--radius);
+  cursor: pointer; opacity: 0.72;
+  transition: opacity 0.15s, color 0.15s, border-color 0.15s, background 0.15s;
+}
+.am-diagram:hover .am-diagram-expand,
+.am-diagram-expand:focus-visible { opacity: 1; }
+.am-diagram-expand:hover {
+  opacity: 1; color: var(--ink); border-color: var(--accent); background: var(--fill);
+}
+.am-diagram-expand:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* ── Diagram Lightbox and Pan-Zoom Viewer ─────────── */
+.am-lightbox {
+  position: fixed; inset: 0; z-index: 1000;
+  display: flex; flex-direction: column;
+  touch-action: none;
+}
+.am-lightbox[hidden] { display: none !important; }
+
+.am-lightbox-backdrop {
+  position: absolute; inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.am-lightbox-header {
+  position: absolute; top: 12px; left: 24px; right: 24px; height: 36px;
+  display: flex; align-items: center; justify-content: space-between;
+  z-index: 10; pointer-events: none;
+}
+.am-lightbox-title {
+  display: inline-flex; align-items: center; gap: 8px;
+  color: rgba(255, 255, 255, 0.92);
+  font: var(--am-fs-text)/1 var(--font-sans, sans-serif); font-weight: 500;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+  pointer-events: auto;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60vw;
+}
+.am-lightbox-title svg { stroke: rgba(255, 255, 255, 0.85); flex-shrink: 0; }
+.am-lightbox-actions {
+  display: flex; align-items: center; gap: 8px; pointer-events: auto;
+}
+.am-lightbox-close {
+  width: 32px; height: 32px;
+  background: var(--paper);
+  border: var(--bw, 1px) solid var(--line-2);
+  border-radius: 50%;
+  color: var(--ink);
+  font-size: var(--am-fs-heading); line-height: 1;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  transition: background 0.15s, color 0.15s, transform 0.15s, border-color 0.15s;
+}
+.am-lightbox-close:hover {
+  color: var(--accent); border-color: var(--accent); background: var(--fill); transform: scale(1.05);
+}
+.am-lightbox-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.am-lightbox-stage {
+  position: absolute;
+  top: 54px; bottom: 20px; left: 24px; right: 24px;
+  background: var(--paper);
+  border: var(--bw, 1px) solid var(--line-2);
+  border-radius: max(var(--radius), 14px);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.am-lightbox-stage.am-panning { cursor: grabbing; }
+
+.am-lightbox-canvas {
+  position: absolute; left: 0; top: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+  pointer-events: none;
+}
+.am-lightbox-canvas svg {
+  max-width: none !important;
+  max-height: none !important;
+  display: block;
+  font-family: var(--font-sans, sans-serif);
+}
+
+/* ── doc template ────────────────────────── */
+.am-doc { max-width: 916px; margin: 0 auto; padding: 40px 28px 64px; }
+.am-doc-layout { position: relative; }
+/* The outline rail: a zero-height sticky strip whose child hangs 8px outside the body on the chosen side. "start" and "end" are
+   logical, so the rail mirrors on a right-to-left page. data-flow says which way the label and the list open: "out" away from the
+   body, "in" over it (src/runtime/outline.js picks it from the room left in the viewport; the markup starts with "in"). */
+/* Above panels and the diagram expand button (2), below the fixed toolbar and reply bar (10). */
+.am-toc { position: sticky; top: 72px; height: 0; z-index: 5; font-size: var(--am-fs-text); }
+.am-outline { position: absolute; top: 0; inset-inline-start: calc(100% + 8px); }
+.am-toc[data-side="start"] .am-outline { inset-inline-start: auto; inset-inline-end: calc(100% + 8px); }
+.am-outline > summary { display: block; width: 16px; list-style: none; cursor: pointer; border-radius: 4px; }
+.am-outline > summary::-webkit-details-marker { display: none; }
+.am-outline > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.am-ticks { display: flex; flex-direction: column; max-height: calc(100vh - 100px); }
+.am-tick { position: relative; display: block; font-style: normal; flex: 0 1 9px; min-height: 2px; }
+.am-tick::before { content: ""; position: absolute; inset-inline: 3px; top: 50%; height: 2px; margin-top: -1px; border-radius: 1px; background: var(--ink-3); opacity: .55; }
+.am-tick:hover::before, .am-tick.is-peek::before { background: var(--ink); opacity: 1; }
+.am-tick.is-current::before { inset-inline: 0; height: 3px; margin-top: -1.5px; background: var(--accent); opacity: 1; }
+.am-tick::after {
+  content: attr(data-title); display: none; position: absolute; top: 50%; transform: translateY(-50%); z-index: 1; pointer-events: none;
+  max-width: min(240px, calc(100vw - 48px)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  padding: 3px 8px; font-size: var(--am-fs-small); color: var(--ink); background: var(--paper); border: 1px solid var(--line-2); border-radius: var(--radius); box-shadow: 0 4px 16px rgba(0, 0, 0, .12);
+}
+.am-tick:hover::after, .am-tick.is-peek::after { display: block; }
+.am-outline[open] .am-tick::after { display: none; }
+.am-outline-list {
+  position: absolute; top: -6px; z-index: 2; margin: 0; padding: 6px; list-style: none;
+  width: min(240px, calc(100vw - 48px)); max-height: calc(100vh - 96px); overflow-y: auto;
+  background: var(--paper); border: 1px solid var(--line-2); border-radius: var(--radius); box-shadow: 0 6px 24px rgba(0, 0, 0, .14);
+}
+.am-outline-list a { display: block; padding: 5px 8px; color: var(--ink-2); text-decoration: none; border-radius: 4px; border-inline-start: 2px solid transparent; }
+.am-outline-list a:hover { color: var(--ink); background: var(--line-2); }
+.am-outline-list a[aria-current="true"] { color: var(--ink); font-weight: 600; border-inline-start-color: var(--accent); }
+.am-outline-list a:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* Opens toward inline-end: end rail flowing out, start rail flowing in. Otherwise toward inline-start. */
+.am-toc[data-side="end"][data-flow="out"] .am-tick::after, .am-toc[data-side="start"][data-flow="in"] .am-tick::after,
+.am-toc[data-side="end"][data-flow="out"] .am-outline-list, .am-toc[data-side="start"][data-flow="in"] .am-outline-list { inset-inline-start: calc(100% + 6px); }
+.am-toc[data-side="start"][data-flow="out"] .am-tick::after, .am-toc[data-side="end"][data-flow="in"] .am-tick::after,
+.am-toc[data-side="start"][data-flow="out"] .am-outline-list, .am-toc[data-side="end"][data-flow="in"] .am-outline-list { inset-inline-end: calc(100% + 6px); }
+@media (prefers-reduced-motion: no-preference) {
+  .am-outline[open] .am-outline-list { animation: am-outline-in .14s ease-out; }
+  .am-tick::before { transition: inset-inline .12s, height .12s, opacity .12s; }
+}
+@keyframes am-outline-in { from { opacity: 0; } to { opacity: 1; } }
+.am-doc-body > .am-panel + .am-panel { margin-top: 20px; }
+
+/* ── Responsive and print ─────────────────────────── */
+@media (max-width: 1100px) {
+  .am-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .am-grid > .am-panel { grid-column: auto !important; }
+  .am-grid > .am-panel.am-span-wide { grid-column: 1 / -1 !important; }
+}
+@media (max-width: 760px) {
+  .am-sheet, .am-doc { padding: 56px 12px 24px; }
+  /* The toolbar holds more controls than a phone fits on one row. It scrolls sideways in place, so Theme and Mode stay reachable
+     and the page keeps the 56px top padding for one row. The rings focus draws outside a button are clipped by that scroll box. */
+  .am-toolbar { max-width: calc(100vw - 24px); overflow-x: auto; scrollbar-width: none; }
+  .am-toolbar::-webkit-scrollbar { display: none; }
+  .am-toolbar > * { flex: none; }
+  .am-toolbar .am-btn:focus-visible, .am-toolbar .am-pick:focus-within { outline-offset: -2px; }
+  .am-head { padding-inline-end: 0; }
+  .am-grid { grid-template-columns: minmax(0, 1fr); }
+  .am-grid > .am-panel.am-span-wide { grid-column: auto !important; }
+  /* The rail hugs the viewport edge inside a strip of its own, so it never covers text and never pushes the body down. */
+  .am-doc-layout--rail-end { padding-inline-end: 18px; }
+  .am-doc-layout--rail-start { padding-inline-start: 18px; }
+  .am-toc[data-side="end"] .am-outline { inset-inline-start: auto; inset-inline-end: -17px; }
+  .am-toc[data-side="start"] .am-outline { inset-inline-end: auto; inset-inline-start: -17px; }
+  .am-tree-cols { grid-template-columns: minmax(0, 1fr); }
+  /* Tables and diagrams keep their size: the wrapper scrolls horizontally when they overflow. A cell is never narrower than about
+     two short words, so a phone does not stack them one per line. On wider screens the sheet layout (src/runtime/layout-dom.js)
+     gives a table panel the width its columns read well at. */
+  .am-md th, .am-md td { min-width: 8em; }
+  .am-diagram svg { max-width: none; }
+  .am-lightbox-header { top: 8px; left: 12px; right: 12px; }
+  .am-lightbox-stage { top: 46px; bottom: 12px; left: 12px; right: 12px; border-radius: max(var(--radius), 10px); }
+}
+.am-colophon { margin: 0 0 8px; font: var(--am-fs-label) var(--font-mono); color: var(--ink-3); }
+.am-colophon a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+
+@media print {
+  .am-toolbar, .am-diagram-expand, .am-lightbox, .am-code-copy, .am-toc, .am-comment-btn, .am-comment, .am-reply, .am-reply-bar { display: none !important; }
+  body { background: var(--paper); }
+  .am-panel { break-inside: avoid; box-shadow: none; }
+}
+/* Printed on paper narrower than three columns, the two-column grid left a hole beside every panel next to a full-width one
+   (a wide table, a wide diagram): one panel per row instead. */
+@media print and (max-width: 1100px) {
+  .am-grid { grid-template-columns: minmax(0, 1fr); }
+  .am-grid > .am-panel { grid-column: auto !important; }
+}
+.am-panel--bare { border: 0; background: transparent; box-shadow: none; }
+.am-panel--bare > .am-panel-body { padding: 0; }
+.am-panel--bare .am-kv { background: var(--paper); }
+
+/* Remark mode: block marks with a note, collected into the Reply copy (src/runtime/remark.js). Each kind borrows a status colour of
+   the theme, so a mark reads in light and dark mode on every theme. */
+.am-btn--remark.is-on { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+.am-btn--remark-clear { color: var(--err); }
+.am-btn--remark-clear.is-armed { background: var(--err-bg); border-color: var(--err); }
+.am-remark-hover { outline: 1px dashed var(--ink-3); outline-offset: 2px; cursor: pointer; }
+[data-am-pick]:focus { outline: none; }
+[data-am-pick]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+:is(.am-mark, .am-remark-kind)[data-kind="suggestion"] { --mark: var(--warn); --mark-bg: var(--warn-bg); }
+:is(.am-mark, .am-remark-kind)[data-kind="keep"] { --mark: var(--ok); --mark-bg: var(--ok-bg); }
+:is(.am-mark, .am-remark-kind)[data-kind="question"] { --mark: var(--accent); --mark-bg: var(--accent-bg); }
+:is(.am-mark, .am-remark-kind)[data-kind="concern"] { --mark: var(--err); --mark-bg: var(--err-bg); }
+.am-mark { border-inline-start: 3px solid var(--mark); padding-inline-start: 10px; background: var(--mark-bg); border-radius: 1px; }
+/* The note chip sits inside the marked block (a table takes it as its caption, a list item puts it before its sub-list), so lists and
+   grids keep their children. */
+.am-mark-note {
+  display: block; margin-block-start: 4px; font: var(--am-fs-small)/1.5 var(--font-sans); letter-spacing: normal; text-transform: none;
+  color: var(--ink-2); white-space: pre-wrap; caption-side: bottom; text-align: start;
+}
+.am-mark-note b { color: var(--ink); font-weight: 600; }
+caption.am-mark-note { display: table-caption; }
+/* Table rows have their own backgrounds, so a tint on the table would show on every other row only: the bar marks a table. */
+table.am-mark { background: none; }
+.am-remark-pop {
+  position: absolute; z-index: 40; width: min(264px, calc(100vw - 16px)); padding: 8px; display: grid; gap: 6px;
+  color: var(--ink); background: var(--paper); border: 1px solid var(--line-2); border-radius: var(--radius); box-shadow: 0 6px 24px rgba(0, 0, 0, .14);
+}
+.am-remark-pop[hidden] { display: none; }
+.am-remark-kinds { display: flex; gap: 6px; flex-wrap: wrap; }
+.am-remark-kind { font: var(--am-fs-small)/1 var(--font-sans); color: var(--ink-2); background: var(--paper); border: 1px solid var(--line-2); border-radius: 999px; padding: 4px 10px; cursor: pointer; }
+.am-remark-kind:hover { border-color: var(--ink-3); }
+.am-remark-kind[aria-pressed="true"] { color: var(--ink); border-color: var(--mark); background: var(--mark-bg); }
+.am-remark-kind:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.am-remark-pop textarea { font: var(--am-fs-text)/1.5 var(--font-sans); color: var(--ink); background: var(--paper); border: 1px solid var(--line-2); border-radius: var(--radius); padding: 6px 8px; resize: vertical; }
+.am-remark-actions { display: flex; gap: 6px; }
+.am-remark-actions .am-btn:disabled { opacity: .5; cursor: default; }
+.am-remark-need { align-self: center; color: var(--ink-3); font-size: var(--am-fs-small); }
+.am-remark-kind::before { content: attr(data-n); margin-inline-end: 5px; color: var(--ink-3); font-family: var(--font-mono); font-size: var(--am-fs-label); }
+@media print { .am-remark-pop { display: none !important; } }
+
+
+html[data-theme="blueprint"] .am-frame { border: 1px solid var(--line); padding: 30px; }
+html[data-theme="blueprint"] .am-frame::before {
+  content: ""; position: absolute; inset: 18px; border: 1px solid var(--line); pointer-events: none;
+}
+html[data-theme="blueprint"] .am-ruler {
+  display: flex; position: absolute; font: var(--am-fs-tick)/1 var(--font-mono); color: var(--ink-3);
+}
+@media (max-width: 760px) {
+  html[data-theme="blueprint"] .am-frame { padding: 0; border: 0; }
+  html[data-theme="blueprint"] .am-frame::before, html[data-theme="blueprint"] .am-ruler { display: none; }
+}
+
+html[data-theme="shadcn"] .am-panel-id { border-radius: 6px; min-width: 24px; height: 24px; margin: 9px 0 9px 14px; font-size: var(--am-fs-small); }
+html[data-theme="shadcn"] .am-panel-head { border-bottom-width: 1px; }
+html[data-theme="shadcn"] .am-kv { border-color: var(--line); border-radius: var(--radius); overflow: hidden; }
+
+html[data-theme="paper"]:lang(zh-Hant)[data-mode], html[data-theme="paper"]:lang(zh-TW)[data-mode], html[data-theme="paper"]:lang(zh-HK)[data-mode], html[data-theme="paper"]:lang(zh-MO)[data-mode] { --font-serif: "Iowan Old Style", Palatino, Georgia, "Songti TC", "PMingLiU", "MingLiU", "Noto Serif CJK TC", "Noto Serif TC", "Source Han Serif TC", "Songti SC", serif; }
+html[data-theme="paper"]:lang(ja)[data-mode] { --font-serif: "Iowan Old Style", Palatino, Georgia, "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif CJK JP", "Noto Serif JP", "Songti SC", serif; }
+html[data-theme="paper"]:lang(he)[data-mode] { --font-serif: "Iowan Old Style", Palatino, Georgia, "Noto Serif Hebrew", "Frank Ruehl CLM", David, "Times New Roman", serif; }
+html[data-theme="paper"] .am-head h1, html[data-theme="paper"] .am-panel-head h2, html[data-theme="paper"] .am-md, html[data-theme="paper"] .am-intro, html[data-theme="paper"] .am-callout { font-family: var(--font-serif); }
+html[data-theme="paper"] .am-head h1 { font-weight: 600; letter-spacing: 0; }
+html[data-theme="paper"] .am-md p, html[data-theme="paper"] .am-md li, html[data-theme="paper"] .am-md blockquote, html[data-theme="paper"] .am-intro { font-size: var(--am-fs-lead); line-height: 1.75; }
+html[data-theme="paper"] .am-md p { margin-bottom: 12px; }
+html[data-theme="paper"] .am-md table { font-family: var(--font-sans); }
+</style>
+</head>
+<body>
+<div class="am-toolbar" data-am-root-lang="zh-CN" data-am-root-theme="paper" data-am-root-mode="auto" data-am-root-style="80">
+<label class="am-pick">主题<select data-am="theme"><option value="blueprint">图纸</option><option value="shadcn">卡片</option><option value="paper" selected>纸张</option></select></label>
+<label class="am-pick">明暗<select data-am="mode"><option value="auto" selected>跟随系统</option><option value="light">亮</option><option value="dark">暗</option></select></label>
+<button class="am-btn" type="button" data-am="scale-down" data-min="0.8" data-max="1.5" data-step="0.05" aria-label="缩小文字" title="缩小文字" hidden>A−</button><button class="am-btn" type="button" data-am="scale-up" data-min="0.8" data-max="1.5" data-step="0.05" aria-label="放大文字" title="放大文字" hidden>A+</button>
+<button class="am-btn am-btn--reply" type="button" data-am="reply" data-ui="{&quot;button&quot;:&quot;回复&quot;,&quot;comment&quot;:&quot;评论&quot;,&quot;commentHint&quot;:&quot;对这个面板的意见&quot;,&quot;title&quot;:&quot;你的回复&quot;,&quot;hint&quot;:&quot;复制后粘贴回和 Agent 的对话，它会按你的选择和意见继续。&quot;,&quot;copy&quot;:&quot;复制回复&quot;,&quot;copyFailed&quot;:&quot;复制失败 — 请按 Cmd/Ctrl+C&quot;,&quot;close&quot;:&quot;关闭&quot;,&quot;suggested&quot;:&quot;建议&quot;,&quot;empty&quot;:&quot;先选择选项，或在面板上写评论。&quot;,&quot;decisions&quot;:&quot;决定&quot;,&quot;comments&quot;:&quot;评论&quot;,&quot;confirmed&quot;:&quot;确认了建议&quot;,&quot;untouched&quot;:&quot;未作答，建议&quot;,&quot;was&quot;:&quot;原为&quot;,&quot;typed&quot;:&quot;以 \&quot;&gt;\&quot; 开头的行是读者输入的文字。&quot;,&quot;raw&quot;:&quot;查看将复制的文本&quot;,&quot;preview&quot;:&quot;预览&quot;,&quot;count&quot;:{&quot;answered&quot;:&quot;已作答 {n} 项&quot;,&quot;comments&quot;:&quot;评论 {n} 条&quot;,&quot;remarks&quot;:&quot;标注 {n} 处&quot;},&quot;done&quot;:&quot;已复制 ✓&quot;,&quot;remarks&quot;:&quot;标注&quot;,&quot;kinds&quot;:{&quot;suggestion&quot;:&quot;建议&quot;,&quot;keep&quot;:&quot;保留&quot;,&quot;question&quot;:&quot;疑问&quot;,&quot;concern&quot;:&quot;关注&quot;}}">回复</button>
+<button class="am-btn am-btn--remark" type="button" data-am="remark" data-ui="{&quot;button&quot;:&quot;标注&quot;,&quot;need&quot;:&quot;选择标签后才能保存&quot;,&quot;hint&quot;:&quot;批注（可选）&quot;,&quot;save&quot;:&quot;保存&quot;,&quot;remove&quot;:&quot;删除&quot;,&quot;clear&quot;:&quot;清除所有标注&quot;,&quot;clearConfirm&quot;:&quot;再次点击以清除 {n} 条标注&quot;,&quot;section&quot;:&quot;标注&quot;,&quot;kinds&quot;:{&quot;suggestion&quot;:&quot;建议&quot;,&quot;keep&quot;:&quot;保留&quot;,&quot;question&quot;:&quot;疑问&quot;,&quot;concern&quot;:&quot;关注&quot;}}">标注</button>
+<button class="am-btn" type="button" data-am="copy" data-done="已复制 ✓">复制源稿</button>
+</div>
+<main class="am-sheet">
+<header class="am-head"><p class="am-colophon">Generated by <a href="https://github.com/QingYunA/answer-me-with-html" target="_blank" rel="noopener">Answer me with HTML</a> 0.5.11 · 2026-11-11 02:08 · <a href="https://github.com/QingYunA/answer-me-with-html" target="_blank" rel="noopener">★ Star on GitHub</a></p><h1>更新说明</h1><p class="am-sub">最近五个测试版，对你有什么变化</p><div class="am-head-meta"><span><b>source</b>关键词备注高亮助手</span></div><div class="am-intro am-md"><div class="am-md"><p>每页只用日常说法讲三件事：改了什么、以前什么样、怎么试。</p>
+</div></div></header>
+<div class="am-frame">
+<div class="am-ruler am-ruler--top" aria-hidden="true"><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span></div><div class="am-ruler am-ruler--bottom" aria-hidden="true"><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span></div><div class="am-ruler am-ruler--left" aria-hidden="true"><span>A</span><span>B</span><span>C</span><span>D</span></div><div class="am-ruler am-ruler--right" aria-hidden="true"><span>A</span><span>B</span><span>C</span><span>D</span></div>
+<div class="am-grid" style="--cols: 2">
+<section class="am-panel am-span-wide" id="panel-A" style="grid-column: span 2">
+<header class="am-panel-head"><span class="am-panel-id">A</span><h2>按版本看</h2></header>
+<div class="am-panel-body"><div class="am-md"><div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>版本</th>
+<th>一句话</th>
+<th>页面</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>2.0.8.21</td>
+<td>比对说不出原因时，先说原因</td>
+<td><a href="v2.0.8.21.html">打开</a></td>
+</tr>
+<tr>
+<td>2.0.8.20</td>
+<td>指向写错，当场提示</td>
+<td><a href="v2.0.8.20.html">打开</a></td>
+</tr>
+<tr>
+<td>2.0.8.19</td>
+<td>两路值不一致，看得见了</td>
+<td><a href="v2.0.8.19.html">打开</a></td>
+</tr>
+<tr>
+<td>2.0.8.18</td>
+<td>图上有、页面也有，能对上</td>
+<td><a href="v2.0.8.18.html">打开</a></td>
+</tr>
+<tr>
+<td>2.0.8.17</td>
+<td>隐私政策小标更安静</td>
+<td><a href="v2.0.8.17.html">打开</a></td>
+</tr>
+</tbody></table></div>
+</div></div>
+</section>
+<section class="am-panel am-span-wide" id="panel-B" style="grid-column: span 2" data-span="2">
+<header class="am-panel-head"><span class="am-panel-id">B</span><h2>装哪个</h2></header>
+<div class="am-panel-body"><div class="am-callout am-callout--info" role="note"><div class="am-callout-title">测试通道</div><div class="am-callout-body am-md"><p>这五页对应测试版。稳定通道仍是 2.0.8，不变。</p>
+</div></div></div>
+</section>
+</div>
+</div>
+</main>
+<textarea id="am-source" hidden readonly aria-hidden="true">---
+template: sheet
+theme: paper
+title: 更新说明
+subtitle: 最近五个测试版，对你有什么变化
+source: 关键词备注高亮助手
+cols: 2
+---
+每页只用日常说法讲三件事：改了什么、以前什么样、怎么试。
+
+## A 按版本看
+
+| 版本 | 一句话 | 页面 |
+|---|---|---|
+| 2.0.8.21 | 比对说不出原因时，先说原因 | [打开](v2.0.8.21.html) |
+| 2.0.8.20 | 指向写错，当场提示 | [打开](v2.0.8.20.html) |
+| 2.0.8.19 | 两路值不一致，看得见了 | [打开](v2.0.8.19.html) |
+| 2.0.8.18 | 图上有、页面也有，能对上 | [打开](v2.0.8.18.html) |
+| 2.0.8.17 | 隐私政策小标更安静 | [打开](v2.0.8.17.html) |
+
+## B 装哪个 {span=2}
+
+```callout info 测试通道
+这五页对应测试版。稳定通道仍是 2.0.8，不变。
+```
+</textarea>
+<script>
+(() => {
+// How a formula reads in a quote. MathML has no plain text, so src/math.js writes the formula as the draft wrote it, delimiters included, in
+// data-am-tex on the <math> element, and the Remark and Reply scripts read page text through this file. On a page without math there is no
+// such element, so formulaOf is null and every text comes out as it did before.
+// A plain ES module for tests; the page gets it with its `export` keyword dropped (src/runtime/compose.js).
+
+const TEX = 'data-am-tex';
+
+// The formula that holds a node, or null.
+const formulaOf = (node) => node.parentElement?.closest(`[${TEX}]`) ?? null;
+
+const firstText = (el) => {
+  for (const child of el.childNodes) {
+    const found = child.nodeType === 3 ? child : firstText(child);
+    if (found) return found;
+  }
+  return null;
+};
+
+// What a text node adds to a quote: its data. The first text node of a formula adds the formula, and the others add nothing.
+// (A formula in an error style is plain text with its delimiters, not a <math>, so it comes out once.)
+function nodeText(node) {
+  const math = formulaOf(node);
+  if (!math) return node.data;
+  return firstText(math) === node ? math.getAttribute(TEX) : '';
+}
+
+// The text of a node as textContent reads it, but with each formula as written.
+const textWithMath = (node) => (node.nodeType === 3 ? nodeText(node) : [...node.childNodes].map(textWithMath).join(''));
+
+(() => {
+  const root = document.documentElement;
+  // A host that serves this page inside its own document leaves the real root without the page's settings. The toolbar keeps a copy;
+  // set back what the root lacks, before anything below reads the root. A root's own value, even an empty one, is never replaced.
+  const carrier = document.querySelector('.am-toolbar');
+  for (const [attr, key] of [['lang', 'data-am-root-lang'], ['dir', 'data-am-root-dir'], ['data-theme', 'data-am-root-theme'], ['data-mode', 'data-am-root-mode'], ['data-style', 'data-am-root-style']]) {
+    if (root.getAttribute(attr) === null && carrier?.getAttribute(key) != null) root.setAttribute(attr, carrier.getAttribute(key));
+  }
+  // Each toolbar list sets one root attribute; its options name the values, so the runtime names no theme or mode.
+  for (const [name, attr] of [['theme', 'data-theme'], ['mode', 'data-mode']]) {
+    const select = document.querySelector(`select[data-am="${name}"]`);
+    if (!select) continue;
+    select.value = root.getAttribute(attr);
+    select.addEventListener('change', () => root.setAttribute(attr, select.value));
+  }
+
+  // ── Text size ─────────────────────────────
+  // A− / A+ set --am-scale on the root; every page size and line (src/themes/type-scale.js) follows it, and the drawing boxes grow
+  // with it while their viewBox keeps the units Node measured. The buttons carry the range from SCALE, so this script keeps no
+  // second copy of the numbers. A reader's choice is remembered in this browser and wins over the page's own scale; where storage
+  // is off (am serve, file://) it lasts for this tab, and the click still works.
+  const scaleDown = document.querySelector('[data-am="scale-down"]');
+  const scaleUp = document.querySelector('[data-am="scale-up"]');
+  if (scaleDown && scaleUp) {
+    const min = Number(scaleDown.dataset.min);
+    const max = Number(scaleDown.dataset.max);
+    const step = Number(scaleDown.dataset.step);
+    const storeKey = 'am-scale';
+    let value;
+
+    const inRange = (n) => Number.isFinite(n) && n >= min && n <= max;
+    const savedScale = () => {
+      try {
+        return Number(localStorage.getItem(storeKey));
+      } catch {
+        return NaN;
+      }
+    };
+    const saveScale = (n) => {
+      try {
+        localStorage.setItem(storeKey, String(n));
+      } catch {
+        // Storage may be off (am serve, file://); the size then lasts until the tab closes.
+      }
+    };
+
+    const updateButtons = () => {
+      const setUnavailable = (btn, unavailable) => {
+        if (unavailable) btn.setAttribute('aria-disabled', 'true');
+        else btn.removeAttribute('aria-disabled');
+      };
+      setUnavailable(scaleDown, value <= min);
+      setUnavailable(scaleUp, value >= max);
+    };
+
+    // One step is a multiple of `step`: Math.round first, then two decimals, so 1.1500000000000001 becomes 1.15.
+    const setScale = (next, remember = false) => {
+      value = Math.min(max, Math.max(min, Number((Math.round(next / step) * step).toFixed(2))));
+      root.style.setProperty('--am-scale', String(value));
+      for (const svg of document.querySelectorAll('.am-diagram:not(.am-lightbox-canvas) > svg[role="img"]')) {
+        const box = svg.viewBox?.baseVal;
+        if (!box || !(box.width > 0) || !(box.height > 0)) continue;
+        svg.setAttribute('width', String(Math.ceil(box.width * value)));
+        svg.setAttribute('height', String(Math.ceil(box.height * value)));
+      }
+      updateButtons();
+      if (remember) saveScale(value);
+      window.dispatchEvent(new Event('am-scale'));
+    };
+
+    // A page with no stored choice is left exactly as it was rendered: no inline variable, no svg rewrite, no extra layout pass.
+    value = parseFloat(getComputedStyle(root).getPropertyValue('--am-scale')) || 1;
+    updateButtons();
+    const saved = savedScale();
+    if (inRange(saved) && saved !== value) setScale(saved);
+    scaleDown.hidden = false;
+    scaleUp.hidden = false;
+    scaleDown.addEventListener('click', () => {
+      if (scaleDown.getAttribute('aria-disabled') === 'true') return;
+      setScale(value - step, true);
+    });
+    scaleUp.addEventListener('click', () => {
+      if (scaleUp.getAttribute('aria-disabled') === 'true') return;
+      setScale(value + step, true);
+    });
+  }
+
+  // A phone cannot show the whole toolbar. Its end (Reply, Remark, Copy source) is what a phone showed before the text-size
+  // buttons, so open at that end: Theme, Mode and A− / A+ are reached by scrolling toward the start. A reader scroll leaves the
+  // position we set, so a later resize does not pull the toolbar back.
+  if (carrier) {
+    const rtl = getComputedStyle(carrier).direction === 'rtl';
+    let lastProgrammatic = null;
+    let readerScrolled = false;
+    const scrollToEnd = () => {
+      if (carrier.scrollWidth <= carrier.clientWidth) return;
+      // Chrome keeps a right-to-left box's scrollLeft negative; the browser clamps either value to the real end.
+      carrier.scrollTo({ left: rtl ? -carrier.scrollWidth : carrier.scrollWidth });
+      lastProgrammatic = carrier.scrollLeft;
+    };
+    carrier.addEventListener('scroll', () => {
+      if (Math.abs(carrier.scrollLeft - lastProgrammatic) > 1) readerScrolled = true;
+    });
+    scrollToEnd();
+    addEventListener('resize', () => {
+      if (!readerScrolled) scrollToEnd();
+    });
+  }
+
+  const copyText = async (text) => {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const ta = Object.assign(document.createElement('textarea'), { value: text });
+      document.body.append(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+    }
+  };
+  // A button reads its label from data-done for a moment after a copy, then comes back to the label it started from. That label is
+  // read once, here: a second click inside the moment would otherwise read the copied label off the button and restore that instead,
+  // and the label would never come back. The moment starts again on each click: the timer of the previous one is left to fire and
+  // does nothing (a token, so this needs no timer bookkeeping the page scripts do not already have).
+  const flasher = (btn) => {
+    const idle = btn.textContent;
+    let clicks = 0;
+    return () => {
+      btn.textContent = btn.dataset.done;
+      const mine = ++clicks;
+      setTimeout(() => { if (mine === clicks) btn.textContent = idle; }, 1400);
+    };
+  };
+
+  const copyBtn = document.querySelector('[data-am="copy"]');
+  if (copyBtn) {
+    const flash = flasher(copyBtn);
+    copyBtn.addEventListener('click', async () => {
+      const nodes = document.querySelectorAll('#am-source');
+      await copyText(nodes[nodes.length - 1]?.value ?? '');
+      flash();
+    });
+  }
+
+  // Each code block copies its own lines, without the line numbers.
+  for (const btn of document.querySelectorAll('[data-am="copy-code"]')) {
+    const flash = flasher(btn);
+    btn.addEventListener('click', async () => {
+      const lines = btn.closest('.am-codeblock')?.querySelectorAll('.am-ln') ?? [];
+      await copyText([...lines].map((l) => l.textContent).join('\n'));
+      flash();
+    });
+  }
+
+  // ── Diagram Lightbox & Pan-Zoom Viewer ─────────────
+  const diagrams = document.querySelectorAll('.am-diagram:not(.am-lightbox-canvas)');
+  const lb = document.querySelector('.am-lightbox');
+  if (diagrams.length && lb) {
+    const backdrop = lb.querySelector('.am-lightbox-backdrop');
+    const titleText = lb.querySelector('.am-lightbox-title-text');
+    const stage = lb.querySelector('.am-lightbox-stage');
+    const canvas = lb.querySelector('.am-lightbox-canvas');
+    const closeBtn = lb.querySelector('.am-lightbox-close');
+    const expandLabel = lb.getAttribute('data-expand') || 'Expand diagram';
+
+    let scale = 1, x = 0, y = 0, fitScale = 1, curVw = 800, curVh = 600;
+    let isDragging = false, activePointerId = null, startX = 0, startY = 0, origX = 0, origY = 0;
+    let lastTrigger = null;
+
+    const apply = () => {
+      canvas.style.transform = `translate3d(${x.toFixed(2)}px, ${y.toFixed(2)}px, 0) scale(${scale.toFixed(4)})`;
+    };
+
+    const zoomTo = (newScale, pivotX, pivotY) => {
+      newScale = Math.max(0.2, Math.min(6.0, newScale));
+      if (Math.abs(newScale - scale) < 0.0001) return;
+      const r = newScale / scale;
+      x = pivotX - (pivotX - x) * r;
+      y = pivotY - (pivotY - y) * r;
+      scale = newScale;
+      apply();
+    };
+
+    const open = (diag, trigger) => {
+      const svg = [...diag.children].find((el) => el.tagName.toLowerCase() === 'svg');
+      if (!svg) return;
+      lastTrigger = trigger;
+
+      const panel = diag.closest('.am-panel');
+      const panelTitle = panel?.querySelector('.am-panel-head h2')?.textContent?.trim() || panel?.querySelector('h2')?.textContent?.trim() || lb.getAttribute('aria-label') || 'Diagram viewer';
+      if (titleText) titleText.textContent = panelTitle;
+
+      const clone = svg.cloneNode(true);
+      const defElements = clone.querySelectorAll('[id]');
+      if (defElements.length) {
+        const idMap = new Map();
+        defElements.forEach((el, i) => {
+          const oldId = el.id;
+          const newId = `${oldId}-lb-${i}`;
+          idMap.set(oldId, newId);
+          el.id = newId;
+        });
+        const urlAttrs = ['marker-start', 'marker-mid', 'marker-end', 'fill', 'stroke', 'filter', 'clip-path', 'mask'];
+        clone.querySelectorAll('*').forEach((el) => {
+          for (const attr of urlAttrs) {
+            const val = el.getAttribute(attr);
+            if (val && val.startsWith('url(#')) {
+              const id = val.slice(5, -1);
+              if (idMap.has(id)) el.setAttribute(attr, `url(#${idMap.get(id)})`);
+            }
+          }
+          const href = el.getAttribute('href') || el.getAttribute('xlink:href');
+          if (href && href.startsWith('#')) {
+            const id = href.slice(1);
+            if (idMap.has(id)) {
+              if (el.hasAttribute('href')) el.setAttribute('href', `#${idMap.get(id)}`);
+              if (el.hasAttribute('xlink:href')) el.setAttribute('xlink:href', `#${idMap.get(id)}`);
+            }
+          }
+        });
+      }
+
+      const vb = svg.viewBox?.baseVal;
+      curVw = (vb && vb.width > 0) ? vb.width : (parseFloat(svg.getAttribute('width')) || svg.clientWidth || 800);
+      curVh = (vb && vb.height > 0) ? vb.height : (parseFloat(svg.getAttribute('height')) || svg.clientHeight || 600);
+      clone.style.width = `${curVw}px`;
+      clone.style.height = `${curVh}px`;
+      canvas.innerHTML = '';
+      canvas.append(clone);
+      lb.removeAttribute('hidden');
+      document.body.style.overflow = 'hidden';
+
+      const rect = stage.getBoundingClientRect();
+      const pad = 48;
+      const availW = Math.max(100, rect.width - pad * 2);
+      const availH = Math.max(100, rect.height - pad * 2);
+      fitScale = Math.min(availW / curVw, availH / curVh, 1.0);
+      scale = fitScale;
+      x = (rect.width - curVw * scale) / 2;
+      y = (rect.height - curVh * scale) / 2;
+      apply();
+      closeBtn.focus();
+    };
+
+    const close = () => {
+      if (lb.hasAttribute('hidden')) return;
+      lb.setAttribute('hidden', '');
+      canvas.innerHTML = '';
+      document.body.style.overflow = '';
+      lastTrigger?.focus();
+    };
+
+    stage.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const rect = stage.getBoundingClientRect();
+      const dy = e.deltaMode === 1 ? e.deltaY * 16 : (e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY);
+      const factor = Math.exp(-Math.max(-200, Math.min(200, dy)) * 0.0015);
+      zoomTo(scale * factor, e.clientX - rect.left, e.clientY - rect.top);
+    }, { passive: false });
+
+    stage.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0 || isDragging) return;
+      isDragging = true;
+      activePointerId = e.pointerId;
+      startX = e.clientX;
+      startY = e.clientY;
+      origX = x;
+      origY = y;
+      stage.setPointerCapture(e.pointerId);
+      stage.classList.add('am-panning');
+    });
+
+    stage.addEventListener('pointermove', (e) => {
+      if (!isDragging || e.pointerId !== activePointerId) return;
+      x = origX + (e.clientX - startX);
+      y = origY + (e.clientY - startY);
+      apply();
+    });
+
+    const endDrag = (e) => {
+      if (!isDragging || e.pointerId !== activePointerId) return;
+      isDragging = false;
+      activePointerId = null;
+      stage.classList.remove('am-panning');
+      try { stage.releasePointerCapture(e.pointerId); } catch {}
+    };
+    stage.addEventListener('pointerup', endDrag);
+    stage.addEventListener('pointercancel', endDrag);
+
+    stage.addEventListener('dblclick', () => {
+      const rect = stage.getBoundingClientRect();
+      scale = fitScale;
+      x = (rect.width - curVw * scale) / 2;
+      y = (rect.height - curVh * scale) / 2;
+      apply();
+    });
+
+    closeBtn.addEventListener('click', close);
+    backdrop.addEventListener('click', close);
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !lb.hasAttribute('hidden')) close();
+    });
+
+    lb.addEventListener('keydown', (e) => {
+      if (e.key !== 'Tab') return;
+      const focusables = lb.querySelectorAll('button:not([disabled]), [tabindex]:not([tabindex="-1"])');
+      if (!focusables.length) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    });
+
+    const expandSvg = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>';
+    diagrams.forEach((diag) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'am-diagram-expand';
+      btn.title = expandLabel;
+      btn.setAttribute('aria-label', expandLabel);
+      btn.innerHTML = expandSvg;
+      btn.addEventListener('click', () => open(diag, btn));
+      diag.prepend(btn);
+    });
+  }
+})();
+(() => {
+// The reply a reader copies from the page: one Markdown text with the decisions, the panel comments and the block remarks.
+// A plain ES module for tests; the page gets it with its `export` keyword dropped (src/runtime/compose.js).
+// decisions: [{ panel, question, picked: [label], suggested: [label], touched }]; comments: [{ panel, title, text }];
+// remarks: [{ panel, quote, kind, note }], where quote is the start of the marked block and kind is a key of ui.kinds.
+// Comment and remark text is quoted line by line, so text the reader typed cannot pass as part of the structure.
+// rtl: the page reads right to left, so the arrow before each answer points left, the way the text runs.
+function replyText({ title, decisions, comments, remarks = [], ui, rtl = false }) {
+  const arrow = rtl ? '←' : '→';
+  const out = [`# Re: ${title}`];
+  if (decisions.length) {
+    out.push('', `## ${ui.decisions}`);
+    decisions.forEach((d, i) => {
+      const answer = d.picked.length ? d.picked.map((l) => `**${l}**`).join(', ') : '**—**';
+      // Every option starts unselected, so an ask the reader never clicked has no answer: the reply names the suggestion
+      // instead of passing it off as the reader's choice.
+      const same = d.picked.length === d.suggested.length && d.picked.every((l) => d.suggested.includes(l));
+      const suggested = d.suggested.join(', ') || '—';
+      const why = !d.touched ? `${ui.untouched}: ${suggested}` : same ? ui.confirmed : `${ui.was}: ${suggested}`;
+      out.push(`${i + 1}. [${d.panel}] ${d.question}`, `   ${arrow} ${answer} _(${why})_`);
+    });
+  }
+  const written = comments.filter((c) => c.text.trim());
+  const quoted = (text) => (text.trim() ? text.trim().split('\n').map((l) => `  > ${l}`) : []);
+  if (written.length) {
+    out.push('', `## ${ui.comments}`);
+    for (const c of written) out.push(`- **${c.panel} · ${c.title}**`, ...quoted(c.text));
+  }
+  if (remarks.length) {
+    out.push('', `## ${ui.remarks}`);
+    for (const r of remarks) {
+      const label = [r.panel, ui.kinds?.[r.kind] ?? r.kind].filter(Boolean).join(' · ');
+      out.push(`- **${label}** "${r.quote}"`, ...quoted(r.note));
+    }
+  }
+  if (written.length || remarks.some((r) => r.note.trim())) out.push('', `_${ui.typed}_`);
+  return `${out.join('\n')}\n`;
+}
+
+// A letter of a right-to-left script. One definition for the page builder (src/bidi.js) and for the right-to-left page script
+// (src/runtime/reply-view.js), so the two cannot drift apart. A plain ES module; the page script gets this file in front of
+// reply-view.js, with its `export` keyword dropped and reply-view.js's import of it removed (src/runtime/compose.js).
+const RTL_LETTER = /[\p{Script=Hebrew}\p{Script=Arabic}\p{Script=Syriac}\p{Script=Thaana}\p{Script=Nko}\p{Script=Samaritan}\p{Script=Mandaic}]/u;
+
+// The reply as the reader sees it in the Reply sheet (src/runtime/reply.js): the Markdown that Copy copies, drawn as headings, bold answers
+// and quoted comments instead of raw "# Re: ...", "1. [E] ..." and "- **A · ...**" lines. Each line gets its own direction, so a
+// Hebrew reader sees Latin answers and paths in place; a line with no right-to-left letter reads left to right, as on any other page.
+// The raw Markdown stays in the sheet under a fold, so the copied text does not change.
+// A plain ES module for tests; the page gets it with its `export` keyword dropped and rtl-letter.js in front of it in place of the
+// import (src/runtime/compose.js).
+
+const escHtml = (s) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+// A line with a right-to-left letter reads right to left; a line without one (an English comment, a path) reads left to right.
+const dirOf = (s) => (RTL_LETTER.test(s) ? 'rtl' : 'ltr');
+
+// The only inline Markdown src/runtime/reply-text.js writes: **answer**, _(note)_ and the "quote" of a remark. Each piece is isolated in its own direction,
+// so a Latin answer inside a Hebrew line keeps its place, and "A · title" still starts with the panel letter.
+const piece = (tag, text) => `<${tag}><bdi dir="${dirOf(text)}">${text}</bdi></${tag}>`;
+function inline(s) {
+  return escHtml(s)
+    .replace(/\*\*(.+?)\*\*/g, (_, t) => piece('strong', t))
+    .replace(/(^|\s)_(.+?)_(?=\s|$)/g, (_, pre, t) => pre + piece('em', t))
+    // The quoted start of a marked block ("- **A · concern** "text""): isolated, so Latin text in a Hebrew line keeps its place.
+    .replace(/&quot;(.+)&quot;$/, (_, t) => `&quot;<bdi dir="${dirOf(t)}">${t}</bdi>&quot;`);
+}
+
+// The reply text (src/runtime/reply-text.js) as HTML, one block per line.
+function replyViewHtml(text) {
+  return text
+    .replace(/\n$/, '')
+    .split('\n')
+    .map((line) => {
+      const dir = dirOf(line);
+      let m;
+      if (!line.trim()) return '<div class="am-rv-gap"></div>';
+      if ((m = line.match(/^(#{1,2}) (.*)$/))) return `<div class="am-rv-h${m[1].length}" dir="${dir}">${inline(m[2])}</div>`;
+      if ((m = line.match(/^(\d+)\. \[([^\]]*)\] (.*)$/))) {
+        return `<div class="am-rv-q" dir="${dir}"><bdi>${m[1]}.</bdi> <bdi class="am-rv-tag">${escHtml(m[2])}</bdi> ${inline(m[3])}</div>`;
+      }
+      if ((m = line.match(/^ {3}([←→]) (.*)$/))) return `<div class="am-rv-a" dir="${dir}">${m[1]} ${inline(m[2])}</div>`;
+      if ((m = line.match(/^- (.*)$/))) return `<div class="am-rv-c" dir="${dir}">${inline(m[1])}</div>`;
+      // A comment line is shown exactly as the reader typed it.
+      if ((m = line.match(/^ {2}> ?(.*)$/))) return `<div class="am-rv-quote" dir="${dirOf(m[1])}">${escHtml(m[1]) || '&nbsp;'}</div>`;
+      return `<div dir="${dir}">${inline(line)}</div>`;
+    })
+    .join('');
+}
+
+// Answer on the page: every panel gets a Comment box, and the Reply button collects the ask answers, the comments and the remarks
+// into one Markdown reply (replyText) to copy back to the agent. Answers and comments stay in localStorage across reloads.
+// The remark script (remark.js) adds the blocks the reader marked, through window.__amRemarkData, and tells this script about a change
+// with an "am-remark-change" event on the document.
+// The Reply sheet shows the reply drawn (replyViewHtml) with the Markdown that Copy copies under a fold. Once the reader has given any
+// input, a bar at the bottom of the page shows the counts and copies the reply in one click, so there is no trip to the top-right button.
+const replyBtn = document.querySelector('[data-am="reply"]');
+const COMMENT_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>';
+if (replyBtn) {
+  const ui = JSON.parse(replyBtn.dataset.ui);
+  const storeKey = `am-reply:${location.pathname}`;
+  // A page served by `am serve` runs without localStorage and the phone may discard its tab, so it keeps the answers on the
+  // server: data-am-save names the write route and data-am-state carries what the server already holds for this page version.
+  const serve = (() => {
+    const { amSave: save, amState: state } = document.body?.dataset ?? {};
+    if (!save) return null;
+    try {
+      return { save, restored: state ? JSON.parse(state) : null };
+    } catch {
+      return { save, restored: null };
+    }
+  })();
+  let saveTimer = null;
+  let pendingPatch = null;
+  const sendSave = (patch) => {
+    fetch(serve.save, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(patch), keepalive: true })
+      .catch(() => {}); // a page that cannot reach the server keeps its state until it closes, as before
+  };
+  // Typing must not put one request per keystroke on the server; localStorage is written at once, the network follows.
+  const saveSoon = (patch) => {
+    clearTimeout(saveTimer);
+    pendingPatch = patch;
+    saveTimer = setTimeout(() => {
+      pendingPatch = null;
+      sendSave(patch);
+    }, 400);
+  };
+  // A hidden or closing page sends the change it still holds, before the timer can run.
+  const flushSave = () => {
+    if (!pendingPatch) return;
+    clearTimeout(saveTimer);
+    sendSave(pendingPatch);
+    pendingPatch = null;
+  };
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushSave();
+  });
+  window.addEventListener('pagehide', flushSave);
+  const panels = [...document.querySelectorAll('.am-panel')];
+  const asks = [...document.querySelectorAll('.am-ask')];
+  // Answers are saved by question text, so they still match after am patch has renumbered the asks.
+  // Page text without the word joiners a right-to-left page puts after a Hebrew prefix hyphen (src/bidi.js): the reply and the saved
+  // answers hold the text as the draft wrote it, a formula too (src/runtime/math-text.js).
+  const WJ = new RegExp(String.fromCharCode(0x2060), 'g');
+  const textOf = (el) => el && textWithMath(el).replace(WJ, '').trim();
+  const keyOf = (ask) => textOf(ask.querySelector('legend')) ?? ask.dataset.ask;
+  const touched = new Set();
+  const boxes = new Map();
+  // The bar is built below with the sheet; the handlers that change the counts only call this.
+  let refreshBar = () => {};
+  // The textarea a failed copy keeps selected, so the reader can still use the keyboard shortcut.
+  let stuck = null;
+
+  const load = () => {
+    if (serve?.restored?.reply) return serve.restored.reply;
+    try {
+      return JSON.parse(localStorage.getItem(storeKey)) || {};
+    } catch {
+      return {};
+    }
+  };
+  const save = () => {
+    const state = {
+      asks: Object.fromEntries(asks.map((a) => [keyOf(a), { picked: picked(a), touched: touched.has(a) }])),
+      comments: Object.fromEntries([...boxes].map(([id, box]) => [id, box.value]).filter(([, text]) => text.trim())),
+    };
+    try {
+      localStorage.setItem(storeKey, JSON.stringify(state));
+    } catch {
+      // Storage may be off (private window, file:// policy); answers then last until the page closes.
+    }
+    if (serve) saveSoon({ reply: state });
+  };
+  const picked = (ask) => [...ask.querySelectorAll('input')].filter((i) => i.checked).map((i) => i.value);
+  const panelOf = (el) => {
+    const panel = el.closest('.am-panel');
+    return { id: panel?.id.replace(/^panel-/, '') ?? '', title: textOf(panel?.querySelector('.am-panel-head h2')) ?? '' };
+  };
+
+  const saved = load();
+  for (const ask of asks) {
+    const inputs = [...ask.querySelectorAll('input')];
+    const state = saved.asks?.[keyOf(ask)];
+    // A saved answer applies only while every picked option still exists on the page, and only if the reader clicked: older versions started
+    // with the suggestion selected and saved it untouched, and that state must come back unselected.
+    if (state?.touched && Array.isArray(state.picked) && state.picked.every((v) => inputs.some((i) => i.value === v))) {
+      for (const input of inputs) input.checked = state.picked.includes(input.value);
+      touched.add(ask);
+    }
+    // A click counts even on the option that is already picked: the reader confirms the suggestion.
+    const answer = () => {
+      touched.add(ask);
+      save();
+      refreshBar();
+    };
+    ask.addEventListener('change', answer);
+    ask.addEventListener('click', (e) => { if (e.target.matches('input')) answer(); });
+  }
+
+  for (const panel of panels) {
+    const id = panel.id.replace(/^panel-/, '');
+    // An icon only: narrow panels have no room for a word next to the title.
+    const btn = Object.assign(document.createElement('button'), { type: 'button', className: 'am-comment-btn', title: ui.comment, innerHTML: COMMENT_ICON });
+    btn.setAttribute('aria-label', `${ui.comment} ${id}`);
+    btn.setAttribute('aria-expanded', 'false');
+    const wrap = Object.assign(document.createElement('div'), { className: 'am-comment', hidden: true });
+    const box = Object.assign(document.createElement('textarea'), { rows: 3, placeholder: ui.commentHint, value: saved.comments?.[id] ?? '' });
+    box.setAttribute('aria-label', `${ui.comment} ${id}`);
+    wrap.append(box);
+    const show = (open) => {
+      wrap.hidden = !open;
+      btn.setAttribute('aria-expanded', String(open));
+    };
+    btn.addEventListener('click', () => {
+      show(wrap.hidden);
+      if (!wrap.hidden) box.focus();
+    });
+    box.addEventListener('input', () => {
+      btn.classList.toggle('am-comment-btn--on', Boolean(box.value.trim()));
+      save();
+      refreshBar();
+    });
+    btn.classList.toggle('am-comment-btn--on', Boolean(box.value.trim()));
+    if (box.value.trim()) show(true);
+    (panel.querySelector('.am-panel-head') ?? panel).append(btn);
+    panel.append(wrap);
+    boxes.set(id, box);
+  }
+
+  const sheet = document.createElement('dialog');
+  sheet.className = 'am-reply';
+  sheet.setAttribute('aria-label', ui.title);
+  sheet.innerHTML = '<div class="am-reply-head"><strong></strong><span></span></div><div class="am-reply-view" tabindex="0"></div><details class="am-reply-raw"><summary></summary><textarea readonly rows="10"></textarea></details><div class="am-reply-actions"><button type="button" class="am-btn" data-act="copy"></button><button type="button" class="am-btn" data-act="close"></button></div>';
+  sheet.querySelector('strong').textContent = ui.title;
+  sheet.querySelector('span').textContent = ui.hint;
+  sheet.querySelector('summary').textContent = ui.raw;
+  const view = sheet.querySelector('.am-reply-view');
+  const raw = sheet.querySelector('details');
+  const text = sheet.querySelector('textarea');
+  const copy = sheet.querySelector('[data-act="copy"]');
+  const close = sheet.querySelector('[data-act="close"]');
+  copy.textContent = ui.copy;
+  close.textContent = ui.close;
+  document.body.append(sheet);
+
+  const compose = () => {
+    const decisions = asks.map((ask) => ({
+      panel: panelOf(ask).id,
+      question: textOf(ask.querySelector('legend')) ?? '',
+      picked: picked(ask),
+      suggested: [...ask.querySelectorAll('input[data-suggested]')].map((i) => i.value),
+      touched: touched.has(ask),
+    }));
+    const comments = [...boxes].map(([id, box]) => ({ panel: id, title: panelOf(box).title, text: box.value }));
+    const remarks = window.__amRemarkData?.() ?? [];
+    const empty = !decisions.length && !comments.some((c) => c.text.trim()) && !remarks.length;
+    const title = textOf(document.querySelector('.am-head h1')) ?? document.title;
+    return empty ? '' : replyText({ title, decisions, comments, remarks, ui, rtl: document.documentElement.dir === 'rtl' });
+  };
+
+  // The text goes through the clipboard API; a page the browser treats as insecure (file://) falls back to selecting a temporary
+  // textarea, because the sheet's own textarea can sit inside a closed fold, where it cannot be selected.
+  // That fallback reports whether it worked. When it does not, the text stays selected (so Cmd/Ctrl+C still copies it) and the
+  // button says what to do instead of showing the "Copied ✓" label the reader cannot trust.
+  const copyText = async (str, btn) => {
+    stuck?.remove();
+    stuck = null;
+    try {
+      await navigator.clipboard.writeText(str);
+      // The close_after_reply script (close-after-reply.js) closes the tab once the reply is on the clipboard.
+      document.dispatchEvent(new Event('am-reply-copied'));
+    } catch {
+      const tmp = Object.assign(document.createElement('textarea'), { value: str });
+      tmp.style.cssText = 'position:fixed;top:-100px;opacity:0';
+      // Inside the sheet while it is open: while a modal dialog is open the rest of the document cannot take focus, so a textarea
+      // in the body can be selected but not focused, and the keyboard shortcut the reader is told to press would copy nothing.
+      // The bottom bar copies while the sheet is closed, and a closed dialog is not rendered, so there the textarea goes in the body.
+      (sheet.open ? sheet : document.body).append(tmp);
+      tmp.select();
+      let copied = false;
+      try {
+        copied = document.execCommand('copy');
+      } catch {
+        copied = false;
+      }
+      if (!copied) {
+        stuck = tmp;
+        btn.textContent = ui.copyFailed;
+        setTimeout(() => { btn.textContent = ui.copy; }, 3000);
+        return;
+      }
+      tmp.remove();
+    }
+    btn.textContent = ui.done;
+    setTimeout(() => { btn.textContent = ui.copy; }, 1400);
+  };
+
+  const open = () => {
+    const reply = compose();
+    if (reply) view.innerHTML = replyViewHtml(reply);
+    else view.textContent = ui.empty;
+    view.scrollTop = 0;
+    text.value = reply;
+    raw.open = false;
+    raw.hidden = !reply;
+    copy.disabled = !reply;
+    if (sheet.showModal) sheet.showModal();
+    else sheet.setAttribute('open', '');
+    (reply ? copy : close).focus();
+  };
+  replyBtn.addEventListener('click', open);
+  close.addEventListener('click', () => (sheet.close ? sheet.close() : sheet.removeAttribute('open')));
+  // A failed copy leaves the text selected for Cmd/Ctrl+C; closing the sheet drops that textarea.
+  sheet.addEventListener('close', () => { stuck?.remove(); stuck = null; });
+  copy.addEventListener('click', () => copyText(text.value, copy));
+
+  const bar = Object.assign(document.createElement('div'), { className: 'am-reply-bar', hidden: true });
+  bar.setAttribute('role', 'region');
+  bar.setAttribute('aria-label', ui.title);
+  const summary = Object.assign(document.createElement('span'), { className: 'am-reply-bar-count' });
+  summary.setAttribute('aria-live', 'polite');
+  const preview = Object.assign(document.createElement('button'), { type: 'button', className: 'am-btn', textContent: ui.preview });
+  const barCopy = Object.assign(document.createElement('button'), { type: 'button', className: 'am-btn am-btn--reply', textContent: ui.copy });
+  preview.addEventListener('click', open);
+  barCopy.addEventListener('click', () => copyText(compose(), barCopy));
+  bar.append(summary, preview, barCopy);
+  document.body.append(bar);
+
+  // The bar shows only the counts that are above zero, and only once there is any input at all.
+  refreshBar = () => {
+    const counts = {
+      answered: touched.size,
+      comments: [...boxes.values()].filter((box) => box.value.trim()).length,
+      remarks: (window.__amRemarkData?.() ?? []).length,
+    };
+    const parts = Object.entries(counts).filter(([, n]) => n > 0).map(([kind, n]) => ui.count[kind].replace('{n}', n));
+    summary.textContent = parts.join(' · ');
+    bar.hidden = !parts.length;
+    document.body.classList.toggle('am-has-reply-bar', parts.length > 0);
+  };
+  document.addEventListener('am-remark-change', () => refreshBar());
+  // Saved remarks are restored by remark.js, which runs after this script in the same <script> element: its data is not there yet.
+  // A microtask runs when that whole element has finished, so the first count includes them.
+  queueMicrotask(() => refreshBar());
+}
+})();
+(() => {
+// Text helpers for remark mode (src/runtime/remark.js): how a marked block is named and quoted.
+// A plain ES module for tests; the page gets it with its `export` keyword dropped (src/runtime/compose.js).
+// A block keeps its mark across `am patch` because the key is its panel, its tag and the start of its text, not its position.
+
+const collapse = (text) => String(text).replace(/\s+/g, ' ').trim();
+
+// The start of a block's text with whitespace collapsed: the readable identity of the block.
+function fingerprint(text, len = 80) {
+  return collapse(text).slice(0, len);
+}
+
+// What the reply quotes of a block: the start of its text, with an ellipsis when it is cut.
+function quote(text, len = 60) {
+  const t = collapse(text);
+  return t.length > len ? `${t.slice(0, len).trimEnd()}…` : t;
+}
+
+// Two blocks with the same text (two identical list items) get the same base key. The n-th one in the page gets "\t<n>" added;
+// a tab cannot be in a fingerprint, which has its whitespace collapsed, so the new key never meets another base key.
+function occurrenceKeys(bases) {
+  const seen = new Map();
+  return bases.map((base) => {
+    const n = seen.get(base) ?? 0;
+    seen.set(base, n + 1);
+    return n ? `${base}\t${n}` : base;
+  });
+}
+
+// Remark mode: the reader turns it on, clicks a block, tags it (suggestion, keep, question, concern) and may add a note.
+// A mark shows as a bar and a note chip inside the block, lives in localStorage like panel comments, and the Reply button carries it
+// back to the agent: reply.js calls window.__amRemarkData, and replyText (reply-text.js) writes the Remarks section.
+(() => {
+  const btn = document.querySelector('[data-am="remark"]');
+  if (!btn) return;
+  const ui = JSON.parse(btn.dataset.ui);
+  const KINDS = ['suggestion', 'keep', 'question', 'concern'];
+  const storeKey = `am-remark:${location.pathname}`;
+  // A page served by `am serve` has no localStorage and the phone may discard its tab; it keeps the marks on the server, in the
+  // same record as the answers (reply.js), so a re-opened page finds them again.
+  const serve = (() => {
+    const { amSave: save, amState: state } = document.body?.dataset ?? {};
+    if (!save) return null;
+    try {
+      return { save, restored: state ? JSON.parse(state) : null };
+    } catch {
+      return { save, restored: null };
+    }
+  })();
+  let saveTimer = null;
+  let pendingPatch = null;
+  const sendSave = (patch) => {
+    fetch(serve.save, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(patch), keepalive: true })
+      .catch(() => {});
+  };
+  const saveSoon = (patch) => {
+    clearTimeout(saveTimer);
+    pendingPatch = patch;
+    saveTimer = setTimeout(() => {
+      pendingPatch = null;
+      sendSave(patch);
+    }, 400);
+  };
+  // A hidden or closing page sends the change it still holds, before the timer can run.
+  const flushSave = () => {
+    if (!pendingPatch) return;
+    clearTimeout(saveTimer);
+    sendSave(pendingPatch);
+    pendingPatch = null;
+  };
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushSave();
+  });
+  window.addEventListener('pagehide', flushSave);
+  // The one definition of a block a reader can mark: the content under <main>. The page and panel titles are left out, because the
+  // reply reads them as text; a panel has its Comment button.
+  // A $$ block on its own is a div; a $$ formula inside a sentence is a span of its paragraph.
+  const BLOCK = 'main :is(h1,h2,h3,h4,h5,h6,p,li,blockquote,pre,table,dd,dt,figure,div.am-math-block):not(.am-head *, .am-panel-head *, .am-toc *)';
+  // A click on these does what it always did.
+  const LIVE = '.am-remark-pop, .am-toolbar, a, button, input, textarea, select, label';
+  const blockAt = (target) => (target.closest(LIVE) ? null : target.closest(BLOCK));
+
+  const WJ = new RegExp(String.fromCharCode(0x2060), 'g'); // word joiners of a right-to-left page (src/bidi.js); not part of the draft's text
+  // A narrow horizontal timeline shows its date and title inline (src/themes/base.css). They stay parts of their own, so a block key
+  // does not change with the width of the window (#194).
+  const OWN_BOX = '.am-timeline--h .am-tl-when, .am-timeline--h .am-tl-title';
+  const inlineBox = new WeakMap();
+  const isInline = (el) => {
+    if (!inlineBox.has(el)) inlineBox.set(el, !el.matches(OWN_BOX) && getComputedStyle(el).display.startsWith('inline'));
+    return inlineBox.get(el);
+  };
+  // The text of a block as the reader sees it: separate lines, cells and timeline parts are joined by a space (textContent would run
+  // "2026" and "Ship" together), and the note chip is not part of it. A formula is one box and reads as the TeX the draft wrote
+  // (src/runtime/math-text.js), not as the MathML tokens.
+  const blockText = (el) => {
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    let text = '';
+    let last = null;
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      if (node.parentElement.closest('.am-mark-note')) continue;
+      let box = formulaOf(node) ?? node.parentElement;
+      while (box !== el && isInline(box)) box = box.parentElement;
+      if (last && box !== last) text += ' ';
+      text += nodeText(node).replace(WJ, '');
+      last = box;
+    }
+    return text;
+  };
+
+  const panelOf = (el) => el.closest('.am-panel')?.id.replace(/^panel-/, '') ?? '';
+  // Block keys, in page order. Built when first needed: a page nobody marked pays nothing.
+  let keys = null;
+  const keyMap = () => {
+    if (!keys) {
+      const blocks = [...document.querySelectorAll(BLOCK)];
+      const ids = occurrenceKeys(blocks.map((el) => `${panelOf(el)}|${el.localName}|${fingerprint(blockText(el))}`));
+      keys = new Map(blocks.map((el, i) => [el, ids[i]]));
+    }
+    return keys;
+  };
+
+  const load = () => {
+    const restored = serve?.restored?.remark;
+    if (Array.isArray(restored)) return restored.filter((m) => typeof m?.key === 'string' && KINDS.includes(m.kind));
+    try {
+      const saved = JSON.parse(localStorage.getItem(storeKey));
+      return Array.isArray(saved) ? saved.filter((m) => typeof m?.key === 'string' && KINDS.includes(m.kind)) : [];
+    } catch {
+      return [];
+    }
+  };
+  // A mark whose block is gone from the page stays stored (it may return with `am patch`); it is neither painted nor sent.
+  const marks = new Map(load().map((m) => [m.key, { key: m.key, kind: m.kind, note: String(m.note ?? '') }]));
+  // Kind and note of a popover closed without Save, by block key, until the page reloads (see open below).
+  const drafts = new Map();
+  const clearBtn = document.createElement('button');
+  clearBtn.type = 'button';
+  clearBtn.className = 'am-btn am-btn--remark-clear';
+  clearBtn.textContent = ui.clear;
+  // Clear all drops saved marks and drafts, so it shows while either exists.
+  const toClear = () => marks.size + drafts.size;
+  const showClear = () => { clearBtn.hidden = toClear() === 0; };
+  btn.insertAdjacentElement('afterend', clearBtn);
+  let clearTimer = null;
+  let clearArmed = false;
+  const resetClear = () => {
+    if (clearTimer !== null) clearTimeout(clearTimer);
+    clearTimer = null;
+    clearArmed = false;
+    clearBtn.classList.remove('is-armed');
+    clearBtn.textContent = ui.clear;
+    showClear();
+  };
+  const armClear = () => {
+    clearArmed = true;
+    clearBtn.classList.add('is-armed');
+    clearBtn.textContent = ui.clearConfirm.replace('{n}', toClear());
+    clearTimer = setTimeout(resetClear, 4000);
+  };
+  clearBtn.addEventListener('click', () => {
+    if (!clearArmed) {
+      armClear();
+      return;
+    }
+    for (const el of document.querySelectorAll('.am-mark')) unpaint(el);
+    marks.clear();
+    // A draft is a remark the reader has not saved yet; Clear all drops it too, so no block reopens with an old kind.
+    drafts.clear();
+    try {
+      localStorage.removeItem(storeKey);
+    } catch {
+      // Storage may be off (private window, a sandboxed page); the in-memory marks still clear.
+    }
+    if (serve) saveSoon({ remark: [] });
+    resetClear();
+    document.dispatchEvent(new Event('am-remark-change'));
+  });
+  const save = () => {
+    try {
+      localStorage.setItem(storeKey, JSON.stringify([...marks.values()]));
+    } catch {
+      // Storage may be off (private window, a sandboxed page); marks then last until the page closes.
+    }
+    if (serve) saveSoon({ remark: [...marks.values()] });
+    // The reply bar (reply.js) shows the number of marks.
+    document.dispatchEvent(new Event('am-remark-change'));
+    showClear();
+  };
+
+  const chip = (el, mark) => {
+    const note = document.createElement(el.localName === 'table' ? 'caption' : 'span');
+    note.className = 'am-mark-note';
+    const kind = document.createElement('b');
+    kind.textContent = ui.kinds[mark.kind];
+    note.append(kind, mark.note ? ` ${mark.note}` : '');
+    return note;
+  };
+  const clearChip = (el) => el.querySelector(':scope > .am-mark-note')?.remove();
+  const paint = (el, mark) => {
+    clearChip(el);
+    el.classList.add('am-mark');
+    el.dataset.kind = mark.kind;
+    // Inside the block, so a list item stays a child of its list. A table takes it as its caption; a list item with a sub-list shows
+    // it under its own text, before the sub-list.
+    const sub = el.querySelector(':scope > ul, :scope > ol');
+    if (el.localName === 'table') el.prepend(chip(el, mark));
+    else if (sub) sub.before(chip(el, mark));
+    else el.append(chip(el, mark));
+  };
+  const unpaint = (el) => {
+    clearChip(el);
+    el.classList.remove('am-mark');
+    delete el.dataset.kind;
+  };
+  showClear();
+  if (marks.size) for (const [el, key] of keyMap()) if (marks.has(key)) paint(el, marks.get(key));
+
+  // The popover edits one block. Save stays off until a kind is picked, and a hint says so. 1–4 pick a kind from the keyboard and
+  // move to the note; Ctrl / Cmd + Enter saves. A popover closed without Save keeps its kind and note as a draft for that block until the page reloads.
+  const pop = document.createElement('div');
+  pop.className = 'am-remark-pop';
+  pop.hidden = true;
+  pop.setAttribute('role', 'dialog');
+  pop.setAttribute('aria-label', ui.button);
+  document.body.append(pop);
+  let opener = null;
+  let anchor = null;
+  let keepDraft = null;
+  const close = (restoreFocus) => {
+    if (pop.hidden) return;
+    keepDraft?.();
+    keepDraft = null;
+    pop.hidden = true;
+    if (restoreFocus) (opener?.isConnected && opener !== document.body ? opener : btn).focus();
+  };
+  const place = () => {
+    const rect = anchor.getBoundingClientRect();
+    const rtl = getComputedStyle(document.documentElement).direction === 'rtl';
+    const x = rtl ? rect.right - pop.offsetWidth : rect.left;
+    // Under the block; a block taller than the window gets the popover at the bottom of the window instead.
+    const y = Math.min(rect.bottom + 6, window.innerHeight - pop.offsetHeight - 8);
+    pop.style.left = `${window.scrollX + Math.min(Math.max(8, x), window.innerWidth - pop.offsetWidth - 8)}px`;
+    pop.style.top = `${window.scrollY + Math.max(8, y)}px`;
+  };
+  const make = (tag, props) => Object.assign(document.createElement(tag), props);
+  const open = (el) => {
+    const key = keyMap().get(el);
+    const mark = marks.get(key);
+    const draft = drafts.get(key);
+    let kind = draft?.kind ?? mark?.kind ?? '';
+    opener = document.activeElement;
+    anchor = el;
+
+    const note = make('textarea', { rows: 2, placeholder: ui.hint, value: draft?.note ?? mark?.note ?? '' });
+    note.setAttribute('aria-label', ui.hint);
+    const keep = make('button', { type: 'button', className: 'am-btn', textContent: ui.save, disabled: !kind });
+    const need = make('span', { className: 'am-remark-need', textContent: ui.need, hidden: Boolean(kind) });
+    keepDraft = () => {
+      if (kind || note.value.trim()) drafts.set(key, { kind, note: note.value });
+      else drafts.delete(key);
+      showClear();
+    };
+    const done = () => { drafts.delete(key); keepDraft = null; showClear(); };
+    keep.addEventListener('click', () => {
+      done();
+      const saved = { key, kind, note: note.value.trim() };
+      marks.set(key, saved);
+      save();
+      paint(el, saved);
+      close(true);
+    });
+    const actions = make('div', { className: 'am-remark-actions' });
+    actions.append(keep);
+    if (mark) {
+      const drop = make('button', { type: 'button', className: 'am-btn', textContent: ui.remove });
+      drop.addEventListener('click', () => {
+        done();
+        marks.delete(key);
+        save();
+        unpaint(el);
+        close(true);
+      });
+      actions.append(drop);
+    }
+    const choose = (k) => {
+      kind = k;
+      for (const other of kindBtns) other.setAttribute('aria-pressed', String(other.dataset.kind === k));
+      keep.disabled = false;
+      need.hidden = true;
+    };
+    const kindBtns = KINDS.map((k, i) => {
+      const kb = make('button', { type: 'button', className: 'am-remark-kind', textContent: ui.kinds[k] });
+      kb.dataset.kind = k;
+      kb.dataset.n = i + 1;
+      kb.setAttribute('aria-pressed', String(k === kind));
+      kb.addEventListener('click', () => choose(k));
+      return kb;
+    });
+    // Ctrl / Cmd + Enter presses Save (nothing while Save waits for a kind). A digit types into the note, so it picks a kind
+    // only while the focus is outside the note.
+    pop.onkeydown = (e) => {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.isComposing) {
+        e.preventDefault();
+        if (!keep.disabled) keep.click();
+        return;
+      }
+      if (e.target === note || e.ctrlKey || e.metaKey || e.altKey || !/^[1-4]$/.test(e.key)) return;
+      e.preventDefault();
+      choose(KINDS[Number(e.key) - 1]);
+      note.focus();
+    };
+    actions.append(need);
+    pop.replaceChildren(make('div', { className: 'am-remark-kinds' }), note, actions);
+    pop.firstChild.append(...kindBtns);
+    pop.hidden = false;
+    place();
+    (kindBtns.find((b) => b.dataset.kind === kind) ?? kindBtns[0]).focus({ preventScroll: true });
+  };
+
+  // Picking works only while remark mode is on. A click on a marked block edits its mark, on a plain block starts one.
+  // The block under the pointer gets an outline: the same blockAt decides what is outlined and what a click picks.
+  let hover = null;
+  const track = (e) => {
+    const el = e.type === 'mouseout' && e.relatedTarget === null ? null : blockAt(e.target);
+    if (el === hover) return;
+    hover?.classList.remove('am-remark-hover');
+    hover = el;
+    hover?.classList.add('am-remark-hover');
+  };
+  const pick = (e) => {
+    const el = blockAt(e.target);
+    if (el) open(el);
+  };
+  // The keyboard picks too: while the mode is on, every block takes focus with Tab, and Enter or Space opens its popover. A block
+  // that already had a tabindex keeps it; only the ones the mode added lose it again.
+  const pickKey = (e) => {
+    if ((e.key !== 'Enter' && e.key !== ' ') || e.ctrlKey || e.metaKey || e.altKey || !e.target.hasAttribute?.('data-am-pick')) return;
+    e.preventDefault();
+    open(e.target);
+  };
+  const focusable = (on) => {
+    if (!on && !keys) return; // the mode starts off: a page nobody marked builds no block keys
+    for (const el of keyMap().keys()) {
+      if (on && !el.hasAttribute('tabindex')) {
+        el.tabIndex = 0;
+        el.setAttribute('data-am-pick', '');
+      } else if (!on && el.hasAttribute('data-am-pick')) {
+        el.removeAttribute('tabindex');
+        el.removeAttribute('data-am-pick');
+      }
+    }
+  };
+  const setMode = (on) => {
+    btn.classList.toggle('is-on', on);
+    btn.setAttribute('aria-pressed', String(on));
+    const toggle = on ? 'addEventListener' : 'removeEventListener';
+    document.body[toggle]('click', pick);
+    document.body[toggle]('mouseover', track);
+    document.body[toggle]('mouseout', track);
+    document.body[toggle]('keydown', pickKey);
+    focusable(on);
+    if (!on) {
+      track({ type: 'mouseout', relatedTarget: null });
+      close(false);
+    }
+  };
+  btn.addEventListener('click', () => setMode(btn.getAttribute('aria-pressed') !== 'true'));
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') close(true);
+  });
+  // A click outside the popover closes it; the same click may then start another mark.
+  document.addEventListener('click', (e) => {
+    if (!pop.hidden && !pop.contains(e.target)) close(false);
+  }, true);
+  setMode(false);
+
+  // What the Reply button reads: the marked blocks that are on the page, in page order.
+  window.__amRemarkData = () => {
+    if (!marks.size) return [];
+    const live = [];
+    for (const [el, key] of keyMap()) {
+      const mark = marks.get(key);
+      if (mark) live.push({ panel: panelOf(el), quote: quote(blockText(el)), kind: mark.kind, note: mark.note });
+    }
+    return live;
+  };
+})();
+})();
+(() => {
+// Pure planner for justified ("photo wall") rows on sheet pages. No DOM access.
+//
+// This file must stay inlinable into the page script: top-level declarations only, no imports, and the exports are
+// `planLayout` and the constants the DOM adapter shares (STEP, MAX_SCALE, MIN_SCALE). The page build strips the `export ` keyword,
+// and test/layout-plan.test.js checks that this still works.
+//
+// planLayout({ width, gap, cols, panels }) -> { rows: [{ columns: [{ panels: [index, ...], width }], height }] }
+//
+// Input (all lengths in px):
+//   width   container width
+//   gap     space between columns, and between two panels stacked in one column
+//   cols    most columns in one row (the planner never uses more than MAX_COLUMNS, but spans stay shares of `cols`)
+//   panels  one entry per panel, in reading order:
+//     samples   [{ w, h }] panel height at sampled widths, ascending by w (heights between samples are interpolated)
+//     minWidth  narrowest feasible width (clamped to `width`)
+//     maxWidth  widest useful width; beyond it the panel only gains empty space (default: no limit)
+//     natural   natural diagram width for a diagram-only panel (default: none)
+//     pad       panel width not used by the diagram (padding and border; default 0)
+//     span      the author's width hint in grid columns (default 1); span >= cols keeps the panel alone in its row
+//
+// Output: { rows, maxScale }. Rows are in reading order; a row is a list of columns (at most `cols`); a column holds one panel or two
+// consecutive panels, stacked. For integer inputs the column widths plus the gaps between them equal `width`.
+// Rows are chosen by dynamic programming over break points; widths by a search in STEP px steps. Cost per row:
+//   H = tallest column; waste = sum((H - columnHeight) * columnWidth) + sum over diagrams wider than maxWidth of (w - maxWidth) * h
+//   dev = sum(((w - preferred) / oneColumn)^2) + SCALE_WEIGHT * sum over diagrams of (ln(scale) / ln(MAX_SCALE))^2
+//   cost = waste / 1000 + PREF_WEIGHT * dev * H
+// Scale band: diagrams on one page stay at similar sizes. With the result's `maxScale` as the diagram size limit, a diagram is
+// shown at scale min(maxScale, (width - pad) / natural). The planner tries a few bands [lo, lo * BAND_RATIO] (lo in BAND_LOS) and
+// keeps the cheapest plan in which no diagram is narrower than scale lo and none is shown above the band's top, so the largest and
+// smallest diagram scale on the page differ by at most BAND_RATIO. A panel wider than its diagram's top size keeps the diagram at
+// that size, and the page script must set the diagram's max-width to natural * maxScale. The band starts no higher than the
+// largest scale the page allows the least roomy diagram, so one wide diagram lowers the band for the others.
+// If no band is feasible the plan is made without a band (maxScale = MAX_SCALE); if no plan fits (or the input is unusable) the
+// result is a single column: one panel per row at the full width.
+
+const STEP = 10;
+const MAX_SCALE = 1.25;
+const MIN_SCALE = 0.75; // the narrowest a diagram is shown, as a share of its natural width
+const MAX_COLUMNS = 6; // rows with more columns are unreadable, and the search grows steeply with the column count
+const BAND_RATIO = 1.25; // the largest and smallest diagram scale on a page differ by at most this
+const BAND_LOS = [MIN_SCALE, 0.85, 0.95, 1]; // lower ends tried for the band; lo * BAND_RATIO is the upper end (1.25 means no upper limit)
+const SCALE_WEIGHT = 3;
+const PREF_WEIGHT = 0.15;
+
+function heightAt(samples, w) {
+  const i = samples.findIndex((s) => s.w >= w);
+  if (i === -1) return samples[samples.length - 1].h;
+  if (i === 0) return samples[0].h;
+  const a = samples[i - 1];
+  const b = samples[i];
+  return a.h + ((b.h - a.h) * (w - a.w)) / (b.w - a.w);
+}
+
+// Every way to split `len` consecutive panels into columns of 1 or 2 panels, as lists of column sizes.
+function splits(len) {
+  if (len === 0) return [[]];
+  return [1, 2].filter((k) => k <= len).flatMap((k) => splits(len - k).map((rest) => [k, ...rest]));
+}
+
+function singleColumn(width, panels) {
+  return { rows: panels.map((_, i) => ({ columns: [{ panels: [i], width }], height: 0 })) };
+}
+
+function planLayout({ width, gap = 0, cols = 3, panels }) {
+  const usable = Number.isFinite(width) && width > 0 && panels.every((p) => Array.isArray(p.samples) && p.samples.length > 0);
+  if (!usable) return singleColumn(width, panels);
+
+  // `cols` stays the unit of the author's spans; no row gets more than MAX_COLUMNS columns however large `cols` is.
+  const maxColumns = Math.min(cols, MAX_COLUMNS);
+  const oneColumn = Math.max(1, (width - gap * (cols - 1)) / cols);
+  // Per-panel limits. With a band [lo, lo * BAND_RATIO], a diagram is no narrower than scale lo and shown at most at the top of the
+  // band: a wider panel keeps it at that size and gains empty space, which the cost counts as waste.
+  const prepare = (lo) => panels.map((p) => {
+    const pad = p.pad ?? 0;
+    const diagram = lo > 0 && p.natural > 0;
+    const scaleCap = diagram ? Math.min(MAX_SCALE, lo * BAND_RATIO) : MAX_SCALE;
+    return {
+      ...p,
+      minWidth: Math.min(width, Math.max(Math.ceil(p.minWidth || 0), diagram ? Math.ceil(p.natural * lo + pad) : 0)),
+      maxWidth: Math.min(p.maxWidth ?? Infinity, diagram ? p.natural * scaleCap + pad : Infinity),
+      scaleCap,
+      pad,
+      preferred: Math.min(width, (p.span ?? 1) * oneColumn + ((p.span ?? 1) - 1) * gap),
+      alone: (p.span ?? 1) >= cols,
+    };
+  });
+  let info = prepare(0);
+  // Beyond its maxWidth a panel only gains empty space, so its height stops changing there (matters when a band lowers maxWidth).
+  const heightOf = (p, w) => heightAt(p.samples, Math.min(w, p.maxWidth));
+  const columnHeight = (col, w) => col.reduce((h, k) => h + heightOf(info[k], w), 0) + gap * (col.length - 1);
+
+  function bestColumns(columns) {
+    const avail = width - gap * (columns.length - 1);
+    const mins = columns.map((c) => Math.max(...c.map((k) => info[k].minWidth)));
+    const minsFrom = mins.map((_, n) => mins.slice(n).reduce((s, w) => s + w, 0));
+    if (minsFrom[0] > avail) return null;
+    let best = null;
+    const evaluate = (ws) => {
+      const hs = ws.map((w, n) => columnHeight(columns[n], w));
+      const H = Math.max(...hs);
+      let waste = 0;
+      let dev = 0;
+      ws.forEach((w, n) => {
+        waste += (H - hs[n]) * w;
+        for (const k of columns[n]) {
+          const p = info[k];
+          if (w > p.maxWidth) waste += (w - p.maxWidth) * heightOf(p, w);
+          dev += ((w - p.preferred) / oneColumn) ** 2;
+          if (p.natural > 0) {
+            const scale = Math.min(p.scaleCap, Math.max(w - p.pad, 1) / p.natural);
+            dev += SCALE_WEIGHT * (Math.log(scale) / Math.log(MAX_SCALE)) ** 2;
+          }
+        }
+      });
+      const cost = waste / 1000 + PREF_WEIGHT * dev * H;
+      if (!best || cost < best.cost) best = { cost, ws, height: H, columns };
+    };
+    const choose = (n, used, ws) => {
+      if (n === columns.length - 1) {
+        const w = avail - used;
+        if (w >= mins[n]) evaluate([...ws, w]);
+        return;
+      }
+      for (let w = mins[n]; used + w + minsFrom[n + 1] <= avail; w += STEP) choose(n + 1, used + w, [...ws, w]);
+    };
+    choose(0, 0, []);
+    return best;
+  }
+
+  // Best columns for one row of panels i..j.
+  function bestRow(i, j) {
+    if (j > i && info.slice(i, j + 1).some((p) => p.alone)) return null;
+    let best = null;
+    for (const split of splits(j - i + 1)) {
+      if (split.length > maxColumns) continue;
+      let next = i;
+      const columns = split.map((size) => Array.from({ length: size }, () => next++));
+      const r = bestColumns(columns);
+      if (r && (!best || r.cost < best.cost)) best = r;
+    }
+    return best;
+  }
+
+  // Row breaks in reading order, for the band set up in `info`. A row holds at most 2 * maxColumns panels. Null if nothing fits.
+  function solve() {
+    const n = panels.length;
+    const total = Array(n + 1).fill(Infinity);
+    const from = Array(n + 1).fill(-1);
+    const chosen = Array(n + 1).fill(null);
+    total[0] = 0;
+    for (let j = 1; j <= n; j++) {
+      for (let i = Math.max(0, j - 2 * maxColumns); i < j; i++) {
+        if (total[i] === Infinity) continue;
+        const r = bestRow(i, j - 1);
+        if (r && total[i] + r.cost < total[j]) {
+          total[j] = total[i] + r.cost;
+          from[j] = i;
+          chosen[j] = r;
+        }
+      }
+    }
+    if (total[n] === Infinity) return null;
+    const rows = [];
+    for (let j = n; j > 0; j = from[j]) {
+      const r = chosen[j];
+      rows.unshift({ columns: r.columns.map((panelsInColumn, c) => ({ panels: panelsInColumn, width: r.ws[c] })), height: r.height });
+    }
+    return { rows, cost: total[n] };
+  }
+
+  let best = null;
+  const diagrams = panels.filter((p) => p.natural > 0);
+  if (diagrams.length > 1) {
+    // No diagram can be shown larger than the page allows, so the band cannot start above the smallest of those limits.
+    const reach = Math.min(...diagrams.map((p) => Math.min(MAX_SCALE, Math.max(width - (p.pad ?? 0), 1) / p.natural)));
+    for (const lo of new Set([...BAND_LOS.filter((x) => x < reach), reach])) {
+      info = prepare(lo);
+      const r = solve();
+      if (r && (!best || r.cost < best.cost)) best = { ...r, maxScale: Math.min(MAX_SCALE, lo * BAND_RATIO) };
+    }
+    info = prepare(0);
+  }
+  best ??= solve();
+  return best ? { rows: best.rows, maxScale: best.maxScale ?? MAX_SCALE } : singleColumn(width, panels);
+}
+
+// DOM adapter for the sheet's justified ("photo wall") layout. Not a module: compose.js puts it after src/runtime/layout-plan.js
+// (which defines planLayout and the shared STEP, MAX_SCALE, MIN_SCALE) inside one function scope of the page script.
+//
+// It measures every panel at sampled widths, asks planLayout for rows and column widths, and applies them with flexbox.
+// The rendered HTML keeps the plain CSS grid: with JavaScript off, at the single-column breakpoint, or while printing, the grid is what
+// shows (the planned widths belong to the screen width, so print never gets a mix of the two); after printing the layout comes back.
+
+const grid = document.querySelector('.am-grid');
+const panels = grid ? [...grid.children].filter((el) => el.classList.contains('am-panel')) : [];
+
+if (panels.length > 1) {
+  const SINGLE_COLUMN = '(max-width: 760px)'; // the single-column breakpoint in src/themes/base.css
+  const TWO_COLUMNS = '(max-width: 1100px)'; // below this the CSS grid has two columns
+  const SAMPLE_STEP = 20; // width sampling step, px; the planner interpolates between samples
+  // The width floors are text sizes (px at scale 1). They take the page scale on every pass, so a runtime change of --am-scale re-plans.
+  const TEXT_MIN = 260; // text keeps at least about 16 CJK characters per line
+  const TABLE_COL_MIN = 96; // per table column, px
+  const TABLE_COL_COMFORT = 220; // a table column this wide reads three or four words per line
+  const KV_COL_MIN = 120; // per key-value column, px: a value of two short words stays on one line
+  const DIAGRAM_MIN = 160;
+  const RESIZE_DELAY = 150;
+  const pageScale = () => {
+    const scale = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--am-scale'));
+    return Number.isFinite(scale) && scale > 0 ? scale : 1;
+  };
+  const OVERFLOWING = '.am-table-wrap, .am-diagram, .am-annot-scroll, pre';
+
+  // The first-row cells of each table carry the column widths fitTables() sets, so restore() resets them too.
+  const tables = [...grid.querySelectorAll('.am-table-wrap > table')];
+  const headCells = (table) => [...(table.rows[0]?.cells ?? [])];
+  const original = new Map([grid, ...panels, ...grid.querySelectorAll('.am-diagram > svg'), ...tables.flatMap(headCells)].map((el) => [el, el.getAttribute('style')]));
+  const restoreStyle = (el) => (original.get(el) === null ? el.removeAttribute('style') : el.setAttribute('style', original.get(el)));
+
+  // Back to the plain grid markup and styles.
+  const restore = () => {
+    for (const box of grid.querySelectorAll(':scope > .am-col')) box.replaceWith(...box.children);
+    for (const el of original.keys()) restoreStyle(el);
+  };
+
+  // The author's width hint, rendered as data-span only when the author wrote one. The inline grid-column is the no-JavaScript fallback
+  // and may hold spans the server added, so it is never read here.
+  const spanHint = (el) => Number(el.dataset.span) || 1;
+  const diagramOnly = (el) => {
+    const body = el.querySelector(':scope > .am-panel-body');
+    return body && body.children.length === 1 ? body.querySelector(':scope > .am-diagram > svg') : null;
+  };
+  const naturalWidth = (svg) => Number(svg.getAttribute('width')) || 0;
+
+  // The width each column of a table reads well at: its natural width, but no wider than TABLE_COL_COMFORT unless its longest word
+  // needs more. Below it the cells wrap one word per line, so a panel with a table is not planned narrower than the sum, and
+  // fitTables() keeps each column at its share (the browser would otherwise give the room to the longest column).
+  const columnWidths = new Map();
+  function comfortableWidth(table, scale) {
+    const saved = table.getAttribute('style');
+    const columns = (width) => {
+      table.style.width = width;
+      return headCells(table).map((cell) => cell.getBoundingClientRect().width);
+    };
+    const most = columns('max-content');
+    const least = columns('min-content');
+    if (saved === null) table.removeAttribute('style');
+    else table.setAttribute('style', saved);
+    // A max-content column comes out a fraction under its text in Chrome, enough to wrap the last word, so it gets one pixel more.
+    const want = most.map((w, i) => Math.min(Math.ceil(w) + 1, Math.max(least[i], TABLE_COL_COMFORT * scale)));
+    columnWidths.set(table, { least, want });
+    return want.reduce((sum, w) => sum + w, 0);
+  }
+
+  // After the layout: each column gets at least its comfortable width, scaled down toward its longest word when the panel came out
+  // narrower than planned (a page narrower than the table), so a table scrolls sideways only when even its longest words do not fit.
+  function fitTables() {
+    for (const [table, { least, want }] of columnWidths) {
+      // Each width is rounded up to a whole pixel (a column a fraction too narrow wraps its last word), so keep a pixel per column spare.
+      const room = table.parentElement.clientWidth - want.length;
+      const low = least.reduce((s, w) => s + w, 0);
+      const high = want.reduce((s, w) => s + w, 0);
+      const k = high > room ? Math.max(0, (room - low) / (high - low || 1)) : 1;
+      headCells(table).forEach((cell, i) => { cell.style.minWidth = `${Math.ceil(least[i] + (want[i] - least[i]) * k)}px`; });
+    }
+  }
+
+  // Height (and, for panels with tables or code, the narrowest width without sideways scrolling) at sampled widths.
+  // Only one panel is displayed while it is measured, so each width change lays out that panel alone.
+  function measure(width) {
+    const scale = pageScale();
+    grid.style.display = 'block';
+    for (const el of panels) {
+      el.style.display = 'none';
+      el.style.boxSizing = 'border-box';
+      for (const svg of el.querySelectorAll('.am-diagram > svg')) {
+        svg.style.width = '100%';
+        svg.style.maxWidth = `${naturalWidth(svg) * MAX_SCALE}px`;
+      }
+    }
+    const info = panels.map((el) => {
+      const svg = diagramOnly(el);
+      const svgs = [...el.querySelectorAll('.am-diagram > svg')];
+      const scrollers = el.querySelectorAll(OVERFLOWING);
+      const tableCols = Math.max(0, ...[...el.querySelectorAll('table tr:first-child')].map((tr) => tr.children.length));
+      el.style.display = '';
+      el.style.width = `${width}px`;
+      const pad = svg ? el.offsetWidth - svg.parentElement.clientWidth : 0;
+      const natural = svg ? naturalWidth(svg) : 0;
+      const shrunk = Math.max(0, ...svgs.map((s) => naturalWidth(s) * MIN_SCALE)) + (svg ? pad : 34);
+      const tableFloors = [...el.querySelectorAll('.am-table-wrap > table')].map((t) => comfortableWidth(t, scale) + el.offsetWidth - t.parentElement.clientWidth);
+      // A key-value grid gets the same care: the room a table gains must not squeeze a neighbouring grid to one word per line.
+      const kvs = [...el.querySelectorAll('.am-kv')].map((kv) => (Number(kv.style.getPropertyValue('--kv-cols')) || 1) * KV_COL_MIN * scale + el.offsetWidth - kv.clientWidth);
+      const floor = svg ? Math.max(DIAGRAM_MIN * scale, natural * MIN_SCALE + pad) : Math.max(TEXT_MIN * scale, shrunk, tableCols * TABLE_COL_MIN * scale + 34, ...tableFloors, ...kvs);
+      const from = Math.min(width, Math.floor(floor / STEP) * STEP);
+      const samples = [];
+      let fits = null;
+      for (let w = from; ; w += SAMPLE_STEP) {
+        w = Math.min(w, width);
+        el.style.width = `${w}px`;
+        if (fits === null && !svg && scrollers.length && ![...scrollers].some((s) => s.scrollWidth > s.clientWidth + 1)) fits = w;
+        samples.push({ w, h: el.offsetHeight });
+        if (w === width) break;
+      }
+      el.style.display = 'none';
+      return {
+        samples,
+        minWidth: svg ? floor : Math.max(floor, fits ?? (scrollers.length ? width : 0)),
+        maxWidth: svg ? natural * MAX_SCALE + pad : Infinity,
+        natural,
+        pad,
+        span: spanHint(el),
+      };
+    });
+    for (const el of panels) {
+      el.style.display = '';
+      el.style.width = '';
+    }
+    return info;
+  }
+
+  // Each column gets a fixed width. A row adds up to the full width, so flex-wrap breaks rows by itself.
+  // Stacked panels go into a column wrapper whose last panel absorbs the extra height.
+  function apply(plan, gap) {
+    grid.style.display = 'flex';
+    grid.style.flexWrap = 'wrap';
+    grid.style.alignItems = 'stretch';
+    grid.style.gap = `${gap}px`;
+    for (const el of panels) {
+      el.style.gridColumn = '';
+      el.style.gridRow = '';
+      el.style.flex = '0 0 auto';
+    }
+    for (const row of plan.rows) {
+      for (const col of row.columns) {
+        const width = `${col.width}px`;
+        if (col.panels.length === 1) {
+          panels[col.panels[0]].style.width = width;
+          continue;
+        }
+        const box = document.createElement('div');
+        box.className = 'am-col';
+        box.style.cssText = `width:${width};flex:0 0 auto;display:flex;flex-direction:column;gap:${gap}px`;
+        panels[col.panels[0]].before(box);
+        for (const k of col.panels) {
+          panels[k].style.width = '';
+          box.append(panels[k]);
+        }
+        panels[col.panels[col.panels.length - 1]].style.flex = '1 1 auto';
+      }
+    }
+  }
+
+  // Diagram-only panels show their diagram at most at the top of the page's scale band; a wider panel gains empty space instead.
+  function capDiagrams(maxScale) {
+    for (const el of panels) {
+      const svg = diagramOnly(el);
+      if (svg) svg.style.maxWidth = `${naturalWidth(svg) * maxScale}px`;
+    }
+  }
+
+  const containerWidth = () => Math.floor(grid.getBoundingClientRect().width);
+
+  function justify() {
+    if (printing || printQuery.matches) return;
+    try {
+      // A vertical scrollbar can appear or vanish once the rows change height; plan again if the width moved.
+      let planned = -1;
+      for (let pass = 0; pass < 3 && planned !== containerWidth(); pass++) {
+        restore();
+        if (matchMedia(SINGLE_COLUMN).matches) return;
+        planned = containerWidth();
+        const gap = parseFloat(getComputedStyle(grid).columnGap) || 0;
+        const cols = Math.max(1, Number(getComputedStyle(grid).getPropertyValue('--cols')) || 3);
+        const plan = planLayout({ width: planned, gap, cols: matchMedia(TWO_COLUMNS).matches ? Math.min(cols, 2) : cols, panels: measure(planned) });
+        apply(plan, gap);
+        capDiagrams(plan.maxScale);
+        fitTables();
+      }
+      // The width never settled: columns planned for another width would overflow or leave gaps, so show the plain grid.
+      if (planned !== containerWidth()) restore();
+    } catch {
+      restore();
+    }
+  }
+
+  // Printing: back to the plain grid (spans and all), and the layout again afterwards. Browsers disagree on which of the
+  // `beforeprint` event and the print media query change fires first, or at all, so listen to both; both are idempotent.
+  // While `printing` is set (beforeprint to afterprint) justify() does nothing, so a late resize cannot bring flex widths into the print layout.
+  let printing = false;
+  const printQuery = matchMedia('print');
+  let timer = 0;
+  const later = () => {
+    clearTimeout(timer);
+    timer = setTimeout(justify, RESIZE_DELAY);
+  };
+  const toPrint = () => {
+    clearTimeout(timer);
+    restore();
+  };
+  justify();
+  addEventListener('resize', later);
+  // A reader's text size changes every panel's text widths and heights, so the sheet is planned again like a resize.
+  addEventListener('am-scale', later);
+  addEventListener('beforeprint', () => {
+    printing = true;
+    toPrint();
+  });
+  addEventListener('afterprint', () => {
+    printing = false;
+    later();
+  });
+  printQuery.addEventListener('change', (e) => (e.matches ? toPrint() : later()));
+  // Late changes to panel heights: web fonts arriving, and images inside the grid finishing their load (load does not bubble, so capture it).
+  document.fonts?.ready.then(later);
+  grid.addEventListener('load', later, true);
+  // Switching theme changes paddings and fonts, hence panel heights.
+  document.querySelector('[data-am="theme"]')?.addEventListener('click', later);
+}
+})();
+// The outline rail of a doc page (src/templates/doc.js): the markup already works without a script, <details> opens the list and the
+// links jump. This adds the hover dwell, the open direction, the keys, the tap outside and the marking of the current section.
+(() => {
+  const nav = document.querySelector('nav.am-toc');
+  const box = nav && nav.querySelector('details.am-outline');
+  if (!box) return;
+  const sum = box.querySelector('summary');
+  const links = Array.from(box.querySelectorAll('.am-outline-list a'));
+  const ticks = Array.from(box.querySelectorAll('.am-tick'));
+  const LIST_W = 240; // keep in step with .am-outline-list in src/themes/base.css
+  const EDGE = 10; // the 6px gap to the rail plus a margin to the viewport edge
+  let current = '';
+  let byHover = false;
+  let dwell = 0;
+  let leave = 0;
+
+  // Open away from the body when the room outside the rail fits the list; otherwise over the body. Never past the viewport.
+  const place = () => {
+    const r = sum.getBoundingClientRect();
+    const right = r.left + r.width / 2 > innerWidth / 2;
+    const room = right ? innerWidth - r.right : r.left;
+    nav.dataset.flow = room >= Math.min(LIST_W, innerWidth - 48) + EDGE ? 'out' : 'in';
+  };
+  const setOpen = (open) => {
+    if (open) place();
+    box.open = open;
+    if (!open) byHover = false;
+  };
+  const peek = (tick) => ticks.forEach((t) => t.classList.toggle('is-peek', t === tick));
+  const currentLink = () => links.find((a) => a.getAttribute('aria-current') === 'true') || links[0];
+
+  const mark = (id) => {
+    current = id;
+    ticks.forEach((t) => t.classList.toggle('is-current', t.dataset.id === id));
+    links.forEach((a) => {
+      if (a.getAttribute('href') === `#panel-${id}`) a.setAttribute('aria-current', 'true');
+      else a.removeAttribute('aria-current');
+    });
+  };
+  const sections = ticks.map((t) => document.getElementById(`panel-${t.dataset.id}`)).filter(Boolean);
+  if (sections.length) mark(sections[0].id.slice(6));
+  if (sections.length && 'IntersectionObserver' in window) {
+    // A thin band a third of the way down the viewport: the section across it is the one being read.
+    const seen = new Set();
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((e) => (e.isIntersecting ? seen.add(e.target) : seen.delete(e.target)));
+      const hit = sections.filter((s) => seen.has(s)).pop();
+      if (hit && hit.id.slice(6) !== current) mark(hit.id.slice(6));
+    }, { rootMargin: '-30% 0px -65% 0px' });
+    sections.forEach((s) => io.observe(s));
+  }
+
+  place();
+  addEventListener('resize', place);
+
+  // Mouse: dwelling on the rail opens the list, leaving it closes a list opened that way. A tap or click opens it for good.
+  box.addEventListener('pointerenter', (e) => {
+    clearTimeout(leave);
+    if (e.pointerType !== 'mouse' || box.open) return;
+    dwell = setTimeout(() => { setOpen(true); byHover = true; }, 300);
+  });
+  box.addEventListener('pointerleave', () => {
+    clearTimeout(dwell);
+    // A link the keyboard moved into keeps the list open; focusout closes it once the focus leaves the nav.
+    if (byHover) leave = setTimeout(() => { if (!nav.contains(document.activeElement)) setOpen(false); }, 250);
+  });
+  sum.addEventListener('click', (e) => {
+    clearTimeout(dwell);
+    if (box.open && byHover) { e.preventDefault(); byHover = false; return; }
+    place();
+  });
+  box.addEventListener('toggle', () => { if (box.open) peek(null); });
+
+  // Keyboard: the summary opens with Enter or Space (native); arrows move through the links; Esc closes and returns to the rail.
+  sum.addEventListener('focus', () => {
+    if (sum.matches(':focus-visible')) peek(ticks.find((t) => t.dataset.id === current));
+  });
+  sum.addEventListener('blur', () => peek(null));
+  nav.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && box.open) {
+      e.preventDefault();
+      setOpen(false);
+      sum.focus();
+      return;
+    }
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return;
+    const at = links.indexOf(document.activeElement);
+    if (at < 0 && e.target !== sum) return;
+    e.preventDefault();
+    if (!box.open) setOpen(true);
+    let next;
+    if (e.key === 'Home') next = links[0];
+    else if (e.key === 'End') next = links[links.length - 1];
+    else if (at < 0) next = e.key === 'ArrowDown' ? currentLink() : links[links.length - 1];
+    else next = links[Math.min(links.length - 1, Math.max(0, at + (e.key === 'ArrowDown' ? 1 : -1)))];
+    next.focus();
+  });
+  nav.addEventListener('focusout', (e) => {
+    if (box.open && e.relatedTarget && !nav.contains(e.relatedTarget)) setOpen(false);
+  });
+
+  // Choosing a section or tapping outside closes the list.
+  links.forEach((a) => a.addEventListener('click', () => setOpen(false)));
+  document.addEventListener('pointerdown', (e) => { if (box.open && !nav.contains(e.target)) setOpen(false); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && box.open && !nav.contains(e.target)) setOpen(false); });
+})();
+})();
+</script>
+</body>
+</html>

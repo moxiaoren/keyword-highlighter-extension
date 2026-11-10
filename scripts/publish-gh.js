@@ -130,7 +130,7 @@ async function api(method, url, body) {
   const skip = all.filter((f) => FORBIDDEN_RE.test(f));
   /* 只上传"站点真正需要"的文件（白名单）：清单、update.xml、包。
    * 其余（PUBLISH.md 等）留在本地 —— 免得把说明文档也传上站点。 */
-  const SITE_FILE_RE = /^(latest(-beta)?\.json|update(-beta)?\.xml|index\.html|kh-autoupdate\.bat|notes\/[A-Za-z0-9.\-]+\.html|\.nojekyll|.+\.(zip|crx))$/i;   // 站点首页 + 一键安装脚本 + 每版说明页（notes/v<ver>.html）也一起发布   // update-beta.xml 也要能发（独立测试版的自动更新源）
+  const SITE_FILE_RE = /^(latest(-beta)?\.json|update(-beta)?\.xml|index\.html|kh-autoupdate\.bat|notes\/[A-Za-z0-9.\-]+\.html|notes\/img\/[A-Za-z0-9.\-]+\.png|\.nojekyll|.+\.(zip|crx))$/i;   // 站点首页 + 一键安装脚本 + 每版说明页（notes/v<ver>.html）也一起发布   // update-beta.xml 也要能发（独立测试版的自动更新源）
   /* 只上传**当前版本**的安装包。
    * 【为什么要收这一刀】release/ 里会一直堆着历史测试版包（实测已经 19 个版本的 crx+zip ≈ 10MB），
    * 每次发版都重传一遍：又慢又会撞上 API 抽风（实测在传第 26 个 blob 时拿到一次 Bad credentials）。
