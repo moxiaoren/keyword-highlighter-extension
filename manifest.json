@@ -36,6 +36,7 @@
         "src/build-info.js",
         "src/core/protocol.js",
         "src/core/text-norm.js",
+        "src/core/scope.js",
         "src/core/config.js",
         "src/core/registry.js",
         "src/core/compiler.js",

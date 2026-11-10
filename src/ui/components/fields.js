@@ -643,6 +643,10 @@
               row.name = o.name;
               row.scopes = (o.scopes || []).slice();
               row.mark = !!o.mark;
+              /* 【#116】保留**原文那一段**：诊断要看用户到底写了什么。
+               * 下面 `suffixChip` 的 `specOf` 会把后缀/`@` 吃进 spec，`row.name` 只剩裸词，
+               * 若用拼回来的文字诊断，`@字段` 这一段就凭空消失了（正好是我们要抓的错）。 */
+              row.origChip = String(o.raw == null ? '' : o.raw);
               if (spec.suffixChip) { row.spec = specOf(row.name); row.name = row.spec.label; }
             } else if (isTok) { row.name = specOf(o.raw).label; row.spec = specOf(o.raw); }
             else row.name = String(o.raw == null ? '' : o.raw);
@@ -651,6 +655,8 @@
           let dirty = false;
 
           const listEl = h('div', { class: 'kh-list-rows' });
+          /* 【#116】指向诊断条：写错的 `@字段名` 以前静默不生效，在这里当场列出来。 */
+          const issueEl = h('div', { class: 'kh-issue-list', hidden: true });
           const countEl = h('span', { class: 'kh-list-count' });
           const filter = h('input', {
             class: 'kh-input kh-list-filter', type: 'search',
@@ -672,10 +678,47 @@
           };
           const syncCount = () => {
             countEl.textContent = '共 ' + alive().length + ' 条，已选 ' + pickedRows().length + ' 条';
+            refreshIssues();
           };
           const rowText = (row) => isKv
             ? (row.name + ' ' + (row.scopes || []).join(' ') + ' ' + (row.scopes && row.scopes.length ? '' : '全部字段') + (row.mark ? ' #表' : ''))
             : hasSuffix ? (row.name + ' ' + (row.spec ? (typeof F.suffixTextOf === 'function' ? F.suffixTextOf(row.spec) : '') : '')) : row.name;
+
+          /* 【#116 需求】指向诊断：`@字段名` 写错时以前整条静默不生效（`splitScope` 只把配不上的
+           * `@…` 当普通词处理，为的是老配置零影响）。用户口径：这种失败必须当场看得见。
+           * 这里**只提示、不改判定** —— 判定仍是 `splitScope`，所以提醒一行都不影响已有配置的命中。
+           * 每次行变化（增删改/过滤/重画）都重算：用户改对之后提醒自己就消失。 */
+          const refreshIssues = () => {
+            /* 【#116】诊断在 `src/core/scope.js`：设置页**不加载** `src/features/img-ocr.js`，
+             * 从前写成 `KH.ImgOcr.scopeIssues` 时，用户最常编辑的地方永远看不到提醒。 */
+            const scope = KH.Scope;
+            if (!issueEl) return;
+            if (!isKv || !scope || typeof scope.scopeIssues !== 'function') { issueEl.hidden = true; return; }
+            /* 拼回「原样写法」再诊断：`rowText` 是给人看的（含「全部字段」这类说明），
+             * 直接喂给解析器会让词尾多出几个字、`@` 不在末尾，永远查不出问题。 */
+            const issueChip = (row) => {
+              if (!isKv) return String(row.name || '');
+              if (!row.dirty && row.origChip != null) return row.origChip;
+              let one = String(row.name || '').trim();
+              for (const sc of (row.scopes || [])) one += '@' + sc;
+              if (row.mark) one += ' #表';
+              return one;
+            };
+            const rawAll = alive().map(issueChip).join('|');
+            const list = scope.scopeIssues(rawAll, known) || [];
+            issueEl.textContent = '';
+            if (!list.length) { issueEl.hidden = true; return; }
+            issueEl.hidden = false;
+            for (let i = 0; i < list.length; i++) {
+              const it = list[i];
+              const text = it.kind === 'suffix'
+                ? '「@' + it.name + '」把取值后缀写进了指向，这样永远配不上 —— 后缀请写在「抓取后续字段」里，'
+                  + '这里只写字段名' + (it.suggest ? '（例如 @' + it.suggest + '）' : '')
+                : '「@' + it.name + '」不是已配的抓取字段，这条不会按字段生效'
+                  + (it.suggest ? ' —— 是不是「' + it.suggest + '」？' : '');
+              issueEl.appendChild(h('div', { class: 'kh-issue-row', text: '⚠ ' + text }));
+            }
+          };
 
           /* ---------- 指向面板：可搜索 + 多选；行里与「批量」共用这一份 ---------- */
           const scopePanel = h('div', { class: 'kh-scope-panel', hidden: true });
@@ -925,6 +968,8 @@
               if (row.spec) row.spec.label = row.name;
               row.dirty = true;
               dirty = true;
+              /* 【#116】改字的同时重算指向诊断：改对了提醒立刻消失，不用关掉再开 */
+              refreshIssues();
             });
             nameInp.addEventListener('keydown', (ev) => {
               if (!ev) return;
@@ -1160,6 +1205,7 @@
             h('div', { class: 'kh-list-addbar' }, [addInp, addBtn2]),
             scopePanel,
             opsBar,
+            issueEl,
             listEl,
             h('div', { class: 'kh-list-foot' }, [h('span', { class: 'kh-list-tip', text: tip })]),
             isTok ? legendEl() : null

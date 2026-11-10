@@ -450,6 +450,18 @@
 
         const saved = await KH.Store.upsertKeyword(Object.assign(kw, { id: editing ? editing.id : kw.id }), cfg);
         D().toast(editing ? '已保存' : '已添加「' + (text || kw.cellVerify) + '」', 'ok');
+        /* 【#116】保存后也要把「写错的指向」当面说出来：`@字段名` 配不上时 `splitScope` 会
+         * 整段当普通词（老配置零影响），以前的结果是"规则看着配了、实际不按字段生效"却没有任何提示。
+         * 只提醒、不拦保存 —— 老配置里可能真有把 `@` 当普通字符的词，硬拦会误伤。 */
+        try {
+          /* 【#116】诊断来自 `src/core/scope.js`（设置页没有 `KH.ImgOcr`，见那边的注释） */
+          const issues = (KH.Scope && typeof KH.Scope.scopeIssuesOf === 'function')
+            ? KH.Scope.scopeIssuesOf(kw) : [];
+          if (issues.length) {
+            D().toast('已保存，但有 ' + issues.length
+              + ' 个指向不是已配的抓取字段（打开对应字段的「修改」可查看）', 'warn');
+          }
+        } catch (e) { /* 诊断失败绝不影响保存 */ }
         if (typeof o.onSaved === 'function') o.onSaved(saved);
         return true;
       }

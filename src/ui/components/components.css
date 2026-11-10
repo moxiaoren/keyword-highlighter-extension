@@ -275,6 +275,7 @@
 }
 .kh-toast-ok { background: var(--success-strong); }
 .kh-toast-error { background: var(--danger-strong); }
+.kh-toast-warn { background: var(--warning); }
 .kh-toast-info { background: var(--ink); }
 
 /* ---------------------------------------------------------------- 小浮层（胶囊弹窗） */
@@ -941,6 +942,14 @@
 .kh-list-addbar .kh-list-add { flex: 1 1 auto; min-width: 0; }
 .kh-list-addbtn { flex: 0 0 auto; }
 .kh-list-ops { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+/* 【#116】指向诊断条：写在「修改」弹窗列表上方，写错的 `@字段名` 在这里当场可见 */
+.kh-issue-list {
+  display: flex; flex-direction: column; gap: 4px; min-width: 0;
+  padding: 6px 8px; border-radius: var(--r-sm);
+  background: var(--warning-soft); color: var(--warn-ink);
+  font-size: 12px; line-height: 1.55; word-break: break-word;
+}
+.kh-issue-row { min-width: 0; }
 .kh-list-rows {
   display: flex; flex-direction: column; gap: 6px; min-width: 0;
   max-height: 46vh; overflow: auto; padding: 2px;

@@ -446,6 +446,29 @@
     return parts.filter((p) => !p.scopes.length).map((p) => p.text).join('|');
   }
 
+  /* ---------------- 【#116 需求】指向诊断：写错的 `@字段名` 不再静默 ----------------
+   * 现状：`splitScope` 遇到配不上的 `@…` 就停手、整段按普通词处理（2.0.7.1 是为了让把
+   * `@` 当普通字符的老配置一个字都不变）。代价是"字段名打错一个字母"之后，用户只看得到
+   * 「这条规则没生效」，没有任何提示 —— 用户口径：这种静默失败必须能在录入界面看见。
+   *
+   * 实现下沉到 `src/core/scope.js`：设置页（options）与独立编辑窗口**不加载**本文件
+   * （`src/features/*` 是内容脚本特性），诊断留在这里的话，设置页里永远是"没有提醒" ——
+   * 而那正是最容易写错的地方。这里只做转发，`KH.ImgOcr.scopeIssues` 保留给既有调用方与测试。
+   */
+  function scopeIssues(raw, known) {
+    return (KH.Scope && typeof KH.Scope.scopeIssues === 'function')
+      ? KH.Scope.scopeIssues(raw, known)
+      : [];
+  }
+  /** 一条规则里两个填了指向的字段（图片命中关键词 / 图上须有的字段值）一起诊断。
+   *  `field` 是**存储字段名**，UI 用它决定把提醒挂在哪一格。 */
+  function scopeIssuesOf(rule) {
+    const meta = (rule && rule.meta) || {};
+    return (KH.Scope && typeof KH.Scope.scopeIssuesOf === 'function')
+      ? KH.Scope.scopeIssuesOf(meta, scopeKnown(rule))
+      : [];
+  }
+
   /**
    * 「图片命中关键词」的**唯一编译点**（用户确认的匹配口径）：
    *   `useRegex: true` + `wholeWord: false` + `caseSensitive: false`
@@ -1775,6 +1798,9 @@
     scopeKnown: scopeKnown, scopedRaw: scopedRaw, literalPatternOf: literalPatternOf,
     /** 【2.0.7.2 需求①】`splitScope(chip, known)` → `{text, scopes[, scope]}`：词尾可连写多个 `@字段名` */
     splitScope: splitScope,
+    /** 【#116】`scopeIssues(raw,known)` → 写错的 `@指向` 清单（只看不改判定）；
+     *  `scopeIssuesOf(rule)` 把两个带指向的字段一起诊断。 */
+    scopeIssues: scopeIssues, scopeIssuesOf: scopeIssuesOf,
     /** 【2.0.7.2 需求④】`needSpecs(raw,field,known)` = 要看的字段（**带用户写的后缀**，取值喂 `Fetch.extractFor`） */
     needSpecs: needSpecs,
     /** 【2.0.4 需求①】「键值行进表」标记：`kvWords(raw)` = 带 `#表`/`#kv` 标记的词（已剥标记）；

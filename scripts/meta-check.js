@@ -1038,6 +1038,34 @@ if (manifest && manifest.version) {
     if (hit.length !== 1) bad(name + ' 必须走 KH.TextNorm（keyOf/verdict），实测 ' + hit.length + ' 处', hit.join('\n      '));
     else ok(name + ' 走 KH.TextNorm');
   }
+
+  /* ④ 【#116】写错的 `@字段名` 不许再静默：诊断入口必须在、UI 两个入口都得接上。
+   *    这里查的是"接线还在不在"—— 判定仍走 `splitScope`（诊断不改行为），
+   *    但只要有人把 UI 那两行删了，用户就又回到"配了不生效、毫无提示"的状态。 */
+  const exp = findIn(['src/features/img-ocr.js'], /scopeIssues: scopeIssues, scopeIssuesOf: scopeIssuesOf/);
+  if (exp.length !== 1) bad('img-ocr.js 必须继续导出 scopeIssues / scopeIssuesOf（内容脚本侧的兼容入口）', exp.join('\n      '));
+  else ok('指向诊断单源（ImgOcr 转发到 KH.Scope）');
+
+  /* 设置页/独立编辑窗口**不加载** img-ocr.js：诊断实现必须住在 core，否则设置页永远没有提醒 */
+  const coreNeed = findIn(['src/core/scope.js'], /KH\.Scope = \{/);
+  if (coreNeed.length !== 1) bad('src/core/scope.js 必须挂出 KH.Scope（设置页与内容脚本共用的唯一诊断实现）', coreNeed.join('\n      '));
+  else ok('指向诊断实现住在 core/scope.js');
+
+  const manNeed = findIn(['manifest.json'], /src\/core\/scope\.js/);
+  if (manNeed.length !== 1) bad('manifest.json 必须加载 src/core/scope.js（内容脚本侧也要有 KH.Scope）', manNeed.join('\n      '));
+  else ok('scope.js 已登记进 content_scripts');
+
+  const optNeed = findIn(['options/options.html'], /src\/core\/scope\.js/);
+  if (optNeed.length !== 1) bad('设置页必须加载 src/core/scope.js（否则写错的指向在设置页静默）', optNeed.join('\n      '));
+  else ok('设置页加载指向诊断');
+
+  const useBatch = findIn(['src/ui/components/fields.js'], /scope\.scopeIssues\(rawAll, known\)/);
+  if (useBatch.length !== 1) bad('「修改」弹窗必须调用 KH.Scope.scopeIssues（写错的 @字段名 当场可见）', useBatch.join('\n      '));
+  else ok('「修改」弹窗接上指向诊断');
+
+  const useSave = findIn(['src/ui/components/keyword-editor.js'], /KH\.Scope\.scopeIssuesOf\(kw\)/);
+  if (useSave.length !== 1) bad('保存成功后必须用 KH.Scope.scopeIssuesOf 提醒一次（静默失败的最后一道提示）', useSave.join('\n      '));
+  else ok('保存时接上指向诊断');
 }
 
 /* ------------------------------------------------------------------ 输出 */

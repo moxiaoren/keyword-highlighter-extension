@@ -197,7 +197,9 @@ const specs = [
   './specs/v20818p1.test.js',
   /* 2.0.8.19 需求（P4）：软著三方比对 —— 开发者=被授权公司 / 著作权人=授权公司 / 两个登记号一致；
    * 不一致且没有授权书时给一行结论。口径见 tests/specs/v20818p4.test.js 头部 */
-  './specs/v20818p4.test.js'
+  './specs/v20818p4.test.js',
+  /* #116：写错的 `@字段名` 不再静默——诊断清单（只提示、不改判定），见 scope-issues.test.js */
+  './specs/scope-issues.test.js'
 ];
 
 (async () => {
