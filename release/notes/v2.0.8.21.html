@@ -1,0 +1,37 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>高亮词助手 2.0.8.21 更新说明</title><style>
+:root{--bg:#f7f8fa;--card:#fff;--fg:#1b1f24;--muted:#5b6672;--line:#e3e7ec;
+--fix:#c0392b;--new:#1f7a4d;--chg:#1f5fa8;--gate:#6b5bd2;--other:#6b7684;}
+@media (prefers-color-scheme:dark){:root{--bg:#14171a;--card:#1c2024;--fg:#e6e9ec;--muted:#9aa5b1;--line:#2b3138;
+--fix:#ff8b80;--new:#6fd39b;--chg:#7fb6f5;--gate:#b3a8ff;--other:#9aa5b1;}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif}
+.wrap{max-width:820px;margin:0 auto;padding:40px 20px 64px}
+header .ver{font-size:34px;font-weight:700;letter-spacing:-.5px}
+header .meta{color:var(--muted);font-size:14px;margin-top:6px}
+.badge{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:600;margin-left:8px;vertical-align:3px}
+.badge.beta{background:#fff0d6;color:#8a5a00}
+.badge.stable{background:#e2f4e8;color:#1f7a4d}
+@media (prefers-color-scheme:dark){.badge.beta{background:#3a2b12;color:#ffc86b}.badge.stable{background:#14301f;color:#6fd39b}}
+ul.items{list-style:none;padding:0;margin:28px 0 0}
+.item{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--other);border-radius:10px;
+padding:14px 16px;margin-bottom:12px}
+.item-fix{border-left-color:var(--fix)}.item-new{border-left-color:var(--new)}
+.item-chg{border-left-color:var(--chg)}.item-gate{border-left-color:var(--gate)}
+.tag{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:6px;margin-bottom:8px;
+color:var(--muted);background:rgba(127,127,127,.12)}
+.item-fix .tag{color:var(--fix)}.item-new .tag{color:var(--new)}.item-chg .tag{color:var(--chg)}.item-gate .tag{color:var(--gate)}
+.item-body p{margin:0 0 8px}.item-body p:last-child{margin-bottom:0}
+code{font:13px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;background:rgba(127,127,127,.14);
+padding:1px 5px;border-radius:5px}
+a{color:var(--chg)}
+.gates{margin-top:28px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 18px}
+.gates h2{font-size:15px;margin:0 0 10px;color:var(--muted);font-weight:600}
+.gates dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px 18px;margin:0}
+.gates dl>div{margin:0}
+.gates dt{font-size:12px;color:var(--muted)}.gates dd{margin:2px 0 0;font-weight:600;font-variant-numeric:tabular-nums}
+footer{margin-top:36px;color:var(--muted);font-size:14px;border-top:1px solid var(--line);padding-top:16px}
+footer a{margin-right:16px}
+table.list{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+table.list th,table.list td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);font-size:14px}
+table.list th{color:var(--muted);font-weight:600}table.list tr:last-child td{border-bottom:0}
+</style></head><body><div class="wrap"><header><div class="ver">高亮词助手 2.0.8.21</div><div class="meta">2026-11-10 · 测试版<span class="badge beta">测试版</span></div><div class="meta">这一版改了什么、为什么改；条目与扩展内「更新日志」同源。</div></header><ul class="items"><li class="item item-fix"><span class="tag">修复·只配同名字段时判不出授权书</span><div class="item-body">软著三方比对如果只配一组同名字段（比如「登记号 ↔ 登记号」），以前永远显示「未识别到软著授权书」，哪怕两张图上都有值。根因是程序靠「只在右侧出现的字段」来认哪张图是授权书，两边同名就认不出来。现在这种情况会明说：「无法判断哪张图是授权书：配置的字段两边同名，请至少配一组不同名的字段（如 开发者 ↔ 被授权公司）」。不去猜第一张就是授权书 —— 猜错会把「不一致」判成「一致」，比不判更糟。</div></li><li class="item item-fix"><span class="tag">修复·提示里写死了字段名</span><div class="item-body">以前不管你怎么配，提示都写「授权公司 / 被授权公司 / 登记号 无法比对」。现在只列你<strong>实际配了</strong>的字段名，配成「著作权人 ↔ 授权方」就显示这两个。</div></li><li class="item item-fix"><span class="tag">修复·字段名合法但取不到文字，没人告诉你</span><div class="item-body"><code>@开发者#图</code>（只取图片、不取文字）或 <code>@开发者@0</code>（取值位置写坏）这类写法，指向检查以前一声不响，判定却永远比不中。现在编辑弹窗顶部会单独归一类提示：只取图片的会说明「拿它当判据永远比不中」，位置写坏的会说明「取不到格子」。<strong>只提示、不拦保存</strong> —— 老配置里这种写法可能是有意的。</div></li><li class="item item-gate"><span class="tag">自检</span><div class="item-body">单测 1063 项（1062 通过 + 1 跳过）：新增 6 条（同名字段判不出、文案不写死、<code>#图</code>/<code>@0</code> 两种取不到文字、正常配置不误报、<code>needText</code> 只对动态词生效）；meta-check 68 项（新增一条「诊断用的值规格缓存必须声明在使用它之前」—— 这个位置写错过一次，报错被 catch 吞掉，导致所有 <code>@字段</code> 被误报成没配过）；真机专验 24 项 + 12 项、全量 UI 回归 150 项全过。</div></li></ul><section class="gates"><h2>门禁</h2><dl><div><dt>单元测试</dt><dd>1062 / 1063</dd></div><div><dt>meta-check（机械红线）</dt><dd>68 项</dd></div><div><dt>真机 UI 回归</dt><dd>150 项</dd></div></dl></section><footer><a href="https://moxiaoren.github.io/keyword-highlighter-extension/notes/">全部版本说明</a><a href="https://github.com/moxiaoren/keyword-highlighter-extension/releases">Releases</a><a href="https://moxiaoren.github.io/keyword-highlighter-extension/">项目主页</a></footer></div></body></html>
