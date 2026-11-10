@@ -1,37 +1,2627 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>高亮词助手 2.0.8.20 更新说明</title><style>
-:root{--bg:#f7f8fa;--card:#fff;--fg:#1b1f24;--muted:#5b6672;--line:#e3e7ec;
---fix:#c0392b;--new:#1f7a4d;--chg:#1f5fa8;--gate:#6b5bd2;--other:#6b7684;}
-@media (prefers-color-scheme:dark){:root{--bg:#14171a;--card:#1c2024;--fg:#e6e9ec;--muted:#9aa5b1;--line:#2b3138;
---fix:#ff8b80;--new:#6fd39b;--chg:#7fb6f5;--gate:#b3a8ff;--other:#9aa5b1;}}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif}
-.wrap{max-width:820px;margin:0 auto;padding:40px 20px 64px}
-header .ver{font-size:34px;font-weight:700;letter-spacing:-.5px}
-header .meta{color:var(--muted);font-size:14px;margin-top:6px}
-.badge{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:600;margin-left:8px;vertical-align:3px}
-.badge.beta{background:#fff0d6;color:#8a5a00}
-.badge.stable{background:#e2f4e8;color:#1f7a4d}
-@media (prefers-color-scheme:dark){.badge.beta{background:#3a2b12;color:#ffc86b}.badge.stable{background:#14301f;color:#6fd39b}}
-ul.items{list-style:none;padding:0;margin:28px 0 0}
-.item{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--other);border-radius:10px;
-padding:14px 16px;margin-bottom:12px}
-.item-fix{border-left-color:var(--fix)}.item-new{border-left-color:var(--new)}
-.item-chg{border-left-color:var(--chg)}.item-gate{border-left-color:var(--gate)}
-.tag{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:6px;margin-bottom:8px;
-color:var(--muted);background:rgba(127,127,127,.12)}
-.item-fix .tag{color:var(--fix)}.item-new .tag{color:var(--new)}.item-chg .tag{color:var(--chg)}.item-gate .tag{color:var(--gate)}
-.item-body p{margin:0 0 8px}.item-body p:last-child{margin-bottom:0}
-code{font:13px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;background:rgba(127,127,127,.14);
-padding:1px 5px;border-radius:5px}
-a{color:var(--chg)}
-.gates{margin-top:28px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 18px}
-.gates h2{font-size:15px;margin:0 0 10px;color:var(--muted);font-weight:600}
-.gates dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px 18px;margin:0}
-.gates dl>div{margin:0}
-.gates dt{font-size:12px;color:var(--muted)}.gates dd{margin:2px 0 0;font-weight:600;font-variant-numeric:tabular-nums}
-footer{margin-top:36px;color:var(--muted);font-size:14px;border-top:1px solid var(--line);padding-top:16px}
-footer a{margin-right:16px}
-table.list{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
-table.list th,table.list td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);font-size:14px}
-table.list th{color:var(--muted);font-weight:600}table.list tr:last-child td{border-bottom:0}
-</style></head><body><div class="wrap"><header><div class="ver">高亮词助手 2.0.8.20</div><div class="meta">2026-11-10 · 测试版<span class="badge beta">测试版</span></div><div class="meta">这一版改了什么、为什么改；条目与扩展内「更新日志」同源。</div></header><ul class="items"><li class="item item-fix"><span class="tag">修复·指向写错不再静默</span><div class="item-body"><code>@字段名</code> 打错一个字母（比如 <code>@开发这</code>）时，这条词以前会整段当普通词、看着配了实际不按字段生效，界面上没有任何提示。现在「修改」弹窗顶部会直接列出来：「不是已配的抓取字段，这条不会按字段生效 —— 是不是「开发者」？」，在输入框里改对就即时消失；保存成功后还会再提醒一次（只提醒，不拦保存）。</div></li><li class="item item-fix"><span class="tag">修复·把取值后缀写进了指向</span><div class="item-body"><code>@开发者^高价</code> 这种写法永远配不上字段：后缀属于「抓取后续字段」那一格，不属于指向。现在单独归为一类提醒，并告诉你后缀该写在哪。</div></li><li class="item item-fix"><span class="tag">修复·设置页里这条提醒以前根本不会出现</span><div class="item-body">诊断原先写在内容脚本模块里，而设置页与独立编辑窗口不加载那个模块 —— 即使写错也只表现为“静默不生效”。现在解析与诊断挪到三处共用的核心模块，设置页、独立编辑窗口、页内编辑器都能看到同一份提醒；命中判定一个字没改。</div></li><li class="item item-gate"><span class="tag">自检</span><div class="item-body">单测 1057 项（1056 通过 + 1 跳过）：新增指向诊断 14 条（只报最靠右的一个、后缀单独归类、实现必须住在 core、ImgOcr 只是转发、诊断不改判定）；meta-check 67 项（新增 6 条防回退红线）；真机专验 12 项、全量 UI 回归 150 项全过。</div></li></ul><section class="gates"><h2>门禁</h2><dl><div><dt>单元测试</dt><dd>1056 / 1057</dd></div><div><dt>meta-check（机械红线）</dt><dd>67 项</dd></div><div><dt>真机 UI 回归</dt><dd>150 项</dd></div></dl></section><footer><a href="https://moxiaoren.github.io/keyword-highlighter-extension/notes/">全部版本说明</a><a href="https://github.com/moxiaoren/keyword-highlighter-extension/releases">Releases</a><a href="https://moxiaoren.github.io/keyword-highlighter-extension/">项目主页</a></footer></div></body></html>
+<!doctype html>
+<html lang="zh-CN" data-theme="paper" data-mode="auto" data-style="80">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-COhqkbaPOF+O1MeXzrrqyxS5JHiLZTzpFZpBTV1Hy4A=' 'sha256-lPqFPx9oza8AmRj6iqQLqEVdDcwxhxzQ3yQnVhy8ZDM='; style-src 'unsafe-inline'; img-src data:; font-src data:; media-src data:; connect-src 'self'; form-action 'none'; base-uri 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="Answer me with HTML 0.5.11">
+<title>2.0.8.20 更新说明</title>
+<style>
+html[data-theme="blueprint"], html[data-theme="blueprint"][data-mode="light"] {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --radius: 0px;
+  --shadow: none;
+  --bw: 1.5px;
+  --head-font: var(--font-sans);
+  --bg: #f6f6f3;
+  --paper: #ffffff;
+  --ink: #16181d;
+  --ink-2: #4b5260;
+  --ink-3: #8b929e;
+  --line: #1d2026;
+  --line-2: #d6dae1;
+  --fill: #f3f5f8;
+  --accent: #1d5fbf;
+  --accent-bg: #e4ecf8;
+  --ok: #1d5fbf;
+  --ok-bg: #e4ecf8;
+  --err: #c62828;
+  --err-bg: #fbeaea;
+  --warn: #a8620a;
+  --warn-bg: #fdf3e2;
+  --head-bg: #16181d;
+  --head-fg: #ffffff;
+}
+html[data-theme="blueprint"][data-mode="dark"] {
+  --bg: #081322;
+  --paper: #0d1c31;
+  --ink: #e6edf7;
+  --ink-2: #a9b8cc;
+  --ink-3: #6b7f99;
+  --line: #c9d6e8;
+  --line-2: #23385a;
+  --fill: #12253f;
+  --accent: #6ea8ff;
+  --accent-bg: #16305a;
+  --ok: #6ea8ff;
+  --ok-bg: #16305a;
+  --err: #ff7070;
+  --err-bg: #3b1620;
+  --warn: #f0b14a;
+  --warn-bg: #3a2a10;
+  --head-bg: #e6edf7;
+  --head-fg: #081322;
+}
+@media (prefers-color-scheme: dark) {
+html[data-theme="blueprint"][data-mode="auto"] {
+  --bg: #081322;
+  --paper: #0d1c31;
+  --ink: #e6edf7;
+  --ink-2: #a9b8cc;
+  --ink-3: #6b7f99;
+  --line: #c9d6e8;
+  --line-2: #23385a;
+  --fill: #12253f;
+  --accent: #6ea8ff;
+  --accent-bg: #16305a;
+  --ok: #6ea8ff;
+  --ok-bg: #16305a;
+  --err: #ff7070;
+  --err-bg: #3b1620;
+  --warn: #f0b14a;
+  --warn-bg: #3a2a10;
+  --head-bg: #e6edf7;
+  --head-fg: #081322;
+}
+}
+
+html[data-theme="shadcn"], html[data-theme="shadcn"][data-mode="light"] {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --radius: 8px;
+  --shadow: 0 1px 2px 0 rgba(0,0,0,0.05);
+  --bw: 1px;
+  --head-font: var(--font-sans);
+  --bg: #fafafa;
+  --paper: #ffffff;
+  --ink: #09090b;
+  --ink-2: #71717a;
+  --ink-3: #a1a1aa;
+  --line: #e4e4e7;
+  --line-2: #f0f0f2;
+  --fill: #f4f4f5;
+  --accent: #2563eb;
+  --accent-bg: #eff6ff;
+  --ok: #16a34a;
+  --ok-bg: #f0fdf4;
+  --err: #dc2626;
+  --err-bg: #fef2f2;
+  --warn: #d97706;
+  --warn-bg: #fffbeb;
+  --head-bg: #18181b;
+  --head-fg: #fafafa;
+}
+html[data-theme="shadcn"][data-mode="dark"] {
+  --bg: #09090b;
+  --paper: #121215;
+  --ink: #fafafa;
+  --ink-2: #a1a1aa;
+  --ink-3: #71717a;
+  --line: #27272a;
+  --line-2: #1c1c1f;
+  --fill: #18181b;
+  --accent: #60a5fa;
+  --accent-bg: #172554;
+  --ok: #4ade80;
+  --ok-bg: #052e16;
+  --err: #f87171;
+  --err-bg: #450a0a;
+  --warn: #fbbf24;
+  --warn-bg: #451a03;
+  --head-bg: #fafafa;
+  --head-fg: #18181b;
+}
+@media (prefers-color-scheme: dark) {
+html[data-theme="shadcn"][data-mode="auto"] {
+  --bg: #09090b;
+  --paper: #121215;
+  --ink: #fafafa;
+  --ink-2: #a1a1aa;
+  --ink-3: #71717a;
+  --line: #27272a;
+  --line-2: #1c1c1f;
+  --fill: #18181b;
+  --accent: #60a5fa;
+  --accent-bg: #172554;
+  --ok: #4ade80;
+  --ok-bg: #052e16;
+  --err: #f87171;
+  --err-bg: #450a0a;
+  --warn: #fbbf24;
+  --warn-bg: #451a03;
+  --head-bg: #fafafa;
+  --head-fg: #18181b;
+}
+}
+
+html[data-theme="paper"], html[data-theme="paper"][data-mode="light"] {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --font-serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Songti SC", "STSong", "Noto Serif CJK SC", "Source Han Serif SC", serif;
+  --radius: 2px;
+  --shadow: none;
+  --bw: 1px;
+  --head-font: var(--font-serif);
+  --bg: #f5f2ea;
+  --paper: #fdfbf6;
+  --ink: #1f1c17;
+  --ink-2: #57514a;
+  --ink-3: #8c867b;
+  --line: #cbc3b4;
+  --line-2: #e5dfd3;
+  --fill: #f3eee4;
+  --accent: #8c2f1e;
+  --accent-bg: #f5e5df;
+  --ok: #2e6a3b;
+  --ok-bg: #e4efe5;
+  --err: #a3251b;
+  --err-bg: #f7e3e0;
+  --warn: #7f5300;
+  --warn-bg: #f6ecd6;
+  --head-bg: #1f1c17;
+  --head-fg: #fdfbf6;
+}
+html[data-theme="paper"][data-mode="dark"] {
+  --bg: #15130f;
+  --paper: #1c1a15;
+  --ink: #ebe5d8;
+  --ink-2: #b5ad9e;
+  --ink-3: #7b7467;
+  --line: #4a443a;
+  --line-2: #2d2a24;
+  --fill: #242119;
+  --accent: #e59a7d;
+  --accent-bg: #3a2219;
+  --ok: #8cc79a;
+  --ok-bg: #1c3122;
+  --err: #f0928a;
+  --err-bg: #3a1d1a;
+  --warn: #e3b866;
+  --warn-bg: #352a13;
+  --head-bg: #ebe5d8;
+  --head-fg: #15130f;
+}
+@media (prefers-color-scheme: dark) {
+html[data-theme="paper"][data-mode="auto"] {
+  --bg: #15130f;
+  --paper: #1c1a15;
+  --ink: #ebe5d8;
+  --ink-2: #b5ad9e;
+  --ink-3: #7b7467;
+  --line: #4a443a;
+  --line-2: #2d2a24;
+  --fill: #242119;
+  --accent: #e59a7d;
+  --accent-bg: #3a2219;
+  --ok: #8cc79a;
+  --ok-bg: #1c3122;
+  --err: #f0928a;
+  --err-bg: #3a1d1a;
+  --warn: #e3b866;
+  --warn-bg: #352a13;
+  --head-bg: #ebe5d8;
+  --head-fg: #15130f;
+}
+}
+
+html:lang(zh-Hant)[data-theme][data-mode], html:lang(zh-TW)[data-theme][data-mode], html:lang(zh-HK)[data-theme][data-mode], html:lang(zh-MO)[data-theme][data-mode] {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", "Heiti TC", "Microsoft JhengHei", "Noto Sans CJK TC", "Noto Sans TC", "PingFang SC", "Microsoft YaHei", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+html:lang(ja)[data-theme][data-mode] {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Yu Gothic", Meiryo, "Noto Sans CJK JP", "Noto Sans JP", "PingFang SC", "Microsoft YaHei", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+html:lang(he)[data-theme][data-mode] {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans Hebrew", "Arial Hebrew", Arial, Roboto, "Helvetica Neue", sans-serif;
+}
+
+html {
+  --am-fs-title: calc(24px * var(--am-scale, 1));
+  --am-fs-stat: calc(17px * var(--am-scale, 1));
+  --am-fs-lead: calc(15.5px * var(--am-scale, 1));
+  --am-fs-heading: calc(15px * var(--am-scale, 1));
+  --am-fs-body: calc(14px * var(--am-scale, 1));
+  --am-fs-text: calc(13px * var(--am-scale, 1));
+  --am-fs-code: calc(12.5px * var(--am-scale, 1));
+  --am-fs-small: calc(12px * var(--am-scale, 1));
+  --am-fs-fine: calc(11.5px * var(--am-scale, 1));
+  --am-fs-label: calc(11px * var(--am-scale, 1));
+  --am-fs-tick: calc(10px * var(--am-scale, 1));
+  --am-fs-d-node: 13px;
+  --am-fs-d-field: 12px;
+  --am-fs-d-edge: 11.5px;
+  --am-fs-d-cluster: 11px;
+  --am-fs-d-step: 10px;
+  --am-fs-d-note: 12px;
+  --am-fs-d-badge: 11px;
+  --am-fs-d-chartCat: 12px;
+  --am-fs-d-chartTick: 11px;
+  --am-fs-d-chartVal: 11px;
+  --am-fs-d-chartLegend: 12px;
+  --am-fs-d-totalMin: 10px;
+  --am-fs-d-totalMax: 22px;
+  --am-fs-d-totalFit: 18px;
+  --am-fs-d-totalUnit: 12px;
+  --am-ln-annotPad: calc(14px * var(--am-scale, 1));
+  --am-ln-segLine: calc(16px * var(--am-scale, 1));
+  --am-ln-whenHeight: calc(24px * var(--am-scale, 1));
+  --am-ln-limitsTick: calc(16px * var(--am-scale, 1));
+  --am-ln-treeBadge: calc(15px * var(--am-scale, 1));
+}
+.am-toolbar, .am-lightbox-header {
+  --am-fs-title: 24px;
+  --am-fs-stat: 17px;
+  --am-fs-lead: 15.5px;
+  --am-fs-heading: 15px;
+  --am-fs-body: 14px;
+  --am-fs-text: 13px;
+  --am-fs-code: 12.5px;
+  --am-fs-small: 12px;
+  --am-fs-fine: 11.5px;
+  --am-fs-label: 11px;
+  --am-fs-tick: 10px;
+}
+
+/* Answer me with HTML base — uses theme variables only, never hard-coded colors (theme tokens and decorations: themes/<name>.js). Exception: the var() fallbacks of diagrams (flow / sequence) equal the blueprint light tokens, guarded by a test. */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-sans); font-size: var(--am-fs-body); line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+code, pre, kbd { font-family: var(--font-mono); }
+/* Korean is written with spaces between words, so break lines at the spaces, not between syllables. A word longer than the line still breaks. */
+:lang(ko) { word-break: keep-all; overflow-wrap: break-word; }
+:lang(ko) :is(pre, code, kbd), :is(pre, code, kbd):lang(ko) { word-break: normal; overflow-wrap: normal; }
+
+/* ── Toolbar ─────────────────────────────── */
+.am-toolbar {
+  position: fixed; top: 12px; inset-inline-end: 12px; z-index: 10; display: flex; gap: 6px;
+}
+.am-btn {
+  font: var(--am-fs-small)/1 var(--font-sans); color: var(--ink); background: var(--paper);
+  border: 1px solid var(--line-2); border-radius: var(--radius); padding: 7px 10px; cursor: pointer;
+}
+.am-btn:hover { border-color: var(--ink-3); }
+.am-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.am-toolbar .am-btn[aria-disabled="true"] { opacity: .5; cursor: default; }
+.am-toolbar .am-btn[aria-disabled="true"]:hover { border-color: var(--line-2); }
+/* Theme and mode lists: a label and a native select inside one button-like box */
+.am-pick {
+  display: flex; align-items: center; gap: 6px; font: var(--am-fs-small)/1 var(--font-sans); color: var(--ink-2); background: var(--paper);
+  border: 1px solid var(--line-2); border-radius: var(--radius); padding-block: 0; padding-inline: 10px 4px;
+}
+.am-pick:hover { border-color: var(--ink-3); }
+.am-pick:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.am-pick select {
+  font: inherit; color: var(--ink); background: transparent; border: 0; padding: 6px 2px; cursor: pointer; outline: none;
+}
+.am-pick option { color: var(--ink); background: var(--paper); }
+
+/* ── Header ───────────────────────────────── */
+.am-head { margin: 0 0 20px; padding-inline-end: 300px; }
+.am-head h1 { margin: 0; font-size: var(--am-fs-title); line-height: 1.25; letter-spacing: -0.01em; }
+.am-sub { margin: 4px 0 0; color: var(--ink-2); }
+.am-head-meta { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 10px; font-size: var(--am-fs-small); color: var(--ink-2); }
+.am-head-meta b { font-family: var(--font-mono); font-weight: 400; color: var(--ink-3); margin-inline-end: 6px; }
+.am-intro { margin-top: 12px; max-width: 80ch; }
+
+/* ── sheet template ────────────────────────── */
+.am-sheet { max-width: 1680px; margin: 0 auto; padding: 32px 28px 40px; }
+.am-frame { position: relative; }
+.am-grid {
+  display: grid; grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr));
+  gap: 20px; align-items: start;
+}
+.am-ruler { display: none; }
+.am-ruler span { flex: 1; display: flex; align-items: center; justify-content: center; }
+.am-ruler--top, .am-ruler--bottom { left: 18px; right: 18px; height: 18px; }
+.am-ruler--top { top: 0; }
+.am-ruler--bottom { bottom: 0; }
+.am-ruler--left, .am-ruler--right { top: 18px; bottom: 18px; width: 18px; flex-direction: column; }
+.am-ruler--left { left: 0; }
+.am-ruler--right { right: 0; }
+.am-ruler--top span + span, .am-ruler--bottom span + span { border-inline-start: 1px solid var(--line); }
+.am-ruler--left span + span, .am-ruler--right span + span { border-top: 1px solid var(--line); }
+
+/* ── Panels ───────────────────────────────── */
+.am-panel {
+  background: var(--paper); border: var(--bw) solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow); min-width: 0; overflow: hidden;
+}
+.am-panel-head {
+  display: flex; align-items: stretch; gap: 0; border-bottom: var(--bw) solid var(--line); min-height: 34px;
+}
+.am-panel-id {
+  display: flex; align-items: center; justify-content: center; min-width: 34px; padding: 0 8px;
+  background: var(--head-bg); color: var(--head-fg); font-weight: 600; font-size: var(--am-fs-body);
+}
+.am-panel-head h2 { margin: 0; padding: 7px 12px; font-size: var(--am-fs-heading); font-weight: 600; flex: 1; display: flex; align-items: center; }
+.am-panel-meta { align-self: center; padding: 0 12px; font: var(--am-fs-label)/1.3 var(--font-mono); color: var(--ink-2); text-align: end; }
+.am-panel-body { padding: 14px 16px 16px; }
+.am-panel-body > * + * { margin-top: 12px; }
+
+/* ── Markdown body ───────────────────────── */
+.am-md > :first-child { margin-top: 0; }
+.am-md > :last-child { margin-bottom: 0; }
+.am-md p { margin: 0 0 8px; }
+.am-md ul, .am-md ol { margin: 0 0 8px; padding-inline-start: 20px; }
+.am-md li + li { margin-top: 3px; }
+.am-md h3, .am-md h4 { margin: 14px 0 6px; font-size: var(--am-fs-text); }
+.am-md a { color: var(--accent); }
+.am-md blockquote { margin: 0 0 8px; padding: 2px 12px; border-inline-start: 3px solid var(--line-2); color: var(--ink-2); }
+.am-md :not(pre) > code { font-size: 0.9em; background: var(--fill); padding: 1px 5px; border-radius: 4px; }
+.am-md hr { border: 0; border-top: 1px solid var(--line-2); margin: 12px 0; }
+.am-md table { width: 100%; border-collapse: collapse; font-size: var(--am-fs-text); }
+.am-md th {
+  text-align: start; font: var(--am-fs-label)/1.3 var(--font-mono); color: var(--ink-2); font-weight: 400;
+  padding: 6px 10px; border-bottom: 1px solid var(--line-2);
+}
+/* th { text-align: start } outranks the align attribute from Markdown alignment, so restore right and center columns explicitly. */
+.am-md th[align="right"] { text-align: right; }
+.am-md th[align="center"] { text-align: center; }
+.am-md td { padding: 7px 10px; border-bottom: 1px solid var(--line-2); vertical-align: top; }
+.am-md tbody tr:nth-child(even) td { background: var(--fill); }
+.am-table-wrap { overflow-x: auto; }
+/* Images scale down to the panel and never past 70% of the window height, keeping their shape. */
+.am-md img { max-width: 100%; max-height: 70vh; height: auto; }
+.am-figure { margin: 0; text-align: center; }
+.am-figure img { display: block; margin: 0 auto; border: 1px solid var(--line-2); border-radius: var(--radius); }
+.am-figure figcaption { margin-top: 6px; font-size: var(--am-fs-small); line-height: 1.4; color: var(--ink-2); }
+.am-code {
+  margin: 0; padding: 12px 14px; background: var(--fill); border: 1px solid var(--line-2);
+  border-radius: var(--radius); overflow-x: auto; font-size: var(--am-fs-code); line-height: 1.5;
+}
+/* Ask: a decision the reader makes; the suggested option has a tag and starts unselected like the others */
+.am-ask { margin: 10px 0; padding: 10px 12px 8px; border: 1px solid var(--line-2); border-radius: var(--radius); background: var(--fill); min-width: 0; }
+/* The question floats inside the box, so a long question wraps like text instead of riding on the border */
+.am-ask-q { float: left; width: 100%; padding: 0; margin-bottom: 4px; font-weight: 600; }
+/* Two columns: the control, then the label, tag and note, which wrap under the label and never under the control */
+.am-ask-opt { clear: both; display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 8px; align-items: baseline; padding: 5px 2px; cursor: pointer; }
+.am-ask-opt input { margin: 0; accent-color: var(--accent); position: relative; top: 2px; }
+.am-ask-tag { display: inline-block; font-size: var(--am-fs-label); line-height: 1.5; color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: 0 6px; white-space: nowrap; }
+.am-ask-note { display: block; color: var(--ink-2); }
+/* Comment box under each panel, and the Reply sheet */
+.am-comment-btn {
+  display: flex; flex-shrink: 0; align-self: center; margin-block: 0; margin-inline: auto 6px; color: var(--ink-3); background: transparent;
+  border: 1px solid transparent; border-radius: var(--radius); padding: 3px; cursor: pointer;
+}
+.am-panel-meta + .am-comment-btn { margin-inline-start: 0; }
+.am-panel:hover .am-comment-btn, .am-comment-btn:focus-visible, .am-comment-btn[aria-expanded="true"] { border-color: var(--line-2); color: var(--ink-2); }
+.am-panel .am-comment-btn.am-comment-btn--on { color: var(--accent); border-color: var(--accent); }
+.am-panel--bare { position: relative; }
+.am-panel--bare > .am-comment-btn { position: absolute; top: 4px; inset-inline-end: 0; }
+.am-comment { padding: 0 14px 12px; }
+.am-comment textarea, .am-reply textarea {
+  width: 100%; font: var(--am-fs-text)/1.5 var(--font-sans); color: var(--ink); background: var(--paper);
+  border: 1px solid var(--line-2); border-radius: var(--radius); padding: 8px 10px; resize: vertical;
+}
+.am-comment textarea:focus-visible, .am-reply textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.am-btn--reply { color: var(--paper); background: var(--ink); border-color: var(--ink); }
+.am-btn--reply:hover { opacity: .88; }
+.am-reply {
+  width: min(640px, calc(100vw - 32px)); padding: 16px; color: var(--ink); background: var(--paper);
+  border: 1px solid var(--line-2); border-radius: var(--radius); box-shadow: 0 12px 40px rgba(0,0,0,.25);
+}
+.am-reply::backdrop { background: rgba(0,0,0,.35); }
+.am-reply-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin-bottom: 10px; }
+.am-reply-head span { color: var(--ink-2); font-size: var(--am-fs-text); }
+.am-reply textarea { font-family: var(--font-mono); font-size: var(--am-fs-code); }
+.am-reply-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+.am-reply .am-btn:disabled { opacity: .5; cursor: default; }
+/* The sheet shows the reply drawn (src/runtime/reply-view.js), each line in its own direction; the Markdown that Copy copies sits under a fold. */
+.am-reply-view {
+  max-height: min(60vh, 26em); overflow: auto; padding: 10px 12px; font: var(--am-fs-body)/1.6 var(--font-sans); color: var(--ink);
+  background: var(--paper); border: 1px solid var(--line-2); border-radius: var(--radius); overflow-wrap: anywhere;
+}
+.am-reply-view:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.am-reply-view > div { text-align: start; unicode-bidi: isolate; }
+.am-rv-gap { height: .5em; }
+.am-rv-h1 { font-weight: 700; font-size: var(--am-fs-heading); }
+.am-rv-h2 { font-weight: 700; color: var(--ink-2); margin-top: 2px; }
+.am-rv-tag {
+  display: inline-block; min-width: 1.6em; padding: 0 4px; font-size: var(--am-fs-small); line-height: 1.5; text-align: center;
+  color: var(--ink-2); border: 1px solid var(--line-2); border-radius: var(--radius);
+}
+.am-rv-a { padding-inline-start: 1.6em; }
+.am-rv-a em { color: var(--ink-2); }
+.am-rv-quote { margin-inline-start: 1em; padding-inline-start: 10px; border-inline-start: 3px solid var(--line-2); color: var(--ink-2); white-space: pre-wrap; }
+.am-reply-raw summary { margin-top: 10px; margin-bottom: 6px; font-size: var(--am-fs-small); color: var(--ink-2); cursor: pointer; }
+/* The bar at the bottom of the page: counts and one-click copy, so the reader need not go to the Reply button at the top. */
+.am-reply-bar {
+  position: fixed; inset-block-end: 16px; inset-inline: 0; margin-inline: auto; width: max-content; max-width: calc(100vw - 24px);
+  z-index: 10; display: flex; align-items: center; gap: 10px; padding-block: 8px; padding-inline: 14px 8px; font-size: var(--am-fs-text);
+  color: var(--ink); background: var(--paper); border: 1px solid var(--line-2); border-radius: var(--radius); box-shadow: 0 6px 24px rgba(0,0,0,.18);
+}
+.am-reply-bar[hidden] { display: none; }
+.am-reply-bar-count { color: var(--ink-2); }
+.am-reply-bar .am-btn { flex: none; white-space: nowrap; }
+body.am-has-reply-bar { padding-block-end: 72px; }
+@media (max-width: 480px) {
+  .am-reply-bar { inset-inline: 12px; width: auto; justify-content: space-between; }
+}
+/* Code block: a header (title or path:lines, language, copy), then one span per line; numbered blocks show the line number in a gutter */
+.am-codeblock { margin: 10px 0; min-width: 0; }
+.am-codeblock .am-code { border-top-left-radius: 0; border-top-right-radius: 0; padding: 10px 0; }
+.am-code-head {
+  display: flex; align-items: center; gap: 8px; padding: 5px 6px 5px 12px; font: var(--am-fs-small)/1.3 var(--font-sans); color: var(--ink-2);
+  background: var(--paper); border: 1px solid var(--line-2); border-bottom: 0; border-radius: var(--radius) var(--radius) 0 0;
+}
+.am-code-title { font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.am-code-lang { margin-left: auto; color: var(--ink-3); text-transform: lowercase; }
+.am-code-copy { font: var(--am-fs-small)/1 var(--font-sans); color: var(--ink-2); background: transparent; border: 1px solid var(--line-2); border-radius: var(--radius); padding: 4px 8px; cursor: pointer; margin-left: auto; }
+.am-code-lang + .am-code-copy { margin-left: 0; }
+.am-code-copy:hover { border-color: var(--ink-3); color: var(--ink); }
+.am-code-copy:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.am-code code { display: block; min-width: max-content; }
+.am-ln { display: block; padding: 0 14px; min-height: 1.5em; white-space: pre; }
+.am-ln--hl { background: var(--accent-bg); box-shadow: inset 3px 0 0 var(--accent); }
+.am-code--num .am-ln::before {
+  content: attr(data-n); display: inline-block; width: 3.5ch; margin-right: 12px; text-align: right; color: var(--ink-3);
+  user-select: none; -webkit-user-select: none;
+}
+
+/* ── Status badges ok / no / warn ──────────────── */
+/* A long note wraps beside its icon, so it does not push the table past a narrow panel; one long word breaks too (break-word, not anywhere, which would let a table squeeze its columns to one word per line). The note is one flex item, so the spaces around its inline tags stay. */
+.am-status { display: inline-flex; align-items: flex-start; max-width: 100%; font-weight: 500; }
+.am-status-icon { flex: none; }
+.am-status-text { min-width: 0; overflow-wrap: break-word; }
+.am-status--ok { color: var(--ok); }
+.am-status--no { color: var(--err); }
+.am-status--warn { color: var(--warn); }
+.am-status-icon { display: inline-block; width: 1.1em; font-weight: 700; }
+
+/* ── callout ─────────────────────────────── */
+.am-callout {
+  border: 1px solid var(--line-2); border-inline-start: 3px solid var(--accent); background: var(--accent-bg);
+  padding: 10px 14px; border-radius: var(--radius);
+}
+.am-callout--ok { border-inline-start-color: var(--ok); background: var(--ok-bg); }
+.am-callout--warn { border-inline-start-color: var(--warn); background: var(--warn-bg); }
+.am-callout--err { border-inline-start-color: var(--err); background: var(--err-bg); }
+.am-callout-title { font-weight: 600; margin-bottom: 4px; }
+
+/* ── kv title block ─────────────────────────── */
+.am-kv {
+  display: grid; grid-template-columns: repeat(var(--kv-cols, 2), minmax(0, 1fr)); margin: 0;
+  border-top: var(--bw) solid var(--line); border-inline-start: var(--bw) solid var(--line);
+}
+.am-kv-cell { border-inline-end: var(--bw) solid var(--line); border-bottom: var(--bw) solid var(--line); padding: 6px 10px 8px; min-width: 0; }
+.am-kv-cell--wide { grid-column: 1 / -1; }
+.am-kv dt { font: var(--am-fs-label)/1.4 var(--font-mono); color: var(--ink-2); }
+.am-kv dd { margin: 2px 0 0; font-size: var(--am-fs-body); font-weight: 500; overflow-wrap: anywhere; }
+.am-kv-cell--wide dd { font-size: var(--am-fs-stat); font-weight: 600; }
+
+/* ── timeline ────────────────────────────── */
+.am-timeline { list-style: none; margin: 0; padding: 0; }
+.am-timeline--h { display: grid; grid-template-columns: repeat(var(--n, 1), minmax(0, 1fr)); padding-top: 4px; }
+.am-timeline--h li { position: relative; text-align: center; padding: 0 6px; }
+.am-timeline--h li::before {
+  content: ""; position: absolute; top: calc(var(--am-ln-whenHeight) + 7px); left: 0; right: 0; border-top: var(--bw) solid var(--line);
+}
+.am-timeline--h li:first-child::before { inset-inline-start: 50%; }
+.am-timeline--h li:last-child::before { inset-inline-end: 50%; }
+.am-tl-when { display: block; font-size: var(--am-fs-heading); font-weight: 500; height: var(--am-ln-whenHeight); }
+.am-tl-dot {
+  position: relative; display: block; width: 11px; height: 11px; margin: 2px auto 8px;
+  border: var(--bw) solid var(--line); border-radius: 50%; background: var(--paper);
+}
+.am-tl-item--hi .am-tl-dot { background: var(--hi-stroke, var(--accent)); border-color: var(--hi-stroke, var(--accent)); }
+.am-tl-title { display: block; font-size: var(--am-fs-code); font-weight: 500; }
+.am-tl-text { display: block; font-size: var(--am-fs-small); color: var(--ink-2); line-height: 1.45; }
+.am-timeline--v li { position: relative; padding: 0 0 14px; padding-inline-start: 22px; }
+.am-timeline--v li::before { content: ""; position: absolute; inset-inline-start: 5px; top: 6px; bottom: -6px; border-inline-start: var(--bw) solid var(--line-2); }
+.am-timeline--v li:last-child::before { display: none; }
+.am-timeline--v .am-tl-dot { position: absolute; inset-inline-start: 0; top: 4px; margin: 0; }
+.am-timeline--v .am-tl-when { display: inline; height: auto; font: var(--am-fs-small) var(--font-mono); color: var(--ink-2); margin-inline-end: 8px; }
+.am-timeline--v .am-tl-title { display: inline; font-size: var(--am-fs-body); }
+.am-timeline--v .am-tl-text { margin-top: 2px; }
+/* .am-tl-wrap is the container (src/components/timeline.js): a horizontal timeline answers to the width it has, not to the width of the window, since a
+   sheet puts panels two or three to a row. Below 560 px (about 90 px for each of the six items a timeline has by default) its dates
+   wrap and the dots cover them, so it lays out like timeline v: line and dots at the start, text beside them. */
+.am-tl-wrap { container-type: inline-size; }
+@container (max-width: 560px) {
+  .am-timeline--h { display: block; padding-top: 0; }
+  .am-timeline--h li { text-align: start; padding: 0 0 14px; padding-inline-start: 22px; }
+  .am-timeline--h li::before, .am-timeline--h li:first-child::before {
+    top: 6px; bottom: -6px; inset-inline-start: 5px; inset-inline-end: auto; border-top: 0; border-inline-start: var(--bw) solid var(--line-2);
+  }
+  .am-timeline--h li:last-child::before { display: none; }
+  .am-timeline--h .am-tl-dot { position: absolute; inset-inline-start: 0; top: 4px; margin: 0; }
+  .am-timeline--h .am-tl-when { display: inline; height: auto; font: var(--am-fs-small) var(--font-mono); color: var(--ink-2); margin-inline-end: 8px; }
+  .am-timeline--h .am-tl-title { display: inline; font-size: var(--am-fs-body); }
+  .am-timeline--h .am-tl-text { margin-top: 2px; }
+}
+
+/* ── annot sentence notes ──────────────────────── */
+.am-annot + .am-annot { border-top: 1px solid var(--line-2); padding-top: 12px; }
+.am-annot-head { display: flex; justify-content: space-between; gap: 12px; font-size: var(--am-fs-text); font-weight: 600; margin-bottom: 8px; }
+.am-annot-meta { font: var(--am-fs-label) var(--font-mono); font-weight: 400; color: var(--ink-2); }
+.am-annot-scroll { overflow-x: auto; }
+.am-annot-line {
+  position: relative; display: inline-block; white-space: pre; font: var(--am-fs-body)/1.6 var(--font-mono);
+  padding-bottom: calc(var(--rows, 0) * (var(--am-ln-segLine) + 1px) + var(--am-ln-annotPad));
+}
+.am-annot-line--wrap { display: block; white-space: normal; padding-bottom: 10px; }
+.am-annot-line--wrap .am-seg { white-space: nowrap; }
+.am-seg { position: relative; }
+.am-seg::after {
+  content: ""; position: absolute; left: 1px; right: 1px; top: calc(100% + 1px); height: 5px;
+  border: 1px solid var(--accent); border-top: 0;
+}
+.am-seg-n {
+  position: absolute; inset-inline-start: 0; top: calc(100% + 8px + var(--row, 0) * (var(--am-ln-segLine) + 1px));
+  font: var(--am-fs-label)/var(--am-ln-segLine) var(--font-sans); color: var(--accent); white-space: nowrap;
+}
+.am-seg--err { color: var(--err); }
+.am-seg--err::after { border-color: var(--err); }
+.am-seg--err .am-seg-n { color: var(--err); }
+.am-annot-caption { font-size: var(--am-fs-small); color: var(--ink-2); }
+
+/* ── limits bars ───────────────────────── */
+.am-lim + .am-lim { margin-top: 14px; }
+.am-lim-head { display: flex; justify-content: space-between; gap: 12px; font-size: var(--am-fs-text); margin-bottom: 4px; }
+.am-lim-val { font: var(--am-fs-small) var(--font-mono); color: var(--accent); white-space: nowrap; }
+.am-lim-track { position: relative; height: 12px; border: 1px solid var(--line-2); background: var(--fill); border-radius: calc(var(--radius) / 2); }
+.am-lim-fill { position: absolute; inset-inline-start: 0; top: 0; bottom: 0; background: var(--accent-bg); border-inline-end: 1px solid var(--accent); }
+.am-lim-mark { position: absolute; top: -4px; bottom: -4px; border-left: 2px solid var(--accent); }
+.am-lim.is-over .am-lim-fill { background: var(--err-bg); border-inline-end-color: var(--err); }
+.am-lim.is-over .am-lim-val { color: var(--err); }
+.am-lim-ticks { position: relative; height: var(--am-ln-limitsTick); font: var(--am-fs-tick)/var(--am-ln-limitsTick) var(--font-mono); color: var(--ink-3); }
+.am-lim-ticks span { position: absolute; transform: translateX(-50%); }
+.am-lim-ticks span:first-child { transform: none; }
+.am-lim-note { font-size: var(--am-fs-label); color: var(--ink-2); margin-inline-start: 6px; }
+
+/* ── tree ─────────────────────────── */
+.am-tree { font-size: var(--am-fs-text); }
+.am-tree-root { display: flex; justify-content: center; position: relative; padding-bottom: 18px; }
+.am-tree-root::after { content: ""; position: absolute; bottom: 0; left: 50%; height: 18px; border-left: var(--bw) solid var(--line); }
+.am-tree-root--solo { padding-bottom: 12px; }
+.am-tree-root--solo::after { display: none; }
+.am-tree-box {
+  border: var(--node-width, var(--bw)) solid var(--node-stroke, var(--line)); background: var(--node-fill, var(--paper)); padding: 6px 14px; text-align: center;
+  border-radius: var(--node-radius, var(--radius)); font-weight: 600; color: var(--node-text, inherit); filter: var(--node-shadow, none);
+}
+.am-tree-box small { display: block; font-weight: 400; color: var(--ink-2); font-size: var(--am-fs-small); }
+/* The root box and a highlighted box are emphasis: they take the highlight tokens. With none set the root box keeps its accent tint and a highlighted box looks like any other. */
+.am-tree-box--root, .am-tree-box--hi { border-color: var(--hi-stroke, var(--node-stroke, var(--line))); color: var(--hi-text, var(--node-text, inherit)); }
+.am-tree-box--root { background: var(--hi-fill, var(--accent-bg)); }
+.am-tree-box--hi { background: var(--hi-fill, var(--node-fill, var(--paper))); }
+.am-tree-box--root small, .am-tree-box--hi small { color: var(--hi-text, var(--ink-2)); }
+.am-tree-box--root { font-size: var(--am-fs-heading); padding: 8px 28px; }
+.am-tree-cols { display: grid; grid-template-columns: repeat(var(--n, 1), minmax(0, 1fr)); }
+.am-tree-col { position: relative; padding: 18px 8px 0; min-width: 0; }
+.am-tree-col::before { content: ""; position: absolute; top: 0; left: 0; right: 0; border-top: var(--bw) solid var(--line); }
+.am-tree-col:first-child::before { inset-inline-start: 50%; }
+.am-tree-col:last-child::before { inset-inline-end: 50%; }
+.am-tree-col::after { content: ""; position: absolute; top: 0; left: 50%; height: 18px; border-left: var(--bw) solid var(--line); }
+.am-tree-list, .am-tree-list ul { list-style: none; margin: 0; padding: 0; }
+.am-tree-col > .am-tree-list { margin: 8px 0 0; margin-inline-start: 14px; }
+.am-tree-list ul { margin-inline-start: 16px; }
+.am-tree-list li { position: relative; padding: 3px 0; padding-inline-start: 18px; }
+.am-tree-list li::before { content: ""; position: absolute; inset-inline-start: 0; top: 0.95em; width: 12px; border-top: 1px solid var(--ink-3); }
+.am-tree-list li::after { content: ""; position: absolute; inset-inline-start: 0; top: 0; bottom: 0; border-inline-start: 1px solid var(--ink-3); }
+.am-tree-list li:last-child::after { bottom: auto; height: 0.95em; }
+.am-tree-tag { font: var(--am-fs-label) var(--font-mono); color: var(--ink-3); margin-inline-end: 4px; }
+.am-tree code { font: var(--am-fs-small) var(--font-mono); }
+.am-tree-sub { display: block; font-size: var(--am-fs-fine); color: var(--ink-2); }
+.am-tree-hi > .am-tree-label { color: var(--accent); font-weight: 600; }
+
+/* ── Diagrams (flow / sequence) ───────────────── */
+.am-diagram { margin: 0; overflow-x: auto; text-align: center; }
+/* Embedded previews can lose html[data-theme]; the fallbacks keep diagrams readable, and defined theme variables still win. */
+.am-diagram svg { max-width: 100%; height: auto; font-family: var(--font-sans, sans-serif); }
+.am-diagram text { fill: var(--ink, #16181d); font-size: var(--am-fs-d-node); }
+/* Diagram tokens (docs/reference.md, "Diagram tokens"): each painted part reads an optional token and falls back to the look it always had,
+   so a theme that sets none of them draws the same diagram. Font family, size and weight are not tokens: diagram text is measured for the sans font. */
+.am-node-shape { fill: var(--node-fill, var(--paper, #ffffff)); stroke: var(--node-stroke, var(--line, #1d2026)); stroke-width: var(--node-width, var(--bw, 1.5px)); filter: var(--node-shadow, none); }
+/* A cylinder is two shapes (body, then cap): only the body casts the shadow. */
+.am-node-shape ~ .am-node-shape { filter: none; }
+/* The corner radius is an SVG attribute (the fallback for Safari before 17.4, which ignores a CSS rx); the default here equals the attribute. A pill and a diamond keep their shape. */
+.am-node--rect .am-node-shape, .am-node--er .am-node-shape { rx: var(--node-radius, 3px); }
+.am-node--hi .am-node-shape { fill: var(--hi-fill, var(--accent-bg, #e4ecf8)); stroke: var(--hi-stroke, var(--accent, #1d5fbf)); }
+.am-diagram .am-node-text { fill: var(--node-text, var(--ink, #16181d)); }
+.am-node--hi text { fill: var(--hi-text, var(--accent, #1d5fbf)); font-weight: 600; }
+.am-diagram .am-node--hi .am-node-text { fill: var(--hi-text, var(--accent, #1d5fbf)); }
+.am-edge { fill: none; stroke: var(--edge-color, var(--ink-2, #4b5260)); stroke-width: var(--edge-width, 1.3); }
+.am-edge--dashed { stroke-dasharray: 5 4; }
+.am-arrow { fill: var(--edge-color, var(--ink-2, #4b5260)); }
+.am-edge-label rect { fill: var(--paper, #ffffff); }
+.am-diagram .am-edge-label text { fill: var(--edge-label, var(--accent, #1d5fbf)); font-size: var(--am-fs-d-edge); }
+.am-cluster { fill: var(--cluster-fill, var(--fill, #f3f5f8)); stroke: var(--cluster-stroke, var(--line-2, #d6dae1)); stroke-width: 1; stroke-dasharray: 4 3; }
+.am-diagram .am-cluster-label { fill: var(--ink-2, #4b5260); font: var(--am-fs-d-cluster) var(--font-mono, monospace); }
+/* The PK / FK / UK marks of an entity follow the node text, and the highlighted text in a highlighted entity, so they stay readable on the theme's fills. */
+.am-diagram .am-er-key { fill: var(--node-text, var(--ink-2, #4b5260)); }
+.am-diagram .am-node--hi .am-er-key { fill: var(--hi-text, var(--ink-2, #4b5260)); }
+.am-lifeline { stroke: var(--lifeline-color, var(--ink-3, #8b929e)); stroke-width: 1; stroke-dasharray: 4 4; }
+/* An actor (and the box of a divider) looks like a node unless the theme sets the actor tokens. */
+.am-actor { fill: var(--actor-fill, var(--node-fill, var(--paper, #ffffff))); stroke: var(--actor-stroke, var(--node-stroke, var(--line, #1d2026))); stroke-width: var(--node-width, var(--bw, 1.5px)); filter: var(--node-shadow, none); rx: var(--node-radius, 2px); }
+.am-diagram .am-actor-text { fill: var(--actor-text, var(--node-text, var(--ink, #16181d))); }
+.am-note { fill: var(--note-fill, var(--warn-bg, #fdf3e2)); stroke: var(--note-stroke, var(--warn, #a8620a)); stroke-width: var(--note-width, 1); rx: var(--note-radius, 2px); }
+.am-diagram .am-step { fill: var(--ink-3, #8b929e); font: var(--am-fs-d-step) var(--font-mono, monospace); }
+
+.am-diagram-expand {
+  /* In flow and sticky: it sits at the end edge (right on a left-to-right page) and stays in view when the diagram scrolls sideways.
+     It takes its own row above the drawing, so it never covers a node at the top-right corner of the drawing. */
+  position: sticky; inset-inline-start: calc(100% - 36px); z-index: 2;
+  display: flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; padding: 0; margin: 0 0 4px; margin-inline: auto 8px;
+  color: var(--ink-2); background: var(--paper);
+  border: var(--bw, 1px) solid var(--line-2); border-radius: var(--radius);
+  cursor: pointer; opacity: 0.72;
+  transition: opacity 0.15s, color 0.15s, border-color 0.15s, background 0.15s;
+}
+.am-diagram:hover .am-diagram-expand,
+.am-diagram-expand:focus-visible { opacity: 1; }
+.am-diagram-expand:hover {
+  opacity: 1; color: var(--ink); border-color: var(--accent); background: var(--fill);
+}
+.am-diagram-expand:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* ── Diagram Lightbox and Pan-Zoom Viewer ─────────── */
+.am-lightbox {
+  position: fixed; inset: 0; z-index: 1000;
+  display: flex; flex-direction: column;
+  touch-action: none;
+}
+.am-lightbox[hidden] { display: none !important; }
+
+.am-lightbox-backdrop {
+  position: absolute; inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.am-lightbox-header {
+  position: absolute; top: 12px; left: 24px; right: 24px; height: 36px;
+  display: flex; align-items: center; justify-content: space-between;
+  z-index: 10; pointer-events: none;
+}
+.am-lightbox-title {
+  display: inline-flex; align-items: center; gap: 8px;
+  color: rgba(255, 255, 255, 0.92);
+  font: var(--am-fs-text)/1 var(--font-sans, sans-serif); font-weight: 500;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+  pointer-events: auto;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60vw;
+}
+.am-lightbox-title svg { stroke: rgba(255, 255, 255, 0.85); flex-shrink: 0; }
+.am-lightbox-actions {
+  display: flex; align-items: center; gap: 8px; pointer-events: auto;
+}
+.am-lightbox-close {
+  width: 32px; height: 32px;
+  background: var(--paper);
+  border: var(--bw, 1px) solid var(--line-2);
+  border-radius: 50%;
+  color: var(--ink);
+  font-size: var(--am-fs-heading); line-height: 1;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  transition: background 0.15s, color 0.15s, transform 0.15s, border-color 0.15s;
+}
+.am-lightbox-close:hover {
+  color: var(--accent); border-color: var(--accent); background: var(--fill); transform: scale(1.05);
+}
+.am-lightbox-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.am-lightbox-stage {
+  position: absolute;
+  top: 54px; bottom: 20px; left: 24px; right: 24px;
+  background: var(--paper);
+  border: var(--bw, 1px) solid var(--line-2);
+  border-radius: max(var(--radius), 14px);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.am-lightbox-stage.am-panning { cursor: grabbing; }
+
+.am-lightbox-canvas {
+  position: absolute; left: 0; top: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+  pointer-events: none;
+}
+.am-lightbox-canvas svg {
+  max-width: none !important;
+  max-height: none !important;
+  display: block;
+  font-family: var(--font-sans, sans-serif);
+}
+
+/* ── doc template ────────────────────────── */
+.am-doc { max-width: 916px; margin: 0 auto; padding: 40px 28px 64px; }
+.am-doc-layout { position: relative; }
+/* The outline rail: a zero-height sticky strip whose child hangs 8px outside the body on the chosen side. "start" and "end" are
+   logical, so the rail mirrors on a right-to-left page. data-flow says which way the label and the list open: "out" away from the
+   body, "in" over it (src/runtime/outline.js picks it from the room left in the viewport; the markup starts with "in"). */
+/* Above panels and the diagram expand button (2), below the fixed toolbar and reply bar (10). */
+.am-toc { position: sticky; top: 72px; height: 0; z-index: 5; font-size: var(--am-fs-text); }
+.am-outline { position: absolute; top: 0; inset-inline-start: calc(100% + 8px); }
+.am-toc[data-side="start"] .am-outline { inset-inline-start: auto; inset-inline-end: calc(100% + 8px); }
+.am-outline > summary { display: block; width: 16px; list-style: none; cursor: pointer; border-radius: 4px; }
+.am-outline > summary::-webkit-details-marker { display: none; }
+.am-outline > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.am-ticks { display: flex; flex-direction: column; max-height: calc(100vh - 100px); }
+.am-tick { position: relative; display: block; font-style: normal; flex: 0 1 9px; min-height: 2px; }
+.am-tick::before { content: ""; position: absolute; inset-inline: 3px; top: 50%; height: 2px; margin-top: -1px; border-radius: 1px; background: var(--ink-3); opacity: .55; }
+.am-tick:hover::before, .am-tick.is-peek::before { background: var(--ink); opacity: 1; }
+.am-tick.is-current::before { inset-inline: 0; height: 3px; margin-top: -1.5px; background: var(--accent); opacity: 1; }
+.am-tick::after {
+  content: attr(data-title); display: none; position: absolute; top: 50%; transform: translateY(-50%); z-index: 1; pointer-events: none;
+  max-width: min(240px, calc(100vw - 48px)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  padding: 3px 8px; font-size: var(--am-fs-small); color: var(--ink); background: var(--paper); border: 1px solid var(--line-2); border-radius: var(--radius); box-shadow: 0 4px 16px rgba(0, 0, 0, .12);
+}
+.am-tick:hover::after, .am-tick.is-peek::after { display: block; }
+.am-outline[open] .am-tick::after { display: none; }
+.am-outline-list {
+  position: absolute; top: -6px; z-index: 2; margin: 0; padding: 6px; list-style: none;
+  width: min(240px, calc(100vw - 48px)); max-height: calc(100vh - 96px); overflow-y: auto;
+  background: var(--paper); border: 1px solid var(--line-2); border-radius: var(--radius); box-shadow: 0 6px 24px rgba(0, 0, 0, .14);
+}
+.am-outline-list a { display: block; padding: 5px 8px; color: var(--ink-2); text-decoration: none; border-radius: 4px; border-inline-start: 2px solid transparent; }
+.am-outline-list a:hover { color: var(--ink); background: var(--line-2); }
+.am-outline-list a[aria-current="true"] { color: var(--ink); font-weight: 600; border-inline-start-color: var(--accent); }
+.am-outline-list a:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* Opens toward inline-end: end rail flowing out, start rail flowing in. Otherwise toward inline-start. */
+.am-toc[data-side="end"][data-flow="out"] .am-tick::after, .am-toc[data-side="start"][data-flow="in"] .am-tick::after,
+.am-toc[data-side="end"][data-flow="out"] .am-outline-list, .am-toc[data-side="start"][data-flow="in"] .am-outline-list { inset-inline-start: calc(100% + 6px); }
+.am-toc[data-side="start"][data-flow="out"] .am-tick::after, .am-toc[data-side="end"][data-flow="in"] .am-tick::after,
+.am-toc[data-side="start"][data-flow="out"] .am-outline-list, .am-toc[data-side="end"][data-flow="in"] .am-outline-list { inset-inline-end: calc(100% + 6px); }
+@media (prefers-reduced-motion: no-preference) {
+  .am-outline[open] .am-outline-list { animation: am-outline-in .14s ease-out; }
+  .am-tick::before { transition: inset-inline .12s, height .12s, opacity .12s; }
+}
+@keyframes am-outline-in { from { opacity: 0; } to { opacity: 1; } }
+.am-doc-body > .am-panel + .am-panel { margin-top: 20px; }
+
+/* ── Responsive and print ─────────────────────────── */
+@media (max-width: 1100px) {
+  .am-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .am-grid > .am-panel { grid-column: auto !important; }
+  .am-grid > .am-panel.am-span-wide { grid-column: 1 / -1 !important; }
+}
+@media (max-width: 760px) {
+  .am-sheet, .am-doc { padding: 56px 12px 24px; }
+  /* The toolbar holds more controls than a phone fits on one row. It scrolls sideways in place, so Theme and Mode stay reachable
+     and the page keeps the 56px top padding for one row. The rings focus draws outside a button are clipped by that scroll box. */
+  .am-toolbar { max-width: calc(100vw - 24px); overflow-x: auto; scrollbar-width: none; }
+  .am-toolbar::-webkit-scrollbar { display: none; }
+  .am-toolbar > * { flex: none; }
+  .am-toolbar .am-btn:focus-visible, .am-toolbar .am-pick:focus-within { outline-offset: -2px; }
+  .am-head { padding-inline-end: 0; }
+  .am-grid { grid-template-columns: minmax(0, 1fr); }
+  .am-grid > .am-panel.am-span-wide { grid-column: auto !important; }
+  /* The rail hugs the viewport edge inside a strip of its own, so it never covers text and never pushes the body down. */
+  .am-doc-layout--rail-end { padding-inline-end: 18px; }
+  .am-doc-layout--rail-start { padding-inline-start: 18px; }
+  .am-toc[data-side="end"] .am-outline { inset-inline-start: auto; inset-inline-end: -17px; }
+  .am-toc[data-side="start"] .am-outline { inset-inline-end: auto; inset-inline-start: -17px; }
+  .am-tree-cols { grid-template-columns: minmax(0, 1fr); }
+  /* Tables and diagrams keep their size: the wrapper scrolls horizontally when they overflow. A cell is never narrower than about
+     two short words, so a phone does not stack them one per line. On wider screens the sheet layout (src/runtime/layout-dom.js)
+     gives a table panel the width its columns read well at. */
+  .am-md th, .am-md td { min-width: 8em; }
+  .am-diagram svg { max-width: none; }
+  .am-lightbox-header { top: 8px; left: 12px; right: 12px; }
+  .am-lightbox-stage { top: 46px; bottom: 12px; left: 12px; right: 12px; border-radius: max(var(--radius), 10px); }
+}
+.am-colophon { margin: 0 0 8px; font: var(--am-fs-label) var(--font-mono); color: var(--ink-3); }
+.am-colophon a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+
+@media print {
+  .am-toolbar, .am-diagram-expand, .am-lightbox, .am-code-copy, .am-toc, .am-comment-btn, .am-comment, .am-reply, .am-reply-bar { display: none !important; }
+  body { background: var(--paper); }
+  .am-panel { break-inside: avoid; box-shadow: none; }
+}
+/* Printed on paper narrower than three columns, the two-column grid left a hole beside every panel next to a full-width one
+   (a wide table, a wide diagram): one panel per row instead. */
+@media print and (max-width: 1100px) {
+  .am-grid { grid-template-columns: minmax(0, 1fr); }
+  .am-grid > .am-panel { grid-column: auto !important; }
+}
+.am-panel--bare { border: 0; background: transparent; box-shadow: none; }
+.am-panel--bare > .am-panel-body { padding: 0; }
+.am-panel--bare .am-kv { background: var(--paper); }
+
+/* Remark mode: block marks with a note, collected into the Reply copy (src/runtime/remark.js). Each kind borrows a status colour of
+   the theme, so a mark reads in light and dark mode on every theme. */
+.am-btn--remark.is-on { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+.am-btn--remark-clear { color: var(--err); }
+.am-btn--remark-clear.is-armed { background: var(--err-bg); border-color: var(--err); }
+.am-remark-hover { outline: 1px dashed var(--ink-3); outline-offset: 2px; cursor: pointer; }
+[data-am-pick]:focus { outline: none; }
+[data-am-pick]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+:is(.am-mark, .am-remark-kind)[data-kind="suggestion"] { --mark: var(--warn); --mark-bg: var(--warn-bg); }
+:is(.am-mark, .am-remark-kind)[data-kind="keep"] { --mark: var(--ok); --mark-bg: var(--ok-bg); }
+:is(.am-mark, .am-remark-kind)[data-kind="question"] { --mark: var(--accent); --mark-bg: var(--accent-bg); }
+:is(.am-mark, .am-remark-kind)[data-kind="concern"] { --mark: var(--err); --mark-bg: var(--err-bg); }
+.am-mark { border-inline-start: 3px solid var(--mark); padding-inline-start: 10px; background: var(--mark-bg); border-radius: 1px; }
+/* The note chip sits inside the marked block (a table takes it as its caption, a list item puts it before its sub-list), so lists and
+   grids keep their children. */
+.am-mark-note {
+  display: block; margin-block-start: 4px; font: var(--am-fs-small)/1.5 var(--font-sans); letter-spacing: normal; text-transform: none;
+  color: var(--ink-2); white-space: pre-wrap; caption-side: bottom; text-align: start;
+}
+.am-mark-note b { color: var(--ink); font-weight: 600; }
+caption.am-mark-note { display: table-caption; }
+/* Table rows have their own backgrounds, so a tint on the table would show on every other row only: the bar marks a table. */
+table.am-mark { background: none; }
+.am-remark-pop {
+  position: absolute; z-index: 40; width: min(264px, calc(100vw - 16px)); padding: 8px; display: grid; gap: 6px;
+  color: var(--ink); background: var(--paper); border: 1px solid var(--line-2); border-radius: var(--radius); box-shadow: 0 6px 24px rgba(0, 0, 0, .14);
+}
+.am-remark-pop[hidden] { display: none; }
+.am-remark-kinds { display: flex; gap: 6px; flex-wrap: wrap; }
+.am-remark-kind { font: var(--am-fs-small)/1 var(--font-sans); color: var(--ink-2); background: var(--paper); border: 1px solid var(--line-2); border-radius: 999px; padding: 4px 10px; cursor: pointer; }
+.am-remark-kind:hover { border-color: var(--ink-3); }
+.am-remark-kind[aria-pressed="true"] { color: var(--ink); border-color: var(--mark); background: var(--mark-bg); }
+.am-remark-kind:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.am-remark-pop textarea { font: var(--am-fs-text)/1.5 var(--font-sans); color: var(--ink); background: var(--paper); border: 1px solid var(--line-2); border-radius: var(--radius); padding: 6px 8px; resize: vertical; }
+.am-remark-actions { display: flex; gap: 6px; }
+.am-remark-actions .am-btn:disabled { opacity: .5; cursor: default; }
+.am-remark-need { align-self: center; color: var(--ink-3); font-size: var(--am-fs-small); }
+.am-remark-kind::before { content: attr(data-n); margin-inline-end: 5px; color: var(--ink-3); font-family: var(--font-mono); font-size: var(--am-fs-label); }
+@media print { .am-remark-pop { display: none !important; } }
+
+
+html[data-theme="blueprint"] .am-frame { border: 1px solid var(--line); padding: 30px; }
+html[data-theme="blueprint"] .am-frame::before {
+  content: ""; position: absolute; inset: 18px; border: 1px solid var(--line); pointer-events: none;
+}
+html[data-theme="blueprint"] .am-ruler {
+  display: flex; position: absolute; font: var(--am-fs-tick)/1 var(--font-mono); color: var(--ink-3);
+}
+@media (max-width: 760px) {
+  html[data-theme="blueprint"] .am-frame { padding: 0; border: 0; }
+  html[data-theme="blueprint"] .am-frame::before, html[data-theme="blueprint"] .am-ruler { display: none; }
+}
+
+html[data-theme="shadcn"] .am-panel-id { border-radius: 6px; min-width: 24px; height: 24px; margin: 9px 0 9px 14px; font-size: var(--am-fs-small); }
+html[data-theme="shadcn"] .am-panel-head { border-bottom-width: 1px; }
+html[data-theme="shadcn"] .am-kv { border-color: var(--line); border-radius: var(--radius); overflow: hidden; }
+
+html[data-theme="paper"]:lang(zh-Hant)[data-mode], html[data-theme="paper"]:lang(zh-TW)[data-mode], html[data-theme="paper"]:lang(zh-HK)[data-mode], html[data-theme="paper"]:lang(zh-MO)[data-mode] { --font-serif: "Iowan Old Style", Palatino, Georgia, "Songti TC", "PMingLiU", "MingLiU", "Noto Serif CJK TC", "Noto Serif TC", "Source Han Serif TC", "Songti SC", serif; }
+html[data-theme="paper"]:lang(ja)[data-mode] { --font-serif: "Iowan Old Style", Palatino, Georgia, "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif CJK JP", "Noto Serif JP", "Songti SC", serif; }
+html[data-theme="paper"]:lang(he)[data-mode] { --font-serif: "Iowan Old Style", Palatino, Georgia, "Noto Serif Hebrew", "Frank Ruehl CLM", David, "Times New Roman", serif; }
+html[data-theme="paper"] .am-head h1, html[data-theme="paper"] .am-panel-head h2, html[data-theme="paper"] .am-md, html[data-theme="paper"] .am-intro, html[data-theme="paper"] .am-callout { font-family: var(--font-serif); }
+html[data-theme="paper"] .am-head h1 { font-weight: 600; letter-spacing: 0; }
+html[data-theme="paper"] .am-md p, html[data-theme="paper"] .am-md li, html[data-theme="paper"] .am-md blockquote, html[data-theme="paper"] .am-intro { font-size: var(--am-fs-lead); line-height: 1.75; }
+html[data-theme="paper"] .am-md p { margin-bottom: 12px; }
+html[data-theme="paper"] .am-md table { font-family: var(--font-sans); }
+</style>
+</head>
+<body>
+<div class="am-toolbar" data-am-root-lang="zh-CN" data-am-root-theme="paper" data-am-root-mode="auto" data-am-root-style="80">
+<label class="am-pick">主题<select data-am="theme"><option value="blueprint">图纸</option><option value="shadcn">卡片</option><option value="paper" selected>纸张</option></select></label>
+<label class="am-pick">明暗<select data-am="mode"><option value="auto" selected>跟随系统</option><option value="light">亮</option><option value="dark">暗</option></select></label>
+<button class="am-btn" type="button" data-am="scale-down" data-min="0.8" data-max="1.5" data-step="0.05" aria-label="缩小文字" title="缩小文字" hidden>A−</button><button class="am-btn" type="button" data-am="scale-up" data-min="0.8" data-max="1.5" data-step="0.05" aria-label="放大文字" title="放大文字" hidden>A+</button>
+<button class="am-btn am-btn--reply" type="button" data-am="reply" data-ui="{&quot;button&quot;:&quot;回复&quot;,&quot;comment&quot;:&quot;评论&quot;,&quot;commentHint&quot;:&quot;对这个面板的意见&quot;,&quot;title&quot;:&quot;你的回复&quot;,&quot;hint&quot;:&quot;复制后粘贴回和 Agent 的对话，它会按你的选择和意见继续。&quot;,&quot;copy&quot;:&quot;复制回复&quot;,&quot;copyFailed&quot;:&quot;复制失败 — 请按 Cmd/Ctrl+C&quot;,&quot;close&quot;:&quot;关闭&quot;,&quot;suggested&quot;:&quot;建议&quot;,&quot;empty&quot;:&quot;先选择选项，或在面板上写评论。&quot;,&quot;decisions&quot;:&quot;决定&quot;,&quot;comments&quot;:&quot;评论&quot;,&quot;confirmed&quot;:&quot;确认了建议&quot;,&quot;untouched&quot;:&quot;未作答，建议&quot;,&quot;was&quot;:&quot;原为&quot;,&quot;typed&quot;:&quot;以 \&quot;&gt;\&quot; 开头的行是读者输入的文字。&quot;,&quot;raw&quot;:&quot;查看将复制的文本&quot;,&quot;preview&quot;:&quot;预览&quot;,&quot;count&quot;:{&quot;answered&quot;:&quot;已作答 {n} 项&quot;,&quot;comments&quot;:&quot;评论 {n} 条&quot;,&quot;remarks&quot;:&quot;标注 {n} 处&quot;},&quot;done&quot;:&quot;已复制 ✓&quot;,&quot;remarks&quot;:&quot;标注&quot;,&quot;kinds&quot;:{&quot;suggestion&quot;:&quot;建议&quot;,&quot;keep&quot;:&quot;保留&quot;,&quot;question&quot;:&quot;疑问&quot;,&quot;concern&quot;:&quot;关注&quot;}}">回复</button>
+<button class="am-btn am-btn--remark" type="button" data-am="remark" data-ui="{&quot;button&quot;:&quot;标注&quot;,&quot;need&quot;:&quot;选择标签后才能保存&quot;,&quot;hint&quot;:&quot;批注（可选）&quot;,&quot;save&quot;:&quot;保存&quot;,&quot;remove&quot;:&quot;删除&quot;,&quot;clear&quot;:&quot;清除所有标注&quot;,&quot;clearConfirm&quot;:&quot;再次点击以清除 {n} 条标注&quot;,&quot;section&quot;:&quot;标注&quot;,&quot;kinds&quot;:{&quot;suggestion&quot;:&quot;建议&quot;,&quot;keep&quot;:&quot;保留&quot;,&quot;question&quot;:&quot;疑问&quot;,&quot;concern&quot;:&quot;关注&quot;}}">标注</button>
+<button class="am-btn" type="button" data-am="copy" data-done="已复制 ✓">复制源稿</button>
+</div>
+<main class="am-sheet">
+<header class="am-head"><p class="am-colophon">Generated by <a href="https://github.com/QingYunA/answer-me-with-html" target="_blank" rel="noopener">Answer me with HTML</a> 0.5.11 · 2026-11-11 02:10 · <a href="https://github.com/QingYunA/answer-me-with-html" target="_blank" rel="noopener">★ Star on GitHub</a></p><h1>2.0.8.20 更新说明</h1><p class="am-sub">指向写错了，当场告诉你，不再悄悄失效</p><div class="am-head-meta"><span><b>source</b>测试版 2.0.8.20</span></div><div class="am-intro am-md"><div class="am-md"><p>以前把一个字段名打错，那条配置就不生效，界面上什么都不说。现在会当场提示。</p>
+</div></div></header>
+<div class="am-frame">
+<div class="am-ruler am-ruler--top" aria-hidden="true"><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span></div><div class="am-ruler am-ruler--bottom" aria-hidden="true"><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span></div><div class="am-ruler am-ruler--left" aria-hidden="true"><span>A</span><span>B</span><span>C</span><span>D</span></div><div class="am-ruler am-ruler--right" aria-hidden="true"><span>A</span><span>B</span><span>C</span><span>D</span></div>
+<div class="am-grid" style="--cols: 2">
+<section class="am-panel am-span-wide" id="panel-A" style="grid-column: span 2">
+<header class="am-panel-head"><span class="am-panel-id">A</span><h2>提示长这样</h2></header>
+<div class="am-panel-body"><div class="am-md"><figure class="am-figure"><img data-am-src="F:/harness/%E9%AB%98%E4%BA%AE%E8%AF%8D%E6%8F%92%E4%BB%B6/work/keyword-highlighter/release/notes/img/editor-reminder-crop.png" src="data:image/png;base64,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G2WQIhmQoytCCCGEEOId7DNKCCGEEEJSDIpRQgghhBCSYlCMEkIIIYSQFCM1itFz585duXJF+YL4+Hg3U968efPq1auKEEIIIYQkI95+DtQhO3fuHD9+vHnN008/3aJFC/uUf/zxx/Dhw4cOHfrEE09MmDChbt26efPm7dWrV4MGDWrXrr169erNmzd37NjxgQceUEnn2rVrHTp0kMFGly9fNv9UoECB9u3bP/TQQ3oN0rzzzjvIQ65cuRQhhBBCCEkW/CJGH3vssYsXL2IB4nLr1q0bNmyAwjN/uS5LliwjR44sVapU1apVoQhbtWo1atSoRx99tF+/ft99952kwR6+/PLLTp06eaZEwaZNm/7999+iRYvOmjWrbdu2WnoeOnTor7/+at269aVLl9auXQvNipVYc/369fXr16dJk8a8kyJFihQqVEgRQgghhBA/4BcxCulZrFgxLMDghAQ8efLke++9h4h5vnz5atasiYB43759tVX53HPPrVy5Mm3atCEhITNnztyzZ4+sX7hwYXBwcKVKlZRHQMvCc4XMDQoKyp49e506dTJkyCA/bdu2bePGjViIjY3FoZETJF68eHGVKlVWrFhh2Q+2ohglhBBCCPETfhGjwhdffPH9999D5yHgDklaokSJ/fv358iR47///sPKnDlzwpKEE1m2bNn06dMj/d69e1999dV//vkHEfN169aVLl26cuXKsDY9iJtD7+LQcD0//PBD/HnlyhUIYi1GT58+LZ9MhTgeNGgQFqZPn44swZSVnBBCCCGEkOTBjwOY3n///V27dn377bfyZ/78+SE3oQshNxEKz5YtG8To/Pnzw8LCVq9ejQQTJkyYPHny8uXL4URCsGLh448/3r59u0o62C3EaO7cubGcNWvWggULjhgxonv37uHh4f/3f/+HXytWrBgQcEuIHzlyBJns3LkzbNEsd4JQvq+GUhFCCCGEEHv86IxayJMnD8LiJ06cQIj8qaeeEp9y8ODBW7Zs2bdvH7xM/NmuXTvYqHqTd955RyUd7Aoi+NNPP/3ll1+Uyf5EdB5m7ZAhQ7RFChCjHzhwICzYZ555BhL57Nmzyhj59PXXX+/evXvo0KHmQU6EEEIIIcS3JFOYHn8+8sgjwcHBy5Yt+/XXXyV6LpQxkGWoT7NSjImJadCggUoi0JQ9e/aEowkxChf2559/lv6piPhD+OKndOnSKWNwFfzRrl27zpgxAxasHreEDTt16lS0aNGxY8dKSkIIIYQQ4if8KEYRpn/vvfd+++23uXPnyppGjRo1a9YMEhDOqE4WHx/ft29fmfgJ4XLvnVGAELyE1xGp79atG7zSU6dOvfbaa9HR0XA6oUchPTNmzDh79mzITYTvkfL3339fsGCBMmzRVatWxcXFIf/K0SRQhBBCCCHEV/hRjN64cQMScP/+/WvWrBk2bBiUZf78+XPmzAm5aR4ntHXr1oiICATxlY+cUTPQmtmzZ5dYfI0aNQ4cOHDo0KENGzbUr18fv7766qvNmzdHRF4Z0fwqVaoowxlFlL9s2bLILf589NFHPZ5bihBCCCGEuMYvYhTxccToYTHCekR0PiQkBK4kJN2AAQMgQydMmPD888/nzZtXGTYk3FDYopkzZ8afkIyiCIUPPvhAec2lS5fgfQYGBjZt2vSrr77q06dP586dkY2aNWuaVWYhA2XMCQUrNzw8vFSpUooQQgghhPgTv4ymr1u37r59++Br/vXXXx07dsyRIwf8xeHDh0dFRc2cObNevXpvvvnm4cOHkRIBcYTOofxkQyjXHCagIJV3bNmyBTsPDg4ePHiwdACFA/rNN998+OGHEKYywRMhhBBCCEkp/OKMPmRgXvPrr79GRkb+9NNPcEC7dOmSMWPGefPmISh/5MiR9957L2vWrJY9jBs3rmfPnojdd+3aVXnBU089BfkLF9b8XSU4oMgPHFBL/B1rOnTosH79eshW5FARQgghhBA/k0bmVPIMhNF79+6tUgjE9PFvSmUAR4fbqgghhBBCyJ3o4DMC487SaMPRj5PeE0IIIYQQ4hqKUUIIIYQQkmJQjBJCCCGEkBTDKzEaHBy8ZcsWlRLguMEGKZIBOboihBBCCCHOkbk7Xa/3agBTdHT0rFmzoqKiVLIDLdioUSMspEgG5Og5c+ZUhBBCCCHkTvQAplWrVm3cuNE+Qbly5SpVqiTLXolRQgghhBBCLJincp8+ffqxY8fMv+bOnbtJkyb6T4pRQgghhBDiSyzfFYI/unfv3vPnzyM6X7hwYe2JChSjhBBCCCHElyTpI5ccTU8IIYQQQlIMilFCCCGEEJJiUIwSQgghhJAUg2KUEEIIIYSkGBSjhBBCCCEkxQhQhBBCCCGE+IFdu3YtXbrUfn2NGjWKFy8uy3RGCSGEEEJIikExSgghhBBC/ALszzx58lhWYo22RRXFKCGEEEII8R916tRJly6d/hPLWGNOQDFKCCGEEEL8xcMPPxweHq7/xDLWmBNQjBJCCCGEED+CoHyRIkWwgH/NAXqB36YnhBACLr3vAAAAO0lEQVRCCCG+hN+mJ4QQQgghdwcUo4QQQgghJMWgGCWEEEIIISkGxSghhBBCCEkxKEYJIYQQQkiK8f8AAAD//7T8msUAAAAGSURBVAMAvtFI0pf5ezUAAAAASUVORK5CYII=" alt="编辑弹窗里，列表上方出现橙色提醒：@开发这 不是已配的抓取字段，并建议改成「开发者」"><figcaption>编辑弹窗里，列表上方出现橙色提醒：@开发这 不是已配的抓取字段，并建议改成「开发者」</figcaption></figure>
+<p>提醒里会说三件事：哪个名字写错了、这条不会生效、是不是你想写的那个名字。</p>
+</div></div>
+</section>
+<section class="am-panel am-span-wide" id="panel-B" style="grid-column: span 2" data-span="2">
+<header class="am-panel-head"><span class="am-panel-id">B</span><h2>两类提醒</h2></header>
+<div class="am-panel-body"><div class="am-md"><div class="am-table-wrap"><table>
+<thead>
+<tr>
+<th>你写的内容</th>
+<th>提醒</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>一对一@开发这</td>
+<td><span class="am-status am-status--warn"><span class="am-status-icon" aria-hidden="true">!</span><span class="am-status-text">不是已配的抓取字段，并给出最接近的名字</span></span></td>
+</tr>
+<tr>
+<td>词@开发者^高价</td>
+<td><span class="am-status am-status--warn"><span class="am-status-icon" aria-hidden="true">!</span><span class="am-status-text">把取值后缀写进了指向，后缀要写在上面的字段栏</span></span></td>
+</tr>
+</tbody></table></div>
+<p>保存时还会弹一句「已保存，但有 N 个指向不是已配的抓取字段」。</p>
+</div>
+<div class="am-callout am-callout--info" role="note"><div class="am-callout-title">只提醒，不拦保存</div><div class="am-callout-body am-md"><p>老配置里 @ 可能本来就当普通字符用。所以只提示，照常保存。</p>
+</div></div></div>
+</section>
+<section class="am-panel am-span-wide" id="panel-C" style="grid-column: span 2">
+<header class="am-panel-head"><span class="am-panel-id">C</span><h2>怎么试</h2></header>
+<div class="am-panel-body"><div class="am-md"><ol>
+<li>打开一个关键词的编辑窗，找到「图片命中关键词」。</li>
+<li>点旁边的「修改」，随便加一条把字段名写错。</li>
+<li>看列表上方有没有橙色提醒，改对之后再消失。</li>
+</ol>
+</div></div>
+</section>
+</div>
+</div>
+</main>
+<textarea id="am-source" hidden readonly aria-hidden="true">---
+template: sheet
+theme: paper
+title: 2.0.8.20 更新说明
+subtitle: 指向写错了，当场告诉你，不再悄悄失效
+source: 测试版 2.0.8.20
+cols: 2
+---
+以前把一个字段名打错，那条配置就不生效，界面上什么都不说。现在会当场提示。
+
+## A 提示长这样
+
+![编辑弹窗里，列表上方出现橙色提醒：@开发这 不是已配的抓取字段，并建议改成「开发者」](F:/harness/高亮词插件/work/keyword-highlighter/release/notes/img/editor-reminder-crop.png)
+
+提醒里会说三件事：哪个名字写错了、这条不会生效、是不是你想写的那个名字。
+
+## B 两类提醒 {span=2}
+
+| 你写的内容 | 提醒 |
+|---|---|
+| 一对一@开发这 | warn 不是已配的抓取字段，并给出最接近的名字 |
+| 词@开发者^高价 | warn 把取值后缀写进了指向，后缀要写在上面的字段栏 |
+
+保存时还会弹一句「已保存，但有 N 个指向不是已配的抓取字段」。
+
+```callout info 只提醒，不拦保存
+老配置里 @ 可能本来就当普通字符用。所以只提示，照常保存。
+```
+
+## C 怎么试
+
+1. 打开一个关键词的编辑窗，找到「图片命中关键词」。
+2. 点旁边的「修改」，随便加一条把字段名写错。
+3. 看列表上方有没有橙色提醒，改对之后再消失。
+</textarea>
+<script>
+(() => {
+// How a formula reads in a quote. MathML has no plain text, so src/math.js writes the formula as the draft wrote it, delimiters included, in
+// data-am-tex on the <math> element, and the Remark and Reply scripts read page text through this file. On a page without math there is no
+// such element, so formulaOf is null and every text comes out as it did before.
+// A plain ES module for tests; the page gets it with its `export` keyword dropped (src/runtime/compose.js).
+
+const TEX = 'data-am-tex';
+
+// The formula that holds a node, or null.
+const formulaOf = (node) => node.parentElement?.closest(`[${TEX}]`) ?? null;
+
+const firstText = (el) => {
+  for (const child of el.childNodes) {
+    const found = child.nodeType === 3 ? child : firstText(child);
+    if (found) return found;
+  }
+  return null;
+};
+
+// What a text node adds to a quote: its data. The first text node of a formula adds the formula, and the others add nothing.
+// (A formula in an error style is plain text with its delimiters, not a <math>, so it comes out once.)
+function nodeText(node) {
+  const math = formulaOf(node);
+  if (!math) return node.data;
+  return firstText(math) === node ? math.getAttribute(TEX) : '';
+}
+
+// The text of a node as textContent reads it, but with each formula as written.
+const textWithMath = (node) => (node.nodeType === 3 ? nodeText(node) : [...node.childNodes].map(textWithMath).join(''));
+
+(() => {
+  const root = document.documentElement;
+  // A host that serves this page inside its own document leaves the real root without the page's settings. The toolbar keeps a copy;
+  // set back what the root lacks, before anything below reads the root. A root's own value, even an empty one, is never replaced.
+  const carrier = document.querySelector('.am-toolbar');
+  for (const [attr, key] of [['lang', 'data-am-root-lang'], ['dir', 'data-am-root-dir'], ['data-theme', 'data-am-root-theme'], ['data-mode', 'data-am-root-mode'], ['data-style', 'data-am-root-style']]) {
+    if (root.getAttribute(attr) === null && carrier?.getAttribute(key) != null) root.setAttribute(attr, carrier.getAttribute(key));
+  }
+  // Each toolbar list sets one root attribute; its options name the values, so the runtime names no theme or mode.
+  for (const [name, attr] of [['theme', 'data-theme'], ['mode', 'data-mode']]) {
+    const select = document.querySelector(`select[data-am="${name}"]`);
+    if (!select) continue;
+    select.value = root.getAttribute(attr);
+    select.addEventListener('change', () => root.setAttribute(attr, select.value));
+  }
+
+  // ── Text size ─────────────────────────────
+  // A− / A+ set --am-scale on the root; every page size and line (src/themes/type-scale.js) follows it, and the drawing boxes grow
+  // with it while their viewBox keeps the units Node measured. The buttons carry the range from SCALE, so this script keeps no
+  // second copy of the numbers. A reader's choice is remembered in this browser and wins over the page's own scale; where storage
+  // is off (am serve, file://) it lasts for this tab, and the click still works.
+  const scaleDown = document.querySelector('[data-am="scale-down"]');
+  const scaleUp = document.querySelector('[data-am="scale-up"]');
+  if (scaleDown && scaleUp) {
+    const min = Number(scaleDown.dataset.min);
+    const max = Number(scaleDown.dataset.max);
+    const step = Number(scaleDown.dataset.step);
+    const storeKey = 'am-scale';
+    let value;
+
+    const inRange = (n) => Number.isFinite(n) && n >= min && n <= max;
+    const savedScale = () => {
+      try {
+        return Number(localStorage.getItem(storeKey));
+      } catch {
+        return NaN;
+      }
+    };
+    const saveScale = (n) => {
+      try {
+        localStorage.setItem(storeKey, String(n));
+      } catch {
+        // Storage may be off (am serve, file://); the size then lasts until the tab closes.
+      }
+    };
+
+    const updateButtons = () => {
+      const setUnavailable = (btn, unavailable) => {
+        if (unavailable) btn.setAttribute('aria-disabled', 'true');
+        else btn.removeAttribute('aria-disabled');
+      };
+      setUnavailable(scaleDown, value <= min);
+      setUnavailable(scaleUp, value >= max);
+    };
+
+    // One step is a multiple of `step`: Math.round first, then two decimals, so 1.1500000000000001 becomes 1.15.
+    const setScale = (next, remember = false) => {
+      value = Math.min(max, Math.max(min, Number((Math.round(next / step) * step).toFixed(2))));
+      root.style.setProperty('--am-scale', String(value));
+      for (const svg of document.querySelectorAll('.am-diagram:not(.am-lightbox-canvas) > svg[role="img"]')) {
+        const box = svg.viewBox?.baseVal;
+        if (!box || !(box.width > 0) || !(box.height > 0)) continue;
+        svg.setAttribute('width', String(Math.ceil(box.width * value)));
+        svg.setAttribute('height', String(Math.ceil(box.height * value)));
+      }
+      updateButtons();
+      if (remember) saveScale(value);
+      window.dispatchEvent(new Event('am-scale'));
+    };
+
+    // A page with no stored choice is left exactly as it was rendered: no inline variable, no svg rewrite, no extra layout pass.
+    value = parseFloat(getComputedStyle(root).getPropertyValue('--am-scale')) || 1;
+    updateButtons();
+    const saved = savedScale();
+    if (inRange(saved) && saved !== value) setScale(saved);
+    scaleDown.hidden = false;
+    scaleUp.hidden = false;
+    scaleDown.addEventListener('click', () => {
+      if (scaleDown.getAttribute('aria-disabled') === 'true') return;
+      setScale(value - step, true);
+    });
+    scaleUp.addEventListener('click', () => {
+      if (scaleUp.getAttribute('aria-disabled') === 'true') return;
+      setScale(value + step, true);
+    });
+  }
+
+  // A phone cannot show the whole toolbar. Its end (Reply, Remark, Copy source) is what a phone showed before the text-size
+  // buttons, so open at that end: Theme, Mode and A− / A+ are reached by scrolling toward the start. A reader scroll leaves the
+  // position we set, so a later resize does not pull the toolbar back.
+  if (carrier) {
+    const rtl = getComputedStyle(carrier).direction === 'rtl';
+    let lastProgrammatic = null;
+    let readerScrolled = false;
+    const scrollToEnd = () => {
+      if (carrier.scrollWidth <= carrier.clientWidth) return;
+      // Chrome keeps a right-to-left box's scrollLeft negative; the browser clamps either value to the real end.
+      carrier.scrollTo({ left: rtl ? -carrier.scrollWidth : carrier.scrollWidth });
+      lastProgrammatic = carrier.scrollLeft;
+    };
+    carrier.addEventListener('scroll', () => {
+      if (Math.abs(carrier.scrollLeft - lastProgrammatic) > 1) readerScrolled = true;
+    });
+    scrollToEnd();
+    addEventListener('resize', () => {
+      if (!readerScrolled) scrollToEnd();
+    });
+  }
+
+  const copyText = async (text) => {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const ta = Object.assign(document.createElement('textarea'), { value: text });
+      document.body.append(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+    }
+  };
+  // A button reads its label from data-done for a moment after a copy, then comes back to the label it started from. That label is
+  // read once, here: a second click inside the moment would otherwise read the copied label off the button and restore that instead,
+  // and the label would never come back. The moment starts again on each click: the timer of the previous one is left to fire and
+  // does nothing (a token, so this needs no timer bookkeeping the page scripts do not already have).
+  const flasher = (btn) => {
+    const idle = btn.textContent;
+    let clicks = 0;
+    return () => {
+      btn.textContent = btn.dataset.done;
+      const mine = ++clicks;
+      setTimeout(() => { if (mine === clicks) btn.textContent = idle; }, 1400);
+    };
+  };
+
+  const copyBtn = document.querySelector('[data-am="copy"]');
+  if (copyBtn) {
+    const flash = flasher(copyBtn);
+    copyBtn.addEventListener('click', async () => {
+      const nodes = document.querySelectorAll('#am-source');
+      await copyText(nodes[nodes.length - 1]?.value ?? '');
+      flash();
+    });
+  }
+
+  // Each code block copies its own lines, without the line numbers.
+  for (const btn of document.querySelectorAll('[data-am="copy-code"]')) {
+    const flash = flasher(btn);
+    btn.addEventListener('click', async () => {
+      const lines = btn.closest('.am-codeblock')?.querySelectorAll('.am-ln') ?? [];
+      await copyText([...lines].map((l) => l.textContent).join('\n'));
+      flash();
+    });
+  }
+
+  // ── Diagram Lightbox & Pan-Zoom Viewer ─────────────
+  const diagrams = document.querySelectorAll('.am-diagram:not(.am-lightbox-canvas)');
+  const lb = document.querySelector('.am-lightbox');
+  if (diagrams.length && lb) {
+    const backdrop = lb.querySelector('.am-lightbox-backdrop');
+    const titleText = lb.querySelector('.am-lightbox-title-text');
+    const stage = lb.querySelector('.am-lightbox-stage');
+    const canvas = lb.querySelector('.am-lightbox-canvas');
+    const closeBtn = lb.querySelector('.am-lightbox-close');
+    const expandLabel = lb.getAttribute('data-expand') || 'Expand diagram';
+
+    let scale = 1, x = 0, y = 0, fitScale = 1, curVw = 800, curVh = 600;
+    let isDragging = false, activePointerId = null, startX = 0, startY = 0, origX = 0, origY = 0;
+    let lastTrigger = null;
+
+    const apply = () => {
+      canvas.style.transform = `translate3d(${x.toFixed(2)}px, ${y.toFixed(2)}px, 0) scale(${scale.toFixed(4)})`;
+    };
+
+    const zoomTo = (newScale, pivotX, pivotY) => {
+      newScale = Math.max(0.2, Math.min(6.0, newScale));
+      if (Math.abs(newScale - scale) < 0.0001) return;
+      const r = newScale / scale;
+      x = pivotX - (pivotX - x) * r;
+      y = pivotY - (pivotY - y) * r;
+      scale = newScale;
+      apply();
+    };
+
+    const open = (diag, trigger) => {
+      const svg = [...diag.children].find((el) => el.tagName.toLowerCase() === 'svg');
+      if (!svg) return;
+      lastTrigger = trigger;
+
+      const panel = diag.closest('.am-panel');
+      const panelTitle = panel?.querySelector('.am-panel-head h2')?.textContent?.trim() || panel?.querySelector('h2')?.textContent?.trim() || lb.getAttribute('aria-label') || 'Diagram viewer';
+      if (titleText) titleText.textContent = panelTitle;
+
+      const clone = svg.cloneNode(true);
+      const defElements = clone.querySelectorAll('[id]');
+      if (defElements.length) {
+        const idMap = new Map();
+        defElements.forEach((el, i) => {
+          const oldId = el.id;
+          const newId = `${oldId}-lb-${i}`;
+          idMap.set(oldId, newId);
+          el.id = newId;
+        });
+        const urlAttrs = ['marker-start', 'marker-mid', 'marker-end', 'fill', 'stroke', 'filter', 'clip-path', 'mask'];
+        clone.querySelectorAll('*').forEach((el) => {
+          for (const attr of urlAttrs) {
+            const val = el.getAttribute(attr);
+            if (val && val.startsWith('url(#')) {
+              const id = val.slice(5, -1);
+              if (idMap.has(id)) el.setAttribute(attr, `url(#${idMap.get(id)})`);
+            }
+          }
+          const href = el.getAttribute('href') || el.getAttribute('xlink:href');
+          if (href && href.startsWith('#')) {
+            const id = href.slice(1);
+            if (idMap.has(id)) {
+              if (el.hasAttribute('href')) el.setAttribute('href', `#${idMap.get(id)}`);
+              if (el.hasAttribute('xlink:href')) el.setAttribute('xlink:href', `#${idMap.get(id)}`);
+            }
+          }
+        });
+      }
+
+      const vb = svg.viewBox?.baseVal;
+      curVw = (vb && vb.width > 0) ? vb.width : (parseFloat(svg.getAttribute('width')) || svg.clientWidth || 800);
+      curVh = (vb && vb.height > 0) ? vb.height : (parseFloat(svg.getAttribute('height')) || svg.clientHeight || 600);
+      clone.style.width = `${curVw}px`;
+      clone.style.height = `${curVh}px`;
+      canvas.innerHTML = '';
+      canvas.append(clone);
+      lb.removeAttribute('hidden');
+      document.body.style.overflow = 'hidden';
+
+      const rect = stage.getBoundingClientRect();
+      const pad = 48;
+      const availW = Math.max(100, rect.width - pad * 2);
+      const availH = Math.max(100, rect.height - pad * 2);
+      fitScale = Math.min(availW / curVw, availH / curVh, 1.0);
+      scale = fitScale;
+      x = (rect.width - curVw * scale) / 2;
+      y = (rect.height - curVh * scale) / 2;
+      apply();
+      closeBtn.focus();
+    };
+
+    const close = () => {
+      if (lb.hasAttribute('hidden')) return;
+      lb.setAttribute('hidden', '');
+      canvas.innerHTML = '';
+      document.body.style.overflow = '';
+      lastTrigger?.focus();
+    };
+
+    stage.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const rect = stage.getBoundingClientRect();
+      const dy = e.deltaMode === 1 ? e.deltaY * 16 : (e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY);
+      const factor = Math.exp(-Math.max(-200, Math.min(200, dy)) * 0.0015);
+      zoomTo(scale * factor, e.clientX - rect.left, e.clientY - rect.top);
+    }, { passive: false });
+
+    stage.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0 || isDragging) return;
+      isDragging = true;
+      activePointerId = e.pointerId;
+      startX = e.clientX;
+      startY = e.clientY;
+      origX = x;
+      origY = y;
+      stage.setPointerCapture(e.pointerId);
+      stage.classList.add('am-panning');
+    });
+
+    stage.addEventListener('pointermove', (e) => {
+      if (!isDragging || e.pointerId !== activePointerId) return;
+      x = origX + (e.clientX - startX);
+      y = origY + (e.clientY - startY);
+      apply();
+    });
+
+    const endDrag = (e) => {
+      if (!isDragging || e.pointerId !== activePointerId) return;
+      isDragging = false;
+      activePointerId = null;
+      stage.classList.remove('am-panning');
+      try { stage.releasePointerCapture(e.pointerId); } catch {}
+    };
+    stage.addEventListener('pointerup', endDrag);
+    stage.addEventListener('pointercancel', endDrag);
+
+    stage.addEventListener('dblclick', () => {
+      const rect = stage.getBoundingClientRect();
+      scale = fitScale;
+      x = (rect.width - curVw * scale) / 2;
+      y = (rect.height - curVh * scale) / 2;
+      apply();
+    });
+
+    closeBtn.addEventListener('click', close);
+    backdrop.addEventListener('click', close);
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !lb.hasAttribute('hidden')) close();
+    });
+
+    lb.addEventListener('keydown', (e) => {
+      if (e.key !== 'Tab') return;
+      const focusables = lb.querySelectorAll('button:not([disabled]), [tabindex]:not([tabindex="-1"])');
+      if (!focusables.length) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    });
+
+    const expandSvg = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>';
+    diagrams.forEach((diag) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'am-diagram-expand';
+      btn.title = expandLabel;
+      btn.setAttribute('aria-label', expandLabel);
+      btn.innerHTML = expandSvg;
+      btn.addEventListener('click', () => open(diag, btn));
+      diag.prepend(btn);
+    });
+  }
+})();
+(() => {
+// The reply a reader copies from the page: one Markdown text with the decisions, the panel comments and the block remarks.
+// A plain ES module for tests; the page gets it with its `export` keyword dropped (src/runtime/compose.js).
+// decisions: [{ panel, question, picked: [label], suggested: [label], touched }]; comments: [{ panel, title, text }];
+// remarks: [{ panel, quote, kind, note }], where quote is the start of the marked block and kind is a key of ui.kinds.
+// Comment and remark text is quoted line by line, so text the reader typed cannot pass as part of the structure.
+// rtl: the page reads right to left, so the arrow before each answer points left, the way the text runs.
+function replyText({ title, decisions, comments, remarks = [], ui, rtl = false }) {
+  const arrow = rtl ? '←' : '→';
+  const out = [`# Re: ${title}`];
+  if (decisions.length) {
+    out.push('', `## ${ui.decisions}`);
+    decisions.forEach((d, i) => {
+      const answer = d.picked.length ? d.picked.map((l) => `**${l}**`).join(', ') : '**—**';
+      // Every option starts unselected, so an ask the reader never clicked has no answer: the reply names the suggestion
+      // instead of passing it off as the reader's choice.
+      const same = d.picked.length === d.suggested.length && d.picked.every((l) => d.suggested.includes(l));
+      const suggested = d.suggested.join(', ') || '—';
+      const why = !d.touched ? `${ui.untouched}: ${suggested}` : same ? ui.confirmed : `${ui.was}: ${suggested}`;
+      out.push(`${i + 1}. [${d.panel}] ${d.question}`, `   ${arrow} ${answer} _(${why})_`);
+    });
+  }
+  const written = comments.filter((c) => c.text.trim());
+  const quoted = (text) => (text.trim() ? text.trim().split('\n').map((l) => `  > ${l}`) : []);
+  if (written.length) {
+    out.push('', `## ${ui.comments}`);
+    for (const c of written) out.push(`- **${c.panel} · ${c.title}**`, ...quoted(c.text));
+  }
+  if (remarks.length) {
+    out.push('', `## ${ui.remarks}`);
+    for (const r of remarks) {
+      const label = [r.panel, ui.kinds?.[r.kind] ?? r.kind].filter(Boolean).join(' · ');
+      out.push(`- **${label}** "${r.quote}"`, ...quoted(r.note));
+    }
+  }
+  if (written.length || remarks.some((r) => r.note.trim())) out.push('', `_${ui.typed}_`);
+  return `${out.join('\n')}\n`;
+}
+
+// A letter of a right-to-left script. One definition for the page builder (src/bidi.js) and for the right-to-left page script
+// (src/runtime/reply-view.js), so the two cannot drift apart. A plain ES module; the page script gets this file in front of
+// reply-view.js, with its `export` keyword dropped and reply-view.js's import of it removed (src/runtime/compose.js).
+const RTL_LETTER = /[\p{Script=Hebrew}\p{Script=Arabic}\p{Script=Syriac}\p{Script=Thaana}\p{Script=Nko}\p{Script=Samaritan}\p{Script=Mandaic}]/u;
+
+// The reply as the reader sees it in the Reply sheet (src/runtime/reply.js): the Markdown that Copy copies, drawn as headings, bold answers
+// and quoted comments instead of raw "# Re: ...", "1. [E] ..." and "- **A · ...**" lines. Each line gets its own direction, so a
+// Hebrew reader sees Latin answers and paths in place; a line with no right-to-left letter reads left to right, as on any other page.
+// The raw Markdown stays in the sheet under a fold, so the copied text does not change.
+// A plain ES module for tests; the page gets it with its `export` keyword dropped and rtl-letter.js in front of it in place of the
+// import (src/runtime/compose.js).
+
+const escHtml = (s) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+// A line with a right-to-left letter reads right to left; a line without one (an English comment, a path) reads left to right.
+const dirOf = (s) => (RTL_LETTER.test(s) ? 'rtl' : 'ltr');
+
+// The only inline Markdown src/runtime/reply-text.js writes: **answer**, _(note)_ and the "quote" of a remark. Each piece is isolated in its own direction,
+// so a Latin answer inside a Hebrew line keeps its place, and "A · title" still starts with the panel letter.
+const piece = (tag, text) => `<${tag}><bdi dir="${dirOf(text)}">${text}</bdi></${tag}>`;
+function inline(s) {
+  return escHtml(s)
+    .replace(/\*\*(.+?)\*\*/g, (_, t) => piece('strong', t))
+    .replace(/(^|\s)_(.+?)_(?=\s|$)/g, (_, pre, t) => pre + piece('em', t))
+    // The quoted start of a marked block ("- **A · concern** "text""): isolated, so Latin text in a Hebrew line keeps its place.
+    .replace(/&quot;(.+)&quot;$/, (_, t) => `&quot;<bdi dir="${dirOf(t)}">${t}</bdi>&quot;`);
+}
+
+// The reply text (src/runtime/reply-text.js) as HTML, one block per line.
+function replyViewHtml(text) {
+  return text
+    .replace(/\n$/, '')
+    .split('\n')
+    .map((line) => {
+      const dir = dirOf(line);
+      let m;
+      if (!line.trim()) return '<div class="am-rv-gap"></div>';
+      if ((m = line.match(/^(#{1,2}) (.*)$/))) return `<div class="am-rv-h${m[1].length}" dir="${dir}">${inline(m[2])}</div>`;
+      if ((m = line.match(/^(\d+)\. \[([^\]]*)\] (.*)$/))) {
+        return `<div class="am-rv-q" dir="${dir}"><bdi>${m[1]}.</bdi> <bdi class="am-rv-tag">${escHtml(m[2])}</bdi> ${inline(m[3])}</div>`;
+      }
+      if ((m = line.match(/^ {3}([←→]) (.*)$/))) return `<div class="am-rv-a" dir="${dir}">${m[1]} ${inline(m[2])}</div>`;
+      if ((m = line.match(/^- (.*)$/))) return `<div class="am-rv-c" dir="${dir}">${inline(m[1])}</div>`;
+      // A comment line is shown exactly as the reader typed it.
+      if ((m = line.match(/^ {2}> ?(.*)$/))) return `<div class="am-rv-quote" dir="${dirOf(m[1])}">${escHtml(m[1]) || '&nbsp;'}</div>`;
+      return `<div dir="${dir}">${inline(line)}</div>`;
+    })
+    .join('');
+}
+
+// Answer on the page: every panel gets a Comment box, and the Reply button collects the ask answers, the comments and the remarks
+// into one Markdown reply (replyText) to copy back to the agent. Answers and comments stay in localStorage across reloads.
+// The remark script (remark.js) adds the blocks the reader marked, through window.__amRemarkData, and tells this script about a change
+// with an "am-remark-change" event on the document.
+// The Reply sheet shows the reply drawn (replyViewHtml) with the Markdown that Copy copies under a fold. Once the reader has given any
+// input, a bar at the bottom of the page shows the counts and copies the reply in one click, so there is no trip to the top-right button.
+const replyBtn = document.querySelector('[data-am="reply"]');
+const COMMENT_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>';
+if (replyBtn) {
+  const ui = JSON.parse(replyBtn.dataset.ui);
+  const storeKey = `am-reply:${location.pathname}`;
+  // A page served by `am serve` runs without localStorage and the phone may discard its tab, so it keeps the answers on the
+  // server: data-am-save names the write route and data-am-state carries what the server already holds for this page version.
+  const serve = (() => {
+    const { amSave: save, amState: state } = document.body?.dataset ?? {};
+    if (!save) return null;
+    try {
+      return { save, restored: state ? JSON.parse(state) : null };
+    } catch {
+      return { save, restored: null };
+    }
+  })();
+  let saveTimer = null;
+  let pendingPatch = null;
+  const sendSave = (patch) => {
+    fetch(serve.save, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(patch), keepalive: true })
+      .catch(() => {}); // a page that cannot reach the server keeps its state until it closes, as before
+  };
+  // Typing must not put one request per keystroke on the server; localStorage is written at once, the network follows.
+  const saveSoon = (patch) => {
+    clearTimeout(saveTimer);
+    pendingPatch = patch;
+    saveTimer = setTimeout(() => {
+      pendingPatch = null;
+      sendSave(patch);
+    }, 400);
+  };
+  // A hidden or closing page sends the change it still holds, before the timer can run.
+  const flushSave = () => {
+    if (!pendingPatch) return;
+    clearTimeout(saveTimer);
+    sendSave(pendingPatch);
+    pendingPatch = null;
+  };
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushSave();
+  });
+  window.addEventListener('pagehide', flushSave);
+  const panels = [...document.querySelectorAll('.am-panel')];
+  const asks = [...document.querySelectorAll('.am-ask')];
+  // Answers are saved by question text, so they still match after am patch has renumbered the asks.
+  // Page text without the word joiners a right-to-left page puts after a Hebrew prefix hyphen (src/bidi.js): the reply and the saved
+  // answers hold the text as the draft wrote it, a formula too (src/runtime/math-text.js).
+  const WJ = new RegExp(String.fromCharCode(0x2060), 'g');
+  const textOf = (el) => el && textWithMath(el).replace(WJ, '').trim();
+  const keyOf = (ask) => textOf(ask.querySelector('legend')) ?? ask.dataset.ask;
+  const touched = new Set();
+  const boxes = new Map();
+  // The bar is built below with the sheet; the handlers that change the counts only call this.
+  let refreshBar = () => {};
+  // The textarea a failed copy keeps selected, so the reader can still use the keyboard shortcut.
+  let stuck = null;
+
+  const load = () => {
+    if (serve?.restored?.reply) return serve.restored.reply;
+    try {
+      return JSON.parse(localStorage.getItem(storeKey)) || {};
+    } catch {
+      return {};
+    }
+  };
+  const save = () => {
+    const state = {
+      asks: Object.fromEntries(asks.map((a) => [keyOf(a), { picked: picked(a), touched: touched.has(a) }])),
+      comments: Object.fromEntries([...boxes].map(([id, box]) => [id, box.value]).filter(([, text]) => text.trim())),
+    };
+    try {
+      localStorage.setItem(storeKey, JSON.stringify(state));
+    } catch {
+      // Storage may be off (private window, file:// policy); answers then last until the page closes.
+    }
+    if (serve) saveSoon({ reply: state });
+  };
+  const picked = (ask) => [...ask.querySelectorAll('input')].filter((i) => i.checked).map((i) => i.value);
+  const panelOf = (el) => {
+    const panel = el.closest('.am-panel');
+    return { id: panel?.id.replace(/^panel-/, '') ?? '', title: textOf(panel?.querySelector('.am-panel-head h2')) ?? '' };
+  };
+
+  const saved = load();
+  for (const ask of asks) {
+    const inputs = [...ask.querySelectorAll('input')];
+    const state = saved.asks?.[keyOf(ask)];
+    // A saved answer applies only while every picked option still exists on the page, and only if the reader clicked: older versions started
+    // with the suggestion selected and saved it untouched, and that state must come back unselected.
+    if (state?.touched && Array.isArray(state.picked) && state.picked.every((v) => inputs.some((i) => i.value === v))) {
+      for (const input of inputs) input.checked = state.picked.includes(input.value);
+      touched.add(ask);
+    }
+    // A click counts even on the option that is already picked: the reader confirms the suggestion.
+    const answer = () => {
+      touched.add(ask);
+      save();
+      refreshBar();
+    };
+    ask.addEventListener('change', answer);
+    ask.addEventListener('click', (e) => { if (e.target.matches('input')) answer(); });
+  }
+
+  for (const panel of panels) {
+    const id = panel.id.replace(/^panel-/, '');
+    // An icon only: narrow panels have no room for a word next to the title.
+    const btn = Object.assign(document.createElement('button'), { type: 'button', className: 'am-comment-btn', title: ui.comment, innerHTML: COMMENT_ICON });
+    btn.setAttribute('aria-label', `${ui.comment} ${id}`);
+    btn.setAttribute('aria-expanded', 'false');
+    const wrap = Object.assign(document.createElement('div'), { className: 'am-comment', hidden: true });
+    const box = Object.assign(document.createElement('textarea'), { rows: 3, placeholder: ui.commentHint, value: saved.comments?.[id] ?? '' });
+    box.setAttribute('aria-label', `${ui.comment} ${id}`);
+    wrap.append(box);
+    const show = (open) => {
+      wrap.hidden = !open;
+      btn.setAttribute('aria-expanded', String(open));
+    };
+    btn.addEventListener('click', () => {
+      show(wrap.hidden);
+      if (!wrap.hidden) box.focus();
+    });
+    box.addEventListener('input', () => {
+      btn.classList.toggle('am-comment-btn--on', Boolean(box.value.trim()));
+      save();
+      refreshBar();
+    });
+    btn.classList.toggle('am-comment-btn--on', Boolean(box.value.trim()));
+    if (box.value.trim()) show(true);
+    (panel.querySelector('.am-panel-head') ?? panel).append(btn);
+    panel.append(wrap);
+    boxes.set(id, box);
+  }
+
+  const sheet = document.createElement('dialog');
+  sheet.className = 'am-reply';
+  sheet.setAttribute('aria-label', ui.title);
+  sheet.innerHTML = '<div class="am-reply-head"><strong></strong><span></span></div><div class="am-reply-view" tabindex="0"></div><details class="am-reply-raw"><summary></summary><textarea readonly rows="10"></textarea></details><div class="am-reply-actions"><button type="button" class="am-btn" data-act="copy"></button><button type="button" class="am-btn" data-act="close"></button></div>';
+  sheet.querySelector('strong').textContent = ui.title;
+  sheet.querySelector('span').textContent = ui.hint;
+  sheet.querySelector('summary').textContent = ui.raw;
+  const view = sheet.querySelector('.am-reply-view');
+  const raw = sheet.querySelector('details');
+  const text = sheet.querySelector('textarea');
+  const copy = sheet.querySelector('[data-act="copy"]');
+  const close = sheet.querySelector('[data-act="close"]');
+  copy.textContent = ui.copy;
+  close.textContent = ui.close;
+  document.body.append(sheet);
+
+  const compose = () => {
+    const decisions = asks.map((ask) => ({
+      panel: panelOf(ask).id,
+      question: textOf(ask.querySelector('legend')) ?? '',
+      picked: picked(ask),
+      suggested: [...ask.querySelectorAll('input[data-suggested]')].map((i) => i.value),
+      touched: touched.has(ask),
+    }));
+    const comments = [...boxes].map(([id, box]) => ({ panel: id, title: panelOf(box).title, text: box.value }));
+    const remarks = window.__amRemarkData?.() ?? [];
+    const empty = !decisions.length && !comments.some((c) => c.text.trim()) && !remarks.length;
+    const title = textOf(document.querySelector('.am-head h1')) ?? document.title;
+    return empty ? '' : replyText({ title, decisions, comments, remarks, ui, rtl: document.documentElement.dir === 'rtl' });
+  };
+
+  // The text goes through the clipboard API; a page the browser treats as insecure (file://) falls back to selecting a temporary
+  // textarea, because the sheet's own textarea can sit inside a closed fold, where it cannot be selected.
+  // That fallback reports whether it worked. When it does not, the text stays selected (so Cmd/Ctrl+C still copies it) and the
+  // button says what to do instead of showing the "Copied ✓" label the reader cannot trust.
+  const copyText = async (str, btn) => {
+    stuck?.remove();
+    stuck = null;
+    try {
+      await navigator.clipboard.writeText(str);
+      // The close_after_reply script (close-after-reply.js) closes the tab once the reply is on the clipboard.
+      document.dispatchEvent(new Event('am-reply-copied'));
+    } catch {
+      const tmp = Object.assign(document.createElement('textarea'), { value: str });
+      tmp.style.cssText = 'position:fixed;top:-100px;opacity:0';
+      // Inside the sheet while it is open: while a modal dialog is open the rest of the document cannot take focus, so a textarea
+      // in the body can be selected but not focused, and the keyboard shortcut the reader is told to press would copy nothing.
+      // The bottom bar copies while the sheet is closed, and a closed dialog is not rendered, so there the textarea goes in the body.
+      (sheet.open ? sheet : document.body).append(tmp);
+      tmp.select();
+      let copied = false;
+      try {
+        copied = document.execCommand('copy');
+      } catch {
+        copied = false;
+      }
+      if (!copied) {
+        stuck = tmp;
+        btn.textContent = ui.copyFailed;
+        setTimeout(() => { btn.textContent = ui.copy; }, 3000);
+        return;
+      }
+      tmp.remove();
+    }
+    btn.textContent = ui.done;
+    setTimeout(() => { btn.textContent = ui.copy; }, 1400);
+  };
+
+  const open = () => {
+    const reply = compose();
+    if (reply) view.innerHTML = replyViewHtml(reply);
+    else view.textContent = ui.empty;
+    view.scrollTop = 0;
+    text.value = reply;
+    raw.open = false;
+    raw.hidden = !reply;
+    copy.disabled = !reply;
+    if (sheet.showModal) sheet.showModal();
+    else sheet.setAttribute('open', '');
+    (reply ? copy : close).focus();
+  };
+  replyBtn.addEventListener('click', open);
+  close.addEventListener('click', () => (sheet.close ? sheet.close() : sheet.removeAttribute('open')));
+  // A failed copy leaves the text selected for Cmd/Ctrl+C; closing the sheet drops that textarea.
+  sheet.addEventListener('close', () => { stuck?.remove(); stuck = null; });
+  copy.addEventListener('click', () => copyText(text.value, copy));
+
+  const bar = Object.assign(document.createElement('div'), { className: 'am-reply-bar', hidden: true });
+  bar.setAttribute('role', 'region');
+  bar.setAttribute('aria-label', ui.title);
+  const summary = Object.assign(document.createElement('span'), { className: 'am-reply-bar-count' });
+  summary.setAttribute('aria-live', 'polite');
+  const preview = Object.assign(document.createElement('button'), { type: 'button', className: 'am-btn', textContent: ui.preview });
+  const barCopy = Object.assign(document.createElement('button'), { type: 'button', className: 'am-btn am-btn--reply', textContent: ui.copy });
+  preview.addEventListener('click', open);
+  barCopy.addEventListener('click', () => copyText(compose(), barCopy));
+  bar.append(summary, preview, barCopy);
+  document.body.append(bar);
+
+  // The bar shows only the counts that are above zero, and only once there is any input at all.
+  refreshBar = () => {
+    const counts = {
+      answered: touched.size,
+      comments: [...boxes.values()].filter((box) => box.value.trim()).length,
+      remarks: (window.__amRemarkData?.() ?? []).length,
+    };
+    const parts = Object.entries(counts).filter(([, n]) => n > 0).map(([kind, n]) => ui.count[kind].replace('{n}', n));
+    summary.textContent = parts.join(' · ');
+    bar.hidden = !parts.length;
+    document.body.classList.toggle('am-has-reply-bar', parts.length > 0);
+  };
+  document.addEventListener('am-remark-change', () => refreshBar());
+  // Saved remarks are restored by remark.js, which runs after this script in the same <script> element: its data is not there yet.
+  // A microtask runs when that whole element has finished, so the first count includes them.
+  queueMicrotask(() => refreshBar());
+}
+})();
+(() => {
+// Text helpers for remark mode (src/runtime/remark.js): how a marked block is named and quoted.
+// A plain ES module for tests; the page gets it with its `export` keyword dropped (src/runtime/compose.js).
+// A block keeps its mark across `am patch` because the key is its panel, its tag and the start of its text, not its position.
+
+const collapse = (text) => String(text).replace(/\s+/g, ' ').trim();
+
+// The start of a block's text with whitespace collapsed: the readable identity of the block.
+function fingerprint(text, len = 80) {
+  return collapse(text).slice(0, len);
+}
+
+// What the reply quotes of a block: the start of its text, with an ellipsis when it is cut.
+function quote(text, len = 60) {
+  const t = collapse(text);
+  return t.length > len ? `${t.slice(0, len).trimEnd()}…` : t;
+}
+
+// Two blocks with the same text (two identical list items) get the same base key. The n-th one in the page gets "\t<n>" added;
+// a tab cannot be in a fingerprint, which has its whitespace collapsed, so the new key never meets another base key.
+function occurrenceKeys(bases) {
+  const seen = new Map();
+  return bases.map((base) => {
+    const n = seen.get(base) ?? 0;
+    seen.set(base, n + 1);
+    return n ? `${base}\t${n}` : base;
+  });
+}
+
+// Remark mode: the reader turns it on, clicks a block, tags it (suggestion, keep, question, concern) and may add a note.
+// A mark shows as a bar and a note chip inside the block, lives in localStorage like panel comments, and the Reply button carries it
+// back to the agent: reply.js calls window.__amRemarkData, and replyText (reply-text.js) writes the Remarks section.
+(() => {
+  const btn = document.querySelector('[data-am="remark"]');
+  if (!btn) return;
+  const ui = JSON.parse(btn.dataset.ui);
+  const KINDS = ['suggestion', 'keep', 'question', 'concern'];
+  const storeKey = `am-remark:${location.pathname}`;
+  // A page served by `am serve` has no localStorage and the phone may discard its tab; it keeps the marks on the server, in the
+  // same record as the answers (reply.js), so a re-opened page finds them again.
+  const serve = (() => {
+    const { amSave: save, amState: state } = document.body?.dataset ?? {};
+    if (!save) return null;
+    try {
+      return { save, restored: state ? JSON.parse(state) : null };
+    } catch {
+      return { save, restored: null };
+    }
+  })();
+  let saveTimer = null;
+  let pendingPatch = null;
+  const sendSave = (patch) => {
+    fetch(serve.save, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(patch), keepalive: true })
+      .catch(() => {});
+  };
+  const saveSoon = (patch) => {
+    clearTimeout(saveTimer);
+    pendingPatch = patch;
+    saveTimer = setTimeout(() => {
+      pendingPatch = null;
+      sendSave(patch);
+    }, 400);
+  };
+  // A hidden or closing page sends the change it still holds, before the timer can run.
+  const flushSave = () => {
+    if (!pendingPatch) return;
+    clearTimeout(saveTimer);
+    sendSave(pendingPatch);
+    pendingPatch = null;
+  };
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushSave();
+  });
+  window.addEventListener('pagehide', flushSave);
+  // The one definition of a block a reader can mark: the content under <main>. The page and panel titles are left out, because the
+  // reply reads them as text; a panel has its Comment button.
+  // A $$ block on its own is a div; a $$ formula inside a sentence is a span of its paragraph.
+  const BLOCK = 'main :is(h1,h2,h3,h4,h5,h6,p,li,blockquote,pre,table,dd,dt,figure,div.am-math-block):not(.am-head *, .am-panel-head *, .am-toc *)';
+  // A click on these does what it always did.
+  const LIVE = '.am-remark-pop, .am-toolbar, a, button, input, textarea, select, label';
+  const blockAt = (target) => (target.closest(LIVE) ? null : target.closest(BLOCK));
+
+  const WJ = new RegExp(String.fromCharCode(0x2060), 'g'); // word joiners of a right-to-left page (src/bidi.js); not part of the draft's text
+  // A narrow horizontal timeline shows its date and title inline (src/themes/base.css). They stay parts of their own, so a block key
+  // does not change with the width of the window (#194).
+  const OWN_BOX = '.am-timeline--h .am-tl-when, .am-timeline--h .am-tl-title';
+  const inlineBox = new WeakMap();
+  const isInline = (el) => {
+    if (!inlineBox.has(el)) inlineBox.set(el, !el.matches(OWN_BOX) && getComputedStyle(el).display.startsWith('inline'));
+    return inlineBox.get(el);
+  };
+  // The text of a block as the reader sees it: separate lines, cells and timeline parts are joined by a space (textContent would run
+  // "2026" and "Ship" together), and the note chip is not part of it. A formula is one box and reads as the TeX the draft wrote
+  // (src/runtime/math-text.js), not as the MathML tokens.
+  const blockText = (el) => {
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    let text = '';
+    let last = null;
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      if (node.parentElement.closest('.am-mark-note')) continue;
+      let box = formulaOf(node) ?? node.parentElement;
+      while (box !== el && isInline(box)) box = box.parentElement;
+      if (last && box !== last) text += ' ';
+      text += nodeText(node).replace(WJ, '');
+      last = box;
+    }
+    return text;
+  };
+
+  const panelOf = (el) => el.closest('.am-panel')?.id.replace(/^panel-/, '') ?? '';
+  // Block keys, in page order. Built when first needed: a page nobody marked pays nothing.
+  let keys = null;
+  const keyMap = () => {
+    if (!keys) {
+      const blocks = [...document.querySelectorAll(BLOCK)];
+      const ids = occurrenceKeys(blocks.map((el) => `${panelOf(el)}|${el.localName}|${fingerprint(blockText(el))}`));
+      keys = new Map(blocks.map((el, i) => [el, ids[i]]));
+    }
+    return keys;
+  };
+
+  const load = () => {
+    const restored = serve?.restored?.remark;
+    if (Array.isArray(restored)) return restored.filter((m) => typeof m?.key === 'string' && KINDS.includes(m.kind));
+    try {
+      const saved = JSON.parse(localStorage.getItem(storeKey));
+      return Array.isArray(saved) ? saved.filter((m) => typeof m?.key === 'string' && KINDS.includes(m.kind)) : [];
+    } catch {
+      return [];
+    }
+  };
+  // A mark whose block is gone from the page stays stored (it may return with `am patch`); it is neither painted nor sent.
+  const marks = new Map(load().map((m) => [m.key, { key: m.key, kind: m.kind, note: String(m.note ?? '') }]));
+  // Kind and note of a popover closed without Save, by block key, until the page reloads (see open below).
+  const drafts = new Map();
+  const clearBtn = document.createElement('button');
+  clearBtn.type = 'button';
+  clearBtn.className = 'am-btn am-btn--remark-clear';
+  clearBtn.textContent = ui.clear;
+  // Clear all drops saved marks and drafts, so it shows while either exists.
+  const toClear = () => marks.size + drafts.size;
+  const showClear = () => { clearBtn.hidden = toClear() === 0; };
+  btn.insertAdjacentElement('afterend', clearBtn);
+  let clearTimer = null;
+  let clearArmed = false;
+  const resetClear = () => {
+    if (clearTimer !== null) clearTimeout(clearTimer);
+    clearTimer = null;
+    clearArmed = false;
+    clearBtn.classList.remove('is-armed');
+    clearBtn.textContent = ui.clear;
+    showClear();
+  };
+  const armClear = () => {
+    clearArmed = true;
+    clearBtn.classList.add('is-armed');
+    clearBtn.textContent = ui.clearConfirm.replace('{n}', toClear());
+    clearTimer = setTimeout(resetClear, 4000);
+  };
+  clearBtn.addEventListener('click', () => {
+    if (!clearArmed) {
+      armClear();
+      return;
+    }
+    for (const el of document.querySelectorAll('.am-mark')) unpaint(el);
+    marks.clear();
+    // A draft is a remark the reader has not saved yet; Clear all drops it too, so no block reopens with an old kind.
+    drafts.clear();
+    try {
+      localStorage.removeItem(storeKey);
+    } catch {
+      // Storage may be off (private window, a sandboxed page); the in-memory marks still clear.
+    }
+    if (serve) saveSoon({ remark: [] });
+    resetClear();
+    document.dispatchEvent(new Event('am-remark-change'));
+  });
+  const save = () => {
+    try {
+      localStorage.setItem(storeKey, JSON.stringify([...marks.values()]));
+    } catch {
+      // Storage may be off (private window, a sandboxed page); marks then last until the page closes.
+    }
+    if (serve) saveSoon({ remark: [...marks.values()] });
+    // The reply bar (reply.js) shows the number of marks.
+    document.dispatchEvent(new Event('am-remark-change'));
+    showClear();
+  };
+
+  const chip = (el, mark) => {
+    const note = document.createElement(el.localName === 'table' ? 'caption' : 'span');
+    note.className = 'am-mark-note';
+    const kind = document.createElement('b');
+    kind.textContent = ui.kinds[mark.kind];
+    note.append(kind, mark.note ? ` ${mark.note}` : '');
+    return note;
+  };
+  const clearChip = (el) => el.querySelector(':scope > .am-mark-note')?.remove();
+  const paint = (el, mark) => {
+    clearChip(el);
+    el.classList.add('am-mark');
+    el.dataset.kind = mark.kind;
+    // Inside the block, so a list item stays a child of its list. A table takes it as its caption; a list item with a sub-list shows
+    // it under its own text, before the sub-list.
+    const sub = el.querySelector(':scope > ul, :scope > ol');
+    if (el.localName === 'table') el.prepend(chip(el, mark));
+    else if (sub) sub.before(chip(el, mark));
+    else el.append(chip(el, mark));
+  };
+  const unpaint = (el) => {
+    clearChip(el);
+    el.classList.remove('am-mark');
+    delete el.dataset.kind;
+  };
+  showClear();
+  if (marks.size) for (const [el, key] of keyMap()) if (marks.has(key)) paint(el, marks.get(key));
+
+  // The popover edits one block. Save stays off until a kind is picked, and a hint says so. 1–4 pick a kind from the keyboard and
+  // move to the note; Ctrl / Cmd + Enter saves. A popover closed without Save keeps its kind and note as a draft for that block until the page reloads.
+  const pop = document.createElement('div');
+  pop.className = 'am-remark-pop';
+  pop.hidden = true;
+  pop.setAttribute('role', 'dialog');
+  pop.setAttribute('aria-label', ui.button);
+  document.body.append(pop);
+  let opener = null;
+  let anchor = null;
+  let keepDraft = null;
+  const close = (restoreFocus) => {
+    if (pop.hidden) return;
+    keepDraft?.();
+    keepDraft = null;
+    pop.hidden = true;
+    if (restoreFocus) (opener?.isConnected && opener !== document.body ? opener : btn).focus();
+  };
+  const place = () => {
+    const rect = anchor.getBoundingClientRect();
+    const rtl = getComputedStyle(document.documentElement).direction === 'rtl';
+    const x = rtl ? rect.right - pop.offsetWidth : rect.left;
+    // Under the block; a block taller than the window gets the popover at the bottom of the window instead.
+    const y = Math.min(rect.bottom + 6, window.innerHeight - pop.offsetHeight - 8);
+    pop.style.left = `${window.scrollX + Math.min(Math.max(8, x), window.innerWidth - pop.offsetWidth - 8)}px`;
+    pop.style.top = `${window.scrollY + Math.max(8, y)}px`;
+  };
+  const make = (tag, props) => Object.assign(document.createElement(tag), props);
+  const open = (el) => {
+    const key = keyMap().get(el);
+    const mark = marks.get(key);
+    const draft = drafts.get(key);
+    let kind = draft?.kind ?? mark?.kind ?? '';
+    opener = document.activeElement;
+    anchor = el;
+
+    const note = make('textarea', { rows: 2, placeholder: ui.hint, value: draft?.note ?? mark?.note ?? '' });
+    note.setAttribute('aria-label', ui.hint);
+    const keep = make('button', { type: 'button', className: 'am-btn', textContent: ui.save, disabled: !kind });
+    const need = make('span', { className: 'am-remark-need', textContent: ui.need, hidden: Boolean(kind) });
+    keepDraft = () => {
+      if (kind || note.value.trim()) drafts.set(key, { kind, note: note.value });
+      else drafts.delete(key);
+      showClear();
+    };
+    const done = () => { drafts.delete(key); keepDraft = null; showClear(); };
+    keep.addEventListener('click', () => {
+      done();
+      const saved = { key, kind, note: note.value.trim() };
+      marks.set(key, saved);
+      save();
+      paint(el, saved);
+      close(true);
+    });
+    const actions = make('div', { className: 'am-remark-actions' });
+    actions.append(keep);
+    if (mark) {
+      const drop = make('button', { type: 'button', className: 'am-btn', textContent: ui.remove });
+      drop.addEventListener('click', () => {
+        done();
+        marks.delete(key);
+        save();
+        unpaint(el);
+        close(true);
+      });
+      actions.append(drop);
+    }
+    const choose = (k) => {
+      kind = k;
+      for (const other of kindBtns) other.setAttribute('aria-pressed', String(other.dataset.kind === k));
+      keep.disabled = false;
+      need.hidden = true;
+    };
+    const kindBtns = KINDS.map((k, i) => {
+      const kb = make('button', { type: 'button', className: 'am-remark-kind', textContent: ui.kinds[k] });
+      kb.dataset.kind = k;
+      kb.dataset.n = i + 1;
+      kb.setAttribute('aria-pressed', String(k === kind));
+      kb.addEventListener('click', () => choose(k));
+      return kb;
+    });
+    // Ctrl / Cmd + Enter presses Save (nothing while Save waits for a kind). A digit types into the note, so it picks a kind
+    // only while the focus is outside the note.
+    pop.onkeydown = (e) => {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.isComposing) {
+        e.preventDefault();
+        if (!keep.disabled) keep.click();
+        return;
+      }
+      if (e.target === note || e.ctrlKey || e.metaKey || e.altKey || !/^[1-4]$/.test(e.key)) return;
+      e.preventDefault();
+      choose(KINDS[Number(e.key) - 1]);
+      note.focus();
+    };
+    actions.append(need);
+    pop.replaceChildren(make('div', { className: 'am-remark-kinds' }), note, actions);
+    pop.firstChild.append(...kindBtns);
+    pop.hidden = false;
+    place();
+    (kindBtns.find((b) => b.dataset.kind === kind) ?? kindBtns[0]).focus({ preventScroll: true });
+  };
+
+  // Picking works only while remark mode is on. A click on a marked block edits its mark, on a plain block starts one.
+  // The block under the pointer gets an outline: the same blockAt decides what is outlined and what a click picks.
+  let hover = null;
+  const track = (e) => {
+    const el = e.type === 'mouseout' && e.relatedTarget === null ? null : blockAt(e.target);
+    if (el === hover) return;
+    hover?.classList.remove('am-remark-hover');
+    hover = el;
+    hover?.classList.add('am-remark-hover');
+  };
+  const pick = (e) => {
+    const el = blockAt(e.target);
+    if (el) open(el);
+  };
+  // The keyboard picks too: while the mode is on, every block takes focus with Tab, and Enter or Space opens its popover. A block
+  // that already had a tabindex keeps it; only the ones the mode added lose it again.
+  const pickKey = (e) => {
+    if ((e.key !== 'Enter' && e.key !== ' ') || e.ctrlKey || e.metaKey || e.altKey || !e.target.hasAttribute?.('data-am-pick')) return;
+    e.preventDefault();
+    open(e.target);
+  };
+  const focusable = (on) => {
+    if (!on && !keys) return; // the mode starts off: a page nobody marked builds no block keys
+    for (const el of keyMap().keys()) {
+      if (on && !el.hasAttribute('tabindex')) {
+        el.tabIndex = 0;
+        el.setAttribute('data-am-pick', '');
+      } else if (!on && el.hasAttribute('data-am-pick')) {
+        el.removeAttribute('tabindex');
+        el.removeAttribute('data-am-pick');
+      }
+    }
+  };
+  const setMode = (on) => {
+    btn.classList.toggle('is-on', on);
+    btn.setAttribute('aria-pressed', String(on));
+    const toggle = on ? 'addEventListener' : 'removeEventListener';
+    document.body[toggle]('click', pick);
+    document.body[toggle]('mouseover', track);
+    document.body[toggle]('mouseout', track);
+    document.body[toggle]('keydown', pickKey);
+    focusable(on);
+    if (!on) {
+      track({ type: 'mouseout', relatedTarget: null });
+      close(false);
+    }
+  };
+  btn.addEventListener('click', () => setMode(btn.getAttribute('aria-pressed') !== 'true'));
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') close(true);
+  });
+  // A click outside the popover closes it; the same click may then start another mark.
+  document.addEventListener('click', (e) => {
+    if (!pop.hidden && !pop.contains(e.target)) close(false);
+  }, true);
+  setMode(false);
+
+  // What the Reply button reads: the marked blocks that are on the page, in page order.
+  window.__amRemarkData = () => {
+    if (!marks.size) return [];
+    const live = [];
+    for (const [el, key] of keyMap()) {
+      const mark = marks.get(key);
+      if (mark) live.push({ panel: panelOf(el), quote: quote(blockText(el)), kind: mark.kind, note: mark.note });
+    }
+    return live;
+  };
+})();
+})();
+(() => {
+// Pure planner for justified ("photo wall") rows on sheet pages. No DOM access.
+//
+// This file must stay inlinable into the page script: top-level declarations only, no imports, and the exports are
+// `planLayout` and the constants the DOM adapter shares (STEP, MAX_SCALE, MIN_SCALE). The page build strips the `export ` keyword,
+// and test/layout-plan.test.js checks that this still works.
+//
+// planLayout({ width, gap, cols, panels }) -> { rows: [{ columns: [{ panels: [index, ...], width }], height }] }
+//
+// Input (all lengths in px):
+//   width   container width
+//   gap     space between columns, and between two panels stacked in one column
+//   cols    most columns in one row (the planner never uses more than MAX_COLUMNS, but spans stay shares of `cols`)
+//   panels  one entry per panel, in reading order:
+//     samples   [{ w, h }] panel height at sampled widths, ascending by w (heights between samples are interpolated)
+//     minWidth  narrowest feasible width (clamped to `width`)
+//     maxWidth  widest useful width; beyond it the panel only gains empty space (default: no limit)
+//     natural   natural diagram width for a diagram-only panel (default: none)
+//     pad       panel width not used by the diagram (padding and border; default 0)
+//     span      the author's width hint in grid columns (default 1); span >= cols keeps the panel alone in its row
+//
+// Output: { rows, maxScale }. Rows are in reading order; a row is a list of columns (at most `cols`); a column holds one panel or two
+// consecutive panels, stacked. For integer inputs the column widths plus the gaps between them equal `width`.
+// Rows are chosen by dynamic programming over break points; widths by a search in STEP px steps. Cost per row:
+//   H = tallest column; waste = sum((H - columnHeight) * columnWidth) + sum over diagrams wider than maxWidth of (w - maxWidth) * h
+//   dev = sum(((w - preferred) / oneColumn)^2) + SCALE_WEIGHT * sum over diagrams of (ln(scale) / ln(MAX_SCALE))^2
+//   cost = waste / 1000 + PREF_WEIGHT * dev * H
+// Scale band: diagrams on one page stay at similar sizes. With the result's `maxScale` as the diagram size limit, a diagram is
+// shown at scale min(maxScale, (width - pad) / natural). The planner tries a few bands [lo, lo * BAND_RATIO] (lo in BAND_LOS) and
+// keeps the cheapest plan in which no diagram is narrower than scale lo and none is shown above the band's top, so the largest and
+// smallest diagram scale on the page differ by at most BAND_RATIO. A panel wider than its diagram's top size keeps the diagram at
+// that size, and the page script must set the diagram's max-width to natural * maxScale. The band starts no higher than the
+// largest scale the page allows the least roomy diagram, so one wide diagram lowers the band for the others.
+// If no band is feasible the plan is made without a band (maxScale = MAX_SCALE); if no plan fits (or the input is unusable) the
+// result is a single column: one panel per row at the full width.
+
+const STEP = 10;
+const MAX_SCALE = 1.25;
+const MIN_SCALE = 0.75; // the narrowest a diagram is shown, as a share of its natural width
+const MAX_COLUMNS = 6; // rows with more columns are unreadable, and the search grows steeply with the column count
+const BAND_RATIO = 1.25; // the largest and smallest diagram scale on a page differ by at most this
+const BAND_LOS = [MIN_SCALE, 0.85, 0.95, 1]; // lower ends tried for the band; lo * BAND_RATIO is the upper end (1.25 means no upper limit)
+const SCALE_WEIGHT = 3;
+const PREF_WEIGHT = 0.15;
+
+function heightAt(samples, w) {
+  const i = samples.findIndex((s) => s.w >= w);
+  if (i === -1) return samples[samples.length - 1].h;
+  if (i === 0) return samples[0].h;
+  const a = samples[i - 1];
+  const b = samples[i];
+  return a.h + ((b.h - a.h) * (w - a.w)) / (b.w - a.w);
+}
+
+// Every way to split `len` consecutive panels into columns of 1 or 2 panels, as lists of column sizes.
+function splits(len) {
+  if (len === 0) return [[]];
+  return [1, 2].filter((k) => k <= len).flatMap((k) => splits(len - k).map((rest) => [k, ...rest]));
+}
+
+function singleColumn(width, panels) {
+  return { rows: panels.map((_, i) => ({ columns: [{ panels: [i], width }], height: 0 })) };
+}
+
+function planLayout({ width, gap = 0, cols = 3, panels }) {
+  const usable = Number.isFinite(width) && width > 0 && panels.every((p) => Array.isArray(p.samples) && p.samples.length > 0);
+  if (!usable) return singleColumn(width, panels);
+
+  // `cols` stays the unit of the author's spans; no row gets more than MAX_COLUMNS columns however large `cols` is.
+  const maxColumns = Math.min(cols, MAX_COLUMNS);
+  const oneColumn = Math.max(1, (width - gap * (cols - 1)) / cols);
+  // Per-panel limits. With a band [lo, lo * BAND_RATIO], a diagram is no narrower than scale lo and shown at most at the top of the
+  // band: a wider panel keeps it at that size and gains empty space, which the cost counts as waste.
+  const prepare = (lo) => panels.map((p) => {
+    const pad = p.pad ?? 0;
+    const diagram = lo > 0 && p.natural > 0;
+    const scaleCap = diagram ? Math.min(MAX_SCALE, lo * BAND_RATIO) : MAX_SCALE;
+    return {
+      ...p,
+      minWidth: Math.min(width, Math.max(Math.ceil(p.minWidth || 0), diagram ? Math.ceil(p.natural * lo + pad) : 0)),
+      maxWidth: Math.min(p.maxWidth ?? Infinity, diagram ? p.natural * scaleCap + pad : Infinity),
+      scaleCap,
+      pad,
+      preferred: Math.min(width, (p.span ?? 1) * oneColumn + ((p.span ?? 1) - 1) * gap),
+      alone: (p.span ?? 1) >= cols,
+    };
+  });
+  let info = prepare(0);
+  // Beyond its maxWidth a panel only gains empty space, so its height stops changing there (matters when a band lowers maxWidth).
+  const heightOf = (p, w) => heightAt(p.samples, Math.min(w, p.maxWidth));
+  const columnHeight = (col, w) => col.reduce((h, k) => h + heightOf(info[k], w), 0) + gap * (col.length - 1);
+
+  function bestColumns(columns) {
+    const avail = width - gap * (columns.length - 1);
+    const mins = columns.map((c) => Math.max(...c.map((k) => info[k].minWidth)));
+    const minsFrom = mins.map((_, n) => mins.slice(n).reduce((s, w) => s + w, 0));
+    if (minsFrom[0] > avail) return null;
+    let best = null;
+    const evaluate = (ws) => {
+      const hs = ws.map((w, n) => columnHeight(columns[n], w));
+      const H = Math.max(...hs);
+      let waste = 0;
+      let dev = 0;
+      ws.forEach((w, n) => {
+        waste += (H - hs[n]) * w;
+        for (const k of columns[n]) {
+          const p = info[k];
+          if (w > p.maxWidth) waste += (w - p.maxWidth) * heightOf(p, w);
+          dev += ((w - p.preferred) / oneColumn) ** 2;
+          if (p.natural > 0) {
+            const scale = Math.min(p.scaleCap, Math.max(w - p.pad, 1) / p.natural);
+            dev += SCALE_WEIGHT * (Math.log(scale) / Math.log(MAX_SCALE)) ** 2;
+          }
+        }
+      });
+      const cost = waste / 1000 + PREF_WEIGHT * dev * H;
+      if (!best || cost < best.cost) best = { cost, ws, height: H, columns };
+    };
+    const choose = (n, used, ws) => {
+      if (n === columns.length - 1) {
+        const w = avail - used;
+        if (w >= mins[n]) evaluate([...ws, w]);
+        return;
+      }
+      for (let w = mins[n]; used + w + minsFrom[n + 1] <= avail; w += STEP) choose(n + 1, used + w, [...ws, w]);
+    };
+    choose(0, 0, []);
+    return best;
+  }
+
+  // Best columns for one row of panels i..j.
+  function bestRow(i, j) {
+    if (j > i && info.slice(i, j + 1).some((p) => p.alone)) return null;
+    let best = null;
+    for (const split of splits(j - i + 1)) {
+      if (split.length > maxColumns) continue;
+      let next = i;
+      const columns = split.map((size) => Array.from({ length: size }, () => next++));
+      const r = bestColumns(columns);
+      if (r && (!best || r.cost < best.cost)) best = r;
+    }
+    return best;
+  }
+
+  // Row breaks in reading order, for the band set up in `info`. A row holds at most 2 * maxColumns panels. Null if nothing fits.
+  function solve() {
+    const n = panels.length;
+    const total = Array(n + 1).fill(Infinity);
+    const from = Array(n + 1).fill(-1);
+    const chosen = Array(n + 1).fill(null);
+    total[0] = 0;
+    for (let j = 1; j <= n; j++) {
+      for (let i = Math.max(0, j - 2 * maxColumns); i < j; i++) {
+        if (total[i] === Infinity) continue;
+        const r = bestRow(i, j - 1);
+        if (r && total[i] + r.cost < total[j]) {
+          total[j] = total[i] + r.cost;
+          from[j] = i;
+          chosen[j] = r;
+        }
+      }
+    }
+    if (total[n] === Infinity) return null;
+    const rows = [];
+    for (let j = n; j > 0; j = from[j]) {
+      const r = chosen[j];
+      rows.unshift({ columns: r.columns.map((panelsInColumn, c) => ({ panels: panelsInColumn, width: r.ws[c] })), height: r.height });
+    }
+    return { rows, cost: total[n] };
+  }
+
+  let best = null;
+  const diagrams = panels.filter((p) => p.natural > 0);
+  if (diagrams.length > 1) {
+    // No diagram can be shown larger than the page allows, so the band cannot start above the smallest of those limits.
+    const reach = Math.min(...diagrams.map((p) => Math.min(MAX_SCALE, Math.max(width - (p.pad ?? 0), 1) / p.natural)));
+    for (const lo of new Set([...BAND_LOS.filter((x) => x < reach), reach])) {
+      info = prepare(lo);
+      const r = solve();
+      if (r && (!best || r.cost < best.cost)) best = { ...r, maxScale: Math.min(MAX_SCALE, lo * BAND_RATIO) };
+    }
+    info = prepare(0);
+  }
+  best ??= solve();
+  return best ? { rows: best.rows, maxScale: best.maxScale ?? MAX_SCALE } : singleColumn(width, panels);
+}
+
+// DOM adapter for the sheet's justified ("photo wall") layout. Not a module: compose.js puts it after src/runtime/layout-plan.js
+// (which defines planLayout and the shared STEP, MAX_SCALE, MIN_SCALE) inside one function scope of the page script.
+//
+// It measures every panel at sampled widths, asks planLayout for rows and column widths, and applies them with flexbox.
+// The rendered HTML keeps the plain CSS grid: with JavaScript off, at the single-column breakpoint, or while printing, the grid is what
+// shows (the planned widths belong to the screen width, so print never gets a mix of the two); after printing the layout comes back.
+
+const grid = document.querySelector('.am-grid');
+const panels = grid ? [...grid.children].filter((el) => el.classList.contains('am-panel')) : [];
+
+if (panels.length > 1) {
+  const SINGLE_COLUMN = '(max-width: 760px)'; // the single-column breakpoint in src/themes/base.css
+  const TWO_COLUMNS = '(max-width: 1100px)'; // below this the CSS grid has two columns
+  const SAMPLE_STEP = 20; // width sampling step, px; the planner interpolates between samples
+  // The width floors are text sizes (px at scale 1). They take the page scale on every pass, so a runtime change of --am-scale re-plans.
+  const TEXT_MIN = 260; // text keeps at least about 16 CJK characters per line
+  const TABLE_COL_MIN = 96; // per table column, px
+  const TABLE_COL_COMFORT = 220; // a table column this wide reads three or four words per line
+  const KV_COL_MIN = 120; // per key-value column, px: a value of two short words stays on one line
+  const DIAGRAM_MIN = 160;
+  const RESIZE_DELAY = 150;
+  const pageScale = () => {
+    const scale = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--am-scale'));
+    return Number.isFinite(scale) && scale > 0 ? scale : 1;
+  };
+  const OVERFLOWING = '.am-table-wrap, .am-diagram, .am-annot-scroll, pre';
+
+  // The first-row cells of each table carry the column widths fitTables() sets, so restore() resets them too.
+  const tables = [...grid.querySelectorAll('.am-table-wrap > table')];
+  const headCells = (table) => [...(table.rows[0]?.cells ?? [])];
+  const original = new Map([grid, ...panels, ...grid.querySelectorAll('.am-diagram > svg'), ...tables.flatMap(headCells)].map((el) => [el, el.getAttribute('style')]));
+  const restoreStyle = (el) => (original.get(el) === null ? el.removeAttribute('style') : el.setAttribute('style', original.get(el)));
+
+  // Back to the plain grid markup and styles.
+  const restore = () => {
+    for (const box of grid.querySelectorAll(':scope > .am-col')) box.replaceWith(...box.children);
+    for (const el of original.keys()) restoreStyle(el);
+  };
+
+  // The author's width hint, rendered as data-span only when the author wrote one. The inline grid-column is the no-JavaScript fallback
+  // and may hold spans the server added, so it is never read here.
+  const spanHint = (el) => Number(el.dataset.span) || 1;
+  const diagramOnly = (el) => {
+    const body = el.querySelector(':scope > .am-panel-body');
+    return body && body.children.length === 1 ? body.querySelector(':scope > .am-diagram > svg') : null;
+  };
+  const naturalWidth = (svg) => Number(svg.getAttribute('width')) || 0;
+
+  // The width each column of a table reads well at: its natural width, but no wider than TABLE_COL_COMFORT unless its longest word
+  // needs more. Below it the cells wrap one word per line, so a panel with a table is not planned narrower than the sum, and
+  // fitTables() keeps each column at its share (the browser would otherwise give the room to the longest column).
+  const columnWidths = new Map();
+  function comfortableWidth(table, scale) {
+    const saved = table.getAttribute('style');
+    const columns = (width) => {
+      table.style.width = width;
+      return headCells(table).map((cell) => cell.getBoundingClientRect().width);
+    };
+    const most = columns('max-content');
+    const least = columns('min-content');
+    if (saved === null) table.removeAttribute('style');
+    else table.setAttribute('style', saved);
+    // A max-content column comes out a fraction under its text in Chrome, enough to wrap the last word, so it gets one pixel more.
+    const want = most.map((w, i) => Math.min(Math.ceil(w) + 1, Math.max(least[i], TABLE_COL_COMFORT * scale)));
+    columnWidths.set(table, { least, want });
+    return want.reduce((sum, w) => sum + w, 0);
+  }
+
+  // After the layout: each column gets at least its comfortable width, scaled down toward its longest word when the panel came out
+  // narrower than planned (a page narrower than the table), so a table scrolls sideways only when even its longest words do not fit.
+  function fitTables() {
+    for (const [table, { least, want }] of columnWidths) {
+      // Each width is rounded up to a whole pixel (a column a fraction too narrow wraps its last word), so keep a pixel per column spare.
+      const room = table.parentElement.clientWidth - want.length;
+      const low = least.reduce((s, w) => s + w, 0);
+      const high = want.reduce((s, w) => s + w, 0);
+      const k = high > room ? Math.max(0, (room - low) / (high - low || 1)) : 1;
+      headCells(table).forEach((cell, i) => { cell.style.minWidth = `${Math.ceil(least[i] + (want[i] - least[i]) * k)}px`; });
+    }
+  }
+
+  // Height (and, for panels with tables or code, the narrowest width without sideways scrolling) at sampled widths.
+  // Only one panel is displayed while it is measured, so each width change lays out that panel alone.
+  function measure(width) {
+    const scale = pageScale();
+    grid.style.display = 'block';
+    for (const el of panels) {
+      el.style.display = 'none';
+      el.style.boxSizing = 'border-box';
+      for (const svg of el.querySelectorAll('.am-diagram > svg')) {
+        svg.style.width = '100%';
+        svg.style.maxWidth = `${naturalWidth(svg) * MAX_SCALE}px`;
+      }
+    }
+    const info = panels.map((el) => {
+      const svg = diagramOnly(el);
+      const svgs = [...el.querySelectorAll('.am-diagram > svg')];
+      const scrollers = el.querySelectorAll(OVERFLOWING);
+      const tableCols = Math.max(0, ...[...el.querySelectorAll('table tr:first-child')].map((tr) => tr.children.length));
+      el.style.display = '';
+      el.style.width = `${width}px`;
+      const pad = svg ? el.offsetWidth - svg.parentElement.clientWidth : 0;
+      const natural = svg ? naturalWidth(svg) : 0;
+      const shrunk = Math.max(0, ...svgs.map((s) => naturalWidth(s) * MIN_SCALE)) + (svg ? pad : 34);
+      const tableFloors = [...el.querySelectorAll('.am-table-wrap > table')].map((t) => comfortableWidth(t, scale) + el.offsetWidth - t.parentElement.clientWidth);
+      // A key-value grid gets the same care: the room a table gains must not squeeze a neighbouring grid to one word per line.
+      const kvs = [...el.querySelectorAll('.am-kv')].map((kv) => (Number(kv.style.getPropertyValue('--kv-cols')) || 1) * KV_COL_MIN * scale + el.offsetWidth - kv.clientWidth);
+      const floor = svg ? Math.max(DIAGRAM_MIN * scale, natural * MIN_SCALE + pad) : Math.max(TEXT_MIN * scale, shrunk, tableCols * TABLE_COL_MIN * scale + 34, ...tableFloors, ...kvs);
+      const from = Math.min(width, Math.floor(floor / STEP) * STEP);
+      const samples = [];
+      let fits = null;
+      for (let w = from; ; w += SAMPLE_STEP) {
+        w = Math.min(w, width);
+        el.style.width = `${w}px`;
+        if (fits === null && !svg && scrollers.length && ![...scrollers].some((s) => s.scrollWidth > s.clientWidth + 1)) fits = w;
+        samples.push({ w, h: el.offsetHeight });
+        if (w === width) break;
+      }
+      el.style.display = 'none';
+      return {
+        samples,
+        minWidth: svg ? floor : Math.max(floor, fits ?? (scrollers.length ? width : 0)),
+        maxWidth: svg ? natural * MAX_SCALE + pad : Infinity,
+        natural,
+        pad,
+        span: spanHint(el),
+      };
+    });
+    for (const el of panels) {
+      el.style.display = '';
+      el.style.width = '';
+    }
+    return info;
+  }
+
+  // Each column gets a fixed width. A row adds up to the full width, so flex-wrap breaks rows by itself.
+  // Stacked panels go into a column wrapper whose last panel absorbs the extra height.
+  function apply(plan, gap) {
+    grid.style.display = 'flex';
+    grid.style.flexWrap = 'wrap';
+    grid.style.alignItems = 'stretch';
+    grid.style.gap = `${gap}px`;
+    for (const el of panels) {
+      el.style.gridColumn = '';
+      el.style.gridRow = '';
+      el.style.flex = '0 0 auto';
+    }
+    for (const row of plan.rows) {
+      for (const col of row.columns) {
+        const width = `${col.width}px`;
+        if (col.panels.length === 1) {
+          panels[col.panels[0]].style.width = width;
+          continue;
+        }
+        const box = document.createElement('div');
+        box.className = 'am-col';
+        box.style.cssText = `width:${width};flex:0 0 auto;display:flex;flex-direction:column;gap:${gap}px`;
+        panels[col.panels[0]].before(box);
+        for (const k of col.panels) {
+          panels[k].style.width = '';
+          box.append(panels[k]);
+        }
+        panels[col.panels[col.panels.length - 1]].style.flex = '1 1 auto';
+      }
+    }
+  }
+
+  // Diagram-only panels show their diagram at most at the top of the page's scale band; a wider panel gains empty space instead.
+  function capDiagrams(maxScale) {
+    for (const el of panels) {
+      const svg = diagramOnly(el);
+      if (svg) svg.style.maxWidth = `${naturalWidth(svg) * maxScale}px`;
+    }
+  }
+
+  const containerWidth = () => Math.floor(grid.getBoundingClientRect().width);
+
+  function justify() {
+    if (printing || printQuery.matches) return;
+    try {
+      // A vertical scrollbar can appear or vanish once the rows change height; plan again if the width moved.
+      let planned = -1;
+      for (let pass = 0; pass < 3 && planned !== containerWidth(); pass++) {
+        restore();
+        if (matchMedia(SINGLE_COLUMN).matches) return;
+        planned = containerWidth();
+        const gap = parseFloat(getComputedStyle(grid).columnGap) || 0;
+        const cols = Math.max(1, Number(getComputedStyle(grid).getPropertyValue('--cols')) || 3);
+        const plan = planLayout({ width: planned, gap, cols: matchMedia(TWO_COLUMNS).matches ? Math.min(cols, 2) : cols, panels: measure(planned) });
+        apply(plan, gap);
+        capDiagrams(plan.maxScale);
+        fitTables();
+      }
+      // The width never settled: columns planned for another width would overflow or leave gaps, so show the plain grid.
+      if (planned !== containerWidth()) restore();
+    } catch {
+      restore();
+    }
+  }
+
+  // Printing: back to the plain grid (spans and all), and the layout again afterwards. Browsers disagree on which of the
+  // `beforeprint` event and the print media query change fires first, or at all, so listen to both; both are idempotent.
+  // While `printing` is set (beforeprint to afterprint) justify() does nothing, so a late resize cannot bring flex widths into the print layout.
+  let printing = false;
+  const printQuery = matchMedia('print');
+  let timer = 0;
+  const later = () => {
+    clearTimeout(timer);
+    timer = setTimeout(justify, RESIZE_DELAY);
+  };
+  const toPrint = () => {
+    clearTimeout(timer);
+    restore();
+  };
+  justify();
+  addEventListener('resize', later);
+  // A reader's text size changes every panel's text widths and heights, so the sheet is planned again like a resize.
+  addEventListener('am-scale', later);
+  addEventListener('beforeprint', () => {
+    printing = true;
+    toPrint();
+  });
+  addEventListener('afterprint', () => {
+    printing = false;
+    later();
+  });
+  printQuery.addEventListener('change', (e) => (e.matches ? toPrint() : later()));
+  // Late changes to panel heights: web fonts arriving, and images inside the grid finishing their load (load does not bubble, so capture it).
+  document.fonts?.ready.then(later);
+  grid.addEventListener('load', later, true);
+  // Switching theme changes paddings and fonts, hence panel heights.
+  document.querySelector('[data-am="theme"]')?.addEventListener('click', later);
+}
+})();
+// The outline rail of a doc page (src/templates/doc.js): the markup already works without a script, <details> opens the list and the
+// links jump. This adds the hover dwell, the open direction, the keys, the tap outside and the marking of the current section.
+(() => {
+  const nav = document.querySelector('nav.am-toc');
+  const box = nav && nav.querySelector('details.am-outline');
+  if (!box) return;
+  const sum = box.querySelector('summary');
+  const links = Array.from(box.querySelectorAll('.am-outline-list a'));
+  const ticks = Array.from(box.querySelectorAll('.am-tick'));
+  const LIST_W = 240; // keep in step with .am-outline-list in src/themes/base.css
+  const EDGE = 10; // the 6px gap to the rail plus a margin to the viewport edge
+  let current = '';
+  let byHover = false;
+  let dwell = 0;
+  let leave = 0;
+
+  // Open away from the body when the room outside the rail fits the list; otherwise over the body. Never past the viewport.
+  const place = () => {
+    const r = sum.getBoundingClientRect();
+    const right = r.left + r.width / 2 > innerWidth / 2;
+    const room = right ? innerWidth - r.right : r.left;
+    nav.dataset.flow = room >= Math.min(LIST_W, innerWidth - 48) + EDGE ? 'out' : 'in';
+  };
+  const setOpen = (open) => {
+    if (open) place();
+    box.open = open;
+    if (!open) byHover = false;
+  };
+  const peek = (tick) => ticks.forEach((t) => t.classList.toggle('is-peek', t === tick));
+  const currentLink = () => links.find((a) => a.getAttribute('aria-current') === 'true') || links[0];
+
+  const mark = (id) => {
+    current = id;
+    ticks.forEach((t) => t.classList.toggle('is-current', t.dataset.id === id));
+    links.forEach((a) => {
+      if (a.getAttribute('href') === `#panel-${id}`) a.setAttribute('aria-current', 'true');
+      else a.removeAttribute('aria-current');
+    });
+  };
+  const sections = ticks.map((t) => document.getElementById(`panel-${t.dataset.id}`)).filter(Boolean);
+  if (sections.length) mark(sections[0].id.slice(6));
+  if (sections.length && 'IntersectionObserver' in window) {
+    // A thin band a third of the way down the viewport: the section across it is the one being read.
+    const seen = new Set();
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((e) => (e.isIntersecting ? seen.add(e.target) : seen.delete(e.target)));
+      const hit = sections.filter((s) => seen.has(s)).pop();
+      if (hit && hit.id.slice(6) !== current) mark(hit.id.slice(6));
+    }, { rootMargin: '-30% 0px -65% 0px' });
+    sections.forEach((s) => io.observe(s));
+  }
+
+  place();
+  addEventListener('resize', place);
+
+  // Mouse: dwelling on the rail opens the list, leaving it closes a list opened that way. A tap or click opens it for good.
+  box.addEventListener('pointerenter', (e) => {
+    clearTimeout(leave);
+    if (e.pointerType !== 'mouse' || box.open) return;
+    dwell = setTimeout(() => { setOpen(true); byHover = true; }, 300);
+  });
+  box.addEventListener('pointerleave', () => {
+    clearTimeout(dwell);
+    // A link the keyboard moved into keeps the list open; focusout closes it once the focus leaves the nav.
+    if (byHover) leave = setTimeout(() => { if (!nav.contains(document.activeElement)) setOpen(false); }, 250);
+  });
+  sum.addEventListener('click', (e) => {
+    clearTimeout(dwell);
+    if (box.open && byHover) { e.preventDefault(); byHover = false; return; }
+    place();
+  });
+  box.addEventListener('toggle', () => { if (box.open) peek(null); });
+
+  // Keyboard: the summary opens with Enter or Space (native); arrows move through the links; Esc closes and returns to the rail.
+  sum.addEventListener('focus', () => {
+    if (sum.matches(':focus-visible')) peek(ticks.find((t) => t.dataset.id === current));
+  });
+  sum.addEventListener('blur', () => peek(null));
+  nav.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && box.open) {
+      e.preventDefault();
+      setOpen(false);
+      sum.focus();
+      return;
+    }
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return;
+    const at = links.indexOf(document.activeElement);
+    if (at < 0 && e.target !== sum) return;
+    e.preventDefault();
+    if (!box.open) setOpen(true);
+    let next;
+    if (e.key === 'Home') next = links[0];
+    else if (e.key === 'End') next = links[links.length - 1];
+    else if (at < 0) next = e.key === 'ArrowDown' ? currentLink() : links[links.length - 1];
+    else next = links[Math.min(links.length - 1, Math.max(0, at + (e.key === 'ArrowDown' ? 1 : -1)))];
+    next.focus();
+  });
+  nav.addEventListener('focusout', (e) => {
+    if (box.open && e.relatedTarget && !nav.contains(e.relatedTarget)) setOpen(false);
+  });
+
+  // Choosing a section or tapping outside closes the list.
+  links.forEach((a) => a.addEventListener('click', () => setOpen(false)));
+  document.addEventListener('pointerdown', (e) => { if (box.open && !nav.contains(e.target)) setOpen(false); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && box.open && !nav.contains(e.target)) setOpen(false); });
+})();
+})();
+</script>
+</body>
+</html>
