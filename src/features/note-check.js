@@ -247,7 +247,8 @@
   };
 
   /**
-   * 命中程度：0=没命中，1=原文一致，2=只差括号补充/标题后缀，3=单位名行政区划写法不同。
+   * 命中程度：0=没命中，1=原文一致，2=只差括号补充/标题后缀，3=单位名行政区划写法不同，
+   * 4=长词里只差 1 个字（卡片值被 OCR/录入认错，正文是另一个字）。
    * 界面据此在「找到了」后面补一句「写法略有差异」，避免用户以为插件在乱认。
    */
   NoteCheck.matchMode = function (hay, needle, kind) {
@@ -273,8 +274,36 @@
       const t = n.replace(/(?:app|客户端|安卓版|ios版|手机版|平台版)$/i, '');
       if (t.length >= 2 && t !== n && h.indexOf(t) >= 0) return 2;
     }
+
+    /* ④ 【2026-11-11】卡片值被 OCR/录入错了 1 个字，正文里其实是另一个字
+     * （用户案例：卡片「飞翔的红蜻挺」，正文是「飞翔的红蜻蜓」）。
+     * 只在**长词 + 有足够多汉字**时放宽：短词放 1 个字就变成另一家了，宁可判红；
+     * 纯数字/编号不许近似（登记号差一位就是另一个号）。 */
+    if (n.length >= 6 && n.length <= 40 && chineseCount(n) >= 4 && nearIndexOf(h, n) >= 0) return 4;
     return 0;
   };
+
+  function chineseCount(s) {
+    const m = String(s == null ? '' : s).match(/[\u4e00-\u9fa5]/g);
+    return m ? m.length : 0;
+  }
+
+  /** 在 h 里找与 n **等长、只差 1 个字符**的窗口；找不到返回 -1。 */
+  function nearIndexOf(h, n) {
+    const len = n.length;
+    if (h.length < len) return -1;
+    for (let i = 0; i + len <= h.length; i++) {
+      let diff = 0;
+      for (let j = 0; j < len; j++) {
+        if (h.charCodeAt(i + j) !== n.charCodeAt(j)) {
+          diff++;
+          if (diff > 1) break;
+        }
+      }
+      if (diff === 1) return i;
+    }
+    return -1;
+  }
 
   /** 「隐私政策链接」抓到的东西在正文里有没有：整串没有就退一步只看域名。 */
   function linkHit(policy, link) {

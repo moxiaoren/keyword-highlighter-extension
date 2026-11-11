@@ -838,23 +838,30 @@
         }
       }
     }
-    /* 【2.0.8.18 P0.5】DOM 与替代值合并：DOM 先占位（它是页面上的权威来源），
-     * 缺口按「已进表的同名字段」补齐。补齐只发生在**这个字段确实没取到值**时，不覆盖 DOM 值。 */
-    const gotNames = seen.map((n) => (TN ? TN.keyOf(n) : n.toLowerCase()));
+    /* 【2026-11-11 用户口径·案例②】DOM 与「进表值」是**并集**，不是「DOM 缺了才拿进表值补」。
+     * 用户原话：著作权人指向抓取字段 b 的图片，命中后进表 `著作权人 | b公司`；再把著作权人的
+     * 动态关键词指向抓取字段 c 的图 —— 图 c 里有 `b公司` 就算命中。
+     * 旧实现只在 DOM 取不到该字段时才回落读进表行，而字段 c 一般**有** DOM 值 ⇒ gotNames 已含
+     * 该字段 ⇒ b公司 永远不参与判定，用户看到的正是「你理解错了我的意思」。
+     * 现在：DOM 值先入（页面上的权威来源），随后把同名字段的进表值**全部**并入（多张图各算一条），
+     * 由 `pushValue` 的 keyOf 去重兜住重复；`missing` 只按「最终有没有值」算。 */
     const extra = extraValues();
+    const gotNames = seen.map((n) => (TN ? TN.keyOf(n) : n.toLowerCase()));
+    const pushName = (k) => { if (gotNames.indexOf(k) < 0) gotNames.push(k); };
     for (const n of want) {
       const k = TN ? TN.keyOf(n) : String(n).toLowerCase();
-      if (gotNames.indexOf(k) >= 0) continue;
+      let added = 0;
       for (const row of extra) {
         const rl = String((row && row.label) || '');
         if (!rl) continue;
         const rk = TN ? TN.keyOf(rl) : rl.toLowerCase();
         if (rk !== k) continue;
         if (!pushValue(row.value)) continue;
-        if (info.fromExtra.indexOf(n) < 0) info.fromExtra.push(n);
-        gotNames.push(k);
-        break;
+        added++;
       }
+      if (!added) continue;
+      pushName(k);
+      if (info.fromExtra.indexOf(n) < 0) info.fromExtra.push(n);
     }
     /* 判据太弱（`12`/`abc`）的值单列：它们不是"没取到"，也不是"图上没有" */
     info.values = [];

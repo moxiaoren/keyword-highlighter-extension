@@ -99,6 +99,33 @@ module.exports = async function run() {
     eq(calls, 1, '缓存命中不许再联网');
   });
 
+  await test('https 撞证书错误时换 http 再抓（sknow 案例）', async () => {
+    const seen = [];
+    const impl = async (u) => {
+      seen.push(u);
+      if (/^https:/i.test(u)) throw new TypeError('Failed to fetch');
+      return page('<html><body><h1>飞翔的红蜻蜓</h1><p>北京知行灵动科技有限公司 隐私政策正文，'
+        + '说明个人信息处理规则与用户权利，含收集范围、使用目的、保存期限、共享情形、注销渠道与投诉方式。</p></body></html>')();
+    };
+    const { Policy } = loadPolicy(impl);
+    const r = await Policy.fetchText('https://sknow.test/app/yszc.html', { hints: ['北京知行灵动科技有限公司'] });
+    truthy(r.ok, '换成 http 后应该抓到：' + JSON.stringify(r));
+    truthy(r.text.indexOf('北京知行灵动科技有限公司') >= 0, '正文要回来');
+    eq(seen.length, 2, '两个协议各试一次');
+    truthy(/^https:/.test(seen[0]) && /^http:/.test(seen[1]), '先原协议再回退，顺序固定：' + seen.join(','));
+  });
+
+  await test('正文已经够长、只是提示词对不上时，不再开后台标签页', async () => {
+    const tabCalls = [];
+    const tabs = { create: (a) => { tabCalls.push(a); return Promise.resolve({ id: 9 }); }, remove: () => Promise.resolve() };
+    const scripting = { executeScript: () => Promise.resolve([{ result: '不该来' }]) };
+    const long = '<html><body><h1>隐私政策</h1><p>' + '本政策说明个人信息处理规则与用户权利。'.repeat(120) + '</p></body></html>';
+    const { Policy } = loadPolicy(page(long), { tabs: tabs, scripting: scripting });
+    const r = await Policy.fetchText('https://sknow.test/long', { hints: ['飞翔的红蜻挺'] }); // 卡片里的错别字
+    truthy(r.ok, '静态正文够长就应该直接成功');
+    eq(tabCalls.length, 0, '不许为了一个错别字去开标签页');
+  });
+
   await test('非 http(s) / PDF / 空页面 / 网络失败都要给出人话原因，不许装成功', async () => {
     const { Policy } = loadPolicy(async () => { throw new Error('net down'); });
     const bad = await Policy.fetchText('javascript:void(0)');

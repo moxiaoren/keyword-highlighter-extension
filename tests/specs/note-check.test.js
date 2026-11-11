@@ -298,6 +298,24 @@ module.exports = async function run() {
     eq(Entity.parseRep('<div>法定代表人：李</div>'), '');
   });
 
+  /* ---- 2026-11-11 同法人链路：360 企业卡（唯一稳定通道） ---- */
+
+  await test('parseRep：360 企业卡「法定代表人 李广朝他投资的」要在「他」处截断', () => {
+    const html = '<div>企业名称 北京知行灵动科技有限公司 统一社会信用代码 91110108575197959C '
+      + '法定代表人 李广朝他投资的 1 家公司 经营状态 开业</div>';
+    eq(Entity.parseRep(html, '北京知行灵动科技有限公司'), '李广朝', '粘连的卡片标签不许进人名');
+  });
+
+  await test('parseRep：两字人名后面紧跟「他投资的」也要完整取到', () => {
+    eq(Entity.parseRep('<div>企业名称 小米科技有限责任公司 法定代表人 雷军他投资的 81 家公司</div>',
+      '小米科技有限责任公司'), '雷军');
+  });
+
+  await test('parseRep：搜索结果页标题里的「法定代表人_360搜索」不许当人名', () => {
+    eq(Entity.parseRep('<div>法定代表人_360搜索</div>'), '');
+    eq(Entity.parseRep('<div>法定代表人 搜索 企业信息</div>'), '');
+  });
+
   await test('parseRep 收紧：拍平正文也要求查询名在附近', () => {
     const pad = '填'.repeat(900);
     eq(Entity.parseRep('<div>' + pad + '法定代表人：李四</div>', '甲公司'), '');
@@ -360,5 +378,22 @@ module.exports = async function run() {
     const v = NC.policyVerdict({ title: '上海松江', dev: '上海市松江区融媒体中心', policy: '本政策由上海松江融媒体中心制定，详细说明了个人信息处理规则。' });
     truthy(v && v.ok);
     eq(v.items.filter((x) => x.key === 'dev')[0].mode, 3, '界面靠 mode 补「写法略有差异」');
+  });
+
+  await test('★ 需求①：卡片值被 OCR/录入认错 1 个字，长词按近似命中（sknow「红蜻挺」/「红蜻蜓」）', () => {
+    eq(NC.matchMode('飞翔的红蜻蜓是一款休闲游戏。', '飞翔的红蜻挺'), 4);
+    const v = NC.policyVerdict({
+      title: '飞翔的红蜻挺',
+      dev: '北京知行灵动科技有限公司',
+      policy: '本政策由北京知行灵动科技有限公司提供。飞翔的红蜻蜓是一款休闲游戏。'
+    });
+    truthy(v && v.ok, '错 1 个字也应按近似命中 ⇒ 整行绿');
+    eq(v.items.filter((x) => x.key === 'title')[0].mode, 4, '界面据此说明「差 1 个字」');
+  });
+
+  await test('反面：近似只放长词、只放 1 个字、不放纯数字/编号', () => {
+    eq(NC.matchMode('本政策由有鑫花提供。', '有盘花'), 0, '3 字短词差一个字就是另一个词，不许近似');
+    eq(NC.matchMode('登记号 2018SR458983 已登记。', '2018SR458984'), 0, '编号差一位就是另一个号');
+    eq(NC.matchMode('本政策由北京某某信息技术有限公司提供。', '北京某某科技有限公司'), 0, '两家不同公司不许近似');
   });
 };

@@ -35,7 +35,9 @@
   const CACHE_KEY = 'khPolicyCacheV2';
   const TTL_MS = 7 * 24 * 3600 * 1000;
   /* 失败只记 1 小时：站点临时抽风/证书恢复后不该锁用户 7 天。 */
-  const TTL_FAIL_MS = 60 * 60 * 1000;
+  /* 【2026-11-11】失败缓存从 1 小时缩到 10 分钟：协议/证书这类失败多半是瞬时的，
+   * 修好后用户不该再等一小时才看到「其实能抓到」（sknow 案例里失败缓存正是「怎么改都没好」的一部分）。 */
+  const TTL_FAIL_MS = 10 * 60 * 1000;
   /* 缓存正文没覆盖这次的目标词（页面可能更新了）时，10 分钟内不重复升级重抓，避免刷屏打站点。 */
   const RETRY_MS = 10 * 60 * 1000;
   const MAX_ENTRIES = 80;
@@ -43,6 +45,10 @@
   const MAX_TEXT = 120000;
   const TIMEOUT_MS = 12000;
   const MIN_TEXT = 40;
+  /* 【2026-11-11 sknow 案例】正文已经够长（>3000 字）时，个别提示词缺失（卡片标题有错别字、
+   * 开发者写法不同）**不再升级去开后台标签页**：静态 HTML 里已经有整篇政策，开标签页既慢又会
+   * 撞上 Chrome 的协议升级错误页，把「其实读到了」的结论污染成「没抓到」。 */
+  const STRONG_TEXT = 3000;
   const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
 
   const ENTITIES = {
@@ -205,6 +211,22 @@
     });
   }
 
+  /* ---------------- 协议回退（2026-11-11 sknow 案例） ----------------
+   * 有的站只在 http 上能打开：直接导航 https 会撞证书错误（`ERR_TLS_CERT_ALTNAME_INVALID`），
+   * Chrome 停在一张「此网站不支持安全连接」的错误页；而用户手里的链接常常是从地址栏复制来的
+   * `https://…`。这时**不是站点没正文**，是协议用错了。两个协议都试一遍，谁读到正文用谁。 */
+  const ERR_PAGE_RE = /^(chrome-error:\/\/|edge-error:\/\/|chrome:\/\/neterror|about:neterror)/i;
+
+  function isErrorPageUrl(u) {
+    return ERR_PAGE_RE.test(String(u || ''));
+  }
+
+  function otherScheme(u) {
+    const m = /^(https?):\/\//i.exec(String(u || ''));
+    if (!m) return '';
+    return (m[1].toLowerCase() === 'http' ? 'https' : 'http') + String(u).slice(m[1].length);
+  }
+
   /* ---------------- 兜底①：后台标签页读「渲染后的正文」 ----------------
    * 为什么需要：有些站点的 WAF / 证书链 / 只认真实导航，service worker 的 fetch 会直接
    * 抛 `failed to fetch`（用户 2026-11-09 实测就是这个），但用标签页打开一切正常；
@@ -280,12 +302,24 @@
           if (enough()) { finish({ ok: true, text: best.slice(0, MAX_TEXT), len: best.length }); return; }
           schedule();
         }, (e) => {
-          /* 错误页（协议被升级 / 证书）注入会直接失败：这时不要傻等。 */
-          finish({ ok: false, reason: '后台标签页读不到正文（' + String((e && e.message) || e) + '）' });
+          /* 错误页（协议被升级 / 证书）注入会直接失败：这时不要傻等，并且明确告诉调用方
+           * 「是错误页」，让它换另一个协议再试一次。 */
+          const msg = String((e && e.message) || e);
+          finish({
+            ok: false,
+            errorPage: /error page/i.test(msg),
+            reason: '后台标签页读不到正文（' + msg + '）'
+          });
         });
       };
       const onUpdated = (id, info) => {
         if (id !== tabId || !info) return;
+        /* 协议被升级时标签页会停在 `chrome-error://chromewebdata/`：先于注入判定，
+         * 这样调用方可以立刻换协议重试，而不是等 15 秒超时。 */
+        if (info.url && isErrorPageUrl(info.url)) {
+          finish({ ok: false, errorPage: true, reason: '浏览器把链接换成了另一个协议，打开的是错误页' });
+          return;
+        }
         if (info.status === 'complete') grab();
       };
       try { tabs.onUpdated.addListener(onUpdated); } catch (e) { finish({ ok: false, reason: '监听标签页失败：' + String((e && e.message) || e) }); return; }
@@ -295,6 +329,9 @@
         Promise.resolve(created).then((tab) => {
           if (!tab || typeof tab.id !== 'number') { finish({ ok: false, reason: '后台标签页没建起来' }); return; }
           tabId = tab.id;
+          if (tab.url && isErrorPageUrl(tab.url)) {
+            finish({ ok: false, errorPage: true, reason: '浏览器把链接换成了另一个协议，打开的是错误页' });
+          }
         }, (e) => finish({ ok: false, reason: '后台标签页没建起来：' + String((e && e.message) || e) }));
       } catch (e) {
         finish({ ok: false, reason: '后台标签页没建起来：' + String((e && e.message) || e) });
@@ -446,41 +483,69 @@
     let hardReason = '';
     let via = 'fetch';
 
-    try {
-      const p = await getPage(u);
-      html = p.html || '';
-      if (p.type.indexOf('pdf') >= 0) {
-        hardReason = '链接是 PDF，读不出文字';
-      } else if (p.type && p.type.indexOf('html') < 0 && p.type.indexOf('text/plain') < 0) {
-        hardReason = '链接不是网页（' + p.type + '）';
-      } else {
-        text = (p.type.indexOf('text/plain') >= 0 ? p.html : Policy.stripHtml(p.html)).slice(0, MAX_TEXT);
+    const alt = otherScheme(u);
+    const order = [u];
+    if (alt && alt !== u) order.push(alt);
+    const tried = [];
+    let pageUrl = u;
+
+    /* 两个协议各试一次：http 站被浏览器升级成 https 时，https 会撞证书错误；
+     * 反过来把 https 链接降成 http 也能救「只在 http 上活着」的老站点。
+     * 一旦某个协议读到正文（≥ MIN_TEXT）就停，不拿后面的失败覆盖已有正文。 */
+    for (let i = 0; i < order.length; i++) {
+      const cu = order[i];
+      tried.push(cu);
+      try {
+        const p = await getPage(cu);
+        const body = (p.type.indexOf('text/plain') >= 0 ? p.html : Policy.stripHtml(p.html)).slice(0, MAX_TEXT);
+        if (p.type.indexOf('pdf') >= 0) {
+          if (!flatLite(text).length) hardReason = '链接是 PDF，读不出文字';
+        } else if (p.type && p.type.indexOf('html') < 0 && p.type.indexOf('text/plain') < 0) {
+          if (!flatLite(text).length) hardReason = '链接不是网页（' + p.type + '）';
+        } else if (flatLite(body).length > flatLite(text).length) {
+          text = body;
+          html = p.html || '';
+          pageUrl = cu;
+        }
+      } catch (err) {
+        if (!directErr) directErr = String((err && err.message) || err);
       }
-    } catch (err) {
-      directErr = String((err && err.message) || err);
+      if (flatLite(text).length >= MIN_TEXT) break;   // 这个协议已经读到正文
     }
 
     const tabReasons = [];
-    const thin = () => flatLite(text).length < MIN_TEXT;
+    const flatLen = () => flatLite(text).length;
+    const thin = () => flatLen() < MIN_TEXT;
     const missHints = () => hints.length > 0 && !covers(text, hints);
+    /* 「正文已经够长、只是缺个提示词」不再升级：卡片标题有错别字（红蜻挺/红蜻蜓）也会走到这里，
+     * 而这时静态 HTML 里其实已经有整篇政策 —— 去开标签页纯属自找错误页。 */
+    const needDeep = () => !hardReason && (thin() || (missHints() && flatLen() < STRONG_TEXT));
 
-    /* 静态结果「太短」或「缺目标词」都升级：短 = 空壳/模板；缺词 = 正文可能是后填的。 */
-    if (!hardReason && (thin() || missHints())) {
-      const tab = await readViaTab(u, hints);
-      if (tab.ok) {
-        /* 渲染后的正文常常比静态模板「短」却才有真内容：命中目标词优先，长度只作次要判据。 */
-        const tabCovers = hints.length > 0 && covers(tab.text, hints);
-        if (tabCovers || flatLite(tab.text).length > flatLite(text).length) { text = tab.text; via = 'tab'; }
-      } else {
-        tabReasons.push(tab.reason || '后台标签页也没读到');
+    /* 静态结果「太短」或「缺目标词且正文不长」才升级：短 = 空壳/模板；缺词 = 正文可能是后填的。
+     * 标签页落在错误页时，换另一个协议再试一次（sknow：https 证书错误、http 才有正文）。 */
+    if (needDeep()) {
+      const tabOrder = [pageUrl].concat(order.filter((x) => x !== pageUrl));
+      for (let i = 0; i < tabOrder.length; i++) {
+        const cu = tabOrder[i];
+        if (tried.indexOf(cu) < 0) tried.push(cu);
+        const tab = await readViaTab(cu, hints);
+        if (tab.ok) {
+          /* 渲染后的正文常常比静态模板「短」却才有真内容：命中目标词优先，长度只作次要判据。 */
+          const tabCovers = hints.length > 0 && covers(tab.text, hints);
+          if (tabCovers || flatLite(tab.text).length > flatLen()) { text = tab.text; via = 'tab'; }
+          break;
+        }
+        tabReasons.push((cu === u ? '' : '换 ' + cu.split(':')[0] + ' 后 ') + (tab.reason || '后台标签页也没读到'));
+        /* 只有「错误页」才值得换协议重试；登录墙/空壳换协议也一样。 */
+        if (!tab.errorPage) break;
       }
     }
 
     /* 仍然不够：正文可能压根不在 DOM 里，而在同源接口的 JSON 里。 */
-    if (!hardReason && html && (thin() || missHints())) {
-      const extra = await probeApi(u, html, hints);
+    if (needDeep()) {
+      const extra = await probeApi(pageUrl, html, hints);
       if (extra) {
-        text = (flatLite(text).length ? (text + '\n' + extra) : extra).slice(0, MAX_TEXT);
+        text = (flatLen() ? (text + '\n' + extra) : extra).slice(0, MAX_TEXT);
         via = (via === 'fetch') ? 'fetch+api' : (via + '+api');
       }
     }
@@ -488,19 +553,23 @@
     let out;
     if (hardReason) {
       out = { ok: false, reason: hardReason };
-    } else if (flatLite(text).length < MIN_TEXT) {
+    } else if (flatLen() < MIN_TEXT) {
       const bits = [];
       if (directErr) bits.push(directErr);
       bits.push('页面里没读到正文（可能需要登录或脚本渲染）');
       for (let i = 0; i < tabReasons.length; i++) bits.push('后台标签页：' + tabReasons[i]);
+      if (tried.length > 1) bits.push('试过的地址：' + tried.join('、'));
       out = { ok: false, reason: bits.join('；') };
     } else {
       out = { ok: true, text: text, len: text.length };
     }
 
-    cache[u] = { at: Date.now(), ok: !!out.ok, text: out.text || '', len: out.len || 0, reason: out.reason || '', via: via };
+    /* 成功时两个协议键都写：卡里链接这次写 http、下次写 https 时不必再抓一遍。 */
+    const entry = { at: Date.now(), ok: !!out.ok, text: out.text || '', len: out.len || 0, reason: out.reason || '', via: via };
+    cache[u] = entry;
+    if (out.ok && alt && alt !== u) cache[alt] = Object.assign({}, entry);
     saveCache(cache);
-    return Object.assign({ url: u, cached: false, via: via }, out);
+    return Object.assign({ url: u, cached: false, via: via, tried: tried.slice() }, out);
   };
 
   self.KH = self.KH || {};

@@ -1259,29 +1259,70 @@
   }
 
   /** 【2.0.8.13 需求①】把「超出一行」的内容格收成一行（自适应省略）。
-   *  规则：先摘 .kh-val-tight 量真实高度，超过一行 1.35 倍才加回去。
-   *  必须在元素进入文档之后量（未挂载时 scrollHeight 恒为 0 ⇒ 永远判"放得下"）。 */
+   *  【2026-11-11 需求③】修「超链接 + 只显示一行」反复跳动：
+   *  旧写法每一轮都先把 `.kh-val-tight` 摘掉、量 scrollHeight、再决定加不加回去 ——
+   *  摘掉的那一帧就是「完全展开」，而 `-webkit-line-clamp`（display:-webkit-box）本身会改变
+   *  盒子的排版上下文，clientWidth 也跟着变 ⇒ 缓存键永远对不上 ⇒ 每轮都摘/加一次，
+   *  用户看到的就是「反复跳动、像要展开」。
+   *  现在：① 宽度改用**单元格内容宽**（与 clamp 无关），② 量高度用**离屏克隆**（不碰可见元素），
+   *  ③ 同一个「文字+宽度」只量一次，结果记在 `__khClipNeed`，之后只做幂等的 class 校准。 */
+  function clipContentWidth(el) {
+    const td = (el.closest && el.closest('td')) || el.parentElement;
+    if (!td) return el.getBoundingClientRect().width;
+    try {
+      const cs = window.getComputedStyle(td);
+      const pl = parseFloat(cs.paddingLeft) || 0;
+      const pr = parseFloat(cs.paddingRight) || 0;
+      return Math.max(0, td.clientWidth - pl - pr);
+    } catch (e) {
+      return el.getBoundingClientRect().width;
+    }
+  }
+
+  /** 离屏克隆量高度：可见元素一个 class 都不动，所以不会有「展开一帧」。 */
+  function clipOverflow(el, width) {
+    let cs;
+    try { cs = window.getComputedStyle(el); } catch (e) { return false; }
+    const fs = parseFloat(cs.fontSize) || 12;
+    const lh = parseFloat(cs.lineHeight) || fs * 1.6;
+    const probe = el.cloneNode(true);
+    probe.removeAttribute('id');
+    probe.classList.remove('kh-val-tight');
+    probe.style.position = 'absolute';
+    probe.style.left = '-99999px';
+    probe.style.top = '0';
+    probe.style.width = Math.max(1, width) + 'px';
+    probe.style.visibility = 'hidden';
+    probe.style.pointerEvents = 'none';
+    probe.style.display = 'block';
+    probe.style.webkitLineClamp = 'unset';
+    probe.style.overflow = 'visible';
+    (el.parentNode || el).appendChild(probe);
+    const h = probe.scrollHeight || probe.offsetHeight || 0;
+    if (probe.parentNode) probe.parentNode.removeChild(probe);
+    return h > lh * 1.35;
+  }
+
   function clipValueBoxes(root) {
     if (!root || !root.querySelectorAll) return;
     const boxes = root.querySelectorAll('.kh-table .kh-val-box');
     for (let i = 0; i < boxes.length; i++) {
       const el = boxes[i];
-      /* 未挂载时 scrollHeight 恒为 0（量不出真实高度），此时连类名都别动。 */
+      /* 未挂载时量不出真实高度，此时连类名都别动。 */
       if (!el.isConnected) continue;
       const txt = String(el.textContent || '');
-      const w = el.clientWidth;
-      /* 文字与可用宽度都没变、上次已经判过"要收" ⇒ 这一轮一个字都不动。
-       * 旧写法每轮都先摘 `.kh-val-tight` 再量：摘下的那一瞬就是"完全展开"的样式，
-       * 新卡更是在双 rAF 之前先绘出一两帧展开态 —— 用户看到的就是那一闪。 */
-      if (el.classList.contains('kh-val-tight') && el.__khClipTxt === txt && el.__khClipW === w) continue;
-      el.classList.remove('kh-val-tight');
-      let cs;
-      try { cs = window.getComputedStyle(el); } catch (e) { continue; }
-      const fs = parseFloat(cs.fontSize) || 12;
-      const lh = parseFloat(cs.lineHeight) || fs * 1.6;
+      const w = Math.round(clipContentWidth(el) * 10) / 10;
+      const tight = el.classList.contains('kh-val-tight');
+      /* 同一段文字 + 同一个宽度 ⇒ 结果不会变：只做幂等校准，一次量都不做。 */
+      if (el.__khClipTxt === txt && el.__khClipW === w && typeof el.__khClipNeed === 'boolean') {
+        if (el.__khClipNeed !== tight) el.classList.toggle('kh-val-tight', el.__khClipNeed);
+        continue;
+      }
+      const need = clipOverflow(el, w);
       el.__khClipTxt = txt;
       el.__khClipW = w;
-      if (el.scrollHeight > lh * 1.35) el.classList.add('kh-val-tight');
+      el.__khClipNeed = need;
+      if (need !== tight) el.classList.toggle('kh-val-tight', need);
     }
   }
   /** 下一帧再量（卡片刚插进 DOM，样式与换行还没落定；双 rAF 是稳妥写法）。 */
@@ -3484,7 +3525,9 @@
         /* 【2.0.8.22】近似命中要说明白：用户看到卡片写「上海市松江区…」、正文写「上海松江…」，
          * 不注明就会怀疑插件在乱认。 */
         const tail = it.hit
-          ? ('：在隐私政策正文里找到了' + (it.mode >= 2 ? '（写法略有差异，已按同一主体匹配）' : ''))
+          ? ('：在隐私政策正文里找到了' + (it.mode === 4
+            ? '（正文写法差 1 个字，多为 OCR / 录入误差）'
+            : (it.mode >= 2 ? '（写法略有差异，已按同一主体匹配）' : '')))
           : '：正文里没有这段文字';
         return name + '「' + shown + '」' + tail;
       };
@@ -5206,6 +5249,62 @@
     return false;
   }
 
+  /* ---------------- 进表值按字段语义裁剪（2026-11-11 需求④） ----------------
+   * 用户原话：「授权方、被授权方这种进表内容，能不能做个针对性优化，只取公司名，后面冗余部分不要。
+   * 登记号同理，只要那一串代码。」
+   * OCR 归行常把后面的「（以下简称"甲方"）」「证书号 xxx」「授权人 合肥…分公司」一起读进值里，
+   * 这些是相邻信息不是本字段的值 —— 进表只留能对上的那一段。
+   * 只对**明确语义**的字段动手（普通字段原样返回）：裁错比不裁更伤人。 */
+  const KV_ORG_LABEL = /(授权方|被授权方|授权公司|被授权公司|著作权人|权利人|开发者|运营者|主办单位|公司名称|单位名称)/;
+  const KV_CODE_LABEL = /(登记号|登记证书|证书号|软著登字|备案号|备案编号|编号|批号)/;
+  const KV_LEAD_LABEL = /^(?:授权方|被授权方|授权公司|被授权公司|著作权人|权利人|开发者|运营者|主办单位|公司名称|单位名称|登记号|登记证书|证书号|软著登字第?|备案号|备案编号|编号)\s*[：:｜|]\s*/;
+  const KV_ORG_TAIL_G = /(股份有限公司|有限责任公司|有限公司|集团有限公司|集团|分公司|公司|厂|中心|研究院|研究所|事务所|工作室|合作社|协会|基金会|学校|大学|学院|医院|银行|支行|经营部|服务部|商行)/g;
+
+  function kvTrimValue(label, raw) {
+    let s = String(raw == null ? '' : raw).trim();
+    if (!s) return s;
+    const lab = String(label == null ? '' : label);
+    s = s.replace(KV_LEAD_LABEL, '').trim();
+    if (!s) return s;
+    if (KV_CODE_LABEL.test(lab)) {
+      /* 登记号只要那一串代码：优先「2018SR458983」这种软著登记号，其次「第 N 号」，再次长编号。 */
+      const pats = [
+        /\d{4}\s*SR\s*\d{5,}/i,
+        /软著登字第\s*\d+\s*号/,
+        /第\s*\d+\s*号/,
+        /[A-Za-z0-9][A-Za-z0-9-]{5,}/,
+        /\d{6,}/
+      ];
+      for (const re of pats) {
+        const m = re.exec(s);
+        if (m) return m[0].replace(/\s+/g, '');
+      }
+      return s;
+    }
+    if (!KV_ORG_LABEL.test(lab)) return s;
+    /* OCR 归行把下一段信息用空格接在后面（「上海某某有限公司 授权人 合肥分公司」）：
+     * 空格后是另一类字段的标签时，公司名到空格为止。 */
+    const noise = s.search(/\s+(?=(?:授权人|被授权|许可人|被许可人|日期|期限|地址|电话|邮箱|联系人|法定代表人|统一社会信用代码|证书号|登记号|编号|签章|盖章))/);
+    if (noise > 0) s = s.slice(0, noise).trim();
+    /* 公司名：先在「（以下简称」「逗号/分号/句号/换行」「连续空白」处切出前半段；
+     * 只有前半段自己带单位后缀才采用（避免把「北京某某科技（集团）有限公司」从括号处切断）。 */
+    let head = s;
+    const cutAt = head.search(/[（(]\s*以下简称|[，,；;。\n]|\s{2,}/);
+    if (cutAt > 0) {
+      const pre = head.slice(0, cutAt).trim();
+      KV_ORG_TAIL_G.lastIndex = 0;
+      if (KV_ORG_TAIL_G.test(pre)) head = pre;
+    }
+    /* 取**最后一个**单位后缀作为结尾：「北京某某有限公司上海分公司」整名保留，
+     * 「A公司（以下简称…）」已在前一步切成「A公司」。 */
+    let end = -1;
+    let m;
+    KV_ORG_TAIL_G.lastIndex = 0;
+    while ((m = KV_ORG_TAIL_G.exec(head))) end = m.index + m[0].length;
+    if (end > 0) head = head.slice(0, end);
+    return head.trim() || s;
+  }
+
   /* ---------------- 值被 OCR 换行拆到下一行（`词：` / `值`） ----------------
    * 只在「命中词后面紧跟着分隔符、但分隔符后是空的」时才往下看，且必须过三道闸，
    * 否则宁可不进表 —— 这条功能最贵的错误就是「拉一段无关正文进卡片」：
@@ -5282,7 +5381,9 @@
     const out = [];
     const seen = new Set();
     const pushRow = (label, value, src) => {
-      const v = String(value == null ? '' : value).trim();
+      /* 【2026-11-11 需求④】进表前按字段语义收窄：授权方/被授权方只留公司名、登记号只留代码。
+       * 放在这一处，三条取值路径（表格格 / 文本行 / 下一行）一起生效。 */
+      const v = kvTrimValue(label, value);
       if (!v) return;
       /* 【2.0.6.2 需求⑧】去重键压掉空白：OCR 同一个值在不同图里可能一个带空格一个不带，
        * 按原样比会把同一条信息记两遍（表格里就出现两行一样的）。
