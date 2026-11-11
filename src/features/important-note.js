@@ -3568,7 +3568,15 @@
       pending.add(url);
       const hints = [String((fields && fields.title) || ''), String((fields && fields.dev) || '')]
         .map((s) => s.trim()).filter(Boolean).slice(0, 4);
+      /* 【2.0.9 体检·稳定性】后台可能被回收、回执可能丢：给 20s 看门狗。
+       * 没有它的话，这一行会永远停在「正在抓取链接正文…」，而且 _policyPending 里那条 URL
+       * 再也不会被删掉 —— 同一次页面会话里重试也发不出去。 */
+      let settled = false;
+      let timer = 0;
       const done = (res) => {
+        if (settled) return;
+        settled = true;
+        if (timer) { clearTimeout(timer); timer = 0; }
         pending.delete(url);
         const cache = this._policyCache || (this._policyCache = new Map());
         const r = (res && res.ok)
@@ -3578,6 +3586,8 @@
         if (!table || !table.isConnected) return;
         try { this.paintPolicy(table, fields, NC); } catch (e) { /* 下一轮重算 */ }
       };
+      /* 看门狗先挂上：下面每条分支（注入点 / 无后台 / 抛错 / 回调）都会走 done() 把它清掉。 */
+      timer = setTimeout(() => done({ ok: false, reason: '后台 20 秒没有回执' }), 20000);
       /* 单测注入点：不改全局 chrome（并发用例会互相抢），面板自己的发送函数优先。 */
       if (typeof this._policySend === 'function') {
         try { this._policySend(url, done); } catch (e) { done({ ok: false, reason: String((e && e.message) || e) }); }
@@ -3662,13 +3672,24 @@
       this._entCache = this._entCache || new Map();
       if (this._entCache.has(key)) return Promise.resolve(this._entCache.get(key));
       return new Promise((resolve) => {
+        /* 【2.0.9 体检·稳定性】后台被回收时回调可能永远不来：20s 后按「未查明」收口，
+         * 否则这层 Promise 和 paintEntity 的 .then 会一直挂着。 */
+        let settled = false;
+        let timer = 0;
+        const finish = (v) => {
+          if (settled) return;
+          settled = true;
+          if (timer) { clearTimeout(timer); timer = 0; }
+          resolve(v);
+        };
+        timer = setTimeout(() => finish(''), 20000);
         let api = null;
         try { api = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) ? chrome : null; } catch (e) { api = null; }
-        if (!api) { resolve(''); return; }
+        if (!api) { finish(''); return; }
         const MSG = (KH && KH.MSG) || {};
         try {
           api.runtime.sendMessage({ type: MSG.ENTITY_LOOKUP, name: key }, (res) => {
-            if (api.runtime.lastError) { resolve(''); return; }
+            if (api.runtime.lastError) { finish(''); return; }
             const rep = (res && res.ok && res.rep) ? String(res.rep) : '';
             if (rep) {
               /*【2.0.8.12 性能】缓存原来无上限：一天里翻几十张网页面，公司名会一条条攒着不释放。
@@ -3679,9 +3700,9 @@
                 if (!first.done) this._entCache.delete(first.value);
               }
             }
-            resolve(rep);
+            finish(rep);
           });
-        } catch (e) { resolve(''); }
+        } catch (e) { finish(''); }
       });
     },
 
