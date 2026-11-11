@@ -100,12 +100,23 @@ class ShimElement {
       contains(c) { return self._class.split(/\s+/).indexOf(c) >= 0; }
     };
   }
-  appendChild(n) { if (n && n.parentNode) n.parentNode.removeChild(n); this.childNodes.push(n); if (n) { n.parentNode = this; } return n; }
+  /* 真 DOM 里 `appendChild(文档片段)` 是把**片段的子节点**搬进来，片段本身不落地。
+   * 垫片以前把片段当成普通节点塞进去，于是「根就是一张表」的序列化读到空片段、产出空串，
+   * 表格那条用例只能标「跳过」。按浏览器语义展开后，它就能真跑并通过。 */
+  appendChild(n) {
+    if (n && n.nodeType === 11) { const kids = n.childNodes.slice(); for (const k of kids) this.appendChild(k); return n; }
+    if (n && n.parentNode) n.parentNode.removeChild(n);
+    this.childNodes.push(n);
+    if (n) { n.parentNode = this; }
+    return n;
+  }
   removeChild(n) { const i = this.childNodes.indexOf(n); if (i >= 0) this.childNodes.splice(i, 1); if (n) n.parentNode = null; return n; }
   /** 真 DOM 有、垫片一直缺的一个：往里插到某个子节点之前。缺它时排布层（把工具栏控件插到
    *  清空键前面）在单测里直接 `TypeError: insertBefore is not a function` —— 是垫片缺口，不是产品 bug。 */
   insertBefore(n, ref) {
     if (!ref) return this.appendChild(n);
+    /* 片段同样按浏览器语义展开（见 appendChild 的注释）。 */
+    if (n && n.nodeType === 11) { const kids = n.childNodes.slice(); for (const k of kids) this.insertBefore(k, ref); return n; }
     if (n && n.parentNode) n.parentNode.removeChild(n);
     const i = this.childNodes.indexOf(ref);
     if (i < 0) return this.appendChild(n);

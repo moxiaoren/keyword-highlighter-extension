@@ -128,10 +128,9 @@ module.exports = async function run() {
   });
 
   await test('表格序列化自动补分隔行', () => {
-    // 垫片的 fromEditor 在"根就是单个 table"这条路径上与真实浏览器存在已知差异
-    // （真实浏览器已验证正常），此处显式跳过并记录，不伪装成通过。
-    if (H.skipIf(true, '表格序列化自动补分隔行',
-      '垫片 fromEditor(单表根) 有差异；真浏览器已验证')) return;
+    /* 以前这里标「跳过」，理由是垫片 `fromEditor(单表根)` 与真浏览器有差异。
+     * 查下来差异在垫片自己：真 DOM 的 `appendChild(片段)` 会展开片段，垫片把片段当节点塞。
+     * 垫片已按浏览器语义修好（tests/harness.js appendChild），这条就真跑，不再跳过。 */
     const box = H.el('div');
     box.appendChild(M.toFragment('| a | b |', document));
     const md = M.fromEditor(box);
