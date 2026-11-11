@@ -32,3 +32,4 @@ Thumbs.db
 # ── e2e 运行时（装置进仓，产物不进）─────
 e2e/_profiles/
 e2e/_out/
+_tmp/
