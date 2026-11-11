@@ -231,7 +231,7 @@ const HANDLERS = {
   /* ---- 【2.0.8.15 需求①】隐私政策链接正文（用户口径：打开链接明明有，判定却说没有）----
    * 内容脚本里的 fetch 按页面来源走 CORS，政策站点不会放行；这里用扩展来源抓 + 7 天缓存，
    * 只回 HTML 正文文字，抓不到就 `{ok:false, reason}`，面板退回卡片抓取值并写明原因。 */
-  [MSG.POLICY_TEXT]: (msg) => self.KH.Policy.fetchText((msg && msg.url) || ''),
+  [MSG.POLICY_TEXT]: (msg) => self.KH.Policy.fetchText((msg && msg.url) || '', { hints: (msg && msg.hints) || [] }),
 
   /* ---- 【2.0.8.5】网页对话（免 Key）：面板 → 后台 → chat.deepseek.com 上的 content/web-chat.js ----
    * 这三条都是"开标签页 / 自检 / 开新对话"，真正的提问走长连接（见文件末尾的 onConnect）。 */

@@ -44,6 +44,7 @@ function loadPolicy(fetchImpl, extraChrome) {
     setTimeout: setTimeout,
     clearTimeout: clearTimeout,
     AbortController: AbortController,
+    TextDecoder: TextDecoder,
     fetch: fetchImpl
   };
   sandbox.self = sandbox;
@@ -163,7 +164,10 @@ module.exports = async function run() {
       executeScript: (arg) => {
         calls.injected.push(arg);
         if (o.injectError) return Promise.reject(new Error(o.injectError));
-        return Promise.resolve([{ result: text }]);
+        /* 允许给一串文本：模拟「complete 首抓是空壳、过几拍才渲染出正文」（toutiao 案例）。 */
+        const seq = Array.isArray(text) ? text : [text];
+        const t = seq[Math.min(calls.injected.length - 1, seq.length - 1)];
+        return Promise.resolve([{ result: t }]);
       }
     };
     /* 建页后的下一拍触发 complete（真实浏览器里是导航完成事件） */
@@ -193,5 +197,81 @@ module.exports = async function run() {
     truthy(String(r.reason).indexOf('failed to fetch') >= 0, '直接抓取的原因要保留：' + r.reason);
     truthy(String(r.reason).indexOf('没读到正文') >= 0, '标签页的原因也要写：' + r.reason);
     eq(stub.calls.removed.join(','), '7', '失败也要关页');
+  });
+
+  /* ------------------------------------------------------------------
+   * 【2.0.8.22】用户 2026-11-11 报的 5 个案例，病根分三类，各锁一条：
+   *   · 编码：GBK/UTF-16 站点按 UTF-8 解会整片乱码；
+   *   · 模板页：静态正文够长但没有目标词（JS 后填）；
+   *   · 接口页：正文根本不在 DOM 里，要按页面 URL 参数调同源接口；
+   *   · 渲染慢：标签页 complete 首抓是空串，必须继续轮询。
+   * ------------------------------------------------------------------ */
+  suite('policy · 2.0.8.22 五类误报的回归（编码 / 渲染 / 同源接口 / 轮询）');
+
+  await test('charset 不是 UTF-8 时按声明编码解（否则正文整片乱码、怎么比都没有）', async () => {
+    const html = '<html><body><p>某某清理大师隐私政策：开发者北京某某科技有限公司，'
+      + '本政策说明我们如何收集、使用、保存与共享您的个人信息，以及您行使查询更正删除注销投诉等权利的方式。</p></body></html>';
+    const buf = Buffer.from(html, 'utf16le');
+    const impl = async () => ({
+      ok: true,
+      status: 200,
+      headers: { get: () => 'text/html; charset=utf-16le' },
+      arrayBuffer: async () => buf
+    });
+    const { Policy } = loadPolicy(impl);
+    const r = await Policy.fetchText('https://wide.test/privacy');
+    truthy(r.ok, '要能解出来：' + JSON.stringify(r).slice(0, 200));
+    truthy(r.text.indexOf('北京某某科技有限公司') >= 0, '解码后中文要原样（不能是乱码）');
+  });
+
+  await test('静态正文够长但缺目标词（模板页）：升级后台标签页读渲染后的正文，via=tab', async () => {
+    const stub = tabStub('某某清理大师隐私政策\n开发者：北京某某科技有限公司\n我们重视您的隐私，完整正文就在这里，请仔细阅读以下全部条款内容。');
+    const html = '<html><body><p>'
+      + '某某清理大师隐私政策模板占位，正文由脚本按应用名填充。'.repeat(3)
+      + '</p></body></html>';
+    const { Policy } = loadPolicy(page(html), { tabs: stub.tabs, scripting: stub.scripting });
+    const r = await Policy.fetchText('https://spa.test/privacy', { hints: ['北京某某科技有限公司'] });
+    truthy(r.ok, JSON.stringify(r).slice(0, 200));
+    eq(r.via, 'tab');
+    truthy(r.text.indexOf('北京某某科技有限公司') >= 0, '命中的必须是渲染后的正文');
+  });
+
+  await test('正文只在同源接口 JSON 里：用页面 URL 的同名参数填 `${appId}` 模板，via=fetch+api', async () => {
+    const pageHtml = '<html><body><h1>悬浮时钟闹钟 隐私政策</h1>'
+      + '<p>本页正文由接口按应用 ID 填充，脚本如下：</p>'
+      + '<script>const apiUrl = `${apiBaseUrl}/api/privacy-config/by-app-id?app_id=${appId}`;</script>'
+      + '<p>' + '如果长时间停留在加载中，请刷新页面或稍后再试。'.repeat(3) + '</p></body></html>';
+    const apiJson = JSON.stringify({ code: 0, data: { app_name: '悬浮时钟闹钟', company_name: '合肥元气满点网络科技有限公司' } });
+    const impl = async (u) => {
+      if (String(u).indexOf('/api/') >= 0) {
+        return {
+          ok: true,
+          status: 200,
+          headers: { get: () => 'application/json; charset=utf-8' },
+          arrayBuffer: async () => Buffer.from(apiJson, 'utf8')
+        };
+      }
+      return page(pageHtml)();
+    };
+    const { Policy } = loadPolicy(impl);
+    const r = await Policy.fetchText('http://49.23.test/privacy-policy-dynamic.html?appId=255&channelId=2',
+      { hints: ['悬浮时钟闹钟', '合肥元气满点网络科技有限公司'] });
+    truthy(r.ok, JSON.stringify(r).slice(0, 300));
+    eq(r.via, 'fetch+api');
+    truthy(r.text.indexOf('合肥元气满点网络科技有限公司') >= 0, '接口 JSON 里的公司名要并进正文');
+  });
+
+  await test('标签页 complete 首抓是空串：继续轮询直到渲染出正文（toutiao 案例）', async () => {
+    const stub = tabStub([
+      '',
+      '今日头条隐私政策\n开发者：北京抖音信息服务有限公司\n我们重视您的隐私，本政策说明个人信息的收集、使用、保存、共享与您的权利，请完整阅读。'
+    ]);
+    const { Policy } = loadPolicy(async () => { throw new TypeError('failed to fetch'); },
+      { tabs: stub.tabs, scripting: stub.scripting });
+    const r = await Policy.fetchText('https://toutiao.test/privacy', { hints: ['今日头条'] });
+    truthy(r.ok, JSON.stringify(r).slice(0, 200));
+    eq(r.via, 'tab');
+    truthy(r.text.indexOf('北京抖音信息服务有限公司') >= 0);
+    truthy(stub.calls.injected.length >= 2, '首抓空串必须再抓一次，不能就此判失败');
   });
 };

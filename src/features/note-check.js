@@ -206,17 +206,74 @@
     return null;
   };
 
+  /* 单位名常见后缀：只在「像单位名」的时候才允许行政区划写法差异，
+   * 普通短词/人名绝不近似（单字、两字近似会全员命中，宁可标没查到也不假绿）。 */
+  const ORG_SUFFIX_WORDS = ['公司', '中心', '集团', '银行', '医院', '学校', '大学', '学院', '工作室',
+    '事务所', '合作社', '协会', '基金会', '研究院', '研究所', '融媒体', '报社', '电视台', '出版社'];
+
+  /** 去掉括号补充说明：「某某公司（松江报社）」→「某某公司」。全角/半角括号都认。 */
+  function coreOf(s) {
+    return String(s == null ? '' : s).replace(/[（(][^）)]*[）)]/g, '');
+  }
+
+  /** 像不像一个单位名（要有单位后缀，且去掉括号后仍够长）。 */
+  function orgLike(s) {
+    if (String(s || '').length < 8) return false;
+    for (let i = 0; i < ORG_SUFFIX_WORDS.length; i++) if (String(s).indexOf(ORG_SUFFIX_WORDS[i]) >= 0) return true;
+    return false;
+  }
+
+  /**
+   * 去掉行政区划单字（省/市/区/县）：同一家单位在卡片与政策正文里常一个写全称
+   * 「上海市松江区融媒体中心」、一个写简称「上海松江融媒体中心」（用户 2026-11-11 的
+   * 松江案例）。只在 `orgLike` 成立时用，且要求剩余长度 ≥ 6，避免把普通词比成一家。
+   */
+  function stripAdmin(s) {
+    return String(s || '').replace(/[省市区县]/g, '');
+  }
+
   /**
    * 子串判定：正文与目标都归一后比较；目标不足 2 个字符不判（单字人名/单字母会全员命中，
    * 宁可标「没查到」也不假绿）。目标里带 `…`/`...` 的截断值只取省略号之前那段。
+   *
+   * 三种「正文里其实有」的写法差异都算命中（都由用户实测案例逼出来的）：
+   *   ① 括号补充：卡片写「银飞数智（广东）科技有限公司」，正文只写「银飞数智科技有限公司」；
+   *   ② 行政区划：卡片「上海市松江区融媒体中心」，正文「上海松江融媒体中心」；
+   *   ③ 标题后缀：卡片「某某清理大师APP」，正文只写「某某清理大师」。
+   * 近似只放宽「写法」，不放宽「是不是同一家」：单位名必须带单位后缀且至少 8 字。
    */
-  NoteCheck.contains = function (hay, needle) {
+  NoteCheck.contains = function (hay, needle, kind) {
+    return NoteCheck.matchMode(hay, needle, kind) > 0;
+  };
+
+  /**
+   * 命中程度：0=没命中，1=原文一致，2=只差括号补充/标题后缀，3=单位名行政区划写法不同。
+   * 界面据此在「找到了」后面补一句「写法略有差异」，避免用户以为插件在乱认。
+   */
+  NoteCheck.matchMode = function (hay, needle, kind) {
     const h = flat(hay);
     let n = flat(needle);
-    if (!h || !n) return false;
+    if (!h || !n) return 0;
     n = n.replace(/(…|\.\.\.).*$/, '');
-    if (n.length < 2) return false;
-    return h.indexOf(n) >= 0;
+    if (n.length < 2) return 0;
+    if (h.indexOf(n) >= 0) return 1;
+
+    /* ① 去掉括号补充说明再比（正文里常省略「（松江报社、…）」这类注释）。 */
+    const core = flat(coreOf(needle)).replace(/(…|\.\.\.).*$/, '');
+    if (core.length >= 4 && core !== n && h.indexOf(core) >= 0) return 2;
+
+    /* ② 单位名：行政区划写法不同也算同一家（上海市松江区 ↔ 上海松江）。 */
+    if (orgLike(core)) {
+      const bare = stripAdmin(core);
+      if (bare.length >= 6 && (h.indexOf(bare) >= 0 || stripAdmin(h).indexOf(bare) >= 0)) return 3;
+    }
+
+    /* ③ 标题带 APP / 客户端 / 平台后缀，正文只写名字。 */
+    if (kind === 'title') {
+      const t = n.replace(/(?:app|客户端|安卓版|ios版|手机版|平台版)$/i, '');
+      if (t.length >= 2 && t !== n && h.indexOf(t) >= 0) return 2;
+    }
+    return 0;
   };
 
   /** 「隐私政策链接」抓到的东西在正文里有没有：整串没有就退一步只看域名。 */
@@ -246,7 +303,8 @@
     const add = (key, needle) => {
       const v = String(needle || '').trim();
       if (!v) return;
-      items.push({ key: key, needle: v, hit: NoteCheck.contains(policy, v) });
+      const mode = NoteCheck.matchMode(policy, v, key);
+      items.push({ key: key, needle: v, hit: mode > 0, mode: mode });
     };
     add('title', f.title);
     add('dev', f.dev);

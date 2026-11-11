@@ -3439,8 +3439,16 @@
       let sourceLine = '正文来源：卡片抓取值（' + flatLen(cardBody) + ' 字）';
       if (got && got.ok) {
         body = String(got.text || '');
-        sourceLine = '正文来源：' + (got.via === 'tab' ? '后台标签页读到的正文' : '隐私政策链接抓回的正文')
-          + '（' + flatLen(body) + ' 字' + (got.cached ? '，7 天缓存' : '') + '）';
+        /* 【2.0.8.22】来源要说清「抓到多深」：静态 HTML / 后台标签页 / 同源接口，
+         * 用户排查「为什么这次读到了」时全靠这一行。 */
+        const viaText = {
+          'fetch': '隐私政策链接抓回的正文',
+          'tab': '后台标签页读到的正文',
+          'fetch+api': '隐私政策链接抓回的正文 + 同源接口数据',
+          'tab+api': '后台标签页读到的正文 + 同源接口数据'
+        };
+        sourceLine = '正文来源：' + (viaText[got.via] || '隐私政策链接抓回的正文')
+          + '（' + flatLen(body) + ' 字' + (got.cached ? '，缓存' : '') + '）';
       } else if (got && !got.ok) {
         sourceLine = '正文来源：卡片抓取值（' + flatLen(cardBody) + ' 字）；链接正文没抓到（' + (got.reason || '未知原因') + '）';
       } else if (src) {
@@ -3473,7 +3481,12 @@
         const name = labelOf[it.key] || it.key;
         const needle = String(it.needle || '').replace(/\s+/g, ' ').trim();
         const shown = needle.length > 90 ? needle.slice(0, 90) + '…' : needle;
-        return name + '「' + shown + '」' + (it.hit ? '：在隐私政策正文里找到了' : '：正文里没有这段文字');
+        /* 【2.0.8.22】近似命中要说明白：用户看到卡片写「上海市松江区…」、正文写「上海松江…」，
+         * 不注明就会怀疑插件在乱认。 */
+        const tail = it.hit
+          ? ('：在隐私政策正文里找到了' + (it.mode >= 2 ? '（写法略有差异，已按同一主体匹配）' : ''))
+          : '：正文里没有这段文字';
+        return name + '「' + shown + '」' + tail;
       };
       const lines = [];
       for (let i = 0; i < v.items.length; i++) {
@@ -3496,18 +3509,22 @@
         const k = v.missing[i];
         lines.push((labelOf[k] || k) + '：这张卡没抓到，不参与校验');
       }
-      setCheckTip(tr, '隐私政策校验（正文 ' + v.len + ' 字；忽略空格后按原文找）\n'
+      setCheckTip(tr, '隐私政策校验（正文 ' + v.len + ' 字；忽略空格/全半角差异，按原文找）\n'
         + sourceLine + '\n' + lines.join('\n') + '\n链接整串找不到时只比域名。');
     },
 
     /**
      * 【2.0.8.15】把隐私政策链接的正文抓回来（发给 background，CORS 只有后台发得出去）。
      * 回来后就地重画这一行；同 URL 失败也只抓一次（会话内缓存失败原因，不反复打站点）。
+     * 【2.0.8.22】把「这张卡要命中的词」一起带过去：后台据此决定要抓多深（空壳/模板页
+     * 静态结果里没有目标词时升级到标签页渲染、再升级到同源接口），而不是只看到一个长度。
      */
     requestPolicyText(url, table, fields, NC) {
       const pending = this._policyPending || (this._policyPending = new Set());
       if (pending.has(url)) return;
       pending.add(url);
+      const hints = [String((fields && fields.title) || ''), String((fields && fields.dev) || '')]
+        .map((s) => s.trim()).filter(Boolean).slice(0, 4);
       const done = (res) => {
         pending.delete(url);
         const cache = this._policyCache || (this._policyCache = new Map());
@@ -3528,7 +3545,7 @@
       if (!api) { done({ ok: false, reason: '当前上下文没有后台通道' }); return; }
       try {
         const type = (KH.MSG && KH.MSG.POLICY_TEXT) || 'kh:policy:text';
-        api.runtime.sendMessage({ type: type, url: url }, (res) => {
+        api.runtime.sendMessage({ type: type, url: url, hints: hints }, (res) => {
           void (chrome.runtime && chrome.runtime.lastError);
           done(res);
         });
