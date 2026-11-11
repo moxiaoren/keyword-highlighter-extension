@@ -25,6 +25,21 @@
 - **两条通道的清单与更新文件互不触碰**：测试版发布只写 `latest-beta.json` + `update-beta.xml`，
   **绝不碰** `latest.json` / `update.xml` —— 那两个是稳定版专用文件，改了会把测试版推给所有用户 ✗。
 
+## 发布链路：只走本地（2026-11-11 定稿）
+
+**唯一发布路径 = 本机三连**：`release-beta.js` / `release.js` 出包 → `publish-gh.js` 推 gh-pages →
+（稳定版再跑 `gh-release.js` 建 Release）。**CI 不参与发布**。
+
+- `.github/workflows/release.yml` 已在仓库里**手动停用**（Actions 页面状态 `disabled_manually`），
+  所以 `git push` 一个 tag 不会再触发它、也不会再出现 Release 红 X。
+- **tag 只是标记**，标的是"这一版发布时对应的提交"，供追溯与回滚判断；打不打、推不推都不影响用户端。
+- 为什么不是"先推 tag、让 CI 打包"：本地已发过的版本，CI 再打一次包字节必然不同（时间戳/压缩顺序），
+  会撞 `release-guard` 的"同名版本禁止覆盖"闸（实测 2.0.8.23 的 Release run 就是这么红的）。
+  这个闸是防"同名版本指向另一份字节"的护栏，不该为迁就 CI 而放宽。
+- 想恢复 CI 发布：先在 Actions 里启用 workflow，再把本地流程改成"只打 tag、不 publish"，
+  并且**不要**在本地和 CI 各发一次 —— 两条路径只能选一条。
+- CI 里保留的是 **e2e 真机回归**（`.github/workflows/e2e.yml`，tag 与 PR 都跑），它只校验、不发布。
+
 ## 自动化脚本一览
 
 | 脚本 | 作用 | 典型用法 |
@@ -38,7 +53,7 @@
 | `scripts/gh-release.js` | **线上 Release（只放稳定版）**：测试版**不建** Release；稳定版的说明 = **这一段测试版要点的汇总** + 本版正式说明；附件挂 crx（`--with-zip` 发版时多挂 zip）、幂等。`--prune-test` 删掉所有测试版 Release（含 tag），`--prune-above=<ver>` 删版本号大于该值的 | `node scripts/gh-release.js`（稳定版发完跑） |
 | `scripts/check-changelog-quotes.js` | 改完 changelog **先跑它**：文案行必须恰好 2 个半角双引号（正文用「」），否则整个文件语法错 | `node scripts/check-changelog-quotes.js` |
 | `scripts/package.js` | 只打包 zip + `latest.json`（门禁 + 真机回归也在这一步） | `node scripts/package.js` |
-| `.github/workflows/release.yml` | CI：打 tag 自动发布 —— **tag 名带 `-beta` ⇒ 测试通道**（走 `release-beta.js`），否则稳定通道；tag 里的版本必须与 `manifest.json` 一致 | 测试版 `git tag v2.0.1.3-beta && git push --tags`<br>稳定版 `git tag v2.0.2 && git push --tags` |
+| `.github/workflows/release.yml` | **已停用（2026-11-11）**：原为「打 tag 自动发布」，因与本地发布抢同一份字节、必撞「同名版本禁止覆盖」闸，现改为**只走本地发布**（见上节）。文件保留作历史，恢复时要先启用 workflow 并停掉本地 publish | 无（不要再用它发版） |
 
 > **Release 的"最新版"口径**：`gh-release.js` 把**当前 manifest 版本**建成正式 Release（不带 pre-release 标记），
 > 否则 Releases 页的「Latest」会停在很久以前那个版本上（实测踩到：Latest 一直显示 v1.6.12）。
@@ -89,7 +104,7 @@ zip 里带时间戳，**同一次构建重新打包，哈希也会变**。所以
 |---|---|---|
 | ① 工作树干净 | `git status --porcelain --untracked-files=no` 有任何输出即中止（未跟踪的新文件不算，产物本来就新写） | `--allow-dirty`（不建议） |
 | ② 版本号未被占用 | 线上清单里已有**同版本号**⇒ 拒绝覆盖；线上版本**比本地新**⇒ 拒绝（先同步） | `--allow-reuse` |
-| ③ 成功后自动打 tag | 出完产物打 `v<版本>`（稳定）/ `v<版本>-beta`（测试）；**只打本地**，`git push origin <tag>` 才触发 CI 构建 | 已存在同名 tag 时不移动，只提示 |
+| ③ 成功后自动打 tag | 出完产物打 `v<版本>`（稳定）/ `v<版本>-beta`（测试）；**只打本地**。tag 只是标记，Release 工作流已停用，推不推都不会触发 CI 发布 | 已存在同名 tag 时不移动，只提示 |
 
 > ② 看的清单：稳定版 `latest.json`、测试版 `latest-beta.json`。读不到线上清单时**不阻断**，只打印⚠️——网络断掉不该让人发不了版，但要让人知道这条闸这次没生效。
 
