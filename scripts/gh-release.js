@@ -104,29 +104,26 @@ function notesFor(version, all) {
 }
 
 /**
- * **稳定版说明 = 这一段测试版要点的汇总**（用户口径："稳定版更新内容是测试版重点总结"）。
- * changelog 是"新的在前"，所以从开头取到当前版本为止；其中**测试版**（四段版本号）只抽标题当要点，
- * 当前稳定版自己的条目按完整说明列出（它是"这一版到底改了什么"的正式口径）。
+ * **稳定版说明 = 这一段测试版的汇总**（用户口径："稳定版更新内容是测试版重点总结"）。
+ * 当前稳定版自己的条目按完整说明列出；「上一个稳定版 → 本版」之间的每个测试版由
+ * `scripts/notes-summary.js` 统一整理（保留标签+正文、重复项只留最终形态），
+ * 与说明页草稿注入用的是同一份数据，不再各写一套。
  */
 function stableNotes(version, all) {
   const list = all || [];
-  const idx = list.findIndex((c) => String(c.version) === String(version));
-  const upto = idx >= 0 ? list.slice(0, idx + 1) : list;
-  const self = upto.find((c) => String(c.version) === String(version));
-  const tests = upto.filter((c) => String(c.version) !== String(version) && isTestVer(c.version));
+  const self = list.find((c) => String(c.version) === String(version));
   const out = [];
   if (self && (self.items || []).length) {
     out.push(self.items.map((s) => '- ' + String(s).replace(NOTES_RE, '**$1** ').trim()).join('\n'));
   }
-  if (tests.length) {
-    out.push('### 本版汇总的测试版要点（' + tests.length + ' 个测试版，从新到旧）');
-    for (const t of tests) {
-      const titles = (t.items || []).map((s) => {
-        const m = NOTES_RE.exec(String(s));
-        return '- ' + (m ? m[1] : String(s).slice(0, 40));
-      });
-      if (titles.length) out.push('**v' + t.version + '**\n' + titles.join('\n'));
-    }
+  const section = require('./notes-summary').markdown(list, version);
+  if (section) {
+    out.push(
+      section
+        .replace(require('./notes-summary').MARK_START, '')
+        .replace(require('./notes-summary').MARK_END, '')
+        .trim()
+    );
   }
   return out.join('\n\n') || '（本版说明见扩展内「帮助与隐私 → 更新日志」）';
 }

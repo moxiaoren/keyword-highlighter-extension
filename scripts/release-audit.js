@@ -17,6 +17,8 @@
 const fs = require('fs');
 const path = require('path');
 
+const NS = require('./notes-summary');
+
 function readVersions(root) {
   const p = path.join(root, 'src', 'ui', 'changelog.js');
   const src = fs.readFileSync(p, 'utf8');
@@ -30,18 +32,13 @@ function readVersions(root) {
 }
 
 function isStable(v) {
-  return String(v).split('.').length === 3;
+  return NS.isStable(v);
 }
 
 /** 稳定版要汇总的测试版：changelog 里排在「本稳定版之后、上一个稳定版之前」的四段号。 */
 function betasBetween(versions, stable) {
-  const at = versions.indexOf(stable);
-  if (at < 0) return [];
-  let prevAt = versions.length;
-  for (let i = at + 1; i < versions.length; i++) {
-    if (isStable(versions[i])) { prevAt = i; break; }
-  }
-  return versions.slice(at + 1, prevAt).filter((v) => !isStable(v));
+  const list = (versions || []).map((v) => ({ version: v }));
+  return NS.betasBetween(list, stable).map((c) => String(c.version));
 }
 
 function textOf(file) {
@@ -73,6 +70,22 @@ function audit(opts) {
   if (isStable(version)) {
     const betas = betasBetween(readVersions(root), version);
     info.push('稳定版要汇总的测试版：' + (betas.length ? betas.join('、') : '无'));
+    if (betas.length) {
+      // 汇总段必须是「脚本生成并注入」的那一段，而不是手写几行版本号
+      if (md.indexOf(NS.MARK_START) < 0) {
+        errors.push('稳定版说明缺汇总段：先跑 `node scripts/notes-summary.js --write`（会写入 ' + NS.MARK_START + ' … ' + NS.MARK_END + '）');
+      }
+      if (md.indexOf(NS.HEADING_HINT) < 0) {
+        errors.push('稳定版说明的汇总段没有「N 个测试版」的标题，看不出覆盖了多少版');
+      }
+      if (html && html.indexOf(NS.HEADING_HINT) < 0) {
+        errors.push('说明页 html 里没有汇总段标题（是不是注入草稿后没重新用 am 渲染？）');
+      }
+      const headed = (md.match(/^### \d+\.\d+\.\d+\.\d+$/gm) || []).length;
+      if (headed < betas.length) {
+        errors.push('汇总段只列了 ' + headed + ' 个测试版，应为 ' + betas.length + ' 个（漏版）');
+      }
+    }
     for (const b of betas) {
       if (md.indexOf(b) < 0) errors.push('稳定版说明没覆盖测试版 ' + b + '（草稿里要逐个列出）');
       if (html && html.indexOf(b) < 0) errors.push('稳定版说明 html 没覆盖测试版 ' + b);

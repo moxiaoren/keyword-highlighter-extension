@@ -67,7 +67,13 @@ module.exports = async function run() {
     eq(rb.ok, false, '只写最后一个测试版要拦下来');
     truthy(rb.errors.join(' ').indexOf('2.0.9.1') >= 0, '要点名漏了哪个测试版');
 
-    const good = fixture('2.0.10', versions, { md: '---\ntitle: 2.0.10\n---\n\n汇总 2.0.9.1 与 2.0.9.2' + '内容'.repeat(120), htmlText: '<html>2.0.10 汇总 2.0.9.1 / 2.0.9.2</html>' });
+    const NS = require('../../scripts/notes-summary');
+    const section =
+      NS.MARK_START + '\n## 从 2.0.9 到 2.0.10：2 个测试版都改了什么\n\n### 2.0.9.2\n\n- **修复** 甲\n\n### 2.0.9.1\n\n- **新增** 乙\n\n' + NS.MARK_END;
+    const good = fixture('2.0.10', versions, {
+      md: '---\ntitle: 2.0.10\n---\n\n2.0.10 更新说明' + '内容'.repeat(120) + '\n\n' + section,
+      htmlText: '<html>2.0.10 更新说明 2 个测试版都改了什么 2.0.9.2 2.0.9.1</html>',
+    });
     const rg = A.audit({ root: good, version: '2.0.10' });
     eq(rg.ok, true, rg.errors.join('; '));
   });

@@ -206,7 +206,9 @@ const specs = [
   /* 证书/授权书结构化自动进表。口径见 tests/specs/ocr-auto.test.js 头部 */
   './specs/ocr-auto.test.js',
   /* 发版口径断言：说明页必须存在；稳定版必须汇总上一个稳定版之后的全部测试版。见 specs/release-audit.test.js */
-  './specs/release-audit.test.js'
+  './specs/release-audit.test.js',
+  /* 稳定版说明的测试版汇总：范围/去重/注入说明页草稿/三条出口共用一份数据。见 specs/notes-summary.test.js */
+  './specs/notes-summary.test.js'
 ];
 
 (async () => {
