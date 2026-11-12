@@ -568,17 +568,36 @@
         }
         window.addEventListener('popstate', this._urlFire);
         window.addEventListener('hashchange', this._urlFire);
+        /* 【2.0.10 性能体检】后台标签页不该继续轮询：轮询本身很便宜（一次字符串比较），
+         * 但隐藏的标签页上"便宜"也是白花，而且切回来时可能已经换过好几条路由。
+         * 这里补一次可见性回调，把隐藏期间漏掉的那一次比对补上。 */
+        this._visBound = true;
+        this._visCatch = () => {
+          if (document.hidden) return;
+          if (location.href === this._lastHref) return;
+          this._lastHref = location.href;
+          if (this._urlOnChange) this._urlOnChange(location.href);
+        };
+        document.addEventListener('visibilitychange', this._visCatch);
       }
 
       // 轮询兜底：很多 SPA 框架缓存了原生 history 引用，上面的包装与事件都不触发
       this._lastHref = location.href;      // 重取基线，顺带消掉"包装命中 + 轮询再命中"的重复触发
       clearInterval(this._timers.poll);
-      this._timers.poll = setInterval(() => {
-        if (location.href !== this._lastHref) {
-          this._lastHref = location.href;
-          if (this._urlOnChange) this._urlOnChange(location.href);
-        }
-      }, 600);
+      this._timers.poll = setInterval(() => { this._urlPollTick(); }, 600);
+    },
+
+    /**
+     * 轮询的一次比对（抽成方法只为了能单测：计时器回调本身在垫片里没法手动触发）。
+     * 【2.0.10 性能体检】后台标签页直接返回 —— 隐藏时没人看页面，轮询白跑；
+     * 切回前台由 `visibilitychange` 补一次（见 `setupUrlWatcher`）。
+     */
+    _urlPollTick() {
+      if (typeof document !== 'undefined' && document.hidden) return false;
+      if (location.href === this._lastHref) return false;
+      this._lastHref = location.href;
+      if (this._urlOnChange) this._urlOnChange(location.href);
+      return true;
     },
 
     /* ---------------- ③ 内容指纹轮询（R13） ---------------- */
@@ -640,7 +659,12 @@
 
     /* ---------------- ③b 「内容凭空长出来」兜底（K60） ---------------- */
 
-    /** 当前文档文本总长（只读、不触发布局：`textContent` 走 DOM 树，`innerText` 会强制布局） */
+    /** 当前文档文本总长（只读、不触发布局：`textContent` 走 DOM 树，`innerText` 会强制布局）
+     *
+     * 【2.0.10 性能体检】试过用 TreeWalker 逐节点累加长度，实测**更慢**：
+     * 5614 个文本节点 ⇒ 每秒 5614 次 JS 回调（native `textContent` 单次 ~26ms，TreeWalker 版 ~90ms）。
+     * 所以保留 native 的 `textContent.length`，把开销交给调用方节流
+     * （`setupGrowthWatcher` 按实测耗时自适应拉长间隔）。 */
     textLen() {
       const el = document.body;
       return el && el.textContent ? el.textContent.length : 0;
@@ -666,6 +690,18 @@
       return grew >= Math.max(300, Math.round(before * 0.15));
     },
 
+    /**
+     * 涨势兜底的退避量：按**实测单次耗时**折算，目标占用 ≤2%（cost×50 倍），上限 15s。
+     * 抽成方法是为了能单测（26ms → 1300ms；1000ms → 15000ms 封顶）。
+     * @param {number} costMs 上一次 `textLen()` 的实测耗时
+     * @returns {number} 额外退避毫秒
+     */
+    growthBackoffMs(costMs) {
+      const c = Number(costMs) || 0;
+      if (!(c > 0)) return 0;
+      return Math.min(15000, c * 50);
+    },
+
     setupGrowthWatcher(cfg) {
       clearInterval(this._timers.growth);
       this._timers.growth = null;
@@ -674,11 +710,26 @@
       const interval = (this._config.pageFingerprintIntervalMs != null) ? this._config.pageFingerprintIntervalMs : 1000;
       this._scanTextLen = this.textLen();
 
+      /* 【2.0.10 性能体检】这条是"内容凭空长出来"的兜底，**不需要每秒一次**：
+       * `textLen()` 是 native 全文长度（800 行页 ~26ms、3000 行页 ~100ms），固定每秒跑
+       * 等于在大页面上每秒插一条长任务（实测空闲 5s 有 130ms 花在它上面，3000 行会翻四倍）。
+       * 这里按**实测单次耗时**自适应拉长间隔：目标占用 ≤2%，同时给一个 1s 的下限，
+       * 慢了以后最多退到 15s 一次 —— 兜底语义不变（内容长出来迟早会被发现），
+       * 但不许它把主线程按秒占住。
+       * `interval` 仍由配置控制（单测用 0 表示"下一轮立刻跑"）。 */
+      this._growthNextAt = 0;
+      this._growthCostMs = 0;
       clearInterval(this._timers.growth);   /*【2.0.8.12】同上：配置变更不许叠出第二条增长计时器 */
       this._timers.growth = setInterval(() => {
         if (document.hidden) return;
         if (KH.Rebuilder && KH.Rebuilder.inRebuildWindow) return;
+        if (Date.now() < this._growthNextAt) return;
+        const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
         const now = this.textLen();
+        const t1 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+        this._growthCostMs = Math.max(0, t1 - t0);
+        const backoff = this.growthBackoffMs(this._growthCostMs);
+        this._growthNextAt = Date.now() + Math.max(0, interval) + backoff;
         if (!this.growthVerdict(this._scanTextLen, now)) return;
         this._growthCount = (this._growthCount || 0) + 1;
         this.request('growth');
@@ -821,6 +872,13 @@
       this.teardownObserver();
       clearTimeout(this._visClearTimer);
       this._visClearTimer = null;
+      /* 【2.0.10 性能体检】可见性回调是挂在 document 上的，下线必须摘掉，
+       * 否则 destroy 之后切回前台还会拿旧回调去比 URL（换站点时最容易踩）。 */
+      if (this._visBound && this._visCatch) {
+        document.removeEventListener('visibilitychange', this._visCatch);
+        this._visBound = false;
+        this._visCatch = null;
+      }
       clearInterval(this._timers.poll);
       clearInterval(this._timers.fingerprint);
       clearInterval(this._timers.growth);

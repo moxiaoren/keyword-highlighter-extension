@@ -89,6 +89,27 @@
    */
   const failSrc = new Map();
   const FAIL_MEMO_MS = 10 * 60 * 1000;
+  /**
+   * 【2.0.10 性能体检】这张表原来**没有上限**：长会话里一批图逐个失败（引擎报错 / 超时 /
+   * 图里没字）就会一直往里堆，虽然每条只有几十字节，但它是"只进不出"的。
+   * 现在给硬上限 300：超了先清已过期的，再按插入顺序丢最旧的（Map 天然保序）。
+   * 丢掉的代价只是"再失败一次"，不会影响正确性。
+   */
+  const FAIL_MAX = 300;
+  function noteFail(src, at) {
+    if (!src) return;
+    failSrc.set(src, at || Date.now());
+    if (failSrc.size <= FAIL_MAX) return;
+    const now = Date.now();
+    for (const [k, t] of Array.from(failSrc.entries())) {
+      if (now - t >= FAIL_MEMO_MS) failSrc.delete(k);
+    }
+    while (failSrc.size > FAIL_MAX) {
+      const first = failSrc.keys().next();
+      if (first.done) break;
+      failSrc.delete(first.value);
+    }
+  }
   let tokenSeq = 0;
   /**
    * 超过这么久还没有终态 → 内容脚本**自己判死**。
@@ -1021,7 +1042,7 @@
         it.errorCode = 'timeout';
       }
       failTwin(rec.src, rec.key, '识别引擎长时间没有回应（已超时）', 'timeout');   // T55
-      if (rec.src) failSrc.set(rec.src, t);            // 需求⑨：超时也别下一轮又排一遍
+      if (rec.src) noteFail(rec.src, t);               // 需求⑨：超时也别下一轮又排一遍（2.0.10 起走带上限的 noteFail）
     }
     if (n) notify();
     if (n) pump();                                   // 超时收口也归还了额度 ⇒ 补发队里的图
@@ -1381,7 +1402,7 @@
         it.engineReason = msg.engineReason || '';
         if (msg.code === 'lang-missing') it.why = 'lang-missing';
         /* 需求⑨：失败的图记一笔，别让下一轮扫描再排一次（右键手动那种条目不记） */
-        if (it.src && !/^ctxmenu\|/.test(it.key)) failSrc.set(it.src, Date.now());
+        if (it.src && !/^ctxmenu\|/.test(it.key)) noteFail(it.src);
       }
     }
     if (targets.length) notify();
