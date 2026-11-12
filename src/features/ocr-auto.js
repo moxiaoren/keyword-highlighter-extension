@@ -50,6 +50,23 @@
     return v.length <= 60 && /(19|20)\d{2}/.test(v) && /(至|到|—|－|-|~|～|起)/.test(v);
   }
 
+  /* APP 备案号：`京ICP备2023012345号-6A`（省简称 + ICP备 + 数字 + 序号 + 应用标识）。
+   * 也有只写 `ICP备2023012345号` 的；纯数字、把「备案」二字当值的一律不算。 */
+  function okRecordNo(v) {
+    var s = String(v == null ? '' : v).replace(/\s+/g, '');
+    return s.length >= 8 && s.length <= 40 && /(?:ICP|icp)备\d{4,10}号(?:-\d+[A-Za-z]?)?/.test(s);
+  }
+
+  /* 域名：至少两段带点（`example.com`、`app.example.com.cn`），允许被 OCR 断在端口前。 */
+  function okDomain(v) {
+    return /^[A-Za-z0-9][A-Za-z0-9\-.]*\.[A-Za-z]{2,}(?::\d+)?$/.test(v);
+  }
+
+  /* 合作内容/授权范围是整句说明，不校验形状，只挡空值和超长（防止把整段正文塞进一格）。 */
+  function okCoop(v) {
+    return v.length >= 2 && v.length <= 120;
+  }
+
   /* ---------------- 字段定义 ----------------
    * `line` 是紧凑写法（最常用）；`words` 用来生成「字与字之间允许被 OCR 拆开」的宽松写法
    * —— 真机上「著 作 权 人」「登 记 号」很常见。`被授权方` 不能被 `授权方` 抢走（notAfter）。 */
@@ -60,7 +77,17 @@
     { id: 'licensee', label: '被授权方', words: ['被授权方', '被授权人', '被授权单位', '被授权公司', '乙方'], line: /(被授权方|被授权人|被授权单位|被授权公司|乙方)/, rev: /^(.{2,40}?)\s*[（(]\s*(?:被授权公司|被授权方|被授权单位|乙方)\s*[）)]/, ok: okName },
     { id: 'appName', label: '应用名称', words: ['应用名称', '软件名称', '应用名', '软件名'], line: /(应用名称|软件名称|APP\s*名称|应用名|软件名)/i, ok: okName },
     { id: 'pkg', label: '包名', words: ['包名', '包名称'], line: /(包名|包名称|Bundle\s*ID|applicationId|Application\s*ID)/i, ok: okPkg },
-    { id: 'term', label: '授权期限', words: ['授权期限', '授权有效期', '授权期间', '有效期', '期限'], line: /(授权期限|授权有效期|授权期间|有效期|期限)/, ok: okTerm }
+    { id: 'term', label: '授权期限', words: ['授权期限', '授权有效期', '授权期间', '有效期', '期限'], line: /(授权期限|授权有效期|授权期间|有效期|期限)/, ok: okTerm },
+
+    /* —— APP 备案核准（2026-11-12 用户点名）——
+     * 备案类文件的「主体」不叫著作权人，叫主办单位；编号是 `京ICP备…号-6A`。 */
+    { id: 'registrant', label: '主办单位', words: ['主办单位', '主办单位名称', '主办者', '备案主体', '备案单位'], line: /(主办单位名称|主办单位|主办者|备案主体|备案单位)/, ok: okName },
+    { id: 'recordNo', label: '备案号', words: ['备案号', '备案编号', 'ICP备案号', '网站备案号', 'APP备案号'], line: /((?:ICP|icp)?\s*备案(?:号|编号))/i, ok: okRecordNo },
+    { id: 'domain', label: '域名', words: ['网站域名', '服务域名', '访问域名', '域名'], line: /(?:网站|服务|访问)?域名/, ok: okDomain },
+
+    /* —— 资质 / 合作协议 ——
+     * 协议里常写「合作内容」「授权范围」，是整句，不当成名字校验。 */
+    { id: 'coop', label: '合作内容', words: ['合作内容', '合作范围', '合作方式', '授权内容', '授权范围'], line: /(合作内容|合作范围|合作方式|授权内容|授权范围)/, ok: okCoop }
   ];
 
   function escRe(s) {
@@ -87,14 +114,22 @@
   /* 文档类型 → 要抽的字段（顺序即进表顺序，与用户点名顺序一致） */
   var SETS = {
     cert: ['owner', 'regNo'],
-    auth: ['licensor', 'licensee', 'appName', 'pkg', 'term']
+    auth: ['licensor', 'licensee', 'appName', 'pkg', 'term'],
+    /* APP 备案核准：主体 + 备案号 + 应用名 + 域名 */
+    record: ['registrant', 'recordNo', 'appName', 'domain'],
+    /* 资质 / 合作协议：谁授权给谁 + 应用 + 期限 + 合作内容 */
+    agreement: ['licensor', 'licensee', 'appName', 'pkg', 'term', 'coop']
   };
 
   /* 授权方/被授权方进表时必须写明是**哪一种**授权（2026-11-12 用户点名）：
    * 软著的授权书与 APP 电子版权的授权书是两份不同的文件，进表不能都写成「授权方」。 */
   var LABELS = {
     'auth-soft': { licensor: '软著授权方', licensee: '软著被授权方' },
-    'auth-app': { licensor: 'APP电子版权授权方', licensee: 'APP电子版权被授权方' }
+    'auth-app': { licensor: 'APP电子版权授权方', licensee: 'APP电子版权被授权方' },
+    'record-app': { registrant: 'APP备案主办单位', recordNo: 'APP备案号', appName: 'APP备案应用名称', domain: 'APP备案域名' },
+    'agreement-soft': { licensor: '软著合作授权方', licensee: '软著合作被授权方' },
+    'agreement-app': { licensor: 'APP电子版权合作授权方', licensee: 'APP电子版权合作被授权方' },
+    'agreement-qual': { licensor: '合作授权方', licensee: '合作被授权方' }
   };
 
   /* ---------------- 文档类型 ---------------- */
@@ -117,18 +152,23 @@
   function docOf(it) {
     var label = String((it && it.label) || '');
     if (/授权书/.test(label)) return 'auth';
+    if (/备案核准|备案通知|备案证明|APP\s*备案|应用备案/i.test(label)) return 'record';
+    if (/合作协议|联运协议|推广协议|代理协议|资质|许可协议|授权协议/.test(label)) return 'agreement';
     if (/登记证书|版权证书/.test(label)) return 'cert';
     var head = headOf(it);
     if (/授权书/.test(head)) return 'auth';
-    if (/著作权登记证书|电子版权证书|软件著作权登记证书/.test(head)) return 'cert';
+    if (/备案核准|备案通知|备案证明|APP\s*备案|应用备案/i.test(head)) return 'record';
+    if (/合作协议|联运协议|推广协议|代理协议|许可协议|授权协议/.test(head)) return 'agreement';
+    if (/著作权登记证书|电子版权证书|软件著作权登记证书|版权认证证书/.test(head)) return 'cert';
     return '';
   }
 
-  /** 文档细类：`cert-soft` / `cert-app` / `auth-soft` / `auth-app`。
-   *  只影响授权方/被授权方的进表名字，不影响抽哪些字段。 */
+  /** 文档细类：`cert-soft` / `cert-app` / `auth-soft` / `auth-app` /
+   *  `record-app` / `agreement-soft|app|qual`。只影响进表名字，不影响抽哪些字段。 */
   function kindOf(it) {
     var doc = docOf(it);
     if (!doc) return '';
+    if (doc === 'record') return 'record-app';
     var label = String((it && it.label) || '');
     var head = headOf(it);
     var full = textOf(it);
@@ -136,6 +176,8 @@
      * 只看字段名会把「APP 电子版权授权书」这种配置套到软著文件上，进表名头就错了。 */
     var soft = /(?:19|20)\d{2}\s*SR\s*\d{5,}/i.test(full) || /软著登字/.test(full);
     var app = /电子版权|APP\s*版权|App\s*版权/i.test(full) || /APP|App|app|电子版权/.test(label + ' ' + head);
+    /* 合作协议：看不出是软著还是 APP 版权时，名字回到中性的「合作授权方 / 合作被授权方」。 */
+    if (doc === 'agreement') return 'agreement-' + (app && !soft ? 'app' : (soft ? 'soft' : 'qual'));
     return doc + '-' + (app && !soft ? 'app' : 'soft');
   }
 
@@ -240,9 +282,16 @@
       var t = /((?:19|20)\d{2}\s*[年./\-]\s*\d{1,2}\s*[月./\-]\s*\d{1,2}\s*日?)\s*(?:至|到|—|－|-|~|～)\s*((?:19|20)\d{2}\s*[年./\-]\s*\d{1,2}\s*[月./\-]\s*\d{1,2}\s*日?)/.exec(full);
       if (t) return clean(t[1] + '至' + t[2]);
     }
+    if (id === 'recordNo') {
+      var r = /((?:[\u4e00-\u9fa5]{1,3})?\s*ICP\s*备\s*\d{4,10}\s*号(?:-\d+[A-Za-z]?)?)/i.exec(full);
+      if (r) return r[1].replace(/\s+/g, '');
+    }
+    if (id === 'domain') {
+      var d = /(?:[A-Za-z0-9][A-Za-z0-9\-]*\.)+[A-Za-z]{2,}/.exec(full);
+      if (d && okDomain(d[0])) return d[0];
+    }
     return '';
   }
-
   /**
    * 从一条 OCR 条目里抽出可以进表的行。
    * @param {object} it `KH.ImgOcr.items()` 里的条目（`state/text/label/src`）

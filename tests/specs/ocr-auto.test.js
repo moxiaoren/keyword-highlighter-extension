@@ -151,6 +151,45 @@ module.exports = async function run() {
     truthy(rows.every((r) => r.kind === 'auth-soft'), '正文有 2022SR ⇒ 软著，不受配置字段名影响');
   });
 
+  await test('★ APP 备案核准：主体叫主办单位，编号是 ICP备…号-6A', () => {
+    const SAMPLE = [
+      'APP备案核准通知书',
+      '主办单位：北京知行灵动科技有限公司',
+      '备案号：京ICP备2023012345号-6A',
+      '应用名称：包包源头',
+      '网站域名：app.baobaoyuantou.com',
+      '服务内容：移动应用'
+    ].join('\n');
+    const rows = A.rowsFor({ state: 'done', label: 'APP备案核准函', src: 'r.png', text: SAMPLE });
+    const m = map(rows);
+    eq(m['APP备案主办单位'], '北京知行灵动科技有限公司', '备案类不叫著作权人，叫主办单位');
+    eq(m['APP备案号'], '京ICP备2023012345号-6A', '编号要带省简称与 -6A 后缀');
+    eq(m['APP备案应用名称'], '包包源头');
+    eq(m['APP备案域名'], 'app.baobaoyuantou.com');
+    truthy(rows.every((r) => r.kind === 'record-app'), 'kind 固定 record-app');
+  });
+
+  await test('★ 资质合作协议：甲乙双方 + 应用 + 期限 + 合作内容', () => {
+    const SAMPLE = [
+      '软件合作推广协议',
+      '甲方（授权方）：北京知行灵动科技有限公司',
+      '乙方（被授权方）：致趣娱科技（深圳）有限公司',
+      '合作应用名称：包包源头',
+      '包名：com.baobao.yt',
+      '合作期限：2025年9月12日至2026年9月11日',
+      '合作内容：在指定渠道推广并运营授权应用'
+    ].join('\n');
+    const rows = A.rowsFor({ state: 'done', label: '软件合作推广协议', src: 'a.png', text: SAMPLE });
+    const m = map(rows);
+    eq(m['合作授权方'], '北京知行灵动科技有限公司');
+    eq(m['合作被授权方'], '致趣娱科技（深圳）有限公司');
+    eq(m['应用名称'], '包包源头');
+    eq(m['包名'], 'com.baobao.yt');
+    truthy((m['授权期限'] || '').indexOf('2025年9月12日') >= 0);
+    truthy((m['合作内容'] || '').indexOf('推广') >= 0);
+    truthy(rows.every((r) => r.kind === 'agreement-qual'), '没有软著/APP 证据 ⇒ 中性合作名头');
+  });
+
   await test('★ 条目没跑完 / 没文本 ⇒ 不抽', () => {
     eq(A.rowsFor({ state: 'pending', label: '登记证书', text: CERT }).length, 0);
     eq(A.rowsFor({ state: 'done', label: '登记证书', text: '' }).length, 0);
