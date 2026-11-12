@@ -88,6 +88,9 @@ function audit(opts) {
       if (html) {
         const lis = (html.match(/<li[ >]/g) || []).length;
         if (lis < 6) errors.push('说明页 html 里只有 ' + lis + ' 条要点，汇总段可能没渲染进去');
+        if (html.indexOf('<svg') < 0) {
+          errors.push('说明页 html 里没有任何图：稳定版说明要有结构性展示（flow 流程图或 svg 示意），不能只有文字列表');
+        }
       }
     }
   } else {

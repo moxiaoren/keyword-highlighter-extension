@@ -74,12 +74,22 @@ module.exports = async function run() {
       '\n\n' + NS.MARK_END;
     const good = fixture('2.0.10', versions, {
       md: '---\ntitle: 2.0.10\n---\n\n2.0.10 更新说明' + '内容'.repeat(120) + '\n\n' + section,
-      htmlText: '<html>2.0.10 更新说明 都改了什么 <ul>' +
+      htmlText: '<html>2.0.10 更新说明 都改了什么 <svg><rect/></svg><ul>' +
         ['<li>乙</li>', '<li>甲一</li>', '<li>甲二</li>', '<li>甲三</li>', '<li>甲四</li>', '<li>甲五</li>'].join('') +
         '</ul></html>',
     });
     const rg = A.audit({ root: good, version: '2.0.10' });
     eq(rg.ok, true, rg.errors.join('; '));
+
+    const flat = fixture('2.0.10', versions, {
+      md: '---\ntitle: 2.0.10\n---\n\n2.0.10 更新说明' + '内容'.repeat(120) + '\n\n' + section,
+      htmlText: '<html>2.0.10 更新说明 都改了什么 <ul>' +
+        ['<li>乙</li>', '<li>甲一</li>', '<li>甲二</li>', '<li>甲三</li>', '<li>甲四</li>', '<li>甲五</li>'].join('') +
+        '</ul></html>',
+    });
+    const rf = A.audit({ root: flat, version: '2.0.10' });
+    eq(rf.ok, false, '只有文字列表、没有任何图要拦下来');
+    truthy(rf.errors.join(' ').indexOf('没有任何图') >= 0, '要说清缺的是结构性展示');
   });
 
   await test('★ betasBetween：只取「上一个稳定版之后」的四段号', () => {
