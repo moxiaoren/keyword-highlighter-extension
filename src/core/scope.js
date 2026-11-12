@@ -137,53 +137,61 @@
     return '';
   }
 
-  /** 一条词 → 第一个生效不了的指向；没有就 `null`（与 splitScope 同构：只要有一个配不上，
-   *  它后面（更靠左）的那些 `@` 也不再生效，所以只报**最靠右**的那个问题点） */
-  function issueOf(chip, known, opts, specs) {
-    let s = String(chip == null ? '' : chip).trim();
+  /** 一条词 → 第一个生效不了的指向，或该条目**自己**取不到文字的问题；没有就 `null`。
+   *  与 splitScope 同构：只要有一个 `@字段` 配不上，它后面（更靠左）的那些 `@` 也不再生效，
+   *  所以先只报**最靠右**的那个指向问题；全部指向都合法后，再看条目自身的取值方式。 */
+  function issueOf(chip, known, opts) {
+    const orig = String(chip == null ? '' : chip);
+    let s = orig.trim();
     const km = KV_MARK.exec(s);
     if (km) s = s.slice(0, km.index).trim();
     const list = known || [];
     for (;;) {
       const m = /@([^@\s]+)$/.exec(s);
-      if (!m) return null;
+      if (!m) break;
       const name = m[1].trim();
+      /* `@0` / `@2` 是「取哪一格」的位置后缀，不是指向 —— 交给 `parseLabelSpec` 去判坏没坏，
+       * 别当字段名剥掉（否则 `开发者@0` 会被误报成「不是已配的字段」）。 */
+      if (/^\d+$/.test(name)) break;
       let hit = '';
       for (const k of list) if (sameField(k, name)) { hit = k; break; }
       if (!hit) {
         return {
-          chip: String(chip == null ? '' : chip),
+          chip: orig,
           name: name,
           kind: SUFFIX_RE.test(name) ? 'suffix' : 'unknown',
           suggest: suggestOf(name, list)
         };
       }
-      /* 【2.0.8.21 缺陷③】名字**配得上**也可能永远拿不到值：指向的字段只取图片、或者取值位置
-       * 写坏了（`@0`）。这种"合法但无效"从前是静默的，用户只会觉得"配了没反应"。
-       * 只在**要比文字**的调用方（`imgOcrNeed`：拿字段值当判据）才报 —— 图片命中词那边
-       * 作用域只按字段名生效，报这一条就是误报。 */
-      if (opts && opts.needText) {
-        const why = textLessReason(specs && specs.get(norm(hit)));
-        if (why) {
-          return {
-            chip: String(chip == null ? '' : chip),
-            name: name,
-            kind: 'noText',
-            reason: why,
-            suggest: ''
-          };
-        }
-      }
       s = s.slice(0, m.index).trim();
     }
+    /* 【2.0.10 需求① · 用户纠正（原话）】「图片动态词指向这个字段是看这个指向字段图片 ocr 结果
+     * 里面有没有命中图片动态词，和指向的字段是不是图片不冲突。你要判断也应该判断配的图片动态词
+     * 本身是不是纯图无文字，他才是需要抓取到文本内容的。」
+     * 所以 `@指向` 只回答"去哪张图上找"，指向字段取图不取文字**不影响**这条判据；
+     * 真正会"永远比不中"的是**条目自己**的取值方式（`开发者#图` / `@0`）—— 判它。
+     * `specs` 形参已不再使用，保留只为兼容既有调用点（`scopeIssues` 不再转发）。 */
+    if (!opts || !opts.needText || !s) return null;
+    const F = KH.Fetch;
+    let spec = null;
+    try { spec = (F && typeof F.parseLabelSpec === 'function') ? F.parseLabelSpec(s) : null; } catch (e) { spec = null; }
+    const why = textLessReason(spec);
+    if (!why) return null;
+    return {
+      chip: orig,
+      name: (spec && spec.label) || s,
+      kind: 'noText',
+      reason: why,
+      suggest: ''
+    };
   }
 
   /**
    * 诊断一批词（`|` 分隔或数组）。
    * @param {string|string[]} raw 词串
    * @param {string[]} known 已配的抓取字段裸名（调用方给；不给自己从 `KH.Fetch` 推）
-   * @param {{needText?:boolean, specs?:Map}} [opts] `needText` = 这些指向要拿来比文字
-   *        （只有「图上须有的字段值」是这种），`specs` = `specsOf(fetchLabels)` 的结果
+   * @param {{needText?:boolean}} [opts] `needText` = 这些条目要被拿来比文字
+   *        （此时按**条目自身**的后缀判 `#图` / `@0`，不看指向字段的规格 —— 见 `issueOf`）
    * @returns {Array<{chip:string,name:string,kind:'unknown'|'suffix'|'noText',reason?:string,suggest:string}>}
    */
   function scopeIssues(raw, known, opts) {
@@ -191,22 +199,21 @@
     const out = [];
     for (const chip of list) {
       if (!String(chip == null ? '' : chip).trim()) continue;
-      const bad = issueOf(chip, known, opts, opts && opts.specs);
+      const bad = issueOf(chip, known, opts);
       if (bad) out.push(bad);
     }
     return out;
   }
 
   /** 一条关键词配置 → 两个指向字段的问题（`imgOcrKeyword` / `imgOcrNeed`），带 `field` 归属。
-   *  两个框的判据不同：命中词只按**字段名**生效（报"取不到文字"是误报），
-   *  而「图上须有的字段值」是拿字段**值**去比文字 ⇒ 只有它需要 `needText`。 */
+   *  只有 `imgOcrNeed`（拿字段值当判据）需要 `needText`：它检查的是条目自身是否 `#图`/`@0`；
+   *  图片命中词那边作用域只按字段名生效，报这一条就是误报。 */
   function scopeIssuesOf(meta, known) {
     const m = meta || {};
     const kn = known || knownOf(m.fetchLabels);
-    const specs = specsOf(m.fetchLabels);
     const out = [];
     for (const field of ['imgOcrKeyword', 'imgOcrNeed']) {
-      const opts = { needText: field === 'imgOcrNeed', specs: specs };
+      const opts = { needText: field === 'imgOcrNeed' };
       for (const it of scopeIssues(m[field], kn, opts)) out.push(Object.assign({ field: field }, it));
     }
     return out;

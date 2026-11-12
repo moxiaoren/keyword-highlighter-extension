@@ -532,28 +532,11 @@
    * 「登记号」读成一行一个字的时候，静态词与动态判据**都**判不中，用户看到的是
    * 「图上明明有，却说没命中」。现在两侧一律剔掉**全部空白（含换行）**：换行只是检测框
    * 切行留下的版面痕迹，不是语义。
-   * 两个常量必须**同时**认全部空白：`unshrinkRange` 靠"跳过被剔掉的字符"做下标映射，
-   * 口径不一致会逐行错位（命中块就画到别的字上）。 */
-  const WHITE_CHAR = /\s/;
+   * 2.0.12 需求③起，这条口径**统一收在 `KH.TextNorm`**（全工程唯一的宽松比较实现）：
+   * 比对时吃掉「空白 / OCR 折行（单换行）/ 全半角 / 中英文标点 / 零宽字符 / 大小写」，
+   * 但**不跨空行**——空行是真正的另起一段，用户明确要求「原本就是另起一段的不需要忽略」。
+   * 静态词（图片命中词）与动态词的判据因此完全同源，不会出现"同一句话两处结论不同"。 */
   const WHITE_ALL = /\s+/g;
-
-  /**
-   * 把「剔空白文本」里的区间映射回**原文**区间。
-   * 【为什么必须映射】命中片段要喂给 `OcrCopy.sentenceOf(text, needle)`，而它是在**原文**里
-   * `indexOf` —— 给一个剔过空白的版本就定位不到整句，用户点词块复制就复制不到东西。
-   * 映射不到（区间越界）返回 null，调用方丢掉这一条，不许猜。
-   */
-  function unshrinkRange(text, from, to) {
-    let seen = 0;
-    let start = -1;
-    for (let i = 0; i < text.length; i += 1) {
-      if (WHITE_CHAR.test(text.charAt(i))) continue;
-      if (seen === from) start = i;
-      seen += 1;
-      if (seen === to) return (start >= 0) ? { start: start, end: i + 1 } : null;
-    }
-    return null;
-  }
 
   /**
    * 识别文本里是否出现「图片命中关键词」。
@@ -590,32 +573,27 @@
     };
     const direct = runAny([pattern, literal], raw);
     if (direct.length) return direct;
-    /* 【空白容忍 · 2.0.2.4 需求③】OCR 把「登记号」读成「登记 号」是常态（分栏/字距/表格线都会插空白），
-     * 而"图片命中关键词"是人手打的 —— 一字之差就整条不命中，用户看到的是"识别了却说没命中"。
-     * 口径：**原样匹配不中时**，两侧各剔一次空白再试一次（顺序固定，先"文本剔空白"这条最常见）。
-     * 两条纪律：
-     *   ① 只在"直接匹配失败"后才走这条路 —— 不改变既有语义，零额外开销；
-     *   ② 命中片段与区间**映射回原文**（见 `unshrinkRange`），面板上的词块与复制整句照旧可用；
-     *   ③ 剔的只是**行内空白**（`WHITE_ALL` 不含 `\r`/`\n`）—— 跨行的词不算命中（票 #34 口径）。 */
-    const compactKeyword = rawKeyword.replace(WHITE_ALL, '');
-    const textHasWs = WHITE_CHAR.test(raw);
-    /* 两侧都没有空白 ⇒ 直接匹配已经就是终局，不走第二条路（零额外开销） */
-    if (!textHasWs && compactKeyword === rawKeyword) return direct;
-    const compact = textHasWs ? raw.replace(WHITE_ALL, '') : raw;
-    const tries = [];
-    if (textHasWs) tries.push([pattern, literal]);
-    if (compactKeyword !== rawKeyword) tries.push([patternOf(compactKeyword), literalPatternOf(compactKeyword)]);
-    for (const pats of tries) {
-      const hits = runAny(pats, compact);
-      if (!hits.length) continue;
-      const out = [];
-      for (const m of hits) {
-        const r = unshrinkRange(raw, m.start, m.end);
-        if (r) out.push({ start: r.start, end: r.end, text: raw.slice(r.start, r.end) });
-      }
-      if (out.length) return out;
+    /* 【宽松兜底 · 2.0.12 需求③】原样匹配不中时，走内核唯一的宽松比较入口
+     * `KH.TextNorm.findInText`：它返回的 `start/end` 已经映射回**原文**区间，
+     * 所以 `OcrCopy.sentenceOf(text, needle)` 与面板词块照旧可用。
+     * 纪律：
+     *   ① 只在"直接匹配失败"后才走这条路 —— 不改变既有正则语义，零额外开销；
+     *   ② 带正则元字符的段（`A+B`、`C++`）不在这里重试：上面 `literal` 已经按字面量兜过，
+     *      再拿正则文本当字面量解释一遍只会产生用户没预期的命中；
+     *   ③ 空行是硬边界（`TextNorm` 用 `\u0001` 哨兵），跨段不算命中。 */
+    const TN = KH.TextNorm;
+    if (!TN || typeof TN.findInText !== 'function') return direct;
+    const LITERAL_OK = /^[^\\^$.*+?()[\]{}]+$/;
+    const out = [];
+    for (const seg of rawKeyword.split(/[|｜]/)) {
+      const piece = String(seg || '').trim();
+      if (!piece || !LITERAL_OK.test(piece)) continue;
+      const hit = TN.findInText(raw, piece, { boundary: false });
+      if (!hit) continue;
+      if (out.some((o) => o.start === hit.start && o.end === hit.end)) continue;
+      out.push({ start: hit.start, end: hit.end, text: hit.text });
     }
-    return direct;
+    return out.length ? out : direct;
   }
 
   /**

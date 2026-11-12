@@ -14,9 +14,12 @@
  * 三条纪律（改这里之前先读）：
  *   ① **归一化只用于比较，不覆盖展示原值**。RFC 8264 §12 明说文本变换"rarely reversible"，
  *      大小写折叠会丢信息（`StPeter` → `stpeter`）。所以本模块的返回值只进判据，不许回写配置/笔记。
- *   ② **只做"格式差异"**：空白、全半角、零宽字符、大小写。**不做**去标点、不做 NFKC
- *      （NFKC 会改长度：`①`→`1`、`ﬁ`→`fi`，长度一变就无法把命中区间映射回原文，
- *      面板的词块与"复制整句"会整片错位；UAX #15 自己也警告 KC/KD "must not be blindly applied"）。
+ *   ② **只做"格式差异"**：空白、全半角、零宽字符、大小写，以及**中英文标点的 1:1 折叠**
+ *      （2026-11-12 需求③：`a，b` 与 `a,b` 要算同一个词）。标点折叠只做**单字符→单字符**
+ *      的查表（`，`→`,`、`「`→`"`），绝不合并/删除字符，所以区间映射照旧精确。
+ *      **不做**去标点、不做 NFKC（NFKC 会改长度：`①`→`1`、`ﬁ`→`fi`，长度一变就无法把命中
+ *      区间映射回原文，面板的词块与"复制整句"会整片错位；UAX #15 自己也警告 KC/KD
+ *      "must not be blindly applied"）。
  *   ③ **逐级归并**：`verdict()` 必须说清是"第几级折出来的相等"（fold-ws / fold-width / …），
  *      面板才能把「因为全半角才凑上」如实告诉用户，而不是笼统地说"一致"。
  * ========================================================================= */
@@ -47,12 +50,46 @@
     return c;
   }
 
+  /**
+   * 中英文标点 1:1 折叠表（全角 ASCII 标点已经被 `foldWidthChar` 折过了，这里只补 CJK 专有标点）。
+   * 纪律：**一个字符换一个字符**，不合并（`……` 不能换成 `...`）、不删除 —— 否则
+   * `foldTo().spans` 就映射不回原文，命中块会画到别的字上。
+   */
+  const PUNCT_MAP = {
+    '。': '.', '、': ',', '；': ';', '：': ':', '？': '?', '！': '!',
+    '「': '"', '」': '"', '『': '"', '』': '"', '“': '"', '”': '"', '‘': "'", '’': "'",
+    '【': '[', '】': ']', '《': '<', '》': '>', '〈': '<', '〉': '>', '〔': '[', '〕': ']',
+    '—': '-', '–': '-', '·': '.'
+  };
+
+  function foldPunctChar(c) { return PUNCT_MAP[c] || c; }
+
+  /** 逐字符的最终折叠（全半角 → 中英标点），返回单个字符 */
+  function foldChar(c) { return foldPunctChar(foldWidthChar(c)); }
+
+  /**
+   * 段落边界哨兵：**空行**（两个换行之间没有别的非空白字符）是真正的另起一段，
+   * 比对时不许跨过去（2026-11-12 需求③：「原本就是另起一段的不需要忽略」）。
+   * 单个换行只是 OCR 检测框切行留下的版面痕迹，照旧丢掉。
+   * 用 `\u0001` 而不是 `\n`：它不会被 `WHITE` 吃掉，也不会和用户文本里的任何字符撞车。
+   */
+  const PARA_BREAK = '\u0001';
+
+  function isNl(c) { return c === '\n' || c === '\r'; }
+
   function stripWs(s) { return String(s == null ? '' : s).replace(WHITE_ALL, ''); }
 
   function foldWidth(s) {
     const src = String(s == null ? '' : s);
     let out = '';
     for (let i = 0; i < src.length; i += 1) out += foldWidthChar(src.charAt(i));
+    return out;
+  }
+
+  function foldPunct(s) {
+    const src = String(s == null ? '' : s);
+    let out = '';
+    for (let i = 0; i < src.length; i += 1) out += foldPunctChar(src.charAt(i));
     return out;
   }
 
@@ -72,10 +109,29 @@
     const spans = [];
     for (let i = 0; i < src.length; i += 1) {
       const c = src.charAt(i);
+      /* 换行：单个换行 = 版面折行（丢掉）；空行 = 真段落边界（插哨兵，不许跨段命中） */
+      if (isNl(c)) {
+        let j = i + 1;
+        if (c === '\r' && src.charAt(j) === '\n') j += 1;
+        let k = j;
+        while (k < src.length) {
+          const d = src.charAt(k);
+          if (isNl(d)) break;
+          if (!WHITE.test(d) && !ZERO_WIDTH.test(d)) break;
+          k += 1;
+        }
+        if (k < src.length && isNl(src.charAt(k))) {
+          let end = k + 1;
+          if (src.charAt(k) === '\r' && src.charAt(end) === '\n') end += 1;
+          out += PARA_BREAK;
+          spans.push([i, end]);
+          i = end - 1;
+        }
+        continue;
+      }
       if (WHITE.test(c)) continue;
       if (ZERO_WIDTH.test(c)) continue;
-      const w = foldWidthChar(c);
-      const low = w.toLowerCase();
+      const low = foldChar(c).toLowerCase();
       for (let k = 0; k < low.length; k += 1) {
         out += low.charAt(k);
         spans.push([i, i + 1]);
@@ -84,8 +140,11 @@
     return { text: out, spans: spans };
   }
 
-  /** 全量规范形（L1 去空白 + L2 全半角 + L3 去零宽 + L4 小写）—— 只用于判等/去重，不用于展示 */
-  function keyOf(s) { return foldTo(s).text; }
+  /** 全量规范形（L1 去空白 + L2 全半角 + L3 中英标点 + L4 去零宽 + L5 小写）—— 只用于判等/去重 */
+  function keyOf(s) {
+    /* 首尾的空行不改变"这是同一个值"，只有夹在两个值中间的段边界才有语义 */
+    return foldTo(s).text.replace(/^\u0001+|\u0001+$/g, '');
+  }
 
   /**
    * 「这个值太短，不足以当判据」。
@@ -153,6 +212,7 @@
    *   `same`       原样（去首尾空白）就一样
    *   `fold-ws`    只差空白（OCR 字距/换行造成的）
    *   `fold-width` 只差全半角（`ａｂｃ` vs `abc`）
+   *   `fold-punct` 只差中英文标点（`a，b` vs `a,b`）
    *   `fold-zero`  只差零宽字符
    *   `fold-case`  只差大小写
    *   `weak`       有一侧太短，**不该**参与相等判定（不是"不一致"，别报冲突）
@@ -172,6 +232,7 @@
     const steps = [
       ['fold-ws', (s) => stripWs(s)],
       ['fold-width', (s) => foldWidth(stripWs(s))],
+      ['fold-punct', (s) => foldPunct(stripWs(s))],
       ['fold-zero', (s) => stripZero(foldWidth(stripWs(s)))],
       ['fold-case', (s) => stripZero(foldWidth(stripWs(s))).toLowerCase()]
     ];
@@ -184,17 +245,21 @@
   /** 是不是"可以认为相等"（含折叠出来的相等；`weak` 不算 —— 判不了就不下结论） */
   function equal(a, b) {
     const v = verdict(a, b);
-    return v === 'same' || v === 'fold-ws' || v === 'fold-width' || v === 'fold-zero' || v === 'fold-case';
+    return v === 'same' || v === 'fold-ws' || v === 'fold-width' || v === 'fold-punct'
+      || v === 'fold-zero' || v === 'fold-case';
   }
 
   KH.TextNorm = {
     /** 常量（诊断/单测读，不要在别处再造一份） */
     MIN_ASCII_LEN: MIN_ASCII_LEN,
     MIN_ANY_LEN: MIN_ANY_LEN,
+    PARA_BREAK: PARA_BREAK,
     keyOf: keyOf,
     foldTo: foldTo,
     foldWidth: foldWidth,
     foldWidthChar: foldWidthChar,
+    foldPunct: foldPunct,
+    foldPunctChar: foldPunctChar,
     stripWs: stripWs,
     stripZero: stripZero,
     isWeak: isWeak,

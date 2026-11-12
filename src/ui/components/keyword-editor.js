@@ -458,8 +458,15 @@
           const issues = (KH.Scope && typeof KH.Scope.scopeIssuesOf === 'function')
             ? KH.Scope.scopeIssuesOf(kw) : [];
           if (issues.length) {
-            D().toast('已保存，但有 ' + issues.length
-              + ' 个指向不是已配的抓取字段（打开对应字段的「修改」可查看）', 'warn');
+            /* 2.0.10：诊断现在分两种 —— 指向写错、动态词自己取不到文字（`#图`/`@0`）。
+             * 旧文案一律说「指向不是已配的字段」，第二种情况会被误导，所以分开数。 */
+            const bad = issues.filter((it) => it.kind !== 'noText');
+            const noText = issues.filter((it) => it.kind === 'noText');
+            const parts = [];
+            if (bad.length) parts.push(bad.length + ' 个指向不是已配的抓取字段');
+            if (noText.length) parts.push(noText.length + ' 条动态词自己取不到文字');
+            D().toast('已保存，但有 ' + parts.join('、')
+              + '（打开对应字段的「修改」可查看）', 'warn');
           }
         } catch (e) { /* 诊断失败绝不影响保存 */ }
         if (typeof o.onSaved === 'function') o.onSaved(saved);

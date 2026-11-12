@@ -199,7 +199,10 @@ const specs = [
    * 不一致且没有授权书时给一行结论。口径见 tests/specs/v20818p4.test.js 头部 */
   './specs/v20818p4.test.js',
   /* #116：写错的 `@字段名` 不再静默——诊断清单（只提示、不改判定），见 scope-issues.test.js */
-  './specs/scope-issues.test.js'
+  './specs/scope-issues.test.js',
+  /* 2.0.10 四条需求的不变式：中英文标点 1:1 折叠 + 空行硬边界 / 图片命中词宽松兜底 /
+   * 列表弹窗拖动排序 / 裁剪宽度只增不减 + 政策小标绝对定位。口径见 tests/specs/v2010.test.js 头部 */
+  './specs/v2010.test.js'
 ];
 
 (async () => {

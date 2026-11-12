@@ -707,12 +707,10 @@
               return one;
             };
             const rawAll = alive().map(issueChip).join('|');
-            /* 只有「图上须有的字段值」是拿字段**值**去比文字；图片命中词那边作用域只按字段名
-             * 生效，跟"取不取得到文字"无关。 */
-            const opts = { needText: !!spec.suffixChip, specs: null };
-            if (opts.needText && typeof scope.specsOf === 'function') {
-              opts.specs = scope.specsOf(fetchRawSeen);
-            }
+            /* 只有「图上须有的字段值」（动态词）会被拿来比文字。判据是**条目自己**的取值方式：
+             * `@指向` 只决定去哪张图的 OCR 文字里找，指向字段取图不取文字跟它无关
+             * （用户 2026-11-12 纠正；旧实现拿指向字段的规格判，导致全是误报）。 */
+            const opts = { needText: !!spec.suffixChip };
             const list = scope.scopeIssues(rawAll, known, opts) || [];
             issueEl.textContent = '';
             if (!list.length) { issueEl.hidden = true; return; }
@@ -720,11 +718,10 @@
             for (let i = 0; i < list.length; i++) {
               const it = list[i];
               const text = it.kind === 'noText'
-                ? '「@' + it.name + '」这个字段'
+                ? '「' + it.name + '」这条动态词自己'
                   + (it.reason === 'image-only'
-                    ? '只取图片、不取文字，拿它当判据永远比不中'
-                    : '的取值位置写坏了（取不到格子），拿它当判据永远比不中')
-                  + ' —— 请把它改成能取文字的字段'
+                    ? '配的是「只要图片」，取回的是图片占位符、没有文字，拿它当判据永远比不中 —— 请把它的「取什么内容」改成含文字'
+                    : '的取值位置写坏了（取不到格子），拿它当判据永远比不中 —— 请重设它的「取哪一格」')
                 : it.kind === 'suffix'
                   ? '「@' + it.name + '」把取值后缀写进了指向，这样永远配不上 —— 后缀请写在「抓取后续字段」里，'
                     + '这里只写字段名' + (it.suggest ? '（例如 @' + it.suggest + '）' : '')
@@ -1047,7 +1044,90 @@
             const del = h('button', { class: 'kh-mini-btn kh-list-del', type: 'button', text: '×', title: '删掉这一条' });
             del.addEventListener('click', () => dropRow(row));
             main.appendChild(del);
-            return h('div', { class: 'kh-lrow' + (isTok ? ' kh-lrow-tok' : '') }, detail ? [main, detail] : [main]);
+            const shell = h('div', { class: 'kh-lrow' + (isTok ? ' kh-lrow-tok' : '') }, detail ? [main, detail] : [main]);
+            /* 【2.0.10 需求②】拖动排序：把手只在左边缘（整行 draggable 会抢走输入框的选字手感）。
+             * 落点用行高的一半判断插前/插后，松手时重排 `rows` 与 DOM 两处，写回走整串重排。 */
+            const grip = h('span', { class: 'kh-lrow-grip', text: '⠿', title: '按住拖动，调整这一条的展示顺序' });
+            grip.setAttribute('draggable', 'true');
+            grip.addEventListener('dragstart', (ev) => {
+              dragRow = row;
+              if (ev && ev.dataTransfer) {
+                try { ev.dataTransfer.effectAllowed = 'move'; } catch (e) { /* 老内核 */ }
+                try { ev.dataTransfer.setData('text/plain', String(row.name || '')); } catch (e) { /* 同上 */ }
+              }
+              if (row.el) row.el.classList.add('is-dragging');
+            });
+            grip.addEventListener('dragend', endDrag);
+            main.insertBefore(grip, cb);
+            shell.addEventListener('dragover', (ev) => {
+              if (!dragRow || dragRow === row || !row.el) return;
+              if (ev && typeof ev.preventDefault === 'function') ev.preventDefault();
+              if (ev) ev.dataTransfer && (ev.dataTransfer.dropEffect = 'move');
+              let before = true;
+              try {
+                const rect = row.el.getBoundingClientRect();
+                const y = (ev && typeof ev.clientY === 'number') ? ev.clientY : 0;
+                before = !rect || !rect.height || (y - rect.top) < rect.height / 2;
+              } catch (e) { before = true; }
+              setDropMark(row, before);
+            });
+            shell.addEventListener('drop', (ev) => {
+              if (!dragRow) return;
+              if (ev && typeof ev.preventDefault === 'function') ev.preventDefault();
+              const from = dragRow;
+              const mark = dropMark;
+              endDrag();
+              if (mark && mark.row && mark.row !== from) moveRow(from, mark.row, mark.before);
+            });
+            return shell;
+          }
+
+          /** 拖拽状态（只在一次拖动内存活；松手/取消都要清干净，否则行会一直留高亮） */
+          let dragRow = null;
+          let dropMark = null;
+          let orderDirty = false;
+          function clearDropMarks() {
+            for (const r of rows) {
+              if (!r.el) continue;
+              r.el.classList.remove('drop-before');
+              r.el.classList.remove('drop-after');
+              r.el.classList.remove('is-dragging');
+            }
+            dropMark = null;
+          }
+          function endDrag() {
+            clearDropMarks();
+            dragRow = null;
+          }
+          function setDropMark(row, before) {
+            if (dropMark && dropMark.row !== row) {
+              if (dropMark.row.el) {
+                dropMark.row.el.classList.remove('drop-before');
+                dropMark.row.el.classList.remove('drop-after');
+              }
+            }
+            dropMark = { row: row, before: !!before };
+            if (row.el) {
+              row.el.classList.toggle('drop-before', !!before);
+              row.el.classList.toggle('drop-after', !before);
+            }
+          }
+          /** 把 `row` 移到 `target` 前/后：`rows` 数组与 DOM 同步移动，保存时按新顺序整串重排 */
+          function moveRow(row, target, before) {
+            if (!row || !target || row === target) return false;
+            const from = rows.indexOf(row);
+            if (from < 0) return false;
+            rows.splice(from, 1);
+            const ti = rows.indexOf(target);
+            if (ti < 0) { rows.splice(from, 0, row); return false; }
+            rows.splice(before ? ti : ti + 1, 0, row);
+            if (row.el && target.el && target.el.parentNode === listEl) {
+              listEl.insertBefore(row.el, before ? target.el : target.el.nextSibling);
+            }
+            orderDirty = true;
+            dirty = true;
+            syncCount();
+            return true;
           }
 
           function renderAll() {
@@ -1204,6 +1284,16 @@
             return name;
           };
 
+          /** 原样写回一行：没动过的行直接取 `origRows` 里的**原文片段**（`|` 两侧空格、
+           *  `｜`、后缀写法全保留），只有新增/改过的行才走 `serialize` 重新拼。 */
+          const rawOut = (row) => {
+            if (row.isNew || row.dirty) return serialize(row);
+            if (row.orig >= 0 && origRows[row.orig]) {
+              const o = origRows[row.orig];
+              return String(o.raw == null ? '' : o.raw);
+            }
+            return serialize(row);
+          };
           const tip = isKv
             ? '每行一条；「指向」用可搜索多选设置，#表 表示命中后并入抓取表。没改过的条目保存时原样保留。'
             : isTok
@@ -1243,9 +1333,10 @@
               const live = alive();
               const hasNew = live.some((r) => r.isNew);
               let out;
-              if (hasNew) {
-                /* 有新增行 ⇒ 顺序只能整串重排（新增行按当前显示顺序插进末尾段） */
-                out = live.map(serialize).filter(Boolean).join('|');
+              if (hasNew || orderDirty) {
+                /* 有新增行 **或拖动改过顺序** ⇒ kvApply 按原下标 patch 会把顺序又改回去，
+                 * 只能整串重排；没动过的行用原文片段，一个字节都不归一。 */
+                out = live.map(rawOut).filter(Boolean).join('|');
               } else {
                 const next = rows.map((r) => {
                   if (r.orig < 0) return null;
@@ -1254,7 +1345,7 @@
                 });
                 out = kvApply(origRaw, origRows, next);
                 /* `kvApply` 找不到原片段时退回 `join('|')`：这里再兜一道，别把空段写进存储 */
-                if (/(^|[|｜])\s*([|｜]|$)/.test(out) && live.length) out = live.map(serialize).filter(Boolean).join('|');
+                if (/(^|[|｜])\s*([|｜]|$)/.test(out) && live.length) out = live.map(rawOut).filter(Boolean).join('|');
               }
               st.raw = out;
               st.editIdx = -1;

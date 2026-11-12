@@ -112,32 +112,46 @@ module.exports = async function run() {
     eq(I.scopedRaw('一对一@开发这', '开发者', known), '一对一@开发这', '旧行为一个字不变');
   });
 
-  /* ---------- 2.0.8.21 缺陷③：名字配得上，但永远拿不到文字 ---------- */
+  /* ---------- 2.0.10 缺陷①：判据是「动态词条目自身」的取值方式 ----------
+   * `@指向` 只决定去哪张图的 OCR 文字里找；指向字段自己 `#图` 只影响它自己的抓取值，
+   * 跟「图上须有这个值」无关 —— 旧实现拿指向字段的规格判，整片误报（用户 2026-11-12 纠正）。 */
 
-  await test('★ `#图` 字段：名字合法、只取图片 —— 当判据时要提示，别静默', () => {
-    const specs = KH.Scope.specsOf('开发者#图|登记号');
-    const r = KH.Scope.scopeIssues('一对一@开发者', ['开发者', '登记号'], { needText: true, specs: specs });
-    eq(r.length, 1);
-    eq(r[0].kind, 'noText');
-    eq(r[0].reason, 'image-only');
+  await test('★ 指向的字段是 `#图` 不再误报（动态词拿的是图上文字）', () => {
+    const r = KH.Scope.scopeIssues('一对一@开发者', ['开发者'], { needText: true });
+    eq(r.length, 0, JSON.stringify(r));
   });
 
-  await test('★ `@0` 位置写坏：同样取不到格子，标成 offset-invalid', () => {
-    const specs = KH.Scope.specsOf('开发者@0');
-    const r = KH.Scope.scopeIssues('一对一@开发者', ['开发者'], { needText: true, specs: specs });
-    eq(r.length, 1);
+  await test('★ 条目自己写了 `#图`：取回的是占位符，当判据时才报 image-only', () => {
+    const r = KH.Scope.scopeIssues('开发者#图', ['开发者'], { needText: true });
+    eq(r.length, 1, JSON.stringify(r));
+    eq(r[0].kind, 'noText');
+    eq(r[0].reason, 'image-only');
+    eq(r[0].name, '开发者', '剥掉后缀报裸名');
+  });
+
+  await test('★ 条目自己写了 `@0`：取不到格子，标成 offset-invalid', () => {
+    const r = KH.Scope.scopeIssues('开发者@0', ['开发者'], { needText: true });
+    eq(r.length, 1, JSON.stringify(r));
     eq(r[0].kind, 'noText');
     eq(r[0].reason, 'offset-invalid');
   });
 
   await test('★ 不需要比文字的字段不报 —— 「图片命中词」只按字段名生效', () => {
-    const specs = KH.Scope.specsOf('开发者#图');
-    eq(KH.Scope.scopeIssues('一对一@开发者', ['开发者'], { needText: false, specs: specs }).length, 0);
-    /* 两个框一起诊断时，只有 imgOcrNeed 那一条会被标出来 */
+    eq(KH.Scope.scopeIssues('开发者#图', ['开发者'], { needText: false }).length, 0);
+    /* 两个框一起诊断：字段自己 #图 不影响 imgOcrNeed 的判定 */
     const both = KH.Scope.scopeIssuesOf({
       fetchLabels: '开发者#图',
       imgOcrKeyword: '词@开发者',
       imgOcrNeed: '一对一@开发者'
+    });
+    eq(both.length, 0, JSON.stringify(both));
+  });
+
+  await test('★ 条目自己 #图 时，两个框一起诊断只报 imgOcrNeed 那一条', () => {
+    const both = KH.Scope.scopeIssuesOf({
+      fetchLabels: '开发者#图',
+      imgOcrKeyword: '开发者#图',
+      imgOcrNeed: '开发者#图'
     });
     eq(both.length, 1, JSON.stringify(both));
     eq(both[0].field, 'imgOcrNeed');
@@ -145,8 +159,8 @@ module.exports = async function run() {
   });
 
   await test('★ 正常配置（默认取右邻格文字）不报 noText', () => {
-    const specs = KH.Scope.specsOf('开发者|登记号@2|著作权人^甲方');
     eq(KH.Scope.scopeIssues('一对一@开发者|x@登记号|y@著作权人', ['开发者', '登记号', '著作权人'],
-      { needText: true, specs: specs }).length, 0);
+      { needText: true }).length, 0);
   });
 };
+

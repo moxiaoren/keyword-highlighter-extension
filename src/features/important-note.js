@@ -604,10 +604,14 @@
     /* 【2.0.8.8 需求②】隐私政策行的小徽标：「名」=主标题、「开」=开发者，看它们在不在这段
      * 隐私政策正文里（用户原话：「在标题单元格插入“名”，“开”的小图标」）。
      * 行底色（全中=浅绿、有缺=浅黄）由 JS 用 KH.NoteCheck.COLOR_OK / COLOR_BAD **内联**写入，
-     * 色值只留一份；这里只负责徽标形状与命中/未命中的深浅。 */
+     * 色值只留一份；这里只负责徽标形状与命中/未命中的深浅。
+     * 【2.0.10 需求④】必须是**绝对定位**：以前是 inline-block，插进标题格就把那格的
+     * 最小内容宽度撑大 → 表格自动布局重算 → 内容格宽度变 → 裁一行的判定反复翻转，
+     * 悬窗/贴边模式看着就是在闪、像要展开（用户点名的正是这两个小标）。绝对定位不参与排版。 */
+    .kh-table .kh-table-label { position: relative; }
     .kh-policy-flag {
-      display: inline-block; margin-left: 3px; padding: 0 3px; border-radius: 3px;
-      font-size: 10px; line-height: 14px; font-weight: 600; vertical-align: bottom;
+      position: absolute; right: 3px; top: 2px; padding: 0 3px; border-radius: 3px;
+      font-size: 10px; line-height: 14px; font-weight: 600;
       background: #e2e8f0; color: #475569;
     }
     .kh-policy-flag.is-hit { background: #2e7d32; color: #fff; }
@@ -1311,8 +1315,16 @@
       /* 未挂载时量不出真实高度，此时连类名都别动。 */
       if (!el.isConnected) continue;
       const txt = String(el.textContent || '');
-      const w = Math.round(clipContentWidth(el) * 10) / 10;
+      const measured = Math.round(clipContentWidth(el) * 10) / 10;
       const tight = el.classList.contains('kh-val-tight');
+      /* 【2.0.10 需求④】宽度只增不减：`.kh-val-tight` 换成 `display:-webkit-box` 后，
+       * 表格自动布局会跟着变（内容格变窄 → 表格重算 → 用更窄的宽度重判 → 判成「放得下」
+       * → 摘掉 clamp → 又变宽…）。用户看到的就是「反复试图展开 + 闪烁」。
+       * 同一段文字只认历史最大宽度；文字变了才重新取基准。 */
+      const w = (typeof el.__khClipBase === 'number' && el.__khClipTxt === txt)
+        ? Math.max(measured, el.__khClipBase)
+        : measured;
+      el.__khClipBase = w;
       /* 同一段文字 + 同一个宽度 ⇒ 结果不会变：只做幂等校准，一次量都不做。 */
       if (el.__khClipTxt === txt && el.__khClipW === w && typeof el.__khClipNeed === 'boolean') {
         if (el.__khClipNeed !== tight) el.classList.toggle('kh-val-tight', el.__khClipNeed);
@@ -3532,6 +3544,8 @@
         return name + '「' + shown + '」' + tail;
       };
       const lines = [];
+      /* 小标是绝对定位的（见 CSS 注释）：两个都缺时靠 top 往下排，不许叠在一起。 */
+      let flagIdx = 0;
       for (let i = 0; i < v.items.length; i++) {
         const it = v.items[i];
         lines.push(lineOf(it));
@@ -3545,6 +3559,9 @@
         flag.className = 'kh-policy-flag is-miss';
         flag.textContent = it.key === 'title' ? '名' : '开';
         flag.title = lineOf(it);
+        /* 绝对定位不参与排版；两个都缺时按序往下排（16px = 14px 行高 + 2px 间隙）。 */
+        flag.style.top = (2 + flagIdx * 16) + 'px';
+        flagIdx++;
         labelCell.appendChild(flag);
       }
       /* 没抓到的项也要写出来：不写的话用户会以为「这一项校验过并且通过了」。 */
