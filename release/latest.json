@@ -1,8 +1,8 @@
 {
   "version": "2.0.10",
-  "zip": "",
+  "zip": "https://moxiaoren.github.io/keyword-highlighter-extension/keyword-highlighter-v2.0.10.zip",
   "crx": "https://moxiaoren.github.io/keyword-highlighter-extension/release/keyword-highlighter-extension-2.0.10.crx",
-  "sha256": "",
+  "sha256": "2726D3988297F3593AFA109F4E1E2E7AEAEE93A33A569075D5FA07BD8CFD09C0",
   "notes": "【回归】单测 **1129** 条 · 机械红线 **68** 项 · 真浏览器回归 **内容层 84 + UI 层 66**（本次打包实测，未跑到的项不列）\n\n【优化·重页面不再每秒卡一下】内容自动重建的兜底检查原来固定每秒跑一次全文长度：800 行页面单次约 26ms、3000 行约 100ms，等于每秒往主线程塞一条长任务。现在按**实测耗时**自适应拉长间隔（目标占用不超过 2%，最慢 15 秒一次），3000 行页面的空闲占用从约 10% 降到 2% 以内，兜底语义不变。\n\n【优化·后台标签页不空转】URL 轮询与内容检查在标签页隐藏时直接跳过；切回前台会补一次比对，不会漏掉隐藏期间的路由变化。挂上的可见性监听在切站点 / 销毁时一并摘掉，不会留幽灵回调。\n\n【修复·图片失败备忘没有上限】长会话里一批图逐个失败（引擎报错 / 超时 / 图里没字）时，失败备忘只进不出。现在有 300 条硬上限，超了先清过期项、再丢最旧的；代价只是「再失败一次」，不影响正确性。",
   "publishedAt": "2026-11-12",
   "htmlUrl": "https://github.com/moxiaoren/keyword-highlighter-extension/releases"
