@@ -92,6 +92,9 @@
         const p = raw.trim();
         if (!p) continue;
         if (cur && offsetTailOf(cur) && /^[0-9\s-]+$/.test(p)) { cur += ',' + p; continue; }
+        /* 【2.0.9.2】`#图1,3` / `#1,3` 的逗号属于「点名第几张图」后缀（与 fetch.js 的 splitLabelTokens 同口径）：
+         * 不当分隔符，否则保存一次就变成 `截图#图1|3`，第三个序号静默丢失。 */
+        if (cur && /#\s*(?:图|仅图)?\s*\d+$/.test(cur) && /^\d+$/.test(p)) { cur += ',' + p; continue; }
         if (cur) out.push(cur);
         cur = p;
       }

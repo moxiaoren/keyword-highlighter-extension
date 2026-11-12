@@ -974,8 +974,10 @@ module.exports = async function run() {
   });
 
   /* 【2.0.2.17 需求⑥ → 2.0.4 需求①收严】图片 OCR 命中后把「键：值」行并进抓取字段表，
-   * 但**必须先对那个词配后缀标记**（`#表`/`#kv`）：没标记的词只做命中判定，一行都不进表。 */
-  await test('★ 需求①：只有配了后缀标记的词才进表，标题格=命中词、值=分隔符之后', () => {
+   * 但**必须先对那个词配后缀标记**（`#表`/`#kv`）：没标记的词只做命中判定，一行都不进表。
+   * 【2.0.10.1】证书/授权书另有结构化自动抽取（ocr-auto.js）：它不看 `#表`，
+   * 认得出文档类型就补行 —— 所以这张证书用例里「著作权人」会被自动抽出来。 */
+  await test('★ 需求①：只有配了后缀标记的词走命中词进表；证书类文档另有自动抽取补行', () => {
     const IN = KH.ImportantNote;
     const orig = KH.ImgOcr;
     KH.ImgOcr = {
@@ -992,10 +994,17 @@ module.exports = async function run() {
     try {
       const meta = { pinId: 'r6', imgOcr: true, imgOcrKeyword: '登记号#表|著作权人' };
       eq(JSON.stringify(IN.ocrExtraRows(meta)),
-        JSON.stringify([{ label: '登记号', value: '2018SR458983' }]),
-        '「登 记 号」被 OCR 读散也要认；「著作权人」没标记 ⇒ 不进表；两张图同值只留一条；别的规则不算');
-      eq(JSON.stringify(IN.ocrExtraRows(Object.assign({}, meta, { imgOcrKeyword: '登记号' }))), '[]',
-        '★ 收严：没配后缀标记 ⇒ 一行都不进表（旧版是"所有命中行都进表"）');
+        JSON.stringify([
+          { label: '登记号', value: '2018SR458983' },
+          { label: '著作权人', value: '某某公司' }
+        ]),
+        '「登 记 号」被 OCR 读散也要认；「著作权人」没 #表 不走命中词路径，但证书类自动抽取会补它；两张图同值只留一条');
+      eq(JSON.stringify(IN.ocrExtraRows(Object.assign({}, meta, { imgOcrKeyword: '登记号' }))),
+        JSON.stringify([
+          { label: '著作权人', value: '某某公司' },
+          { label: '登记号', value: '2018SR458983' }
+        ]),
+        '★ 一个 #表 都没配：命中词一行都不进表，只剩证书自动抽取的两行（顺序按证书字段表）');
       eq(JSON.stringify(IN.ocrExtraRows(Object.assign({}, meta, { imgOcr: false }))), '[]', '没勾「识别图片文字」⇒ 不补行');
       eq(JSON.stringify(IN.ocrExtraRows(Object.assign({}, meta, { pinId: 'r-none' }))), '[]', '别的规则的结果不许串味');
       eq(JSON.stringify(IN.ocrExtraRows(null)), '[]', '没有 meta ⇒ 安全返回空');

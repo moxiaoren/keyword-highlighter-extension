@@ -549,6 +549,10 @@
    *   执行顺序固定：`!` 去空白 → `^` 按锚点切 → `%` 按码点截取（与书写顺序无关）。
    */
   const IMG_SUFFIX_RE = /#\s*(图|仅图)?\s*(\d+)?\s*$/;
+  /* 【2.0.9.2 需求】`#图1,3` / `#1,3` = **点名第几张图**（1 起数，跨格累计，与"前 N 张"同一套序号）。
+   * 为什么必须用逗号：`#图3` 早有"最多 3 张"的语义，直接把 3 解释成"第 3 张"会改掉老配置；
+   * 逗号列表只在**至少两个序号**时成立，单序号仍走老规则（`#1` 右邻一格、`#图1` 只留 1 张）。 */
+  const IMG_PICK_RE = /#\s*(图|仅图)?\s*(\d+(?:\s*[,，]\s*\d+)+)\s*$/;
   /* 【2.0.8.14 需求①】字符类必须**排斥全部后缀记号**（`@ # ^ ! ~ * %`）：
    * 旧写法只排 `@ # ^`，于是 `名称@2~!` 的 `@` 会把 `2~!` 整串当表达式捕获 ⇒ 判非法、
    * `@2` 静默失效、`~`/`!` 也跟着被吞（用户实测：「@2 会被误读，从而都失效」）。 */
@@ -571,6 +575,7 @@
     let offset = '';
     let imgOnly = false;
     let imgLimit = 0;
+    let imgPick = [];
     let noImg = false;
     let simple = false;
     let stripSpace = false;
@@ -605,6 +610,14 @@
         link = true;
         linkTpl = tpl;
         s = s.slice(0, mlk.index).replace(/^[ 　]+|[ 　]+$/g, '');
+        continue;
+      }
+      const mp = IMG_PICK_RE.exec(s);
+      if (mp) {
+        /* 点名第几张图：`#图1,3` = 只要第 1、3 张图；`#1,3` = 文字照留、图只留第 1、3 张。 */
+        imgPick = parseImgPick(mp[2]);
+        if (mp[1]) imgOnly = true;
+        s = s.slice(0, mp.index).replace(/^[ \u3000]+|[ \u3000]+$/g, '');
         continue;
       }
       const mi = IMG_SUFFIX_RE.exec(s);
@@ -656,7 +669,7 @@
       }
       break;
     }
-    return { label: s, simple: simple, imgOnly: imgOnly, imgLimit: imgLimit, noImg: noImg, offset: offset, offsetInvalid: isOffsetInvalid(offset), stripSpace: stripSpace, anchor: anchor, sliceSpec: sliceSpec, clip: clip, link: link, linkTpl: linkTpl };
+    return { label: s, simple: simple, imgOnly: imgOnly, imgLimit: imgLimit, imgPick: imgPick, noImg: noImg, offset: offset, offsetInvalid: isOffsetInvalid(offset), stripSpace: stripSpace, anchor: anchor, sliceSpec: sliceSpec, clip: clip, link: link, linkTpl: linkTpl };
   }
 
   /**
@@ -670,6 +683,7 @@
     /* `#0`＝该字段不要图，独占一行：它和 `#图`/`#N` 是相反意图，能同时写出来只说明用户写错了，
      * 此时以 `#0` 为准（展示串也照实写出来，让用户一眼看见自己写了什么）。 */
     if (it.noImg) out.push('#0');
+    else if (it.imgPick && it.imgPick.length) out.push('#' + (it.imgOnly ? '图' : '') + it.imgPick.join(','));
     else if (it.imgOnly) out.push(it.imgLimit ? '#图' + it.imgLimit : '#图');
     else if (it.imgLimit) out.push('#' + it.imgLimit);
     else if (it.simple) out.push('#1');
@@ -693,7 +707,8 @@
     const out = [];
     const off = String(it.offset || '').trim();
     if (off) out.push(it.offsetInvalid ? ('值格 @' + off + '（无效）') : ('值格：右数第 ' + off + ' 格'));
-    if (it.noImg) out.push('不要图片');
+    if (it.imgPick && it.imgPick.length) out.push((it.imgOnly ? '只留图：' : '文字与图：') + '第 ' + it.imgPick.join('、') + ' 张');
+    else if (it.noImg) out.push('不要图片');
     else if (it.imgOnly) out.push(it.imgLimit ? ('只留图（最多 ' + it.imgLimit + ' 张）') : '只留图');
     else if (it.imgLimit) out.push('图最多 ' + it.imgLimit + ' 张');
     else if (it.simple) out.push('只读右邻一格');
@@ -791,6 +806,9 @@
         const p = piece.trim();
         if (!p) continue;
         if (cur && /@[0-9\s-]+$/.test(cur) && /^[0-9\s-]+$/.test(p)) { cur += ',' + p; continue; }
+        /* 【2.0.9.2】`#图1,3` / `#1,3` 的逗号属于「点名第几张图」后缀，不能当字段分隔符
+         * （否则 `截图#图1,3` 会被切成 `截图#图1` + `3` 两个字段，第三个序号静默失效）。 */
+        if (cur && /#\s*(?:图|仅图)?\s*\d+$/.test(cur) && /^\d+$/.test(p)) { cur += ',' + p; continue; }
         if (cur) out.push(cur);
         cur = p;
       }
@@ -813,11 +831,27 @@
   }
 
   /**
+   * `1,3` / `1，3` → `[1,3]`（1 起数、去重、升序、最多 12 个）。
+   * 序号是**整字段的图片序号**（跨格累计，和 `#N` 的"前 N 张"同一套计数），不是"这一格里第几张"。
+   */
+  function parseImgPick(text) {
+    const out = [];
+    for (const part of String(text == null ? '' : text).split(/[,，]/)) {
+      const n = parseInt(part, 10);
+      if (!(n >= 1 && n <= 99)) continue;
+      if (out.indexOf(n) < 0) out.push(n);
+    }
+    out.sort((a, b) => a - b);
+    return out.slice(0, 12);
+  }
+
+  /**
    * 按字段的图片选项处理一段内容（**只动图片占位符与文字，不碰 HTML**，调用方随后仍走 escHtml）：
    *   · `imgOnly`  → 只留图片（丢掉文字）
    *   · `imgLimit` → 该字段全局最多保留 N 张图（`budget.n` 跨单元格累计，保证"前 N 张"是整字段的前 N 张）
+   *   · `imgPick`  → 只保留点名的第几张图（序号同样跨单元格累计）
    *   · `noImg`（`#0`）→ 图**全不要**（丢掉图片占位符、文字照留）
-   * 用户口径："抓取需要支持仅图片、前几张图片的方式"。
+   * 用户口径："抓取需要支持仅图片、前几张图片的方式"，以及"图片可以配成抓第一张和第三张"。
    */
   function applyImgPolicy(text, opt, budget) {
     let s = String(text == null ? '' : text);
@@ -828,24 +862,24 @@
       s = stripImgPlaceholders(s);
       return s.replace(/[ \t]{2,}/g, ' ').replace(/^[ \t]+|[ \t]+$/g, '');
     }
+    if (!opt) return s;
+    const pick = (Array.isArray(opt.imgPick) && opt.imgPick.length) ? opt.imgPick : null;
+    const limit = opt.imgLimit > 0 ? opt.imgLimit : 0;
+    if (!opt.imgOnly && !limit && !pick) return s;
     /* 【刻意**不按 src 去重**】真实页面里同一张图可能在两列/两行里各出现一次
      * （用户给的结构就是这样：最新版本与历史版本都放了「图一图二」），
      * 去重会直接把其中一列吃空 —— 比"偶尔多一张重复图"糟得多。 */
-    if (!opt || (!opt.imgOnly && !opt.imgLimit)) return s;
-    if (opt.imgOnly) {
-      const keep = [];
-      s.replace(IMG_RE, (m) => { keep.push(m); return m; });
-      s = keep.join(' ');
-      if (!s) return '';
-    }
-    if (opt.imgLimit > 0) {
-      if (b.n == null) b.n = 0;                  // 跨单元格累计，**不重置**（整字段的前 N 张）
-      s = s.replace(IMG_RE, (m) => {
-        b.n++;
-        return b.n <= opt.imgLimit ? m : '';
-      });
-      s = s.replace(/[ \t]{2,}/g, ' ').replace(/^[ \t]+|[ \t]+$/g, '');
-    }
+    if (b.n == null) b.n = 0;                    // 跨单元格累计，**不重置**
+    const kept = [];
+    s = s.replace(IMG_RE, (m) => {
+      b.n++;
+      const keep = pick ? (pick.indexOf(b.n) >= 0) : (!limit || b.n <= limit);
+      if (keep) kept.push(m);
+      return keep ? m : '';
+    });
+    s = s.replace(/[ \t]{2,}/g, ' ').replace(/^[ \t]+|[ \t]+$/g, '');
+    /* 只留图：文字一个不留（占位符按序号/上限过滤后的那份） */
+    if (opt.imgOnly) return kept.length ? kept.join(' ') : '';
     return s;
   }
 
@@ -1711,7 +1745,7 @@
      * 分开的原因：签名只回答"能不能并成一条"，把 `ABC` 与 `abc` 也并掉会改变既有版面。 */
     const squashVal = (v) => KH.TextNorm.stripWs(v);
     const contentOf = (it) => (it.rows || []).map((line) => (line || []).map((c) => squashVal(c && c.t)));
-    const imgPolicyOf = (opt) => [!!(opt && opt.imgOnly), (opt && opt.imgLimit) || 0, !!(opt && opt.noImg)];
+    const imgPolicyOf = (opt) => [!!(opt && opt.imgOnly), (opt && opt.imgLimit) || 0, !!(opt && opt.noImg), (opt && opt.imgPick || []).join(',')];
     const sigOf = (it) => JSON.stringify([contentOf(it), it.ocr ? 'ocr' : imgPolicyOf(it.opt)]);
     const contentSigOf = (it) => JSON.stringify(contentOf(it));
     /* 合并后的字段名用 `\u0001` 当分隔符（不落进笔记 HTML）：用户自己的字段名里可能带 `/`，

@@ -608,9 +608,16 @@
      * 【2.0.10 需求④】必须是**绝对定位**：以前是 inline-block，插进标题格就把那格的
      * 最小内容宽度撑大 → 表格自动布局重算 → 内容格宽度变 → 裁一行的判定反复翻转，
      * 悬窗/贴边模式看着就是在闪、像要展开（用户点名的正是这两个小标）。绝对定位不参与排版。 */
+    /* 【2.0.10.2 用户】小标改成**横排、浮在标题文字上面**：整组塞进一个绝对定位的容器，
+     * 从右往左依次排开；容器不占父格排版宽度，所以既不会把标题格撑宽（→ 裁切判据来回翻），
+     * 也不会把标题文字挤到换行 —— 需要时它就直接压在文字尾部。 */
     .kh-table .kh-table-label { position: relative; }
+    .kh-table .kh-policy-flags {
+      position: absolute; right: 3px; top: 50%; transform: translateY(-50%);
+      display: inline-flex; align-items: center; gap: 2px; z-index: 2;
+    }
     .kh-policy-flag {
-      position: absolute; right: 3px; top: 2px; padding: 0 3px; border-radius: 3px;
+      position: static; padding: 0 3px; border-radius: 3px;
       font-size: 10px; line-height: 14px; font-weight: 600;
       background: #e2e8f0; color: #475569;
     }
@@ -3517,7 +3524,7 @@
       tr.setAttribute('data-kh-policy-sig', sig);
       const labelCell = tr.querySelector('td');
       if (labelCell) {
-        const old = labelCell.querySelectorAll('.kh-policy-flag');
+        const old = labelCell.querySelectorAll('.kh-policy-flag, .kh-policy-flags');
         for (let i = 0; i < old.length; i++) if (old[i].parentNode) old[i].parentNode.removeChild(old[i]);
       }
       tintRow(tr, '');
@@ -3544,8 +3551,18 @@
         return name + '「' + shown + '」' + tail;
       };
       const lines = [];
-      /* 小标是绝对定位的（见 CSS 注释）：两个都缺时靠 top 往下排，不许叠在一起。 */
-      let flagIdx = 0;
+      /* 小标横排放在同一个容器里（见 CSS 注释）：容器绝对定位、不参与排版，
+       * 「名」「开」从左到右依次排开，需要时直接压在标题文字尾部。 */
+      const doc = tr.ownerDocument || document;
+      let flagBox = null;
+      const flagBoxOf = () => {
+        if (!labelCell) return null;
+        if (flagBox) return flagBox;
+        flagBox = doc.createElement('span');
+        flagBox.className = 'kh-policy-flags';
+        labelCell.appendChild(flagBox);
+        return flagBox;
+      };
       for (let i = 0; i < v.items.length; i++) {
         const it = v.items[i];
         lines.push(lineOf(it));
@@ -3554,15 +3571,13 @@
          * 橙色小标，指明是谁没找到；命中的那一项有绿底行就够，也不挂。 */
         if (!labelCell || v.ok || it.hit) continue;
         if (it.key !== 'title' && it.key !== 'dev') continue;
-        const doc = tr.ownerDocument || document;
+        const box = flagBoxOf();
+        if (!box) continue;
         const flag = doc.createElement('span');
         flag.className = 'kh-policy-flag is-miss';
         flag.textContent = it.key === 'title' ? '名' : '开';
         flag.title = lineOf(it);
-        /* 绝对定位不参与排版；两个都缺时按序往下排（16px = 14px 行高 + 2px 间隙）。 */
-        flag.style.top = (2 + flagIdx * 16) + 'px';
-        flagIdx++;
-        labelCell.appendChild(flag);
+        box.appendChild(flag);
       }
       /* 没抓到的项也要写出来：不写的话用户会以为「这一项校验过并且通过了」。 */
       for (let i = 0; i < (v.missing || []).length; i++) {
@@ -5382,7 +5397,12 @@
     if (!KH.ImgOcr || typeof KH.ImgOcr.items !== 'function') return [];
     /* 只有被标记的词才进表（唯一实现：`KH.ImgOcr.kvWords`，与匹配口径同一份标记语法） */
     const words = (typeof KH.ImgOcr.kvWords === 'function') ? (KH.ImgOcr.kvWords(meta.imgOcrKeyword) || []) : [];
-    if (!words.length) return [];
+    /* 【2.0.10.1 需求】证书/授权书的结构化自动抽取（`src/features/ocr-auto.js`）：
+     * 用户点名「没配命中词就不进表」这件事 —— 它不依赖 `imgOcrKeyword`，所以
+     * 词表为空时**不能**在这里提前返回；下面按条目调 `rowsFor(it)` 直接补行。 */
+    const autoApi = KH.OcrAuto;
+    const autoOn = !!(autoApi && typeof autoApi.rowsFor === 'function');
+    if (!words.length && !autoOn) return [];
     /* 【2.0.7.1 需求②】`#表` 词也认 `@字段名` 作用域：某字段配了限定词，就只用限定词补行。
      * 同一个 label 只算一次（`kvLiteralRe` 要编译正则）。 */
     /* 【2.0.8.6 需求③ 提速】`kvLiteralRe` 每次都要编译正则，而 `ocrExtraRows` 在每张卡、每轮
@@ -5418,7 +5438,7 @@
     try { list = KH.ImgOcr.items() || []; } catch (e) { return []; }
     const out = [];
     const seen = new Set();
-    const pushRow = (label, value, src) => {
+    const pushRow = (label, value, src, kind) => {
       /* 【2026-11-11 需求④】进表前按字段语义收窄：授权方/被授权方只留公司名、登记号只留代码。
        * 放在这一处，三条取值路径（表格格 / 文本行 / 下一行）一起生效。 */
       const v = kvTrimValue(label, value);
@@ -5439,7 +5459,7 @@
        * 加一个可枚举字段会把它们全变红，而它们守的是"进表规则"，不是"行有几个字段"）。 */
       const row = { label: label, value: v };
       Object.defineProperty(row, 'from', {
-        value: { src: String(src == null ? '' : src), label: label, kind: 'static' },
+        value: { src: String(src == null ? '' : src), label: label, kind: kind || 'static' },
         enumerable: false
       });
       out.push(row);
@@ -5454,7 +5474,7 @@
       if (!it || it.ruleId !== ruleId || it.state !== 'done' || !it.text) continue;
       if (Array.isArray(it.matched) && !it.matched.length) continue;
       const matchers = matchersFor(it.label);
-      if (!matchers.length) continue;
+      if (!matchers.length && !autoOn) continue;
       const rawLines = String(it.text).split(/\r?\n/);
       for (let li = 0; li < rawLines.length; li++) {
         const line = rawLines[li].trim();
@@ -5492,6 +5512,13 @@
           const next = kvNextValue(rawLines, li + 1, mt.word, matchers);
           if (next) pushRow(mt.word, kvCutValue(next, matchers, mt.word), it.src);
         }
+      }
+      /* 【2.0.10.1 需求】证书/授权书的结构化行：`kind:'auto'` 让「值是自动抽的」可追溯，
+       * 与用户命中词抽出来的行同表展示、同一套去重（同 label 同 value 不会出两行）。 */
+      if (autoOn) {
+        let autoRows = [];
+        try { autoRows = autoApi.rowsFor(it) || []; } catch (e) { autoRows = []; }
+        for (const ar of autoRows) pushRow(ar.label, ar.value, ar.src, 'auto');
       }
     }
     return out;

@@ -147,6 +147,31 @@ module.exports = async function run() {
     truthy(b.indexOf(encodeURIComponent('4')) < 0, '第 4 张应被丢掉');
   });
 
+  await test('★ 2.0.9.2：`#图1,3` 点名第几张图（跨格累计；单序号仍是老语义）', () => {
+    const p = F.parseLabels('截图#图1,3|图标#2,4|混合#图3|资质类型#1');
+    console.log('        ' + JSON.stringify(p));
+    eq(p[0].label, '截图', '逗号列表是后缀，不能留在字段名里');
+    truthy(p[0].imgOnly, '`#图1,3` = 只要图片');
+    eq(p[0].imgPick.join(','), '1,3', '解析成 [1,3]');
+    truthy(!p[1].imgOnly && p[1].imgPick.join(',') === '2,4', '`#2,4` = 文字照留、图只留第 2、4 张');
+    truthy(p[2].imgOnly && p[2].imgLimit === 3 && !p[2].imgPick.length, '`#图3` 仍是「最多 3 张」，没被解释成「第 3 张」');
+    truthy(p[3].simple && !p[3].imgPick.length, '`#1` 仍是简单模式');
+    eq(F.suffixTextOf(p[0]), '#图1,3', '展示串逐字回写');
+    eq(F.suffixTextOf(p[1]), '#2,4', '不带图字时也回写序号');
+    truthy(F.describeSuffix(p[0]).indexOf('第 1、3 张') >= 0, '人话描述要说清第几张');
+
+    const budget = { n: 0 };
+    const a = F.applyImgPolicy(PH('1', 'https://ex.com/1.png') + ' ' + PH('2', 'https://ex.com/2.png'), p[0], budget);
+    const b = F.applyImgPolicy(PH('3', 'https://ex.com/3.png') + ' ' + PH('4', 'https://ex.com/4.png'), p[0], budget);
+    console.log('        第一格 = ' + JSON.stringify(a) + ' 第二格 = ' + JSON.stringify(b));
+    eq(a.match(/KHIMG/g).length, 1, '第一格只留第 1 张');
+    truthy(a.indexOf('\u0001KHIMG\u00012|') < 0, '第 2 张应被丢掉');
+    eq(b.match(/KHIMG/g).length, 1, '第二格只留第 3 张（序号跨格累计）');
+    truthy(b.indexOf('\u0001KHIMG\u00014|') < 0, '第 4 张应被丢掉');
+    truthy(!/[\u4e00-\u9fa5]/.test(a + b), '仅图片模式下文字不出现');
+    truthy((a + b).indexOf('说法') < 0, '`#图1,3` 只留图、不留文字');
+  });
+
   await test('★ 同一张图在两列各出现一次 → **两列都要保留**（刻意不去重）', () => {
     /* 用户给的结构里"最新版本/历史版本"两列放的是同一批图；按 src 去重会把一列吃空。 */
     const budget = { n: 0 };

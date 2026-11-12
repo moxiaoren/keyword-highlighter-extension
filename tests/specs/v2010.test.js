@@ -125,20 +125,34 @@ module.exports = async function run() {
     truthy(/el\.__khClipTxt === txt/.test(seg), '换了文字才重新取基准');
   });
 
-  await test('★ 「名」「开」小标绝对定位：不占标题格宽度、不参与换行', () => {
+  await test('★ 「名」「开」小标横排、浮在标题文字上面', () => {
     const src = read('src/features/important-note.js');
-    const i = src.indexOf('.kh-policy-flag {');
-    truthy(i >= 0, '小标样式还在');
-    const seg = src.slice(i, i + 260);
-    truthy(/position:\s*absolute/.test(seg), '必须是绝对定位（inline-block 会撑宽标题格 → 整表重排）');
-    truthy(/right:\s*3px/.test(seg) && /top:\s*2px/.test(seg), '贴右上角');
-    truthy(!/margin-left/.test(seg), '绝对定位后不许再留 margin（会把它推出去）');
+    const i = src.indexOf('.kh-table .kh-policy-flags {');
+    truthy(i >= 0, '小标要有一个绝对定位的容器');
+    const seg = src.slice(i, i + 320);
+    truthy(/position:\s*absolute/.test(seg), '容器绝对定位：不参与排版、不撑宽标题格');
+    truthy(/right:\s*3px/.test(seg) && /top:\s*50%/.test(seg) && /translateY\(-50%\)/.test(seg),
+      '贴在标题格右侧、垂直居中（压在文字上面）');
+    truthy(/display:\s*inline-flex/.test(seg), '两个小标横排');
+    const fi = src.indexOf('.kh-policy-flag {');
+    truthy(fi >= 0, '小标样式还在');
+    const fseg = src.slice(fi, fi + 220);
+    truthy(/position:\s*static/.test(fseg), '小标回到普通流，由容器负责排开');
+    truthy(!/margin-left/.test(fseg), '不许留 margin（会被推出容器）');
     truthy(/\.kh-table \.kh-table-label \{ position: relative; \}/.test(src),
       '标题格要成为定位上下文，否则小标会跑到整张卡外面');
+    truthy(!/flagIdx \* 16/.test(src), '竖排的旧写法要删掉');
   });
 
-  await test('★ 两个小标（名 + 开）竖排：不许叠在一起', () => {
-    const src = read('src/features/important-note.js');
-    truthy(/flagIdx \* 16/.test(src), '第二个小标要往下让 16px');
+  await test('★ 抓取字段可以点名第几张图（控件与写回）', () => {
+    const src = read('src/ui/components/fields.js');
+    truthy(/指定第几张图（#图1,3）/.test(src), '「取什么内容」要有这一档');
+    truthy(/const imgPickInp = h\('input'/.test(src), '需要输入序号的控件');
+    truthy(/imgPickInp\.hidden = m !== '#PICK'/.test(src), '只有选中这一档时才露出输入框');
+    truthy(/sp\.imgPick = \(m === '#PICK'\)/.test(src), '改档位要写回 sp.imgPick');
+    truthy(/\.sort\(\(a, b\) => a - b\)/.test(src), '序号要排好再存，`3,1` 与 `1,3` 等价');
+    truthy(/it\.imgPick && it\.imgPick\.length/.test(src), '展示串要先看序号');
+    truthy(/'#' \+ \(it\.imgOnly \? '图' : ''\) \+ it\.imgPick\.join\(','\)/.test(src),
+      '写回 `#图1,3`（只留图）或 `#1,3`（文字照留）');
   });
 };

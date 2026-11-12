@@ -841,11 +841,14 @@
               h('option', { value: 'default', text: '右邻这一格' }),
               h('option', { value: '#1', text: '右邻一格（#1）' }),
               h('option', { value: '#图', text: '只要图片（#图）' }),
+              h('option', { value: '#PICK', text: '指定第几张图（#图1,3）' }),
               h('option', { value: '#图N', text: '图片，最多 N 张（#图N）' }),
               h('option', { value: '#N', text: '图上文字与图，最多 N 张（#N）' }),
               h('option', { value: '#0', text: '不要图片（#0）' })
             ]);
             const imgN = h('input', { class: 'kh-input kh-sfx-num', type: 'number', min: '1', step: '1', value: String(sp.imgLimit || 2) });
+            /* 【2.0.9.2】点名第几张图：1 起数、跨格累计，`1,3` = 第 1 张和第 3 张。 */
+            const imgPickInp = h('input', { class: 'kh-input kh-sfx-num', type: 'text', value: (sp.imgPick || []).join(','), placeholder: '如 1,3' });
             const offsetInp = h('input', { class: 'kh-input kh-sfx-offset', type: 'text', value: String(sp.offset || ''), placeholder: '留空＝右邻；如 2 或 1-3' });
             const anchorInp = h('input', { class: 'kh-input kh-sfx-anchor', type: 'text', value: String(sp.anchor || ''), placeholder: '如 [复制]：只取它之前的文字' });
             const sliceMode = h('select', { class: 'kh-input kh-sfx-slice' }, [
@@ -876,6 +879,7 @@
             /* 初始态：storage 里的后缀 → 表单控件 */
             let mode = 'default';
             if (sp.noImg) mode = '#0';
+            else if (sp.imgPick && sp.imgPick.length) mode = '#PICK';
             else if (sp.imgOnly) mode = sp.imgLimit ? '#图N' : '#图';
             else if (sp.imgLimit) mode = '#N';
             else if (sp.simple) mode = '#1';
@@ -902,6 +906,7 @@
             const syncNums = () => {
               const m = modeSel.value;
               imgN.hidden = !(m === '#图N' || m === '#N');
+              imgPickInp.hidden = m !== '#PICK';
               const sm2 = sliceMode.value;
               sliceA.hidden = sm2 === 'none';
               sliceB.hidden = sm2 !== 'range';
@@ -909,10 +914,18 @@
             const compose = () => {
               const m = String(modeSel.value || 'default');
               sp.noImg = m === '#0';
-              sp.imgOnly = (m === '#图' || m === '#图N');
+              sp.imgOnly = (m === '#图' || m === '#图N' || m === '#PICK');
               sp.simple = m === '#1';
               const n = Math.max(0, parseInt(imgN.value, 10) || 0);
               sp.imgLimit = (m === '#图N' || m === '#N') ? n : 0;
+              sp.imgPick = (m === '#PICK')
+                ? String(imgPickInp.value == null ? '' : imgPickInp.value)
+                  .split(/[,，\s]+/)
+                  .map((x) => parseInt(x, 10))
+                  .filter((x, i, arr) => x >= 1 && x <= 99 && arr.indexOf(x) === i)
+                  .sort((a, b) => a - b)
+                  .slice(0, 12)
+                : [];
               sp.offset = String(offsetInp.value == null ? '' : offsetInp.value).replace(/\s+/g, '');
               sp.offsetInvalid = false;
               sp.stripSpace = !!stripCb.checked;
@@ -938,6 +951,7 @@
             };
             modeSel.addEventListener('change', compose);
             imgN.addEventListener('input', compose);
+            imgPickInp.addEventListener('input', compose);
             offsetInp.addEventListener('input', compose);
             anchorInp.addEventListener('input', compose);
             sliceMode.addEventListener('change', compose);
@@ -951,7 +965,7 @@
             syncNums();
             paintPreview();
             detail.appendChild(h('div', { class: 'kh-sfx-grid' }, [
-              group('取哪一格', [modeSel, imgN]),
+              group('取哪一格', [modeSel, imgN, imgPickInp]),
               group('值格位置 @', [offsetInp]),
               group('取什么内容', [anchorInp, sliceMode, sliceA, sliceB,
                 h('label', { class: 'kh-sfx-check' }, [clipCb, h('span', { text: '内容格只显示一行（悬停看全文）' })]),
@@ -1704,6 +1718,7 @@
     if (!it) return '';
     let s = '';
     if (it.noImg) s = '#0';
+    else if (it.imgPick && it.imgPick.length) s = '#' + (it.imgOnly ? '图' : '') + it.imgPick.join(',');
     else if (it.imgOnly) s = it.imgLimit ? '#图' + it.imgLimit : '#图';
     else if (it.imgLimit) s = '#' + it.imgLimit;
     else if (it.simple) s = '#1';
