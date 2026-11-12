@@ -56,8 +56,8 @@
   var DEFS = [
     { id: 'owner', label: '著作权人', words: ['著作权人', '著作权所有者', '版权所有人', '版权人'], line: /(著作权人|著作权所有者|版权所有人|版权人)/, ok: okName },
     { id: 'regNo', label: '登记号', words: ['登记号', '证书号'], line: /(登记号|证书号|软著登字第)/, strong: /登\s*记\s*号/, ok: okCode },
-    { id: 'licensor', label: '授权方', words: ['授权方', '授权人', '授权单位', '甲方'], notAfter: '被', line: /(?<!被)(授权方|授权人|授权单位|甲方)/, ok: okName },
-    { id: 'licensee', label: '被授权方', words: ['被授权方', '被授权人', '被授权单位', '乙方'], line: /(被授权方|被授权人|被授权单位|乙方)/, ok: okName },
+    { id: 'licensor', label: '授权方', words: ['授权方', '授权人', '授权单位', '授权公司', '甲方'], notAfter: '被', line: /(?<!被)(授权方|授权人|授权单位|授权公司|甲方)/, rev: /^(.{2,40}?)\s*[（(]\s*(?:授权公司|授权方|授权单位|甲方)\s*[）)]/, ok: okName },
+    { id: 'licensee', label: '被授权方', words: ['被授权方', '被授权人', '被授权单位', '被授权公司', '乙方'], line: /(被授权方|被授权人|被授权单位|被授权公司|乙方)/, rev: /^(.{2,40}?)\s*[（(]\s*(?:被授权公司|被授权方|被授权单位|乙方)\s*[）)]/, ok: okName },
     { id: 'appName', label: '应用名称', words: ['应用名称', '软件名称', '应用名', '软件名'], line: /(应用名称|软件名称|APP\s*名称|应用名|软件名)/i, ok: okName },
     { id: 'pkg', label: '包名', words: ['包名', '包名称'], line: /(包名|包名称|Bundle\s*ID|applicationId|Application\s*ID)/i, ok: okPkg },
     { id: 'term', label: '授权期限', words: ['授权期限', '授权有效期', '授权期间', '有效期', '期限'], line: /(授权期限|授权有效期|授权期间|有效期|期限)/, ok: okTerm }
@@ -131,9 +131,12 @@
     if (!doc) return '';
     var label = String((it && it.label) || '');
     var head = headOf(it);
-    var sig = label + ' ' + head;
-    var app = /APP|App|app|电子版权/.test(sig);
-    return doc + '-' + (app ? 'app' : 'soft');
+    var full = textOf(it);
+    /* 正文证据优先：授权书正文里的登记号是 `2022SR…`（软著），或者明写「电子版权 / APP 版权」。
+     * 只看字段名会把「APP 电子版权授权书」这种配置套到软著文件上，进表名头就错了。 */
+    var soft = /(?:19|20)\d{2}\s*SR\s*\d{5,}/i.test(full) || /软著登字/.test(full);
+    var app = /电子版权|APP\s*版权|App\s*版权/i.test(full) || /APP|App|app|电子版权/.test(label + ' ' + head);
+    return doc + '-' + (app && !soft ? 'app' : 'soft');
   }
 
   /* ---------------- 取值 ---------------- */
@@ -197,6 +200,34 @@
     return '';
   }
 
+  /* 反向版式：`公司名（被授权公司）：` —— 名字写在标签前面，授权书里很常见。 */
+  function valueBeforeLabel(line, def) {
+    if (!def.rev) return '';
+    var m = def.rev.exec(String(line || '').trim());
+    if (!m) return '';
+    var v = clean(m[1]);
+    /* `授权方（甲方）：公司名` 这种写法里，括号前的「授权方」只是标签本身，
+     * 不能当成值；真正的值在冒号后面，交给常规路径。 */
+    if (/^(?:甲方|乙方|被?授权(?:方|人|单位|公司))$/.test(v)) return '';
+    return def.ok(v) ? v : '';
+  }
+
+  /* 应用名兜底：授权书常写 `《包包源头》(以下简称"授权应用")`，没有「应用名称」这个标签。 */
+  function appNameFromTitle(full) {
+    var re = /《([^》]{2,40})》/g;
+    var m;
+    var first = '';
+    while ((m = re.exec(full))) {
+      var v = clean(m[1]);
+      if (!okName(v)) continue;
+      if (/授权|协议|合同|证书|申请|说明|承诺/.test(v)) continue;
+      var after = full.slice(m.index + m[0].length, m.index + m[0].length + 12);
+      if (/以下简称|下称/.test(after)) return v;
+      if (!first) first = v;
+    }
+    return first;
+  }
+
   /* 版式兜底：登记号/授权期限有很稳的形状，标签被 OCR 认坏时还能捞回来。 */
   function fallbackText(full, id) {
     if (id === 'regNo') {
@@ -232,6 +263,11 @@
       var def = BY_ID[ids[k]];
       if (!def) continue;
       var v = '';
+      /* 反向版式先试：`致趣娱科技（深圳) 有限公司（被授权公司)：` 里名字在标签左边，
+       * 按「标签后取值」永远取到冒号后面那句话，被授权方就丢了。 */
+      if (def.rev) {
+        for (var ri = 0; ri < lines.length && !v; ri++) v = valueBeforeLabel(lines[ri], def);
+      }
       /* 有 `strong`（更精确的标题词）就先按它找一遍：证书上同时印着「证书号」和「登记号」时，
        * 用户点名的「登记号」优先，不能被前一行那个别名抢走。 */
       if (def.strong) {
@@ -251,6 +287,12 @@
         else if (!same) v = valueNextLine(lines, i, def);
       }
       if (!v || !def.ok(v)) v = fallbackText(full, def.id);
+      if (!v || !def.ok(v)) {
+        if (def.id === 'appName') v = appNameFromTitle(full);
+        /* 授权书写「我司授予贵司…」时，授权方就是发文方本身；至少把主体关系标出来，
+         * 不能让这一行整个消失。 */
+        else if (def.id === 'licensor' && /我司|本公司/.test(full)) v = '我司';
+      }
       if (!v || !def.ok(v)) continue;
       /* 授权方/被授权方按文档细类改名：软著与 APP 电子版权不能混成同一个字段名。 */
       var label = overrides[def.id] || def.label;
