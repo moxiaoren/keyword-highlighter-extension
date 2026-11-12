@@ -60,19 +60,23 @@ module.exports = async function run() {
     truthy(r.errors.join(' ').indexOf('缺说明页 html') >= 0);
   });
 
-  await test('★ 稳定版：必须覆盖上一个稳定版之后的每一个测试版', () => {
+  await test('★ 稳定版：说明页里要有汇总段（不列测试版号，但要点不能少）', () => {
     const versions = ['2.0.10', '2.0.9.2', '2.0.9.1', '2.0.9', '2.0.8.23'];
     const bad = fixture('2.0.10', versions, { md: '---\ntitle: 2.0.10\n---\n\n2.0.9.2 的那些改动…' + '内容'.repeat(120), htmlText: '<html>2.0.10</html>' });
     const rb = A.audit({ root: bad, version: '2.0.10' });
-    eq(rb.ok, false, '只写最后一个测试版要拦下来');
-    truthy(rb.errors.join(' ').indexOf('2.0.9.1') >= 0, '要点名漏了哪个测试版');
+    eq(rb.ok, false, '没有汇总段要拦下来');
+    truthy(rb.errors.join(' ').indexOf('汇总段') >= 0, '要说清缺的是汇总段');
 
     const NS = require('../../scripts/notes-summary');
     const section =
-      NS.MARK_START + '\n## 从 2.0.9 到 2.0.10：2 个测试版都改了什么\n\n### 2.0.9.2\n\n- **修复** 甲\n\n### 2.0.9.1\n\n- **新增** 乙\n\n' + NS.MARK_END;
+      NS.MARK_START + '\n## 2.0.10 都改了什么\n\n### 新功能\n\n- **新增** 乙\n\n### 问题修复\n\n' +
+      ['- **修复** 甲一', '- **修复** 甲二', '- **修复** 甲三', '- **修复** 甲四', '- **修复** 甲五'].join('\n') +
+      '\n\n' + NS.MARK_END;
     const good = fixture('2.0.10', versions, {
       md: '---\ntitle: 2.0.10\n---\n\n2.0.10 更新说明' + '内容'.repeat(120) + '\n\n' + section,
-      htmlText: '<html>2.0.10 更新说明 2 个测试版都改了什么 2.0.9.2 2.0.9.1</html>',
+      htmlText: '<html>2.0.10 更新说明 都改了什么 <ul>' +
+        ['<li>乙</li>', '<li>甲一</li>', '<li>甲二</li>', '<li>甲三</li>', '<li>甲四</li>', '<li>甲五</li>'].join('') +
+        '</ul></html>',
     });
     const rg = A.audit({ root: good, version: '2.0.10' });
     eq(rg.ok, true, rg.errors.join('; '));

@@ -76,19 +76,19 @@ function audit(opts) {
         errors.push('稳定版说明缺汇总段：先跑 `node scripts/notes-summary.js --write`（会写入 ' + NS.MARK_START + ' … ' + NS.MARK_END + '）');
       }
       if (md.indexOf(NS.HEADING_HINT) < 0) {
-        errors.push('稳定版说明的汇总段没有「N 个测试版」的标题，看不出覆盖了多少版');
+        errors.push('稳定版说明的汇总段没有「都改了什么」的标题');
       }
       if (html && html.indexOf(NS.HEADING_HINT) < 0) {
         errors.push('说明页 html 里没有汇总段标题（是不是注入草稿后没重新用 am 渲染？）');
       }
-      const headed = (md.match(/^### \d+\.\d+\.\d+\.\d+$/gm) || []).length;
-      if (headed < betas.length) {
-        errors.push('汇总段只列了 ' + headed + ' 个测试版，应为 ' + betas.length + ' 个（漏版）');
+      // 用户口径：不列测试版号，所以这里只要求「够像一份汇总」，
+      // 不逐个版本号点卯；条目太少说明汇总被删空或没注入。
+      const bullets = (md.match(/^- /gm) || []).length;
+      if (bullets < 6) errors.push('汇总段只有 ' + bullets + ' 条要点，至少要 6 条（全部测试版都改了什么）');
+      if (html) {
+        const lis = (html.match(/<li[ >]/g) || []).length;
+        if (lis < 6) errors.push('说明页 html 里只有 ' + lis + ' 条要点，汇总段可能没渲染进去');
       }
-    }
-    for (const b of betas) {
-      if (md.indexOf(b) < 0) errors.push('稳定版说明没覆盖测试版 ' + b + '（草稿里要逐个列出）');
-      if (html && html.indexOf(b) < 0) errors.push('稳定版说明 html 没覆盖测试版 ' + b);
     }
   } else {
     info.push('测试版：说明页只需覆盖本版');

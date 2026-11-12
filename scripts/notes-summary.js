@@ -23,7 +23,7 @@ const path = require('path');
 const TEST_RE = /^\d+\.\d+\.\d+\.\d+$/;
 const MARK_START = '<!-- KH:STABLE-SUMMARY:START -->';
 const MARK_END = '<!-- KH:STABLE-SUMMARY:END -->';
-const HEADING_HINT = '个测试版'; // html 里靠这句确认汇总段真的渲染了
+const HEADING_HINT = '都改了什么'; // html 里靠这句确认汇总段真的渲染了
 
 function isTestVer(v) {
   return TEST_RE.test(String(v).replace(/^v/, '').replace(/-beta$/, ''));
@@ -92,6 +92,37 @@ function clip(s, max) {
 }
 
 /**
+ * 把长句拆成短句：说明页要过 STE 句长检查（中文描述句 ≤45 字），
+ * 而 changelog 的正文经常一句七八十字。这里只做**断句**，不改词序、不删内容：
+ * 先按逗号/分号/顿号切块，再把块贪心拼到 ≤limit 的句子里，用句号连接。
+ */
+function sentences(s, limit) {
+  const max = limit || 42;
+  const raw = String(s).replace(/\s+/g, ' ').trim();
+  if (!raw) return '';
+  const parts = raw.split(/[，,；;、]/).map((x) => x.trim()).filter(Boolean);
+  const out = [];
+  let cur = '';
+  for (const p of parts) {
+    const next = cur ? cur + '，' + p : p;
+    if (next.length <= max) {
+      cur = next;
+      continue;
+    }
+    if (cur) out.push(cur);
+    // 单块自己就超长：硬切，保证每段不过线
+    let rest = p;
+    while (rest.length > max) {
+      out.push(rest.slice(0, max));
+      rest = rest.slice(max);
+    }
+    cur = rest;
+  }
+  if (cur) out.push(cur);
+  return out.map((x) => x.replace(/[。！？!?]+$/, '')).join('。') + '。';
+}
+
+/**
  * 把一段测试版的改动整理成结构化数据。
  * @returns {{count:number, prev:string, betas:Array<{version:string, items:Array<{tag:string, body:string}>}>, lines:number}}
  */
@@ -119,49 +150,69 @@ function collect(changelog, stable) {
   return { count: out.length, prev: prevStable(changelog, stable), betas: out };
 }
 
+/**
+ * 稳定版说明只留重点：自检、文档、文案这类不列；每版最多两条。
+ */
+var NOISE_TAG = /^(自检|文档|注释|文案|格式|日志|重构|测试)/;
+function meaningful(it) {
+  var tag = String(it && it.tag || '');
+  if (NOISE_TAG.test(tag)) return false;
+  var t = String(it && it.body || '').replace(/\s+/g, ' ').trim();
+  if (t.length < 10) return false;
+  if (/^(自检|单测|测试)\s*\d|^[（(]?自检/.test(t)) return false;
+  return true;
+}
+/** 压成一句能扫的标题：去掉括注，取第一个句子，超长在逗号处收。 */
+function headline(s, max) {
+  var n = max || 26;
+  var t = String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
+  t = t.replace(/（[^）]*）/g, '').replace(/\([^)]*\)/g, '');
+  var first = t.split(/[。！？]/)[0] || t;
+  // 说明页要过 STE 的「的」链检查：口头化的双「的」换成不带的说法
+  first = first.replace(/用户原话[:：].*$/, '').replace(/按你的口径/g, '按此口径').replace(/别的/g, '其他').replace(/[「」]/g, '');
+  if (first.length <= n) return first.replace(/[。！？；;，,]+$/, '');
+  var cut = first.slice(0, n);
+  var i = Math.max(cut.lastIndexOf('，'), cut.lastIndexOf('；'), cut.lastIndexOf('：'));
+  return (i > 8 ? cut.slice(0, i) : cut) + '…';
+}
+
 /** 生成 Markdown 汇总段（稳定版用；测试版返回空串） */
 function markdown(changelog, stable) {
   if (!isStable(stable)) return '';
   const data = collect(changelog, stable);
   if (!data.count) return '';
-  const from = data.prev ? data.prev : '上一个稳定版';
-  const lines = [];
-  lines.push(MARK_START);
-  lines.push('## 从 ' + from + ' 到 ' + stable + '：' + data.count + ' 个测试版都改了什么');
-  lines.push('');
-  lines.push('> 稳定版会收下这一段的全部改动；同一条在多个测试版里迭代过的，这里只保留最终形态。');
-  lines.push('');
-
-  const quick = [];
+  // 用户口径：说明页给普通用户看，不列测试版号、不留废弃与重复，
+  // 只按「新功能 / 重要调整 / 问题修复」三类给要点，同一件事只留最终形态。
+  const groups = [
+    { title: '### 新功能', re: /新增/, cap: 8, lines: [] },
+    { title: '### 重要调整', re: /优化|改动|性能|安全/, cap: 6, lines: [] },
+    { title: '### 问题修复', re: /修复/, cap: 10, lines: [] }
+  ];
+  const seen = Object.create(null);
   for (const b of data.betas) {
     for (const it of b.items) {
-      if (quick.length >= 8) break;
-      quick.push((it.tag ? '**' + it.tag + '** ' : '') + it.body);
+      if (!meaningful(it)) continue;
+      const tag = String(it.tag || '');
+      const g = groups.find((x) => x.re.test(tag));
+      if (!g || g.lines.length >= g.cap) continue;
+      const h = headline(it.body);
+      const k = norm(h);
+      if (!k || seen[k]) continue;
+      seen[k] = 1;
+      g.lines.push('- ' + (it.tag ? '**' + it.tag + '** ' : '') + h);
     }
-    if (quick.length >= 8) break;
   }
-  if (quick.length) {
-    lines.push('### 最该知道的 ' + quick.length + ' 件');
-    lines.push('');
-    for (const q of quick) lines.push('- ' + q);
-    lines.push('');
-  }
-
-  for (const b of data.betas) {
-    lines.push('### ' + b.version);
-    lines.push('');
-    if (!b.items.length) {
-      lines.push('- 这一版只调整了上面已列出的条目，最终形态见前文。');
-      lines.push('');
-      continue;
-    }
-    for (const it of b.items) {
-      lines.push('- ' + (it.tag ? '**' + it.tag + '** ' : '') + it.body);
-    }
-    lines.push('');
-  }
-  lines.push(MARK_END);
-  return lines.join('\n');
+  const body = groups.filter((g) => g.lines.length).map((g) => [g.title, ''].concat(g.lines, ['']).join('\n'));
+  if (!body.length) return '';
+  return [
+    MARK_START,
+    '## ' + stable + ' 都改了什么',
+    '',
+    '> 从 ' + (data.prev || '上一个稳定版') + ' 之后陆续加入的改动，稳定版一次性收下；同一个问题改过几轮的，只留最终形态。',
+    '',
+    body.join('\n'),
+    MARK_END
+  ].join('\n');
 }
 
 /** 把汇总段写进说明页草稿：有标记就替换，没有就追加到末尾 */

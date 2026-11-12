@@ -52,19 +52,19 @@ module.exports = async function run() {
     eq(d.betas[0].items[0].body.indexOf('改法 B') >= 0, true, '留最新那一版的写法');
   });
 
-  await test('★ markdown：有标记、有「N 个测试版」标题、逐版小节', () => {
+  await test('★ markdown：有标记、按新功能/调整/修复三类给要点、不列测试版号', () => {
     const cl = [
       entry('2.0.10'),
-      entry('2.0.9.2', ['【修复】甲问题']),
-      entry('2.0.9.1', ['【新增】乙功能']),
+      entry('2.0.9.2', ['【修复】甲问题：取不到正文那一类现在能判了']),
+      entry('2.0.9.1', ['【新增】乙功能：图片可以点名第几张']),
       entry('2.0.9'),
     ];
     const md = NS.markdown(cl, '2.0.10');
     truthy(md.indexOf(NS.MARK_START) >= 0 && md.indexOf(NS.MARK_END) >= 0, '要有可替换的标记');
-    truthy(md.indexOf('2 个测试版都改了什么') >= 0, '标题要写清覆盖了几版');
-    truthy(md.indexOf('### 2.0.9.2') >= 0 && md.indexOf('### 2.0.9.1') >= 0, '每版一个小节');
+    truthy(md.indexOf('2.0.10 都改了什么') >= 0, '标题写清是哪个稳定版');
+    truthy(md.indexOf('### 新功能') >= 0 && md.indexOf('### 问题修复') >= 0, '按类型分组');
     truthy(md.indexOf('甲问题') >= 0 && md.indexOf('乙功能') >= 0, '正文要进汇总');
-    truthy(md.indexOf('最该知道的') >= 0, '要有扫读用的重点');
+    truthy(md.indexOf('### 2.0.9.2') < 0 && md.indexOf('2.0.9.1') < 0, '测试版号不展示给用户');
   });
 
   await test('★ 测试版不生成汇总段', () => {
@@ -72,7 +72,7 @@ module.exports = async function run() {
   });
 
   await test('★ inject：没有标记就追加，有标记就原位替换（不会越注越多）', () => {
-    const sec = NS.markdown([entry('2.0.10'), entry('2.0.9.1', ['【新增】乙'])], '2.0.10');
+    const sec = NS.markdown([entry('2.0.10'), entry('2.0.9.1', ['【新增】乙功能：图片可以点名第几张'])], '2.0.10');
     const once = NS.inject('---\ntitle: x\n---\n\n正文', sec);
     truthy(once.indexOf(NS.MARK_START) > 0, '追加在正文之后');
     const twice = NS.inject(once, sec);
@@ -88,7 +88,7 @@ module.exports = async function run() {
     truthy(d.betas.some((b) => b.version === '2.0.8.23'), '最新的那个要在');
     truthy(d.betas.some((b) => b.version === '2.0.8.1'), '最早的那个也要在');
     const md = NS.markdown(cl, '2.0.9');
-    truthy(md.length > 3000, '汇总不能只有几行标题，实际 ' + md.length);
+    truthy(md.length > 1000, '汇总不能只有几行标题，实际 ' + md.length);
   });
 
   await test('★ 三条出口共用一份数据：Release 正文与断言都 require 本模块', () => {
