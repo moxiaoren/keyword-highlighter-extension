@@ -57,21 +57,30 @@ module.exports = async function run() {
 
   await test('★ 授权书：自动出五个字段，顺序与用户点名一致', () => {
     const rows = A.rowsFor({ state: 'done', label: '计算机软件著作权登记证书授权书', src: 'b.png', text: AUTH });
-    eq(rows.map((r) => r.label).join(','), '授权方,被授权方,应用名称,包名,授权期限');
+    eq(rows.map((r) => r.label).join(','), '软著授权方,软著被授权方,应用名称,包名,授权期限');
     const m = map(rows);
-    eq(m['授权方'], '北京知行灵动科技有限公司');
-    eq(m['被授权方'], '上海云启信息技术有限公司');
+    eq(m['软著授权方'], '北京知行灵动科技有限公司');
+    eq(m['软著被授权方'], '上海云启信息技术有限公司');
     eq(m['应用名称'], '云启助手');
     eq(m['包名'], 'com.yunqi.helper');
     eq(m['授权期限'], '2024年1月1日至2026年12月31日');
     eq(rows[0].doc, 'auth');
+    eq(rows[0].kind, 'auth-soft', '软著授权书要标明归属');
   });
 
   await test('★ 「被授权方」不会被「授权方」的标签抢走', () => {
     const text = ['APP电子版权证书授权书', '被授权方：上海云启信息技术有限公司', '包名：com.yunqi.helper'].join('\n');
     const m = map(A.rowsFor({ state: 'done', label: 'APP电子版权证书授权书', src: 'c.png', text }));
-    truthy(!m['授权方'], '没有「授权方」这一行时不许把「被授权方」的值顶上来');
-    eq(m['被授权方'], '上海云启信息技术有限公司');
+    truthy(!m['APP电子版权授权方'], '没有「授权方」这一行时不许把「被授权方」的值顶上来');
+    eq(m['APP电子版权被授权方'], '上海云启信息技术有限公司');
+  });
+
+  await test('★ 授权方/被授权方带文档归属：软著与 APP 电子版权不混名', () => {
+    const soft = map(A.rowsFor({ state: 'done', label: '计算机软件著作权登记证书授权书', src: 's.png', text: AUTH }));
+    truthy(soft['软著授权方'] && soft['软著被授权方'], '软著授权书');
+    const app = map(A.rowsFor({ state: 'done', label: 'APP电子版权证书授权书', src: 'a.png', text: AUTH }));
+    truthy(app['APP电子版权授权方'] && app['APP电子版权被授权方'], 'APP 电子版权授权书');
+    truthy(!app['软著授权方'], '不能沿用软著的字段名');
   });
 
   await test('★ 认不出文档类型 ⇒ 一行都不出（不许在普通截图里瞎猜）', () => {
@@ -98,7 +107,7 @@ module.exports = async function run() {
   await test('★ 包名形状不对 ⇒ 只少这一行，别的行照出', () => {
     const text = ['计算机软件著作权登记证书授权书', '被授权方：上海云启信息技术有限公司', '包名：com yunqi helper'].join('\n');
     const m = map(A.rowsFor({ state: 'done', label: '授权书', src: 'g.png', text }));
-    eq(m['被授权方'], '上海云启信息技术有限公司');
+    eq(m['软著被授权方'], '上海云启信息技术有限公司');
     truthy(!m['包名'], '不带点的不是包名');
   });
 
@@ -107,6 +116,17 @@ module.exports = async function run() {
     eq(map(A.rowsFor({ state: 'done', label: '登记证书', src: 'h.png', text: regText }))['登记号'], '2019SR0456789');
     const termText = ['计算机软件著作权登记证书授权书', '授权有效期从 2024-01-01 至 2026-12-31'].join('\n');
     eq(map(A.rowsFor({ state: 'done', label: '授权书', src: 'i.png', text: termText }))['授权期限'], '2024-01-01 至 2026-12-31');
+  });
+
+  await test('★ 登记号必须是编号形状：2026SA0112833 出，纯数字不出', () => {
+    const mk = (v) => ['计算机软件著作权登记证书', '著作权人：北京知行灵动科技有限公司', '登记号：' + v].join('\n');
+    const code = (v) => (map(A.rowsFor({ state: 'done', label: '登记证书', text: mk(v) }))['登记号'] || '');
+    eq(code('2026SA0112833'), '2026SA0112833', '年份 + 两位字母 + 数字');
+    eq(code('2019SR0456789'), '2019SR0456789');
+    eq(code('软著登字第1234567号'), '软著登字第1234567号', '中文形仍认');
+    eq(code('20260112833'), '', '纯数字不是登记号（用户点名的毛病）');
+    eq(code('12345'), '', '太短不算');
+    eq(code('北京知行灵动科技有限公司'), '', '公司名不是登记号');
   });
 
   await test('★ 条目没跑完 / 没文本 ⇒ 不抽', () => {

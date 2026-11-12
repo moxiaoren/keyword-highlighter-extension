@@ -159,6 +159,19 @@ async function fetchPublished() {
     die('版本占用检查未通过：' + err.message);
   }
 
+  /* ⓪b 发版口径（2026-11-12 用户要求）：说明页草稿 + html 必须在；
+   * 稳定版还要覆盖「上一个稳定版之后的所有测试版」——见 scripts/release-audit.js。 */
+  {
+    step('0b', '发版口径：说明页');
+    const r = require('./release-audit').audit({ root: ROOT, version: VERSION });
+    if (!r.ok) {
+      die('发版口径断言未通过：\n      ' + r.errors.join('\n      ') +
+        '\n    修法：先写 .tmp/notes/v' + VERSION + '.md 并渲染 release/notes/v' + VERSION + '.html。');
+    }
+    for (const line of r.info) log('    · ' + line);
+    log('    ✓ 说明页齐了（' + VERSION + '）');
+  }
+
   /* ---------------------------------------------------------------- ① 门禁 */
   if (!SKIP_GATES) {
     step(1, '门禁：meta-check / 单元测试 / integrity');

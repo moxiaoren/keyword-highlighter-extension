@@ -138,6 +138,17 @@ function makeZip(dir, zipOut) {
     }
   }
 
+  /* ⓪b 发版口径（2026-11-12 用户要求）：说明页草稿 + html 必须在，缺一个就不许出包。 */
+  {
+    log('\n[0b] 发版口径：说明页');
+    const r = require('./release-audit').audit({ root: ROOT, version: VERSION });
+    if (!r.ok) {
+      die('发版口径断言未通过：\n      ' + r.errors.join('\n      ') +
+        '\n    修法：先写 .tmp/notes/v' + VERSION + '.md，用 am 渲染成 release/notes/v' + VERSION + '.html，再出包。');
+    }
+    log('    ✓ 说明页草稿与 html 都在（' + VERSION + '）');
+  }
+
   /* ① 门禁 + 常规打包（复用正式版那套，保证产物内容一致） */
   {
     const pkgArgs = [];
