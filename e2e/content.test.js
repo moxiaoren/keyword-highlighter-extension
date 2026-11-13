@@ -2963,6 +2963,75 @@ module.exports = async function runContent(ctx) {
     truthy(okAbs || okRel, '就绪预算：绝对 12000ms，或 3000/800 比值 ≤5（旧二次方实现约 14 倍）。实际 min=' + ms + 'ms、比值 ' + (ratio ? ratio.toFixed(2) : '-') + '（800 行基线 ' + heavy800Ms + 'ms）' + JSON.stringify(runs));
   });
 
+  /* ★ 2.0.10 体检转常驻预算：空闲时主线程占用。
+   * 事故背景：内容兜底检查原来固定每 1000ms 跑一次 `document.body.textContent.length`，
+   * 3000 行页面单次约 100ms ⇒ 空闲期每秒一条长任务（5s 内 500–830ms，占 10–16%）。
+   * 2.0.10 改成按实测耗时退避（`min(15s, cost × 50)`）后约 140ms/5s。
+   * 判据用**绝对预算**而不是比值：这台机器同一份代码的读数噪声约 ±38%（见上面 3000 行那条的历史），
+   * 但 140ms 与 500ms 之间余量足够，钉 400ms 既不假红、退化回固定 1s 又必然超。
+   * 另一条软判据：空闲期高亮区间数不许自己变 —— 变了说明还有周期性重建，那是同一类退化的另一种形态。 */
+  await test('★ 空闲主线程占用（防止「每秒全文拼接」退化）', async () => {
+    await page.goto(origin + '/perf-heavy.html?rows=3000', { waitUntil: 'domcontentloaded', timeout: 25000 });
+    const on = await page.waitForFunction(() => {
+      if (document.documentElement.getAttribute('data-kh-state') !== 'on') return false;
+      let n = 0;
+      CSS.highlights.forEach((hl) => { n += (hl.size !== undefined ? hl.size : 0); });
+      return n > 3000;
+    }, null, { timeout: 25000 }).then(() => true).catch(() => false);
+    truthy(on, '3000 行页面要先进入高亮态，才谈得上「空闲」占用');
+
+    /* 等首轮收尾：区间数连续 2.5s 不变再开始量，否则量到的是还在渲染的尾巴（会把预算撑爆、
+       而且和插件的空闲行为无关）。顺手记这段里区间数变了几次。 */
+    let last = -1, stableSince = Date.now(), changes = 0;
+    const ranges = () => page.evaluate(() => {
+      let c = 0;
+      CSS.highlights.forEach((hl) => { c += (hl.size !== undefined ? hl.size : 0); });
+      return c;
+    });
+    while (Date.now() - stableSince < 2500) {
+      const n = await ranges();
+      if (n !== last) { if (last !== -1) changes++; last = n; stableSince = Date.now(); }
+      await page.waitForTimeout(250);
+    }
+
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Performance.enable');
+    const read = async () => {
+      const m = await cdp.send('Performance.getMetrics');
+      const map = {};
+      m.metrics.forEach((x) => { map[x.name] = x.value; });
+      return map;
+    };
+    /* 采 4 秒窗口、最多 3 段：这一段容易被「非空闲」的事带偏（这页上还有别的周期活，
+       实测同一份代码两段能读到 170ms / 620ms）。判别办法不是"取最小"，而是**只认干净样本**：
+       窗口内高亮区间数变过，就说明这段里发生了重建，那段读数测的不是空闲，整段丢掉重采
+       （2.0.10 的退避退化是"只读全文长度"，区间数不会变 —— 反证实测关掉退避后 2811ms，照样抓得住）。 */
+    const samples = [];
+    let min = null;
+    for (let i = 0; i < 3 && !min; i++) {
+      const r0 = await ranges();
+      const a = await read();
+      await page.waitForTimeout(4000);
+      const b = await read();
+      const r1 = await ranges();
+      const rec = {
+        task: Math.round((b.TaskDuration - a.TaskDuration) * 1000),
+        script: Math.round((b.ScriptDuration - a.ScriptDuration) * 1000),
+        dirty: r0 !== r1
+      };
+      samples.push(rec);
+      if (!rec.dirty && (min === null || rec.task < min.task)) min = rec;
+    }
+    try { await cdp.detach(); } catch (e) { /* 浏览器已在关的时候可能失败，不影响判据 */ }
+
+    console.log('        空闲 4s 样本 = ' + JSON.stringify(samples) +
+      '（干净样本取最小 ' + (min ? min.task + 'ms，脚本 ' + min.script + 'ms' : '无') + '）');
+    truthy(changes === 0, '空闲期高亮区间数不许自己变（变了说明还在周期性重建），实际变了 ' + changes + ' 次');
+    truthy(!!min, '必须至少采到一段干净的空闲样本（3 段里都有重建 ⇒ 插件在周期性重扫，本身就超标）');
+    truthy(min && min.task < 400, '★ 空闲 4s 主线程占用预算 400ms（修复前固定每秒全文拼接约 400–560ms，修复后约 150ms），实际 ' +
+      (min ? min.task + 'ms ' : '无干净样本 ') + JSON.stringify(samples));
+  });
+
   /* ==================== 图片文字识别（OCR）：图里的字也算命中 ====================
    * 用户诉求：表格里"值是一张截图"时，图里的字也要能命中（老逻辑只看文本节点）。
    * 这里盯四件事：
