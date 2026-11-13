@@ -1255,4 +1255,40 @@ module.exports = async function run() {
     }
   });
 
+  /* 【2026-11-13 用户需求】营业执照/资质自动补的「企业名称」按开发者比对涂色；
+   * 承诺函自动补的「承诺对象」按平台白名单涂绿/涂黄；「承诺方」只展示不上色。 */
+  await test('自动行涂色：企业名称与开发者一致 ⇒ 绿，承诺对象白名单外 ⇒ 黄', () => {
+    const div = H.el('div', {}, []);
+    div.innerHTML = KH.Fetch.rowsToTableHtml([
+      { label: '开发者', rows: [[{ t: '北京知行灵动科技有限公司' }]], opt: null },
+      { label: '企业名称', rows: [[{ t: '北京知行灵动科技有限公司' }]], opt: null },
+      { label: '承诺对象', rows: [[{ t: '华为技术有限公司' }]], opt: null },
+      { label: '承诺方', rows: [[{ t: '广州丙科技有限公司' }]], opt: null }
+    ]);
+    const panel = shadowPanel();
+    panel.decorateChecks(div, {});
+    const trs = div.querySelectorAll('tr');
+    /* 开发者与企业名称同值 ⇒ 表格把两行并成一行；合并行也要按「与开发者一致」判绿 */
+    eq(trs[0].querySelectorAll('td')[0].style.background, KH.NoteCheck.COLOR_OK, '企业名称与开发者一致 ⇒ 浅绿');
+    eq(trs[1].querySelectorAll('td')[0].style.background, KH.NoteCheck.COLOR_BAD, '华为 ⇒ 浅黄');
+    falsy(trs[2].querySelectorAll('td')[0].style.background, '承诺方只展示，不上色');
+    truthy(String(trs[1].querySelectorAll('td')[0].getAttribute('title') || '').indexOf('承诺对象') >= 0,
+      '悬停要说明为什么黄');
+    if (div.parentNode) div.parentNode.removeChild(div);
+  });
+
+  await test('自动行涂色：企业名称与开发者不一致 / 承诺对象是 vivo ⇒ 黄 / 绿', () => {
+    const div = H.el('div', {}, []);
+    div.innerHTML = KH.Fetch.rowsToTableHtml([
+      { label: '开发者', rows: [[{ t: '上海乙信息技术有限公司' }]], opt: null },
+      { label: '企业名称', rows: [[{ t: '北京知行灵动科技有限公司' }]], opt: null },
+      { label: '承诺对象', rows: [[{ t: '维沃移动通信有限公司' }]], opt: null }
+    ]);
+    const panel = shadowPanel();
+    panel.decorateChecks(div, {});
+    const trs = div.querySelectorAll('tr');
+    eq(trs[1].querySelectorAll('td')[0].style.background, KH.NoteCheck.COLOR_BAD, '两家不一致 ⇒ 浅黄');
+    eq(trs[2].querySelectorAll('td')[0].style.background, KH.NoteCheck.COLOR_OK, 'vivo/维沃 ⇒ 浅绿');
+    if (div.parentNode) div.parentNode.removeChild(div);
+  });
 };

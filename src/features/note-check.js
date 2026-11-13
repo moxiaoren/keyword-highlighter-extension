@@ -408,5 +408,58 @@
     return ra === rb ? 'same' : 'diff';
   };
 
+  /* ---------- ③ 资质里的企业名称 vs 开发者 ---------- */
+
+  /**
+   * 营业执照 / 资质里抽到的「企业名称」与卡片里抓取到的「开发者」是否一致。
+   * 用户口径（2026-11-13）：一致 ⇒ 绿；不一致 ⇒ 黄；缺一边 ⇒ 不涂色（不能假装校验过）。
+   * @returns {{state:'same'|'diff'|'unknown', color:string, note:string, company:string, dev:string}}
+   */
+  NoteCheck.qualVerdict = function (company, dev) {
+    const c = entityNorm(company);
+    const d = entityNorm(dev);
+    const rawC = String(company == null ? '' : company).trim();
+    const rawD = String(dev == null ? '' : dev).trim();
+    if (!c || !d) {
+      return {
+        state: 'unknown',
+        color: '',
+        note: !c ? '没有取到资质里的企业名称' : '卡片里没有「开发者」，无法比对',
+        company: rawC,
+        dev: rawD
+      };
+    }
+    if (c === d) return { state: 'same', color: NoteCheck.COLOR_OK, note: '企业名称与开发者一致', company: rawC, dev: rawD };
+    /* 同一家单位的全称 / 简称：只在两边都够长、且互相包含时放行，避免短词误绿。 */
+    if (c.length >= 6 && d.length >= 6 && (c.indexOf(d) >= 0 || d.indexOf(c) >= 0)) {
+      return { state: 'same', color: NoteCheck.COLOR_OK, note: '企业名称与开发者写法略有差异，按同一家处理', company: rawC, dev: rawD };
+    }
+    return { state: 'diff', color: NoteCheck.COLOR_BAD, note: '企业名称与开发者不一致，请人工确认', company: rawC, dev: rawD };
+  };
+
+  /* ---------- ④ 承诺函的承诺对象 ---------- */
+  /** 放行名单（用户点名）：vivo / 维沃 / 广东天宸；以及「没有指向具体应用平台」的泛称。 */
+  const PROMISE_OK = /vivo|维沃|天宸/i;
+  /* 明确点名了别家平台 ⇒ 即使行文里也带「应用平台」也不放行。 */
+  const PROMISE_OTHER = /华为|huawei|小米|xiaomi|oppo|广东欢太|欢太|应用宝|腾讯|荣耀|honor|三星|samsung|魅族|meizu|中兴|努比亚|一加|realme|抖音|快手|百度|阿里/i;
+  const PROMISE_GENERIC = /未指定具体平台|各?应用平台|各?应用市场|各?应用商店|各大渠道|所有渠道/;
+
+  /**
+   * 承诺对象判定：vivo / 维沃 / 广东天宸 ⇒ 绿；无具体平台的泛称 ⇒ 绿；
+   * 其余平台（华为、小米、OPPO、广东欢太…）与认不出的写法 ⇒ 黄，交人工确认。
+   * @returns {{state:'ok'|'warn'|'unknown', color:string, note:string, target:string}}
+   */
+  NoteCheck.promiseVerdict = function (target) {
+    const raw = String(target == null ? '' : target).trim();
+    if (!raw) return { state: 'unknown', color: '', note: '没有取到承诺对象', target: '' };
+    if (PROMISE_OK.test(raw)) {
+      return { state: 'ok', color: NoteCheck.COLOR_OK, note: '承诺对象在放行名单（vivo / 维沃 / 广东天宸）', target: raw };
+    }
+    if (!PROMISE_OTHER.test(raw) && PROMISE_GENERIC.test(raw)) {
+      return { state: 'ok', color: NoteCheck.COLOR_OK, note: '没有指向具体平台，按应用平台泛称放行', target: raw };
+    }
+    return { state: 'warn', color: NoteCheck.COLOR_BAD, note: '承诺对象不是 vivo / 维沃 / 广东天宸，请人工确认', target: raw };
+  };
+
   KH.NoteCheck = NoteCheck;
 })();

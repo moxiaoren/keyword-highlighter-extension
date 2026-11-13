@@ -3481,6 +3481,41 @@
       try { fields = NC.readFields(table); } catch (e) { return; }
       this.paintPolicy(table, fields, NC);
       this.paintEntity(el, table, fields, NC);
+      this.paintAuto(table, fields, NC);
+    },
+
+    /**
+     * 【2026-11-13】证书之外的两种自动行：
+     *   · `企业名称`（营业执照 / 资质）—— 与卡片里抓取到的「开发者」比对：
+     *     一致标绿、不一致标黄、缺一边不涂色（判定在 `NoteCheck.qualVerdict`）；
+     *   · `承诺对象`（承诺函）—— vivo / 维沃 / 广东天宸、无具体平台的泛称标绿，
+     *     其余平台标黄（判定在 `NoteCheck.promiseVerdict`）；`承诺方` 只是说明，不上色。
+     * 行定位按字段名文本（自动行没有 DOM 标记，同值行还会被合并成一行）。
+     */
+    paintAuto(table, fields, NC) {
+      if (!NC || typeof NC.qualVerdict !== 'function' || !table || !table.querySelectorAll) return;
+      const dev = String((fields && fields.dev) || '').trim();
+      const trs = table.querySelectorAll('tr');
+      for (let i = 0; i < trs.length; i++) {
+        const tr = trs[i];
+        const tds = tr.querySelectorAll('td');
+        if (tds.length < 2) continue;
+        const labels = NC.labelsOf(tds[0]);
+        if (!labels.length) continue;
+        const has = (name) => labels.some((l) => NC.entityNorm(l) === NC.entityNorm(name));
+        const val = String(tds[1].textContent || '').trim();
+        let v = null;
+        let what = '';
+        if (has('企业名称')) { v = NC.qualVerdict(val, dev); what = '企业名称校验'; }
+        else if (has('承诺对象')) { v = NC.promiseVerdict(val); what = '承诺对象校验'; }
+        if (!v) continue;
+        /* 同样内容不重画；值变了（OCR 重跑 / 用户改配置）才重判。 */
+        const sig = [val, dev, v.state, v.note].join('\\u0001');
+        if (tr.getAttribute('data-kh-auto-sig') === sig) continue;
+        tr.setAttribute('data-kh-auto-sig', sig);
+        tintRow(tr, v.color || '');
+        setCheckTip(tr, v.color ? (what + '：' + v.note) : '');
+      }
     },
 
     /** 需求②：隐私政策行底色 + 「名」「开」徽标；悬停说明「拿什么去正文里找、找没找到」。 */

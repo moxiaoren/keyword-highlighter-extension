@@ -396,4 +396,45 @@ module.exports = async function run() {
     eq(NC.matchMode('登记号 2018SR458983 已登记。', '2018SR458984'), 0, '编号差一位就是另一个号');
     eq(NC.matchMode('本政策由北京某某信息技术有限公司提供。', '北京某某科技有限公司'), 0, '两家不同公司不许近似');
   });
+
+  /* 【2026-11-13 用户需求】营业执照/资质抽出的「企业名称」要跟开发者比对；承诺函判承诺对象。
+   * 抽取层（ocr-auto）只负责抽得对，绿/黄口径全部收在这里，面板只照着画。 */
+  suite('note-check · 2.0.10.1 资质企业名比对 / 承诺对象判定');
+
+  await test('企业名称与开发者一致 ⇒ 绿；不一致 ⇒ 黄；缺开发者 ⇒ 不涂色', () => {
+    const same = NC.qualVerdict('北京知行灵动科技有限公司', '北京知行灵动科技有限公司');
+    eq(same.state, 'same');
+    eq(same.color, NC.COLOR_OK);
+    const diff = NC.qualVerdict('北京知行灵动科技有限公司', '上海乙信息技术有限公司');
+    eq(diff.state, 'diff');
+    eq(diff.color, NC.COLOR_BAD);
+    const none = NC.qualVerdict('北京知行灵动科技有限公司', '');
+    eq(none.state, 'unknown');
+    eq(none.color, '', '没有开发者就不许凭猜涂色');
+  });
+
+  await test('企业名称允许括号补充说明/空白差异，但不许把短名当同一家', () => {
+    const v = NC.qualVerdict('北京知行灵动科技有限公司（甲方）', '北京知行灵动科技有限公司');
+    eq(v.state, 'same', '括号补充说明不进比对口径');
+    eq(NC.qualVerdict('北京知行灵动科技有限公司', '知行灵动').state, 'diff',
+      '只写 4 个字属于写法不明，不能当同一家放绿');
+  });
+
+  await test('承诺对象：vivo / 维沃 / 广东天宸 与无指向泛称 ⇒ 绿', () => {
+    for (const t of ['维沃移动通信有限公司', 'vivo', '广东天宸网络科技有限公司', '各应用平台', '应用商店', '未指定具体平台']) {
+      const v = NC.promiseVerdict(t);
+      eq(v.state, 'ok', t + ' 应放行（绿）');
+      eq(v.color, NC.COLOR_OK);
+    }
+  });
+
+  await test('承诺对象：白名单外的平台一律黄，认不出也黄', () => {
+    for (const t of ['华为技术有限公司', '小米科技有限责任公司', 'OPPO广东移动通信有限公司',
+      '广东欢太科技有限公司', '应用宝', '荣耀终端有限公司', '某某不知名公司']) {
+      const v = NC.promiseVerdict(t);
+      eq(v.state, 'warn', t + ' 应提示人工确认（黄）');
+      eq(v.color, NC.COLOR_BAD);
+    }
+    eq(NC.promiseVerdict('').state, 'unknown', '空值不涂色');
+  });
 };
