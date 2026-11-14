@@ -4329,6 +4329,90 @@ module.exports = async function runContent(ctx) {
     }
   });
 
+  /* ---------------------------------------------------------- 判定三态的非颜色标记 */
+  group('判定三态的非颜色标记（台账 #3/#4/#5：灰度下也必须分得清）', { aspects: ['visual'] });
+
+  await test('★ 一致 / 待确认 / 未查明三态各有非颜色标记（不靠比色也分得开）', async () => {
+    await fresh('list.html');
+    /* 内容脚本跑在隔离世界，主世界拿不到 window.KH —— 用 CDP 取扩展上下文的 id（同 e2e/verify-20819.js）。
+     * 断言只看 DOM 里的标记元素与文案，不比较颜色：这正是这条需求的意义。 */
+    const cdp = await api.context.newCDPSession(page);
+    let extCtx = 0;
+    cdp.on('Runtime.executionContextCreated', (e) => {
+      const c = e.context;
+      if (c.origin && String(c.origin).indexOf('chrome-extension://') === 0) extCtx = c.id;
+    });
+    await cdp.send('Runtime.enable');
+    for (let i = 0; i < 80 && !extCtx; i++) await page.waitForTimeout(100);
+    truthy(extCtx > 0, '必须找到内容脚本所在的扩展隔离世界');
+    const inExt = async (expression) => {
+      const r = await cdp.send('Runtime.evaluate', { expression: expression, contextId: extCtx, returnByValue: true, awaitPromise: true });
+      if (r.exceptionDetails) {
+        throw new Error('扩展世界抛错：' + ((r.exceptionDetails.exception && r.exceptionDetails.exception.description) || r.exceptionDetails.text));
+      }
+      return r.result.value;
+    };
+    try {
+      /* 两张真表格：① 企业名称与开发者同值（一致）+ 承诺对象华为（待确认）
+       *              ② 只有企业名称、没有开发者（未查明：不涂色但要留标记） */
+      await page.evaluate(() => {
+        const mk = (id, rows) => {
+          const box = document.createElement('div');
+          box.id = id;
+          box.style.cssText = 'position:fixed;left:0;top:0;width:520px;background:#fff;z-index:2147483647';
+          box.innerHTML = '<table class="kh-table kh-table-fetch"><tbody>' + rows.map((r) =>
+            '<tr><td class="kh-table-label">' + r[0] + '</td><td>' + r[1] + '</td></tr>').join('') + '</tbody></table>';
+          document.body.appendChild(box);
+        };
+        mk('e2e-verdict-two', [
+          ['开发者', '北京知行灵动科技有限公司'],
+          ['企业名称', '北京知行灵动科技有限公司'],
+          ['承诺对象', '华为技术有限公司']
+        ]);
+        mk('e2e-verdict-unknown', [['企业名称', '北京知行灵动科技有限公司']]);
+      });
+
+      const rowsOut = await inExt('(function () {'
+        + 'var out = []; var boxes = ["e2e-verdict-two", "e2e-verdict-unknown"];'
+        + 'for (var b = 0; b < boxes.length; b++) {'
+        + '  var el = document.getElementById(boxes[b]);'
+        + '  window.KH.ImportantNote.panel.decorateChecks(el, {});'
+        + '  var tds = el.querySelectorAll("td.kh-table-label");'
+        + '  for (var i = 0; i < tds.length; i++) {'
+        + '    var m = tds[i].querySelector(".kh-verdict");'
+        + '    out.push({ box: boxes[b], label: window.KH.NoteCheck.labelText(tds[i]),'
+        + '      mark: m ? String(m.textContent) : "", state: m ? String(m.getAttribute("data-state") || "") : "",'
+        + '      bg: String(tds[i].style.background || ""), tip: String(tds[i].title || "") });'
+        + '  }'
+        + '}'
+        + 'return out; })()');
+      console.log('        三态标记: ' + JSON.stringify(rowsOut.map((x) => ({ b: x.box, l: x.label, m: x.mark, s: x.state, bg: x.bg }))));
+
+      const pick = (box, label) => rowsOut.filter((x) => x.box === box && x.label === label)[0];
+      const same = pick('e2e-verdict-two', '企业名称');
+      const warn = pick('e2e-verdict-two', '承诺对象');
+      const unknown = pick('e2e-verdict-unknown', '企业名称');
+      truthy(same && warn && unknown, '三行都要画出来，实际 ' + JSON.stringify(rowsOut.map((x) => x.label)));
+      eq(same.mark, '✔ 一致', '一致态要挂「✔ 一致」');
+      eq(same.state, 'same');
+      eq(warn.mark, '⚠ 待确认', '待确认态要挂「⚠ 待确认」');
+      truthy(same.mark !== warn.mark, '两态文案必须不同（只靠底色不够）');
+      eq(unknown.mark, '？ 未查明', '未查明要挂独立的第三态标记');
+      eq(unknown.bg, '', '未查明不涂色');
+      truthy(String(unknown.tip).indexOf('未查明') >= 0, '未查明的悬停说明必须非空且写明原因，实际 = ' + JSON.stringify(unknown.tip));
+      eq(unknown.label, '企业名称', '标记是后缀，字段名照旧认得出来');
+      await shot(page, '28-verdict-marks');
+    } finally {
+      await page.evaluate(() => {
+        ['e2e-verdict-two', 'e2e-verdict-unknown'].forEach((id) => {
+          const el = document.getElementById(id);
+          if (el) el.remove();
+        });
+      }).catch(() => {});
+      await cdp.detach().catch(() => {});
+    }
+  });
+
   await page.close();
   return report('内容层真浏览器测试');
 };

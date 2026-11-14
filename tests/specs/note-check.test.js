@@ -437,4 +437,38 @@ module.exports = async function run() {
     }
     eq(NC.promiseVerdict('').state, 'unknown', '空值不涂色');
   });
+
+  /* 【台账 #3/#4/#5 · 2026-11-14】三态必须**不靠颜色**也分得清：图标 + 文案，唯一真源在这里。
+   * 颜色只是辅助 —— 灰度截图、色觉障碍、打印出来时浅绿/浅黄/不涂色三态长得一样（WCAG 1.4.1）。 */
+  suite('note-check · 判定三态的非颜色标记（台账 #3/#4/#5）');
+
+  await test('★ 三态图标互不相同，ok/same 与 warn/diff 各自同形同名', () => {
+    const same = NC.verdictMark('same');
+    const ok = NC.verdictMark('ok');
+    const diff = NC.verdictMark('diff');
+    const warn = NC.verdictMark('warn');
+    const unk = NC.verdictMark('unknown');
+    eq(ok.label, same.label, 'ok 与 same 是同一种「一致」');
+    eq(warn.label, diff.label, 'warn 与 diff 是同一种「待确认」');
+    truthy(same.icon && diff.icon && unk.icon, '三态都要有图标');
+    truthy(same.icon !== diff.icon && diff.icon !== unk.icon && same.icon !== unk.icon,
+      '★ 三个图标必须互不相同 —— 灰度/色觉障碍/打印时靠形状分');
+    truthy(same.text !== diff.text && diff.text !== unk.text, '三态文案也要不一样');
+    eq(same.label, same.icon + ' ' + same.text, 'label 就是图标 + 空格 + 文案（面板直接显示它）');
+    truthy(String(unk.text).indexOf('未查明') >= 0, '未查明的文案要说明白');
+    eq(NC.verdictMark(''), null, '空态没有标记');
+    eq(NC.verdictMark(null), null, 'null 没有标记');
+    eq(NC.verdictMark('nope'), null, '不认识的态不许瞎给标记');
+  });
+
+  await test('★ 未查明的判定说明不许是空串（空串 = 和「没配校验」长得一样）', () => {
+    const q = NC.qualVerdict('北京知行灵动科技有限公司', '');
+    eq(q.state, 'unknown');
+    eq(q.color, '', '未查明不涂色');
+    truthy(String(q.note || '').trim().length > 0, '★ 悬停说明必须非空');
+    const p = NC.promiseVerdict('');
+    eq(p.state, 'unknown');
+    truthy(String(p.note || '').trim().length > 0, '承诺对象缺失同理');
+    eq(NC.sameLegalRep({ name: '北京知行灵动科技有限公司' }, { name: '' }), 'unknown', '缺一边 = 未查明');
+  });
 };

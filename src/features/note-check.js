@@ -107,6 +107,14 @@
       if (!t) continue;
       if (s.slice(-t.length) === t) s = s.slice(0, -t.length);
     }
+    /* 判定小标（✔一致 / ⚠待确认 / ？未查明）也是 append 的后缀，同样从右端剥掉：
+     * 不剥的话下一轮 labelsOf 会读到「企业名称✔ 一致」，字段名认不出来 ⇒ 判定整条失效。 */
+    const marks = td.querySelectorAll ? td.querySelectorAll('.kh-verdict') : [];
+    for (let i = marks.length - 1; i >= 0; i--) {
+      const t = String(marks[i].textContent || '');
+      if (!t) continue;
+      if (s.slice(-t.length) === t) s = s.slice(0, -t.length);
+    }
     /* 徽标排在展开区后面，所以先剥徽标、再剥展开区（<details> 的计数与全部字段名）。 */
     const more = td.querySelector ? td.querySelector('.kh-table-more') : null;
     if (more) {
@@ -459,6 +467,30 @@
       return { state: 'ok', color: NoteCheck.COLOR_OK, note: '没有指向具体平台，按应用平台泛称放行', target: raw };
     }
     return { state: 'warn', color: NoteCheck.COLOR_BAD, note: '承诺对象不是 vivo / 维沃 / 广东天宸，请人工确认', target: raw };
+  };
+
+  /* ---------- ⑤ 判定三态的非颜色标记（台账 #3/#4/#5） ---------- */
+
+  /**
+   * 一致 / 不一致 / 未查明三态的**非颜色**标记（图标 + 两字文案）。
+   * 为什么必须有：颜色只能算辅助 —— 灰度截图、色觉障碍、打印出来时
+   * 「浅绿一致 / 浅黄不一致 / 不涂色未查明」三态长得一模一样（WCAG 1.4.1 要求信息不单靠颜色）。
+   * 图标与文案只写这一份：面板层 `setVerdictMark` 直接取，单测也断言这里，别在两处各写一套。
+   * @param {string} state same|ok（一致）/ diff|warn（待确认）/ unknown（未查明）
+   * @returns {{state:string, icon:string, text:string, label:string}|null} 不认识的态返回 null
+   */
+  NoteCheck.verdictMark = function (state) {
+    const s = String(state == null ? '' : state);
+    const map = {
+      same: { icon: '✔', text: '一致' },
+      ok: { icon: '✔', text: '一致' },
+      diff: { icon: '⚠', text: '待确认' },
+      warn: { icon: '⚠', text: '待确认' },
+      unknown: { icon: '？', text: '未查明' }
+    };
+    const m = map[s];
+    if (!m) return null;
+    return { state: s, icon: m.icon, text: m.text, label: m.icon + ' ' + m.text };
   };
 
   KH.NoteCheck = NoteCheck;

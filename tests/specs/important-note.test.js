@@ -1291,4 +1291,70 @@ module.exports = async function run() {
     eq(trs[2].querySelectorAll('td')[0].style.background, KH.NoteCheck.COLOR_OK, 'vivo/维沃 ⇒ 浅绿');
     if (div.parentNode) div.parentNode.removeChild(div);
   });
+
+  /* 【台账 #3/#4/#5 · 2026-11-14】颜色不动，另挂一枚**不靠颜色**的标记：
+   * ✔ 一致 / ⚠ 待确认 / ？ 未查明。灰度截图、色觉障碍、打印时三态仍要分得清。 */
+  await test('★ 判定行两态各带非颜色标记：✔ 一致 / ⚠ 待确认', () => {
+    const div = H.el('div', {}, []);
+    div.innerHTML = KH.Fetch.rowsToTableHtml([
+      { label: '开发者', rows: [[{ t: '北京知行灵动科技有限公司' }]], opt: null },
+      { label: '企业名称', rows: [[{ t: '北京知行灵动科技有限公司' }]], opt: null },
+      { label: '承诺对象', rows: [[{ t: '华为技术有限公司' }]], opt: null }
+    ]);
+    const panel = shadowPanel();
+    panel.decorateChecks(div, {});
+    const trs = div.querySelectorAll('tr');
+    /* 开发者与企业名称同值 ⇒ 表格并成一行，这一行是「一致」 */
+    const sameCell = trs[0].querySelectorAll('td')[0];
+    const sameMark = sameCell.querySelector('.kh-verdict');
+    truthy(sameMark, '★ 一致行必须有非颜色标记（只涂浅绿不够）');
+    eq(String(sameMark.textContent), '✔ 一致');
+    eq(sameMark.getAttribute('data-state'), 'same', '状态挂在 data-state 上，样式只认它');
+    const warnCell = trs[1].querySelectorAll('td')[0];
+    const warnMark = warnCell.querySelector('.kh-verdict');
+    truthy(warnMark, '★ 不一致行必须有非颜色标记');
+    eq(String(warnMark.textContent), '⚠ 待确认');
+    truthy(String(warnMark.textContent) !== String(sameMark.textContent), '两态文案必须不同');
+    truthy(String(sameCell.getAttribute('title') || '').length > 0, '悬停说明还在');
+    if (div.parentNode) div.parentNode.removeChild(div);
+  });
+
+  await test('★ 未查明是独立第三态：不涂色、有标记、悬停非空', () => {
+    const div = H.el('div', {}, []);
+    div.innerHTML = KH.Fetch.rowsToTableHtml([
+      { label: '企业名称', rows: [[{ t: '北京知行灵动科技有限公司' }]], opt: null }
+    ]);
+    const panel = shadowPanel();
+    panel.decorateChecks(div, {});
+    const td = div.querySelectorAll('tr')[0].querySelectorAll('td')[0];
+    falsy(td.style.background, '未查明不许涂色');
+    const mark = td.querySelector('.kh-verdict');
+    truthy(mark, '★ 未查明也要有标记 —— 否则和「这张卡没配校验」长得一模一样');
+    eq(String(mark.textContent), '？ 未查明');
+    eq(mark.getAttribute('data-state'), 'unknown');
+    truthy(String(td.getAttribute('title') || '').indexOf('未查明') >= 0, '★ 悬停要写明未查明（以前是空串）');
+    if (div.parentNode) div.parentNode.removeChild(div);
+  });
+
+  await test('★ 标记是纯后缀：字段名照旧认得出来，且同态重画复用同一节点', () => {
+    const div = H.el('div', {}, []);
+    div.innerHTML = KH.Fetch.rowsToTableHtml([
+      { label: '开发者', rows: [[{ t: '北京知行灵动科技有限公司' }]], opt: null },
+      { label: '承诺对象', rows: [[{ t: '华为技术有限公司' }]], opt: null }
+    ]);
+    const panel = shadowPanel();
+    panel.decorateChecks(div, {});
+    const cell = div.querySelectorAll('tr')[1].querySelectorAll('td')[0];
+    const first = cell.querySelector('.kh-verdict');
+    truthy(first, '前提：这一格真的挂了标记');
+    eq(String(KH.NoteCheck.labelText(cell)), '承诺对象', 'labelText 要从右端把徽标剥掉');
+    eq(KH.NoteCheck.labelsOf(cell).join('|'), '承诺对象', 'labelsOf 也照旧只认字段名');
+    /* 值改成 vivo ⇒ 判定从「待确认」翻成「一致」：文案要更新，节点要复用（每轮换新会闪） */
+    cell.parentNode.querySelectorAll('td')[1].textContent = '维沃移动通信有限公司';
+    panel.decorateChecks(div, {});
+    const second = cell.querySelector('.kh-verdict');
+    truthy(second === first, '同一张卡重画要复用标记节点');
+    eq(String(second.textContent), '✔ 一致', '判定变了，标记要跟着变');
+    if (div.parentNode) div.parentNode.removeChild(div);
+  });
 };

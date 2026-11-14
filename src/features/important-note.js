@@ -623,6 +623,24 @@
     }
     .kh-policy-flag.is-hit { background: #2e7d32; color: #fff; }
     .kh-policy-flag.is-miss { background: #b45309; color: #fff; }
+    /* 【台账 #3/#4/#5 · 2026-11-14】判定三态的**非颜色**标记：✔一致 / ⚠待确认 / ？未查明。
+     * 只上色不改字样的话，灰度截图、色觉障碍、打印出来三态完全一样（WCAG 1.4.1）。
+     * 摆放沿用「名」「开」小标那套：绝对定位**不参与排版** —— 上一版把 inline 徽标插进标题格，
+     * 撑大最小内容宽度 ⇒ 表格重算 ⇒ 裁一行的判定来回翻 ⇒ 悬窗像在闪（见上面那段警告）。
+     * 宽度代价改由标题文字让位：判定行的 .kh-lbt 上限再收 1.1em，右侧留出一条给标记。
+     * 未查明用虚线框 + 问号：不涂色，灰度下靠形状也能和实心的 ✔ / ⚠ 分开。 */
+    .kh-table .kh-table-label.kh-verdict-host { padding-right: 3.1em; }
+    .kh-table .kh-table-label.kh-verdict-host .kh-lbt { max-width: calc(var(--kh-lbt-maxw, 8em) - 1.1em); }
+    .kh-verdict {
+      position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+      display: inline-flex; align-items: center; gap: 2px;
+      padding: 0 3px; border-radius: 3px; border: 1px solid transparent;
+      font-size: 10px; line-height: 14px; font-weight: 600; white-space: nowrap;
+      background: #e2e8f0; color: #334155; z-index: 3;
+    }
+    .kh-verdict[data-state="same"], .kh-verdict[data-state="ok"] { background: #2e7d32; color: #fff; }
+    .kh-verdict[data-state="diff"], .kh-verdict[data-state="warn"] { background: #b45309; color: #fff; }
+    .kh-verdict[data-state="unknown"] { background: #fff; color: #475569; border-color: #94a3b8; border-style: dashed; }
     /* 字段标题格里的文本（= 设置「抓取字段」里填的那个名字）**不必整段展示**，省下的宽度留给内容。
      * 用户 2026-10-11 原话："抓取字段的标题内容可以不完整展示…实际抓取到的内容展示还是需要完整展示的，节省宽度"。
      * 做法：标题文本包一层 .kh-lbt（见下方 noteFragment 的补包裹），**宽度上限 + 单行裁切**，
@@ -2431,6 +2449,46 @@
     }
   }
 
+  /**
+   * 【台账 #3/#4/#5 · 2026-11-14】给判定行补一枚**非颜色**标记：✔一致 / ⚠待确认 / ？未查明。
+   * 图标与文案取自 `NoteCheck.verdictMark`（单一真源），这里只管挂到标题格的右侧。
+   * 为什么非补不可：颜色是辅助信息 —— 灰度截图、色觉障碍、打印时三态必须仍能分清；
+   * 未查明尤其不能和「这张卡根本没配校验」长得一样（以前 tip 传空串，两者外观完全相同）。
+   * 标记绝对定位（CSS 见 .kh-verdict），不参与表格排版，不会重演「撑宽标题格 ⇒ 裁切判定来回翻」。
+   * @param {Element} tr 判定行
+   * @param {string} state same|ok / diff|warn / unknown
+   * @param {string} tip 悬停说明；未查明时必须非空
+   * @returns {Element|null} 挂上去的标记节点
+   */
+  function setVerdictMark(tr, state, tip) {
+    const NC = (typeof KH !== 'undefined' && KH && KH.NoteCheck) || null;
+    const m = (NC && typeof NC.verdictMark === 'function') ? NC.verdictMark(state) : null;
+    const cell = (tr && tr.querySelector) ? tr.querySelector('td.kh-table-label') : null;
+    if (!cell) return null;
+    let mark = cell.querySelector ? cell.querySelector('.kh-verdict') : null;
+    if (!m) {
+      /* 判定撤销（比如值被清空）时标记也要跟着撤，否则会留下上一轮的结论。 */
+      if (mark && mark.parentNode) mark.parentNode.removeChild(mark);
+      if (cell.classList) cell.classList.remove('kh-verdict-host');
+      return null;
+    }
+    if (!mark) {
+      const doc = cell.ownerDocument || (typeof document !== 'undefined' ? document : null);
+      if (!doc) return null;
+      mark = doc.createElement('span');
+      mark.className = 'kh-verdict';
+      cell.appendChild(mark);
+    }
+    if (cell.classList) cell.classList.add('kh-verdict-host');
+    if (mark.getAttribute('data-state') !== state) mark.setAttribute('data-state', state);
+    if (String(mark.textContent || '') !== m.label) mark.textContent = m.label;
+    /* 图标本身对读屏无意义：补一句完整说明，颜色不参与任何一处传达。 */
+    const say = String(tip || m.label);
+    if (mark.getAttribute('aria-label') !== say) mark.setAttribute('aria-label', say);
+    if (String(mark.getAttribute('title') || '') !== say) mark.setAttribute('title', say);
+    return mark;
+  }
+
   /** 类别名：取第一条命中词所属规则的备注（`adj`）；没备注就空着，不硬编「未分类」。 */
   function catOf(item) {
     const entries = (item && item.entries) || [];
@@ -3514,7 +3572,11 @@
         if (tr.getAttribute('data-kh-auto-sig') === sig) continue;
         tr.setAttribute('data-kh-auto-sig', sig);
         tintRow(tr, v.color || '');
-        setCheckTip(tr, v.color ? (what + '：' + v.note) : '');
+        /* 【台账 #3/#4/#5】结论必须有**非颜色**标记；未查明也要给标记与说明。
+         * 旧写法未查明时 tip 是空串 ⇒ 看着和「这张卡没配校验」一模一样。 */
+        const tip = v.color ? (what + '：' + v.note) : (what + '：未查明（不改底色）\n' + v.note);
+        setCheckTip(tr, tip);
+        setVerdictMark(tr, v.state, tip);
       }
     },
 
@@ -3566,8 +3628,14 @@
       let v = null;
       try { v = NC.policyVerdict(eff); } catch (e) { v = null; }
       if (!v) {
-        /* 正文还没有（链接在途 / 抓不到且卡片那格不是正文）：如实说「先不判定」，不许装成「没有」。 */
-        setCheckTip(tr, src ? ('隐私政策校验：暂时判不了\n' + sourceLine + '\n展开链接后会自动重判；也可以把正文直接抓成字段。') : '');
+        /* 正文还没有（链接在途 / 抓不到且卡片那格不是正文）：如实说「先不判定」，不许装成「没有」。
+         * 【台账 #5】未查明也必须有标记与文案 —— 旧写法在没链接时 tip 是空串，
+         * 外观跟「这张卡没配隐私政策校验」完全一样，用户分不出「没判」和「没这项」。 */
+        const tip = src
+          ? ('隐私政策校验：暂时判不了\n' + sourceLine + '\n展开链接后会自动重判；也可以把正文直接抓成字段。')
+          : '隐私政策校验：这张卡没有隐私政策正文，无法判定（不改底色）';
+        setCheckTip(tr, tip);
+        setVerdictMark(tr, 'unknown', tip);
         return;
       }
       tintRow(tr, v.ok ? NC.COLOR_OK : NC.COLOR_BAD);
@@ -3619,8 +3687,13 @@
         const k = v.missing[i];
         lines.push((labelOf[k] || k) + '：这张卡没抓到，不参与校验');
       }
-      setCheckTip(tr, '隐私政策校验（正文 ' + v.len + ' 字；忽略空格/全半角差异，按原文找）\n'
-        + sourceLine + '\n' + lines.join('\n') + '\n链接整串找不到时只比域名。');
+      const tip = '隐私政策校验（正文 ' + v.len + ' 字；忽略空格/全半角差异，按原文找）\n'
+        + sourceLine + '\n' + lines.join('\n') + '\n链接整串找不到时只比域名。';
+      setCheckTip(tr, tip);
+      /* 【台账 #3/#4】一致态挂 ✔一致；不一致态本来就有「名」「开」橙色小标（文字标记），
+       * 再来一枚 ⚠ 会跟它们抢同一条右侧窄带、把标题压得看不见 —— 两态各有非颜色标记即达标，
+       * 所以这里只给「全中」加徽标，有缺时把上一轮的徽标撤掉。 */
+      setVerdictMark(tr, v.ok ? 'ok' : null, v.ok ? tip : '');
     },
 
     /**
@@ -3691,8 +3764,10 @@
           if (devTr.getAttribute('data-kh-ent-sig') !== sigSame) {
             devTr.setAttribute('data-kh-ent-sig', sigSame);
             tintRow(devTr, NC.COLOR_OK);
-            setCheckTip(devTr, '同法人校验：两边名字完全相同 ⇒ 同一主体（不联网）\n'
-              + '开发者「' + dev + '」\n核准主体「' + ent + '」');
+            const tipSame = '同法人校验：两边名字完全相同 ⇒ 同一主体（不联网）\n'
+              + '开发者「' + dev + '」\n核准主体「' + ent + '」';
+            setCheckTip(devTr, tipSame);
+            setVerdictMark(devTr, 'same', tipSame);
           }
         }
         return;
@@ -3717,6 +3792,9 @@
           const tip = '同法人校验：未查明（不改底色）\n' + sides;
           setCheckTip(devTr, tip);
           setCheckTip(entTr, tip);
+          /* 【台账 #5】未查明是独立的第三态：不涂色，但必须带标记与文案。 */
+          setVerdictMark(devTr, 'unknown', tip);
+          setVerdictMark(entTr, 'unknown', tip);
           return;
         }
         const color = verdict === 'same' ? NC.COLOR_OK : NC.COLOR_BAD;
@@ -3726,7 +3804,16 @@
           + '\n' + sides;
         setCheckTip(devTr, tip);
         setCheckTip(entTr, tip);
-      }).catch(() => { /* 查询失败 = 未查明，保持原样 */ });
+        setVerdictMark(devTr, verdict, tip);
+        setVerdictMark(entTr, verdict, tip);
+      }).catch(() => {
+        /* 查询失败 = 未查明：不涂色，但要留标记与说明（不然失败和「没校验」长得一样）。 */
+        const tip = '同法人校验：查询失败，未查明（不改底色）\n' + sides;
+        setCheckTip(devTr, tip);
+        setCheckTip(entTr, tip);
+        setVerdictMark(devTr, 'unknown', tip);
+        setVerdictMark(entTr, 'unknown', tip);
+      });
     },
 
     /**
