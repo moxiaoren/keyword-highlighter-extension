@@ -30,9 +30,11 @@ node run.js --aspects=none # 不启动浏览器，只做装置自检
 | `content.test.js`（约 258 KB） | 内容层断言：命中/渲染/抓取/OCR/站点门禁 |
 | `ui.test.js` | UI 层断言：设置页、内嵌面板、编辑器 |
 | `fixtures/*.html`（44 个） | 断言用的静态页面 |
+| `probe-review.js` | 走查探针：一次真浏览器会话实测首启引导、底色落点与对比度、判定证据能不能拿到；报告写 `_out/review-probe.json` |
+| `shot-verdict-demo.js` | 演示截图：真浏览器里造两张抓取卡片，截三态标记（默认落 `_out/`，喂 `docs/demo` 时用 `KH_SHOT_OUT` 指定） |
 
-**不在仓里**（留在工作区 `_e2e/`）：`probe-*.js` 约 100 个一次性探针、`_out/`、`_profiles/`、
-`_probe-prof*/`。探针是排障时现写现用的，不属于质量门禁。
+**不在仓里**（留在工作区 `_e2e/`）：其余 `probe-*.js` 约 100 个一次性探针、`_out/`、`_profiles/`、
+`_probe-prof*/`。一次性探针是排障时现写现用的，不属于质量门禁；上面两个是反复要用的，所以留下。
 
 ## 与出包的关系
 
