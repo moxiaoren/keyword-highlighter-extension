@@ -30,6 +30,7 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
+const { execSync } = require('child_process');
 
 const ROOT = path.join(__dirname, '..');
 const REL = path.join(ROOT, 'release');
@@ -234,8 +235,18 @@ function assetsFor(version) {
       updated++;
       console.log('  ↻ ' + tag + '：已存在 → 更新说明');
     } else {
+      /* 【2.0.10.3 修】tag 必须指向本次发版的提交，不能给默认分支名：
+       * 分支名由 GitHub 在**建 Release 那一刻**解析成远端分支的尖端，而本地往往还没推
+       * ⇒ 2.0.10.3 就是这样把 tag 打在了上一版发布提交上（远端又有一条 protect release
+       * tags 规则集，删除/更新都被拒，只能临时停用规则再修）。这里优先用本地 HEAD，
+       * 且只在「HEAD 里的 manifest 版本 == 本次要发的版本」时才用，避免发旧版时指错。 */
+      let commitish = def;
+      try {
+        const headMan = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'manifest.json'), 'utf8')).version;
+        if (headMan === v) commitish = execSync('git rev-parse HEAD', { cwd: path.join(__dirname, '..') }).toString().trim();
+      } catch (e) { commitish = def; }
       const made = await api('POST', '/repos/' + OWNER + '/' + REPO + '/releases', {
-        tag_name: tag, target_commitish: def, name: tag, body: body, draft: false, prerelease: pre
+        tag_name: tag, target_commitish: commitish, name: tag, body: body, draft: false, prerelease: pre
       });
       if (!made.ok) { console.log('  ✗ ' + tag + ' 建 Release 失败（HTTP ' + made.status + '）：' + String(made.text).slice(0, 160)); continue; }
       rel = made.json;
