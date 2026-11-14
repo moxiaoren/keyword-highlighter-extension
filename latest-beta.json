@@ -1,9 +1,9 @@
 {
-  "version": "2.0.10.2",
+  "version": "2.0.10.3",
   "channel": "beta",
-  "zip": "https://moxiaoren.github.io/keyword-highlighter-extension/keyword-highlighter-beta-v2.0.10.2.zip",
-  "sha256": "562DF3CC16A0E840116C1D1B51EEF7B45BB2FF0956B40A5EB85F218C8E63D185",
-  "notes": "测试版 2.0.10.2",
+  "zip": "https://moxiaoren.github.io/keyword-highlighter-extension/keyword-highlighter-beta-v2.0.10.3.zip",
+  "sha256": "E6D86E48975FAB0D3D5E032FCF36110012B5CF4DDAFE8FB422058D5F609D97EC",
+  "notes": "测试版 2.0.10.3",
   "publishedAt": "2026-11-14",
   "htmlUrl": "https://github.com/moxiaoren/keyword-highlighter-extension/releases"
 }
