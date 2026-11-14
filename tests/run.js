@@ -218,7 +218,11 @@ const specs = [
 
   /* 台账 #10：版本说明只由一处渲染函数产出（welcome 与 options 共用）；欢迎页只列未读，
    * 全读过时留一行「本版说明已读，点开回看」。见 specs/changelog-single-source.test.js */
-  './specs/changelog-single-source.test.js'
+  './specs/changelog-single-source.test.js',
+
+  /* 【2026-11-14 批1】列表弹窗纯呈现改造：吸顶头 / 行型 / 快加不回抢焦点 / 批量危险区 /
+   * 隐藏勾选警告 / 图例一项一行。见 specs/list-modal-uplift.test.js */
+  './specs/list-modal-uplift.test.js'
 ];
 
 (async () => {

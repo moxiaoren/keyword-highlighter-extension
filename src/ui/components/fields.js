@@ -678,8 +678,22 @@
             if (n <= 2) return row.scopes.join('、');
             return row.scopes[0] + ' 等 ' + n + ' 个';
           };
+          const hiddenPicked = () => pickedRows().filter((r) => r.el && r.el.hidden);
+          /* 【2026-11-14 批1】批量删除必须写明「有 N 条被筛选隐藏」：以前勾中 A 行、再搜 B、点删除，
+           * A 跟着一起消失且界面一个字都不提示（数据丢失级）。这里只把事实**说清楚**，删除口径一字未动。 */
+          const paintBulk = () => {
+            const n = pickedRows().length;
+            delBtn.textContent = n ? '删除选中（' + n + ' 条）' : '删除选中';
+            const hid = hiddenPicked().length;
+            const warn = (n && hid)
+              ? '⚠ 已选的 ' + n + ' 条里有 ' + hid + ' 条被当前筛选隐藏，点删除会一并删掉'
+              : '';
+            bulkWarn.textContent = warn;
+            bulkWarn.hidden = !warn;
+          };
           const syncCount = () => {
             countEl.textContent = '共 ' + alive().length + ' 条，已选 ' + pickedRows().length + ' 条';
+            paintBulk();
             refreshIssues();
           };
           const rowText = (row) => isKv
@@ -1152,13 +1166,13 @@
               listEl.appendChild(row.el);
             }
             if (!alive().length) {
-              listEl.appendChild(h('div', { class: 'kh-list-empty', text: '还没有条目，在下面输入后回车添加' }));
+              listEl.appendChild(h('div', { class: 'kh-list-empty', text: '还没有条目，在上面的输入框里回车添加' }));
             }
             applyFilter();
             syncCount();
           }
 
-          function addRow(data, afterRow) {
+          function addRow(data, afterRow, opts) {
             const row = Object.assign({
               orig: -1, gone: false, dirty: true, isNew: true, picked: false, el: null, name: ''
             }, data || {});
@@ -1181,7 +1195,10 @@
             dirty = true;
             applyFilter();
             syncCount();
-            const focusInp = row.el.querySelector ? row.el.querySelector('.kh-list-val') : null;
+            /* 【2026-11-14 批1】从顶部「快加」框加进来时**不抢焦点**：连续录 10 条不用反复点回输入框。
+             * 行内回车（`addRow(null, row)`）仍然把焦点送进新行 —— 那是「接着这一条往下写」的场景。 */
+            const keepFocus = !!(opts && opts.keepFocus);
+            const focusInp = keepFocus ? null : (row.el.querySelector ? row.el.querySelector('.kh-list-val') : null);
             if (focusInp && typeof focusInp.focus === 'function') { try { focusInp.focus(); } catch (e) { /* 隐藏时忽略 */ } }
             return row;
           }
@@ -1202,6 +1219,8 @@
               if (!row.el) continue;
               row.el.hidden = !!row.gone || (!!q && rowText(row).toLowerCase().indexOf(q) < 0);
             }
+            /* 筛选一变，「有几条勾选被隐藏」就会变 —— 警告条必须当场刷新。 */
+            paintBulk();
           }
 
           const pick = (mode2) => {
@@ -1221,10 +1240,12 @@
           const dropPicked = () => {
             const list = pickedRows();
             if (!list.length) { D().toast('先勾选要删的条目'); return; }
+            const hid = list.filter((r) => r.el && r.el.hidden).length;
             for (const row of list) { row.gone = true; row.dirty = true; }
             dirty = true;
             renderAll();
             if (!scopePanel.hidden) scopePanel.hidden = true;
+            D().toast('已删除 ' + list.length + ' 条' + (hid ? '（其中 ' + hid + ' 条是被筛选隐藏的）' : ''));
           };
           const forPicked = (fn) => {
             const list = pickedRows();
@@ -1233,26 +1254,34 @@
             dirty = true;
             syncCount();
           };
-          const ops = [mkBtn('删除选中', dropPicked, '只删勾选的条目，其他条目不受影响')];
+          /* 【2026-11-14 批1】批量条分区：左边「批量改」（指向 / 进表），右边「危险区」（删除，
+           * 带条数并在有隐藏勾选时单独提示）。一次误删是数据丢失，不能和改指向挤在同一排。 */
+          const delBtn = mkBtn('删除选中', dropPicked, '只删勾选的条目；删的条数会写在按钮上');
+          const ops = [];
           if (isKv) {
-            ops.unshift(mkBtn('指向…', () => {
+            ops.push(mkBtn('指向…', () => {
               if (!pickedRows().length) { D().toast('先勾选要改的条目'); return; }
               openScope('bulk');
             }, '给勾选的词设置 @指向：可搜索、可多选，也可以设为全部字段'));
-            ops.unshift(mkBtn('设为全部字段', () => {
+            ops.push(mkBtn('设为全部字段', () => {
               forPicked((row) => {
                 row.scopes = [];
                 if (row._scopeBtn) row._scopeBtn.textContent = scopeLabel(row);
               });
             }, '去掉 @指向：这些词对抓到的所有图都算命中'));
-            ops.unshift(mkBtn('取消进表', () => {
+            ops.push(mkBtn('取消进表', () => {
               forPicked((row) => { row.mark = false; if (row._paintMark) row._paintMark(); });
             }));
-            ops.unshift(mkBtn('设为进表', () => {
+            ops.push(mkBtn('设为进表', () => {
               forPicked((row) => { row.mark = true; if (row._paintMark) row._paintMark(); });
             }, '勾上后：图里「这个词：值」会并进重要笔记的抓取表'));
           }
-          const opsBar = h('div', { class: 'kh-list-ops' }, ops);
+          /* 左「批量改」/ 右「危险区」：删除永远在最后一格，且和改指向隔开至少一条分隔线。 */
+          const opsBar = h('div', { class: 'kh-list-ops' }, [
+            ops.length ? h('div', { class: 'kh-list-ops-grp', 'data-grp': 'bulk' }, ops) : null,
+            h('div', { class: 'kh-list-ops-grp is-danger', 'data-grp': 'danger' }, [delBtn])
+          ].filter(Boolean));
+          const bulkWarn = h('div', { class: 'kh-list-warn', hidden: true });
 
           const addFromInput = () => {
             const v = String(addInp.value == null ? '' : addInp.value).trim();
@@ -1263,13 +1292,13 @@
               for (const o of add) {
                 if (spec.suffixChip) {
                   const sp = specOf(o.name);
-                  addRow({ name: sp.label, spec: sp, scopes: o.scopes, mark: o.mark });
-                } else addRow({ name: o.name, scopes: o.scopes, mark: o.mark });
+                  addRow({ name: sp.label, spec: sp, scopes: o.scopes, mark: o.mark }, null, { keepFocus: true });
+                } else addRow({ name: o.name, scopes: o.scopes, mark: o.mark }, null, { keepFocus: true });
               }
             } else if (isTok) {
-              for (const one of split(v)) { const sp = specOf(one); addRow({ name: sp.label, spec: sp }); }
+              for (const one of split(v)) { const sp = specOf(one); addRow({ name: sp.label, spec: sp }, null, { keepFocus: true }); }
             } else {
-              for (const one of split(v)) addRow({ name: one });
+              for (const one of split(v)) addRow({ name: one }, null, { keepFocus: true });
             }
             addInp.value = '';
             try { addInp.focus(); } catch (e) { /* 垫片没有 focus */ }
@@ -1311,18 +1340,35 @@
           const tip = isKv
             ? '每行一条；「指向」用可搜索多选设置，#表 表示命中后并入抓取表。没改过的条目保存时原样保留。'
             : isTok
-              ? '每行一个抓取字段；后缀点「后缀」展开设置，不用手敲 #图3 / ^[复制] / %1-3；勾「不完整展示」= 内容格折 3 行。'
+              ? '每行一个抓取字段；点行里的「取值：…」展开设置，不用手敲 #图3 / ^[复制] / %1-3；勾「不完整展示」= 内容格折 3 行。'
               : '每行一条，保存时用 | 连接。';
-          const body = h('div', { class: 'kh-list-box' }, [
-            h('div', { class: 'kh-list-toolbar' }, [
-              filter,
-              mkBtn('全选', () => pick('all')),
-              mkBtn('反选', () => pick('inv')),
-              countEl
+          /* 【2026-11-14 批1】三类行型各说一句话：这一屏到底是「词条」「抓取字段」还是「图片词」，
+           * 以前只能靠经验看后缀差别。副标题只讲**怎么录**，不重复图例（图例在底部可展开）。 */
+          const rowType = isTok ? 'tok' : (isKv ? 'kv' : 'plain');
+          const rowTypeName = isTok ? '抓取字段' : (isKv ? '图片词' : '词条');
+          const rowTypeHint = isTok
+            ? '每行一个字段名 + 取值后缀，回车添加下一条'
+            : (isKv
+              ? '每行一条；可设 @指向，勾「进表」把命中值并入抓取表'
+              : '每行一条，回车添加下一条，保存时用 | 连接');
+          const body = h('div', { class: 'kh-list-box', 'data-rowtype': rowType }, [
+            h('div', { class: 'kh-list-kicker' }, [
+              h('span', { class: 'kh-list-type', 'data-rowtype': rowType, text: rowTypeName }),
+              h('span', { class: 'kh-list-kicker-t', text: rowTypeHint })
             ]),
-            h('div', { class: 'kh-list-addbar' }, [addInp, addBtn2]),
+            /* 头两行整块吸顶：列表再长，「快加」框与筛选也不滚出视野（主路径是录词，addbar 在前）。 */
+            h('div', { class: 'kh-list-head' }, [
+              h('div', { class: 'kh-list-addbar' }, [addInp, addBtn2]),
+              h('div', { class: 'kh-list-toolbar' }, [
+                filter,
+                mkBtn('全选', () => pick('all')),
+                mkBtn('反选', () => pick('inv')),
+                countEl
+              ])
+            ]),
             scopePanel,
             opsBar,
+            bulkWarn,
             issueEl,
             listEl,
             h('div', { class: 'kh-list-foot' }, [h('span', { class: 'kh-list-tip', text: tip })]),
@@ -1784,12 +1830,28 @@
    */
   function legendEl() {
     const h = D().h;
+    /* 【2026-11-14 批1】原来是一串 151 字、用 `/` 硬拼的段落 —— 想查一个记号得在长句里找。
+     * 现在一项一行：左边记号（等宽），右边白话。记号本身与解析顺序**一个字都没改**。 */
+    const rows = [
+      ['#1', '右邻这一格'],
+      ['#图', '只要图片'],
+      ['#图3', '只要图片，最多 3 张（3 换成你要的张数）'],
+      ['#3', '图上文字与图，最多 3 张'],
+      ['#0', '这个字段不要图'],
+      ['@2', '取值格在右邻第 2 格（@字段名 = 只取那个字段的格）'],
+      ['^锚文本', '只取锚点之前的部分'],
+      ['%4', '只取前 4 字（%1-3 = 取第 1–3 字）'],
+      ['~', '内容格只显示一行，悬停看全文'],
+      ['*', '内容格做成超链接（可写模板 https://…/?q={v}）'],
+      ['!', '去掉内部空白'],
+      ['| 或 ｜', '一次写多个字段；弹窗里每行一条，回车添加下一条']
+    ];
     return h('details', { class: 'kh-lbl-legend' }, [
-      h('summary', { text: '后缀怎么写（点开看全部）' }),
-      h('div', {
-        text: '后缀：#1 右邻一格 / #图 仅图片 / #3 最多 3 张 / #图3 仅图片且最多 3 张 / #0 该字段不要图 / @2 值格 / ! 去空白 / ^锚文本 只取锚点之前 / %4 前 4 字；'
-          + '一次写多个字段用 | 或 ｜（例：名称^[复制]|备注#图）；在「修改」弹窗里每行一条，回车添加下一条'
-      })
+      h('summary', { text: '取值后缀怎么写（点开看全部）' }),
+      h('div', { class: 'kh-legend-body' }, rows.map((pair) => h('div', { class: 'kh-legend-row' }, [
+        h('code', { class: 'kh-legend-code', text: pair[0] }),
+        h('span', { class: 'kh-legend-val', text: pair[1] })
+      ])))
     ]);
   }
 

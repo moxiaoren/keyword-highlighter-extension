@@ -2106,6 +2106,63 @@ module.exports = async function runUi(ctx) {
     await closeEditor();
   });
 
+  group('10b. options · 列表弹窗纯呈现（批1）', { aspects: ['ui'] });
+
+  await test('★ 列表弹窗批1：头两行吸顶、行型自报、连续录入不回跳（真机焦点）', async () => {
+    await openFreshEditor();
+    await opt.evaluate(() => {
+      const cb = document.getElementById('fld-fetchEnabled');
+      if (cb && !cb.checked) { cb.checked = true; cb.dispatchEvent(new Event('change', { bubbles: true })); }
+    });
+    await opt.click('.kh-cand-box[data-for="fld-fetchLabels"] .kh-list-btn');
+    await opt.waitForTimeout(250);
+    const head = await opt.evaluate(() => {
+      const h = document.querySelector('.kh-modal .kh-list-head');
+      if (!h) return null;
+      const type = document.querySelector('.kh-modal .kh-list-type');
+      const box = document.querySelector('.kh-modal .kh-list-box');
+      const cs = getComputedStyle(h);
+      return {
+        kids: [...h.children].map((el) => el.className),
+        pos: cs.position,
+        type: type ? (type.textContent || '').trim() : null,
+        rowtype: box ? box.getAttribute('data-rowtype') : null,
+        legendRows: document.querySelectorAll('.kh-modal .kh-legend-row').length
+      };
+    });
+    truthy(head, '列表弹窗要有吸顶头容器');
+    eq(head.kids.length, 2, '头容器正好两行：' + JSON.stringify(head.kids));
+    truthy(/kh-list-addbar/.test(head.kids[0]), '第一行是快加框（主路径是录词）');
+    truthy(/kh-list-toolbar/.test(head.kids[1]), '第二行才是筛选');
+    eq(head.pos, 'sticky', '头要吸顶（position: sticky）');
+    eq(head.type, '抓取字段', '行型要自报家门');
+    eq(String(head.rowtype), 'tok', '抓取字段弹窗的 data-rowtype 是 tok');
+    truthy(head.legendRows >= 10, '图例一项一行，实测 ' + head.legendRows + ' 行');
+
+    /* 连录两条：每次回车后焦点必须还在快加框里（抢进新行 = 每录一条都要手点回来） */
+    const focusLog = [];
+    for (const w of ['测试字段甲', '测试字段乙']) {
+      await opt.fill('.kh-modal .kh-list-add', w);
+      await opt.keyboard.press('Enter');
+      await opt.waitForTimeout(140);
+      focusLog.push(await opt.evaluate(() => {
+        const add = document.querySelector('.kh-modal .kh-list-add');
+        return {
+          isAdd: document.activeElement === add,
+          val: add ? add.value : null,
+          n: document.querySelectorAll('.kh-modal .kh-lrow').length
+        };
+      }));
+    }
+    truthy(focusLog[0].isAdd && focusLog[1].isAdd, '★ 连续录入时焦点不许被抢进新行：' + JSON.stringify(focusLog));
+    eq(focusLog[0].val, '', '加完要清空输入框');
+    eq(focusLog[1].n, 2, '两条都要真的进列表：' + JSON.stringify(focusLog));
+
+    await opt.keyboard.press('Escape');
+    await opt.waitForTimeout(200);
+    await closeEditor();
+  });
+
   await test('★ 候选框展开不许把三列挤变形（2.0.6.4 需求①：47 个词一次灌满）', async () => {
     await openFreshEditor();
     await opt.evaluate(() => {

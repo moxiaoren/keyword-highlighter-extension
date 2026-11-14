@@ -942,6 +942,47 @@
 .kh-list-addbar .kh-list-add { flex: 1 1 auto; min-width: 0; }
 .kh-list-addbtn { flex: 0 0 auto; }
 .kh-list-ops { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+/* ============================================================================
+ * 【2026-11-14 批1】列表弹窗只改呈现（存储串、解析顺序、回写口径一律不动）：
+ *   ① 头两行（快加框 + 筛选）整块吸顶，列表再长也不滚丢；
+ *   ② 三类行型（词条 / 抓取字段 / 图片词）各有一条色条 + 类型名，同一个弹窗不同行型不再长得一样；
+ *   ③ 批量条分区：左边「批量改」，右边「危险区」（删除带条数）；
+ *   ④ 有勾选被筛选隐藏时单独一条警告（以前会静默一起删）。
+ * ========================================================================= */
+.kh-list-head {
+  position: sticky; top: -1px; z-index: 3;
+  display: flex; flex-direction: column; gap: 6px; min-width: 0;
+  padding: 6px 0; margin-top: -6px;
+  background: var(--card);
+}
+.kh-list-kicker { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; min-width: 0; }
+.kh-list-type {
+  flex: 0 0 auto; padding: 0 6px; border-radius: 999px;
+  font-size: 11px; line-height: 16px; font-weight: 600;
+  background: var(--brand-soft); color: var(--brand-deep);
+}
+.kh-list-type[data-rowtype="tok"] { background: var(--warning-soft); color: var(--warn-ink); }
+.kh-list-type[data-rowtype="kv"] { background: var(--success-soft); color: var(--success-strong); }
+.kh-list-kicker-t { flex: 1 1 auto; min-width: 0; font-size: 11px; line-height: 16px; color: var(--text-3); }
+.kh-list-ops-grp { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
+.kh-list-ops-grp.is-danger { margin-left: auto; padding-left: 8px; border-left: 1px solid var(--border); }
+.kh-list-warn {
+  padding: 4px 8px; border-radius: var(--r-sm);
+  background: var(--warning-soft); color: var(--warn-ink);
+  font-size: 12px; line-height: 1.5; word-break: break-word;
+}
+.kh-list-warn[hidden] { display: none; }
+.kh-list-box[data-rowtype="tok"] .kh-lrow { border-left: 3px solid var(--warn-ink); }
+.kh-list-box[data-rowtype="kv"] .kh-lrow { border-left: 3px solid var(--success-strong); }
+.kh-list-box[data-rowtype="plain"] .kh-lrow { border-left: 3px solid var(--brand); }
+/* 图例一项一行：查一个记号不用在 151 字长句里扫。 */
+.kh-legend-body { display: flex; flex-direction: column; gap: 1px; }
+.kh-legend-row { display: flex; gap: 8px; min-width: 0; }
+.kh-legend-code {
+  flex: 0 0 auto; min-width: 4.5em;
+  color: var(--brand-deep); font-weight: 600; font-family: ui-monospace, Menlo, Consolas, monospace;
+}
+.kh-legend-val { flex: 1 1 auto; min-width: 0; color: var(--text-2); }
 /* 【#116】指向诊断条：写在「修改」弹窗列表上方，写错的 `@字段名` 在这里当场可见 */
 .kh-issue-list {
   display: flex; flex-direction: column; gap: 4px; min-width: 0;
