@@ -1183,6 +1183,31 @@ if (manifest && manifest.version) {
   }
 }
 
+/* ===== 权限披露与 manifest 一致（台账 #13 · 2026-11-14） =====
+
+/* 为什么：`manifest.json` 的 `permissions` 是商店审核看的「实际要什么」，`PRIVACY.md` 的权限表
+ * 是给用户和审核看的「为什么」。两边一旦漂移（2026-11-14 就发现 2.0.10.9 加了 `scripting`
+ * 但隐私政策没写），披露就不实，属于上架会被驳的那类问题。这条只比名单，不检查用途文案。 */
+{
+  let man = null;
+  try { man = JSON.parse(read('manifest.json')); }
+  catch (err) { bad('manifest.json 读不了：' + err.message); }
+  if (man) {
+    let pv = null;
+    try { pv = read('PRIVACY.md'); }
+    catch (err) { if (err.code !== 'ENOENT') bad('PRIVACY.md 读不了：' + err.message); }
+    if (pv === null) warn('没有 PRIVACY.md，权限披露核对跳过');
+    else {
+      const perms = Array.isArray(man.permissions) ? man.permissions : [];
+      const miss = perms.filter((p) => pv.indexOf('`' + p + '`') < 0);
+      if (!/host_permissions/.test(pv)) miss.push('host_permissions');
+      if (miss.length) bad('PRIVACY.md 的权限表没覆盖 manifest 里的权限：' + miss.join(' / '),
+        '商店要求隐私披露与实际权限一致；加一行到 PRIVACY.md 第四节');
+      else ok('权限披露与 manifest 一致（' + perms.length + ' 项 + host_permissions）');
+    }
+  }
+}
+
 /* ------------------------------------------------------------------ 输出 */
 
 /* README 里的「机械红线（N 项）」必须就是本次实测条数 —— 手写数字一定会烂（票 #42）。
