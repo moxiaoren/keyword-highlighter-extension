@@ -372,9 +372,12 @@ module.exports = async function run() {
   await test('★welcome 三个渲染各自兜底 + 订阅 storage 变化（一个坏掉不许带走整页）', () => {
 
     const wjs = code(readSrc('welcome/welcome.js'));
-    truthy(/const boot = \(fn, what\) => fn\(\)\.catch\(/.test(wjs),
-      '★ 旧写法是三个裸调用：谁先 reject 谁把后面的一起带走，且是 unhandled rejection');
-    ['renderStatus', 'renderLog', 'renderShortcuts'].forEach((fn) => {
+    /* 兜底从 fn().catch(...) 换成 Promise.resolve().then(fn)：能力清单渲染是同步的，
+     * 数据缺失会在调用时就 throw，旧写法连 catch 都到不了（台账 2026-11-14 第 1 条）。 */
+    truthy(/const boot = \(fn, what\) => Promise\.resolve\(\)\s*\.then\(fn\)\s*\.catch\(/.test(wjs),
+      '★ 旧写法是三个裸调用：谁先 reject 谁把后面的一起带走，且是 unhandled rejection；'
+      + '而且同步 throw 根本落不进 catch');
+    ['renderAbilities', 'renderStatus', 'renderLog', 'renderShortcuts'].forEach((fn) => {
       truthy(new RegExp('boot\\(' + fn + ',').test(wjs), fn + ' 必须走 boot 兜底');
     });
     truthy(/chrome\.storage\.onChanged\.addListener\(/.test(wjs),

@@ -26,13 +26,10 @@
       <div class="kh-hero-mark" aria-hidden="true">🔍</div>
       <div class="kh-hero-text">
         <div class="kh-hero-name">关键词高亮<span class="kh-ver" id="version">v—</span></div>
-        <div class="kh-hero-tag">在任意网页标出关键词，并把同行信息收进「重要笔记」 —— 只上色，不改动网页。</div>
-        <!-- 三句承诺：新用户在第一屏就该知道的三件事（都比"功能列表"更早影响信任与取舍） -->
-        <div class="kh-hero-chips">
-          <span class="kh-chip">仅上色 · 不改动网页</span>
-          <span class="kh-chip">识别全在本机</span>
-          <span class="kh-chip">数据只存本机</span>
-        </div>
+        <!-- 定位句与三句承诺由 welcome.js 按 src/ui/abilities.js 渲染（唯一真源）。
+             别在这里补字：漏改一处就是「页面说的和插件做的不一致」，meta-check 会红。 -->
+        <div class="kh-hero-tag" id="hero-tag"></div>
+        <div class="kh-hero-chips" id="hero-chips"></div>
       </div>
     </header>
 
@@ -41,40 +38,15 @@
       <span class="kh-dot" aria-hidden="true"></span><span id="kw-count">正在读取…</span>
     </div>
 
-    <!-- ③ 它能做什么：新用户最先要知道的是"能力"，而不是"按钮在哪" -->
-    <h2 class="kh-sec-title">它能做什么</h2>
-    <section class="kh-feats" aria-label="主要功能">
-      <div class="kh-feat">
-        <div class="kh-feat-i" aria-hidden="true">🔍</div>
-        <div class="kh-feat-t">关键词高亮</div>
-        <div class="kh-feat-d">普通词 / 正则 / 全词 / 区分大小写。命中<b>只做视觉上色</b>，不插入任何节点、不改网页内容。</div>
-      </div>
-      <div class="kh-feat">
-        <div class="kh-feat-i" aria-hidden="true">▦</div>
-        <div class="kh-feat-t">单元格组合</div>
-        <div class="kh-feat-d">「左格标题 ＋ 右格核心」或「表头列 ＋ 数据行」——<b>两格都命中才生效</b>，避免半截误标。</div>
-      </div>
-      <div class="kh-feat">
-        <div class="kh-feat-i" aria-hidden="true">📌</div>
-        <div class="kh-feat-t">抓取 ＋ 重要笔记</div>
-        <div class="kh-feat-d">命中后把<b>同行的其它字段一并抓走</b>，聚合在可拖动的悬浮面板里；点高亮词还能单独看该词备注。</div>
-      </div>
-      <div class="kh-feat">
-        <div class="kh-feat-i" aria-hidden="true">🎨</div>
-        <div class="kh-feat-t">分组与配色</div>
-        <div class="kh-feat-d">每个词可单独设底色 / 文字色，分组设一次组内共用。优先级：<b>分组色 &gt; 词色 &gt; 全局默认</b>。</div>
-      </div>
-      <div class="kh-feat">
-        <div class="kh-feat-i" aria-hidden="true">🖼</div>
-        <div class="kh-feat-t">图片文字识别</div>
-        <div class="kh-feat-d">表格里「截图当值」的格子也能被关键词命中：<b>抓取字段值格</b>里的图识别一次，命中就进面板顶部的<b>截图表</b>，图上带红框；词条多了在格子的标题行点「<b>批量</b>」一次改作用域与 <code>#表</code>。</div>
-      </div>
-      <div class="kh-feat">
-        <div class="kh-feat-i" aria-hidden="true">🖱</div>
-        <div class="kh-feat-t">右键即识别 · 大图一键 OCR</div>
-        <div class="kh-feat-d">网页上的图<b>右键</b>即识别，点下去那一刻面板里就有这张图；点开大图后工具条上也能识别，识别过变「<b>显示全文</b>」。</div>
-      </div>
-    </section>
+    <!-- ③ 基础能力 / 卖点：两层分开写（台账 2026-11-14 第 1 条）。
+         内容一个字都不写在这里：全部由 src/ui/abilities.js 定义、welcome.js 渲染 ——
+         加新功能只改那一份数据，README 里同一段也由它生成（不靠人记得改两处）。
+         每条卡右下角带「界面落点」，点的就是设置页/面板里真实存在的那一节。 -->
+    <h2 class="kh-sec-title">基础能力</h2>
+    <section class="kh-feats" id="feats-basic" aria-label="基础能力"></section>
+
+    <h2 class="kh-sec-title">卖点</h2>
+    <section class="kh-feats" id="feats-selling" aria-label="卖点"></section>
 
     <!-- ④ 三步上手：怎么开始 -->
     <h2 class="kh-sec-title">三步上手</h2>
@@ -134,6 +106,8 @@
   <script src="../src/platform/markdown.js"></script>
   <!-- 界面主题（2.0.8.13 需求④）：欢迎页与设置页共用同一份真值 -->
   <script src="../src/ui/theme.js"></script>
+  <!-- 能力清单单一真源（台账第 1 条）：首屏定位句、三枚承诺胶囊、两层能力卡全由它渲染 -->
+  <script src="../src/ui/abilities.js"></script>
   <script src="welcome.js"></script>
 </body>
 </html>

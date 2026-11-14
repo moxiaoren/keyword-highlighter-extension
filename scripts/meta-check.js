@@ -872,7 +872,7 @@ if (manifest && manifest.version) {
     // ② 同一条规则顺手核工作区根 `CONTEXT.md` 的「已发布」速览行（票 #50 收口）：它以前手抄
     //    2.0.0.7 / `storage, alarms, offscreen`，别的机器一同步就看到旧口径。手抄数字必然漂，
     //    所以这里拿 manifest（测试版）与 release/latest.json（稳定版）当真源比对。
-    //    **故意并入本条、不新增 ok()**：红线数必须还是 47（README「机械红线（47 项）」与
+    //    **故意并入本条、不新增 ok()**：红线数必须还是 70（README「机械红线（70 项）」与
     //    changelog 各版自检行都钉着这个数，加一条就要连带改两处历史记录）。
     const ctxAbs = path.join(root, '..', '..', 'CONTEXT.md');
     const ctxProblems = [];
@@ -1003,6 +1003,76 @@ if (manifest && manifest.version) {
   const t4 = findIn(['src/features/important-note.js'], /点开看全部|共 \{n\} 条/);
   if (t4.length) bad('面板文案单源：OCR 文案必须取 KH.OcrCopy.VIEW，不许写死字面量', t4.join('\n      '));
   else ok('面板文案单源（OCR 文案取自 KH.OcrCopy.VIEW）');
+}
+
+/* ------------------------------------------------ 能力清单单源（2026-11-14 · 台账第 1 条）
+ * 背景：欢迎页首屏原来手写定位句 + 三枚标签 + 6 张能力卡，README 又手写一份散文；
+ * 加一条能力要改两处，改漏一处就自相矛盾（首屏说六个、README 说八个）。
+ * 现在唯一真源是 src/ui/abilities.js：欢迎页运行时渲染，README 由 scripts/gen-abilities.js 生成。
+ * 两条红线各防一种回退，缺一条都会让「单源」在两周内烂掉：
+ *   ① 有人手改 README 的块，或改了数据忘了重生成 → 块与数据不一致；
+ *   ② 有人把卡片文案写回 welcome.html（看着更像直出、其实又变成两份），
+ *      或改了界面把某个「界面落点」指到不存在的地方（首屏承诺点过去是空的）。
+ */
+{
+  const gen = require('./gen-abilities');
+  const A = gen.loadAbilities();
+  const block = gen.renderBlock(A);
+  const md = read('README.md');
+  const i = md.indexOf(gen.BEGIN);
+  const j = md.indexOf(gen.END);
+  if (i < 0 || j < i) {
+    bad('README 缺能力块标记（能力段只能由脚本生成）',
+      '在「## 它做什么」之前插一行 ' + gen.BEGIN + ' 和一行 ' + gen.END + '，再跑 node scripts/gen-abilities.js --write');
+  } else if (md.slice(i, j + gen.END.length) !== block) {
+    bad('README 的能力块与 src/ui/abilities.js 不一致（手改了块，或改了数据没重生成）',
+      '跑 node scripts/gen-abilities.js --write 重写；不要手改块里的字');
+  } else {
+    /* ⑤ 另外两个消费方：README 首段与工作区根 CONTEXT.md 的「## 0. 定位」。三处必须逐字一致（定位句只写一份）；少了任何一个核对，就等于判据只做了一半 —— 另一个消费方改错时没有任何红灯。 */
+    const posProbs = [];
+    if (md.indexOf(A.positioning) < 0) {
+      posProbs.push('README 首段没有 abilities.js 的定位句 —— 原样写：' + A.positioning);
+    }
+    let ctxPos = null;
+    try { ctxPos = fs.readFileSync(path.join(root, '..', '..', 'CONTEXT.md'), 'utf8'); }
+    catch (e) { ctxPos = null; }
+    if (ctxPos === null) {
+      posProbs.push('CONTEXT.md 读不到（工作区根，交付仓库上一层）—— 无处核对「## 0. 定位」');
+    } else if (ctxPos.indexOf(A.positioning) < 0) {
+      posProbs.push('CONTEXT.md 的定位段与 abilities.js 不一致 —— 原样写：' + A.positioning);
+    }
+    if (posProbs.length) {
+      bad('定位句的三处消费方不一致（abilities.js / README 首段 / CONTEXT.md 的「## 0. 定位」）',
+        posProbs.join('\n      '));
+    } else {
+      ok('README 能力块由 src/ui/abilities.js 生成（逐字一致，'
+        + (A.basics.length + A.selling.length) + ' 条）＋ README/CONTEXT 定位句逐字一致');
+    }
+  }
+
+  const html = read('welcome/welcome.html');
+  const probs = [];
+  ['hero-tag', 'hero-chips', 'feats-basic', 'feats-selling'].forEach((id) => {
+    /* 空容器：开标签后除了空白就是闭标签。一旦有人把卡片写回 HTML，这里立刻不空 → 红。 */
+    const re = new RegExp('id="' + id + '"[^>]*>\\s*</(div|section)>');
+    if (!re.test(html)) probs.push('welcome/welcome.html 缺少空容器 #' + id
+      + '（能力文案必须由 abilities.js 渲染，不许写回 HTML）');
+  });
+  if (html.indexOf('src="../src/ui/abilities.js"') < 0) {
+    probs.push('welcome/welcome.html 没有引入 src/ui/abilities.js（页面会白屏掉一整段）');
+  }
+  Object.keys(A.anchors || {}).forEach((k) => {
+    const a = A.anchors[k] || {};
+    const p = a.probe || {};
+    if (!p.file || !p.needle) { probs.push('anchors.' + k + ' 缺 probe（file + needle）'); return; }
+    let txt = '';
+    try { txt = read(p.file); } catch (e) { probs.push('anchors.' + k + ' 的落点文件不存在：' + p.file); return; }
+    if (txt.indexOf(p.needle) < 0) {
+      probs.push('anchors.' + k + '（' + a.label + '）的探针在 ' + p.file + ' 里找不到「' + p.needle + '」');
+    }
+  });
+  if (probs.length) bad('能力清单：欢迎页必须是空容器 + 每个「界面落点」都要指到真东西', probs.join('\n      '));
+  else ok('能力清单：欢迎页空容器渲染 + ' + Object.keys(A.anchors || {}).length + ' 个界面落点全部命中');
 }
 
 /* ------------------------------------------------ 值一致口径的唯一实现（票 #113 / 2.0.8.18 需求①）

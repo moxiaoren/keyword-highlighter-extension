@@ -102,6 +102,9 @@ body {
 .kh-feat-t { font-weight: 600; font-size: var(--fs-md); margin-bottom: 5px; }
 .kh-feat-d { color: var(--text-3); font-size: var(--fs-sm); line-height: 1.75; }
 .kh-feat-d b { color: var(--text-2); font-weight: 600; }
+/* 界面落点（台账 2026-11-14 第 1 条）：把每条能力/卖点钉到设置页或面板里真实存在的一节，
+   用户读完能直接点过去。样式故意比正文更弱 —— 它是「去哪儿看」，不是卖点本身。 */
+.kh-feat-where { margin-top: 8px; font-size: var(--fs-xs); color: var(--text-4); }
 
 /* ---------------------------------------------------------------- 三步卡 */
 .kh-steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }

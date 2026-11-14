@@ -226,9 +226,75 @@
     console.warn('[KH] welcome：storage.onChanged 不可用，状态条不会自动刷新 ——', err && err.message);
   }
 
-  /* 三个渲染各自兜底：旧写法三个裸调用（`renderStatus(); renderLog(); renderShortcuts();`）
-   * 谁先 reject 谁就把整页剩下的渲染**一起带走**，且是 unhandled rejection —— 用户零提示。 */
-  const boot = (fn, what) => fn().catch((err) => console.warn('[KH] welcome：' + what + ' 渲染失败 ——', err && err.message));
+  /* 能力清单渲染（台账 2026-11-14 第 1 条）：首屏定位句、三枚承诺胶囊、两层能力卡
+   * 全部读 src/ui/abilities.js —— 这个文件**不再写第二条文案**。为什么：
+   * 这三处原来各写一份散文，上线新功能时漏改一处，用户读到的就是「说的和做的不一样」，
+   * 而且没有任何红灯。现在唯一的编辑点是那份数据，README 的同一段也由它生成。
+   * 每条卡下面那行「界面落点」不是装饰：它把卖点钉到设置页/面板里真实存在的一节上，
+   * 用户读完能直接点到对应功能（meta-check 会去那些文件里核对锚点还在）。 */
+  function renderAbilities() {
+    const A = window.KH_ABILITIES;
+    if (!A) throw new Error('abilities.js 没加载，能力清单取不到');
+    const byId = {};
+    (A.selling || []).forEach((it) => { if (it && it.id) byId[it.id] = it; });
+
+    $('hero-tag').textContent = A.positioning || '';
+
+    const chips = $('hero-chips');
+    chips.textContent = '';
+    (A.heroChips || []).forEach((id) => {
+      const it = byId[id];
+      if (!it) return;                       /* 数据里没有就少一枚，绝不临时编一句承诺 */
+      const s = document.createElement('span');
+      s.className = 'kh-chip';
+      s.textContent = it.chip || it.title || '';
+      chips.appendChild(s);
+    });
+
+    const card = (it) => {
+      const box = document.createElement('div');
+      box.className = 'kh-feat';
+      if (it.id) box.dataset.khAbility = it.id;
+      const ic = document.createElement('div');
+      ic.className = 'kh-feat-i';
+      ic.setAttribute('aria-hidden', 'true');
+      ic.textContent = it.icon || '';
+      const tt = document.createElement('div');
+      tt.className = 'kh-feat-t';
+      tt.textContent = it.title || '';
+      const dd = document.createElement('div');
+      dd.className = 'kh-feat-d';
+      dd.textContent = it.desc || '';
+      box.appendChild(ic);
+      box.appendChild(tt);
+      box.appendChild(dd);
+      const anchor = (A.anchors || {})[it.anchor];
+      if (anchor && anchor.label) {
+        const w = document.createElement('div');
+        w.className = 'kh-feat-where';
+        w.textContent = '界面落点：' + anchor.label;
+        box.appendChild(w);
+      }
+      return box;
+    };
+
+    const fill = (id, list) => {
+      const box = $(id);
+      if (!box) return;
+      box.textContent = '';
+      (list || []).forEach((it) => { if (it) box.appendChild(card(it)); });
+    };
+    fill('feats-basic', A.basics);
+    fill('feats-selling', A.selling);
+  }
+  /* 各渲染各自兜底：旧写法三个裸调用（`renderStatus(); renderLog(); renderShortcuts();`）
+   * 谁先 reject 谁就把整页剩下的渲染**一起带走**，且是 unhandled rejection —— 用户零提示。
+   * 现在走 Promise.resolve().then(fn)：**同步 throw 也落到同一条 catch 里**（能力清单
+   * 渲染是同步的，单测里数据缺失会当场抛错，旧写法那样包会先错在 fn() 这一层）。 */
+  const boot = (fn, what) => Promise.resolve()
+    .then(fn)
+    .catch((err) => console.warn('[KH] welcome：' + what + ' 渲染失败 ——', err && err.message));
+  boot(renderAbilities, '能力清单');
   boot(renderStatus, '状态条');
   boot(renderLog, '更新日志');
   boot(renderShortcuts, '快捷键卡');
