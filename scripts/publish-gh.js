@@ -480,6 +480,14 @@ async function api(method, url, body) {
   if (skipped) log('  未变的 ' + skipped + ' 个文件跳过上传（远端已有相同内容，base_tree 会原地保留）');
   if (DRY) { log('\n--dry：以上为将发布的内容，未做任何提交。'); return; }
 
+  /* 【空 tree 不是错误】GitHub 的建 tree 接口对空数组回 422 `Invalid tree info`。
+   * 触发条件很现实：上一次发布其实已经成功，但脚本在打印结果前被打断（run_code 超时），
+   * 于是重跑时全部文件都「未变」——这本该是「线上已是最新」，不该报红吓人。 */
+  if (!tree.length) {
+    log('  线上已是最新：本次没有文件变化，未提交。');
+    return;
+  }
+
   /* ④ 一个 commit 提交全部文件（避免"传了一半"的中间态） */
   const parent = await api('GET', '/repos/' + OWNER + '/' + REPO + '/git/commits/' + parentSha);
   if (!parent.ok) die('读父提交失败：' + parent.text.slice(0, 200));
