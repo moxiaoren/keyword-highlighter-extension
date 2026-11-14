@@ -9,6 +9,8 @@ const specs = [
   './specs/arbiter.test.js',
   './specs/storage.test.js',
   './specs/fetch.test.js',
+  /* 后缀「写法 ⇄ 解析」往返：批 2 换了面板控件，落盘语法必须一字不差 */
+  './specs/suffix-roundtrip.test.js',
   './specs/important-note.test.js',
   './specs/markdown.test.js',
   './specs/version.test.js',

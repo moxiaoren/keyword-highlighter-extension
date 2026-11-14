@@ -687,7 +687,9 @@
     else if (it.imgOnly) out.push(it.imgLimit ? '#图' + it.imgLimit : '#图');
     else if (it.imgLimit) out.push('#' + it.imgLimit);
     else if (it.simple) out.push('#1');
-    if (it.offset) out.push('@' + it.offset + (it.offsetInvalid ? '（无效）' : ''));
+    /* 「（无效）」只是展示标记：`@abc（无效）` 再读回来时它会被当成 offset 的一部分，
+     * 不剥掉就会越标越多（`@abc（无效）（无效）`）。剥掉后展示串幂等。 */
+    if (it.offset) out.push('@' + String(it.offset).replace(/（无效）$/, '') + (it.offsetInvalid ? '（无效）' : ''));
     if (it.stripSpace) out.push('!');
     if (it.anchor) out.push('^' + it.anchor);
     if (it.sliceSpec) out.push('%' + it.sliceSpec);

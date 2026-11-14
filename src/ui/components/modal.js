@@ -38,6 +38,8 @@
     e.stopPropagation();
     // Esc：优先交给实例自己的钩子（例如胶囊小弹窗要先关掉自己）
     if (inst.onEsc && inst.onEsc() === true) return;
+    // 再问「关之前要不要先拦一下」（有未保存改动时用；返回 false = 不关）
+    if (inst.onBeforeClose && inst.onBeforeClose() === false) return;
     inst.close();
   }, true);
 
@@ -51,6 +53,8 @@
    *   onSave     返回 false / Promise<false> 则**不关闭**（校验失败场景）
    *   onClose    关闭后回调（无论是保存还是取消）
    *   onEsc      返回 true 表示"我自己处理了 Esc"
+   *   onBeforeClose 用户点 × / 取消 / 遮罩 / Esc 时先问它：返回 false 就**不关**
+   *              （程序化 close() 不过这道闸，「放弃修改」才关得掉）
    * @returns {object} 实例 { close, setBusy, el }
    */
   function open(opts) {
@@ -63,18 +67,28 @@
 
     const footerEl = h('div', { class: 'kh-modal-foot' });
     const inst = {
-      el: null, close, setBusy, onEsc: o.onEsc || null
+      el: null, close, setBusy, onEsc: o.onEsc || null, onBeforeClose: o.onBeforeClose || null
+    };
+    /* 所有「用户想关窗」的入口（× / 取消 / 遮罩 / Esc）都走这里：
+     * onBeforeClose 返回 false 就不关（例如列表弹窗有未保存改动，要先确认）。
+     * 程序化关闭（实例 close() / Modal.close()）刻意**不过**这道闸，
+     * 否则「放弃修改」自己也会被拦下来。 */
+    const requestClose = () => {
+      if (typeof o.onBeforeClose === 'function' && o.onBeforeClose() === false) return;
+      close();
     };
 
     if (o.footer) {
-      footerEl.appendChild(o.footer);
+      /* 允许传数组：自定义底栏常常是「左边说明 + 右边两个按钮」，
+       * 包一层 div 会丢 `.kh-modal-foot` 的 gap 与右对齐，所以按节点逐个挂。 */
+      for (const n of [].concat(o.footer)) if (n) footerEl.appendChild(n);
     } else {
       const cancel = h('button', { class: 'kh-btn', type: 'button', text: o.cancelLabel || '取消' });
       const save = h('button', {
         class: 'kh-btn ' + (o.danger ? 'kh-btn-danger' : 'kh-btn-primary'), type: 'button',
         text: o.saveLabel || '保存'
       });
-      cancel.addEventListener('click', () => close());
+      cancel.addEventListener('click', requestClose);
       save.addEventListener('click', async () => {
         if (!o.onSave) return close();
         setBusy(true);
@@ -94,7 +108,7 @@
 
     const headEl = h('div', { class: 'kh-modal-head' }, [
       h('div', { class: 'kh-modal-title', text: o.title == null ? '' : String(o.title) }),
-      h('button', { class: 'kh-modal-x', type: 'button', title: '关闭', text: '×', on: { click: () => close() } })
+      h('button', { class: 'kh-modal-x', type: 'button', title: '关闭', text: '×', on: { click: requestClose } })
     ]);
 
     /* `bare: true` = **只留内容**：去掉遮罩底色与弹窗自己的标题行。
@@ -109,7 +123,7 @@
 
     const mask = h('div', { class: 'kh-modal-mask' + (bare ? ' is-bare' : ''), 'data-kh-ext-ui': '1' }, [dialog]);
     if (o.maskClose !== false) {
-      mask.addEventListener('mousedown', (e) => { if (e.target === mask) close(); });
+      mask.addEventListener('mousedown', (e) => { if (e.target === mask) requestClose(); });
     }
 
     /* 挂载点：默认 document.body（选项页 / popup）。
@@ -118,7 +132,9 @@
      * 同时把挂载点交给 toast：否则提示会落在 shadow 外、拿不到组件样式。 */
     (o.mount || document.body).appendChild(mask);
     if (o.mount && D().setToastMount) D().setToastMount(o.mount);
-    const rec = { close, setBusy, onEsc: inst.onEsc, mask, dialog };
+    /* ⚠️ `onBeforeClose` 必须一起进栈：Esc 是从栈顶 rec 上取钩子的，漏了它
+     * 就会「× 会拦、Esc 不拦」，改动被 Esc 静默丢掉。 */
+    const rec = { close, setBusy, onEsc: inst.onEsc, onBeforeClose: inst.onBeforeClose, mask, dialog };
     inst.el = dialog;
     inst.mask = mask;
     stack.push(rec);

@@ -1060,6 +1060,13 @@
 .kh-sfx-preview .kh-sfx-sample { flex: 1 1 220px; min-width: 0; }
 .kh-sfx-out { flex: 0 1 auto; font-size: var(--fs-sm); color: var(--text-2); overflow-wrap: anywhere; }
 .kh-sfx-out.is-empty { color: var(--text-4); }
+/* 【2.0.11 批2】位置组的说明句：讲清「留空 = 右邻这一格」，不占一个表单项 */
+.kh-sfx-hint { font-size: 12px; line-height: 1.5; color: var(--text-3); }
+/* 批量设取值：跟在后缀面板最后，与上面的表单项拉开一档 */
+.kh-sfx-applybar { display: flex; justify-content: flex-end; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+.kh-sfx-apply { font-size: 12px; }
+/* 关闭确认：只有一句人话，不需要列表区的边距 */
+.kh-confirm-body { font-size: var(--fs-sm); line-height: 1.7; color: var(--text-2); }
 
 /* 指向面板：搜索框 + 「全部字段」 + 字段多选，单行与批量共用 */
 .kh-scope-panel {

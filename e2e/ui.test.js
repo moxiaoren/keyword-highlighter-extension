@@ -1409,14 +1409,24 @@ module.exports = async function runUi(ctx) {
    * ======================================================================= */
 
   /* 下面两个用例都要从**干净的新建弹窗**开始（上一组用例结束时弹窗状态不定） */
+  /* 【2026-11-15 批2】关弹窗要**逐层**关：列表弹窗有未保存改动时会先弹「未保存的修改」确认框，
+   * 只找「取消」会关不掉、残留到下一个用例（实测：残留的空态 div 盖住了下一轮的行）。
+   * 这里从最上层往下点，最多四层（确认框 → 列表弹窗 → 编辑器）。 */
   const closeEditor = async () => {
-    await opt.evaluate(() => {
-      if (!document.querySelector('.kh-editor')) return;
-      const cancel = Array.from(document.querySelectorAll('.kh-modal .kh-btn'))
-        .find((b) => /取消/.test((b.textContent || '').trim()));
-      if (cancel) cancel.click();
-    });
-    await opt.waitForTimeout(300);
+    for (let i = 0; i < 4; i++) {
+      const done = await opt.evaluate(() => {
+        const modals = Array.from(document.querySelectorAll('.kh-modal'));
+        if (!modals.length) return true;
+        const top = modals[modals.length - 1];
+        const btn = Array.from(top.querySelectorAll('.kh-btn'))
+          .find((b) => /^(取消|放弃修改)$/.test((b.textContent || '').trim()));
+        if (btn) { btn.click(); return false; }
+        return true;
+      });
+      if (done) break;
+      await opt.waitForTimeout(220);
+    }
+    await opt.waitForTimeout(220);
   };
   /**
    * 等编辑弹窗**真的**上屏。
@@ -2158,6 +2168,150 @@ module.exports = async function runUi(ctx) {
     eq(focusLog[0].val, '', '加完要清空输入框');
     eq(focusLog[1].n, 2, '两条都要真的进列表：' + JSON.stringify(focusLog));
 
+    await opt.keyboard.press('Escape');
+    await opt.waitForTimeout(200);
+    await closeEditor();
+  });
+
+  await test('★ 列表弹窗批2：搜得到、改得动、能批量设取值，删除只删看得见的', async () => {
+    await openFreshEditor();
+    await opt.evaluate(() => {
+      const cb = document.getElementById('fld-fetchEnabled');
+      if (cb && !cb.checked) { cb.checked = true; cb.dispatchEvent(new Event('change', { bubbles: true })); }
+    });
+    const openLabels = async () => {
+      await opt.click('.kh-cand-box[data-for="fld-fetchLabels"] .kh-list-btn');
+      await opt.waitForTimeout(220);
+    };
+    const rowsOf = () => opt.locator('.kh-modal .kh-lrow');
+    const namesOf = () => opt.evaluate(() => Array.from(document.querySelectorAll('.kh-modal .kh-lrow'))
+      .map((r) => { const i = r.querySelector('input.kh-list-val'); return i ? i.value : ''; }));
+
+    await openLabels();
+    /* 测试配置里本来就有抓取字段 ⇒ 所有断言都按「基线 + 我加的这几条」算，不假设从零开始 */
+    const base = await namesOf();
+    const idxOf = (name) => opt.evaluate((n) => Array.from(document.querySelectorAll('.kh-modal .kh-lrow'))
+      .findIndex((r) => { const i = r.querySelector('input.kh-list-val'); return i && i.value === n; }), name);
+    for (const n of ['计费方式', '主体X甲方', '备案编号X']) {
+      await opt.fill('.kh-modal .kh-list-add', n);
+      await opt.keyboard.press('Enter');
+      await opt.waitForTimeout(120);
+    }
+    eq((await namesOf()).length, base.length + 3, '三条都要进列表');
+
+    /* ① 搜索：只剩命中行可见（总行数不变，不丢数据） */
+    await opt.fill('.kh-modal .kh-list-filter', '主体X');
+    await opt.waitForTimeout(220);
+    const filtered = await opt.evaluate(() => {
+      const rows = Array.from(document.querySelectorAll('.kh-modal .kh-lrow'));
+      return { total: rows.length, vis: rows.filter((r) => !r.hidden).length };
+    });
+    eq(filtered.total, base.length + 3, '搜索只影响可见性，行不能被删掉');
+    eq(filtered.vis, 1, '只留命中「主体X」的那一行，实测 ' + filtered.vis);
+
+    /* ② 删除只删看得见的：勾中唯一可见行，清筛选后删除，其余必须留下 */
+    await rowsOf().nth(await idxOf('主体X甲方')).locator('input.kh-list-cb').check();
+    await opt.fill('.kh-modal .kh-list-filter', '');
+    await opt.waitForTimeout(220);
+    const delTxt = await opt.evaluate(() => {
+      const b = document.querySelector('.kh-modal .kh-list-ops-grp.is-danger button');
+      return b ? b.textContent : '';
+    });
+    eq(delTxt, '删除选中（1 条）', '按钮只报看得见的条数');
+    await opt.click('.kh-modal .kh-list-ops-grp.is-danger button');
+    await opt.waitForTimeout(220);
+    const afterDel = await namesOf();
+    eq(afterDel.length, base.length + 2, '只删掉一条，实测 ' + JSON.stringify(afterDel));
+    falsy(afterDel.indexOf('主体X甲方') >= 0, '被勾中的那条删掉了');
+    for (const n of base) truthy(afterDel.indexOf(n) >= 0, '既有字段不能被顺手删掉：' + n);
+
+    /* ③ 改名 + 保存往返：关掉重开，名字还在（写回整串没被归一） */
+    await rowsOf().nth(await idxOf('计费方式')).locator('input.kh-list-val').fill('计费方式改');
+    await opt.waitForTimeout(150);
+    await opt.click('.kh-modal:has(.kh-list-box) .kh-modal-foot .kh-btn-primary');
+    await opt.waitForTimeout(320);
+    await openLabels();
+    truthy((await idxOf('计费方式改')) >= 0, '改名要真的写回');
+
+    /* ④ 批量设取值：改一行的位置，勾另一行应用过去 */
+    const i0 = await idxOf('计费方式改');
+    const i1 = i0 === 0 ? 1 : 0;
+    await rowsOf().nth(i0).locator('.kh-lrow-suffix').click();
+    await opt.waitForTimeout(200);
+    await rowsOf().nth(i0).locator('.kh-sfx-offset').fill('2');
+    await opt.waitForTimeout(200);
+    const sfx0 = await rowsOf().nth(i0).locator('.kh-lrow-suffix').textContent();
+    truthy(/第 2 格/.test(String(sfx0)), '这一行的取值说明要跟着变：' + sfx0);
+    await rowsOf().nth(i1).locator('input.kh-list-cb').check();
+    await rowsOf().nth(i0).locator('.kh-sfx-apply').click();
+    await opt.waitForTimeout(250);
+    const sfx1 = await rowsOf().nth(i1).locator('.kh-lrow-suffix').textContent();
+    eq(String(sfx1), String(sfx0), '批量设取值要一模一样：' + sfx1 + ' vs ' + sfx0);
+
+    /* ⑤ 关窗前先确认：有改动时 Esc 不直接关，选「放弃修改」才关且改动没落盘 */
+    await opt.keyboard.press('Escape');
+    await opt.waitForTimeout(220);
+    const confirmTitle = await opt.evaluate(() => {
+      const ms = document.querySelectorAll('.kh-modal');
+      const top = ms[ms.length - 1];
+      const t = top && top.querySelector('.kh-modal-title');
+      return {
+        lists: document.querySelectorAll('.kh-modal .kh-list-box').length,
+        title: t ? t.textContent : null
+      };
+    });
+    eq(confirmTitle.lists, 1, '列表弹窗还在（没被直接关掉）：' + JSON.stringify(confirmTitle));
+    eq(String(confirmTitle.title), '有未保存的修改', '确认框说清是什么事');
+    await opt.locator('.kh-modal').last().locator('.kh-btn-danger').click();
+    await opt.waitForTimeout(250);
+    eq(await opt.evaluate(() => document.querySelectorAll('.kh-modal .kh-list-box').length), 0, '「放弃修改」后列表弹窗关掉');
+    await openLabels();
+    const sfxBack = await rowsOf().nth(i1).locator('.kh-lrow-suffix').textContent();
+    falsy(sfxBack === sfx0, '放弃修改就不该落盘，另一行仍是原取值：' + sfxBack);
+    await opt.keyboard.press('Escape');
+    await opt.waitForTimeout(200);
+    await closeEditor();
+  });
+
+  await test('★ 列表弹窗批2：拖拽把手能换顺序，保存后重开顺序还在', async () => {
+    await openFreshEditor();
+    await opt.evaluate(() => {
+      const cb = document.getElementById('fld-fetchEnabled');
+      if (cb && !cb.checked) { cb.checked = true; cb.dispatchEvent(new Event('change', { bubbles: true })); }
+    });
+    await opt.click('.kh-cand-box[data-for="fld-fetchLabels"] .kh-list-btn');
+    await opt.waitForTimeout(250);
+    const rowsOf = () => opt.locator('.kh-modal .kh-lrow');
+    const namesOf = () => opt.evaluate(() => Array.from(document.querySelectorAll('.kh-modal .kh-lrow'))
+      .map((r) => { const i = r.querySelector('input.kh-list-val'); return i ? i.value : ''; }));
+    for (const n of ['甲字段', '乙字段', '丙字段']) {
+      await opt.fill('.kh-modal .kh-list-add', n);
+      await opt.keyboard.press('Enter');
+      await opt.waitForTimeout(130);
+    }
+    const before = await namesOf();
+    eq(before.join(','), '甲字段,乙字段,丙字段', '先按录入顺序排好');
+
+    /* 把最后一行的把手拖到第一行上半 ⇒ 它应该插到最前面 */
+    const grip = rowsOf().nth(2).locator('.kh-lrow-grip');
+    const target = rowsOf().nth(0);
+    await grip.hover();
+    await opt.mouse.down();
+    await opt.mouse.move(0, 0, { steps: 4 });
+    const box = await target.boundingBox();
+    await opt.mouse.move(box.x + 20, box.y + 3, { steps: 8 });
+    await opt.mouse.up();
+    await opt.waitForTimeout(250);
+    const after = await namesOf();
+    eq(after.join(','), '丙字段,甲字段,乙字段', '拖到第一行上半 ⇒ 插到最前，实测 ' + after.join(','));
+
+    /* 保存后重开：顺序要落盘（写回走整串重排） */
+    await opt.click('.kh-modal:has(.kh-list-box) .kh-modal-foot .kh-btn-primary');
+    await opt.waitForTimeout(320);
+    await opt.click('.kh-cand-box[data-for="fld-fetchLabels"] .kh-list-btn');
+    await opt.waitForTimeout(250);
+    const persisted = await namesOf();
+    eq(persisted.join(','), '丙字段,甲字段,乙字段', '重开后顺序仍是拖过的，实测 ' + persisted.join(','));
     await opt.keyboard.press('Escape');
     await opt.waitForTimeout(200);
     await closeEditor();

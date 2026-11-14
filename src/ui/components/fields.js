@@ -679,14 +679,16 @@
             return row.scopes[0] + ' 等 ' + n + ' 个';
           };
           const hiddenPicked = () => pickedRows().filter((r) => r.el && r.el.hidden);
-          /* 【2026-11-14 批1】批量删除必须写明「有 N 条被筛选隐藏」：以前勾中 A 行、再搜 B、点删除，
-           * A 跟着一起消失且界面一个字都不提示（数据丢失级）。这里只把事实**说清楚**，删除口径一字未动。 */
+          /* 【2026-11-14 批1】批量删除必须写明「有 N 条被筛选隐藏」。
+           * 【2.0.11 批2】口径改成**只删看得见的勾选**：勾 A → 搜 B → 点删除，A 不会再跟着消失；
+           * 警告条同时说清「哪几条没删」与「删掉几条」。 */
           const paintBulk = () => {
             const n = pickedRows().length;
-            delBtn.textContent = n ? '删除选中（' + n + ' 条）' : '删除选中';
             const hid = hiddenPicked().length;
+            const vis = n - hid;
+            delBtn.textContent = vis ? '删除选中（' + vis + ' 条）' : '删除选中';
             const warn = (n && hid)
-              ? '⚠ 已选的 ' + n + ' 条里有 ' + hid + ' 条被当前筛选隐藏，点删除会一并删掉'
+              ? '⚠ 已选的 ' + n + ' 条里有 ' + hid + ' 条被当前筛选隐藏；删除只作用于可见的 ' + vis + ' 条，隐藏的会留下'
               : '';
             bulkWarn.textContent = warn;
             bulkWarn.hidden = !warn;
@@ -847,19 +849,32 @@
             scopePanel.hidden = true;
           });
 
+          /* 行上的「取值：…」按钮：compose 与「应用到选中」都走它，避免文案两处写 */
+          const paintSuffixBtn = (row) => {
+            if (!row || !row._suffixBtn) return;
+            row._suffixBtn.textContent = (typeof F.describeSuffix === 'function')
+              ? ('取值：' + (F.describeSuffix(row.spec) || '默认（右邻这一格）'))
+              : ('后缀：' + ((typeof F.suffixTextOf === 'function' ? F.suffixTextOf(row.spec) : '') || '无'));
+            row._suffixBtn.title = '当前写法：' + ((typeof F.suffixTextOf === 'function' ? F.suffixTextOf(row.spec) : '') || '无');
+          };
+
           /* ---------- 抓取字段后缀：结构化编辑（不再手敲 #图3 / ^[复制] / %1-3） ---------- */
           const buildSuffix = (row) => {
             const sp = row.spec;
             const detail = h('div', { class: 'kh-lrow-detail', hidden: true });
-            const modeSel = h('select', { class: 'kh-input kh-sfx-mode' }, [
-              h('option', { value: 'default', text: '右邻这一格' }),
-              h('option', { value: '#1', text: '右邻一格（#1）' }),
+            /* 2.0.11 批2：位置与图片分成两组 —— 原来「取哪一格」里既放位置又放图片选项，
+             * 「@2 值格」另起一组，说的其实是同一件事（从哪取），用户要自己猜两组谁优先。
+             * 合并后：位置只看 offset（留空＝右邻），图片只看 imgModeSel；`#1` 收敛成位置组里的一个勾选。
+             * 存储字段一个没少：simple/imgOnly/imgLimit/imgPick/noImg/offset 照旧。 */
+            const imgModeSel = h('select', { class: 'kh-input kh-sfx-mode' }, [
+              h('option', { value: 'none', text: '图与文字都留（默认）' }),
+              h('option', { value: '#0', text: '不要图片（#0）' }),
               h('option', { value: '#图', text: '只要图片（#图）' }),
               h('option', { value: '#PICK', text: '指定第几张图（#图1,3）' }),
               h('option', { value: '#图N', text: '图片，最多 N 张（#图N）' }),
-              h('option', { value: '#N', text: '图上文字与图，最多 N 张（#N）' }),
-              h('option', { value: '#0', text: '不要图片（#0）' })
+              h('option', { value: '#N', text: '图上文字与图，最多 N 张（#N）' })
             ]);
+            const simpleCb = h('input', { type: 'checkbox' });
             const imgN = h('input', { class: 'kh-input kh-sfx-num', type: 'number', min: '1', step: '1', value: String(sp.imgLimit || 2) });
             /* 【2.0.9.2】点名第几张图：1 起数、跨格累计，`1,3` = 第 1 张和第 3 张。 */
             const imgPickInp = h('input', { class: 'kh-input kh-sfx-num', type: 'text', value: (sp.imgPick || []).join(','), placeholder: '如 1,3' });
@@ -891,13 +906,30 @@
             const sampleInp = h('input', { class: 'kh-input kh-sfx-sample', type: 'text', placeholder: '粘贴一格真实文字，试一下取到的是什么' });
             const previewOut = h('span', { class: 'kh-sfx-out is-empty', text: '取到的值会显示在这里' });
             /* 初始态：storage 里的后缀 → 表单控件 */
-            let mode = 'default';
-            if (sp.noImg) mode = '#0';
-            else if (sp.imgPick && sp.imgPick.length) mode = '#PICK';
-            else if (sp.imgOnly) mode = sp.imgLimit ? '#图N' : '#图';
-            else if (sp.imgLimit) mode = '#N';
-            else if (sp.simple) mode = '#1';
-            modeSel.value = mode;
+            const initFromSpec = () => {
+              let mode = 'none';
+              if (sp.noImg) mode = '#0';
+              else if (sp.imgPick && sp.imgPick.length) mode = '#PICK';
+              else if (sp.imgOnly) mode = sp.imgLimit ? '#图N' : '#图';
+              else if (sp.imgLimit) mode = '#N';
+              imgModeSel.value = mode;
+              simpleCb.checked = !!sp.simple;
+              offsetInp.value = String(sp.offset || '');
+              imgN.value = String(sp.imgLimit || 2);
+              imgPickInp.value = (sp.imgPick || []).join(',');
+              anchorInp.value = String(sp.anchor || '');
+              stripCb.checked = !!sp.stripSpace;
+              clipCb.checked = !!sp.clip;
+              linkCb.checked = !!sp.link;
+              linkTplInp.value = String(sp.linkTpl || '');
+              const smA = /^\s*(\d+)\s*-\s*(\d+)\s*$/.exec(String(sp.sliceSpec || ''));
+              const sfA = /^\s*(\d+)\s*$/.exec(String(sp.sliceSpec || ''));
+              if (smA) { sliceMode.value = 'range'; sliceA.value = smA[1]; sliceB.value = smA[2]; }
+              else if (sfA) { sliceMode.value = 'first'; sliceA.value = sfA[1]; }
+              else sliceMode.value = 'none';
+              syncNums();
+              paintPreview();
+            };
             const sm = /^\s*(\d+)\s*-\s*(\d+)\s*$/.exec(String(sp.sliceSpec || ''));
             const sf = /^\s*(\d+)\s*$/.exec(String(sp.sliceSpec || ''));
             if (sm) { sliceMode.value = 'range'; sliceA.value = sm[1]; sliceB.value = sm[2]; }
@@ -918,18 +950,21 @@
               previewOut.className = 'kh-sfx-out';
             };
             const syncNums = () => {
-              const m = modeSel.value;
+              const m = imgModeSel.value;
               imgN.hidden = !(m === '#图N' || m === '#N');
               imgPickInp.hidden = m !== '#PICK';
+              /* 只读右邻一格跟「点名第几张 / 最多 N 张」互斥：解析侧不会同时产生，写回去也会丢一个 */
+              simpleCb.disabled = (m === '#图N' || m === '#N' || m === '#PICK');
+              if (simpleCb.disabled) simpleCb.checked = false;
               const sm2 = sliceMode.value;
               sliceA.hidden = sm2 === 'none';
               sliceB.hidden = sm2 !== 'range';
             };
             const compose = () => {
-              const m = String(modeSel.value || 'default');
+              const m = String(imgModeSel.value || 'none');
               sp.noImg = m === '#0';
               sp.imgOnly = (m === '#图' || m === '#图N' || m === '#PICK');
-              sp.simple = m === '#1';
+              sp.simple = !!simpleCb.checked && !(m === '#图N' || m === '#N' || m === '#PICK');
               const n = Math.max(0, parseInt(imgN.value, 10) || 0);
               sp.imgLimit = (m === '#图N' || m === '#N') ? n : 0;
               sp.imgPick = (m === '#PICK')
@@ -956,14 +991,10 @@
               dirty = true;
               syncNums();
               paintPreview();
-              if (row._suffixBtn) {
-                row._suffixBtn.textContent = (typeof F.describeSuffix === 'function')
-                  ? ('取值：' + (F.describeSuffix(sp) || '默认（右邻这一格）'))
-                  : ('后缀：' + ((typeof F.suffixTextOf === 'function' ? F.suffixTextOf(sp) : '') || '无'));
-                row._suffixBtn.title = '当前写法：' + ((typeof F.suffixTextOf === 'function' ? F.suffixTextOf(sp) : '') || '无');
-              }
+              paintSuffixBtn(row);
             };
-            modeSel.addEventListener('change', compose);
+            imgModeSel.addEventListener('change', compose);
+            simpleCb.addEventListener('change', compose);
             imgN.addEventListener('input', compose);
             imgPickInp.addEventListener('input', compose);
             offsetInp.addEventListener('input', compose);
@@ -976,11 +1007,15 @@
             linkCb.addEventListener('change', compose);
             linkTplInp.addEventListener('input', compose);
             sampleInp.addEventListener('input', paintPreview);
-            syncNums();
-            paintPreview();
+            initFromSpec();
+            row._refreshSuffix = initFromSpec;
+            /* 首屏先给样例与预览：先看「取到的是什么」，再决定要不要动下面的设置 */
+            detail.appendChild(h('div', { class: 'kh-sfx-preview' }, [sampleInp, previewOut]));
             detail.appendChild(h('div', { class: 'kh-sfx-grid' }, [
-              group('取哪一格', [modeSel, imgN, imgPickInp]),
-              group('值格位置 @', [offsetInp]),
+              group('从哪取（位置）', [offsetInp,
+                h('label', { class: 'kh-sfx-check' }, [simpleCb, h('span', { text: '只读右邻一格（#1）' })]),
+                h('div', { class: 'kh-sfx-hint', text: '留空 = 右邻这一格；写 2 = 右邻第 2 格' })]),
+              group('要哪种图', [imgModeSel, imgN, imgPickInp]),
               group('取什么内容', [anchorInp, sliceMode, sliceA, sliceB,
                 h('label', { class: 'kh-sfx-check' }, [clipCb, h('span', { text: '内容格只显示一行（悬停看全文）' })]),
                 h('label', { class: 'kh-sfx-check' }, [linkCb, h('span', { text: '内容格做成超链接（值是网址就直链；也可在下面写模板）' })]),
@@ -988,7 +1023,23 @@
               ]),
               group('怎么清理', [h('label', { class: 'kh-sfx-check' }, [stripCb, h('span', { text: '去掉内部空白（包名这类用）' })])])
             ]));
-            detail.appendChild(h('div', { class: 'kh-sfx-preview' }, [sampleInp, previewOut]));
+            /* 2.0.11 批2：一份取值可以一次套到多条上（原来只能一条条点开、逐项重设） */
+            const applyBtn = h('button', { class: 'kh-mini-btn kh-sfx-apply', type: 'button', text: '把这套取值应用到勾选的条目' });
+            applyBtn.title = '先把要一起改的条目在列表里勾上，再点这里；只改取值方式，不改名称';
+            applyBtn.addEventListener('click', () => {
+              const targets = pickedRows().filter((r) => r !== row && r.spec);
+              if (!targets.length) { D().toast('先在列表里勾选要一起改的条目'); return; }
+              const keys = ['noImg', 'imgOnly', 'imgLimit', 'imgPick', 'simple', 'offset', 'offsetInvalid', 'stripSpace', 'anchor', 'sliceSpec', 'clip', 'link', 'linkTpl'];
+              targets.forEach((tr) => {
+                keys.forEach((k) => { tr.spec[k] = Array.isArray(row.spec[k]) ? row.spec[k].slice() : row.spec[k]; });
+                tr.dirty = true;
+                dirty = true;
+                if (typeof tr._refreshSuffix === 'function') tr._refreshSuffix();
+                paintSuffixBtn(tr);
+              });
+              D().toast('已把取值应用到 ' + targets.length + ' 条');
+            });
+            detail.appendChild(h('div', { class: 'kh-sfx-applybar' }, [applyBtn]));
             return detail;
           };
 
@@ -1238,14 +1289,18 @@
             return b;
           };
           const dropPicked = () => {
-            const list = pickedRows();
-            if (!list.length) { D().toast('先勾选要删的条目'); return; }
-            const hid = list.filter((r) => r.el && r.el.hidden).length;
+            const all = pickedRows();
+            const list = all.filter((r) => !(r.el && r.el.hidden));
+            if (!list.length) {
+              D().toast(all.length ? '勾选的条目都被当前筛选隐藏了，先清掉筛选再删' : '先勾选要删的条目');
+              return;
+            }
+            const hid = all.length - list.length;
             for (const row of list) { row.gone = true; row.dirty = true; }
             dirty = true;
             renderAll();
             if (!scopePanel.hidden) scopePanel.hidden = true;
-            D().toast('已删除 ' + list.length + ' 条' + (hid ? '（其中 ' + hid + ' 条是被筛选隐藏的）' : ''));
+            D().toast('已删除 ' + list.length + ' 条' + (hid ? '；另有 ' + hid + ' 条被筛选隐藏，已保留' : ''));
           };
           const forPicked = (fn) => {
             const list = pickedRows();
@@ -1375,21 +1430,8 @@
             isTok ? legendEl() : null
           ]);
           renderAll();
-          listModal = ui.Modal.open({
-            title: spec.label + ' · 修改',
-            body,
-            size: 'md',
-            /* 页面里的「快速添加」把编辑器挂在 ShadowRoot 上：列表弹窗必须跟着挂进去，
-             * 否则会落到 document.body 上、拿不到组件样式（被页面样式冲掉）。 */
-            mount: (() => {
-              try {
-                const r = (typeof box.getRootNode === 'function') ? box.getRootNode() : null;
-                return (r && r !== document && r.host) ? r : null;
-              } catch (e) { return null; }
-            })(),
-            saveLabel: '保存',
-            onSave: () => {
-              if (!dirty) return true;                 // 没动过 ⇒ 不写回，原串一个字节都不碰
+          const commit = () => {
+            if (!dirty) return true;                   // 没动过 ⇒ 不写回，原串一个字节都不碰
               const live = alive();
               const hasNew = live.some((r) => r.isNew);
               let out;
@@ -1413,7 +1455,58 @@
               draw();
               st.notify();
               return true;
-            }
+          };
+          /* 【2.0.11 批2】有未保存改动时，× / 取消 / Esc / 点遮罩都先问一句。
+           * modal 的这三个关闭按钮是直连 close()、没有钩子，所以：× 与「取消」克隆替换成
+           * 先确认版本，遮罩用 maskClose:false 自己接管，Esc 走 onEsc。 */
+          const touchedCount = () => rows.filter((r) => r.isNew || r.gone || r.dirty).length;
+          let asking = false;
+          const requestClose = () => {
+            if (!dirty) { if (listModal) listModal.close(); return; }
+            if (asking) return;
+            asking = true;
+            const n = touchedCount();
+            let confirmInst = null;
+            const keepBtn = h('button', {
+              class: 'kh-btn', type: 'button', text: '继续编辑',
+              on: { click: () => { asking = false; if (confirmInst) confirmInst.close(); } }
+            });
+            const dropBtn = h('button', {
+              class: 'kh-btn kh-btn-danger', type: 'button', text: '放弃修改',
+              on: { click: () => { asking = false; if (confirmInst) confirmInst.close(); if (listModal) listModal.close(); } }
+            });
+            confirmInst = ui.Modal.open({
+              title: '有未保存的修改',
+              body: h('div', {
+                class: 'kh-confirm-body',
+                text: (n ? '这次改了 ' + n + ' 条' : '列表里的顺序改过了') + '，直接关掉就丢了。'
+              }),
+              size: 'sm',
+              footer: [keepBtn, dropBtn],
+              onClose: () => { asking = false; }
+            });
+          };
+          listModal = ui.Modal.open({
+            title: spec.label + ' · 修改',
+            body,
+            size: 'md',
+            /* 页面里的「快速添加」把编辑器挂在 ShadowRoot 上：列表弹窗必须跟着挂进去，
+             * 否则会落到 document.body 上、拿不到组件样式（被页面样式冲掉）。 */
+            mount: (() => {
+              try {
+                const r = (typeof box.getRootNode === 'function') ? box.getRootNode() : null;
+                return (r && r !== document && r.host) ? r : null;
+              } catch (e) { return null; }
+            })(),
+            saveLabel: '保存',
+            /* × / 取消 / 遮罩 / Esc 都要先过这一关：有未保存改动就不关，弹一句确认。
+             * 「放弃修改」走的是实例 close()（程序化关闭），不会再被拦。 */
+            onBeforeClose: () => {
+              if (!dirty) return true;
+              requestClose();
+              return false;
+            },
+            onSave: commit
           });
           return listModal;
         };

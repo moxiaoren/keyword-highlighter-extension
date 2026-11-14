@@ -96,16 +96,18 @@ module.exports = async function run() {
     truthy(danger, '删除要单独进危险区');
     truthy(/删除选中/.test(String(danger.textContent)), '危险区里是删除按钮');
     const src = read('src/ui/components/fields.js');
-    truthy(/delBtn\.textContent = n \? '删除选中（' \+ n \+ ' 条）'/.test(src), '按钮要报条数，别让人猜删几条');
+    truthy(/delBtn\.textContent = vis \? '删除选中（' \+ vis \+ ' 条）'/.test(src), '按钮要报条数（按可见的算），别让人猜删几条');
     truthy(/\.kh-list-ops-grp\.is-danger \{ margin-left: auto/.test(read('src/ui/components/components.css')),
       '危险区要推到右侧并加分隔线');
     KH.ui.Modal.closeAll();
   });
 
-  await test('★ 勾选被筛选隐藏：警告条出现且说明「会一并删掉」', () => {
+  await test('★ 勾选被筛选隐藏：警告条说明「只删可见的，隐藏的留下」', () => {
     const src = read('src/ui/components/fields.js');
     truthy(/const hiddenPicked = \(\) => pickedRows\(\)\.filter/.test(src), '要能数出隐藏的勾选');
-    truthy(/被当前筛选隐藏，点删除会一并删掉/.test(src), '警告要说清后果');
+    truthy(/删除只作用于可见的/.test(src), '警告要说清删除口径：只删可见勾选');
+    truthy(/const list = all\.filter\(\(r\) => !\(r\.el && r\.el\.hidden\)\)/.test(src), '删除时要跳过被筛选隐藏的行');
+    truthy(/另有 ' \+ hid \+ ' 条被筛选隐藏，已保留/.test(src), '删完要点明哪几条被留下了');
     truthy(/paintBulk\(\);/.test(src), '筛选变化后要刷新警告条');
     truthy(/const bulkWarn = h\('div', \{ class: 'kh-list-warn', hidden: true \}\)/.test(src), '警告条默认不占位');
     truthy(/已删除 ' \+ list\.length \+ ' 条/.test(src), '删完要点明删了几条');
@@ -128,5 +130,55 @@ module.exports = async function run() {
     truthy(t.indexOf('回车') >= 0, '仍要说清「回车添加下一条」');
     truthy(legend.querySelectorAll('.kh-legend-val').length === rows.length, '每行都要有白话解释');
     KH.ui.Modal.closeAll();
+  });
+
+  /* ── 批 2：结构归并（还是只动呈现，存储串与解析顺序不变） ───────────────── */
+
+  await test('★ 后缀面板：预览排在最前，「取哪一格」与「@值格」合成一组', () => {
+    const modal = openList(mkTok('开发者'));
+    const detail = modal.querySelector('.kh-lrow-detail');
+    truthy(detail, '抓取字段行要带后缀面板');
+    const kids = detail.children.map((el) => el.className || '');
+    const iPrev = kids.findIndex((c) => /kh-sfx-preview/.test(c));
+    const iGrid = kids.findIndex((c) => /kh-sfx-grid/.test(c));
+    truthy(iPrev >= 0 && iGrid >= 0, '预览块与设置区都在：' + kids.join(' / '));
+    truthy(iPrev < iGrid, '预览要排在设置前面（展开就能看到取到的值）');
+    const labels = detail.querySelectorAll('.kh-sfx-label').map((el) => String(el.textContent));
+    truthy(labels.some((t) => t.indexOf('从哪取') >= 0), '位置组改成「从哪取（位置）」：' + labels.join(' / '));
+    truthy(labels.some((t) => t.indexOf('要哪种图') >= 0), '图选项单独一组「要哪种图」');
+    falsy(labels.some((t) => t.indexOf('取哪一格') >= 0), '旧的「取哪一格」要消失（和 @ 讲的是同一件事）');
+    falsy(labels.some((t) => t.indexOf('值格位置') >= 0), '旧的「值格位置 @」要消失（已并入位置组）');
+    truthy(detail.querySelectorAll('.kh-sfx-check').length >= 1, '#1 变成位置组里的一个勾选');
+    truthy(detail.querySelector('.kh-sfx-apply') !== null, '要有「把这套取值应用到勾选的条目」');
+    KH.ui.Modal.closeAll();
+  });
+
+  await test('★ 批量设取值：没勾选任何条目时先说清怎么用', () => {
+    const modal = openList(mkTok('开发者'));
+    const btn = modal.querySelector('.kh-sfx-apply');
+    truthy(btn, '按钮要在');
+    btn.dispatchEvent({ type: 'click' });
+    const toastEl = document.body.querySelector('.kh-toast');
+    truthy(toastEl, '点它要有提示（不能静默）');
+    truthy(/勾选/.test(String(toastEl.textContent)), '提示要说清「先勾选要一起改的条目」：' + toastEl.textContent);
+    KH.ui.Modal.closeAll();
+  });
+
+  await test('★ 有未保存改动时关窗先确认；没改动就直接关', () => {
+    const modal = openList(mkTok(''));
+    const add = modal.querySelector('.kh-list-add');
+    add.value = '新字段';
+    modal.querySelector('.kh-list-addbtn').dispatchEvent({ type: 'click' });
+    eq(KH.ui.Modal.depth(), 1, '加了一条，列表弹窗还开着');
+    modal.querySelector('.kh-modal-x').dispatchEvent({ type: 'click' });
+    eq(KH.ui.Modal.depth(), 2, '有改动时点 × 要先弹确认');
+    const cf = lastModalEl();
+    eq(String(cf.querySelector('.kh-modal-title').textContent), '有未保存的修改', '确认框要说清是什么事');
+    cf.querySelector('.kh-btn-danger').dispatchEvent({ type: 'click' });
+    eq(KH.ui.Modal.depth(), 0, '「放弃修改」之后两个都关掉');
+
+    const clean = openList(mkTok(''));
+    clean.querySelector('.kh-modal-x').dispatchEvent({ type: 'click' });
+    eq(KH.ui.Modal.depth(), 0, '没改过就直接关，不啰嗦');
   });
 };
