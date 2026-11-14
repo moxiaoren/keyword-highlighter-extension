@@ -1671,6 +1671,8 @@
     $('pf-noteFontSize').value = (cfg.importantNote || {}).fontSize || '';
     limitInput($('pf-notePanelWidth'), KH.Config.PANEL_WIDTH_MIN, KH.Config.PANEL_WIDTH_MAX);
     $('pf-notePanelWidth').value = cfg.notePanelWidth;
+    /* 【台账 #7】承诺对象放行名单回显：走同一个归一函数（存储里可能是逗号串、坏值）。 */
+    $('pf-promiseOk').value = KH.Config.normalizeNoteCheck(cfg.noteCheck).promiseOk.join('\n');
     /* 置顶排序（2.0.2.6 需求②）：候选与回显都要重建（关键词表变了候选就得跟着变）。 */
     renderPinOrder();
     /* 【2.0.8.4 需求④】AI 助手的接口配置（与上面那块"重要笔记"同属样式/配置页）。 */
@@ -1935,6 +1937,13 @@
     const w = KH.Config.normalizePanelWidth($('pf-notePanelWidth').value);
     $('pf-notePanelWidth').value = w;
     await mutate(() => KH.Store.patch({ notePanelWidth: w }));
+  });
+  /* 【台账 #7】承诺对象放行名单：改完立刻生效（写回前先归一，再把归一结果回显 —— 用户才知道
+   * 哪几条被去重/清空了）。归一函数只有 `KH.Config.normalizeNoteCheck` 一份。 */
+  $('pf-promiseOk').addEventListener('change', async () => {
+    const list = KH.Config.normalizeNoteCheck($('pf-promiseOk').value).promiseOk;
+    $('pf-promiseOk').value = list.join('\n');
+    await mutate(() => KH.Store.patch({ noteCheck: { promiseOk: list } }));
   });
 
   /* ---- 【2.0.8.4 需求④】AI 助手：保存与「测试连接」 ----

@@ -15,7 +15,7 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 const H = require('../harness');
-const { suite, test, eq, truthy, falsy } = H;
+const { suite, test, eq, truthy, falsy, deepEq } = H;
 const ROOT = path.join(__dirname, '..', '..');
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 
@@ -482,5 +482,57 @@ module.exports = async function run() {
     eq(p.state, 'unknown');
     truthy(String(p.note || '').trim().length > 0, '承诺对象缺失同理');
     eq(NC.sameLegalRep({ name: '北京知行灵动科技有限公司' }, { name: '' }), 'unknown', '缺一边 = 未查明');
+  });
+
+  /* 【台账 #7】放行名单从写死的正则改成配置项：业务线换平台不用改代码发版。
+   * 判据：名单进 chrome.storage 且随导入导出走；改名单无需改代码即生效；单测覆盖空名单/自定义名单。
+   * 这里锁判定层；「进 storage / 随导出走」由 storage.test.js 的往返用例锁。 */
+  suite('note-check · 承诺对象放行名单可配（台账 #7）');
+
+  await test('★ 默认名单＝原写死名单：vivo / 维沃 / 天宸 仍放行，华为仍黄（升级行为不变）', () => {
+    for (const t of ['vivo移动通信有限公司', '维沃移动通信有限公司', '广东天宸网络科技有限公司']) {
+      eq(NC.promiseVerdict(t).state, 'ok', t + ' 应在默认放行名单里');
+    }
+    eq(NC.promiseVerdict('华为技术有限公司').state, 'warn');
+    truthy(String(NC.promiseVerdict('vivo').note).indexOf('vivo') >= 0, '说明里要写出命中的是哪份名单');
+  });
+
+  await test('★ 自定义名单立即生效：加华为 ⇒ 华为变绿、vivo 变黄（无需改代码）', () => {
+    const ok = NC.promiseVerdict('华为技术有限公司', { promiseOk: ['华为'] });
+    eq(ok.state, 'ok');
+    eq(ok.color, NC.COLOR_OK);
+    truthy(ok.note.indexOf('华为') >= 0, '说明要写出当前名单');
+    const vivo = NC.promiseVerdict('vivo移动通信有限公司', { promiseOk: ['华为'] });
+    eq(vivo.state, 'warn', '不在名单里的 vivo 必须交人工确认');
+    truthy(vivo.note.indexOf('华为') >= 0);
+  });
+
+  await test('★ 空名单是合法配置：具体平台一律不放行、泛称仍放行、文案写明「名单为空」', () => {
+    const v = NC.promiseVerdict('vivo移动通信有限公司', { promiseOk: [] });
+    eq(v.state, 'warn');
+    truthy(v.note.indexOf('放行名单为空') >= 0, '★ 不能说成「不是 vivo…」——名单本来就是空的');
+    eq(NC.promiseVerdict('各应用平台', { promiseOk: [] }).state, 'ok', '泛称与名单无关');
+    eq(NC.promiseVerdict('', { promiseOk: [] }).state, 'unknown');
+  });
+
+  await test('★ 名单项按字面匹配：填 .* 不会被当成通配', () => {
+    eq(NC.promiseVerdict('vivo移动通信', { promiseOk: ['.*'] }).state, 'warn');
+    eq(NC.promiseVerdict('某某.*公司', { promiseOk: ['.*'] }).state, 'ok', '字面出现才算命中');
+  });
+
+  await test('★ 归一：数组/逗号/顿号/换行都认，去空、去重（忽略大小写）、单项限量', () => {
+    const C = KH.Config;
+    deepEq(C.normalizeNoteCheck('vivo，华为、vivo\n\n 天宸 ').promiseOk, ['vivo', '华为', '天宸']);
+    deepEq(C.normalizeNoteCheck(['VIVO', 'vivo']).promiseOk, ['VIVO'], '重复项保留第一次写法');
+    deepEq(C.normalizeNoteCheck('').promiseOk, []);
+    truthy(C.normalizeNoteCheck(C.defaults.noteCheck).promiseOk.length >= 3, '默认名单不许被归一清空');
+    eq(C.normalizeNoteCheck('x'.repeat(100)).promiseOk[0].length, C.NOTE_CHECK_ITEM_MAX);
+  });
+
+  await test('★ 读路径归一：存储里的逗号串被修成数组，坏值回默认名单（不静默丢用户配置）', () => {
+    const out = KH.Config.normalize({ noteCheck: { promiseOk: '华为、小米' } });
+    deepEq(out.config.noteCheck.promiseOk, ['华为', '小米']);
+    const bad = KH.Config.normalize({ noteCheck: 42 });
+    deepEq(bad.config.noteCheck.promiseOk, KH.Config.defaults.noteCheck.promiseOk, '坏值回默认名单');
   });
 };

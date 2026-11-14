@@ -1400,4 +1400,31 @@ module.exports = async function run() {
       if (had === undefined) delete global.chrome; else global.chrome = had;
     }
   });
+
+  /* 【台账 #7】判定要真的读面板当前的配置（this.cfg），不能偷偷回落到写死的默认值。
+   * 判据「改名单无需改代码即生效」在面板这一层就是这条接线。 */
+  await test('★ 面板按当前配置判：cfg 里放行华为 ⇒ 华为绿、vivo 黄（不用改代码）', () => {
+    const make = (target) => {
+      const div = H.el('div', {}, []);
+      div.innerHTML = KH.Fetch.rowsToTableHtml([
+        { label: '开发者', rows: [[{ t: '北京知行灵动科技有限公司' }]], opt: null },
+        { label: '承诺对象', rows: [[{ t: target }]], opt: null }
+      ]);
+      return div;
+    };
+    const panel = shadowPanel();
+    panel.cfg = { noteCheck: { promiseOk: ['华为'] } };   // 设置页改完写进配置的形状
+    const dHuawei = make('华为技术有限公司');
+    panel.decorateChecks(dHuawei, {});
+    const hwCell = dHuawei.querySelectorAll('tr')[1].querySelectorAll('td')[0];
+    eq(hwCell.style.background, KH.NoteCheck.COLOR_OK, '★ 华为在自定义名单里 ⇒ 浅绿');
+    eq(String(hwCell.querySelector('.kh-verdict').textContent), '✔ 一致');
+    const dVivo = make('维沃移动通信有限公司');
+    panel.decorateChecks(dVivo, {});
+    const vivoCell = dVivo.querySelectorAll('tr')[1].querySelectorAll('td')[0];
+    eq(vivoCell.style.background, KH.NoteCheck.COLOR_BAD, '★ 自定义名单里没有 vivo ⇒ 浅黄（默认名单不再兜底）');
+    eq(String(vivoCell.querySelector('.kh-verdict').textContent), '⚠ 待确认');
+    if (dHuawei.parentNode) dHuawei.parentNode.removeChild(dHuawei);
+    if (dVivo.parentNode) dVivo.parentNode.removeChild(dVivo);
+  });
 };

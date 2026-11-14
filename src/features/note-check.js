@@ -446,27 +446,63 @@
   };
 
   /* ---------- ④ 承诺函的承诺对象 ---------- */
-  /** 放行名单（用户点名）：vivo / 维沃 / 广东天宸；以及「没有指向具体应用平台」的泛称。 */
-  const PROMISE_OK = /vivo|维沃|天宸/i;
-  /* 明确点名了别家平台 ⇒ 即使行文里也带「应用平台」也不放行。 */
+  /* 明确点名了别家平台 ⇒ 即使行文里也带「应用平台」也不放行。这份表是「反面清单」，
+   * 与放行名单不同：它不随配置走（配置只决定放行什么，不决定谁算别家）。 */
   const PROMISE_OTHER = /华为|huawei|小米|xiaomi|oppo|广东欢太|欢太|应用宝|腾讯|荣耀|honor|三星|samsung|魅族|meizu|中兴|努比亚|一加|realme|抖音|快手|百度|阿里/i;
   const PROMISE_GENERIC = /未指定具体平台|各?应用平台|各?应用市场|各?应用商店|各大渠道|所有渠道/;
 
+  /** 名单项按**字面子串**匹配：转义元字符后拼成一条正则（用户填 `.*` 不会被当成通配）。 */
+  function escapeRe(s) {
+    return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
   /**
-   * 承诺对象判定：vivo / 维沃 / 广东天宸 ⇒ 绿；无具体平台的泛称 ⇒ 绿；
+   * 放行名单的唯一取值路径（【台账 #7】名单可配）：
+   *   · 调用方给 `list`（面板传 `cfg.noteCheck`）→ 用它；
+   *   · 没给 → 回退 `KH.Config.defaults.noteCheck.promiseOk`（默认 vivo / 维沃 / 天宸）；
+   *   · 清洗一律走 `KH.Config.normalizeNoteCheck`，本文件不再写第二份去重/限量逻辑。
+   * @returns {string[]}
+   */
+  NoteCheck.promiseOkList = function (raw) {
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) raw = raw.promiseOk;
+    if (raw === undefined || raw === null) {
+      const d = (typeof KH !== 'undefined' && KH.Config && KH.Config.defaults && KH.Config.defaults.noteCheck) || null;
+      raw = d ? d.promiseOk : [];
+    }
+    const C = (typeof KH !== 'undefined' && KH.Config) || null;
+    if (C && typeof C.normalizeNoteCheck === 'function') return C.normalizeNoteCheck(raw).promiseOk;
+    return Array.isArray(raw) ? raw.map(s => String(s == null ? '' : s).trim()).filter(Boolean) : [];
+  };
+
+  /**
+   * 承诺对象判定：命中放行名单 ⇒ 绿；无具体平台的泛称 ⇒ 绿；
    * 其余平台（华为、小米、OPPO、广东欢太…）与认不出的写法 ⇒ 黄，交人工确认。
+   * 名单为空也照样判：此时没有任何平台被放行，说明里必须直说「名单为空」，
+   * 否则用户会以为是插件没认出 vivo（【台账 #7】判据：改名单无需改代码即生效）。
+   * @param {string} target 承诺对象原文
+   * @param {string[]|{promiseOk:string[]}} [list] 放行名单；省略回退默认名单
    * @returns {{state:'ok'|'warn'|'unknown', color:string, note:string, target:string}}
    */
-  NoteCheck.promiseVerdict = function (target) {
+  NoteCheck.promiseVerdict = function (target, list) {
     const raw = String(target == null ? '' : target).trim();
+    const okList = NoteCheck.promiseOkList(list);
+    const names = okList.join(' / ');
     if (!raw) return { state: 'unknown', color: '', note: '没有取到承诺对象', target: '' };
-    if (PROMISE_OK.test(raw)) {
-      return { state: 'ok', color: NoteCheck.COLOR_OK, note: '承诺对象在放行名单（vivo / 维沃 / 广东天宸）', target: raw };
+    const hit = okList.length ? new RegExp(okList.map(escapeRe).join('|'), 'i').test(raw) : false;
+    if (hit) {
+      return { state: 'ok', color: NoteCheck.COLOR_OK, note: '承诺对象在放行名单（' + names + '）', target: raw };
     }
     if (!PROMISE_OTHER.test(raw) && PROMISE_GENERIC.test(raw)) {
       return { state: 'ok', color: NoteCheck.COLOR_OK, note: '没有指向具体平台，按应用平台泛称放行', target: raw };
     }
-    return { state: 'warn', color: NoteCheck.COLOR_BAD, note: '承诺对象不是 vivo / 维沃 / 广东天宸，请人工确认', target: raw };
+    return {
+      state: 'warn',
+      color: NoteCheck.COLOR_BAD,
+      target: raw,
+      note: okList.length
+        ? ('承诺对象不是 ' + names + '，请人工确认')
+        : '放行名单为空（设置页 › 样式配置可添加），请人工确认'
+    };
   };
 
   /* ---------- ⑤ 判定三态的非颜色标记（台账 #3/#4/#5） ---------- */

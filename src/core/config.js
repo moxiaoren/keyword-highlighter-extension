@@ -416,6 +416,44 @@
     };
   }
 
+  /* ---------- 【台账 #7】承诺对象放行名单 ----------
+   * 原来是 `note-check.js` 里写死的 `/vivo|维沃|天宸/i`：业务线换平台就得改代码发版。
+   * 现在名单是配置项（进 chrome.storage、随导出导入走、设置页可编辑），本文件只负责：
+   *   · 默认名单（默认值唯一真源）；
+   *   · `normalizeNoteCheck` 这一个归一函数 —— 设置页回显、读路径、面板取名单共用一份。
+   * 名单项的语义是**字面子串**，不是正则：匹配前由 `note-check.js` 统一转义。
+   */
+  const NOTE_CHECK_OK_MAX = 60;
+  const NOTE_CHECK_ITEM_MAX = 40;
+  const PROMISE_OK_DEFAULT = ['vivo', '维沃', '天宸'];
+
+  /**
+   * 放行名单的唯一归一：接受数组，或逗号/顿号/分号/换行分隔的字符串。
+   * 去空白、去空项、去重（忽略大小写，保留第一次的写法）、单项截断 40 字、最多 60 项。
+   * 不剥正则元字符 —— 用户填 `.*` 应当被当成字面「.*」，而不是通配。
+   * @returns {{promiseOk: string[]}}
+   */
+  function normalizeNoteCheck(raw) {
+    let src;
+    if (Array.isArray(raw)) src = raw;
+    else if (typeof raw === 'string') src = raw.split(/[,，、;；\n\r]+/);
+    else if (raw && typeof raw === 'object') src = raw.promiseOk;
+    else src = null;
+    if (typeof src === 'string') src = src.split(/[,，、;；\n\r]+/);
+    if (!Array.isArray(src)) src = [];
+    const out = [];
+    const seen = Object.create(null);
+    for (let i = 0; i < src.length && out.length < NOTE_CHECK_OK_MAX; i++) {
+      const s = String(src[i] == null ? '' : src[i]).trim().slice(0, NOTE_CHECK_ITEM_MAX);
+      if (!s) continue;
+      const k = s.toLowerCase();
+      if (seen[k]) continue;
+      seen[k] = true;
+      out.push(s);
+    }
+    return { promiseOk: out };
+  }
+
   const Config = {
     /** 默认值 —— 唯一真源（方案 §7.1 定稿形态） */
     defaults: {
@@ -460,6 +498,12 @@
          * 口径与归一见 `pinOrderKeys`；匹配与排序在 `important-note.js` 的 `head.sortByPins`。 */
         pinOrder: ''
       },
+
+      /* 【台账 #7】「承诺对象」放行名单：承诺函里的承诺对象命中其中任一项 ⇒ 标 ✔ 一致。
+       * 默认就是原来的写死名单（vivo / 维沃 / 广东天宸 的简称「天宸」），所以升级后行为不变。
+       * 空名单是合法配置：此时只有「没有指向具体平台的泛称」仍然放行，其余一律交人工确认。
+       * 归一只有 `normalizeNoteCheck` 一份（设置页 / 读路径 / 面板共用）。 */
+      noteCheck: normalizeNoteCheck({ promiseOk: PROMISE_OK_DEFAULT }),
 
       /** 重要笔记面板的**默认宽度**（px；T26 / 用户 2026-10-12：200 → 250）。
        *  单一真源：面板侧把它写成 CSS 变量 `--khin-panel-w`（`panel.render`），面板右下角仍可临时
@@ -584,6 +628,12 @@
     NOTE_FONT_DEFAULT,
 
     /** 【2.0.8.4 需求④ / 2.0.8.5 网页对话】AI 助手的接口配置归一    /** 【2.0.8.4 需求④ / 2.0.8.5 网页对话】AI 助手的接口配置归一 + 预设清单（设置页 / 后台请求共用一份） */
+    /* 【台账 #7】放行名单的唯一归一 + 上限常量（设置页 / 读路径 / 面板共用一份） */
+    normalizeNoteCheck,
+    PROMISE_OK_DEFAULT,
+    NOTE_CHECK_OK_MAX,
+    NOTE_CHECK_ITEM_MAX,
+
     normalizeAi,
     aiPreset,
     AI_PRESET_LIST,
@@ -703,6 +753,16 @@
         if (JSON.stringify(mg) !== JSON.stringify(cfg.imgMerge || null)) {
           cfg.imgMerge = mg;
           changed.invalid.push('imgMerge');
+        }
+      }
+
+      /* ②e3 【台账 #7】承诺对象放行名单的读路径归一：坏值回默认、去空、去重、限量。
+       * 存量配置里没有这个键 ⇒ `merge` 已经从 defaults 补上默认名单，升级后行为不变。 */
+      {
+        const nc = normalizeNoteCheck(cfg.noteCheck);
+        if (JSON.stringify(nc) !== JSON.stringify(cfg.noteCheck || null)) {
+          cfg.noteCheck = nc;
+          changed.invalid.push('noteCheck');
         }
       }
 

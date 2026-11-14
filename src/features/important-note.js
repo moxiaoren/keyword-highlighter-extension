@@ -3549,7 +3549,7 @@
      * 【2026-11-13】证书之外的两种自动行：
      *   · `企业名称`（营业执照 / 资质）—— 与卡片里抓取到的「开发者」比对：
      *     一致标绿、不一致标黄、缺一边不涂色（判定在 `NoteCheck.qualVerdict`）；
-     *   · `承诺对象`（承诺函）—— vivo / 维沃 / 广东天宸、无具体平台的泛称标绿，
+     *   · `承诺对象`（承诺函）—— 放行名单（设置页可配，默认 vivo / 维沃 / 广东天宸）、无具体平台的泛称标绿，
      *     其余平台标黄（判定在 `NoteCheck.promiseVerdict`）；`承诺方` 只是说明，不上色。
      * 行定位按字段名文本（自动行没有 DOM 标记，同值行还会被合并成一行）。
      */
@@ -3568,7 +3568,8 @@
         let v = null;
         let what = '';
         if (has('企业名称')) { v = NC.qualVerdict(val, dev); what = '企业名称校验'; }
-        else if (has('承诺对象')) { v = NC.promiseVerdict(val); what = '承诺对象校验'; }
+        /* 【台账 #7】名单来自配置（设置页可编辑、随导入导出走）；没配时 `promiseOkList` 回退默认名单。 */
+        else if (has('承诺对象')) { v = NC.promiseVerdict(val, this.cfg && this.cfg.noteCheck); what = '承诺对象校验'; }
         if (!v) continue;
         /* 同样内容不重画；值变了（OCR 重跑 / 用户改配置）才重判。 */
         const sig = [val, dev, v.state, v.note].join('\\u0001');

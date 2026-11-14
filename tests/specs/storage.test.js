@@ -378,6 +378,21 @@ module.exports = async function run() {
     eq((out.styles || {}).changeHandling, 'always', '部分导出（含样式/配置）也必须带上它');
   });
 
+  /* 【台账 #7】名单是业务口径（这家平台算不算合规），换机器/恢复备份必须跟着走。
+   * 只登记进 STYLE_KEYS 还不够 —— 这里真的导出一次、再导入回来。 */
+  await test('★ 【台账 #7】承诺对象放行名单随导出走、导入能写回', async () => {
+    truthy(S.STYLE_KEYS.indexOf('noteCheck') >= 0, '名单是配置，必须登记在 STYLE_KEYS');
+    const json = S.exportJSON({ keywords: false, siteRules: false, siteDisabled: false, styles: true },
+      { noteCheck: { promiseOk: ['华为', '小米'] } });
+    const out = JSON.parse(json);
+    deepEq((out.styles || {}).noteCheck.promiseOk, ['华为', '小米'], '部分导出（仅配置）也要带上名单');
+    await withMem({ globalEnabled: true }, async () => {
+      await S.importJSON(json, { include: { keywords: false, siteRules: false, siteDisabled: false, styles: true }, mode: 'overwrite' }, {});
+      const back = await S.load();
+      deepEq(back.noteCheck.promiseOk, ['华为', '小米'], '导入后名单必须落到配置里');
+    });
+  });
+
   await test('meta.scope 反映实际导出块', () => {
     const out = JSON.parse(S.exportJSON({ keywords: true, siteRules: false, siteDisabled: false, styles: false }, {}));
     eq(out.meta.scope.keywords, true);
