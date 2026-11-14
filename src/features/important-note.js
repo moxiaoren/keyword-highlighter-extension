@@ -266,10 +266,6 @@
     :host([data-kh-theme="dark"]) .khin-notebar { color: #e6ebf2; }
     :host([data-kh-theme="dark"]) .khin-notebar .khin-notecount,
     :host([data-kh-theme="dark"]) .khin-notebar .khin-notearrow { color: #9aa7b6; }
-    :host([data-kh-theme="dark"]) .khin-row { border-bottom-color: #2a333f; }
-    :host([data-kh-theme="dark"]) .khin-row-head:hover { background: #1f2734; }
-    :host([data-kh-theme="dark"]) .khin-row-sub { color: #9aa7b6; }
-    :host([data-kh-theme="dark"]) .khin-row.has-tint .khin-row-sub { color: #c2cbd7; }
     :host([data-kh-theme="dark"]) .khin-item { background: #1f2734; border-color: #2a333f; }
     :host([data-kh-theme="dark"]) .khin-item-note { color: #dbe3ec; }
     :host([data-kh-theme="dark"]) .khin-item-note a { color: #8ec2f2; }
@@ -315,115 +311,6 @@
     .khin-body { flex: 1 1 auto; min-height: 60px; overflow-y: auto; padding: 6px 0; }
     .khin-body.khin-collapsed { display: none; }
 
-    /* ---------- 【2026-11-03 需求】四态：贴边条 / 摘要列 / 手风琴 / 浮窗 ----------
-     * 用户原话：「重要笔记悬浮窗优化（还是之前说的内容过多，主次不分明，遮挡页面等问题）」。
-     * 贴边条 8px 宽、96px 高，竖排条数；悬停/点击滑出 300px 摘要列（最高 45vh，内部滚动）；
-     * 点一行手风琴展开（同时只开一张，展开态最高 60vh）；「浮窗」回旧卡片。
-     * 所有尺寸都是硬上限 —— 内容再多也不许把页面盖住（验收：1/5/20 条时可见高度 ≤60vh）。 */
-    .khin-rail {
-      position: relative; width: 8px; height: 96px; padding: 0; border: 0;
-      border-radius: 0 6px 6px 0; background: rgba(53,121,194,.16);
-      display: flex; align-items: center; justify-content: center; cursor: pointer;
-      overflow: visible; transition: background .15s ease;
-    }
-    .khin-rail:hover { background: rgba(53,121,194,.3); }
-    /* [2.0.8.6] 贴边条可上下拖：光标给个「能抓」的暗示 */
-    .khin-rail { cursor: grab; touch-action: none; }
-    .khin-rail.is-dragging { cursor: grabbing; }
-    .khin-rail[data-side="right"] { border-radius: 6px 0 0 6px; }
-    /* 条子只有 8px，条数做成挂在右侧的小圆泡（在条子之外，不占命中宽度）。 */
-    .khin-rail-count {
-      position: absolute; top: -3px; left: 5px; min-width: 17px; height: 17px;
-      box-sizing: border-box; padding: 0 4px; border-radius: 9px;
-      background: #2f6fb5; color: #fff; font-size: 10px; font-weight: 600;
-      line-height: 17px; text-align: center; font-style: normal;
-      box-shadow: 0 0 0 2px #fff;
-    }
-    .khin-rail[data-side="right"] .khin-rail-count { left: auto; right: 5px; }
-    .khin-rail-unread {
-      position: absolute; top: 18px; left: 8px; width: 5px; height: 5px; border-radius: 50%;
-      background: #e53935; display: none;
-    }
-    .khin-wrap.has-unread .khin-rail-unread { display: block; }
-    /* 【2.0.8.4 需求②】摘要列**顶边对齐贴边条、只向下长**。
-     * 旧写法是 top:50% + translateY(-50%)（垂直居中）—— 每次重扫重建行时内容高度一变，
-     * 整列就跟着上下挪；钉住之后尤其明显（用户原话：「钉住之后出现悬窗上下跳动，没有滚动页面」）。
-     * 现在锚点固定在贴边条顶边，高度变化只往下延伸，视觉上不会跳。
-     * is-expanded 把 45vh → 60vh 的差额**上移一半**（7.5vh），展开前后中心点不变。 */
-    .khin-drawer {
-      position: absolute; top: 0; left: calc(100% + 6px);
-      width: 300px; max-width: calc(100vw - 24px); max-height: 45vh; transition: width .14s ease-out;
-      background: #fff; border: 1px solid #e3e8f0; border-radius: 12px;
-      box-shadow: 0 8px 28px rgba(0,0,0,.18); display: flex; flex-direction: column;
-      overflow: hidden;
-    }
-    /* 同上：摘要列的入场动画也只在造壳时播一次（hover 开合 / 自动收起都会翻转 hidden）。 */
-    .khin-drawer.khin-enter { animation: khin-in .14s ease-out; }
-    .khin-drawer[data-side="right"] { left: auto; right: calc(100% + 6px); }
-    .khin-drawer[hidden] { display: none !important; }
-    /* 展开（手风琴）时高度上限 45vh → 60vh：顶边上移差额的一半，中心点不动 ⇒ 展开这一下不"跳"。 */
-    .khin-drawer.is-expanded { max-height: 60vh; top: -7.5vh; }
-    /* [2.0.8.6] AI 页签给一档更宽：300 宽里气泡挤成一团（用户截图实测） */
-    .khin-drawer.is-ai { width: 344px; max-height: 56vh; }
-    .khin-dh {
-      display: flex; align-items: center; gap: 6px; padding: 8px 10px; flex: 0 0 auto;
-      background: linear-gradient(180deg, #fff, #eaf1fb); border-bottom: 1px solid #eef1f6;
-    }
-    .khin-dh-title { font-size: 13px; font-weight: 600; color: #2f6fb5; flex: 1; white-space: nowrap; }
-    .khin-dh-count { font-size: 11px; color: #2f6fb5; background: #eaf1fb; border-radius: 9px; padding: 0 6px; }
-    .khin-dh-btn {
-      border: 0; background: none; color: #8a8a8a; cursor: pointer; font-size: 12px;
-      padding: 2px 5px; border-radius: 4px; line-height: 1.2; font-family: inherit;
-    }
-    .khin-dh-btn:hover { color: #333; background: rgba(0,0,0,.05); }
-    .khin-dh-btn.is-on { color: #2f6fb5; background: #eaf1fb; }
-    .khin-rows { flex: 1 1 auto; overflow: auto; }
-    .khin-row { border-bottom: 1px solid #f0f3f7; }
-    .khin-row:last-child { border-bottom: 0; }
-    /* 【2.0.8.8 需求①】收纳态整行铺的就是**卡片本身的颜色**，不再自己调淡。
-     * 用户原话：「贴边模式底色不要自己搞，直接复用卡片颜色就行。你现在搞的颜色太淡了，
-     * 还会和其他淡色卡片混淆从而误判重要程度。」
-     * ⇒ 底色与卡片 .khin-item 的 item.bg 同源（--khin-tint 由 rowBgOf() 给原色）。
-     * 整行已经是色块：左侧 3px 色条与 8px 方点跟底色同色，看不见只剩噪声 ⇒ 退休；
-     * 悬停改成叠一层白，不再把底色盖回 #f7faff（否则一动鼠标颜色就"消失"）。 */
-    .khin-row.has-tint { background: var(--khin-tint, transparent); }
-    .khin-row.has-tint .khin-row-head { padding-left: 5px; }
-    .khin-row.has-tint .khin-row-dot { display: none; }
-    .khin-row.has-tint .khin-row-sub { color: #334155; }
-    .khin-row.has-tint .khin-row-head:hover { background: rgba(255,255,255,.45); }
-    .khin-row-cat {
-      flex: 0 0 auto; max-width: 72px; font-size: 10px; line-height: 16px; padding: 0 5px;
-      border-radius: 8px; background: rgba(15,23,42,.06); color: #475569;
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    }
-    .khin-row-head { display: flex; align-items: center; gap: 6px; padding: 7px 8px; cursor: pointer; min-height: 36px; }
-    .khin-row-head:hover { background: #f7faff; }
-    .khin-row-dot { width: 8px; height: 8px; border-radius: 2px; flex: 0 0 auto; background: #2f6fb5; }
-    .khin-row-t {
-      font-size: 12px; font-weight: 600; color: #1f2937; max-width: 96px;
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 0 auto;
-    }
-    .khin-row-sub {
-      font-size: 11px; color: #64748b; flex: 1 1 auto; min-width: 0;
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    }
-    /* 【2.0.8.9 需求②】展开态不再显示缩略内容：正文卡片就在下面，摘要再占一行只是白占位置
-     * （用户原话：「展开后不需要那个缩略内容了，无端的占位置」）。
-     * 挂在 head 的 aria-expanded 上是因为它只有展开/收起这一处会变，patchRow 就地更新时
-     * 也会同步改它 —— 两边都跟着走，不会出现「卡片开着、摘要还赖着」的错位。 */
-    .khin-row-head[aria-expanded="true"] .khin-row-sub { display: none; }
-    .khin-row-n { font-size: 10px; color: #2f6fb5; background: #eaf1fb; border-radius: 8px; padding: 0 5px; flex: 0 0 auto; }
-    .khin-row-btn { border: 0; background: none; color: #8a8a8a; cursor: pointer; font-size: 12px; padding: 1px 3px; border-radius: 4px; flex: 0 0 auto; font-family: inherit; }
-    .khin-row-btn:hover { color: #333; background: rgba(0,0,0,.05); }
-    .khin-row-body { max-height: calc(60vh - 96px); overflow: auto; padding: 0 8px 8px; }
-    .khin-row-body[hidden] { display: none; }
-    .khin-row-empty { padding: 14px 12px; font-size: 12px; color: #94a3b8; text-align: center; }
-    .khin-df { flex: 0 0 auto; padding: 6px 10px; border-top: 1px solid #eef1f6; display: flex; justify-content: flex-end; }
-    .khin-df-btn {
-      border: 1px solid #e3e8f0; background: #fff; color: #475569; cursor: pointer;
-      font-size: 12px; padding: 3px 10px; border-radius: 6px; font-family: inherit;
-    }
-    .khin-df-btn:hover { background: #f7faff; color: #2f6fb5; }
     /* 整页只有图片命中时这份列表是空的，但它仍占着 min-height:60px 的 flex 槽位
      * ⇒ 面板顶部白出一条 60px 的带子（T29 / F6.1）。它必须和别的分区一样有自己的
      * [hidden] 兜底：display:none 才不参与 flex 布局（visibility/opacity 都不行）。 */
@@ -444,8 +331,6 @@
       background: #f8fafc; border: 1px solid #eef1f6; border-radius: 8px;
     }
     .khin-item:last-child { margin-bottom: 0; }
-    /* 摘要列展开区里的卡片沿用同一张卡，但外层已经给了 padding 与底色，这里只剥掉重复的边距/边框。 */
-    .khin-row-body .khin-item { margin: 0; box-shadow: none; border: 0; }
     .khin-item-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; margin-bottom: 2px; }
     .khin-item-tags { position: relative; display: flex; flex-wrap: wrap; gap: 4px; flex: 1; min-width: 0; }
     /* 命中词块的上限是**派生的**：一个词块不许超过面板里那一行的可用宽度
@@ -492,8 +377,7 @@
       font-size: 8px; font-weight: 700; line-height: 11px; text-align: center;
     }
     .kh-table-fetch tr.kh-merge-row.kh-merge-hidden { display: none; }
-    .khin-item.is-merge-open .kh-table-fetch tr.kh-merge-hidden,
-    .khin-row-body.is-merge-open .kh-table-fetch tr.kh-merge-hidden { display: table-row; }
+    .khin-item.is-merge-open .kh-table-fetch tr.kh-merge-hidden { display: table-row; }
     .kh-merge-more {
       margin: 2px 0 0; padding: 0 2px; border: 0; background: none; cursor: pointer;
       font: inherit; font-size: 10px; line-height: 16px; color: #2f6fb5;
@@ -1270,9 +1154,9 @@
   }
 
   /** 【2.0.8.14 需求②】入场动画只播一次（造壳那一刻），此后无论显示多少次都直接呈现。
-   *  用户反复报「悬窗无端闪烁」，其中一条独立成因就是这里：`.khin-panel` / `.khin-drawer`
-   *  都把 `animation: khin-in` 挂在自己身上，而 `hidden` 一翻转（空结果 hide→show、
-   *  贴边条 hover 开合、浮窗↔贴边换形态）`display:none → block` 就会让动画从头重播：
+   *  用户反复报「悬窗无端闪烁」，其中一条独立成因就是这里：`.khin-panel`
+   *  把 `animation: khin-in` 挂在自己身上，而 `hidden` 一翻转（空结果 hide→show）
+   *  `display:none → block` 就会让动画从头重播：
    *  opacity 0 → 1 再叠一个 translateY(-6px) → 0，肉眼就是"整个窗闪一下"。
    *  改成按类名播一次、`animationend`（或兜底 400ms）立刻摘类 —— 动画与"显示"解耦。 */
   function playEnter(el) {
@@ -2509,27 +2393,10 @@
     bodyEl: null,
     countEl: null,
     minimized: false,
-    /* 【2026-11-03 需求】四态：rail（贴边条）/ list（摘要列滑出）/ float（旧的左上角卡片）。
-     * `pinned` = 摘要列钉住（鼠标移开不自动收）；`expandKeys` = 展开着的那些行的 note 文本；
-     * `railSide` = 贴边条停哪一侧；`shellMode` 记录当前外壳是 rail 还是 float（避免每轮重播动画）。
-     * 【2.0.8.7 需求③】`expandKey`（单值手风琴）改成 `expandKeys`（Set）：用户要同时看好几张卡，
-     * 「同时只开一张」是为省遮挡想出来的，反而成了限制。列本身仍 60vh 封顶、内部滚动，
-     * 多开几张不会更挡页面。
-     * 【2.0.8.9 需求②】默认形态改成 **float（悬窗）**，贴边（rail）退为备选。
-     * 用户原话：「贴边模式优化（请改成默认悬窗，贴边模式才应该是备选）」—— 贴边条要先把
-     * 鼠标挪到边上、再点一下才看得到内容，悬窗直接给全貌；所以首次打开就是悬窗，
-     * 想要贴边用头部按钮或 `[` 切，切过去之后本次会话内保持（不写配置，避免旧用户被静默改设置）。
-     * 注意 setMode() 仍接受 'rail'/'list'/'float' 三值，默认值只影响首屏。 */
-    mode: 'float',
-    pinned: false,
-    expandKeys: null,
-    pinDefaultDone: false,
-    railSide: 'left',
-    /* [2.0.8.6] 贴边条的纵向位置：null = 默认居中（42%）；拖过之后是视口内的中心 y（px） */
-    railTop: null,
-    shellMode: '',
-    closeTimer: 0,
-    openTimer: 0,
+    /* 【台账 #2 · 2.0.10.6】交互只剩一条路径：**悬窗**。
+     * 贴边条（rail）与摘要列（list）连同它们的钉住/自动收起/手风琴一起删了 ——
+     * 「同一件事两种外壳」才是遮挡与主次不分的老根，不是某个形态本身不好。
+     * 收起只有一种：`minimized`（整块换成 48px 圆形 FAB，点一下回来）。 */
     items: [],
     /* 上一轮用过的置顶表签名（见 `render`）：卡间顺序不进 `head.changed`，靠它认
      * "用户改了置顶排序"。空串 = 没配/没排序过（与 `pins.join()` 的空表结果一致 ⇒ 首轮不误判脏）。 */
@@ -2539,10 +2406,9 @@
      * 旧版每次 `textContent=''` 整块重建 ⇒ 图重新解码、滚动位置归零 = 用户看到的"闪"。 */
     cardNotes: [],
     cardEls: [],
-    /* 【2.0.8.5 无感重建】按 key 复用：note 文本 → 卡片元素、摘要列 note → 行元素。
-     * 有了它们，内容变但结构没变时只改文字，不重造 DOM（不闪、不丢图片解码与滚动位置）。 */
+    /* 【2.0.8.5 无感重建】按 key 复用：note 文本 → 卡片元素。
+     * 有了它，内容变但结构没变时只改文字，不重造 DOM（不闪、不丢图片解码与滚动位置）。 */
     cardMap: new Map(),
-    rowEls: new Map(),
     /* 右键「截图」卡的内容签名（见 `renderCtxCard`）：OCR 状态每变一次都会调它，
      * 签名没变就不拆不建，省掉一次 `<img>` 重载。 */
     ctxSigCache: null,
@@ -2585,13 +2451,6 @@
     /* FAB 这次按住的毫秒数（T41）：由 startDrag 的 pointerup / pointercancel 结算，
      * click 只读。默认 0 = 放行（键盘激活、或根本没有手势那一次 click）。 */
     fabHeldMs: 0,
-    /* FAB 上一次展开面板的时刻（T60）。存在的唯一理由：**同一次鼠标双击的第二次落点**。
-     * 一次双击的派发序是 down/up/click(1) → down/up/click(2) → dblclick；click(1) 落点就是 FAB，
-     * :1264 的 click 里会 openPanel() ⇒ renderContent() 当场把 `.khin-fab` 换壳成
-     * `.khin-panel`+`.khin-header`（FAB 中心与标题栏那一行必然相交）⇒ 紧随其后的 click(2) 与
-     * dblclick 就落在刚生成的标题栏上，命中 :1377 的「双击收起」⇒ 面板闪一下又收回去（T60 症状）。
-     * 默认 0 = 没有刚展开过 ⇒ 标题栏双击照常收起。 */
-    fabOpenedAt: 0,
 
     ensure(doc) {
       if (this.host && this.host.isConnected) return this.host;
@@ -2605,25 +2464,7 @@
       doc.body.appendChild(host);
       this.host = host;
       this.setDefaultPosition();
-      this.detectRailSide();
       this.applyPosition();
-      /* 全局键盘（只在面板可见时生效）：Esc 收一级、`[` 收成条、`]` 展开摘要列。 */
-      this.onKeyDown = (e) => {
-        if (!this.root || this.root.hidden) return;
-        const t = e.target;
-        const typing = !!(t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable));
-        if (typing || e.ctrlKey || e.metaKey || e.altKey) return;
-        if (e.key === 'Escape' && this.mode === 'list') {
-          this.pinned = false;
-          this.setMode('rail', { focus: true });
-        } else if (e.key === '[' && this.mode !== 'rail') {
-          this.pinned = false;
-          this.setMode('rail', { focus: true });
-        } else if (e.key === ']' && this.mode === 'rail') {
-          this.openList(false);
-        }
-      };
-      doc.addEventListener('keydown', this.onKeyDown, true);
 
       /* 点击缩略图 → **当前页灯箱看大图**（用户实测要求；旧行为是新标签页）。
        * data: 内嵌图同样支持（本身就是原图数据），只有非 http(s) 协议才不处理。
@@ -2717,15 +2558,6 @@
      * 拖动期间面板尺寸不会变（内容没动），沿用按下时那一次量值完全等价。 */
     applyPosition(metrics) {
       if (!this.root) return;
-      /* 【2026-11-03 需求】贴边条/摘要列贴着视口边缘（垂直居中 42%），不参与拖动钳位；
-       * 浮窗仍是旧的左上角卡片，拖动 + 四边钳位照旧。 */
-      if (this.mode !== 'float') {
-        this.root.style.left = this.railSide === 'left' ? '0px' : 'auto';
-        this.root.style.right = this.railSide === 'right' ? '0px' : 'auto';
-        this.root.style.top = (this.railTop == null) ? '42%' : (Math.round(this.railTop) + 'px');
-        this.root.style.transform = 'translateY(-50%)';
-        return;
-      }
       this.root.style.right = 'auto';
       this.root.style.transform = '';
       /* 一次 rect 读，横纵共用（省一次强制布局）。
@@ -2858,9 +2690,6 @@
       const pinChanged = this.pinSig !== pinSig;
       this.pinSig = pinSig;
       const sorted = pins.length ? head.sortByPins(items, pins) : items;
-      /* 【2.0.8.6 需求②】默认钉住置顶词（见 applyPinDefault 的三条克制）。必须在 dirty 之前算：
-       * 它改的 `pinned` / `expandKeys` 本身就是"要重画"的信号。 */
-      const pinDefault = this.applyPinDefault(sorted, pins);
 
       if (!sorted.length && !this.ctxItems().length) {
         this.items = sorted;
@@ -2870,14 +2699,9 @@
       /* 外壳还没建过也必须走 renderContent：`head.changed([], [])` 是 false，
        * 光看内容新旧会漏掉"整页只有右键识别的图、面板还没建"这种情况（实测踩过：
        * 面板宿主建出来了、里面却没有那张「截图」卡）。
-       * 【2.0.8.4 需求②】"外壳缺没缺"要按**当前形态的壳**判：贴边形态没有 `panelEl`
-       * （摘列用 railEl/drawerEl），旧判据 `!this.panelEl` 在贴边模式下**恒真** ⇒ 每轮重扫都
-       * 整块重建摘要列，展开的卡/列内滚动/已解码的图全被重置，而摘要列又跟着高度上下挪
-       * （用户实测："钉住之后悬窗上下跳动"）。 */
-      const shellMissing = this.mode === 'float'
-        ? !this.panelEl
-        : (!this.panelEl && !this.railEl);
-      const dirty = shellMissing || this.minimized || pinChanged || pinDefault || head.changed(this.items, sorted);
+       * 收起态（FAB）与外壳缺失都必须重建一次：前者要换壳、后者要建壳。 */
+      const shellMissing = !this.panelEl;
+      const dirty = shellMissing || this.minimized || pinChanged || head.changed(this.items, sorted);
       this.items = sorted;
       if (dirty) this.renderContent();
       else {
@@ -2886,8 +2710,6 @@
         this.renderCtxCard();
       }
       this.show();
-      /* 默认钉住的那条要**看得见**才算数：还在贴边条形态就把它滑出来（只这一次）。 */
-      if (pinDefault && this.mode === 'rail') this.openList(true);
     },
 
     /**
@@ -2901,548 +2723,21 @@
        * 但**不能无条件**走完整渲染：`render()` 一进来就 `ensure()` 造壳 ⇒ 整页明明没东西也会
        * 多出一个空宿主（K71 的「两者都关 ⇒ 面板不存在」就是这么红的）。所以只在真有右键条目时补渲染。 */
       if (!this.root && !this.ctxItems().length) return;
-      /* 【2.0.8.4 需求②】`panelEl` 在贴边形态指向摘列抽屉 ⇒ 不能再拿它当"整轮还没渲染过"的判据；
-       * 真正的判据是"宿主/外壳建了没"（两者都没有才走整轮）。 */
-      if (!this.root || (!this.panelEl && !this.railEl)) {
+      /* 判据是"宿主/外壳建了没"（都没有才走整轮），别再拿某一形态的壳当"渲染过"的凭证。 */
+      if (!this.root || !this.panelEl) {
         this.render(this.items, this.cfg);
         return;
       }
       this.applyImgMarks();
       this.renderCtxCard();
-      /* 摘要列里也画着右键那张「截图」卡与命中红框：OCR 状态一变，行内容必须跟着重画
-       * （行有指纹闸，内容没变不会白重建）。 */
-      if (this.mode === 'list') { this.rowsSig = ''; this.renderRows(); }
       /* OCR 状态变化走这条（没有新增定时器）：识别结果一回来就重落核对结论 */
       if (!this.items.length && !this.ctxItems().length) this.hide();
       else this.show();
     },
 
-    /* =====================【2026-11-03 需求】四态：贴边条 → 摘要列 → 手风琴 → 浮窗 =====================
-     * 用户原话：「重要笔记悬浮窗优化（还是之前说的内容过多，主次不分明，遮挡页面等问题）」。
-     * 口径见 docs/ui-v3/2026-11-02-重要笔记悬浮窗-交互重做方案.md：
-     *   贴边条（默认左缘 8px，竖排条数；左缘被 fixed 元素占住就自动换右缘）
-     *   → 悬停/点击滑出摘要列（宽 300，最高 45vh，每卡一行：色块 + 标题 + 首字段值 + N 处）
-     *   → 点一行手风琴展开（同时只开一张，内容区最高 60vh，内部滚动）
-     *   →「浮窗」按钮回左上角卡片；浮窗双击标题栏回贴边条。
-     * **遮挡的三条硬边界**：摘要列 45vh、展开后 60vh、行内容区 calc(60vh - 96px) 并滚动。
-     * ============================================================================================ */
 
-    /** 摘要列打开（`pin` = 钉住常驻；悬停打开不钉）。 */
-    /**
-     * 【2.0.8.6 需求②】贴边模式默认钉住「设置里置顶排序的第一个词」那条笔记，并展开它的抓取内容。
-     * 用户原话：「重要笔记悬浮窗贴边模式，默认钉住设置里配置成排序置顶那个词的抓取内容，
-     * 并且展开展示（如果没有就还是全部收起）」。
-     * 三条克制：
-     *   · 只在**本次挂载第一次**渲染时做一次（`pinDefaultDone`）；用户手动收起后不再自动弹回来；
-     *   · 置顶词没配 / 全页没有对应命中 → 什么都不做，保持原来的全部收起；
-     *   · 只认置顶表**第一个**词：置顶表是用户排过序的，第一个才是他要先看到的那条。
-     */
-    applyPinDefault(sorted, pins) {
-      if (this.pinDefaultDone) return false;
-      this.pinDefaultDone = true;
-      if (!pins || !pins.length || !sorted || !sorted.length) return false;
-      const key = tagText(pins[0]).toLowerCase();
-      if (!key) return false;
-      let hit = null;
-      for (let i = 0; i < sorted.length; i++) {
-        const it = sorted[i] || {};
-        const inEntries = (it.entries || []).some((e) => tagText(e && e.kw).toLowerCase() === key);
-        const inIds = (it.pinIds || []).some((p) => tagText(p).toLowerCase() === key);
-        if (inEntries || inIds) { hit = it; break; }
-      }
-      if (!hit) return false;
-      this.pinned = true;
-      this.expandSet().add(String(hit.note == null ? '' : hit.note));
-      return true;
-    },
 
-    /** 展开集合（懒建）。【2.0.8.7 需求③】允许多张同时展开 —— 用户原话：
-     *  「虽然每次只能展开一个减少了遮挡，但是存在需要同时看好几个卡片的情况」。 */
-    expandSet() {
-      if (!this.expandKeys) this.expandKeys = new Set();
-      return this.expandKeys;
-    },
-
-    isOpenNote(key) {
-      return !!(this.expandKeys && this.expandKeys.has(key));
-    },
-
-    /** 开/关一行的展开体。关掉最后一张时顺手清掉 `is-expanded`，列高回到 45vh。 */
-    setOpenNote(key, on) {
-      const set = this.expandSet();
-      if (on) set.add(key); else set.delete(key);
-      return set.size > 0;
-    },
-
-    openList(pin) {
-      this.cancelAutoClose();
-      if (pin) this.pinned = true;
-      if (this.mode !== 'list') this.setMode('list');
-      else { this.renderContent(); this.applyPosition(); }
-    },
-
-    /** 鼠标移开后的自动收起（钉住时永不触发）。 */
-    scheduleClose(ms) {
-      this.cancelAutoClose();
-      if (this.pinned) return;
-      this.closeTimer = setTimeout(() => {
-        this.closeTimer = 0;
-        if (!this.pinned && this.mode === 'list') this.setMode('rail');
-      }, ms == null ? 1200 : ms);
-    },
-
-    cancelAutoClose() {
-      if (this.closeTimer) { clearTimeout(this.closeTimer); this.closeTimer = 0; }
-      if (this.openTimer) { clearTimeout(this.openTimer); this.openTimer = 0; }
-    },
-
-    /** 切形态（唯一入口）。`opts.focus` 只在键盘/按钮切换时用，悬停打开不抢焦点。 */
-    setMode(mode, opts) {
-      const next = (mode === 'list' || mode === 'float') ? mode : 'rail';
-      this.mode = next;
-      if (next !== 'list') this.expandKeys = null;
-      this.cancelAutoClose();
-      this.renderContent();
-      this.applyPosition();
-      if (opts && opts.focus) {
-        const el = next === 'float' ? this.panelEl : (this.drawerEl || this.railEl);
-        if (el && el.focus) { try { el.focus({ preventScroll: true }); } catch (e) { /* 老内核 */ } }
-      }
-    },
-
-    /** 贴边条/摘要列的外壳（与浮窗外壳互斥；`shellMode` 防止每轮重播入场动画）。 */
-    renderRailContent(count) {
-      const doc = document;
-      const V = KH.OcrCopy.VIEW;
-      if (this.shellMode !== 'rail') {
-        this.shellMode = 'rail';
-        this.panelEl = null;
-        this.bodyEl = null;
-        this.countEl = null;
-        this.noteBarEl = null;
-        this.noteCountEl = null;
-        this.noteArrowEl = null;
-        /* 条数竖排；未读点是「有笔记且现在收着」的提示，不参与计数（计数在条子身上）。 */
-        this.root.innerHTML =
-          '<button class="khin-rail" type="button" data-side="left" aria-expanded="false">' +
-            '<span class="khin-rail-count"></span>' +
-            '<span class="khin-rail-unread" aria-hidden="true"></span>' +
-          '</button>' +
-          '<div class="khin-drawer" hidden data-side="left">' +
-            '<div class="khin-dh">' +
-              '<span class="khin-dh-title"></span>' +
-              '<span class="khin-dh-count"></span>' +
-              '<button class="khin-dh-btn" data-act="pin" type="button"></button>' +
-              '<button class="khin-dh-btn" data-act="side" type="button"></button>' +
-              '<button class="khin-dh-btn" data-act="float" type="button"></button>' +
-              '<button class="khin-dh-btn" data-act="rail" type="button">—</button>' +
-            '</div>' +
-            /* 【2.0.8.4 需求④】页签 + 两个互斥面板：笔记（摘列）与 AI 对话共用这一块宽度。 */
-            '<div class="khin-tabs" role="tablist">' +
-              '<button class="khin-tab" type="button" role="tab" data-tab="note"></button>' +
-              '<button class="khin-tab" type="button" role="tab" data-tab="ai"></button>' +
-            '</div>' +
-            '<div class="khin-pane khin-pane-note">' +
-              '<div class="khin-rows"></div>' +
-              '<div class="khin-df"><button class="khin-df-btn" data-act="copy" type="button"></button></div>' +
-            '</div>' +
-            '<div class="khin-ai" hidden></div>' +
-          '</div>';
-        this.railEl = this.root.querySelector('.khin-rail');
-        this.railCountEl = this.root.querySelector('.khin-rail-count');
-        this.drawerEl = this.root.querySelector('.khin-drawer');
-        /* 【2.0.8.4 需求②】贴边形态也把 `panelEl` 指到"当前形态的主容器"（摘列抽屉）：
-         * 脏判据 `!panelEl` 一直是"外壳建没建过"的唯一信号（单测也按这个桩写），
-         * 贴边模式下让它恒为 null 就等于每轮都判脏。 */
-        this.panelEl = this.drawerEl;
-        playEnter(this.drawerEl);   // 【2.0.8.14 需求②】摘要列也只播这一次（hover 开合不重播）
-        this.rowsEl = this.root.querySelector('.khin-rows');
-        this.drawerCountEl = this.root.querySelector('.khin-dh-count');
-        this.pinBtnEl = this.root.querySelector('[data-act="pin"]');
-        this.copyBtnEl = this.root.querySelector('[data-act="copy"]');
-        const bind = (el, ev, fn) => { if (el) el.addEventListener(ev, fn); };
-
-        /* [2.0.8.6] 贴边条可以上下拖了：默认居中，拖过的位置记在本页会话里。
-         * 与点击共存：位移 < 3px 才算「点了一下」，否则收手不弹抽屉。 */
-        let railDrag = null;
-        bind(this.railEl, 'pointerdown', (e) => {
-          if (e.button !== 0) return;
-          const rect = this.railEl.getBoundingClientRect();
-          railDrag = { y: e.clientY, center: rect.top + rect.height / 2, moved: 0 };
-          try { this.railEl.setPointerCapture(e.pointerId); } catch (err) { /* 老内核 */ }
-          this.railEl.classList.add('is-dragging');
-        });
-        bind(this.railEl, 'pointermove', (e) => {
-          if (!railDrag) return;
-          const dy = e.clientY - railDrag.y;
-          if (Math.abs(dy) > 3) railDrag.moved = 1;
-          if (!railDrag.moved) return;
-          const half = 24;
-          const y = Math.max(half, Math.min(window.innerHeight - half, railDrag.center + dy));
-          this.railTop = y;
-          this.applyPosition();
-        });
-        const endRailDrag = (e) => {
-          if (!railDrag) return;
-          const moved = railDrag.moved;
-          railDrag = null;
-          this.railEl.classList.remove('is-dragging');
-          try { this.railEl.releasePointerCapture(e.pointerId); } catch (err) { /* 忽略 */ }
-          if (moved) { this.railDraggedAt = Date.now(); e.preventDefault(); e.stopPropagation(); return; }
-          this.openList(true);
-        };
-        bind(this.railEl, 'pointerup', endRailDrag);
-        bind(this.railEl, 'pointercancel', endRailDrag);
-        /* 单击仍然保留：真实指针事件里 pointerup 已处理过（`railDrag` 为 null 时这里不重复），
-         * 而键盘 Enter/空格 / 单测里的 `click()` 只派发 click —— 必须照样能打开。 */
-        bind(this.railEl, 'click', (e) => {
-          e.stopPropagation();
-          if (railDrag) return;
-          /* 刚拖完那一下：浏览器仍会补发 click，别再把它当"点开" */
-          if (this.railDraggedAt && Date.now() - this.railDraggedAt < 300) return;
-          this.openList(true);
-        });
-        bind(this.railEl, 'mouseenter', () => {
-          this.cancelAutoClose();
-          if (this.mode !== 'rail') return;
-          /* 120ms 才滑出：鼠标只是扫过页面左缘时不该闪一个 300px 的列。 */
-          this.openTimer = setTimeout(() => {
-            this.openTimer = 0;
-            if (this.mode === 'rail') this.openList(false);
-          }, 120);
-        });
-        bind(this.railEl, 'mouseleave', () => { if (!this.pinned) this.scheduleClose(1200); });
-        bind(this.drawerEl, 'mouseenter', () => this.cancelAutoClose());
-        bind(this.drawerEl, 'mouseleave', () => { if (!this.pinned) this.scheduleClose(1200); });
-        /* 键盘：Esc 收一级；↑/↓ 在行头之间移；Enter 由行头的 role=button 自己处理。 */
-        bind(this.drawerEl, 'keydown', (e) => {
-          if (e.key === 'Escape') { e.stopPropagation(); this.pinned = false; this.setMode('rail', { focus: true }); return; }
-          if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
-          const heads = this.rowsEl ? this.rowsEl.querySelectorAll('.khin-row-head') : [];
-          if (!heads.length) return;
-          e.preventDefault();
-          let i = -1;
-          for (let k = 0; k < heads.length; k++) if (heads[k] === doc.activeElement) i = k;
-          const n = e.key === 'ArrowDown' ? Math.min(heads.length - 1, i + 1) : Math.max(0, i - 1);
-          heads[n === -1 ? 0 : n].focus();
-        });
-
-        const act = (name, fn) => {
-          const b = this.root.querySelector('[data-act="' + name + '"]');
-          if (b) b.addEventListener('click', (e) => { e.stopPropagation(); fn(); });
-        };
-        act('pin', () => {
-          this.pinned = !this.pinned;
-          this.renderContent();
-          if (!this.pinned) this.scheduleClose(1200);
-        });
-        act('side', () => {
-          this.railSide = this.railSide === 'left' ? 'right' : 'left';
-          this.renderContent();
-          this.applyPosition();
-        });
-        act('float', () => this.setMode('float', { focus: true }));
-        act('rail', () => { this.pinned = false; this.setMode('rail', { focus: true }); });
-        act('copy', () => this.copyAll());
-        /* 【2.0.8.4 需求④】页签只在用户点击时切（悬停滑出仍默认看笔记，别让鼠标扫过就跳页签）。 */
-        this.bindTabs(this.drawerEl);
-      }
-
-      /* ---- 每次 render 只刷「会变」的那些 ---- */
-      if (this.railCountEl) this.railCountEl.textContent = String(count);
-      const railLabel = KH.OcrCopy.render(KH.OcrCopy.VIEW.railLabel, { n: count });
-      this.railEl.title = KH.OcrCopy.render(V.railTip, { n: count });
-      this.railEl.setAttribute('aria-label', railLabel);
-      this.railEl.setAttribute('data-side', this.railSide);
-      this.railEl.setAttribute('aria-expanded', this.mode === 'list' ? 'true' : 'false');
-      this.root.classList.toggle('has-unread', count > 0 && this.mode === 'rail');
-      if (this.drawerEl) {
-        this.drawerEl.hidden = this.mode !== 'list';
-        this.drawerEl.setAttribute('data-side', this.railSide);
-        this.drawerEl.classList.toggle('is-expanded', this.mode === 'list' && !!(this.expandKeys && this.expandKeys.size));
-      }
-      const dhTitle = this.root.querySelector('.khin-dh-title');
-      if (dhTitle) dhTitle.textContent = V.drawerTitle;
-      if (this.drawerCountEl) this.drawerCountEl.textContent = KH.OcrCopy.render(V.drawerCount, { n: count });
-      if (this.pinBtnEl) {
-        this.pinBtnEl.textContent = this.pinned ? V.pinned : V.pin;
-        this.pinBtnEl.title = this.pinned ? V.pinned : V.pin;
-        this.pinBtnEl.classList.toggle('is-on', !!this.pinned);
-      }
-      const sideBtn = this.root.querySelector('[data-act="side"]');
-      if (sideBtn) sideBtn.title = V.sideTip;
-      const floatBtn = this.root.querySelector('[data-act="float"]');
-      if (floatBtn) floatBtn.textContent = KH.OcrCopy.VIEW.floatBtn;
-      const railBtn = this.root.querySelector('[data-act="rail"]');
-      if (railBtn) railBtn.title = KH.OcrCopy.VIEW.collapseTip;
-      if (this.copyBtnEl) this.copyBtnEl.textContent = V.copyAll;
-      if (this.mode === 'list') this.renderRows();
-      /* 页签状态与 AI 面板跟着外壳一起落（切形态/首次建壳都会走到这里），
-       * 否则「AI」页签下的内容会在重建后消失或与笔记面板同时露出来。 */
-      this.syncTab();
-    },
-
-    /** 摘要列的一行一张卡（`expandKeys` 是同时展开着的那几条 note；2.0.8.7 起不再只开一张）。 */
-    renderRows() {
-      if (!this.rowsEl) return;
-      /* 【2.0.8.4 需求②】内容没变就**一行都不动**。
-       * 旧写法每轮都 `innerHTML=''` 重造全部行：展开态那张卡里刚解码好的图、列内滚动位置、
-       * 用户的文本选择全部归零 —— 页面自己抖一下（定时器/轮播）就重来一次，用户看到的就是
-       * 「钉住之后悬窗上下跳动」。判据用行内容的指纹（note 全文 + 底色 + 词条 + 右键卡 + 展开项），
-       * note 里已经包含抓取表格的值，所以字段值变了照样会重建。 */
-      const sig = this.rowsSignature();
-      if (this.rowsSig === sig && this.rowsEl.firstChild) return;
-      const keepScroll = this.rowsEl.scrollTop || 0;
-      const doc = document;
-      const V = KH.OcrCopy.VIEW;
-      const ctx = this.ctxItems();
-      const rows = [];
-      for (let i = 0; i < this.items.length; i++) rows.push({ item: this.items[i] });
-      const specs = rows.slice();
-      if (ctx.length) specs.push({ ctx: true });
-      const keyOf = (spec) => (spec.ctx ? '@ctx' : String(spec.item.note == null ? '' : spec.item.note));
-
-      /* 【2.0.8.5 无感重建】内容变了但**行的集合没变**时，就地改文字，不重造 DOM。
-       * 旧写法这一支也是 `innerHTML=''` 全部重建：页面里一个计时器/计数器动一下就闪一次，
-       * 展开那张卡里的图会重新解码、文本选择会掉、列内滚动会弹 —— 用户看到的就是"闪烁"。
-       * 判据只看"行还在不在"，因为内容指纹已经在上一步挡掉了"什么都没变"的情况。 */
-      const prevList = this.rowList || [];
-      /* 【2.0.8.7 需求④·闪烁根因②】按**位置**认同一集，不再按 key（note 全文）认。
-       * 旧判据要求每一行的 note 文本一字不差，页面正文一变 key 就全变 ⇒ 走 `innerHTML=''`
-       * 整列重造，图重解码、滚动归零。位置一致时逐行 `patchRow` 就够了，内容变了它也负责改。
-       * 仍然要求这些行**真挂在这个列表里**：切形态（浮窗 ↔ 贴边）会连壳带列表一起换掉，
-       * 旧行还在数组里但已经不在 DOM 上 —— 那时必须重建，否则摘要列会空白。 */
-      let sameSet = specs.length > 0 && prevList.length === specs.length;
-      if (sameSet) {
-        for (let i = 0; i < specs.length; i++) {
-          const r = prevList[i];
-          if (!r || r.parentNode !== this.rowsEl || this.rowsEl.children[i] !== r) { sameSet = false; break; }
-        }
-      }
-      this.rowEls = new Map();
-      this.rowList = [];
-      if (sameSet) {
-        for (let i = 0; i < specs.length; i++) {
-          const row = prevList[i];
-          this.patchRow(row, specs[i]);
-          this.rowEls.set(keyOf(specs[i]), row);
-          this.rowList.push(row);
-        }
-        this.rowsSig = sig;
-        if (keepScroll) this.rowsEl.scrollTop = keepScroll;
-        return;
-      }
-
-      this.rowsEl.innerHTML = '';
-      if (!rows.length && !ctx.length) {
-        const empty = doc.createElement('div');
-        empty.className = 'khin-row-empty';
-        empty.textContent = V.rowsEmpty;
-        this.rowsEl.appendChild(empty);
-        this.rowEls = new Map();
-        this.rowList = [];
-        return;
-      }
-      const addRow = (spec) => {
-        const key = spec.ctx ? '@ctx' : String(spec.item.note == null ? '' : spec.item.note);
-        const open = this.isOpenNote(key);
-        const row = doc.createElement('div');
-        row.className = 'khin-row';
-        /* 【2.0.8.8 需求①】整行底色 = 卡片原色（`item.bg`），不再自己调淡（见 `rowBgOf`）。 */
-        const bg = (!spec.ctx && /^#[0-9a-fA-F]{3,8}$/.test(spec.item.bg || '')) ? spec.item.bg : '';
-        if (bg) {
-          row.classList.add('has-tint');
-          row.style.setProperty('--khin-tint', rowBgOf(bg));
-        }
-        const head = doc.createElement('div');
-        head.className = 'khin-row-head';
-        head.setAttribute('role', 'button');
-        head.setAttribute('tabindex', '0');
-        head.setAttribute('aria-expanded', open ? 'true' : 'false');
-        const dot = doc.createElement('span');
-        dot.className = 'khin-row-dot';
-        if (bg) dot.style.background = bg;
-        const catText = spec.ctx ? '' : catOf(spec.item);
-        const cat = catText ? doc.createElement('span') : null;
-        if (cat) {
-          cat.className = 'khin-row-cat';
-          cat.textContent = catText;
-          cat.title = '类别：' + catText;
-        }
-        const title = doc.createElement('span');
-        title.className = 'khin-row-t';
-        const entries = (spec.item && spec.item.entries) || [];
-        title.textContent = spec.ctx ? V.ctxShotLabel
-          : String((entries[0] && entries[0].kw) || (spec.item.note ? summarizeNote(spec.item.note).slice(0, 12) : '') || '（空）');
-        const sub = doc.createElement('span');
-        sub.className = 'khin-row-sub';
-        sub.textContent = spec.ctx ? V.ctxSub : summarizeNote(spec.item.note);
-        sub.title = sub.textContent;
-        const nEl = doc.createElement('span');
-        nEl.className = 'khin-row-n';
-        nEl.textContent = KH.OcrCopy.render(V.rowCount, { n: spec.ctx ? ctx.length : entries.length });
-        head.appendChild(dot);
-        if (cat) head.appendChild(cat);
-        head.appendChild(title); head.appendChild(sub); head.appendChild(nEl);
-
-        if (!spec.ctx) {
-          const loc = doc.createElement('button');
-          loc.className = 'khin-row-btn';
-          loc.type = 'button';
-          loc.textContent = V.locate;
-          loc.title = V.locateTip;
-          loc.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const kw = String((entries[0] && entries[0].kw) || '');
-            /* 指纹：这张卡表里除字段名外的值（最多取 6 个），用来在图里、表格里挑对那一处 */
-            const hints = [];
-            const body = row && row.querySelector ? row.querySelector('.khin-row-body') : null;
-            if (body) {
-              for (const td of body.querySelectorAll('td')) {
-                if (td.classList && td.classList.contains('kh-table-label')) continue;
-                const t = String(td.textContent || '').trim();
-                if (t && hints.indexOf(t) < 0) hints.push(t);
-                if (hints.length >= 6) break;
-              }
-            }
-            locateInPage(kw, hints);
-          });
-          head.appendChild(loc);
-        }
-        const close = doc.createElement('button');
-        close.className = 'khin-row-btn';
-        close.type = 'button';
-        close.textContent = '✕';
-        close.title = V.removeTip;
-        close.addEventListener('click', (e) => {
-          e.stopPropagation();
-          if (spec.ctx) {
-            if (KH.ImgOcr && typeof KH.ImgOcr.clearManual === 'function') KH.ImgOcr.clearManual();
-          } else {
-            this.ignored.add(spec.item.note);
-            this.refresh();
-          }
-        });
-        head.appendChild(close);
-
-        const toggle = () => {
-          const next = !this.isOpenNote(key);
-          this.setOpenNote(key, next);
-          this.renderContent();
-          /* 展开后把这张卡滚进视野（列本身限高，不能指望用户自己找）。 */
-          const mine = this.rowEls && this.rowEls.get(key);
-          const body = (mine && mine.querySelector) ? mine.querySelector('.khin-row-body:not([hidden])') : null;
-          if (body) scheduleClip(body);
-          if (body && body.scrollIntoView) { try { body.scrollIntoView({ block: 'nearest' }); } catch (e) { /* 老内核 */ } }
-        };
-        head.addEventListener('click', toggle);
-        head.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); toggle(); }
-        });
-
-        const body = doc.createElement('div');
-        body.className = 'khin-row-body';
-        body.hidden = !open;
-        if (open) {
-          const card = spec.ctx ? this.ctxCard(doc) : this.buildCardEl(spec.item);
-          if (card) { body.appendChild(card); this.applyImgMarksToEl(card); }
-        }
-        if (open) scheduleClip(body);
-        row.appendChild(head);
-        row.appendChild(body);
-        this.rowsEl.appendChild(row);
-        /* 【2.0.8.14 需求②】展开态刚挂进文档就同步量一次（双 rAF 之前不许先绘展开态）。 */
-        if (open) clipValueBoxes(row);
-        if (this.rowEls) this.rowEls.set(key, row);
-        if (this.rowList) this.rowList.push(row);
-      };
-      for (let i = 0; i < rows.length; i++) addRow(rows[i]);
-      if (ctx.length) addRow({ ctx: true });
-      this.rowsSig = sig;
-      /* 重建了就把列内滚动位置放回去（内容变多是常态；不能因为多了一条就把用户读到的位置顶走）。 */
-      if (keepScroll) this.rowsEl.scrollTop = keepScroll;
-    },
-
-    /**
-     * 就地更新一行（行集合没变时用）：只改文字与展开体，元素本身不重造。
-     * 这是【2.0.8.5 无感重建】的关键一步 —— 行还是那几行时，用户不该看到任何闪动。
-     */
-    patchRow(row, spec) {
-      if (!row) return;
-      const V = KH.OcrCopy.VIEW;
-      const key = spec.ctx ? '@ctx' : String(spec.item.note == null ? '' : spec.item.note);
-      const open = this.isOpenNote(key);
-      const head = row.querySelector('.khin-row-head');
-      const title = row.querySelector('.khin-row-t');
-      const sub = row.querySelector('.khin-row-sub');
-      const nEl = row.querySelector('.khin-row-n');
-      const dot = row.querySelector('.khin-row-dot');
-      const entries = (spec.item && spec.item.entries) || [];
-      const titleText = spec.ctx ? V.ctxShotLabel
-        : String((entries[0] && entries[0].kw) || (spec.item.note ? summarizeNote(spec.item.note).slice(0, 12) : '') || '（空）');
-      if (title && title.textContent !== titleText) title.textContent = titleText;
-      const subText = spec.ctx ? V.ctxSub : summarizeNote(spec.item.note);
-      if (sub && sub.textContent !== subText) { sub.textContent = subText; sub.title = subText; }
-      const nText = KH.OcrCopy.render(V.rowCount, { n: spec.ctx ? this.ctxItems().length : entries.length });
-      if (nEl && nEl.textContent !== nText) nEl.textContent = nText;
-      /* 底色 / 色条 / 类别 chip 就地改（换底色不该重造行）。 */
-      const bg = (!spec.ctx && /^#[0-9a-fA-F]{3,8}$/.test(spec.item.bg || '')) ? spec.item.bg : '';
-      row.classList.toggle('has-tint', !!bg);
-      if (bg) {
-        row.style.setProperty('--khin-tint', rowBgOf(bg));
-      } else {
-        row.style.removeProperty('--khin-tint');
-      }
-      if (dot) dot.style.background = bg;
-      this.patchCat(row, spec);
-      if (head) head.setAttribute('aria-expanded', open ? 'true' : 'false');
-      const body = row.querySelector('.khin-row-body');
-      if (body) {
-        body.hidden = !open;
-        if (open) {
-          /* 【2.0.8.7 需求④·闪烁根因①】内容签名没变就**一个字都不动**。
-           * 旧写法这里无条件 `innerHTML=''` 再重建卡片：展开状态下每轮刷新都会把卡里的图
-           * 重新解码一遍、把列内滚动与文本选择归零 —— 用户看到的就是"闪"。 */
-          const csig = this.cardSig(spec);
-          if (row.__cardSig !== csig || !body.firstChild) {
-            body.innerHTML = '';
-            const card = spec.ctx ? this.ctxCard(document) : this.buildCardEl(spec.item);
-            if (card) { body.appendChild(card); this.applyImgMarksToEl(card); clipValueBoxes(card); }
-            row.__cardSig = csig;
-          } else {
-            this.applyImgMarksToEl(body.firstChild);
-          }
-        } else if (body.firstChild) {
-          body.innerHTML = '';
-          row.__cardSig = '';
-        }
-      }
-    },
-
-    /** 类别 chip：有就补/改，没有就摘掉（规则备注改了不用整行重造）。 */
-    patchCat(row, spec) {
-      const head = row.querySelector('.khin-row-head');
-      if (!head) return;
-      const want = spec.ctx ? '' : catOf(spec.item);
-      let cat = head.querySelector('.khin-row-cat');
-      if (!want) {
-        if (cat && cat.parentNode) cat.parentNode.removeChild(cat);
-        return;
-      }
-      if (!cat) {
-        cat = head.ownerDocument.createElement('span');
-        cat.className = 'khin-row-cat';
-        const dot = head.querySelector('.khin-row-dot');
-        if (dot && dot.nextSibling) head.insertBefore(cat, dot.nextSibling);
-        else head.appendChild(cat);
-      }
-      if (cat.textContent !== want) {
-        cat.textContent = want;
-        cat.title = '类别：' + want;
-      }
-    },
-
-    /** 一张卡「画出来是什么样」的签名：展开体只有在它变了的时候才重建。 */
+    /** 一张卡「画出来是什么样」的签名：正文没变的卡就原地留用（见 `renderItems`）。 */
     cardSig(spec) {
       if (spec.ctx) {
         const c = this.ctxItems();
@@ -3464,34 +2759,7 @@
         '\u0002' + String(it.noteFontSize || '') + '\u0002' + kw.join('\u0003') + '\u0002' + merge;
     },
 
-    /**
-     * 摘要列行内容的指纹（`renderRows` 的唯一重建判据）。
-     * 只收**会画到行上**的东西：note 全文（抓取表格的 HTML 就在串里）、底色、词条、右键卡状态、
-     * 当前展开项。刻意不收"对象身份"——每轮 Consume 都会新造条目对象，按身份比等于永远重建。
-     */
-    rowsSignature() {
-      const parts = [];
-      for (let i = 0; i < this.items.length; i++) {
-        const it = this.items[i] || {};
-        const entries = it.entries || [];
-        const kw = [];
-        for (let k = 0; k < entries.length; k++) kw.push(String((entries[k] && entries[k].kw) || ''));
-        parts.push(String(it.note == null ? '' : it.note) + '\u0001' + String(it.bg || '') +
-          '\u0001' + String(it.imgSize || '') + '\u0001' + String(it.noteFontSize || '') +
-          '\u0001' + kw.join('\u0002') +
-          '\u0001' + (it.mergeRows || []).map((r) => (r.field || '') + ':' + (r.hit ? '1' : '0') + ':' + (r.value || '')).join(','));
-      }
-      const ctx = this.ctxItems();
-      const ctxSig = [];
-      for (let i = 0; i < ctx.length; i++) {
-        const c = ctx[i] || {};
-        ctxSig.push(String(c.src || '') + ':' + String(c.state || '') + ':' + String((c.text || '').length));
-      }
-      return parts.join('\u0003') + '\u0004' + ctxSig.join('\u0002') + '\u0004' +
-        (this.expandKeys ? Array.from(this.expandKeys).sort().join('\u0005') : '');
-    },
-
-    /** 单张笔记卡（摘要列展开态与浮窗态共用；`renderItems` 新建卡也走它）。 */
+    /** 单张笔记卡（`renderItems` 新建卡时走它）：标题行 + 标签 + 正文，构造时不碰页面。 */
     buildCardEl(item) {
       const doc = document;
       const el = doc.createElement('div');
@@ -4086,40 +3354,19 @@
     },
 
     /** 左缘 60px 内有 fixed/sticky 元素 ⇒ 贴边条自动停右缘（方案 §避让第一条）。 */
-    detectRailSide() {
-      try {
-        const y = Math.round(window.innerHeight * 0.42);
-        const isDocked = (el) => {
-          let p = el;
-          for (let i = 0; p && i < 8; i++) {
-            const st = window.getComputedStyle ? window.getComputedStyle(p) : null;
-            if (st && (st.position === 'fixed' || st.position === 'sticky')) return true;
-            p = p.parentNode;
-          }
-          return false;
-        };
-        for (let x = 6; x <= 60; x += 6) {
-          const el = document.elementFromPoint(x, y);
-          if (!el || el === document.documentElement || el === document.body || el === this.host) continue;
-          if (isDocked(el)) { this.railSide = 'right'; break; }
-        }
-      } catch (e) { /* 探测失败就用默认左缘 */ }
-    },
-
     renderContent() {
       if (!this.root) return;
       /* 计数 = 笔记卡片 + 右键识别的图（那张「截图」卡也是用户眼里的内容，
        * 只有它的时候计数不许是 0 —— 那会让人以为面板里是空的） */
       const count = this.items.length + this.ctxItems().length;
-      if (this.mode === 'float') { this.renderFloatContent(count); return; }
-      this.renderRailContent(count);
+      this.renderFloatContent(count);
     },
 
-    /** 浮窗态：2.0.8.1 的左上角卡片（可拖动、可缩放）；收起目标从 FAB 换成贴边条。 */
+    /** 唯一形态：悬窗（2.0.8.1 的左上角卡片，可拖动、可缩放）；收起态是 48px 圆形 FAB。 */
     renderFloatContent(count) {
       if (!this.root) return;
 
-      // 收起态：整块换成圆形 FAB（单击/双击/回车都能展开 —— 拖动收尾不算，见 startDrag）
+      // 收起态：整块换成圆形 FAB（单击/回车展开；拖动收尾与长按不算，见 startDrag）
       if (this.minimized) {
         this.panelEl = null;
         this.bodyEl = null;
@@ -4132,9 +3379,9 @@
         const fabNow = this.root.querySelector ? this.root.querySelector('.khin-fab') : null;
         if (fabNow && this.fabCount === count) return;
         this.fabCount = count;
-        /* FAB 是真按钮（T29 / F4.1）：原来是个 div、只绑了 dblclick ⇒ 键盘够不着、鼠标单击
-         * 也没反应，只有「双击」这一条隐性通路（能收不能开）。现在 click 展开、dblclick 保留
-         * （用户双击习惯不变）、pointerdown 仍交给拖动；计数进 aria-label，📌 与徽标都是装饰。
+        /* FAB 是真按钮（T29 / F4.1）：click 展开（原生 button 的 Enter/空格也派发 click，
+         * 键盘通路到此闭合）、pointerdown 交给拖动；计数进 aria-label，📌 与徽标都是装饰。
+         * 【台账 #2】双击不再单独绑 —— 它是第二条「展开」通路，与单击等价却是另一处要维护的行为。
          * 文案取自 KH.OcrCopy.VIEW（面板不许自己写这几句中文）。 */
         this.root.innerHTML =
           '<button class="khin-fab" type="button"><span aria-hidden="true">📌</span>' +
@@ -4143,13 +3390,9 @@
         const fabLabel = KH.OcrCopy.render(KH.OcrCopy.VIEW.fabLabel, { n: count });
         fab.title = fabLabel;
         fab.setAttribute('aria-label', fabLabel);
-        /* 展开的唯一通路（FAB click / FAB dblclick / 键盘激活）。
-         * `suppressMs` 只给测试注入时钟用（生产调用一律不带参数、也不传事件对象 ⇒ 取当前时刻）；
-         * 展开前先清窗口：上一次留下的时刻不该吞掉这一次的标题栏双击（这一行**无条件覆盖**就已
-         * 同时完成「清上一次」与「记这一次」，不必再单写一句 cleanup）。 */
-        const openPanel = (suppressMs) => {
+        /* 展开的唯一通路（FAB click；键盘激活同一条）。 */
+        const openPanel = () => {
           this.minimized = false;
-          this.fabOpenedAt = typeof suppressMs === 'number' ? suppressMs : Date.now();
           this.renderContent();
           this.applyPosition();
         };
@@ -4176,15 +3419,13 @@
           if (heldMs >= FAB_LONG_PRESS_MS) return;
           openPanel();
         });
-        fab.addEventListener('dblclick', () => openPanel());
         /* 键盘：原生 <button> 的 Enter 与空格都会派发 click ⇒ 键盘通路到此闭合，
          * 不必再补 keydown（补了会双触发）。 */
         return;
       }
 
       // 展开态：外壳只创建一次（避免每次命中变化重播入场动画 → 闪烁）
-      if (this.shellMode !== 'float' || !this.panelEl) {
-        this.shellMode = 'float';
+      if (!this.panelEl) {
         this.fabCount = -1;   // 收起态那份 FAB 已被整块换掉（见上面 `this.minimized` 分支的说明）
         /* 题头措辞（含箭头字符）一律取自 KH.OcrCopy.VIEW（F3.4：原来两个题头逐字相同，
          * 读屏听不出展开的是哪一块）；aria-controls 指向受控区。
@@ -4196,7 +3437,7 @@
               '<span class="khin-header-icon" aria-hidden="true">📌</span>' +
               '<span class="khin-header-title">重要笔记</span>' +
               '<span class="khin-header-count">0 条</span>' +
-              '<button class="khin-header-btn" data-act="rail">—</button>' +
+              '<button class="khin-header-btn" data-act="collapse"></button>' +
             '</div>' +
             /* 【2.0.8.4 需求④】页签：笔记 / AI 助手。两块互斥（hidden），共用面板宽度。 */
             '<div class="khin-tabs" role="tablist">' +
@@ -4239,26 +3480,20 @@
 
         const header = this.panelEl.querySelector('.khin-header');
         header.addEventListener('pointerdown', (e) => this.startDrag(e));
-        // 双击标题栏收起为 FAB（策划案 §5.2.3）
-        header.addEventListener('dblclick', () => {
-          /* T60：同一次鼠标双击的**第二次落点**。若这块标题栏是不久前刚被 FAB 的 click(1) 换壳出来的，
-           * 这一下 dblclick 不是用户新起的手势，不许当成「双击收起」——否则面板刚展开就被收回去。
-           * 一次性：命中即清零（不清就是永久抑制，展开久了再双击标题栏将永远收不起来）。
-           * ponytail: 600ms 是浏览器双击间隔上限（沿用 FAB_LONG_PRESS_MS），用户「点开、停顿、再双击标题栏收起」会被吞掉一次；真要精确就得在 FAB 换壳时吞掉紧随其后的那一次 click/dblclick（事件层面认序列，而不是拿时间窗近似）。
-           * 只在 fabOpenedAt 非 0 时生效 ⇒ 未经过 FAB 展开的面板（例如页面刷新后恢复）不受影响。 */
-          const sinceFabOpen = Date.now() - this.fabOpenedAt;
-          if (this.fabOpenedAt && sinceFabOpen >= 0 && sinceFabOpen < FAB_LONG_PRESS_MS) { this.fabOpenedAt = 0; return; }
-          this.minimized = false;
-          this.setMode('rail', { focus: true });
-        });
-        const railBtn = this.panelEl.querySelector('[data-act="rail"]');
-        if (railBtn) {
-          railBtn.title = KH.OcrCopy.VIEW.collapseTip;
-          railBtn.textContent = KH.OcrCopy.VIEW.collapseBtn;
-          railBtn.addEventListener('click', (e) => {
+        /* 【台账 #2】收起只有一条路径：头部按钮 → 换回 FAB（原来的「双击标题栏」也是收起，已删）。
+         * 收起后把焦点递给 FAB：键盘用户按一次 Tab 就能接着展开，不会被留在空壳里。 */
+        const collapseBtn = this.panelEl.querySelector('[data-act="collapse"]');
+        if (collapseBtn) {
+          collapseBtn.title = KH.OcrCopy.VIEW.collapseTip;
+          collapseBtn.textContent = KH.OcrCopy.VIEW.collapseBtn;
+          collapseBtn.setAttribute('aria-label', KH.OcrCopy.VIEW.collapseBtn);
+          collapseBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            this.minimized = false;
-            this.setMode('rail', { focus: true });
+            this.minimized = true;
+            this.renderContent();
+            this.applyPosition();
+            const fab = this.root && this.root.querySelector('.khin-fab');
+            if (fab && fab.focus) { try { fab.focus({ preventScroll: true }); } catch (err) { /* 老内核 */ } }
           });
         }
         /* 【2.0.8.4 需求④】浮窗也有「笔记 / AI」页签，与贴边摘列是同一份会话。 */
@@ -4281,7 +3516,7 @@
       this.renderItems();
       /* 命中红框跟着卡片一起重建：卡片是整体换新的，标记必须在这一趟重算（旧框也在这趟摘掉） */
       this.applyImgMarks();
-      /* 【2.0.8.4 需求④】页签/对话面也跟着落（外壳刚建好时必须补这一次，见 renderRailContent 里的说明） */
+      /* 【2.0.8.4 需求④】页签/对话面也跟着落（外壳刚建好时必须补这一次） */
       this.syncTab();
     },
 
@@ -4376,7 +3611,6 @@
         tabs[i].classList.toggle('is-on', on);
         tabs[i].setAttribute('aria-selected', on ? 'true' : 'false');
       }
-      if (this.drawerEl) this.drawerEl.classList.toggle('is-ai', aiOn);
       const pane = this.root.querySelector('.khin-pane-note');
       const box = this.root.querySelector('.khin-ai');
       if (pane) pane.hidden = aiOn;
@@ -5215,7 +4449,7 @@
        * 【2.0.8.14 需求②】先**同步**量一次：旧写法只挂双 rAF，新卡会先按"未收行"的展开态
        * 绘一到两帧、半拍后再收成一行，看起来就是内容先铺开又缩回去的一闪。同步量完再补一帧
        * 等字体/换行落定（函数内按「文字 + 可用宽度」缓存，没变化就什么都不做）。 */
-      const clipRoot = this.rowsEl || this.root || null;
+      const clipRoot = this.root || null;
       clipValueBoxes(clipRoot);
       scheduleClip(clipRoot);
     },
@@ -5294,8 +4528,8 @@
      */
     isOpen() {
       if (!this.root || this.root.hidden) return false;
-      if (this.mode === 'float') return !this.minimized;
-      return this.mode === 'list';
+      /* 收起态（FAB）不算打开：调度层据此判断"面板此刻有没有展开"。 */
+      return !this.minimized;
     },
 
     /**
@@ -5323,13 +4557,7 @@
       this.panelEl = null;
       this.bodyEl = null;
       this.countEl = null;
-      /* 【2.0.8.4】贴边形态的引用与行指纹一并清：宿主都拆了，留着就是悬空引用 / 让下一轮误判"没变"。 */
-      this.railEl = null;
-      this.drawerEl = null;
-      this.rowsEl = null;
-      this.rowsSig = '';
       this.collapsedNotes.clear();
-      this.pinDefaultDone = false;
       /* 【2.0.8.4 需求④】对话面引用与本次会话的对话一起清（面板都下线了，留着只是悬空引用）。 */
       this.aiEl = null;
       this.aiListEl = null;
@@ -5341,14 +4569,11 @@
         try { this.aiPort.disconnect(); } catch (e) { /* 已经断了 */ }
         this.aiPort = null;
       }
-      /* 外壳模式也必须清：宿主已拆，下一轮 ensure() 造的是空壳，若 `shellMode` 还停在 'rail'/'float'，
-       * 两个 render*Content 都会跳过建壳 ⇒ 面板永久空白（悬空引用 + 不重建）。 */
-      this.shellMode = '';
+      /* 注意：`panelEl` 已置空 ⇒ 下一轮 ensure() 造的空壳必然走建壳分支（否则面板永久空白）。 */
       this.dragState = null;
       this.ignored.clear();
       this.items = [];
-      /* 【2.0.8.5】按 key 复用的两张表随面板一起清（宿主已拆，留着是指向已删除节点的引用）。 */
-      this.rowEls = new Map();
+      /* 【2.0.8.5】按 key 复用的表随面板一起清（宿主已拆，留着是指向已删除节点的引用）。 */
       this.cardMap = new Map();
       /* 置顶签名随面板一起清：下次 render 从干净态重建，别拿上一站（另一个页面/另一次启动）的
        * 置顶表去比"顺序变没变"。 */

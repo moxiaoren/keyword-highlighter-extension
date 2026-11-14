@@ -8,7 +8,7 @@
  */
 const fs = require('fs');
 const path = require('path');
-const { test, truthy } = require('../harness');
+const { test, truthy, falsy } = require('../harness');
 
 const ROOT = path.join(__dirname, '..', '..');
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -38,16 +38,17 @@ test('默认整段显示：基础规则不是 clamp', () => {
   truthy(!/-webkit-line-clamp/.test(seg), '基础规则里不能再有 clamp');
 });
 
-test('三个入口都要量：展开新卡、切换展开态、整块重排', () => {
+test('★ 整块重排就同步量：量的是面板根，不再有摘要列的行级入口', () => {
   const src = read(SRC);
-  /* 【2.0.8.14 需求②】新增"同步量一次"的三个入口：新卡挂进文档立刻量（不等双 rAF，
-   * 否则新卡先按展开态绘一两帧再收行 = 一闪）。所以这里数的是 clipValueBoxes 的调用点。 */
+  /* 【2.0.8.14 需求②】新卡挂进文档立刻量（不等双 rAF，否则先按展开态绘一两帧再收行 = 一闪）。
+   * 【台账 #2】摘要列删掉后，逐行量两个入口随之消失；悬窗每次 renderItems 结束**整块量一次**
+   * 覆盖所有卡片（量的是 this.root，不再依赖 rowsEl）。 */
   const hits = (src.match(/clipValueBoxes\(/g) || []).length;
-  truthy(hits >= 4, 'clipValueBoxes 至少 4 处（定义 1 + 调用 3），实际 ' + hits);
-  truthy(/if \(open\) clipValueBoxes\(row\);/.test(src), '展开新卡挂进文档后要同步量');
-  truthy(/this\.applyImgMarksToEl\(card\); clipValueBoxes\(card\);/.test(src), '切换展开态重建卡片后要同步量');
+  truthy(hits >= 3, 'clipValueBoxes 至少 3 处（定义 1 + scheduleClip 内 1 + 整块 1），实际 ' + hits);
+  truthy(/const clipRoot = this\.root \|\| null;/.test(src), '★ 量的对象必须是面板根（摘要列的 rowsEl 已删）');
   truthy(/clipValueBoxes\(clipRoot\);/.test(src), '整块重排后要同步量');
   truthy(/scheduleClip\(clipRoot\);/.test(src), '整块重排后还要补一帧（等字体/换行落定）');
+  falsy(/clipValueBoxes\(row\)/.test(src), '行级入口随摘要列一起删净');
 });
 
 test('量不出来就不裁（未挂载元素 scrollHeight=0，不能被当成"超长"）', () => {

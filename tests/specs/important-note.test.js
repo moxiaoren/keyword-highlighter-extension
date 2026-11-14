@@ -1066,17 +1066,20 @@ module.exports = async function run() {
    */
   suite('2.0.8.9 默认悬窗 / 展开收掉缩略 / 合规小标（需求②③）');
 
-  await test('默认形态是 float（悬窗），贴边退为备选', () => {
+  /* 【台账 #2 · 2.0.10.6】用户拍板 A：只留悬窗，贴边条与摘要列整条删掉。
+   * 这一条从「默认值必须是 float」改成「再也没有第二种形态可切」。 */
+  await test('只剩一种形态：悬窗（贴边条 / 摘要列已删净）', () => {
     const src = read('src/features/important-note.js');
-    truthy(/mode:\s*'float'/.test(src), '`panel.mode` 的默认值必须是 float');
-    falsy(/mode:\s*'rail',/.test(src), '不许再把 rail 写回默认值');
+    falsy(/mode:\s*'(float|rail|list)'/.test(src), '`panel.mode` 这个概念必须消失，否则还剩第二条路径');
+    falsy(/setMode\(|renderRailContent\(|renderRows\(/.test(src), '切形态 / 贴边 / 摘要列的入口要一起删');
+    truthy(/minimized: false/.test(src), '收起态仍由 minimized 记（换回 FAB）');
+    truthy(/data-act="collapse"/.test(src), '头部按钮改成「收起」，不再是「贴边」');
   });
 
-  await test('展开态隐藏缩略内容（.khin-row-sub），收起态照旧显示', () => {
+  await test('贴边条与摘要列的样式已删净（不留死选择器）', () => {
     const src = read('src/features/important-note.js');
-    truthy(/\.khin-row-head\[aria-expanded="true"\]\s+\.khin-row-sub\s*\{\s*display:\s*none;?\s*\}/.test(src),
-      '靠 head 的 aria-expanded 收掉 sub：addRow 与 patchRow 两路都会同步这个属性');
-    truthy(/\.khin-row-sub\s*\{/.test(src), '收起态那行还得留着（没展开时要看摘要）');
+    falsy(/\.khin-(rail|drawer|dh|rows?)\b/.test(src), '贴边条 / 摘要列 / 行元素的选择器不许还留在注入样式里');
+    truthy(/\.khin-fab \{/.test(src), 'FAB 的样式必须留着 —— 它是唯一收起态');
   });
 
   await test('浮窗复用旧卡也要跑合规校验（否则「只有贴边有」会复发）', () => {
@@ -1164,7 +1167,7 @@ module.exports = async function run() {
    * 以及标签区每轮 render 都 innerHTML 重造（hover 态与展开中的下拉当场消失）。 */
   suite('重要笔记 · 悬窗不闪（2.0.8.14 需求②）');
 
-  await test('★ 入场动画只挂在 .khin-enter 上：显示/隐藏不许重播（面板与摘要列都要）', () => {
+  await test('★ 入场动画只挂在 .khin-enter 上：显示/隐藏不许重播', () => {
     const src = read('src/features/important-note.js');
     const ruleOf = (sel) => {
       const re = new RegExp(sel.replace(/\./g, '\\.') + ' \\{[\\s\\S]*?\\n    \\}');
@@ -1172,14 +1175,11 @@ module.exports = async function run() {
       return m ? m[0] : '';
     };
     const panelRule = ruleOf('.khin-panel');
-    const drawerRule = ruleOf('.khin-drawer');
     truthy(panelRule && !/animation\s*:/.test(panelRule), '★ .khin-panel 基础规则里不许再有 animation（否则每次显示都重播）');
-    truthy(drawerRule && !/animation\s*:/.test(drawerRule), '★ .khin-drawer 基础规则里不许再有 animation（hover 开合一次就闪一次）');
+    falsy(/\.khin-drawer/.test(src), '摘要列已删，不该再有它的动画规则');
     truthy(/\.khin-panel\.khin-enter \{ animation: khin-in/.test(src), '动画改挂到 .khin-panel.khin-enter');
-    truthy(/\.khin-drawer\.khin-enter \{ animation: khin-in/.test(src), '动画改挂到 .khin-drawer.khin-enter');
     truthy(/function playEnter\(el\)/.test(src), '要有一个只播一次的工具函数');
-    truthy(/playEnter\(this\.panelEl\)/.test(src), '浮窗造壳后要播一次');
-    truthy(/playEnter\(this\.drawerEl\)/.test(src), '摘要列造壳后要播一次');
+    truthy(/playEnter\(this\.panelEl\)/.test(src), '悬窗造壳后要播一次');
     truthy(/addEventListener\('animationend', stop/.test(src) && /setTimeout\(stop, 400\)/.test(src),
       'animationend 与兜底定时器都要能摘类（被提前隐藏时 animationend 不派发）');
   });

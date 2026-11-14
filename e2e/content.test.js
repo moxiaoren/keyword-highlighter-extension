@@ -135,8 +135,8 @@ module.exports = async function runContent(ctx) {
   page.on('console', (m) => { if (m.type() === 'error' && !/favicon/.test(m.text())) errors.push(m.text()); });
   page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
 
-  /** 四态（2026-11-03）：默认形态是贴边条。旧用例围绕 .khin-panel/.khin-item 写，
-   * 需要浮窗内容时先点条 → 点「浮窗」；没有宿主（该页没有重要笔记）时静默跳过。 */
+  /** 【台账 #2】只剩悬窗一种形态（贴边条/摘要列已删）。旧用例围绕 .khin-panel/.khin-item 写，
+   * 需要面板时等宿主出现即可；若它处于收起态（.khin-fab），点开再看；没有宿主时静默跳过。 */
   const openFloatPage = async (pg) => {
     /* 笔记是扫描后异步算出来的：宿主可能晚一拍出现，先等它（没有命中时静默放行）。 */
     try {
@@ -149,12 +149,9 @@ module.exports = async function runContent(ctx) {
       const wrap = sr.querySelector('.khin-wrap');
       if (wrap && wrap.hidden) return false;
       if (sr.querySelector('.khin-panel')) return true;
-      const rail = sr.querySelector('.khin-rail');
-      if (!rail) return false;
-      rail.click();
-      const f = sr.querySelector('[data-act="float"]');
-      if (f) f.click();
-      return true;
+      const fab = sr.querySelector('.khin-fab');
+      if (fab) fab.click();
+      return !!sr.querySelector('.khin-panel');
     });
     if (ok) await pg.waitForTimeout(250);
     return ok;
@@ -165,7 +162,7 @@ module.exports = async function runContent(ctx) {
     await page.goto(FIX(origin, file), { waitUntil: 'load' });
     await page.waitForFunction(() => document.documentElement.getAttribute('data-kh-state') !== null, null, { timeout: 15000 });
     await page.waitForTimeout(400);   // silent/gap 已注入 0，稍等一轮重建
-    /* 默认切到浮窗，保持旧用例的读法；专门验「默认贴边条」的用例传 { float: false }。 */
+    /* 默认就是悬窗；openFloat 只在收起态（FAB）时点开，保持旧用例的读法。 */
     if (!opts || opts.float !== false) await openFloat();
   };
 
@@ -1005,13 +1002,12 @@ module.exports = async function runContent(ctx) {
     }
   });
 
-  await test('四态默认：**悬窗**常驻左上（2.0.8.9 需求②）；贴边条退为备选', async () => {
+  await test('★ 默认只有一种形态：悬窗常驻左上（台账 #2）；贴边条/摘要列已删净', async () => {
     /* 【必须自己起页】同第 2 组：本组依赖"页面上有重要笔记内容"，
      * 不能依赖前一组（第 4 组）留下的页面 —— 否则单独跑 interact 方面会假红。 */
     await fresh('list.html');
-    /* 2026-11-07 用户拍板（需求②原话：「贴边模式优化（请改成默认悬窗，贴边模式才应该是备选）」）
-     * —— 与 2026-11-03 的「默认只露 8px 贴边条」相反，那条口径随需求作废。
-     * 现在默认就是左上角悬窗（.khin-panel），贴边条要用户自己切（双击标题栏 / 头部按钮 / `[`）。 */
+    /* 【台账 #2】用户拍板 A 方案：删掉 rail（贴边条）与 list（摘要列），只留悬窗；
+     * 收起改由悬窗头部「收起」→ 48px FAB（下一组专门测这条回环）。 */
     const box = await page.locator('#kh-important-note-host').evaluate((h) => {
       const sr = h.shadowRoot;
       const p = sr.querySelector('.khin-panel');
@@ -1020,65 +1016,53 @@ module.exports = async function runContent(ctx) {
       return {
         left: Math.round(r.left), top: Math.round(r.top), width: Math.round(r.width),
         rail: !!sr.querySelector('.khin-rail'),
+        drawer: !!sr.querySelector('.khin-drawer'),
         rows: sr.querySelectorAll('.khin-row').length,
         items: sr.querySelectorAll('.khin-item').length
       };
     });
     truthy(box, '默认形态应是悬窗（.khin-panel）');
-    falsy(box.rail, '默认不该再出贴边条（贴边是备选），实际 ' + JSON.stringify(box));
+    falsy(box.rail, '贴边条已删，不该再出现，实际 ' + JSON.stringify(box));
+    falsy(box.drawer, '摘要列已删，不该再出现，实际 ' + JSON.stringify(box));
     truthy(box.left < 100 && box.top < 100, '悬窗默认停在左上角（v1.52.0 口径不变），实际 ' + JSON.stringify(box));
     truthy(box.width >= KHConfig.PANEL_WIDTH_MIN,
       '悬窗宽度应达到最小可读宽度 ' + KHConfig.PANEL_WIDTH_MIN + 'px，实际 ' + box.width);
-    truthy(box.items > 0, '默认悬窗展开态应直接给出全部条目（不必先点贴边条）');
-
-    /* 备选路径不能坏：双击标题栏仍应切回贴边条（下一条专门测「再点回悬窗」） */
-    const hx = await page.locator('#kh-important-note-host').evaluate((h) => {
-      const e = h.shadowRoot.querySelector('.khin-header');
-      const r = e.getBoundingClientRect();
-      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
-    });
-    await page.mouse.dblclick(hx.x, hx.y);
-    await page.waitForTimeout(350);
-    const rail = await page.locator('#kh-important-note-host').evaluate((h) => {
-      const b = h.shadowRoot.querySelector('.khin-rail');
-      if (!b) return null;
-      const r = b.getBoundingClientRect();
-      return { left: Math.round(r.left), width: Math.round(r.width), top: Math.round(r.top), vh: window.innerHeight };
-    });
-    truthy(rail, '双击标题栏后应能切回贴边条（备选路径可用）');
-    truthy(rail.left < 2, '贴边条应贴左缘，left=' + rail.left);
-    truthy(rail.width <= 12, '贴边条要窄（8px），实际 ' + rail.width);
-    truthy(Math.abs(rail.top - rail.vh * 0.42) < rail.vh * 0.15, '贴边条在左缘中段（约 42% 视口高），实际 top=' + rail.top);
+    truthy(box.items > 0, '默认悬窗展开态应直接给出全部条目');
   });
 
-  await test('★ 双击标题栏 = 回贴边条；点条再滑出摘要列（四态，不再收成 FAB）', async () => {
+  await test('★ 收起只有一条路径：头部「收起」→ 面板换成一颗 FAB；点 FAB 回到悬窗', async () => {
     await fresh('list.html');
-    const h = await page.locator('#kh-important-note-host').evaluate((host) => {
-      const el = host.shadowRoot.querySelector('.khin-header');
-      const r = el.getBoundingClientRect();
-      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
-    });
-    await page.mouse.dblclick(h.x, h.y);
-    await page.waitForTimeout(350);
-    const state = await page.locator('#kh-important-note-host').evaluate((host) => {
+    const collapsed = await page.locator('#kh-important-note-host').evaluate((host) => {
       const sr = host.shadowRoot;
-      return { rail: !!sr.querySelector('.khin-rail'), fab: !!sr.querySelector('.khin-fab'), panel: !!sr.querySelector('.khin-panel') };
+      const b = sr.querySelector('[data-act="collapse"]');
+      if (!b) return { err: '没有「收起」按钮' };
+      b.click();
+      const fab = sr.querySelector('.khin-fab');
+      return {
+        err: null,
+        fab: !!fab,
+        badge: fab && fab.querySelector('.khin-fab-badge') ? fab.querySelector('.khin-fab-badge').textContent : '',
+        aria: fab ? fab.getAttribute('aria-label') : '',
+        panel: !!sr.querySelector('.khin-panel'),
+        rail: !!sr.querySelector('.khin-rail'),
+        drawer: !!sr.querySelector('.khin-drawer')
+      };
     });
-    truthy(state.rail, '双击标题栏后应回到贴边条（.khin-rail）');
-    falsy(state.fab, 'FAB 圆钮已退役，不该再出现');
-    await shot(page, '02-panel-rail');
-    // 点条 → 摘要列；点「浮窗」→ 回面板
-    await page.locator('#kh-important-note-host').evaluate((host) => host.shadowRoot.querySelector('.khin-rail').click());
-    await page.waitForTimeout(300);
-    const drawer = await page.locator('#kh-important-note-host').evaluate((host) => {
-      const d = host.shadowRoot.querySelector('.khin-drawer');
-      return d && d.hidden === false && host.shadowRoot.querySelectorAll('.khin-row').length > 0;
-    });
-    truthy(drawer, '点贴边条应滑出摘要列（含行）');
-    await page.locator('#kh-important-note-host').evaluate((host) => host.shadowRoot.querySelector('[data-act="float"]').click());
+    truthy(!collapsed.err && collapsed.fab, '点头部「收起」后应换成 FAB，实际 ' + JSON.stringify(collapsed));
+    falsy(collapsed.panel, '收起后面板本体不该还在');
+    falsy(collapsed.rail, '贴边条已删，不该再出现');
+    falsy(collapsed.drawer, '摘要列已删，不该再出现');
+    truthy(Number(collapsed.badge) > 0, 'FAB 徽标应带条数，实际 ' + JSON.stringify(collapsed.badge));
+    truthy(/条/.test(collapsed.aria), 'FAB 的 aria 文案要说清条数，实际 ' + collapsed.aria);
+    await shot(page, '02-panel-collapsed');
+    await page.locator('#kh-important-note-host').evaluate((host) => host.shadowRoot.querySelector('.khin-fab').click());
     await page.waitForTimeout(350);
-    const expanded = await page.locator('#kh-important-note-host').evaluate((host) => !!host.shadowRoot.querySelector('.khin-panel'));
-    truthy(expanded, '点「浮窗」应展开为面板');
+    const back = await page.locator('#kh-important-note-host').evaluate((host) => ({
+      panel: !!host.shadowRoot.querySelector('.khin-panel'),
+      fab: !!host.shadowRoot.querySelector('.khin-fab')
+    }));
+    truthy(back.panel, '点 FAB 应回到悬窗');
+    falsy(back.fab, '展开后不该还留着 FAB');
   });
 
   await test('★ 单条关闭：✕ 后该条不再出现（本次会话）', async () => {
@@ -1302,14 +1286,18 @@ module.exports = async function runContent(ctx) {
 
   /* 面板默认贴左上角（v1.52.0 口径），会盖住装置页第一行命中词 —— 那些位置点到的是
    * 插件自己的面板（`isOwnUI` → 不弹卡片），与"卡片/悬停能力"无关。
-   * 所以先把它双击收起成小 FAB，腾出命中点（也是用户的常规操作）。 */
+   * 【台账 #2】收起只剩一条路径：点头部「收起」→ 面板换成一颗 FAB，腾出命中点。 */
   const minimizePanel = async () => {
     await page.evaluate(() => {
       const host = document.getElementById('kh-important-note-host');
-      const h = host && host.shadowRoot && host.shadowRoot.querySelector('.khin-header');
-      if (h) h.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, composed: true }));
+      const b = host && host.shadowRoot && host.shadowRoot.querySelector('[data-act="collapse"]');
+      if (b) b.click();
     });
-    await page.waitForTimeout(350);
+    await page.waitForFunction(() => {
+      const host = document.getElementById('kh-important-note-host');
+      const sr = host && host.shadowRoot;
+      return !!(sr && sr.querySelector('.khin-fab') && !sr.querySelector('.khin-panel'));
+    }, null, { timeout: 3000 });
   };
 
   await test('★ 点击高亮词弹出备注卡片（坐标为命中定位）', async () => {
@@ -1428,14 +1416,13 @@ module.exports = async function runContent(ctx) {
       const host = document.getElementById('kh-important-note-host');
       const sr = host && host.shadowRoot;
       const p = sr && sr.querySelector('.khin-panel');
-      const rail = sr && sr.querySelector('.khin-rail');
       if (!p) return null;
       const b = p.getBoundingClientRect();
       return { left: Math.round(b.left), top: Math.round(b.top), width: Math.round(b.width),
-        rail: !!rail, rows: sr.querySelectorAll('.khin-row').length, items: sr.querySelectorAll('.khin-item').length };
+        rail: !!(sr && sr.querySelector('.khin-rail')), items: sr.querySelectorAll('.khin-item').length };
     });
     truthy(r, '应有重要笔记悬窗（配置里 k1/k3 带重要笔记）');
-    falsy(r.rail, '默认不该出现贴边条（贴边是备选），实际 ' + JSON.stringify(r));
+    falsy(r.rail, '贴边条已删，默认与备选都不该出现，实际 ' + JSON.stringify(r));
     truthy(r.left < 100 && r.top < 100, '悬窗停左上角，实际 ' + JSON.stringify(r));
     truthy(r.items > 0, '默认悬窗应直接给全条目，实际 ' + JSON.stringify(r));
   });
@@ -3352,7 +3339,7 @@ module.exports = async function runContent(ctx) {
         return { hit: pick('e2e-ocr-hit'), miss: pick('e2e-ocr-miss'), nohit: pick('e2e-ocr-nohit') };
       });
 
-      await openFloat();   // 四态：默认贴边条，红框只在浮窗卡片里
+      await openFloat();   // 唯一形态：悬窗，红框只在浮窗卡片里
       /* 等识别**落地**（成功/失败都算）+ 红框出现：不能再按面板行等（分区已删），
        * 判据见 `OCR_SETTLED`（background 在飞表归零 + 红框已出现）。 */
       const settled = await OCR_SETTLED(150000, 1);
@@ -3564,7 +3551,7 @@ module.exports = async function runContent(ctx) {
       await page.goto(origin + '/hidden-hit.html', { waitUntil: 'load' });
       await page.waitForFunction(() => document.documentElement.getAttribute('data-kh-state') !== null, null, { timeout: 20000 });
       await page.evaluate(OCR_DEVICE);
-      await openFloat();   // 四态：默认贴边条，卡片与红框只在浮窗里
+      await openFloat();   // 唯一形态：悬窗，卡片与红框只在浮窗里
 
       const settled = await OCR_SETTLED(150000, 1);
       if (!settled) {

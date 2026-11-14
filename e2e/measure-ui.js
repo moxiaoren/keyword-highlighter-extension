@@ -284,17 +284,18 @@ async function snap(page, name, opts) {
         data.scenarios[data.scenarios.length - 1].panel = inner;
         console.log('    面板 ' + JSON.stringify(inner && inner.box));
       }
-      /* 展开第一张卡 + 贴边条形态 */
+      /* 收起态形态（【台账 #2】只剩一条路：头部「收起」→ FAB → 点 FAB 回来） */
       try {
-        const hd = page.locator('#kh-important-note-host').evaluate((h) => {
-          const e = h.shadowRoot.querySelector('.khin-header');
-          const r = e.getBoundingClientRect();
-          return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+        await page.locator('#kh-important-note-host').evaluate((h) => {
+          const b = h.shadowRoot.querySelector('[data-act="collapse"]');
+          if (b) b.click();
         });
-        await page.mouse.dblclick((await hd).x, (await hd).y);
         await page.waitForTimeout(500);
-        await snap(page, 'content-note-rail');
-        await page.mouse.dblclick((await hd).x, (await hd).y);
+        await snap(page, 'content-note-collapsed-fab');
+        await page.locator('#kh-important-note-host').evaluate((h) => {
+          const f = h.shadowRoot.querySelector('.khin-fab');
+          if (f) f.click();
+        });
         await page.waitForTimeout(500);
         await snap(page, 'content-note-back-to-float');
       } catch (e) { console.log('  ! 形态切换失败: ' + e.message); }
