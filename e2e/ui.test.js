@@ -3758,6 +3758,56 @@ module.exports = async function runUi(ctx) {
     falsy(popErrors.length, '报错：' + popErrors.join(' | '));
   });
 
+
+  /* 【台账 #11】三步上手不是装饰：点一张卡要真的落到设置页对应小节。
+   * 深链能成立，靠的是 options.js 启动时读 location.hash（#sec-xxx → showSection）。 */
+  group('9. welcome · 三步上手直达设置页', { aspects: ['ui'] });
+
+  await test('★ 三张卡都是链接，点第 2 张落到「样式」分区且地址栏带 #sec-style', async () => {
+    const wel = await api.extensionPage('welcome/welcome.html');
+    try {
+      await wel.waitForTimeout(400);
+      const list = await wel.evaluate(() => Array.from(document.querySelectorAll('a.kh-step')).map((a) => {
+        const r = a.getBoundingClientRect();
+        return {
+          href: a.getAttribute('href') || '',
+          go: ((a.querySelector('.kh-step-go') || {}).textContent || '').trim(),
+          w: Math.round(r.width), h: Math.round(r.height)
+        };
+      }));
+      eq(list.length, 3, '三步上手应有 3 张可点卡片，实际 ' + JSON.stringify(list));
+      list.forEach((s, i) => {
+        includes(s.href, 'options/options.html#sec-', '第 ' + (i + 1) + ' 张卡应直达设置页小节，实际 ' + JSON.stringify(s.href));
+        truthy(s.w > 150 && s.h > 80, '第 ' + (i + 1) + ' 张卡要真的能点（尺寸 ' + s.w + 'x' + s.h + '）');
+        includes(s.go, '去', '第 ' + (i + 1) + ' 张卡要有落点说明，实际 ' + JSON.stringify(s.go));
+      });
+      await Promise.all([
+        wel.waitForNavigation({ waitUntil: 'domcontentloaded' }),
+        wel.click('a.kh-step >> nth=1')
+      ]);
+      await wel.waitForFunction(() => !!document.getElementById('sec-style'), null, { timeout: 10000 });
+      const landed = await wel.evaluate(() => {
+        const sec = document.getElementById('sec-style');
+        const other = document.getElementById('sec-keywords');
+        return {
+          path: location.pathname, hash: location.hash,
+          styleHidden: !!sec.hidden,
+          styleH: Math.round(sec.getBoundingClientRect().height),
+          otherHidden: !!(other && other.hidden)
+        };
+      });
+      includes(landed.path, 'options/options.html', '点卡应跳到设置页，实际 ' + JSON.stringify(landed.path));
+      eq(landed.hash, '#sec-style', '地址栏应带目标分区，实际 ' + JSON.stringify(landed.hash));
+      falsy(landed.styleHidden, '★ 落到的分区必须是显示状态（#sec-style 不能还藏着）');
+      truthy(landed.styleH > 100, '★ 分区要有真实内容高度，实际 ' + landed.styleH);
+      truthy(landed.otherHidden, '★ 只切到目标分区，别的分区要收起（否则等于停在默认页）');
+      console.log('        深链落点: ' + JSON.stringify(landed));
+      await shot(wel, 'welcome-step2');
+    } finally {
+      try { await wel.close(); } catch (e) { /* 忽略 */ }
+    }
+  });
+
   await shot(pop, '13-popup-full');
   await pop.close();
 

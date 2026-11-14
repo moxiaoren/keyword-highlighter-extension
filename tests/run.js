@@ -212,7 +212,9 @@ const specs = [
   './specs/notes-summary.test.js',
   /* 能力清单唯一真源（台账 2026-11-14 第 1 条）：定位句干净、两层条数与 id、
    * 每个界面落点的 probe 真能命中、首屏胶囊与卖点 chip 同源。见 specs/abilities.test.js */
-  './specs/abilities.test.js'
+  './specs/abilities.test.js',
+  /* 三步上手：三张卡必须是真的链接，且 #sec-xxx 都是设置页真实分区（台账 #11） */
+  './specs/welcome-steps.test.js'
 ];
 
 (async () => {
