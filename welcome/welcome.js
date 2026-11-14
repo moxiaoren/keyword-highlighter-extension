@@ -41,17 +41,6 @@
    * 用户既看不到这次更新，也没有任何提示，而且下次打开依然什么都没有。 */
   const CHANGELOG = Array.isArray(window.CHANGELOG) ? window.CHANGELOG : null;
 
-  /* 日志条目是 Markdown（反引号 / 加粗 / 裸网址），必须过 `KH.Markdown` 的**单源**渲染。
-   * 拿不到渲染器时退回**纯文本**（如实显示标记），绝不静默丢内容、也绝不 innerHTML。 */
-  function docFragment(text) {
-    const md = (window.KH && window.KH.Markdown) || null;
-    if (!md || typeof md.toDocFragment !== 'function') return null;
-    try { return md.toDocFragment(String(text), document); } catch (err) {
-      console.warn('[KH] welcome：更新日志条目渲染失败，退回纯文本 ——', err && err.message);
-      return null;
-    }
-  }
-
   /** 首屏状态条：如实显示"当前有没有词"，并给出直达设置页的入口 */
   async function renderStatus() {
     const { keywords = [], groups = [] } = await chrome.storage.local.get(['keywords', 'groups']);
@@ -86,53 +75,36 @@
      * 打开即标记已读（见本函数末尾）——用户事后自己再点进来时 lastSeen 就等于 version。 */
     const seenCurrent = !isFirst && cmp(lastSeen, version) >= 0;
 
-    /* 展示「上一个看过的版本 → 当前版本」之间的条目；首次安装只展示当前版本。
-     * 但**当前版本那一块永远在里面**（issue #20）：更新成功那次本页是自动弹出来的、没人主动点，
-     * 那次就把版本标记成已读；之后再从帮助/关于点进来时若仍把当前版本排除在外，页面就恒为
-     * 「暂无新版本说明」——更新说明变成只在用户没主动看的那一次出现，而这是唯一可达的入口。
-     * 读过的本次更新允许多看几遍：宁可见两遍，不许一次都见不到。 */
-    const entries = (CHANGELOG || []).filter((e) => {
-      const vsCurrent = cmp(e.version, version);
-      if (vsCurrent > 0) return false;                 // 比当前版本更新的条目不上屏（旧版本残留数据）
-      if (vsCurrent === 0) return true;                // 当前版本块：始终给，可回看
-      return !isFirst && cmp(e.version, lastSeen) > 0; // 上次已读之后、当前版本之前的那几段
-    });
+    /* 台账 #10（用户 2026-11-14 口径 A）：未读判据收进唯一渲染入口 `KH.ChangelogRender.pickEntries`，
+     * 这里不再自己写一遍 filter —— 两处各写一份正是「改一处漏一处」的根因。
+     * 欢迎页只画未读；全读过时另给一行「本版说明已读，点开回看」，不会再退化成一个空态。 */
+    const picked = (window.KH && window.KH.ChangelogRender)
+      ? window.KH.ChangelogRender.pickEntries(CHANGELOG || [], { version: version, lastSeen: lastSeen, cmp: cmp })
+      : null;
 
     $('rel-head').textContent = isFirst ? '本次安装的版本'
-      : (seenCurrent ? '本次更新（已读过，可回看）' : '本次更新');
+      : (seenCurrent ? '更新说明' : '本次更新');
 
     const box = $('changelog');
-    box.innerHTML = '';
+    const R = (window.KH && window.KH.ChangelogRender) || null;
+    box.textContent = '';
     if (!CHANGELOG) {
       // 数据没加载出来时**不许**说「暂无新版本说明」——那不是事实
       $('rel-head').textContent = '更新日志';
       box.innerHTML = '<p style="color:var(--text-3);font-size:var(--fs-sm)">更新日志数据没能加载（changelog.js 未就绪），请重新打开本页；在它恢复之前不会标记「已读」。</p>';
       return;
     }
-    if (!entries.length) {
-      box.innerHTML = '<p style="color:var(--text-3);font-size:var(--fs-sm)">暂无新版本说明。</p>';
-    } else {
-      for (const rel of entries) {
-        const wrap = document.createElement('div');
-        wrap.className = 'kh-clip';                 // 默认只露前 3 条（见 welcome.css）
-        const h = document.createElement('div');
-        h.className = 'kh-rel-title';
-        h.textContent = rel.version;
-        wrap.appendChild(h);
-        const ul = document.createElement('ul');
-        ul.className = 'kh-rel-items';
-        for (const it of rel.items || []) {
-          const li = document.createElement('li');
-          /* 旧写法 `li.innerHTML = it`：日志里的 `**加粗**` 与 `` `命令` `` 是标记，
-           * 会原样印给用户（全库 1,514 处 `**`、1,250 处反引号）；而且 innerHTML 是汇点。
-           * 现在过单源渲染器（文本→节点），并在 `plain` 档下**不产出链接/图片**。 */
-          const frag = docFragment(it);
-          if (frag) li.appendChild(frag); else li.textContent = String(it);
-          ul.appendChild(li);
-        }
-        wrap.appendChild(ul);
-        box.appendChild(wrap);
-      }
+    if (!R) {
+      // 渲染器没加载出来时同样如实说，不假装「没有更新」
+      $('rel-head').textContent = '更新日志';
+      box.innerHTML = '<p style="color:var(--text-3);font-size:var(--fs-sm)">更新日志渲染器没加载（changelog-render.js 未就绪），请重新打开本页。</p>';
+      return;
+    }
+    if (picked && picked.unread.length) {
+      /* 版本块结构由唯一渲染入口产出（类名只为欢迎页的折叠样式而传） */
+      R.renderInto(box, picked.unread, {
+        itemClass: 'kh-clip', titleClass: 'kh-rel-title', listClass: 'kh-rel-items'
+      });
       /* 「展开全部」必须按**屏幕上真被藏起来的条数**给，不能按总条数算。
        * 真机教训：折叠是**每块**只露前 3 条（welcome.css 的 li:nth-child(n + 4)），
        * 而这里原来把所有版本的总条数拿来判 `total > 3` ⇒ 当这次更新的条目分散在各块、
@@ -152,6 +124,30 @@
           btn.textContent = open ? '收起' : '展开全部（' + hiddenCount + ' 条）';
         });
       }
+    } else if (picked && picked.read.length) {
+      /* 台账 #10（用户 2026-11-14 口径 A）：全部读过时不铺开全文，也不留空态 ——
+       * 只给一行「本版说明已读，点开回看」，点开就地展开最近一版（默认收起）。 */
+      const line = document.createElement('button');
+      line.type = 'button';
+      line.className = 'kh-read-note';
+      line.textContent = R.SUMMARY;
+      const back = document.createElement('div');
+      back.className = 'kh-read-back';
+      back.hidden = true;
+      R.renderInto(back, picked.read.slice(0, 1), {
+        itemClass: 'kh-clip', titleClass: 'kh-rel-title', listClass: 'kh-rel-items'
+      });
+      line.addEventListener('click', () => {
+        back.hidden = !back.hidden;
+        line.textContent = back.hidden ? R.SUMMARY : '收起已读说明';
+      });
+      box.appendChild(line);
+      box.appendChild(back);
+      $('btn-toggle-log').hidden = true;
+    } else {
+      // 日志表里确实一条都没有（不是「已读」），如实说没有日志
+      box.innerHTML = '<p style="color:var(--text-3);font-size:var(--fs-sm)">暂无更新日志。</p>';
+      $('btn-toggle-log').hidden = true;
     }
 
     /* 只有**确实读到过**上次记录，才允许把这次看到的内容标记成已读。

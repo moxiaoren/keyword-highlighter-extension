@@ -2299,23 +2299,12 @@
 
   /* ==================================================================== ⑧ 更新日志（单源） */
 
-  /**
-   * 更新日志条目 → `<li>`：走 Markdown **单源**渲染（`toDocFragment` = 认 `` `行内代码` ``、
-   * **不产出任何链接/图片**）。旧写法 `h('li', { text: String(t) })` 把 `**加粗**` 与
-   * `` `命令` `` 的标记原样印给用户（全库 1,514 处 `**`、1,250 处反引号；C7 F-6），
-   * 而"welcome 与 options 各写各的口径"正是这条缺陷的根因 —— 现在两处共用同一个入口。
-   */
-  function changelogLi(text) {
-    const md = KH.Markdown;
-    const li = document.createElement('li');
-    let frag = null;
-    if (md && typeof md.toDocFragment === 'function') {
-      try { frag = md.toDocFragment(String(text), document); } catch (err) {
-        console.warn('[KH] options：更新日志条目渲染失败，退回纯文本 ——', err && err.message);
-      }
-    }
-    if (frag) li.appendChild(frag); else li.textContent = String(text);
-    return li;
+  /* 条目与版本块的 DOM 结构只在 `src/ui/changelog-render.js` 里定义一次（台账 #10）；
+   * 这里不再留第二套 `changelogLi`，否则又会回到「改一处漏一处」。 */
+  function logRenderer() {
+    const R = KH && KH.ChangelogRender;
+    if (R && typeof R.renderInto === 'function' && typeof R.entryEl === 'function') return R;
+    return null;
   }
 
   /* 关于页默认只看最近 RECENT 条（用户 2026-10-11 现场：183 条全量渲染把「关于」页撑到 49,567px，
@@ -2331,19 +2320,21 @@
     if (toc) clear(toc);
     const list = (typeof window.CHANGELOG !== 'undefined' && Array.isArray(window.CHANGELOG)) ? window.CHANGELOG : [];
     if (!list.length) { box.appendChild(h('div', { class: 'kh-muted', text: '暂无更新日志' })); return; }
+    const R = logRenderer();
+    if (!R) {
+      /* 渲染器没就绪就如实说，不假装「没有日志」（C7 F-10 同一条原则） */
+      box.appendChild(h('div', { class: 'kh-muted', text: '更新日志渲染器没加载（changelog-render.js 未就绪），请重新打开本页' }));
+      return;
+    }
     const RECENT = 8;
     const TOC_MAX = 20;
     const shown = chgExpanded ? list : list.slice(0, RECENT);
     let tocShown = 0;
-    // 每条版本一个锚点，右侧悬浮目录可点击跳转
+    // 每条版本一个锚点，右侧悬浮目录可点击跳转；版本块结构由唯一渲染入口产出
     for (const entry of shown) {
-      const items = Array.isArray(entry.items) ? entry.items : [String(entry.items || '')];
       const ver = String(entry.version || '');
       const lid = 'chg-' + ver.replace(/[^\w.]/g, '_');
-      box.appendChild(h('div', { class: 'kh-log-item', id: lid }, [
-        h('div', { class: 'kh-log-ver', text: ver }),
-        h('ul', { class: 'kh-log-list' }, items.map(changelogLi))
-      ]));
+      box.appendChild(R.entryEl(entry, { anchorId: () => lid }));
       if (toc && tocShown < TOC_MAX) {
         tocShown++;
         toc.appendChild(h('a', {

@@ -107,6 +107,8 @@
   <script src="../src/ui/changelog.js"></script>
   <!-- 更新日志是 Markdown：渲染必须走 src/platform/markdown.js 的**单源**（C7 F-6） -->
   <script src="../src/platform/markdown.js"></script>
+  <!-- 版本说明的唯一渲染入口（台账 #10）：welcome 与 options 共用同一套条目/版本块/未读判据 -->
+  <script src="../src/ui/changelog-render.js"></script>
   <!-- 界面主题（2.0.8.13 需求④）：欢迎页与设置页共用同一份真值 -->
   <script src="../src/ui/theme.js"></script>
   <!-- 能力清单单一真源（台账第 1 条）：首屏定位句、三枚承诺胶囊、两层能力卡全由它渲染 -->

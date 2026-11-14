@@ -240,11 +240,16 @@ module.exports = async function run() {
     const css = readSrc('welcome/welcome.css');
     truthy(/\.kh-clip:not\(\.is-open\) \.kh-rel-items li:nth-child\(n \+ 4\)\s*\{\s*display:\s*none;\s*\}/.test(css),
       '★ welcome.css 的折叠规则变了的话，按计算样式数的判据也跟着变，这条钉住两者同源');
-    const wjs = code(readSrc('welcome/welcome.js'));
-    truthy(/wrap\.className = 'kh-clip'/.test(wjs), '每块要挂 .kh-clip（CSS 折叠的锚点）');
-    truthy(/ul\.className = 'kh-rel-items'/.test(wjs), '条目列表要挂 .kh-rel-items');
-    truthy(/const li = document\.createElement\('li'\);/.test(wjs) && /ul\.appendChild\(li\);/.test(wjs),
+    /* 台账 #10：版本块 DOM 只由 src/ui/changelog-render.js 产出，欢迎页只负责传类名。
+     * 断言仍落在这两件事实上：结构在共享模块里、类名由欢迎页传入。 */
+    const clr = code(readSrc('src/ui/changelog-render.js'));
+    truthy(/wrap\.className = o\.itemClass/.test(clr), '每块要挂调用方给的类（欢迎页传 kh-clip = CSS 折叠的锚点）');
+    truthy(/ul\.className = o\.listClass/.test(clr), '条目列表要挂调用方给的类（欢迎页传 kh-rel-items）');
+    truthy(/const li = d\.createElement\('li'\);/.test(clr) && /ul\.appendChild\(itemEl\(it, d\)\);/.test(clr),
       '条目要真的建成 li（否则计算样式数不到）—— C7 F-6 把建成方式从 innerHTML 换成了节点渲染');
+    const wjs = code(readSrc('welcome/welcome.js'));
+    truthy(/itemClass: 'kh-clip'[\s\S]{0,60}?listClass: 'kh-rel-items'/.test(wjs),
+      '★ 欢迎页必须把这两个类名传给唯一渲染入口（否则 CSS 折叠与计算样式判据都没有锚点）');
   });
 
   /* ---------------- C7 F-14：第二级失败（独立窗口）不许零反馈 ---------------- */
@@ -359,14 +364,20 @@ module.exports = async function run() {
     const wjs = code(readSrc('welcome/welcome.js'));
     const body = between(wjs, 'async function renderLog()', 'await chrome.storage.local.set({ khLastSeenVersion');
     truthy(body, '应能找到 renderLog 主体');
-    truthy(/if \(vsCurrent > 0\) return false;/.test(body), '比当前版本更新的条目不上屏');
-    truthy(/if \(vsCurrent === 0\) return true;/.test(body),
-      '★ 当前版本块必须无条件留下：升级后那次是 onInstalled 自动弹开并标记已读的，' +
+    /* 台账 #10：未读判据搬进唯一渲染入口，这里按新落点核两件事 ——
+     * ① 切分规则本身（当前版本永不丢）；② 欢迎页真的调它、不再自己 filter。 */
+    const clr = code(readSrc('src/ui/changelog-render.js'));
+    const pick = between(clr, 'function pickEntries(list, opts) {', 'return { unread, read };');
+    truthy(pick, '应能找到 pickEntries 主体（否则下面是在空串上跑）');
+    truthy(/if \(vsCurrent > 0\) continue;/.test(pick), '比当前版本更新的条目不上屏');
+    truthy(/if \(lastSeen && cmp\(lastSeen, version\) >= 0\) read\.push\(e\); else unread\.push\(e\);/.test(pick),
+      '★ 当前版本块必须留下（未读或已读都可回看）：升级后那次是 onInstalled 自动弹开并标记已读的，' +
       '事后用户自己点进来时 lastSeen 就等于 version，旧判据把这一块一起滤掉 → 页面恒为「暂无新版本说明」');
     truthy(/const seenCurrent = !isFirst && cmp\(lastSeen, version\) >= 0;/.test(body),
       '要能区分「本次更新还没看过」与「已读过、可回看」');
-    falsy(/cmp\(e\.version, version\) <= 0 && cmp\(e\.version, lastSeen\) > 0/.test(body),
-      '★ 旧的一行判据必须退休（它对 lastSeen === version 返回空集）');
+    truthy(/ChangelogRender[\s\S]{0,40}?pickEntries\(CHANGELOG \|\| \[\]/.test(body),
+      '★ 欢迎页必须调唯一渲染入口的 pickEntries（第二份 filter 就是漂移的起点）');
+    falsy(/filter\(\(e\) =>/.test(body), '旧的自己 filter 写法必须退场');
   });
 
   await test('★welcome 三个渲染各自兜底 + 订阅 storage 变化（一个坏掉不许带走整页）', () => {
@@ -404,10 +415,13 @@ module.exports = async function run() {
 
   await test('★options 侧的更新日志条目也走同一个入口（旧代码是 h(li,{text}) 原样印标记）', () => {
     const ojs = code(readSrc('options/options.js'));
-    truthy(/function changelogLi\(text\)/.test(ojs), '★ options 要有一个明确的条目渲染函数');
-    truthy(/md\.toDocFragment\(String\(text\), document\)/.test(ojs), '★ 走文档档，不是 h(li,{text})');
+    truthy(/function logRenderer\(\)/.test(ojs), '★ options 要有一个明确的渲染器探测函数（拿不到就如实说，不静默）');
+    truthy(/R\.entryEl\(entry, \{ anchorId:/.test(ojs), '★ 版本块必须由唯一渲染入口产出（旧代码自己 h(div)+h(ul)+h(li)）');
+    falsy(/function changelogLi\(/.test(ojs), '★ 第二套条目渲染必须退场（改一处漏一处的根因）');
     truthy(ojs.indexOf("h('li', { text: String(t) })") < 0, '★ 旧写法必须退场');
-    const body = between(ojs, 'function changelogLi(', 'function renderChangelog(');
+    const clr = code(readSrc('src/ui/changelog-render.js'));
+    const body = between(clr, 'function itemEl(text, doc) {', 'function entryEl(');
+    truthy(body, '应能找到共享条目渲染函数');
     truthy(/li\.textContent = String\(text\)/.test(body),
       '★ 渲染器不可用时退回**纯文本**（如实显示标记），不许静默丢内容');
   });

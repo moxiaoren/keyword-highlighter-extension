@@ -65,15 +65,23 @@ module.exports = async function run() {
     truthy(Array.isArray(CL) && CL.length > 100,
       'changelog.js 应能解析出 100+ 个版本条目，实际 ' + (CL && CL.length));
     eq(typeof M.toDocFragment, 'function', '★ 文档档入口必须存在（旧代码根本没有这一档）');
+    /* 台账 #10：两页不再各写一套 DOM 构造，结构 + 未读判据都在唯一入口里。
+     * 这里只钉三件事实：入口存在并走文档档；两页都调它；两页都把它加载进来。 */
+    const clr = fs.readFileSync(path.join(ROOT, 'src', 'ui', 'changelog-render.js'), 'utf8');
+    truthy(/KH\.ChangelogRender = \{/.test(clr), '★ 渲染入口必须对外注册（welcome / options 共用）');
+    truthy(/toDocFragment\(String\(text\), d\)/.test(clr), '★ 条目必须走文档档（旧代码是 h(li,{text}) / li.innerHTML）');
     const opt = fs.readFileSync(path.join(ROOT, 'options', 'options.js'), 'utf8');
     const wel = fs.readFileSync(path.join(ROOT, 'welcome', 'welcome.js'), 'utf8');
-    truthy(/toDocFragment/.test(opt), '★ options 侧必须走文档档（旧代码是 h(li,{text})）');
-    truthy(/toDocFragment/.test(wel), '★ welcome 侧必须走文档档（旧代码是 li.innerHTML = it）');
-    /* 「条目不许再走 innerHTML」这条源码哨兵已迁到 scripts/meta-check.js 的红线列表
-     * （它就是一条静态断言，且要剥注释才判得准 —— 那种活属于门禁，不属于行为测试）。 */
+    truthy(/R\.entryEl\(entry, \{ anchorId:/.test(opt), '★ options 侧必须走唯一渲染入口');
+    truthy(/function changelogLi\(/.test(opt) === false, '★ options 侧的第二套实现必须退场');
+    truthy(/ChangelogRender[\s\S]{0,40}?pickEntries\(/.test(wel) && /R\.renderInto\(/.test(wel),
+      '★ welcome 侧必须走同一个入口（未读判据 + 版本块）');
     const whtml = fs.readFileSync(path.join(ROOT, 'welcome', 'welcome.html'), 'utf8');
     truthy(/src\/platform\/markdown\.js/.test(whtml),
       '★ welcome 页必须真的把渲染器加载进来（否则只能退回纯文本，标记照旧上屏）');
+    truthy(/src\/ui\/changelog-render\.js/.test(whtml), '★ welcome 页要加载唯一渲染入口');
+    const ohtml = fs.readFileSync(path.join(ROOT, 'options', 'options.html'), 'utf8');
+    truthy(/src\/ui\/changelog-render\.js/.test(ohtml), '★ 设置页也要加载同一份渲染入口');
   });
 
   await test('★全量真实数据渲染：不产出 a / img / script / iframe / style', () => {

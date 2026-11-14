@@ -214,7 +214,11 @@ const specs = [
    * 每个界面落点的 probe 真能命中、首屏胶囊与卖点 chip 同源。见 specs/abilities.test.js */
   './specs/abilities.test.js',
   /* 三步上手：三张卡必须是真的链接，且 #sec-xxx 都是设置页真实分区（台账 #11） */
-  './specs/welcome-steps.test.js'
+  './specs/welcome-steps.test.js',
+
+  /* 台账 #10：版本说明只由一处渲染函数产出（welcome 与 options 共用）；欢迎页只列未读，
+   * 全读过时留一行「本版说明已读，点开回看」。见 specs/changelog-single-source.test.js */
+  './specs/changelog-single-source.test.js'
 ];
 
 (async () => {

@@ -177,6 +177,16 @@ kbd {
 }
 /* 默认只露前 3 条：欢迎页不该被一篇长文淹没（旧版实测整页 8889px） */
 .kh-clip:not(.is-open) .kh-rel-items li:nth-child(n + 4) { display: none; }
+/* 台账 #10（用户 2026-11-14 口径 A）：本版说明全部读过时，只留一行入口。
+   不用灰字写「暂无新版本说明」——那不是事实，也让回看没有入口；点开就地展开最近一版。 */
+.kh-read-note {
+  display: inline-block; margin: 0; padding: 0; border: 0; background: none;
+  color: var(--brand-deep); font-family: inherit; font-size: var(--fs-sm);
+  line-height: 1.7; cursor: pointer; text-align: left;
+}
+.kh-read-note:hover { text-decoration: underline; }
+.kh-read-note:focus-visible { outline: 2px solid var(--brand-2); outline-offset: 2px; border-radius: var(--r-sm); }
+.kh-read-back { margin-top: 10px; }
 
 /* ---------------------------------------------------------------- 按钮 */
 .kh-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 22px; }
