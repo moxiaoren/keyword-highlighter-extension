@@ -461,6 +461,18 @@ module.exports = async function run() {
     eq(NC.verdictMark('nope'), null, '不认识的态不许瞎给标记');
   });
 
+  /* 【台账 #8】超时是第四态：和「未查明」必须分得开 —— 一个该等会儿再看，一个就是查不到。 */
+  await test('★ 超时是独立第四态：⏱ 超时，图标与文案都和「？未查明」不同', () => {
+    const to = NC.verdictMark('timeout');
+    const unk = NC.verdictMark('unknown');
+    truthy(to, '★ 超时要有自己的标记（不许退回未查明）');
+    eq(to.text, '超时');
+    truthy(to.icon !== unk.icon, '★ 超时与未查明的图标必须不同 —— 灰度/打印时靠形状分');
+    truthy(to.text !== unk.text, '★ 文案也必须不同（判据：界面与数据上可区分）');
+    eq(to.label, to.icon + ' ' + to.text, 'label 仍是图标 + 空格 + 文案');
+    eq(NC.verdictMark('timedout'), null, '只认 timeout 这个态名，别自己拆字');
+  });
+
   await test('★ 未查明的判定说明不许是空串（空串 = 和「没配校验」长得一样）', () => {
     const q = NC.qualVerdict('北京知行灵动科技有限公司', '');
     eq(q.state, 'unknown');

@@ -641,6 +641,9 @@
     .kh-verdict[data-state="same"], .kh-verdict[data-state="ok"] { background: #2e7d32; color: #fff; }
     .kh-verdict[data-state="diff"], .kh-verdict[data-state="warn"] { background: #b45309; color: #fff; }
     .kh-verdict[data-state="unknown"] { background: #fff; color: #475569; border-color: #94a3b8; border-style: dashed; }
+    /* 【台账 #8】超时是第四态：不涂行底色，但徽标要说「超时」而不是「未查明」——
+     * 用户能据此决定「等会儿再看」还是「这条就是查不到」。虚线 + ⏱ 与未查明的 ？ 灰度下也分得开。 */
+    .kh-verdict[data-state="timeout"] { background: #fff7ed; color: #9a3412; border-color: #fdba74; border-style: dashed; }
     /* 字段标题格里的文本（= 设置「抓取字段」里填的那个名字）**不必整段展示**，省下的宽度留给内容。
      * 用户 2026-10-11 原话："抓取字段的标题内容可以不完整展示…实际抓取到的内容展示还是需要完整展示的，节省宽度"。
      * 做法：标题文本包一层 .kh-lbt（见下方 noteFragment 的补包裹），**宽度上限 + 单行裁切**，
@@ -3776,11 +3779,17 @@
       if (entTr.getAttribute('data-kh-ent-sig') === sig) return;
       entTr.setAttribute('data-kh-ent-sig', sig);
       devTr.setAttribute('data-kh-ent-sig', sig);
+      /* 兼容两种回法：字符串（老写法 / 单测打的桩）与 { rep, timedOut }（lookupEntity 现在给这个）。 */
+      const asSide = (v) => (v && typeof v === 'object')
+        ? { rep: String(v.rep || ''), timedOut: !!v.timedOut }
+        : { rep: String(v || ''), timedOut: false };
       const repOfSide = (name) => {
-        if (NC.isPersonName(name)) return Promise.resolve(String(name));
-        return this.lookupEntity(name).then((rep) => (NC.isPersonName(rep) ? rep : String(rep || '')));
+        if (NC.isPersonName(name)) return Promise.resolve({ rep: String(name), timedOut: false });
+        return this.lookupEntity(name).then((got) => asSide(got));
       };
-      Promise.all([repOfSide(dev), repOfSide(ent)]).then((reps) => {
+      Promise.all([repOfSide(dev), repOfSide(ent)]).then((sides0) => {
+        const reps = [sides0[0].rep, sides0[1].rep];
+        const timedOut = !!(sides0[0].timedOut || sides0[1].timedOut);
         /* 卡片可能已经被下一次刷新换掉：旧节点不再画（新卡自己会重算）。 */
         if (el && el.isConnected === false) return;
         if (table && table.isConnected === false) return;
@@ -3788,13 +3797,16 @@
         const sides = '开发者「' + dev + '」→ ' + (reps[0] || '未查到法人') + '\n'
           + '核准主体「' + ent + '」→ ' + (reps[1] || '未查到法人');
         if (verdict === 'unknown') {
-          /* 未查明：不改底色，只在悬停里如实说一句（不猜法人名）。 */
-          const tip = '同法人校验：未查明（不改底色）\n' + sides;
+          /* 不改底色，但原因要说得清：【台账 #8】等满 20 秒没回执 = 超时（可以等会儿再看），
+           * 其余才是「未查明」。两种情况以前都只写「未查明」，用户分不出该重试还是该放弃。 */
+          const tip = timedOut
+            ? '同法人校验：查询超时（20 秒没有回执，不改底色）\n' + sides
+            : '同法人校验：未查明（不改底色）\n' + sides;
           setCheckTip(devTr, tip);
           setCheckTip(entTr, tip);
           /* 【台账 #5】未查明是独立的第三态：不涂色，但必须带标记与文案。 */
-          setVerdictMark(devTr, 'unknown', tip);
-          setVerdictMark(entTr, 'unknown', tip);
+          setVerdictMark(devTr, timedOut ? 'timeout' : 'unknown', tip);
+          setVerdictMark(entTr, timedOut ? 'timeout' : 'unknown', tip);
           return;
         }
         const color = verdict === 'same' ? NC.COLOR_OK : NC.COLOR_BAD;
@@ -3822,21 +3834,25 @@
      */
     lookupEntity(name) {
       const key = String(name || '').trim();
-      if (!key) return Promise.resolve('');
+      /* 【台账 #8】超时是独立结局：一律 resolve { rep, timedOut }，调用方靠 timedOut 把它和
+       * 「查不到法人」分开（以前两种都回空串，界面上长得一模一样）。 */
+      if (!key) return Promise.resolve({ rep: '', timedOut: false });
       this._entCache = this._entCache || new Map();
-      if (this._entCache.has(key)) return Promise.resolve(this._entCache.get(key));
+      if (this._entCache.has(key)) return Promise.resolve({ rep: String(this._entCache.get(key) || ''), timedOut: false });
       return new Promise((resolve) => {
         /* 【2.0.9 体检·稳定性】后台被回收时回调可能永远不来：20s 后按「未查明」收口，
          * 否则这层 Promise 和 paintEntity 的 .then 会一直挂着。 */
         let settled = false;
         let timer = 0;
-        const finish = (v) => {
+        const finish = (v, timedOut) => {
           if (settled) return;
           settled = true;
           if (timer) { clearTimeout(timer); timer = 0; }
-          resolve(v);
+          resolve({ rep: String(v || ''), timedOut: !!timedOut });
         };
-        timer = setTimeout(() => finish(''), 20000);
+        /* 等待上限默认 20 秒（判据口径）；单测把 this._entTimeoutMs 调小即可不等真 20 秒。 */
+        const waitMs = Number(this._entTimeoutMs) > 0 ? Number(this._entTimeoutMs) : 20000;
+        timer = setTimeout(() => finish('', true), waitMs);
         let api = null;
         try { api = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) ? chrome : null; } catch (e) { api = null; }
         if (!api) { finish(''); return; }

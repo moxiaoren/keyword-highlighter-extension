@@ -1357,4 +1357,47 @@ module.exports = async function run() {
     eq(String(second.textContent), '✔ 一致', '判定变了，标记要跟着变');
     if (div.parentNode) div.parentNode.removeChild(div);
   });
+  /* 【台账 #8】查询超时 = 第四态：不涂底色，但徽标写「⏱ 超时」而不是「？未查明」。
+   * 用户据此能分清「后台没回执，等会儿再看」和「这条真的查不到」。 */
+  await test('★ 查询超时挂 ⏱ 超时（不是 ？未查明）：不涂色、悬停写明超时', async () => {
+    const div = H.el('div', {}, []);
+    div.innerHTML = KH.Fetch.rowsToTableHtml([
+      { label: '开发者', rows: [[{ t: '北京知行灵动科技有限公司' }]], opt: null },
+      { label: '核准主体', rows: [[{ t: '华为技术有限公司' }]], opt: null }
+    ]);
+    /* 同法人判定在 Promise 回调里画，回调会先看 isConnected —— 垫片的 div 不挂到文档上会被当已卸载跳过 */
+    if (document.body) document.body.appendChild(div);
+    const panel = shadowPanel();
+    panel.lookupEntity = () => Promise.resolve({ rep: '', timedOut: true });
+    panel.decorateChecks(div, {});
+    await new Promise((r) => setTimeout(r, 20));
+    const trs = div.querySelectorAll('tr');
+    eq(trs.length, 2, '前提：开发者与核准主体各一行');
+    const cell = trs[1].querySelectorAll('td')[0];
+    const mark = cell.querySelector('.kh-verdict');
+    truthy(mark, '★ 超时行必须有标记 —— 否则和「没配校验」长得一样');
+    eq(String(mark.textContent), '⏱ 超时');
+    eq(mark.getAttribute('data-state'), 'timeout');
+    falsy(cell.style.background, '超时同样不改底色');
+    truthy(String(cell.getAttribute('title') || '').indexOf('超时') >= 0, '★ 悬停要写明超时，而不是只写未查明');
+    if (div.parentNode) div.parentNode.removeChild(div);
+  });
+
+  /* 数据层：20 秒（单测缩短到 25ms）没回执时 lookupEntity 要回 timedOut，
+   * 且 Promise 必须收口（判据：20s 后不留悬挂 Promise）。 */
+  await test('★ 没回执时 lookupEntity 回 timedOut=true 且 Promise 一定收口', async () => {
+    const had = Object.prototype.hasOwnProperty.call(global, 'chrome') ? global.chrome : undefined;
+    const panel = shadowPanel();
+    panel._entTimeoutMs = 25;
+    panel._entCache = new Map();
+    global.chrome = { runtime: { lastError: null, sendMessage: function () { /* 后台被回收：永不回执 */ } } };
+    try {
+      const res = await panel.lookupEntity('某某超时科技有限公司');
+      eq(typeof res, 'object', '★ 结果要带上「是不是超时」，不能只回空串');
+      eq(res.timedOut, true, '★ 没回执 ⇒ timedOut 必须为 true');
+      eq(res.rep, '');
+    } finally {
+      if (had === undefined) delete global.chrome; else global.chrome = had;
+    }
+  });
 };

@@ -486,7 +486,9 @@
       ok: { icon: '✔', text: '一致' },
       diff: { icon: '⚠', text: '待确认' },
       warn: { icon: '⚠', text: '待确认' },
-      unknown: { icon: '？', text: '未查明' }
+      unknown: { icon: '？', text: '未查明' },
+      /* 【台账 #8】超时和「查不到法人 / 未查明」不是一回事：20 秒没回执要单独说得出来。 */
+      timeout: { icon: '⏱', text: '超时' }
     };
     const m = map[s];
     if (!m) return null;

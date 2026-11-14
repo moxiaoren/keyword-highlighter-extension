@@ -4370,13 +4370,23 @@ module.exports = async function runContent(ctx) {
           ['承诺对象', '华为技术有限公司']
         ]);
         mk('e2e-verdict-unknown', [['企业名称', '北京知行灵动科技有限公司']]);
+        /* 【台账 #8】超时是第四态：开发者与核准主体两边都查不到法人，但原因是「20 秒没回执」。 */
+        mk('e2e-verdict-timeout', [
+          ['开发者', '北京知行灵动科技有限公司'],
+          ['核准主体', '华为技术有限公司']
+        ]);
       });
 
       const rowsOut = await inExt('(function () {'
-        + 'var out = []; var boxes = ["e2e-verdict-two", "e2e-verdict-unknown"];'
+        + 'var out = []; var boxes = ["e2e-verdict-two", "e2e-verdict-unknown", "e2e-verdict-timeout"];'
+        + 'return (async function () {'
         + 'for (var b = 0; b < boxes.length; b++) {'
         + '  var el = document.getElementById(boxes[b]);'
+        + '  if (boxes[b] === "e2e-verdict-timeout") {'
+        + '    window.KH.ImportantNote.panel.lookupEntity = function () { return Promise.resolve({ rep: "", timedOut: true }); };'
+        + '  }'
         + '  window.KH.ImportantNote.panel.decorateChecks(el, {});'
+        + '  if (boxes[b] === "e2e-verdict-timeout") await new Promise(function (r) { setTimeout(r, 80); });'
         + '  var tds = el.querySelectorAll("td.kh-table-label");'
         + '  for (var i = 0; i < tds.length; i++) {'
         + '    var m = tds[i].querySelector(".kh-verdict");'
@@ -4385,7 +4395,7 @@ module.exports = async function runContent(ctx) {
         + '      bg: String(tds[i].style.background || ""), tip: String(tds[i].title || "") });'
         + '  }'
         + '}'
-        + 'return out; })()');
+        + 'return out; })(); })()');
       console.log('        三态标记: ' + JSON.stringify(rowsOut.map((x) => ({ b: x.box, l: x.label, m: x.mark, s: x.state, bg: x.bg }))));
 
       const pick = (box, label) => rowsOut.filter((x) => x.box === box && x.label === label)[0];
@@ -4401,10 +4411,20 @@ module.exports = async function runContent(ctx) {
       eq(unknown.bg, '', '未查明不涂色');
       truthy(String(unknown.tip).indexOf('未查明') >= 0, '未查明的悬停说明必须非空且写明原因，实际 = ' + JSON.stringify(unknown.tip));
       eq(unknown.label, '企业名称', '标记是后缀，字段名照旧认得出来');
+      /* 【台账 #8】超时是第四态：同样是「不改底色」，但徽标与悬停都要写「超时」，
+       * 和「？未查明」分得开（一个该等会儿再看，一个就是查不到）。 */
+      const timeout = pick('e2e-verdict-timeout', '核准主体');
+      truthy(timeout, '超时那张表要画出来，实际 ' + JSON.stringify(rowsOut.map((x) => x.label)));
+      eq(timeout.mark, '⏱ 超时', '查询超时要挂「⏱ 超时」而不是「？ 未查明」');
+      eq(timeout.state, 'timeout');
+      truthy(timeout.mark !== unknown.mark, '超时与未查明的文案必须不同');
+      eq(timeout.bg, '', '超时同样不改底色');
+      truthy(String(timeout.tip).indexOf('超时') >= 0, '悬停要写明超时，实际 = ' + JSON.stringify(timeout.tip));
       await shot(page, '28-verdict-marks');
     } finally {
       await page.evaluate(() => {
-        ['e2e-verdict-two', 'e2e-verdict-unknown'].forEach((id) => {
+        try { delete window.KH.ImportantNote.panel.lookupEntity; } catch (e) {}
+        ['e2e-verdict-two', 'e2e-verdict-unknown', 'e2e-verdict-timeout'].forEach((id) => {
           const el = document.getElementById(id);
           if (el) el.remove();
         });

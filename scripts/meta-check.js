@@ -872,8 +872,8 @@ if (manifest && manifest.version) {
     // ② 同一条规则顺手核工作区根 `CONTEXT.md` 的「已发布」速览行（票 #50 收口）：它以前手抄
     //    2.0.0.7 / `storage, alarms, offscreen`，别的机器一同步就看到旧口径。手抄数字必然漂，
     //    所以这里拿 manifest（测试版）与 release/latest.json（稳定版）当真源比对。
-    //    **故意并入本条、不新增 ok()**：红线数必须还是 70（README「机械红线（70 项）」与
-    //    changelog 各版自检行都钉着这个数，加一条就要连带改两处历史记录）。
+    //    这半条故意并入本条的 ok()（不单开一条）：它核的是同一件事的另一个消费方，分开算会让
+    //    「红线数」随文档整理而跳。真要加红线，README 的「机械红线（N 项）」必须同步（脚本会红）。
     const ctxAbs = path.join(root, '..', '..', 'CONTEXT.md');
     const ctxProblems = [];
     let ctxSrc = null;
@@ -1147,6 +1147,40 @@ if (manifest && manifest.version) {
   const knownAt = fieldsSrc.indexOf('const knownFields = () =>');
   if (seenAt < 0 || knownAt < 0 || seenAt > knownAt) bad('fetchRawSeen 必须声明在 knownFields 之前（否则 known 恒空，所有 @字段 都被误报）', '见 src/ui/components/fields.js');
   else ok('值规格缓存的声明顺序');
+}
+
+/* ===== 台账列数：每行竖线数必须等于表头（台账 #9 · 2026-11-14） ===== */
+
+/* 为什么：`_stage/REQUESTS.md` 的台账表靠人工追加，二十多行里出现过「状态写进落点列」「只写三格」
+ * 的断行（2026-11-14 清出 87–89 三行）。列数错了 markdown 照样渲染，人眼很难看出来，只有机器数得出来。
+ * 只认「日期打头的台账行」：文件里还有批次表、判据表，列数各不相同，不能一把尺子量。
+ * 脱离工作区单独交付时 `_stage/` 不存在 ⇒ 跳过，不算红灯。 */
+{
+  const ledgerAbs = path.join(root, '..', '..', '_stage', 'REQUESTS.md');
+  const HEAD_ROW = /^\|\s*日期\s*\|/;
+  const DATE_ROW = /^\|\s*\d{4}-\d{2}-\d{2}\s*\|/;
+  /* 表里可能有转义的竖线（用户原话里的 `著作权人\|b公司`），先去掉再数，否则正常行会被误判。 */
+  const BACKSLASH = String.fromCharCode(92);
+  const pipes = (line) => (line.split(BACKSLASH + '|').join('').match(/\|/g) || []).length;
+  let ledgerSrc = null;
+  try { ledgerSrc = fs.readFileSync(ledgerAbs, 'utf8'); }
+  catch (err) { if (err.code !== 'ENOENT') bad('台账读不到：' + err.message); }
+  if (ledgerSrc !== null) {
+    const lines = ledgerSrc.split(/\r?\n/);
+    const headLine = lines.find((l) => HEAD_ROW.test(l)) || '';
+    if (!headLine) warn('台账里没找到「| 日期 |」表头，列数核对跳过');
+    else {
+      const expect = pipes(headLine);
+      const off = [];
+      lines.forEach((l, i) => {
+        if (!DATE_ROW.test(l)) return;
+        const got = pipes(l);
+        if (got !== expect) off.push('REQUESTS.md:' + (i + 1) + '  有 ' + got + ' 根竖线（表头 ' + expect + ' 根）');
+      });
+      if (off.length) bad('台账行与表头的列数对不上（状态会错进落点列）', off.join('\n      '));
+      else ok('台账列数对得上（表头 ' + expect + ' 根竖线，全部日期行一致）');
+    }
+  }
 }
 
 /* ------------------------------------------------------------------ 输出 */
