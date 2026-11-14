@@ -528,6 +528,10 @@
     /* 【台账 #8】超时是第四态：不涂行底色，但徽标要说「超时」而不是「未查明」——
      * 用户能据此决定「等会儿再看」还是「这条就是查不到」。虚线 + ⏱ 与未查明的 ？ 灰度下也分得开。 */
     .kh-verdict[data-state="timeout"] { background: #fff7ed; color: #9a3412; border-color: #fdba74; border-style: dashed; }
+    /* 【台账 #6】判定证据：命中值 / 来源 / 时间 / 原页入口，就地可见，不再只藏在悬停 title 里。 */
+    .kh-evidence { display: block; margin-top: 2px; font-size: 10px; line-height: 14px; color: inherit; opacity: .82; white-space: normal; word-break: break-word; }
+    .kh-evidence-link { text-decoration: underline; color: inherit; cursor: pointer; }
+    .kh-evidence-sep { opacity: .55; margin: 0 4px; }
     /* 字段标题格里的文本（= 设置「抓取字段」里填的那个名字）**不必整段展示**，省下的宽度留给内容。
      * 用户 2026-10-11 原话："抓取字段的标题内容可以不完整展示…实际抓取到的内容展示还是需要完整展示的，节省宽度"。
      * 做法：标题文本包一层 .kh-lbt（见下方 noteFragment 的补包裹），**宽度上限 + 单行裁切**，
@@ -2376,6 +2380,75 @@
     return mark;
   }
 
+  /**
+   * 【台账 #6 · 2026-11-14】判定证据行：命中值 / 来源 / 读取时间 / 原页入口四件，就地挂在值格里。
+   * 旧样子只有悬停 title，鼠标不悬停就只剩一个「✔ 一致」——判据要求「就地看到」；
+   * 证据行是普通块级元素（不进 `.kh-val-box`，不参与裁切测量），不改变表格列宽逻辑。
+   * 无 URL（比如非网页环境）时写「原页 未取到」，不发请求、不抛错。
+   * @param {Element} tr 判定行
+   * @param {{value?:string, source?:string, url?:string, at?:number, label?:string}} spec 证据
+   * @returns {Element|null} 证据节点
+   */
+  function setEvidence(tr, spec) {
+    if (!tr || !tr.querySelectorAll) return null;
+    const tds = tr.querySelectorAll('td');
+    if (!tds || tds.length < 2) return null;
+    const host = tds[1];
+    const s = spec || {};
+    const value = String(s.value == null ? '' : s.value).trim();
+    const source = String(s.source || '本页抓取').trim();
+    const url = String(s.url || '').trim();
+    const sig = [value, source, url].join('\u0001');
+    if (tr.getAttribute && tr.getAttribute('data-kh-ev-sig') === sig) return host.querySelector('.kh-evidence');
+    if (tr.setAttribute) tr.setAttribute('data-kh-ev-sig', sig);
+    let box = host.querySelector ? host.querySelector('.kh-evidence') : null;
+    if (!box) {
+      const doc = host.ownerDocument || (typeof document !== 'undefined' ? document : null);
+      if (!doc) return null;
+      box = doc.createElement('div');
+      box.className = 'kh-evidence';
+      host.appendChild(box);
+    }
+    while (box.firstChild) box.removeChild(box.firstChild);
+    const doc = box.ownerDocument || document;
+    const add = (text, cls) => {
+      const sp = doc.createElement('span');
+      if (cls) sp.className = cls;
+      sp.textContent = text;
+      box.appendChild(sp);
+      return sp;
+    };
+    const shown = value.length > 26 ? value.slice(0, 26) + '…' : value;
+    add((s.label ? s.label + '：' : '值：') + (shown || '未取到'));
+    const sep = () => add(' · ', 'kh-evidence-sep');
+    sep();
+    add('源：' + source);
+    sep();
+    const ts = Number(s.at) > 0 ? Number(s.at) : 0;
+    if (ts) {
+      const d = new Date(ts);
+      const p2 = (n) => (n < 10 ? '0' + n : String(n));
+      add('读取：' + p2(d.getHours()) + ':' + p2(d.getMinutes()));
+    } else {
+      add('读取：未取到');
+    }
+    if (url) {
+      sep();
+      const a = doc.createElement('a');
+      a.className = 'kh-evidence-link';
+      a.setAttribute('href', url);
+      a.setAttribute('target', '_blank');
+      a.setAttribute('rel', 'noreferrer');
+      a.textContent = '原页 ↗';
+      a.title = url;
+      box.appendChild(a);
+    } else {
+      sep();
+      add('原页 未取到');
+    }
+    return box;
+  }
+
   /** 类别名：取第一条命中词所属规则的备注（`adj`）；没备注就空着，不硬编「未分类」。 */
   function catOf(item) {
     const entries = (item && item.entries) || [];
@@ -2824,6 +2897,8 @@
     paintAuto(table, fields, NC) {
       if (!NC || typeof NC.qualVerdict !== 'function' || !table || !table.querySelectorAll) return;
       const dev = String((fields && fields.dev) || '').trim();
+      /* 【台账 #6】原页入口就是当前页（判定值全部来自本页抓取表）。 */
+      const pageUrl = (typeof location !== 'undefined' && location && location.href) ? location.href : '';
       const trs = table.querySelectorAll('tr');
       for (let i = 0; i < trs.length; i++) {
         const tr = trs[i];
@@ -2849,6 +2924,13 @@
         const tip = v.color ? (what + '：' + v.note) : (what + '：未查明（不改底色）\n' + v.note);
         setCheckTip(tr, tip);
         setVerdictMark(tr, v.state, tip);
+        /* 【台账 #6】证据就地可见：命中值 + 来源 + 读取时间 + 原页入口。 */
+        setEvidence(tr, {
+          value: val,
+          source: has('企业名称') ? '本页抓取 · 与开发者比对' : '本页抓取 · 对照放行名单',
+          url: pageUrl,
+          at: Date.now()
+        });
       }
     },
 
@@ -3025,6 +3107,8 @@
       const dev = String(fields.dev || '').trim();
       const ent = String(fields.entity || '').trim();
       if (!dev || !ent) return;
+      /* 【台账 #6】证据行的原页入口（本页）。 */
+      const pageUrl = (typeof location !== 'undefined' && location && location.href) ? location.href : '';
       /* 同一行有两种来法，不能一律跳：
        *   ① 两边名字一字不差 ⇒ 抓取表把它们合并成了一行（见 fetch.js 的「同值合行」）。
        *      名字相同就是同一主体，不用联网 —— 直接按「同法人」染绿，悬停写清依据。
@@ -3040,6 +3124,7 @@
               + '开发者「' + dev + '」\n核准主体「' + ent + '」';
             setCheckTip(devTr, tipSame);
             setVerdictMark(devTr, 'same', tipSame);
+            setEvidence(devTr, { value: dev, source: '本页抓取 · 两边名字相同', url: pageUrl, at: Date.now() });
           }
         }
         return;
@@ -3076,6 +3161,9 @@
           /* 【台账 #5】未查明是独立的第三态：不涂色，但必须带标记与文案。 */
           setVerdictMark(devTr, timedOut ? 'timeout' : 'unknown', tip);
           setVerdictMark(entTr, timedOut ? 'timeout' : 'unknown', tip);
+          const srcUnknown = timedOut ? '本页抓取 · 法人查询超时' : '本页抓取 · 法人未查到';
+          setEvidence(devTr, { value: dev, source: srcUnknown, url: pageUrl, at: Date.now() });
+          setEvidence(entTr, { value: ent, source: srcUnknown, url: pageUrl, at: Date.now() });
           return;
         }
         const color = verdict === 'same' ? NC.COLOR_OK : NC.COLOR_BAD;
@@ -3087,6 +3175,9 @@
         setCheckTip(entTr, tip);
         setVerdictMark(devTr, verdict, tip);
         setVerdictMark(entTr, verdict, tip);
+        const srcEnt = '本页抓取 · 法人查询';
+        setEvidence(devTr, { value: dev, source: srcEnt, url: pageUrl, at: Date.now() });
+        setEvidence(entTr, { value: ent, source: srcEnt, url: pageUrl, at: Date.now() });
       }).catch(() => {
         /* 查询失败 = 未查明：不涂色，但要留标记与说明（不然失败和「没校验」长得一样）。 */
         const tip = '同法人校验：查询失败，未查明（不改底色）\n' + sides;
@@ -3094,6 +3185,8 @@
         setCheckTip(entTr, tip);
         setVerdictMark(devTr, 'unknown', tip);
         setVerdictMark(entTr, 'unknown', tip);
+        setEvidence(devTr, { value: dev, source: '本页抓取 · 法人查询失败', url: pageUrl, at: Date.now() });
+        setEvidence(entTr, { value: ent, source: '本页抓取 · 法人查询失败', url: pageUrl, at: Date.now() });
       });
     },
 

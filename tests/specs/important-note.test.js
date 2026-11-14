@@ -1357,6 +1357,47 @@ module.exports = async function run() {
     eq(String(second.textContent), '✔ 一致', '判定变了，标记要跟着变');
     if (div.parentNode) div.parentNode.removeChild(div);
   });
+  /* 【台账 #6】判定证据要就地可见：命中值 / 来源 / 读取时间 / 原页入口，不能只藏在悬停 title 里。 */
+  await test('★ 判定行就地显示证据：值 / 来源 / 时间 / 原页入口', () => {
+    const div = H.el('div', {}, []);
+    div.innerHTML = KH.Fetch.rowsToTableHtml([
+      { label: '开发者', rows: [[{ t: '北京知行灵动科技有限公司' }]], opt: null },
+      { label: '企业名称', rows: [[{ t: '华为技术有限公司' }]], opt: null }
+    ]);
+    const panel = shadowPanel();
+    panel.decorateChecks(div, {});
+    const tr = div.querySelectorAll('tr')[1];
+    const box = tr.querySelectorAll('td')[1].querySelector('.kh-evidence');
+    truthy(box, '★ 判定行的值格里必须有证据行');
+    const text = String(box.textContent || '');
+    truthy(text.indexOf('值：华为技术有限公司') >= 0, '命中值要就地写出来：' + text);
+    truthy(text.indexOf('源：本页抓取') >= 0, '来源要写清：' + text);
+    truthy(/读取：\d{2}:\d{2}/.test(text), '读取时间要写出来：' + text);
+    const link = box.querySelector('.kh-evidence-link');
+    truthy(link, '★ 原页入口必须可点');
+    eq(link.getAttribute('href'), location.href, '原页链接指向当前页');
+    eq(link.getAttribute('target'), '_blank');
+    eq(String(link.textContent), '原页 ↗');
+    if (div.parentNode) div.parentNode.removeChild(div);
+  });
+
+  await test('★ 未查明行也带证据（值仍在，来源说清未查明）', () => {
+    const div = H.el('div', {}, []);
+    div.innerHTML = KH.Fetch.rowsToTableHtml([
+      { label: '企业名称', rows: [[{ t: '北京知行灵动科技有限公司' }]], opt: null }
+    ]);
+    const panel = shadowPanel();
+    panel.decorateChecks(div, {});
+    const tr = div.querySelectorAll('tr')[0];
+    const box = tr.querySelectorAll('td')[1].querySelector('.kh-evidence');
+    truthy(box, '未查明也是判定行，证据不能缺');
+    const text = String(box.textContent || '');
+    truthy(text.indexOf('值：北京知行灵动科技有限公司') >= 0, text);
+    truthy(text.indexOf('源：本页抓取') >= 0, text);
+    eq(tr.querySelectorAll('td')[0].querySelector('.kh-verdict').getAttribute('data-state'), 'unknown');
+    if (div.parentNode) div.parentNode.removeChild(div);
+  });
+
   /* 【台账 #8】查询超时 = 第四态：不涂底色，但徽标写「⏱ 超时」而不是「？未查明」。
    * 用户据此能分清「后台没回执，等会儿再看」和「这条真的查不到」。 */
   await test('★ 查询超时挂 ⏱ 超时（不是 ？未查明）：不涂色、悬停写明超时', async () => {

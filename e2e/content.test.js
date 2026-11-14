@@ -4377,13 +4377,18 @@ module.exports = async function runContent(ctx) {
         + '  var tds = el.querySelectorAll("td.kh-table-label");'
         + '  for (var i = 0; i < tds.length; i++) {'
         + '    var m = tds[i].querySelector(".kh-verdict");'
+        + '    var vcell = tds[i].parentNode.querySelectorAll("td")[1];'
+        + '    var ev = vcell ? vcell.querySelector(".kh-evidence") : null;'
+        + '    var evA = ev ? ev.querySelector(".kh-evidence-link") : null;'
         + '    out.push({ box: boxes[b], label: window.KH.NoteCheck.labelText(tds[i]),'
         + '      mark: m ? String(m.textContent) : "", state: m ? String(m.getAttribute("data-state") || "") : "",'
-        + '      bg: String(tds[i].style.background || ""), tip: String(tds[i].title || "") });'
+        + '      bg: String(tds[i].style.background || ""), tip: String(tds[i].title || ""),'
+        + '      ev: ev ? String(ev.textContent || "") : "", evHref: evA ? String(evA.getAttribute("href") || "") : "" });'
         + '  }'
         + '}'
         + 'return out; })(); })()');
       console.log('        三态标记: ' + JSON.stringify(rowsOut.map((x) => ({ b: x.box, l: x.label, m: x.mark, s: x.state, bg: x.bg }))));
+      console.log('        判定证据: ' + JSON.stringify(rowsOut.map((x) => ({ l: x.label, ev: x.ev, href: x.evHref }))));
 
       const pick = (box, label) => rowsOut.filter((x) => x.box === box && x.label === label)[0];
       const same = pick('e2e-verdict-two', '企业名称');
@@ -4407,6 +4412,13 @@ module.exports = async function runContent(ctx) {
       truthy(timeout.mark !== unknown.mark, '超时与未查明的文案必须不同');
       eq(timeout.bg, '', '超时同样不改底色');
       truthy(String(timeout.tip).indexOf('超时') >= 0, '悬停要写明超时，实际 = ' + JSON.stringify(timeout.tip));
+      /* 【台账 #6】证据要就地可见：命中值 / 来源 / 读取时间 / 原页入口。 */
+      truthy(String(same.ev || '').indexOf('值：北京知行灵动科技有限公司') >= 0, '证据行要写出命中值，实际 = ' + JSON.stringify(same.ev));
+      truthy(String(same.ev || '').indexOf('源：本页抓取') >= 0, '证据行要写出处，实际 = ' + JSON.stringify(same.ev));
+      truthy(/读取：\d{2}:\d{2}/.test(String(same.ev || '')), '证据行要写读取时间，实际 = ' + JSON.stringify(same.ev));
+      truthy(/^https?:/.test(String(same.evHref || '')), '原页入口必须可点，实际 = ' + JSON.stringify(same.evHref));
+      truthy(String(unknown.ev || '').indexOf('值：北京知行灵动科技有限公司') >= 0, '未查明行也要有证据，实际 = ' + JSON.stringify(unknown.ev));
+      truthy(/读取：\d{2}:\d{2}/.test(String(unknown.ev || '')), '未查明行的读取时间也要在，实际 = ' + JSON.stringify(unknown.ev));
       await shot(page, '28-verdict-marks');
     } finally {
       await page.evaluate(() => {
