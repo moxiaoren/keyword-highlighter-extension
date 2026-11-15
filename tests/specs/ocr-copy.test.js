@@ -24,7 +24,10 @@ const PLACEHOLDERS = ['n', 'host', 'matched',
   /* 【2.0.8.19 · P4】软著比对结论行的字段名与两路原值（见 important-note.js 的 compareText） */
   'left', 'right', 'lv', 'rv', 'vals',
   /* 【2.0.8.21 缺陷②】未识别到授权书时点名的字段名（动态拼，不再写死三个） */
-  'names'];
+  'names',
+  /* 【2.0.11 · T1】右键卡候选行：{name}=要固定的字段名（证书/备案/授权书…），
+   * {spec}=完整字段串（证书#图），复制成功/失败都要把它原样说给用户。 */
+  'name', 'spec'];
 
 module.exports = async function run() {
   const { KH } = require('../bootstrap');

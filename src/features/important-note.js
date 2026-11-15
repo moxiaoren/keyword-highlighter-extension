@@ -608,10 +608,34 @@
       margin-left: 4px; font-weight: 400; font-size: 9px; line-height: 1.5;
       color: var(--kh-text-3, #94a3b8); white-space: nowrap;
     }
+    /* 【2.0.11 · T1】右键卡里的候选行：虚线左边、浅底小标，一眼看出「这是认出来的，还没固定」。 */
+    .kh-table .khin-ghost-row > td { border-top: 1px dashed #c7d2fe; background: #f5f7ff; }
+    .kh-table .khin-ghost-row > td.kh-table-label { box-shadow: inset 3px 0 0 #818cf8; }
+    .khin-ghost-val { font-weight: 600; }
+    .khin-ghost-tag { display: block; margin-top: 2px; font-size: 10px; line-height: 1.5; color: #4338ca; }
+    .khin-ghost-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+    .khin-ghost-fix {
+      font: inherit; font-size: 11px; line-height: 18px; padding: 0 8px; cursor: pointer;
+      border: 1px dashed #818cf8; border-radius: 4px; background: #eef2ff; color: #3730a3;
+    }
+    .khin-ghost-fix:hover { background: #e0e7ff; }
+    .khin-ghost-fix:disabled { cursor: default; opacity: .8; }
+    .khin-ghost-none { margin-top: 6px; font-size: 11px; line-height: 1.5; color: #64748b; }
   `;
 
   /** 图片协议白名单（与内容脚本 sanitize 同口径：仅 http(s)） */
   const IMG_PROTOCOL_OK = /^https?:\/\//i;
+
+  /* 【2.0.11 · T1】右键卡候选行 → 「固定为字段」时要复制的字段名。
+   * 只映射 `OcrAuto.rowsFor` 能认出的六类证件；认不出就不给按钮（不猜）。 */
+  const GHOST_DOC_FIELD = {
+    cert: '证书',
+    'record-app': '备案',
+    auth: '授权书',
+    agreement: '授权书',
+    license: '执照',
+    promise: '承诺函'
+  };
 
   /** 灯箱允许的图片来源：http(s) 之外还允许 `data:image/*`
    *  —— v1.52 起"抓取到的图片"就可能是内嵌的 data URI（旧版注释写着"data: 内嵌图无需跳转"），
@@ -4198,6 +4222,34 @@
      * 图直接用 `<img>`：点击走宿主上那条**现有**的 IMG 委托（`root.addEventListener('click')`），
      * 灯箱会把同一个 `td` 里的图拼成相册、并带上各自的 OCR 全文与命中词 —— 不必另写一套。
      */
+    /* 【2.0.11 · T1】右键卡里的候选行：只读 OCR 文本，不写配置、不进抓取表格。
+     * 返回 `{rows, titles, done}`：rows 直接画成 ghost 行；titles 是「固定为字段」按钮要复制的名字；
+     * done 用于区分「还没识别完」与「识别完了但认不出是哪种证」。 */
+    ctxGhosts(list) {
+      const rows = [];
+      const titles = [];
+      const seen = new Set();
+      let done = 0;
+      const auto = KH.OcrAuto;
+      if (!auto || typeof auto.rowsFor !== 'function') return { rows: rows, titles: titles, done: done };
+      for (const it of list) {
+        if (!it || it.state !== 'done' || !it.text) continue;
+        done++;
+        let got = [];
+        try { got = auto.rowsFor(it) || []; } catch (e) { got = []; }
+        for (const r of got) {
+          if (!r || !r.label || !r.value) continue;
+          const sig = String(r.doc || '') + '\u0001' + String(r.label) + '\u0001' + String(r.value);
+          if (seen.has(sig)) continue;
+          seen.add(sig);
+          rows.push({ label: String(r.label), value: String(r.value), doc: String(r.doc || '') });
+          const name = GHOST_DOC_FIELD[String(r.doc || '')];
+          if (name && titles.indexOf(name) < 0) titles.push(name);
+        }
+      }
+      return { rows: rows, titles: titles, done: done };
+    },
+
     ctxCard(doc) {
       const list = this.ctxItems();
       if (!list.length) return null;
@@ -4265,7 +4317,64 @@
       tr.appendChild(th);
       tr.appendChild(td);
       table.appendChild(tr);
+      /* 【2.0.11 · T1】贴图即出候选行（用户口径：先贴图再引导配置）。
+       * 候选行只是展示，不参与抓取表格解析（行名用 `<td>` 而非 `.kh-table-label` 以外的钩子）；
+       * 右键识别没有可写的规则目标 ⇒「固定为字段」只复制字段串，由用户粘到「抓取后续字段」。 */
+      const ghost = this.ctxGhosts(list);
+      for (const g of ghost.rows) {
+        const gtr = doc.createElement('tr');
+        gtr.className = 'khin-ghost-row';
+        gtr.setAttribute('data-kh-ghost', '1');
+        const gth = doc.createElement('td');
+        gth.className = 'kh-table-label';
+        const glbt = doc.createElement('span');
+        glbt.className = 'kh-lbt';
+        glbt.textContent = g.label;
+        glbt.title = g.label;
+        gth.appendChild(glbt);
+        const gtd = doc.createElement('td');
+        const gv = doc.createElement('div');
+        gv.className = 'khin-ghost-val';
+        gv.textContent = g.value;
+        const gt = doc.createElement('span');
+        gt.className = 'khin-ghost-tag';
+        gt.textContent = KH.OcrCopy.VIEW.ghostTag;
+        gtd.appendChild(gv);
+        gtd.appendChild(gt);
+        gtr.appendChild(gth);
+        gtr.appendChild(gtd);
+        table.appendChild(gtr);
+      }
       noteEl.appendChild(table);
+      if (ghost.rows.length) {
+        const actions = doc.createElement('div');
+        actions.className = 'khin-ghost-actions';
+        for (const name of ghost.titles) {
+          const spec = name + '#图';
+          const btn = doc.createElement('button');
+          btn.type = 'button';
+          btn.className = 'khin-ghost-fix';
+          btn.textContent = KH.OcrCopy.render(KH.OcrCopy.VIEW.ghostFix, { name: name });
+          btn.title = '把「' + spec + '」复制到剪贴板，粘到「抓取后续字段」就能固定成字段';
+          btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            copyToClipboard(spec, el).then((ok) => {
+              btn.textContent = ok
+                ? KH.OcrCopy.render(KH.OcrCopy.VIEW.ghostCopied, { spec: spec })
+                : KH.OcrCopy.render(KH.OcrCopy.VIEW.ghostCopyFail, { spec: spec });
+              btn.disabled = true;
+            });
+          });
+          actions.appendChild(btn);
+        }
+        if (actions.childNodes.length) noteEl.appendChild(actions);
+      } else if (ghost.done) {
+        /* 有识别完的图、却一条候选都没认出来：说清能认哪几种证，别让用户以为坏了。 */
+        const none = doc.createElement('div');
+        none.className = 'khin-ghost-none';
+        none.textContent = KH.OcrCopy.VIEW.ghostNone;
+        noteEl.appendChild(none);
+      }
       el.appendChild(noteEl);
       return el;
     },
@@ -4628,6 +4737,20 @@
   const KV_CODE_LABEL = /(登记号|登记证书|证书号|软著登字|备案号|备案编号|编号|批号)/;
   const KV_LEAD_LABEL = /^(?:授权方|被授权方|授权公司|被授权公司|著作权人|权利人|开发者|运营者|主办单位|公司名称|单位名称|登记号|登记证书|证书号|软著登字第?|备案号|备案编号|编号)\s*[：:｜|]\s*/;
   const KV_ORG_TAIL_G = /(股份有限公司|有限责任公司|有限公司|集团有限公司|集团|分公司|公司|厂|中心|研究院|研究所|事务所|工作室|合作社|协会|基金会|学校|大学|学院|医院|银行|支行|经营部|服务部|商行)/g;
+  /* 【2.0.11 · T2】强形状：字段名是用户自定义的（「证照号码」「资质编号」）时也要能裁出代码。
+   * 只收**几乎不可能出现在公司名/正文里**的三种（用户拍板 3A：不收「第 N 号」与 6 位以上纯数字 ——
+   * 「第3号仓库」「订单20240101」都会被误裁）。 */
+  const KV_STRONG_CODE = [
+    /\b\d{4}\s*SR\s*\d{5,}\b/i,
+    /软著登字第\s*\d+\s*号/,
+    /[京津沪渝冀豫云辽黑湘皖鲁新苏浙赣鄂桂甘晋蒙陕吉闽贵粤青藏川宁琼使领]\s*ICP\s*[备证]\s*\d{4,}\s*号(?:\s*-\s*\d+[A-Za-z]?)?/i
+  ];
+  /* 正文词开头一律不裁（把一句话裁成半个公司名，比不裁更伤人）。 */
+  const KV_ORG_PROSE = /^(?:本(?:协议|授权|证书|合同|文件|声明|承诺|页)|该|兹|经|由|根据|双方|甲乙|甲方|乙方|我司|本公司|特此)/;
+  /* 空格后跟另一个字段标签 = 明确的截断证据（与 kvOrgHead 同一张表）。 */
+  const KV_ORG_NOISE = /\s+(?=(?:授权人|被授权|许可人|被许可人|日期|期限|地址|电话|邮箱|联系人|法定代表人|统一社会信用代码|证书号|登记号|编号|签章|盖章))/;
+  /* 单位名：**从值开头**就要是「名字 + 单位后缀」，中间不许有逗号/句号/顿号。 */
+  const KV_ORG_NAME = /^[^\s，,；;。：:、]{2,40}(?:股份有限公司|有限责任公司|有限公司|集团有限公司|集团|分公司|公司|厂|中心|研究院|研究所|事务所|工作室|合作社|协会|基金会|学校|大学|学院|医院|银行|支行|经营部|服务部|商行)/;
 
   function kvTrimValue(label, raw) {
     let s = String(raw == null ? '' : raw).trim();
@@ -4650,14 +4773,35 @@
       }
       return s;
     }
-    if (!KV_ORG_LABEL.test(lab)) return s;
+    /* 【2.0.11 · T2】强形状优先：custom 字段名（「证照号码」「资质编号」）里带了软著/备案编号，
+     * 直接取那一串。识别不出语义的普通字段仍然原样返回 —— 只有强形状才越界裁。 */
+    const strong = kvStrongCode(s);
+    if (strong) return strong;
+    if (!KV_ORG_LABEL.test(lab)) {
+      /* 自定义字段名下的公司名：值开头就是单位名、且确实带噪音尾巴才收口。 */
+      return kvShapeOrg(s) || s;
+    }
+    return kvOrgHead(s);
+  }
+
+  function kvStrongCode(s) {
+    const raw = String(s == null ? '' : s);
+    for (const re of KV_STRONG_CODE) {
+      const m = re.exec(raw);
+      if (m) return m[0].replace(/\s+/g, '');
+    }
+    return '';
+  }
+
+  /* 逐字沿用 2.0.11 之前组织类字段的裁剪顺序：噪音标签 → 前半段 → 最后一个单位后缀。 */
+  function kvOrgHead(s) {
     /* OCR 归行把下一段信息用空格接在后面（「上海某某有限公司 授权人 合肥分公司」）：
      * 空格后是另一类字段的标签时，公司名到空格为止。 */
-    const noise = s.search(/\s+(?=(?:授权人|被授权|许可人|被许可人|日期|期限|地址|电话|邮箱|联系人|法定代表人|统一社会信用代码|证书号|登记号|编号|签章|盖章))/);
-    if (noise > 0) s = s.slice(0, noise).trim();
+    let head = s;
+    const noise = head.search(KV_ORG_NOISE);
+    if (noise > 0) head = head.slice(0, noise).trim();
     /* 公司名：先在「（以下简称」「逗号/分号/句号/换行」「连续空白」处切出前半段；
      * 只有前半段自己带单位后缀才采用（避免把「北京某某科技（集团）有限公司」从括号处切断）。 */
-    let head = s;
     const cutAt = head.search(/[（(]\s*以下简称|[，,；;。\n]|\s{2,}/);
     if (cutAt > 0) {
       const pre = head.slice(0, cutAt).trim();
@@ -4672,6 +4816,18 @@
     while ((m = KV_ORG_TAIL_G.exec(head))) end = m.index + m[0].length;
     if (end > 0) head = head.slice(0, end);
     return head.trim() || s;
+  }
+
+  function kvShapeOrg(s) {
+    const raw = String(s == null ? '' : s);
+    if (KV_ORG_PROSE.test(raw)) return '';
+    if (!KV_ORG_NAME.test(raw)) return '';
+    /* 只认「明确的截断证据」：空格后跟另一个字段标签，或「（以下简称」/逗号/句号。
+     * 光有「单位后缀后面还跟着字」不算证据 —— 「北京某某有限公司 132 号」是正文值，裁了就是丢信息。 */
+    const cut = KV_ORG_NOISE.test(raw) || /[（(]\s*以下简称|[，,；;。\n]/.test(raw);
+    if (!cut) return '';
+    const head = kvOrgHead(raw);
+    return head !== raw ? head : '';
   }
 
   /* ---------------- 值被 OCR 换行拆到下一行（`词：` / `值`） ----------------
@@ -4937,6 +5093,8 @@
     /* 【2.0.8.7】合并闸门是「图这次真的 OCR 命中才出行」的判据所在 —— 纯函数 + 只读
      * `KH.ImgOcr.items()`，导出给单测，免得为了验一条判定去搭整块面板。 */
     mergeRowsFor, ocrFieldHit, rowBgOf, catOf,
+    /* 【2.0.11 · T2】值裁剪是纯函数、没有别的入口 —— 导出给单测钉住五类既有裁剪与三条强形状。 */
+    _trimValue: kvTrimValue,
 
   };
 })();

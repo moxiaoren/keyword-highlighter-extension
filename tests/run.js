@@ -229,6 +229,7 @@ const specs = [
   './specs/list-modal-uplift.test.js',
   /* 批 3：搜索命中高亮与计数（筛中 K 条 / is-hit / 「筛中：…」/ 零结果一键清空）。 */
   './specs/list-search-hit.test.js',
+  './specs/trim-shape.test.js',
   /* 自动行参与比对（别名 / 收敛 / 严格开关 / ⚙ 待配置）。口径见 specs/auto-compare.test.js 头部 */
   './specs/auto-compare.test.js'
 ];

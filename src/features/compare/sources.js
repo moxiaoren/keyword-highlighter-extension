@@ -128,6 +128,8 @@
     for (let i = 0; i < trs.length; i += 1) {
       const tr = trs[i];
       if (String(tr.className || '').indexOf('kh-merge-row') >= 0) continue;
+      /* 右键卡里的 ghost 候选行（2.0.11 · T1）只是「认出来的草稿」，不是抓取到的字段。 */
+      if (tr.getAttribute && tr.getAttribute('data-kh-ghost')) continue;
       const tds = tr.querySelectorAll('td');
       if (!tds.length) continue;
       const keys = Sources.fieldKeysOf(tds[0]);
@@ -150,6 +152,7 @@
     for (let i = 0; i < trs.length; i += 1) {
       const tr = trs[i];
       if (String(tr.className || '').indexOf('kh-merge-row') >= 0) continue;
+      if (tr.getAttribute && tr.getAttribute('data-kh-ghost')) continue;
       const tds = tr.querySelectorAll('td');
       if (!tds.length) continue;
       const labels = Sources.labelsOf(tds[0]);

@@ -3766,6 +3766,65 @@ module.exports = async function runContent(ctx) {
     }
   });
 
+  /* ==================== 2.0.11 · T1：右键贴图即出候选行 ====================
+   * 用户口径（m08922 · 1A/2A）：先贴图、先看见候选，再决定要不要配字段；
+   * 右键识别没有规则可写，所以「固定为字段」只把字段串复制给用户，不偷偷改配置。 */
+  await group('2.0.11 · T1：右键贴图即出候选行（不必先配抓取字段）', { aspects: ['interact'] });
+
+  await test('★ 识别完成 ⇒「截图」卡里多出候选行与固定入口（零候选则说清支持哪些证）', async () => {
+    await api.setConfig(Object.assign({}, CONFIG, { keywords: [] }));
+    try {
+      await page.goto(origin + '/hidden-hit.html', { waitUntil: 'load' });
+      await page.waitForFunction(() => document.documentElement.getAttribute('data-kh-state') !== null, null, { timeout: 20000 });
+      const src = origin + '/ocr-ctx.png';
+      const tabId = await api.sw.evaluate(async () => {
+        const tabs = await chrome.tabs.query({});
+        const t = tabs.filter((x) => String(x.url || '').indexOf('hidden-hit.html') >= 0)[0];
+        return t ? t.id : null;
+      });
+      truthy(tabId != null, '找不到承载页的 tabId（真机装置不成立）');
+      const toTab = (msg) => api.sw.evaluate(([id, m]) => chrome.tabs.sendMessage(id, m)
+        .then(() => 'ok', (e) => 'err:' + (e && e.message)), [tabId, msg]);
+
+      eq(await toTab({ type: 'kh:ocr:queued', requestId: 'e2e-ghost-1', src: src, via: 'contextMenu' }),
+        'ok', '右键受理要能送到发起页');
+      eq(await toTab({
+        type: 'kh:ocr:result', requestId: 'e2e-ghost-1', ok: true, src: src,
+        text: '软件著作权登记证书\n著作权人：北京知行灵动科技有限公司\n登记号：2026SR0635345',
+        confidence: 0.95, ocrMs: 500, via: 'contextMenu'
+      }), 'ok', '识别结果要能送到发起页');
+
+      await openFloat();
+      const ghost = await page.waitForFunction(() => {
+        const host = document.getElementById('kh-important-note-host');
+        const sr = host && host.shadowRoot;
+        const rows = sr ? sr.querySelectorAll('.khin-ghost-row') : [];
+        if (!rows.length) return false;
+        const labels = Array.prototype.map.call(rows, (r) => (r.querySelector('.kh-lbt') || {}).textContent || '');
+        const btn = sr.querySelector('.khin-ghost-fix');
+        const none = sr.querySelector('.khin-ghost-none');
+        const tag = sr.querySelector('.khin-ghost-tag');
+        return {
+          labels: labels,
+          tag: tag ? (tag.textContent || '') : '',
+          btn: btn ? (btn.textContent || '') : '',
+          none: none ? (none.textContent || '') : '',
+          ghostAttr: rows[0].getAttribute('data-kh-ghost')
+        };
+      }, null, { timeout: 20000 }).then((h) => h.jsonValue()).catch(() => null);
+
+      truthy(ghost, '★ 识别完就该出现候选行（不要求先配「抓取字段」）');
+      eq(ghost.labels.join(','), '著作权人,登记号', '候选行名来自自动认类；实际 ' + JSON.stringify(ghost.labels));
+      eq(ghost.tag, '来自这张图 · 待确认', '每行都标清"这是认出来的草稿"');
+      eq(ghost.btn, '固定为字段：证书', '给出固定入口（右键路径只能复制字段串）');
+      eq(ghost.none, '', '有候选就不该说"没认出来"');
+      eq(ghost.ghostAttr, '1', '候选行带属性钩子：不参与抓取字段解析');
+      await shot(page, 'e2e-ctx-ghost');
+    } finally {
+      await api.setConfig(CONFIG);
+    }
+  });
+
   await group('变更相关性：无关变动不重建 / 抓取字段变化只刷面板 / 拆词慢填必须重建', { aspects: ['hit', 'interact'] });
 
   const REL_PLAIN = {
