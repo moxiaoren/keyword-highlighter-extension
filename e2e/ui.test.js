@@ -3170,6 +3170,97 @@ module.exports = async function runUi(ctx) {
     await opt.waitForTimeout(300);
   });
 
+  group('10c. options · 列表弹窗批3（搜索命中与计数）', { aspects: ['ui'] });
+
+  await test('★ 列表弹窗批3：计数报「筛中 K 条」、命中行打 is-hit、零结果可一键清空', async () => {
+    await openFreshEditor();
+    await opt.evaluate(() => {
+      const cb = document.getElementById('fld-fetchEnabled');
+      if (cb && !cb.checked) { cb.checked = true; cb.dispatchEvent(new Event('change', { bubbles: true })); }
+    });
+    await opt.click('.kh-cand-box[data-for="fld-fetchLabels"] .kh-list-btn');
+    await opt.waitForTimeout(250);
+    for (const n of ['批三甲词', '批三乙词']) {
+      await opt.fill('.kh-modal .kh-list-add', n);
+      await opt.keyboard.press('Enter');
+      await opt.waitForTimeout(140);
+    }
+    const snap = () => opt.evaluate(() => {
+      const rows = Array.from(document.querySelectorAll('.kh-modal .kh-lrow'));
+      const vis = rows.filter((r) => !r.hidden);
+      const nores = document.querySelector('.kh-modal .kh-list-nores');
+      return {
+        count: ((document.querySelector('.kh-modal .kh-list-count') || {}).textContent || '').trim(),
+        hit: rows.filter((r) => r.classList.contains('is-hit')).length,
+        total: rows.length,
+        vis: vis.length,
+        hitWhy: vis.filter((r) => { const w = r.querySelector('.kh-list-why'); return !!(w && !w.hidden); }).length,
+        nores: nores ? !nores.hidden : false,
+        noresText: nores ? (nores.textContent || '').trim() : ''
+      };
+    });
+    await opt.fill('.kh-modal .kh-list-filter', '批三甲词');
+    await opt.waitForTimeout(220);
+    const one = await snap();
+    console.log('        筛「批三甲词」: ' + JSON.stringify(one));
+    truthy(one.count.indexOf('筛中 1 条') >= 0, '计数要报筛中 1 条：' + one.count);
+    eq(one.hit, 1, '命中的那条要打 is-hit');
+    eq(one.vis, 1, '只剩命中的一条可见：' + JSON.stringify(one));
+    eq(one.hitWhy, 0, '名字里就看得见命中，不该再补一行「筛中：」');
+
+    await opt.fill('.kh-modal .kh-list-filter', 'zzz-不存在');
+    await opt.waitForTimeout(220);
+    const zero = await snap();
+    truthy(zero.count.indexOf('筛中 0 条') >= 0, '零命中要老实报 0：' + zero.count);
+    truthy(zero.nores, '零命中要给一条能收尾的零结果条');
+    truthy(zero.noresText.indexOf('zzz-不存在') >= 0, '零结果条要说清筛的是哪个词：' + zero.noresText);
+    await opt.click('.kh-modal .kh-list-nores-btn');
+    await opt.waitForTimeout(220);
+    const back = await snap();
+    eq(back.vis, back.total, '一键清空后所有行都回来：' + JSON.stringify(back));
+    eq(back.nores, false, '清空后零结果条收起');
+    truthy(back.count.indexOf('筛中') < 0, '没有筛选词时不报「筛中」：' + back.count);
+    await closeEditor();
+  });
+
+  await test('★ 编辑弹窗尺寸自适应：窄视口不出血、三列自动折行（1040px 只是上限）', async () => {
+    await openFreshEditor();
+    const geom = () => opt.evaluate(() => {
+      const m = document.querySelector('.kh-modal');
+      const cols = Array.from(document.querySelectorAll('.kh-modal .kh-editor-col'));
+      const r = m.getBoundingClientRect();
+      const tops = cols.map((c) => Math.round(c.getBoundingClientRect().top));
+      return {
+        vw: window.innerWidth,
+        l: Math.round(r.left),
+        right: Math.round(r.right),
+        w: Math.round(r.width),
+        rows: new Set(tops).size,
+        colW: cols.length ? Math.round(cols[0].getBoundingClientRect().width) : 0,
+        overflowX: Math.max(0, document.documentElement.scrollWidth - window.innerWidth)
+      };
+    });
+    const wide = await geom();
+    console.log('        1280 视口: ' + JSON.stringify(wide));
+    truthy(wide.l >= 0 && wide.right <= wide.vw + 1, '宽视口下弹窗不许出血：' + JSON.stringify(wide));
+    eq(wide.rows, 1, '宽视口三列并排');
+
+    await opt.setViewportSize({ width: 900, height: 700 });
+    await opt.waitForTimeout(450);
+    const narrow = await geom();
+    console.log('        900 视口: ' + JSON.stringify(narrow));
+    truthy(narrow.l >= 0 && narrow.right <= narrow.vw + 1, '窄视口下弹窗左右都不许出血：' + JSON.stringify(narrow));
+    eq(narrow.overflowX, 0, '整页不许横向溢出');
+    truthy(narrow.rows >= 2, '900 宽放不下三列 ⇒ 必须折行，实测行数 ' + narrow.rows);
+    truthy(narrow.colW >= 300, '折行后列不该被压窄（≥300px），实测 ' + narrow.colW);
+
+    await opt.setViewportSize({ width: 1280, height: 900 });
+    await opt.waitForTimeout(450);
+    const restored = await geom();
+    eq(restored.rows, 1, '恢复宽视口后回到三列');
+    await closeEditor();
+  });
+
   group('11. options · 分组 / 站点 / 导入导出', { aspects: ['ui'] });
 
   await test('分组分区存在且能列出分组', async () => {

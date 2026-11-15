@@ -1098,3 +1098,22 @@
 .kh-list-empty { padding: 10px 2px; color: var(--text-4); font-size: 12px; }
 .kh-list-foot { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; font-size: 12px; color: var(--text-3); }
 .kh-list-tip { flex: 1 1 auto; }
+
+/* 【2.0.13 批3】搜索命中：命中的行给左侧强调条；命中落在名字以外（@指向 / 取值后缀 / 进表）时
+ * 补一行「筛中：…」并把命中的字标出来 —— 名称在输入框里没法逐字标亮，标亮就落在这一行上。
+ * 零结果给一个能点的收尾（清空筛选），别让用户对着空列表猜。 */
+.kh-list-box .kh-lrow.is-hit { background: var(--brand-softer); box-shadow: inset 3px 0 0 var(--brand); }
+.kh-list-why {
+  margin: 2px 0 0 26px; font-size: 12px; line-height: 1.5;
+  color: var(--brand-on-soft); word-break: break-word;
+}
+.kh-list-why[hidden] { display: none; }
+.kh-list-why-t { color: var(--text-3); }
+.kh-list-hit { background: var(--brand-soft); color: var(--brand-on-soft); border-radius: 3px; padding: 0 2px; font-weight: 600; }
+.kh-list-nores {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin: 6px 0 2px; padding: 8px 10px; border-radius: var(--r-sm);
+  background: var(--bg-2); color: var(--text-3); font-size: var(--fs-sm);
+}
+.kh-list-nores[hidden] { display: none; }
+.kh-list-nores-t { flex: 1 1 auto; }

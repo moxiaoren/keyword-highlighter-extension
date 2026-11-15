@@ -655,6 +655,11 @@
           let dirty = false;
 
           const listEl = h('div', { class: 'kh-list-rows' });
+          /* 【2.0.13 批3】一条都没筛中时给个能点的话：否则只剩空列表，用户不知道该清筛选还是该加词。 */
+          const noResT = h('span', { class: 'kh-list-nores-t' });
+          const noResBtn = h('button', { class: 'kh-mini-btn kh-list-nores-btn', type: 'button', text: '清空筛选' });
+          const noResEl = h('div', { class: 'kh-list-nores', hidden: true }, [noResT, noResBtn]);
+          noResBtn.addEventListener('click', () => { filter.value = ''; applyFilter(); });
           /* 【#116】指向诊断条：写错的 `@字段名` 以前静默不生效，在这里当场列出来。 */
           const issueEl = h('div', { class: 'kh-issue-list', hidden: true });
           /* 【2.0.8.21 缺陷③】`knownFields()` 读到的「抓取后续字段」原文，留给诊断去解析**值规格**：
@@ -693,14 +698,58 @@
             bulkWarn.textContent = warn;
             bulkWarn.hidden = !warn;
           };
+          /* 【2.0.13 批3】搜索命中：名称在**输入框**里，没法逐字标亮 ⇒
+           * ① 命中的行整行打 `is-hit`（左侧强调条）；
+           * ② 命中来自 `@指向` / `取值后缀` 这类**看不见的地方**时，行尾补一句「筛中：…」
+           *    并把命中的字用 <mark> 标出来 —— 否则用户会以为筛选坏了（只有名字命中就不重复一行）。
+           * ③ 计数同时报「筛中 K 条」，不再只有一个总数。 */
+          let filterQ = '';
+          let filterHits = -1;
+          const extraText = (row) => isKv
+            ? ((row.scopes || []).join(' ') + ' ' + ((row.scopes && row.scopes.length) ? '' : '全部字段') + (row.mark ? ' #表' : ''))
+            : hasSuffix ? (row.spec && typeof F.suffixTextOf === 'function' ? F.suffixTextOf(row.spec) : '') : '';
+          /* 行文字＝名称 + 附加部分；与旧实现逐字等价（改名/筛选口径一个字节都不许变） */
+          const rowText = (row) => (isKv || hasSuffix) ? (row.name + ' ' + extraText(row)) : row.name;
+          const matchInfo = (row, q) => {
+            if (!q) return null;
+            const name = String(row.name == null ? '' : row.name);
+            const extra = String(extraText(row) || '');
+            const inName = name.toLowerCase().indexOf(q) >= 0;
+            const inExtra = extra.toLowerCase().indexOf(q) >= 0;
+            if (!inName && !inExtra) return null;
+            return { inName: inName, inExtra: inExtra, extra: extra };
+          };
+          const paintHit = (row, q, info) => {
+            if (row.el && row.el.classList) row.el.classList.toggle('is-hit', !!info);
+            const why = row._why;
+            if (!why) return;
+            if (!info || info.inName) { why.hidden = true; why.textContent = ''; return; }
+            const src = String(info.extra || '');
+            why.textContent = '';
+            why.appendChild(h('span', { class: 'kh-list-why-t', text: '筛中：' }));
+            const low = src.toLowerCase();
+            /* 极少数字符小写化会改长度（如 `İ`）⇒ 位置对不上，就整段原样显示、不硬标 */
+            if (low.length !== src.length) {
+              why.appendChild(h('span', { text: src }));
+              why.hidden = false;
+              return;
+            }
+            let i = 0;
+            while (i < src.length) {
+              const at = low.indexOf(q, i);
+              if (at < 0) { why.appendChild(h('span', { text: src.slice(i) })); break; }
+              if (at > i) why.appendChild(h('span', { text: src.slice(i, at) }));
+              why.appendChild(h('mark', { class: 'kh-list-hit', text: src.slice(at, at + q.length) }));
+              i = at + q.length;
+            }
+            why.hidden = false;
+          };
           const syncCount = () => {
-            countEl.textContent = '共 ' + alive().length + ' 条，已选 ' + pickedRows().length + ' 条';
+            const mid = filterQ ? ('，筛中 ' + (filterHits < 0 ? 0 : filterHits) + ' 条') : '';
+            countEl.textContent = '共 ' + alive().length + ' 条' + mid + '，已选 ' + pickedRows().length + ' 条';
             paintBulk();
             refreshIssues();
           };
-          const rowText = (row) => isKv
-            ? (row.name + ' ' + (row.scopes || []).join(' ') + ' ' + (row.scopes && row.scopes.length ? '' : '全部字段') + (row.mark ? ' #表' : ''))
-            : hasSuffix ? (row.name + ' ' + (row.spec ? (typeof F.suffixTextOf === 'function' ? F.suffixTextOf(row.spec) : '') : '')) : row.name;
 
           /* 【#116 需求】指向诊断：`@字段名` 写错时以前整条静默不生效（`splitScope` 只把配不上的
            * `@…` 当普通词处理，为的是老配置零影响）。用户口径：这种失败必须当场看得见。
@@ -1073,6 +1122,9 @@
               }
             });
             const main = h('div', { class: 'kh-lrow-main' }, [cb, nameInp]);
+            /* 【2.0.13 批3】命中说明行：只在「命中在名字以外」（@指向 / 取值后缀 / 进表）时出现 */
+            const why = h('div', { class: 'kh-list-why', hidden: true });
+            row._why = why;
             if (isKv) {
               const scopeBtn = h('button', { class: 'kh-mini-btn kh-lrow-scope', type: 'button', text: scopeLabel(row) });
               scopeBtn.title = '这个词对哪些抓取字段的图生效（可多选）';
@@ -1123,7 +1175,7 @@
             const del = h('button', { class: 'kh-mini-btn kh-list-del', type: 'button', text: '×', title: '删掉这一条' });
             del.addEventListener('click', () => dropRow(row));
             main.appendChild(del);
-            const shell = h('div', { class: 'kh-lrow' + (isTok ? ' kh-lrow-tok' : '') }, detail ? [main, detail] : [main]);
+            const shell = h('div', { class: 'kh-lrow' + (isTok ? ' kh-lrow-tok' : '') }, detail ? [main, why, detail] : [main, why]);
             /* 【2.0.10 需求②】拖动排序：把手只在左边缘（整行 draggable 会抢走输入框的选字手感）。
              * 落点用行高的一半判断插前/插后，松手时重排 `rows` 与 DOM 两处，写回走整串重排。 */
             const grip = h('span', { class: 'kh-lrow-grip', text: '⠿', title: '按住拖动，调整这一条的展示顺序' });
@@ -1266,12 +1318,26 @@
 
           function applyFilter() {
             const q = String(filter.value == null ? '' : filter.value).trim().toLowerCase();
+            filterQ = q;
+            let hits = 0;
             for (const row of rows) {
               if (!row.el) continue;
-              row.el.hidden = !!row.gone || (!!q && rowText(row).toLowerCase().indexOf(q) < 0);
+              const info = matchInfo(row, q);
+              const hide = !!row.gone || (!!q && !info);
+              row.el.hidden = hide;
+              if (!hide) hits++;
+              paintHit(row, q, info);
+            }
+            filterHits = q ? hits : -1;
+            /* 一条都没筛中：说清「筛的是什么」并给一键清空，别让用户对着空列表猜。 */
+            if (noResEl) {
+              const show = !!q && hits === 0 && alive().length > 0;
+              noResEl.hidden = !show;
+              if (show) noResT.textContent = '没有筛中「' + String(filter.value == null ? '' : filter.value).trim() + '」的条目';
             }
             /* 筛选一变，「有几条勾选被隐藏」就会变 —— 警告条必须当场刷新。 */
             paintBulk();
+            syncCount();
           }
 
           const pick = (mode2) => {
@@ -1426,6 +1492,7 @@
             bulkWarn,
             issueEl,
             listEl,
+            noResEl,
             h('div', { class: 'kh-list-foot' }, [h('span', { class: 'kh-list-tip', text: tip })]),
             isTok ? legendEl() : null
           ]);

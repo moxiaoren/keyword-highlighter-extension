@@ -224,7 +224,9 @@ const specs = [
 
   /* 【2026-11-14 批1】列表弹窗纯呈现改造：吸顶头 / 行型 / 快加不回抢焦点 / 批量危险区 /
    * 隐藏勾选警告 / 图例一项一行。见 specs/list-modal-uplift.test.js */
-  './specs/list-modal-uplift.test.js'
+  './specs/list-modal-uplift.test.js',
+  /* 批 3：搜索命中高亮与计数（筛中 K 条 / is-hit / 「筛中：…」/ 零结果一键清空）。 */
+  './specs/list-search-hit.test.js'
 ];
 
 (async () => {
