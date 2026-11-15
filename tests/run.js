@@ -194,6 +194,8 @@ const specs = [
   /* 2.0.8.18 需求①：图片命中词/动态词的「值一致性」口径收敛到 `src/core/text-norm.js` 一份实现
    * （空白/全半角/零宽/大小写分级折叠 + 纯 ASCII 词边界 + 短值不当判据）。口径见该 spec 头部 */
   './specs/text-norm.test.js',
+  './specs/compare-core.test.js',
+  './specs/compare-sources.test.js',
   /* 2.0.8.18 需求②（P1）：合并行冲突呈现 —— 每行 onConflict 五档（mark/both/ocr/fetch/skip），
    * 策略只决定显示哪个值，另一路永远留在悬停里。口径见 tests/specs/v20818p1.test.js 头部 */
   './specs/v20818p1.test.js',
@@ -226,7 +228,9 @@ const specs = [
    * 隐藏勾选警告 / 图例一项一行。见 specs/list-modal-uplift.test.js */
   './specs/list-modal-uplift.test.js',
   /* 批 3：搜索命中高亮与计数（筛中 K 条 / is-hit / 「筛中：…」/ 零结果一键清空）。 */
-  './specs/list-search-hit.test.js'
+  './specs/list-search-hit.test.js',
+  /* 自动行参与比对（别名 / 收敛 / 严格开关 / ⚙ 待配置）。口径见 specs/auto-compare.test.js 头部 */
+  './specs/auto-compare.test.js'
 ];
 
 (async () => {

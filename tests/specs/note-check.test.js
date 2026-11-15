@@ -47,7 +47,13 @@ function loadEntity() {
 
 module.exports = async function run() {
   const { KH } = require('../bootstrap');
-  const NC = KH.NoteCheck;
+  const C = KH.Compare;
+  /* 合并门面：R4 之后判等分散在 core / sources / rules / present，旧用例按同一组名字调用。 */
+  const NC = Object.assign({}, C.Sources, C, C.Rules, {
+    verdictMark: C.markOf,
+    /* 旧接口返回字符串 same|diff|unknown；新接口 legalRep 返回 {state,how,by}。 */
+    sameLegalRep: (a, b) => C.legalRep(a, b).state
+  });
   const Entity = loadEntity();
 
   const table = (rows) => H.el('table', { class: 'kh-table kh-table-fetch' }, rows);

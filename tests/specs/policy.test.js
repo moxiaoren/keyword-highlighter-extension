@@ -63,7 +63,7 @@ const page = (html, type) => async () => ({
 
 module.exports = async function run() {
   const { KH } = require('../bootstrap');
-  const NC = KH.NoteCheck;
+  const NC = Object.assign({}, KH.Compare, KH.Compare.Sources);
 
   suite('policy · HTML → 正文（链接里真正要匹配的那段字）');
 

@@ -1150,17 +1150,17 @@ module.exports = async function run() {
   });
 
   await test('字段名一律走 labelText / fieldKeysOf（徽标与合并标签不许污染 readFields / rowOfField）', () => {
-    const nc = read('src/features/note-check.js');
-    const src = read('src/features/important-note.js');
-    truthy(nc.indexOf('NoteCheck.labelText') >= 0, 'note-check 要导出 labelText');
+    const sources = read('src/features/compare/sources.js');
+    const note = read('src/features/important-note.js');
+    truthy(sources.indexOf('Sources.labelText = function') >= 0, '来源层要导出 labelText');
     /* 2.0.8.14：读字段名从「单名」升级成「一行可能有多个名称」（开发者/核准主体名称同值会合并）。
      * 入口是 fieldKeysOf ⇒ labelsOf ⇒ labelText，三层都必须走，任何一层绕过就会重新吞字段。 */
-    truthy(/NoteCheck\.fieldKeysOf\(tds\[0\]\)/.test(nc), 'readFields 用 fieldKeysOf 取字段名（合并行一个都不许漏）');
-    truthy(/NoteCheck\.fieldsOf|NoteCheck\.fieldKeysOf[\s\S]{0,400}NoteCheck\.fieldKey\(labels\[/.test(nc), 'fieldKeysOf 内部把每个名称都过一遍 fieldKey');
-    truthy(/if \(!out\.length\) push\(NoteCheck\.labelText\(td\)\)/.test(nc), 'labelsOf 兜底也要走 labelText');
-    truthy(/NC\.fieldKeysOf\(tds\[0\]\)/.test(src), 'rowOfField 也必须用 fieldKeysOf，否则合并行找不回 policy/dev 行');
-    falsy(/NoteCheck\.fieldKey\(tds\[0\]\.textContent\)/.test(nc), '不许再直接读 textContent');
-    falsy(/NC\.fieldKey\(tds\[0\]\.textContent\)/.test(src), '面板层同样不许直接读 textContent');
+    truthy(/fieldKeysOf = function \(td\)[\s\S]{0,200}labelsOf\(td\)/.test(sources), 'fieldKeysOf 先取全部名称');
+    truthy(/const keys = Sources\.fieldKeysOf\(tds\[0\]\)/.test(sources), 'readFields 用 fieldKeysOf 取字段名（合并行一个都不许漏）');
+    truthy(/if \(!out\.length\) push\(Sources\.labelText\(td\)\)/.test(sources), 'labelsOf 兜底也要走 labelText');
+    truthy(/S\.fieldKeysOf\(tds\[0\]\)/.test(note), 'rowOfField 也必须用 fieldKeysOf，否则合并行找不回 policy/dev 行');
+    falsy(/fieldKey\(tds\[0\]\.textContent\)/.test(sources), '不许再直接读 textContent');
+    falsy(/fieldKey\(tds\[0\]\.textContent\)/.test(note), '面板层同样不许直接读 textContent');
   });
   /* 【2.0.8.14 需求②】用户仍报「重要笔记悬窗无端闪烁」。上一版修的是"重建时 hide→show 重播动画"，
    * 这一版补两条独立的残留成因：入场动画本身挂在"可见"上（任何 hidden 翻转都重播），
@@ -1269,8 +1269,8 @@ module.exports = async function run() {
     panel.decorateChecks(div, {});
     const trs = div.querySelectorAll('tr');
     /* 开发者与企业名称同值 ⇒ 表格把两行并成一行；合并行也要按「与开发者一致」判绿 */
-    eq(trs[0].querySelectorAll('td')[0].style.background, KH.NoteCheck.COLOR_OK, '企业名称与开发者一致 ⇒ 浅绿');
-    eq(trs[1].querySelectorAll('td')[0].style.background, KH.NoteCheck.COLOR_BAD, '华为 ⇒ 浅黄');
+    eq(trs[0].querySelectorAll('td')[0].style.background, KH.Compare.COLOR_OK, '企业名称与开发者一致 ⇒ 浅绿');
+    eq(trs[1].querySelectorAll('td')[0].style.background, KH.Compare.COLOR_BAD, '华为 ⇒ 浅黄');
     falsy(trs[2].querySelectorAll('td')[0].style.background, '承诺方只展示，不上色');
     truthy(String(trs[1].querySelectorAll('td')[0].getAttribute('title') || '').indexOf('承诺对象') >= 0,
       '悬停要说明为什么黄');
@@ -1287,8 +1287,8 @@ module.exports = async function run() {
     const panel = shadowPanel();
     panel.decorateChecks(div, {});
     const trs = div.querySelectorAll('tr');
-    eq(trs[1].querySelectorAll('td')[0].style.background, KH.NoteCheck.COLOR_BAD, '两家不一致 ⇒ 浅黄');
-    eq(trs[2].querySelectorAll('td')[0].style.background, KH.NoteCheck.COLOR_OK, 'vivo/维沃 ⇒ 浅绿');
+    eq(trs[1].querySelectorAll('td')[0].style.background, KH.Compare.COLOR_BAD, '两家不一致 ⇒ 浅黄');
+    eq(trs[2].querySelectorAll('td')[0].style.background, KH.Compare.COLOR_OK, 'vivo/维沃 ⇒ 浅绿');
     if (div.parentNode) div.parentNode.removeChild(div);
   });
 
@@ -1321,9 +1321,9 @@ module.exports = async function run() {
 
   await test('★ 未查明是独立第三态：不涂色、有标记、悬停非空', () => {
     const div = H.el('div', {}, []);
-    div.innerHTML = KH.Fetch.rowsToTableHtml([
-      { label: '企业名称', rows: [[{ t: '北京知行灵动科技有限公司' }]], opt: null }
-    ]);
+    div.innerHTML = '<table class="kh-table-fetch"><tbody>' +
+      '<tr><td class="kh-table-label">企业名称</td><td>北京知行灵动科技有限公司</td></tr>' +
+      '<tr><td class="kh-table-label">开发者</td><td></td></tr></tbody></table>';
     const panel = shadowPanel();
     panel.decorateChecks(div, {});
     const td = div.querySelectorAll('tr')[0].querySelectorAll('td')[0];
@@ -1347,8 +1347,8 @@ module.exports = async function run() {
     const cell = div.querySelectorAll('tr')[1].querySelectorAll('td')[0];
     const first = cell.querySelector('.kh-verdict');
     truthy(first, '前提：这一格真的挂了标记');
-    eq(String(KH.NoteCheck.labelText(cell)), '承诺对象', 'labelText 要从右端把徽标剥掉');
-    eq(KH.NoteCheck.labelsOf(cell).join('|'), '承诺对象', 'labelsOf 也照旧只认字段名');
+    eq(String(KH.Compare.Sources.labelText(cell)), '承诺对象', 'labelText 要从右端把徽标剥掉');
+    eq(KH.Compare.Sources.labelsOf(cell).join('|'), '承诺对象', 'labelsOf 也照旧只认字段名');
     /* 值改成 vivo ⇒ 判定从「待确认」翻成「一致」：文案要更新，节点要复用（每轮换新会闪） */
     cell.parentNode.querySelectorAll('td')[1].textContent = '维沃移动通信有限公司';
     panel.decorateChecks(div, {});
@@ -1383,9 +1383,9 @@ module.exports = async function run() {
 
   await test('★ 未查明行也带证据（值仍在，来源说清未查明）', () => {
     const div = H.el('div', {}, []);
-    div.innerHTML = KH.Fetch.rowsToTableHtml([
-      { label: '企业名称', rows: [[{ t: '北京知行灵动科技有限公司' }]], opt: null }
-    ]);
+    div.innerHTML = '<table class="kh-table-fetch"><tbody>' +
+      '<tr><td class="kh-table-label">企业名称</td><td>北京知行灵动科技有限公司</td></tr>' +
+      '<tr><td class="kh-table-label">开发者</td><td></td></tr></tbody></table>';
     const panel = shadowPanel();
     panel.decorateChecks(div, {});
     const tr = div.querySelectorAll('tr')[0];
@@ -1458,12 +1458,12 @@ module.exports = async function run() {
     const dHuawei = make('华为技术有限公司');
     panel.decorateChecks(dHuawei, {});
     const hwCell = dHuawei.querySelectorAll('tr')[1].querySelectorAll('td')[0];
-    eq(hwCell.style.background, KH.NoteCheck.COLOR_OK, '★ 华为在自定义名单里 ⇒ 浅绿');
+    eq(hwCell.style.background, KH.Compare.COLOR_OK, '★ 华为在自定义名单里 ⇒ 浅绿');
     eq(String(hwCell.querySelector('.kh-verdict').textContent), '✔ 一致');
     const dVivo = make('维沃移动通信有限公司');
     panel.decorateChecks(dVivo, {});
     const vivoCell = dVivo.querySelectorAll('tr')[1].querySelectorAll('td')[0];
-    eq(vivoCell.style.background, KH.NoteCheck.COLOR_BAD, '★ 自定义名单里没有 vivo ⇒ 浅黄（默认名单不再兜底）');
+    eq(vivoCell.style.background, KH.Compare.COLOR_BAD, '★ 自定义名单里没有 vivo ⇒ 浅黄（默认名单不再兜底）');
     eq(String(vivoCell.querySelector('.kh-verdict').textContent), '⚠ 待确认');
     if (dHuawei.parentNode) dHuawei.parentNode.removeChild(dHuawei);
     if (dVivo.parentNode) dVivo.parentNode.removeChild(dVivo);

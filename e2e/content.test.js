@@ -4341,7 +4341,8 @@ module.exports = async function runContent(ctx) {
     };
     try {
       /* 两张真表格：① 企业名称与开发者同值（一致）+ 承诺对象华为（待确认）
-       *              ② 只有企业名称、没有开发者（未查明：不涂色但要留标记） */
+       *              ② 开发者行在但值是空的（未查明：不涂色但要留标记）
+       *                  —— 注意「整行缺失」现在是 ⚙ 待配置（真缺配置），不再冒充未查明。 */
       await page.evaluate(() => {
         const mk = (id, rows) => {
           const box = document.createElement('div');
@@ -4356,7 +4357,7 @@ module.exports = async function runContent(ctx) {
           ['企业名称', '北京知行灵动科技有限公司'],
           ['承诺对象', '华为技术有限公司']
         ]);
-        mk('e2e-verdict-unknown', [['企业名称', '北京知行灵动科技有限公司']]);
+        mk('e2e-verdict-unknown', [['开发者', ''], ['企业名称', '北京知行灵动科技有限公司']]);
         /* 【台账 #8】超时是第四态：开发者与核准主体两边都查不到法人，但原因是「20 秒没回执」。 */
         mk('e2e-verdict-timeout', [
           ['开发者', '北京知行灵动科技有限公司'],
@@ -4380,7 +4381,7 @@ module.exports = async function runContent(ctx) {
         + '    var vcell = tds[i].parentNode.querySelectorAll("td")[1];'
         + '    var ev = vcell ? vcell.querySelector(".kh-evidence") : null;'
         + '    var evA = ev ? ev.querySelector(".kh-evidence-link") : null;'
-        + '    out.push({ box: boxes[b], label: window.KH.NoteCheck.labelText(tds[i]),'
+        + '    out.push({ box: boxes[b], label: window.KH.Compare.Sources.labelText(tds[i]),'
         + '      mark: m ? String(m.textContent) : "", state: m ? String(m.getAttribute("data-state") || "") : "",'
         + '      bg: String(tds[i].style.background || ""), tip: String(tds[i].title || ""),'
         + '      ev: ev ? String(ev.textContent || "") : "", evHref: evA ? String(evA.getAttribute("href") || "") : "" });'

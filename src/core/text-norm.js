@@ -95,6 +95,59 @@
 
   function stripZero(s) { return String(s == null ? '' : s).replace(ZERO_WIDTH, ''); }
 
+/**
+ * 去掉括号补充说明：「某某公司（松江报社）」→「某某公司」。全角/半角括号都认。
+ *
+ * ⚠️ 匹配专用：它**会改变长度**，所以只能进判据，不许回写配置，也不许拿去映射命中区间
+ * （`foldTo().spans` 是按逐字符记账的，删了字就映射不回去）。
+ */
+function coreOf(s) {
+  return String(s == null ? '' : s).replace(/[（(][^）)]*[）)]/g, '');
+}
+
+/** 去掉行政区划单字（省/市/区/县）：同一家单位常一个写全称、一个写简称。同样只用于匹配。 */
+function stripAdmin(s) {
+  return String(s == null ? '' : s).replace(/[省市区县]/g, '');
+}
+
+/**
+ * 正文形：`keyOf` 之后**去掉段落哨兵**，把折行拼成一串。
+ * 为什么不能在 `keyOf` 上直接 `indexOf`：「在正文里找子串」的场景（隐私政策校验）要能跨行命中，
+ * 而 `keyOf` 会在空行处插 `\u0001`，跨段子串就永远找不到。
+ */
+function flatOf(s) {
+  return keyOf(s).replace(/\u0001/g, '');
+}
+
+/**
+ * 在 `hay` 里找一个与 `needle` **等长、只差 1 个字符**的窗口；找不到返回 -1。
+ * 用途：卡片上的值被 OCR/录入认错了一个字，正文里其实是另一个字。
+ */
+function nearAt(hay, needle) {
+  const h = String(hay == null ? '' : hay);
+  const n = String(needle == null ? '' : needle);
+  if (!n || h.length < n.length) return -1;
+  for (let i = 0; i + n.length <= h.length; i += 1) {
+    let diff = 0;
+    for (let j = 0; j < n.length; j += 1) {
+      if (h.charCodeAt(i + j) !== n.charCodeAt(j)) {
+        diff += 1;
+        if (diff > 1) break;
+      }
+    }
+    if (diff === 1) return i;
+  }
+  return -1;
+}
+
+/** `near` 只对「够长、夹着够多汉字、不是纯数字」的值开放：短词差一个字就是另一家了。 */
+function nearOk(k) {
+  if (k.length < 6 || k.length > 40) return false;
+  if (/^[0-9]+$/.test(k)) return false;
+  const han = k.match(/[\u4e00-\u9fa5]/g);
+  return !!han && han.length >= 4;
+}
+
   /**
    * 全量折叠 + **区间映射**：`foldTo(text).spans[i]` = 输出第 i 个字符来自原文的 `[start, end)`。
    *
@@ -218,8 +271,16 @@
    *   `weak`       有一侧太短，**不该**参与相等判定（不是"不一致"，别报冲突）
    *   `only-a` / `only-b`  有一侧是空的
    *   `conflict`   以上都不成立 = 真的不一样
+   *
+   * 可选开关（默认全关，老调用方的结论逐字不变）——用于「同一家单位写法不同」「认错一个字」这两类：
+   *   `{core:true}`  → `fold-core`  只差括号补充说明（`某某（松江）公司` ↔ `某某公司`）
+   *   `{admin:true}` → `fold-admin` 去掉省/市/区/县后相等，且剩余 ≥6 字
+   *   `{near:true}`  → `near`       等长且只差 1 个字（长度 6–40、汉字 ≥4、非纯数字）
+   * 之所以放在 `verdict` 里而不是各消费方自己写：这类差异属于「是不是同一个值」的下游判断，
+   * 必须能说清是第几级折出来的，面板文案才解释得清。
    */
-  function verdict(a, b) {
+  function verdict(a, b, opts) {
+    const o = opts || {};
     const A = String(a == null ? '' : a);
     const B = String(b == null ? '' : b);
     const ka = keyOf(A);
@@ -239,14 +300,25 @@
     for (let i = 0; i < steps.length; i += 1) {
       if (steps[i][1](A) === steps[i][1](B)) return steps[i][0];
     }
+    if (o.core) {
+      const ca = keyOf(coreOf(A));
+      const cb = keyOf(coreOf(B));
+      if (ca && cb && ca === cb) return 'fold-core';
+    }
+    if (o.admin) {
+      const aa = stripAdmin(ka);
+      const ab = stripAdmin(kb);
+      if (aa.length >= 6 && aa === ab) return 'fold-admin';
+    }
+    if (o.near && nearOk(ka) && nearOk(kb) && nearAt(ka, kb) >= 0) return 'near';
     return 'conflict';
   }
 
   /** 是不是"可以认为相等"（含折叠出来的相等；`weak` 不算 —— 判不了就不下结论） */
-  function equal(a, b) {
-    const v = verdict(a, b);
+  function equal(a, b, opts) {
+    const v = verdict(a, b, opts);
     return v === 'same' || v === 'fold-ws' || v === 'fold-width' || v === 'fold-punct'
-      || v === 'fold-zero' || v === 'fold-case';
+      || v === 'fold-zero' || v === 'fold-case' || v === 'fold-core' || v === 'fold-admin' || v === 'near';
   }
 
   KH.TextNorm = {
@@ -262,6 +334,11 @@
     foldPunctChar: foldPunctChar,
     stripWs: stripWs,
     stripZero: stripZero,
+    coreOf: coreOf,
+    stripAdmin: stripAdmin,
+    flatOf: flatOf,
+    nearAt: nearAt,
+    nearOk: nearOk,
     isWeak: isWeak,
     hasBoundary: hasBoundary,
     findInText: findInText,

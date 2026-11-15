@@ -487,7 +487,7 @@
     }
     /* 【2.0.8.8 需求②】隐私政策行的小徽标：「名」=主标题、「开」=开发者，看它们在不在这段
      * 隐私政策正文里（用户原话：「在标题单元格插入“名”，“开”的小图标」）。
-     * 行底色（全中=浅绿、有缺=浅黄）由 JS 用 KH.NoteCheck.COLOR_OK / COLOR_BAD **内联**写入，
+     * 行底色（全中=浅绿、有缺=浅黄）由 JS 用 KH.Compare.COLOR_OK / COLOR_BAD **内联**写入，
      * 色值只留一份；这里只负责徽标形状与命中/未命中的深浅。
      * 【2.0.10 需求④】必须是**绝对定位**：以前是 inline-block，插进标题格就把那格的
      * 最小内容宽度撑大 → 表格自动布局重算 → 内容格宽度变 → 裁一行的判定反复翻转，
@@ -528,6 +528,8 @@
     /* 【台账 #8】超时是第四态：不涂行底色，但徽标要说「超时」而不是「未查明」——
      * 用户能据此决定「等会儿再看」还是「这条就是查不到」。虚线 + ⏱ 与未查明的 ？ 灰度下也分得开。 */
     .kh-verdict[data-state="timeout"] { background: #fff7ed; color: #9a3412; border-color: #fdba74; border-style: dashed; }
+  /* 【2.0.13】⚙ 待配置：责任在配置，不在数据 —— 用中性的靛色虚线，别和「⚠ 待确认」混成一种黄。 */
+  .kh-verdict[data-state="unset"] { background: #eef2ff; color: #3730a3; border-color: #a5b4fc; border-style: dashed; }
     /* 【台账 #6】判定证据：命中值 / 来源 / 时间 / 原页入口，就地可见，不再只藏在悬停 title 里。 */
     .kh-evidence { display: block; margin-top: 2px; font-size: 10px; line-height: 14px; color: inherit; opacity: .82; white-space: normal; word-break: break-word; }
     .kh-evidence-link { text-decoration: underline; color: inherit; cursor: pointer; }
@@ -1969,12 +1971,13 @@
         continue;
       }
       const rv = r.rv[0] || '';
-      if (lv && rv && TN && (TN.isWeak(lv) || TN.isWeak(rv))) continue;
-      const v = TN ? TN.verdict(lv, rv)
-        : (lv === rv ? 'same' : (lv && rv ? 'conflict' : (lv ? 'only-a' : (rv ? 'only-b' : 'none'))));
-      if (v === 'conflict') out.push({ kind: 'mismatch', row: r, lv: lv, rv: rv });
-      else if (v === 'only-a') out.push({ kind: 'missRight', row: r, lv: lv, rv: rv });
-      else if (v === 'only-b') out.push({ kind: 'missLeft', row: r, lv: lv, rv: rv });
+      /* 【2.0.13 · A2】判等统一走 `rowState`（同一口径也用于行底色）：
+       * 去括号补充 + 长名只差一字不再算「不一致」——用户 2026-11-15 拍板四处全收敛。 */
+      const st = rowState(lv, rv);
+      if (st.state === 'weak' || st.state === 'same' || st.state === 'none') continue;
+      if (st.state === 'conflict') out.push({ kind: 'mismatch', row: r, lv: lv, rv: rv });
+      else if (st.state === 'only-a') out.push({ kind: 'missRight', row: r, lv: lv, rv: rv });
+      else if (st.state === 'only-b') out.push({ kind: 'missLeft', row: r, lv: lv, rv: rv });
     }
     return out;
   }
@@ -2287,8 +2290,8 @@
    * 跳过合并行（它们的左列是自定义标题，可能和字段同名）。
    */
   function rowOfField(table, key) {
-    const NC = (KH && KH.NoteCheck) || (typeof window !== 'undefined' && window.KH && window.KH.NoteCheck);
-    if (!NC || !table || !table.querySelectorAll) return null;
+    const S = (KH && KH.Compare && KH.Compare.Sources) || null;
+    if (!S || !table || !table.querySelectorAll) return null;
     const trs = table.querySelectorAll('tr');
     for (let i = 0; i < trs.length; i++) {
       const tr = trs[i];
@@ -2297,10 +2300,57 @@
       if (!tds.length) continue;
       /* 合并行里一行可能是「开发者 / 核准主体名称」两个字段，`fieldKey(单名)` 只认得出一个，
        * 所以这里问「这一行有没有这个 key」而不是「这一行叫什么」。 */
-      const keys = NC.fieldKeysOf ? NC.fieldKeysOf(tds[0]) : [NC.fieldKey(NC.labelText ? NC.labelText(tds[0]) : tds[0].textContent)];
+      const keys = S.fieldKeysOf(tds[0]);
       if (keys.indexOf(key) >= 0) return tr;
     }
     return null;
+  }
+
+  /**
+   * 【2.0.13 · A2】两个值比成一种结论 —— `compareProblems`（表格下方那一行）与 `paintAuto`（行底色）
+   * **共用这一处**。抽出来的原因：以前自动行上色是另一套判等（企业名称一套、承诺对象一套、
+   * 其余自动行根本不参与），同一对字段在「结论行」和「行底色」上可能给出不同答案。
+   * 归一全走 `KH.TextNorm.verdict`：`{core:true, near:true}` = 去括号补充 + 长名只差一字
+   * （用户 2026-11-15 拍板「四处全收敛」，这两个开关默认关，只在这里打开）。
+   * @param {string} lv 左侧（本页/开发者一侧）值
+   * @param {string} rv 右侧（图里 / 资质一侧）值
+   * @returns {{state:string, how:string}} state ∈ same|conflict|only-a|only-b|weak|none；how 是 verdict 原始标签
+   */
+  function rowState(lv, rv) {
+    const TN = (typeof KH !== 'undefined' && KH && KH.TextNorm) || null;
+    const a = String(lv == null ? '' : lv).trim();
+    const b = String(rv == null ? '' : rv).trim();
+    if (!a && !b) return { state: 'none', how: '' };
+    /* 弱值不参与判等（Q4）：`12` 撞上 `2024-12-31` 是误报，不是差异。 */
+    if (TN && a && b && (TN.isWeak(a) || TN.isWeak(b))) return { state: 'weak', how: '' };
+    if (TN) {
+      const how = TN.verdict(a, b, { core: true, near: true });
+      if (how === 'weak' || how === 'only-a' || how === 'only-b' || how === 'none') return { state: how, how: how };
+      return { state: how === 'conflict' ? 'conflict' : 'same', how: how };
+    }
+    return { state: a && b ? (a === b ? 'same' : 'conflict') : (a ? 'only-a' : 'only-b'), how: '' };
+  }
+
+  /**
+   * 【2.0.13 · A2】按字段名从抓取表里取「本页」那一格的值（渲染时取数）。
+   * 与旧 `decorateMerge` 里的局部 `valueOf` 只差一处：字段名走 `NC.labelsOf`——
+   * 它已从右端逆序剥掉 `.kh-verdict` / `.kh-policy-flag` / `.kh-table-more`。
+   * 旧写法读 `tds[0].textContent`，浮窗复用旧卡时左列还挂着上一轮的「✔ 一致」
+   * ⇒ 归一后的名字对不上 ⇒ 取不到值 ⇒ 结论行误报「缺字段」（§9.2 隐患）。
+   * @returns {string} 值；没有这一行就是空串
+   */
+  function fetchField(table, field) {
+    /* 【2.0.13 · R2】取字段只有一份实现：compare/sources.js。
+     * 它已经处理「合并行多个名字」「从右端逆序剥 .kh-verdict / .kh-evidence」，
+     * 以及「行在、值空也算 found」（调用方据此区分 ⚙ 待配置 与 ？ 未查明）。 */
+    const S = (typeof KH !== 'undefined' && KH && KH.Compare && KH.Compare.Sources) || null;
+    if (S && typeof S.field === 'function') return S.field(table, field);
+    return { found: false, value: '' };
+  }
+
+  /** `fetchField` 的取值版：只关心值的地方（结论行）用它，不关心「这一行在不在」。 */
+  function fetchValueOf(table, field) {
+    return fetchField(table, field).value;
   }
 
   /**
@@ -2342,7 +2392,7 @@
 
   /**
    * 【台账 #3/#4/#5 · 2026-11-14】给判定行补一枚**非颜色**标记：✔一致 / ⚠待确认 / ？未查明。
-   * 图标与文案取自 `NoteCheck.verdictMark`（单一真源），这里只管挂到标题格的右侧。
+   * 图标与文案取自 `Compare.markOf`（单一真源），这里只管挂到标题格的右侧。
    * 为什么非补不可：颜色是辅助信息 —— 灰度截图、色觉障碍、打印时三态必须仍能分清；
    * 未查明尤其不能和「这张卡根本没配校验」长得一样（以前 tip 传空串，两者外观完全相同）。
    * 标记绝对定位（CSS 见 .kh-verdict），不参与表格排版，不会重演「撑宽标题格 ⇒ 裁切判定来回翻」。
@@ -2352,8 +2402,8 @@
    * @returns {Element|null} 挂上去的标记节点
    */
   function setVerdictMark(tr, state, tip) {
-    const NC = (typeof KH !== 'undefined' && KH && KH.NoteCheck) || null;
-    const m = (NC && typeof NC.verdictMark === 'function') ? NC.verdictMark(state) : null;
+    const C = (typeof KH !== 'undefined' && KH && KH.Compare) || null;
+    const m = (C && typeof C.markOf === 'function') ? C.markOf(state) : null;
     const cell = (tr && tr.querySelector) ? tr.querySelector('td.kh-table-label') : null;
     if (!cell) return null;
     let mark = cell.querySelector ? cell.querySelector('.kh-verdict') : null;
@@ -2875,62 +2925,87 @@
      * 两处都按字段值做签名，同样的内容不重画（否则每次刷新都会闪一下）。
      */
     decorateChecks(el, item) {
-      const NC = (KH && KH.NoteCheck) || (typeof window !== 'undefined' && window.KH && window.KH.NoteCheck);
-      if (!NC || !el || !el.querySelector) return;
+      const C = (typeof KH !== 'undefined' && KH && KH.Compare) || null;
+      const S = C && C.Sources;
+      if (!C || !S || !el || !el.querySelector) return;
       const table = el.querySelector('table.kh-table-fetch');
       if (!table) return;
       let fields;
-      try { fields = NC.readFields(table); } catch (e) { return; }
-      this.paintPolicy(table, fields, NC);
-      this.paintEntity(el, table, fields, NC);
-      this.paintAuto(table, fields, NC);
+      try { fields = S.readFields(table); } catch (e) { return; }
+      this.paintPolicy(table, fields);
+      this.paintEntity(el, table, fields);
+      this.paintAuto(table, fields);
     },
 
     /**
      * 【2026-11-13】证书之外的两种自动行：
      *   · `企业名称`（营业执照 / 资质）—— 与卡片里抓取到的「开发者」比对：
-     *     一致标绿、不一致标黄、缺一边不涂色（判定在 `NoteCheck.qualVerdict`）；
+     *     一致标绿、不一致标黄、缺一边不涂色（判定在 `Compare.Rules.qualVerdict`）；
      *   · `承诺对象`（承诺函）—— 放行名单（设置页可配，默认 vivo / 维沃 / 广东天宸）、无具体平台的泛称标绿，
-     *     其余平台标黄（判定在 `NoteCheck.promiseVerdict`）；`承诺方` 只是说明，不上色。
+     *     其余平台标黄（判定在 `Compare.Rules.promiseVerdict`）；`承诺方` 只是说明，不上色。
      * 行定位按字段名文本（自动行没有 DOM 标记，同值行还会被合并成一行）。
      */
-    paintAuto(table, fields, NC) {
-      if (!NC || typeof NC.qualVerdict !== 'function' || !table || !table.querySelectorAll) return;
+    paintAuto(table, fields) {
+      if (!table || !table.querySelectorAll) return;
       const dev = String((fields && fields.dev) || '').trim();
       /* 【台账 #6】原页入口就是当前页（判定值全部来自本页抓取表）。 */
       const pageUrl = (typeof location !== 'undefined' && location && location.href) ? location.href : '';
+      /* 【2.0.13 · 用户 2026-11-15 拍板「第 2 条严格」】总开关关掉 = 一律不上色。
+       * 「关掉」不能只是「不再画新的」：上一轮画上去的底色/标记/证据还挂在行上，
+       * 用户会以为开关没生效。本函数画过的行都带 `data-kh-auto-sig`，按这个标记撤回。 */
+      const ic = this.cfg && this.cfg.imgCompare;
+      if (ic && ic.on === false) {
+        const trsOff = table.querySelectorAll('tr');
+        for (let oi = 0; oi < trsOff.length; oi++) {
+          const trOff = trsOff[oi];
+          if (!trOff.getAttribute || trOff.getAttribute('data-kh-auto-sig') === null) continue;
+          tintRow(trOff, '');
+          setCheckTip(trOff, '');
+          setVerdictMark(trOff, '');
+          if (trOff.removeAttribute) { trOff.removeAttribute('data-kh-auto-sig'); trOff.removeAttribute('data-kh-ev-sig'); }
+          const hostOff = trOff.querySelectorAll('td')[1];
+          const boxOff = hostOff && hostOff.querySelector ? hostOff.querySelector('.kh-evidence') : null;
+          if (boxOff && boxOff.parentNode) boxOff.parentNode.removeChild(boxOff);
+        }
+        return;
+      }
+      /* 【2.0.13 · R3】判定收进 `compare/rules.js`，呈现收进 `compare/present.js`；
+       * 本函数只剩三件事：取值 → 交给规则 → 把结论落到行上。 */
+      const RULES = (KH.Compare && KH.Compare.Rules) || null;
+      const PRESENT = (KH.Compare && KH.Compare.Present) || null;
+      const Sources = (KH.Compare && KH.Compare.Sources) || null;
+      if (!RULES || !PRESENT || !Sources) return;
       const trs = table.querySelectorAll('tr');
+      /* 「开发者」这一行在不在：用来把「没配」和「配了没取到」分开（第 3 条）。 */
+      const devTr = rowOfField(table, 'dev');
       for (let i = 0; i < trs.length; i++) {
         const tr = trs[i];
         const tds = tr.querySelectorAll('td');
         if (tds.length < 2) continue;
-        const labels = NC.labelsOf(tds[0]);
+        const labels = Sources.labelsOf(tds[0]);
         if (!labels.length) continue;
-        const has = (name) => labels.some((l) => NC.entityNorm(l) === NC.entityNorm(name));
-        const val = String(tds[1].textContent || '').trim();
-        let v = null;
-        let what = '';
-        if (has('企业名称')) { v = NC.qualVerdict(val, dev); what = '企业名称校验'; }
-        /* 【台账 #7】名单来自配置（设置页可编辑、随导入导出走）；没配时 `promiseOkList` 回退默认名单。 */
-        else if (has('承诺对象')) { v = NC.promiseVerdict(val, this.cfg && this.cfg.noteCheck); what = '承诺对象校验'; }
+        const val = Sources.cellValue(tds[1]);
+        const v = RULES.autoVerdict({
+          labels: labels,
+          value: val,
+          dev: dev,
+          devPresent: !!devTr,
+          cfg: this.cfg,
+          get: (f) => fetchField(table, f)
+        });
         if (!v) continue;
+        const pres = PRESENT.presentVerdict({
+          what: v.what, state: v.state, note: v.note, color: v.color,
+          source: v.source, value: val, url: pageUrl, at: Date.now()
+        });
         /* 同样内容不重画；值变了（OCR 重跑 / 用户改配置）才重判。 */
-        const sig = [val, dev, v.state, v.note].join('\\u0001');
+        const sig = [val, dev, pres.state, v.note].join('\u0001');
         if (tr.getAttribute('data-kh-auto-sig') === sig) continue;
         tr.setAttribute('data-kh-auto-sig', sig);
-        tintRow(tr, v.color || '');
-        /* 【台账 #3/#4/#5】结论必须有**非颜色**标记；未查明也要给标记与说明。
-         * 旧写法未查明时 tip 是空串 ⇒ 看着和「这张卡没配校验」一模一样。 */
-        const tip = v.color ? (what + '：' + v.note) : (what + '：未查明（不改底色）\n' + v.note);
-        setCheckTip(tr, tip);
-        setVerdictMark(tr, v.state, tip);
-        /* 【台账 #6】证据就地可见：命中值 + 来源 + 读取时间 + 原页入口。 */
-        setEvidence(tr, {
-          value: val,
-          source: has('企业名称') ? '本页抓取 · 与开发者比对' : '本页抓取 · 对照放行名单',
-          url: pageUrl,
-          at: Date.now()
-        });
+        tintRow(tr, pres.color);
+        setCheckTip(tr, pres.tip);
+        setVerdictMark(tr, pres.state, pres.tip);
+        setEvidence(tr, pres.evidence);
       }
     },
 
@@ -2940,7 +3015,7 @@
       if (!tr) return;
       /* 链接正文缓存：同一份政策很多卡共用，抓一次就够（url → {ok,text,len,reason,at,cached}）。 */
       const cache = this._policyCache || (this._policyCache = new Map());
-      const src = (typeof NC.policySource === 'function') ? NC.policySource(fields) : null;
+      const src = (typeof KH.Compare.Sources.policySource === 'function') ? KH.Compare.Sources.policySource(fields) : null;
       const got = src ? cache.get(src.url) : null;
       const cardBody = String(fields.policy || '');
       const flatLen = (t) => String(t || '').replace(/\s+/g, '').length;
@@ -2980,7 +3055,7 @@
       }
       tintRow(tr, '');
       let v = null;
-      try { v = NC.policyVerdict(eff); } catch (e) { v = null; }
+      try { v = KH.Compare.policyVerdict(eff); } catch (e) { v = null; }
       if (!v) {
         /* 正文还没有（链接在途 / 抓不到且卡片那格不是正文）：如实说「先不判定」，不许装成「没有」。
          * 【台账 #5】未查明也必须有标记与文案 —— 旧写法在没链接时 tip 是空串，
@@ -2992,7 +3067,7 @@
         setVerdictMark(tr, 'unknown', tip);
         return;
       }
-      tintRow(tr, v.ok ? NC.COLOR_OK : NC.COLOR_BAD);
+      tintRow(tr, v.ok ? KH.Compare.COLOR_OK : KH.Compare.COLOR_BAD);
       const labelOf = { title: '主标题', dev: '开发者', content: '隐私政策链接' };
       const lineOf = (it) => {
         const name = labelOf[it.key] || it.key;
@@ -3119,7 +3194,7 @@
           const sigSame = dev + '\u0001' + ent;
           if (devTr.getAttribute('data-kh-ent-sig') !== sigSame) {
             devTr.setAttribute('data-kh-ent-sig', sigSame);
-            tintRow(devTr, NC.COLOR_OK);
+            tintRow(devTr, KH.Compare.COLOR_OK);
             const tipSame = '同法人校验：两边名字完全相同 ⇒ 同一主体（不联网）\n'
               + '开发者「' + dev + '」\n核准主体「' + ent + '」';
             setCheckTip(devTr, tipSame);
@@ -3138,7 +3213,7 @@
         ? { rep: String(v.rep || ''), timedOut: !!v.timedOut }
         : { rep: String(v || ''), timedOut: false };
       const repOfSide = (name) => {
-        if (NC.isPersonName(name)) return Promise.resolve({ rep: String(name), timedOut: false });
+        if (KH.Compare.isPersonName(name)) return Promise.resolve({ rep: String(name), timedOut: false });
         return this.lookupEntity(name).then((got) => asSide(got));
       };
       Promise.all([repOfSide(dev), repOfSide(ent)]).then((sides0) => {
@@ -3147,7 +3222,7 @@
         /* 卡片可能已经被下一次刷新换掉：旧节点不再画（新卡自己会重算）。 */
         if (el && el.isConnected === false) return;
         if (table && table.isConnected === false) return;
-        const verdict = NC.sameLegalRep({ name: dev, rep: reps[0] }, { name: ent, rep: reps[1] });
+        const verdict = KH.Compare.legalRep({ name: dev, rep: reps[0] }, { name: ent, rep: reps[1] }).state;
         const sides = '开发者「' + dev + '」→ ' + (reps[0] || '未查到法人') + '\n'
           + '核准主体「' + ent + '」→ ' + (reps[1] || '未查到法人');
         if (verdict === 'unknown') {
@@ -3166,7 +3241,7 @@
           setEvidence(entTr, { value: ent, source: srcUnknown, url: pageUrl, at: Date.now() });
           return;
         }
-        const color = verdict === 'same' ? NC.COLOR_OK : NC.COLOR_BAD;
+        const color = verdict === 'same' ? KH.Compare.COLOR_OK : KH.Compare.COLOR_BAD;
         tintRow(devTr, color);
         tintRow(entTr, color);
         const tip = '同法人校验：' + (verdict === 'same' ? '同一个法定代表人' : '不是同一个法定代表人')
@@ -3271,23 +3346,9 @@
       }
       const TN = KH.TextNorm;
       const keyOf = (s) => (TN ? TN.keyOf(s) : String(s == null ? '' : s).replace(/\s+/g, '').toLowerCase());
-      const valueOf = (field) => {
-        const want = keyOf(field);
-        if (!want) return '';
-        const trs = table.querySelectorAll('tr');
-        for (let i = 0; i < trs.length; i++) {
-          /* 跳过自己上一轮画的合并行：它们的左列是「自定义标题」，可能正好等于某个字段名 */
-          if (String(trs[i].className || '').indexOf('kh-merge-row') >= 0) continue;
-          const tds = trs[i].querySelectorAll('td');
-          if (!tds.length) continue;
-          /* 【2.0.8.18】字段名比较也走唯一口径：全半角/零宽/空白都折（旧写法按 `textContent` 精确比，
-           * 抓取表里「登记号」与配置里「登记 号」永远对不上 ⇒ 行被静默丢掉）。 */
-          if (keyOf(tds[0].textContent) !== want) continue;
-          const v = tds.length > 1 ? String(tds[1].textContent || '').trim() : '';
-          if (v) return v;
-        }
-        return '';
-      };
+      /* 【2.0.13 · A2】字段名改走 `NC.labelsOf`（剥掉左列上的判定标记），
+       * 与 `paintAuto` 共用同一个取数实现 —— 顺带修掉「浮窗复用旧卡时结论行误报缺字段」。 */
+      const valueOf = (field) => fetchValueOf(table, field);
       /* 【2.0.8.19 · P4】结论行贴在合并表下方（Q8）：一行说清「要不要授权书 / 哪一组对不上」。
        * 签名用结论原文本身（文案已包含两路值）—— 文本没变就不重排。 */
       const paintCmp = (text) => {

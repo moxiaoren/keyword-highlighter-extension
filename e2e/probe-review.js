@@ -13,7 +13,7 @@ const server = require('./server');
 
 const PAINT = (cases) => {
   const P = window.KH.ImportantNote.panel;
-  const NC = window.KH.NoteCheck;
+  const NC = window.KH.Compare;
   P.ensure(document);
   const root = P.root;
   root.hidden = false;
@@ -75,8 +75,8 @@ const PAINT = (cases) => {
     colors: { OK: NC.COLOR_OK, BAD: NC.COLOR_BAD },
     panelClickables: clickable,
     evidenceishText: evid,
-    hasQual: typeof NC.qualVerdict === 'function',
-    hasPromise: typeof NC.promiseVerdict === 'function'
+    hasQual: typeof (NC.Rules && NC.Rules.qualVerdict) === 'function',
+    hasPromise: typeof (NC.Rules && NC.Rules.promiseVerdict) === 'function'
   };
 };
 
