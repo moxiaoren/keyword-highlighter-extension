@@ -84,12 +84,14 @@
         company: rawC, dev: rawD
       };
     }
-    if (c === d) return { state: 'same', color: C.COLOR_OK, note: '企业名称与开发者一致', company: rawC, dev: rawD };
+    /* 【T6】同值时不再重复「一致」那句（结论由呈现层统一写），只留两边原值；
+     * how 交给呈现层命名差异类型（括号补充 / 互相包含…）。 */
+    if (c === d) return { state: 'same', how: 'same', color: C.COLOR_OK, note: '', company: rawC, dev: rawD };
     /* 同一家单位的全称 / 简称：只在两边都够长、且互相包含时放行，避免短词误绿。 */
     if (c.length >= 6 && d.length >= 6 && (c.indexOf(d) >= 0 || d.indexOf(c) >= 0)) {
-      return { state: 'same', color: C.COLOR_OK, note: '企业名称与开发者写法略有差异，按同一家处理', company: rawC, dev: rawD };
+      return { state: 'same', how: 'contain', color: C.COLOR_OK, note: '企业名称「' + rawC + '」；开发者「' + rawD + '」', company: rawC, dev: rawD };
     }
-    return { state: 'diff', color: C.COLOR_BAD, note: '企业名称与开发者不一致，请人工确认', company: rawC, dev: rawD };
+    return { state: 'diff', how: 'conflict', color: C.COLOR_BAD, note: '企业名称「' + rawC + '」；开发者「' + rawD + '」', company: rawC, dev: rawD };
   }
 
   /* ---------- ④ 承诺函的承诺对象 ---------- */
@@ -173,12 +175,12 @@
       } else if (state === 'unknown' && !dev) {
         note = '「开发者」这一行是空的，没法比对';
       }
-      return { what: '企业名称校验', state: state, note: note, color: state === 'same' ? C.COLOR_OK : (state === 'diff' ? C.COLOR_BAD : ''), source: '本页抓取 · 与开发者比对', keyValue: value };
+      return { what: '企业名称校验', state: state, how: v.how, note: note, color: state === 'same' ? C.COLOR_OK : (state === 'diff' ? C.COLOR_BAD : ''), source: '本页抓取 · 与开发者比对', keyValue: value };
     }
 
     if (has('承诺对象')) {
       const v = promiseVerdict(value, opts.cfg && opts.cfg.noteCheck);
-      return { what: '承诺对象校验', state: v.state, note: v.note, color: v.color, source: '本页抓取 · 对照放行名单', keyValue: value };
+      return { what: '承诺对象校验', state: v.state, how: v.how, note: v.note, color: v.color, source: '本页抓取 · 对照放行名单', keyValue: value };
     }
 
     /* 配置对：行名对上任一侧 ⇒ 取另一侧的卡片值判等。方向无关。 */
@@ -209,11 +211,11 @@
       const ov = qualVerdict(value, dev);
       if (ov.state === 'same') {
         return { what: whatOwner, state: 'same', color: C.COLOR_OK, source: srcOwner, keyValue: value,
-          note: '与「开发者」一致（命中：' + dev + '）' };
+          how: ov.how, note: '这一行「' + value + '」；开发者「' + dev + '」' };
       }
       if (ov.state === 'diff') {
         return { what: whatOwner, state: 'diff', color: C.COLOR_BAD, source: srcOwner, keyValue: value,
-          note: '与「开发者」不一致（「开发者」= ' + dev + '，这一行 = ' + value + '）' };
+          how: 'conflict', note: '开发者「' + dev + '」；这一行「' + value + '」' };
       }
       return { what: whatOwner, state: 'unknown', color: '', source: srcOwner, keyValue: value,
         note: '无法核实：两边有一边没取到值（不改底色）' };
@@ -237,11 +239,11 @@
     }
     if (st.state === 'same') {
       return { what: what, state: 'same', color: C.COLOR_OK, source: src, keyValue: value,
-        note: '与「' + other + '」一致（命中：' + pageV + '）' };
+        how: st.how, note: '「' + other + '」= ' + pageV + '；这一行 = ' + value };
     }
     if (st.state === 'diff') {
       return { what: what, state: 'diff', color: C.COLOR_BAD, source: src, keyValue: value,
-        note: '与「' + other + '」不一致（「' + other + '」= ' + pageV + '，这一行 = ' + value + '）' };
+        how: 'conflict', note: '「' + other + '」= ' + pageV + '；这一行 = ' + value };
     }
     return { what: what, state: 'unknown', color: '', source: src, keyValue: value,
       note: '无法核实：没取到「' + other + '」的值（不改底色）' };

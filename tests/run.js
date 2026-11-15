@@ -233,7 +233,9 @@ const specs = [
   /* 自动行参与比对（别名 / 收敛 / 严格开关 / ⚙ 待配置）。口径见 specs/auto-compare.test.js 头部 */
   './specs/auto-compare.test.js',
   /* 校验中心（T5）：三处配置的只读汇总。口径见 specs/compare-center.test.js 头部 */
-  './specs/compare-center.test.js'
+  './specs/compare-center.test.js',
+  /* 悬停降维（T6）：结论先行 / 最多三句 / 差异类型。口径见 specs/tip-t6.test.js 头部 */
+  './specs/tip-t6.test.js'
 ];
 
 (async () => {

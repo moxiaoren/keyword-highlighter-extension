@@ -1332,7 +1332,7 @@ module.exports = async function run() {
     truthy(mark, '★ 未查明也要有标记 —— 否则和「这张卡没配校验」长得一模一样');
     eq(String(mark.textContent), '？ 未查明');
     eq(mark.getAttribute('data-state'), 'unknown');
-    truthy(String(td.getAttribute('title') || '').indexOf('未查明') >= 0, '★ 悬停要写明未查明（以前是空串）');
+    truthy(String(td.getAttribute('title') || '').indexOf('无法核实') >= 0, '★ 悬停要写明无法核实（T6 统一结论词；以前是空串）');
     if (div.parentNode) div.parentNode.removeChild(div);
   });
 

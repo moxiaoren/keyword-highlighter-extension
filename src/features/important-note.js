@@ -2883,8 +2883,8 @@
          * 【台账 #5】未查明也必须有标记与文案 —— 旧写法在没链接时 tip 是空串，
          * 外观跟「这张卡没配隐私政策校验」完全一样，用户分不出「没判」和「没这项」。 */
         const tip = src
-          ? ('隐私政策校验：暂时判不了\n' + sourceLine + '\n展开链接后会自动重判；也可以把正文直接抓成字段。')
-          : '隐私政策校验：这张卡没有隐私政策正文，无法判定（不改底色）';
+          ? ('隐私政策校验：暂时判不了（正文还没回来）\n' + sourceLine + '\n展开链接后会自动重判。')
+          : '隐私政策校验：无法核实（这张卡没有隐私政策正文）\n加一个「隐私政策」字段，或让它抓链接，就能自动判。';
         setCheckTip(tr, tip);
         setVerdictMark(tr, 'unknown', tip);
         return;
@@ -2938,8 +2938,13 @@
         const k = v.missing[i];
         lines.push((labelOf[k] || k) + '：这张卡没抓到，不参与校验');
       }
-      const tip = '隐私政策校验（正文 ' + v.len + ' 字；忽略空格/全半角差异，按原文找）\n'
-        + sourceLine + '\n' + lines.join('\n') + '\n链接整串找不到时只比域名。';
+      /* 【T6】悬停最多三句：结论 → 逐项依据（压成一行）→ 比对口径。 */
+      const miss = (v.missing || []).map((k) => labelOf[k] || k);
+      const tip = [
+        '隐私政策校验：' + (v.ok ? '一致（主标题 / 开发者 / 链接 都在正文里）' : '不一致（有项没对上）'),
+        '正文 ' + v.len + ' 字（' + sourceLine + '）；' + (lines.join('；') || '没有可比的项') + (miss.length ? '；没抓到：' + miss.join(' / ') : ''),
+        '忽略空格 / 全半角差异按原文找；链接整串找不到时只比域名。'
+      ].join('\n');
       setCheckTip(tr, tip);
       /* 【台账 #3/#4】一致态挂 ✔一致；不一致态本来就有「名」「开」橙色小标（文字标记），
        * 再来一枚 ⚠ 会跟它们抢同一条右侧窄带、把标题压得看不见 —— 两态各有非颜色标记即达标，
@@ -3017,8 +3022,8 @@
           if (devTr.getAttribute('data-kh-ent-sig') !== sigSame) {
             devTr.setAttribute('data-kh-ent-sig', sigSame);
             tintRow(devTr, KH.Compare.COLOR_OK);
-            const tipSame = '同法人校验：两边名字完全相同 ⇒ 同一主体（不联网）\n'
-              + '开发者「' + dev + '」\n核准主体「' + ent + '」';
+            const tipSame = '同法人校验：同一主体（两边名字完全相同，不联网）\n'
+              + '开发者「' + dev + '」；核准主体「' + ent + '」';
             setCheckTip(devTr, tipSame);
             setVerdictMark(devTr, 'same', tipSame);
             setEvidence(devTr, { value: dev, source: '本页抓取 · 两边名字相同', url: pageUrl, at: Date.now() });
@@ -3045,14 +3050,15 @@
         if (el && el.isConnected === false) return;
         if (table && table.isConnected === false) return;
         const verdict = KH.Compare.legalRep({ name: dev, rep: reps[0] }, { name: ent, rep: reps[1] }).state;
-        const sides = '开发者「' + dev + '」→ ' + (reps[0] || '未查到法人') + '\n'
-          + '核准主体「' + ent + '」→ ' + (reps[1] || '未查到法人');
+        const sides = '开发者「' + dev + '」→ ' + (reps[0] || '未查到法人')
+          + '；核准主体「' + ent + '」→ ' + (reps[1] || '未查到法人');
         if (verdict === 'unknown') {
           /* 不改底色，但原因要说得清：【台账 #8】等满 20 秒没回执 = 超时（可以等会儿再看），
            * 其余才是「未查明」。两种情况以前都只写「未查明」，用户分不出该重试还是该放弃。 */
-          const tip = timedOut
-            ? '同法人校验：查询超时（20 秒没有回执，不改底色）\n' + sides
-            : '同法人校验：未查明（不改底色）\n' + sides;
+          const tip = (timedOut
+            ? '同法人校验：超时（20 秒没有回执）\n' + sides
+            : '同法人校验：无法核实（法人未查到）\n' + sides)
+            + '\n稍后重新打开这张卡会自动重查。';
           setCheckTip(devTr, tip);
           setCheckTip(entTr, tip);
           /* 【台账 #5】未查明是独立的第三态：不涂色，但必须带标记与文案。 */
@@ -3066,7 +3072,7 @@
         const color = verdict === 'same' ? KH.Compare.COLOR_OK : KH.Compare.COLOR_BAD;
         tintRow(devTr, color);
         tintRow(entTr, color);
-        const tip = '同法人校验：' + (verdict === 'same' ? '同一个法定代表人' : '不是同一个法定代表人')
+        const tip = '同法人校验：' + (verdict === 'same' ? '同一主体（同一个法定代表人）' : '不是同一主体（法人不同）')
           + '\n' + sides;
         setCheckTip(devTr, tip);
         setCheckTip(entTr, tip);
@@ -3077,7 +3083,7 @@
         setEvidence(entTr, { value: ent, source: srcEnt, url: pageUrl, at: Date.now() });
       }).catch(() => {
         /* 查询失败 = 未查明：不涂色，但要留标记与说明（不然失败和「没校验」长得一样）。 */
-        const tip = '同法人校验：查询失败，未查明（不改底色）\n' + sides;
+        const tip = '同法人校验：无法核实（查询失败，不改底色）\n' + sides;
         setCheckTip(devTr, tip);
         setCheckTip(entTr, tip);
         setVerdictMark(devTr, 'unknown', tip);
