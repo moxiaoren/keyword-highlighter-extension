@@ -4461,7 +4461,7 @@ module.exports = async function runContent(ctx) {
       truthy(same.mark !== warn.mark, '两态文案必须不同（只靠底色不够）');
       eq(unknown.mark, '？ 未查明', '未查明要挂独立的第三态标记');
       eq(unknown.bg, '', '未查明不涂色');
-      truthy(String(unknown.tip).indexOf('未查明') >= 0, '未查明的悬停说明必须非空且写明原因，实际 = ' + JSON.stringify(unknown.tip));
+      truthy(String(unknown.tip).indexOf('无法核实') >= 0, '未查明的悬停说明必须非空且写明原因，实际 = ' + JSON.stringify(unknown.tip));
       eq(unknown.label, '企业名称', '标记是后缀，字段名照旧认得出来');
       /* 【台账 #8】超时是第四态：同样是「不改底色」，但徽标与悬停都要写「超时」，
        * 和「？未查明」分得开（一个该等会儿再看，一个就是查不到）。 */
