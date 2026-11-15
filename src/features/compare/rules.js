@@ -216,6 +216,145 @@
       note: '无法核实：没取到「' + other + '」的值（不改底色）' };
   }
 
+
+  /* ---------- ④ 软著三方：角色推断 + 逐组判等（原 important-note.js 内实现） ---------- */
+
+  /** 角色推断用的键：与 core.keyOf 同一口径（core 未加载时退回本地等价实现）。 */
+  function compareKey(s) {
+    if (typeof C.keyOf === 'function') return C.keyOf(s);
+    return String(s == null ? '' : s).replace(/\s+/g, '').toLowerCase();
+  }
+
+  /**
+   * 配置 + OCR 进表行 → 比对计划。
+   *   · 哪张图是授权书：该图的进表行里出现了「只在右侧出现」的字段（rightOnly）；
+   *     全是双侧字段时退回「有右无左」；一组 rightOnly 都没有 ⇒ docAmbiguous（配置问题）。
+   *   · 同角色多张图取并集；右侧值 >1 条 ⇒ 交给 compareProblems 报「授权书内部不一致」。
+   * @param {Array<{label:string,value:string,from?:{src:string}}>} rows
+   * @param {object} cfg
+   * @returns {null | {rows:Array, hasDoc:boolean, docCount:number, docAmbiguous:boolean, rightNames:string[]}}
+   */
+  function compareOf(rows, cfg) {
+    const ic = (cfg && cfg.imgCompare) || null;
+    if (!ic || ic.on === false || !ic.rows || !ic.rows.length) return null;
+    const leftKeys = new Set();
+    const rightKeys = new Set();
+    for (let i = 0; i < ic.rows.length; i++) {
+      const l = compareKey(ic.rows[i] && ic.rows[i].left);
+      const g = compareKey(ic.rows[i] && ic.rows[i].right);
+      if (l) leftKeys.add(l);
+      if (g) rightKeys.add(g);
+    }
+    const rightOnly = [];
+    rightKeys.forEach((k) => { if (!leftKeys.has(k)) rightOnly.push(k); });
+    const rightNames = [];
+    if (rightOnly.length) {
+      for (let i = 0; i < ic.rows.length; i++) {
+        const r = ic.rows[i] || {};
+        const rawName = String(r.right || '').trim();
+        if (!rawName) continue;
+        if (rightOnly.indexOf(compareKey(rawName)) < 0) continue;
+        if (rightNames.indexOf(rawName) < 0) rightNames.push(rawName);
+      }
+    }
+    const docAmbiguous = rightOnly.length === 0;
+    const bySrc = new Map();
+    const loose = new Map();
+    const add = (map, k, v) => {
+      let a = map.get(k);
+      if (!a) { a = []; map.set(k, a); }
+      if (a.indexOf(v) < 0) a.push(v);
+    };
+    for (let i = 0; i < (rows || []).length; i++) {
+      const r = rows[i] || {};
+      const v = String(r.value == null ? '' : r.value).trim();
+      const k = compareKey(r.label);
+      if (!v || !k) continue;
+      const src = (r.from && r.from.src) || '';
+      if (!src) { add(loose, k, v); continue; }
+      let m = bySrc.get(src);
+      if (!m) { m = new Map(); bySrc.set(src, m); }
+      add(m, k, v);
+    }
+    const ownSrcs = [];
+    const docSrcs = [];
+    bySrc.forEach((m, src) => {
+      let isDoc = false;
+      if (rightOnly.length) {
+        for (let i = 0; i < rightOnly.length; i++) if (m.has(rightOnly[i])) { isDoc = true; break; }
+      } else {
+        let hasRight = false;
+        let hasLeft = false;
+        m.forEach((_v, k) => {
+          if (rightKeys.has(k)) hasRight = true;
+          if (leftKeys.has(k)) hasLeft = true;
+        });
+        isDoc = hasRight && !hasLeft;
+      }
+      (isDoc ? docSrcs : ownSrcs).push(src);
+    });
+    const collect = (srcList, key) => {
+      const out = [];
+      for (let i = 0; i < srcList.length; i++) {
+        const arr = (bySrc.get(srcList[i]) || new Map()).get(key);
+        if (!arr) continue;
+        for (let j = 0; j < arr.length; j++) if (out.indexOf(arr[j]) < 0) out.push(arr[j]);
+      }
+      return out;
+    };
+    const collectMap = (m, key) => {
+      const arr = m.get(key);
+      return arr ? arr.slice() : [];
+    };
+    const list = [];
+    for (let i = 0; i < ic.rows.length; i++) {
+      const r = ic.rows[i] || {};
+      const left = String(r.left || '').trim();
+      const right = String(r.right || '').trim();
+      if (!left || !right) continue;
+      const lk = compareKey(left);
+      const rk = compareKey(right);
+      list.push({
+        left: left, right: right,
+        rv: collect(docSrcs, rk),
+        /* 图片来源：软著证明优先 → 无来源行 → 授权书图兜底；页面 DOM 值由渲染方补在最前。 */
+        lvOcr: collect(ownSrcs, lk).concat(collectMap(loose, lk)).concat(collect(docSrcs, lk))
+      });
+    }
+    return { rows: list, hasDoc: docSrcs.length > 0, docCount: docSrcs.length, docAmbiguous: docAmbiguous, rightNames: rightNames };
+  }
+
+  /**
+   * 比对计划 → 问题清单。valueOf(field) 由渲染方注入（单测可不传）。
+   * 只报：两值不同 / 授权书缺字段 / 软著证明缺字段 / 授权书内部两个值 / 认不出角色。
+   * 弱值不参与判等（避免 `12` 撞上 `2024-12-31`）。
+   * @returns {Array<{kind:'noDoc'|'noDocAmbig'|'mismatch'|'docMulti'|'missRight'|'missLeft'}>}
+   */
+  function compareProblems(cmp, valueOf) {
+    if (!cmp || !cmp.rows || !cmp.rows.length) return [];
+    if (!cmp.hasDoc) {
+      if (cmp.docAmbiguous) return [{ kind: 'noDocAmbig' }];
+      return [{ kind: 'noDoc', names: cmp.rightNames || [] }];
+    }
+    const out = [];
+    for (let i = 0; i < cmp.rows.length; i++) {
+      const r = cmp.rows[i];
+      let dom = '';
+      try { dom = valueOf ? String(valueOf(r.left) || '').trim() : ''; } catch (e) { dom = ''; }
+      const lv = dom || (r.lvOcr[0] || '');
+      if (r.rv.length > 1) {
+        out.push({ kind: 'docMulti', row: r, lv: lv, rv: r.rv.join(' / ') });
+        continue;
+      }
+      const rv = r.rv[0] || '';
+      const st = pairVerdict(lv, rv);
+      if (st.state === 'weak' || st.state === 'same' || st.state === 'none') continue;
+      if (st.state === 'diff' || st.state === 'conflict' || st.how === 'conflict') out.push({ kind: 'mismatch', row: r, lv: lv, rv: rv });
+      else if (st.state === 'only-a' || st.how === 'only-a') out.push({ kind: 'missRight', row: r, lv: lv, rv: rv });
+      else if (st.state === 'only-b' || st.how === 'only-b') out.push({ kind: 'missLeft', row: r, lv: lv, rv: rv });
+    }
+    return out;
+  }
   R.enabled = enabled;
   R.pairsOf = pairsOf;
   R.otherOf = otherOf;
@@ -225,4 +364,6 @@
   R.promiseOkList = promiseOkList;
   R.listHit = listHit;
   R.autoVerdict = autoVerdict;
+  R.compareOf = compareOf;
+  R.compareProblems = compareProblems;
 })();

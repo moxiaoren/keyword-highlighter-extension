@@ -1784,7 +1784,7 @@
 
   /* ---- 【2.0.8.19 需求①】软著三方比对 ----
    * 只维护 `imgCompare.rows = [{left, right}]`；归一的真源是 `KH.Config.normalizeImgCompare`。
-   * 判定与结论行都在 `important-note.js`（compareOf / compareText），这里不做任何判定，
+   * 判定与结论行都在 `compare/`（rules.js 的 compareOf / compareProblems、present.js 的 compareText），这里不做任何判定，
    * 免得设置页和面板各说一套。 */
   let cmpWired = false;
   function compareRowsOf() {

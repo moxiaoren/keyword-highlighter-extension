@@ -120,15 +120,15 @@ module.exports = async function run() {
   await test('判等收敛：括号补充不算不一致（同一家）', () => {
     const cmp = { hasDoc: true, docAmbiguous: false, rightNames: ['著作权人'],
       rows: [{ left: '开发者', right: '著作权人', rv: ['北京甲乙科技有限公司'], lvOcr: [''] }] };
-    const probs = N.compareProblems(cmp, () => '北京甲乙科技（集团）有限公司');
+    const probs = KH.Compare.Rules.compareProblems(cmp, () => '北京甲乙科技（集团）有限公司');
     eq(probs.length, 0, '去括号补充后同名 ⇒ 不再报不一致');
   });
 
   await test('判等收敛：长名只差一字不算不一致；完全不同的仍然报', () => {
     const mk = (lv, rv) => ({ hasDoc: true, docAmbiguous: false, rightNames: ['著作权人'],
       rows: [{ left: '开发者', right: '著作权人', rv: [rv], lvOcr: [''] }] });
-    eq(N.compareProblems(mk('北京知行灵动科技有限公司', '北京知行灵动科技有限公局'), () => '北京知行灵动科技有限公司').length, 0, '只差一字 ⇒ 近似同一家');
-    const bad = N.compareProblems(mk('上海完全不同科技有限公司', '北京知行灵动科技有限公司'), () => '上海完全不同科技有限公司');
+    eq(KH.Compare.Rules.compareProblems(mk('北京知行灵动科技有限公司', '北京知行灵动科技有限公局'), () => '北京知行灵动科技有限公司').length, 0, '只差一字 ⇒ 近似同一家');
+    const bad = KH.Compare.Rules.compareProblems(mk('上海完全不同科技有限公司', '北京知行灵动科技有限公司'), () => '上海完全不同科技有限公司');
     eq(bad.length, 1);
     eq(bad[0].kind, 'mismatch');
   });

@@ -22,7 +22,8 @@ const row = (label, value, src) => ({ label: label, value: value, from: { src: s
 module.exports = async function run() {
   const KH = H.loadKernel();
   const C = KH.Config;
-  const N = KH.ImportantNote;
+  const RULES = KH.Compare.Rules;
+  const PRES = KH.Compare.Present;
   const V = KH.OcrCopy.VIEW;
 
   /* ================= ① 配置归一 ================= */
@@ -52,7 +53,7 @@ module.exports = async function run() {
 
   await test('★ 不配 / 配空 ⇒ 关闭，且 compareOf 直接返回 null（零成本）', () => {
     const cfg = { imgCompare: C.normalizeImgCompare({}) };
-    eq(N.compareOf([row('开发者', '公司a', 'A')], cfg), null);
+    eq(RULES.compareOf([row('开发者', '公司a', 'A')], cfg), null);
   });
 
   /* ================= ② 角色识别（哪张图是授权书） ================= */
@@ -74,7 +75,7 @@ module.exports = async function run() {
       row('被授权公司', '乙公司', 'auth'),
       row('登记号', 'abfx', 'auth')
     ];
-    const cmp = N.compareOf(rows, cfgOf(ROWS));
+    const cmp = RULES.compareOf(rows, cfgOf(ROWS));
     eq(cmp.hasDoc, true);
     eq(cmp.docCount, 1);
     /* 右侧（授权书侧）的值取授权书那张图 */
@@ -85,7 +86,7 @@ module.exports = async function run() {
 
   await test('★ 没有授权书 ⇒ hasDoc=false（结论改成「需要授权书」）', () => {
     const rows = [row('著作权人', '甲公司', 'soft'), row('登记号', 'abfx', 'soft')];
-    const cmp = N.compareOf(rows, cfgOf(ROWS));
+    const cmp = RULES.compareOf(rows, cfgOf(ROWS));
     eq(cmp.hasDoc, false);
     eq(cmp.docCount, 0);
   });
@@ -96,10 +97,10 @@ module.exports = async function run() {
       row('被授权公司', '乙公司', 'auth1'),
       row('授权公司', '丙公司', 'auth2')
     ];
-    const cmp = N.compareOf(rows, cfgOf(ROWS));
+    const cmp = RULES.compareOf(rows, cfgOf(ROWS));
     const r = cmp.rows[1];
     eq(r.rv.length, 2, '并集两个值');
-    const probs = N.compareProblems(cmp, () => '');
+    const probs = RULES.compareProblems(cmp, () => '');
     truthy(probs.some((p) => p.kind === 'docMulti'), '同字段两个值要报内部不一致');
   });
 
@@ -117,20 +118,20 @@ module.exports = async function run() {
   const domOf = (map) => (field) => map[field] || '';
 
   await test('★ 三组全对上 ⇒ 没有问题、也不渲染结论', () => {
-    const cmp = N.compareOf(baseRows(), cfgOf(ROWS));
-    const probs = N.compareProblems(cmp, domOf({ 开发者: '乙公司' }));
+    const cmp = RULES.compareOf(baseRows(), cfgOf(ROWS));
+    const probs = RULES.compareProblems(cmp, domOf({ 开发者: '乙公司' }));
     eq(probs.length, 0);
-    eq(N.compareText(probs, cmp.hasDoc), '');
+    eq(PRES.compareText(probs, cmp.hasDoc), '');
   });
 
   await test('★ 配了比对但没有授权书 ⇒ 一句话让它去补，不罗列三条缺字段', () => {
     const rows = [row('著作权人', '甲公司', 'soft'), row('登记号', 'abfx', 'soft')];
-    const cmp = N.compareOf(rows, cfgOf(ROWS));
+    const cmp = RULES.compareOf(rows, cfgOf(ROWS));
     eq(cmp.hasDoc, false);
-    const probs = N.compareProblems(cmp, domOf({ 开发者: '丁公司' }));
+    const probs = RULES.compareProblems(cmp, domOf({ 开发者: '丁公司' }));
     eq(probs.length, 1);
     eq(probs[0].kind, 'noDoc');
-    const text = N.compareText(probs, cmp.hasDoc);
+    const text = PRES.compareText(probs, cmp.hasDoc);
     /* 【2.0.8.21 缺陷②】文案点名的是这次**实际配的**右侧字段，不再写死三个字段名 */
     truthy(text.indexOf('「被授权公司」') >= 0, text);
     truthy(text.indexOf('「授权公司」') >= 0, text);
@@ -140,10 +141,10 @@ module.exports = async function run() {
   await test('★ 有授权书仍不一致 ⇒ 逐组报「图上是 X / 授权书是 Y」', () => {
     const rows = baseRows();
     rows[2] = row('授权公司', '戊公司', 'auth');
-    const cmp = N.compareOf(rows, cfgOf(ROWS));
-    const probs = N.compareProblems(cmp, domOf({ 开发者: '乙公司' }));
+    const cmp = RULES.compareOf(rows, cfgOf(ROWS));
+    const probs = RULES.compareProblems(cmp, domOf({ 开发者: '乙公司' }));
     eq(probs.length, 1);
-    const text = N.compareText(probs, cmp.hasDoc);
+    const text = PRES.compareText(probs, cmp.hasDoc);
     truthy(text.indexOf('著作权人') >= 0, text);
     truthy(text.indexOf('甲公司') >= 0 && text.indexOf('戊公司') >= 0, text);
     truthy(text.indexOf(V.cmpNoDoc) < 0, '有授权书就不再提授权书');
@@ -152,25 +153,25 @@ module.exports = async function run() {
   await test('★ 全半角/空白差异算「一致」（走 TextNorm，不误报）', () => {
     const rows = baseRows();
     rows[3] = row('被授权公司', '乙公 司', 'auth');
-    const cmp = N.compareOf(rows, cfgOf(ROWS));
-    const probs = N.compareProblems(cmp, domOf({ 开发者: '乙公司' }));
+    const cmp = RULES.compareOf(rows, cfgOf(ROWS));
+    const probs = RULES.compareProblems(cmp, domOf({ 开发者: '乙公司' }));
     eq(probs.length, 0, '空白不该造成不一致');
   });
 
   await test('★ 授权书缺字段 ⇒ 报「缺『被授权公司』」，不报不一致', () => {
     const rows = baseRows().filter((r) => r.label !== '被授权公司');
-    const cmp = N.compareOf(rows, cfgOf(ROWS));
-    const probs = N.compareProblems(cmp, domOf({ 开发者: '乙公司' }));
+    const cmp = RULES.compareOf(rows, cfgOf(ROWS));
+    const probs = RULES.compareProblems(cmp, domOf({ 开发者: '乙公司' }));
     truthy(probs.some((p) => p.kind === 'missRight'), JSON.stringify(probs));
-    const text = N.compareText(probs, cmp.hasDoc);
+    const text = PRES.compareText(probs, cmp.hasDoc);
     truthy(text.indexOf('缺「被授权公司」') >= 0, text);
   });
 
   await test('★ 弱值不参与判等（`12` 不能撞出冲突）', () => {
     const rows = baseRows();
     rows[4] = row('登记号', '12', 'auth');
-    const cmp = N.compareOf(rows, cfgOf(ROWS));
-    const probs = N.compareProblems(cmp, domOf({ 开发者: '乙公司' }));
+    const cmp = RULES.compareOf(rows, cfgOf(ROWS));
+    const probs = RULES.compareProblems(cmp, domOf({ 开发者: '乙公司' }));
     eq(probs.length, 0, '两边都太短 ⇒ 不当成"对不上"');
   });
 
@@ -178,9 +179,9 @@ module.exports = async function run() {
     const rows = baseRows();
     rows[2] = row('授权公司', '戊公司', 'auth');
     rows[3] = row('被授权公司', '己公司', 'auth');
-    const cmp = N.compareOf(rows, cfgOf(ROWS));
-    const probs = N.compareProblems(cmp, domOf({ 开发者: '乙公司' }));
-    const text = N.compareText(probs, cmp.hasDoc);
+    const cmp = RULES.compareOf(rows, cfgOf(ROWS));
+    const probs = RULES.compareProblems(cmp, domOf({ 开发者: '乙公司' }));
+    const text = PRES.compareText(probs, cmp.hasDoc);
     truthy(text.indexOf(V.cmpSep) >= 0, text);
     eq(text.split(V.cmpSep).length, 2, '两组不一致 = 两条结论');
   });
@@ -192,23 +193,23 @@ module.exports = async function run() {
       row('登记号', 'abc1234', 'pic1'),
       row('登记号', 'abc1234', 'pic2')
     ];
-    const cmp = N.compareOf(two, cfgOf([{ left: '登记号', right: '登记号' }]));
+    const cmp = RULES.compareOf(two, cfgOf([{ left: '登记号', right: '登记号' }]));
     eq(cmp.hasDoc, false);
     eq(cmp.docAmbiguous, true);
-    const probs = N.compareProblems(cmp, () => '');
+    const probs = RULES.compareProblems(cmp, () => '');
     eq(probs.length, 1);
     eq(probs[0].kind, 'noDocAmbig');
-    truthy(N.compareText(probs, false).indexOf('无法判断哪张图是授权书') >= 0);
+    truthy(PRES.compareText(probs, false).indexOf('无法判断哪张图是授权书') >= 0);
   });
 
   /* ---------- 2.0.8.21 缺陷②：文案里不能出现用户没配过的字段名 ---------- */
 
   await test('★ 「未识别到授权书」只点名用户配的字段，不写死三个字段名', () => {
     const only = [row('开发者', '甲公司', 'soft')];
-    const cmp = N.compareOf(only, cfgOf([{ left: '开发者', right: '被授权公司' }]));
+    const cmp = RULES.compareOf(only, cfgOf([{ left: '开发者', right: '被授权公司' }]));
     eq(cmp.hasDoc, false);
     eq(cmp.docAmbiguous, false);
-    const text = N.compareText(N.compareProblems(cmp, () => '甲公司'), false);
+    const text = PRES.compareText(RULES.compareProblems(cmp, () => '甲公司'), false);
     truthy(text.indexOf('「被授权公司」') >= 0, text);
     eq(text.indexOf('「授权公司」'), -1, '没配的字段名不该出现在文案里：' + text);
     eq(text.indexOf('登记号'), -1, '没配的字段名不该出现在文案里：' + text);

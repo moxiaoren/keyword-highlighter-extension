@@ -1830,188 +1830,11 @@
    *     （`rightOnly`）。全是双侧字段时退回「有右无左」。
    *   · 同角色多张图取**并集**（Q7）；同一个字段在同一侧出现两个值 ⇒ 报「授权书内部不一致」。
    */
-  function compareOf(rows, cfg) {
-    const ic = (cfg && cfg.imgCompare) || null;
-    if (!ic || ic.on === false || !ic.rows || !ic.rows.length) return null;
-    const TN = KH.TextNorm;
-    const keyOf = (s) => (TN ? TN.keyOf(s) : String(s == null ? '' : s).replace(/\s+/g, '').toLowerCase());
-    const leftKeys = new Set();
-    const rightKeys = new Set();
-    for (let i = 0; i < ic.rows.length; i++) {
-      const l = keyOf(ic.rows[i] && ic.rows[i].left);
-      const g = keyOf(ic.rows[i] && ic.rows[i].right);
-      if (l) leftKeys.add(l);
-      if (g) rightKeys.add(g);
-    }
-    const rightOnly = [];
-    rightKeys.forEach((k) => { if (!leftKeys.has(k)) rightOnly.push(k); });
-    /* 【2.0.8.21 缺陷①②】两件事都要先记下来，`compareProblems` 才知道该报哪一种问题：
-     *   · `rightNames` —— 实际配置的**右侧字段名原文**（不是 key；key 去空白、小写过，
-     *     直接拼进提示会变成 `abfx` 这种看不出是谁的东西）。`noDoc` 文案靠它拼，不再写死。
-     *   · `docAmbiguous` —— 一组"只在右侧出现"的字段都没有（典型：只配了 `登记号 ↔ 登记号`）。
-     *     这时角色判断只能退回「有右无左」，而任何一张软著证明图也会带同名字段 ⇒ 判不出授权书。
-     *     那是**配置问题**，不是"用户忘了放授权书"，报的话术必须不一样。 */
-    const rightNames = [];
-    if (rightOnly.length) {
-      for (let i = 0; i < ic.rows.length; i++) {
-        const r = ic.rows[i] || {};
-        const raw = String(r.right || '').trim();
-        if (!raw) continue;
-        if (rightOnly.indexOf(keyOf(raw)) < 0) continue;
-        if (rightNames.indexOf(raw) < 0) rightNames.push(raw);
-      }
-    }
-    const docAmbiguous = rightOnly.length === 0;
-    const bySrc = new Map();
-    const loose = new Map();
-    const add = (map, k, v) => {
-      let a = map.get(k);
-      if (!a) { a = []; map.set(k, a); }
-      if (a.indexOf(v) < 0) a.push(v);
-    };
-    for (let i = 0; i < (rows || []).length; i++) {
-      const r = rows[i] || {};
-      const v = String(r.value == null ? '' : r.value).trim();
-      const k = keyOf(r.label);
-      if (!v || !k) continue;
-      const src = (r.from && r.from.src) || '';
-      if (!src) { add(loose, k, v); continue; }
-      let m = bySrc.get(src);
-      if (!m) { m = new Map(); bySrc.set(src, m); }
-      add(m, k, v);
-    }
-    const ownSrcs = [];
-    const docSrcs = [];
-    bySrc.forEach((m, src) => {
-      let isDoc = false;
-      if (rightOnly.length) {
-        for (let i = 0; i < rightOnly.length; i++) if (m.has(rightOnly[i])) { isDoc = true; break; }
-      } else {
-        let hasRight = false;
-        let hasLeft = false;
-        m.forEach((_v, k) => {
-          if (rightKeys.has(k)) hasRight = true;
-          if (leftKeys.has(k)) hasLeft = true;
-        });
-        isDoc = hasRight && !hasLeft;
-      }
-      (isDoc ? docSrcs : ownSrcs).push(src);
-    });
-    const collect = (srcList, key) => {
-      const out = [];
-      for (let i = 0; i < srcList.length; i++) {
-        const arr = (bySrc.get(srcList[i]) || new Map()).get(key);
-        if (!arr) continue;
-        for (let j = 0; j < arr.length; j++) if (out.indexOf(arr[j]) < 0) out.push(arr[j]);
-      }
-      return out;
-    };
-    const collectMap = (m, key) => {
-      const arr = m.get(key);
-      return arr ? arr.slice() : [];
-    };
-    const list = [];
-    for (let i = 0; i < ic.rows.length; i++) {
-      const r = ic.rows[i] || {};
-      const left = String(r.left || '').trim();
-      const right = String(r.right || '').trim();
-      if (!left || !right) continue;
-      const lk = keyOf(left);
-      const rk = keyOf(right);
-      list.push({
-        left: left, right: right,
-        /* 右侧（授权书侧）的值：同角色多张图取并集 */
-        rv: collect(docSrcs, rk),
-        /* 左侧值的图片来源：软著证明（非授权书图）优先 → 无来源行 → 授权书图兜底。
-         * 页面 DOM 抓取值由 `decorateMerge` 在渲染时补在最前面（那里才拿得到表格）。 */
-        lvOcr: collect(ownSrcs, lk).concat(collectMap(loose, lk)).concat(collect(docSrcs, lk))
-      });
-    }
-    return {
-      rows: list,
-      hasDoc: docSrcs.length > 0,
-      docCount: docSrcs.length,
-      docAmbiguous: docAmbiguous,
-      rightNames: rightNames
-    };
-  }
-
   /** 一张卡的比对行从哪来：只在配置了比对、且有 OCR 进表行时才算（没配就是零成本）。 */
   function compareRowsFor(meta, cfg) {
     const ic = cfg && cfg.imgCompare;
     if (!ic || ic.on === false || !ic.rows || !ic.rows.length) return [];
     try { return ocrExtraRows(meta) || []; } catch (e) { return []; }
-  }
-
-  /**
-   * 判等 → 问题清单。`valueOf(field)` 是**渲染时**的 DOM 取数（可选：单测不传就只用 OCR 值）。
-   * 只报四类问题：两值不同 / 授权书缺字段 / 软著证明缺字段 / 授权书内部两个值。
-   * 弱值（<2 字或纯 ASCII<4，Q4）不参与判等，避免 `12` 撞上 `2024-12-31` 这类误报。
-   */
-  function compareProblems(cmp, valueOf) {
-    if (!cmp || !cmp.rows || !cmp.rows.length) return [];
-    /* 【2.0.8.19 Q6】没有授权书就没有"右侧"可言：这时不该逐组报「缺字段」三条
-     * （用户看到的会是三行噪音），而是一句话——**去补授权书**。
-     * 【2.0.8.21 缺陷①】但这句"补授权书"只在**能判断角色**时成立：两边字段同名时，
-     * 用户可能已经放了授权书、只是系统认不出，这时喊"没找到授权书"就是误导。
-     * 所以先看 `docAmbiguous`，分两种问题上报（`names` 带到文案里，不再写死字段名）。 */
-    if (!cmp.hasDoc) {
-      if (cmp.docAmbiguous) return [{ kind: 'noDocAmbig' }];
-      return [{ kind: 'noDoc', names: cmp.rightNames || [] }];
-    }
-    const TN = KH.TextNorm;
-    const out = [];
-    for (let i = 0; i < cmp.rows.length; i++) {
-      const r = cmp.rows[i];
-      let dom = '';
-      try { dom = valueOf ? String(valueOf(r.left) || '').trim() : ''; } catch (e) { dom = ''; }
-      const lv = dom || (r.lvOcr[0] || '');
-      if (r.rv.length > 1) {
-        out.push({ kind: 'docMulti', row: r, lv: lv, rv: r.rv.join(' / ') });
-        continue;
-      }
-      const rv = r.rv[0] || '';
-      /* 【2.0.13 · A2】判等统一走 `rowState`（同一口径也用于行底色）：
-       * 去括号补充 + 长名只差一字不再算「不一致」——用户 2026-11-15 拍板四处全收敛。 */
-      const st = rowState(lv, rv);
-      if (st.state === 'weak' || st.state === 'same' || st.state === 'none') continue;
-      if (st.state === 'conflict') out.push({ kind: 'mismatch', row: r, lv: lv, rv: rv });
-      else if (st.state === 'only-a') out.push({ kind: 'missRight', row: r, lv: lv, rv: rv });
-      else if (st.state === 'only-b') out.push({ kind: 'missLeft', row: r, lv: lv, rv: rv });
-    }
-    return out;
-  }
-
-  /** 问题清单 → 表格下方那一行结论（无问题 ⇒ 空串 ⇒ 不渲染）。文案全部来自 `KH.OcrCopy.VIEW`。 */
-  function compareText(problems, hasDoc) {
-    if (!problems || !problems.length) return '';
-    const V = (KH.OcrCopy && KH.OcrCopy.VIEW) || {};
-    const R = (KH.OcrCopy && typeof KH.OcrCopy.render === 'function')
-      ? KH.OcrCopy.render
-      : (t, o) => String(t).replace(/\{(\w+)\}/g, (m, k) => (o && o[k] != null ? String(o[k]) : ''));
-    const msgs = [];
-    /* 【2.0.8.21 缺陷②】右侧字段名从配置里取，拼成「授权公司」「被授权公司」——
-     * 文案里不再出现用户没配过的字段名。 */
-    const namesOf = (arr) => (arr || []).map((n) => '「' + n + '」').join('');
-    for (let i = 0; i < problems.length; i++) {
-      const p = problems[i];
-      if (p.kind === 'noDoc') {
-        msgs.push(R(V.cmpNoDoc || '', { names: namesOf(p.names) }));
-      } else if (p.kind === 'noDocAmbig') {
-        msgs.push(V.cmpNoDocAmbig || '');
-      } else if (p.kind === 'mismatch') {
-        msgs.push(R(V.cmpMismatch || '', { left: p.row.left, right: p.row.right, lv: p.lv, rv: p.rv }));
-      } else if (p.kind === 'docMulti') {
-        msgs.push(R(V.cmpDocMulti || '', { right: p.row.right, vals: p.rv }));
-      } else if (p.kind === 'missRight') {
-        msgs.push(R(V.cmpMissRight || '', { right: p.row.right }));
-      } else if (p.kind === 'missLeft') {
-        msgs.push(R(V.cmpMissLeft || '', { left: p.row.left }));
-      }
-    }
-    const out = [];
-    for (let i = 0; i < msgs.length; i++) if (msgs[i] && out.indexOf(msgs[i]) < 0) out.push(msgs[i]);
-    return out.join(V.cmpSep || '；');
   }
 
   const head = {
@@ -2179,7 +2002,7 @@
           const i = k.indexOf('\u0000');
           entries.push({ kw: k.slice(0, i), adj: k.slice(i + 1) });
         });
-        items.push({ note: g.note, entries, pinIds: Array.from(g.pinIds), imgSize: g.imgSize || '', noteFontSize: g.noteFontSize || '', bg: g.bg || '', mergeRows: Array.from(g.mergeMap.values()), compare: compareOf(g.cmpRows, cfg) });
+        items.push({ note: g.note, entries, pinIds: Array.from(g.pinIds), imgSize: g.imgSize || '', noteFontSize: g.noteFontSize || '', bg: g.bg || '', mergeRows: Array.from(g.mergeMap.values()), compare: KH.Compare.Rules.compareOf(g.cmpRows, cfg) });
       });
       return items;
     },
@@ -2304,31 +2127,6 @@
       if (keys.indexOf(key) >= 0) return tr;
     }
     return null;
-  }
-
-  /**
-   * 【2.0.13 · A2】两个值比成一种结论 —— `compareProblems`（表格下方那一行）与 `paintAuto`（行底色）
-   * **共用这一处**。抽出来的原因：以前自动行上色是另一套判等（企业名称一套、承诺对象一套、
-   * 其余自动行根本不参与），同一对字段在「结论行」和「行底色」上可能给出不同答案。
-   * 归一全走 `KH.TextNorm.verdict`：`{core:true, near:true}` = 去括号补充 + 长名只差一字
-   * （用户 2026-11-15 拍板「四处全收敛」，这两个开关默认关，只在这里打开）。
-   * @param {string} lv 左侧（本页/开发者一侧）值
-   * @param {string} rv 右侧（图里 / 资质一侧）值
-   * @returns {{state:string, how:string}} state ∈ same|conflict|only-a|only-b|weak|none；how 是 verdict 原始标签
-   */
-  function rowState(lv, rv) {
-    const TN = (typeof KH !== 'undefined' && KH && KH.TextNorm) || null;
-    const a = String(lv == null ? '' : lv).trim();
-    const b = String(rv == null ? '' : rv).trim();
-    if (!a && !b) return { state: 'none', how: '' };
-    /* 弱值不参与判等（Q4）：`12` 撞上 `2024-12-31` 是误报，不是差异。 */
-    if (TN && a && b && (TN.isWeak(a) || TN.isWeak(b))) return { state: 'weak', how: '' };
-    if (TN) {
-      const how = TN.verdict(a, b, { core: true, near: true });
-      if (how === 'weak' || how === 'only-a' || how === 'only-b' || how === 'none') return { state: how, how: how };
-      return { state: how === 'conflict' ? 'conflict' : 'same', how: how };
-    }
-    return { state: a && b ? (a === b ? 'same' : 'conflict') : (a ? 'only-a' : 'only-b'), how: '' };
   }
 
   /**
@@ -3377,7 +3175,7 @@
           if (dv || (cr.lvOcr && cr.lvOcr.length) || (cr.rv && cr.rv.length)) { cmpEvidence = true; break; }
         }
       }
-      paintCmp(cmpEvidence ? compareText(compareProblems(cmp, valueOf), !!(cmp && cmp.hasDoc)) : '');
+      paintCmp(cmpEvidence ? KH.Compare.Present.compareText(KH.Compare.Rules.compareProblems(cmp, valueOf), !!(cmp && cmp.hasDoc)) : '');
       if (!rows.length) {
         clearRows();
         table.removeAttribute('data-kh-merge-sig');
@@ -5139,8 +4937,6 @@
     /* 【2.0.8.7】合并闸门是「图这次真的 OCR 命中才出行」的判据所在 —— 纯函数 + 只读
      * `KH.ImgOcr.items()`，导出给单测，免得为了验一条判定去搭整块面板。 */
     mergeRowsFor, ocrFieldHit, rowBgOf, catOf,
-    /* 【2.0.8.19 · P4】三方比对是纯函数（输入=进表行+配置，输出=问题清单/结论文案），
-     * 导出给单测：判角色、并集、弱值、授权书内部冲突都能直接喂数据验，不必搭整块面板。 */
-    compareOf, compareProblems, compareText
+
   };
 })();
