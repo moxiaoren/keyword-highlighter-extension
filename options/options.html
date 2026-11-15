@@ -518,6 +518,17 @@
         </div>
       </details>
 
+      <!-- 【校验中心 T5】只汇总、不提供修改：图怎么取 / 谁和谁比 / 放行哪些平台，
+           每项标出「默认」还是「已改」。数据源是 compare/center.js 的纯函数 summary(cfg)，
+           这里只负责画，不在这里重算一遍（否则又长出第二套口径）。 -->
+      <details class="kh-adv" id="ocr-adv-checkcenter">
+        <summary>🧭 校验中心（现在按什么在判）</summary>
+        <div class="kh-adv-body">
+          <p class="kh-muted">一眼看清自动行到底按什么在判。这里<strong>只汇总、不给修改</strong>：要改，去下面标的位置。</p>
+          <ul class="kh-cc-list" id="check-center"></ul>
+        </div>
+      </details>
+
       <!-- 【2.0.8.19 需求①】软著三方比对：左＝软著证明上的字段（页面抓取值或图上的值），
            右＝软著授权书上的字段。配好之后，卡片表格下方多一行结论，只在真有问题时出现。 -->
       <details class="kh-adv" id="ocr-adv-compare">
@@ -938,6 +949,7 @@
   <script src="../src/build-info.js"></script>
   <script src="../src/core/protocol.js"></script>
   <script src="../src/core/config.js"></script>
+  <script src="../src/features/compare/center.js"></script>
   <script src="../src/core/scope.js"></script>
   <script src="../src/platform/storage.js"></script>
   <script src="../src/platform/markdown.js"></script>

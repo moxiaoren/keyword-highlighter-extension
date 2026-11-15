@@ -17,6 +17,9 @@
 
   function raw(v) { return v == null ? '' : String(v); }
 
+  /** 没配比对对时也要和「开发者」比一比的字段：图片里抽到的主体名。 */
+  const OWNER_LABELS = ['著作权人', '著作权人名称', '主办单位', 'APP备案主办单位', 'APP备案主办单位名称'];
+
   /** 总开关：`imgCompare.on === false` 时一律不判。默认 on（老配置没有这个键）。 */
   function enabled(cfg) {
     const ic = cfg && cfg.imgCompare;
@@ -186,7 +189,35 @@
       other = otherOf(labels[i], pairs);
       if (other) label = labels[i];
     }
-    if (!other) return null;
+    if (!other) {
+      /* ---------- ⑤ T4：主体行兜底与「开发者」比对 ----------
+       * 著作权人 / 主办单位这类行没被用户配成比对对时，仍然和开发者比一次：
+       * 判等口径完全复用上面的 qualVerdict（归一、≥6 字互相包含），不写第二套。
+       * 配置对优先于兜底：用户明确指了别的对侧，就按用户说的比。 */
+      const ownerLabel = labels.filter((l) => OWNER_LABELS.some((x) => keyOf(x) === keyOf(l)))[0] || '';
+      if (!ownerLabel) return null;
+      const whatOwner = '比对「' + ownerLabel + '」↔「开发者」';
+      const srcOwner = '本页抓取 · 与开发者比对';
+      if (!opts.devPresent) {
+        return { what: whatOwner, state: 'unset', color: '', source: srcOwner, keyValue: value,
+          note: '还没配「开发者」这一行，没法比对（去设置页 › 抓取字段里加上）' };
+      }
+      if (!dev) {
+        return { what: whatOwner, state: 'unknown', color: '', source: srcOwner, keyValue: value,
+          note: '「开发者」这一行是空的，没法比对（不改底色）' };
+      }
+      const ov = qualVerdict(value, dev);
+      if (ov.state === 'same') {
+        return { what: whatOwner, state: 'same', color: C.COLOR_OK, source: srcOwner, keyValue: value,
+          note: '与「开发者」一致（命中：' + dev + '）' };
+      }
+      if (ov.state === 'diff') {
+        return { what: whatOwner, state: 'diff', color: C.COLOR_BAD, source: srcOwner, keyValue: value,
+          note: '与「开发者」不一致（「开发者」= ' + dev + '，这一行 = ' + value + '）' };
+      }
+      return { what: whatOwner, state: 'unknown', color: '', source: srcOwner, keyValue: value,
+        note: '无法核实：两边有一边没取到值（不改底色）' };
+    }
     const what = '比对「' + label + '」↔「' + other + '」';
     const src = '本页抓取 · 按你配的比对关系';
     const got = get(other) || { found: false, value: '' };

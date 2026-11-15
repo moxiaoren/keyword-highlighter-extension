@@ -147,4 +147,55 @@ module.exports = async function run() {
     const line = div.querySelector('.kh-compare-line');
     eq(line, null, '两边同值 ⇒ 不该出结论行；出线就说明左列字段名被标记污染、取数失败');
   });
+
+  /* ---------- T4：主体行没配比对对，也自动和「开发者」比 ---------- */
+
+  await test('★ 著作权人没配比对对，也自动和「开发者」比：一致 ⇒ 绿（悬停写明比的是谁）', () => {
+    const div = card([['开发者', '北京甲科技（集团）有限公司'], ['著作权人', '北京甲科技有限公司']]);
+    const p = shadowPanel();
+    p.cfg = { imgCompare: { on: true, rows: [] } };
+    p.decorateChecks(div, {});
+    const m = markOf(div, 1);
+    truthy(m, '著作权人行要出标记');
+    eq(m.getAttribute('data-state'), 'same');
+    eq(String(m.textContent), '✔ 一致');
+    const tip = String(cellOf(div, 1).getAttribute('title') || '');
+    truthy(tip.indexOf('比对「著作权人」↔「开发者」') >= 0, tip);
+    const ev = valOf(div, 1).querySelector('.kh-evidence');
+    truthy(ev && String(ev.textContent).indexOf('与开发者比对') >= 0, '证据要写清是与开发者比对');
+  });
+
+  await test('著作权人与「开发者」不一致 ⇒ ⚠ 待确认，悬停给两边原值', () => {
+    const div = card([['开发者', '北京甲科技有限公司'], ['著作权人', '上海乙科技有限公司']]);
+    const p = shadowPanel();
+    p.cfg = { imgCompare: { on: true, rows: [] } };
+    p.decorateChecks(div, {});
+    const m = markOf(div, 1);
+    eq(m.getAttribute('data-state'), 'diff');
+    const tip = String(cellOf(div, 1).getAttribute('title') || '');
+    truthy(tip.indexOf('上海乙科技有限公司') >= 0 && tip.indexOf('北京甲科技有限公司') >= 0, tip);
+  });
+
+  await test('著作权人整卡没有「开发者」行 ⇒ ⚙ 待配置（缺的是配置，不是结果）', () => {
+    const div = card([['著作权人', '北京甲科技有限公司']]);
+    const p = shadowPanel();
+    p.cfg = { imgCompare: { on: true, rows: [] } };
+    p.decorateChecks(div, {});
+    const m = markOf(div, 0);
+    eq(m.getAttribute('data-state'), 'unset');
+    falsy(cellOf(div, 0).style.background);
+  });
+
+  await test('用户配了别的对侧 ⇒ 配置对优先于「与开发者」兜底', () => {
+    /* 开发者是甲、著作权人是乙、主办单位也是乙：若兜底生效，著作权人会判 diff；
+     * 配了 著作权人↔主办单位 之后应按配置判 same。 */
+    const div = card([['开发者', '北京甲科技有限公司'], ['著作权人', '上海乙科技有限公司'], ['主办单位', '上海乙科技有限公司（总部）']]);
+    const p = shadowPanel();
+    p.cfg = { imgCompare: { on: true, rows: [{ left: '著作权人', right: '主办单位' }] } };
+    p.decorateChecks(div, {});
+    const m = markOf(div, 1);
+    eq(m.getAttribute('data-state'), 'same', '按配置对判同一家，而不是按开发者判 diff');
+    const ev = valOf(div, 1).querySelector('.kh-evidence');
+    truthy(ev && String(ev.textContent).indexOf('按你配的比对关系') >= 0);
+  });
 };

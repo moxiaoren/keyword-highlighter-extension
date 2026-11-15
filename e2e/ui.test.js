@@ -179,9 +179,38 @@ module.exports = async function runUi(ctx) {
       '★ 引擎控件必须落在分区首屏内，实际分区内 top=' + r.engTop + ' / 视口 ' + r.vh + '（本页原本 1071px，引擎在首屏之外）');
     /* 【2.0.7.3】预算 1000 → 1200：真版 2.0.7.2 在这个分区里加了一张**软著一致性核对**折叠卡
      * （六条字段名 + 比对基准），它是真功能、不是文案膨胀 —— 这条断言的本意（"别把引擎控件埋在
-     * 一屏文字下面"）由上面那条 `engTop < 视口` 独立守着，所以这里只放宽总高预算，不放宽本意。 */
-    truthy(r.height < 1200, '★ 本页高度要有上限（原 1071px；2.0.7.2 起多了软著核对卡），实际 ' + r.height + 'px');
+     * 一屏文字下面"）由上面那条 `engTop < 视口` 独立守着，所以这里只放宽总高预算，不放宽本意。
+     * 【2.0.10.15】预算 1200 → 1300：2.0.10.15 又加了「校验中心」折叠卡（默认折叠，展开前 44px 摘要），
+     * 同样是真功能；同一先例，仍由 `engTop < 视口` 守本意。 */
+    truthy(r.height < 1300, '★ 本页高度要有上限（原 1071px；2.0.7.2 软著核对卡、2.0.10.15 校验中心后仍有上限），实际 ' + r.height + 'px');
     includes(r.secHeadText, '样式', '顶部要有一行指路「相关设置在 样式 → 重要笔记」（两个外观默认值已搬到那里）');
+  });
+
+  await test('★ 校验中心：图怎么取 / 谁和谁比 / 放行哪些平台三项都在（T5）', async () => {
+    const r = await opt.evaluate(() => {
+      const sec = document.getElementById('sec-ocr');
+      if (!sec) return null;
+      const wasHidden = sec.hidden;
+      sec.hidden = false;
+      const box = document.getElementById('check-center');
+      const items = box ? Array.prototype.slice.call(box.querySelectorAll('.kh-cc-item')) : [];
+      const out = {
+        hasCard: !!document.getElementById('ocr-adv-checkcenter'),
+        keys: items.map((li) => li.getAttribute('data-cc')),
+        titles: items.map((li) => ((li.querySelector('strong') || {}).textContent || '')),
+        tags: items.map((li) => ((li.querySelector('.kh-cc-tag') || {}).textContent || '')),
+        texts: items.map((li) => ((li.querySelector('.kh-cc-text') || {}).textContent || '')),
+        hints: items.map((li) => ((li.querySelector('.kh-cc-hint') || {}).textContent || ''))
+      };
+      sec.hidden = wasHidden;
+      return out;
+    });
+    truthy(r && r.hasCard, '设置页要有「🧭 校验中心」折叠卡，实际 ' + JSON.stringify(r));
+    eq(r.keys.join(','), 'ocr,pairs,allow', '三项顺序固定：图怎么取 / 谁和谁比 / 放行哪些平台，实际 ' + JSON.stringify(r.keys));
+    eq(r.titles.join(','), '图怎么取,谁和谁比,放行哪些平台', '标题要说人话，实际 ' + JSON.stringify(r.titles));
+    truthy(r.tags.every((t) => t === '默认' || t === '已改'), '每项都要标默认/已改，实际 ' + JSON.stringify(r.tags));
+    truthy(r.texts.every((t) => t.length > 0), '三项都要有当前生效值的摘要，实际 ' + JSON.stringify(r.texts));
+    truthy(r.hints.every((t) => t.length > 0), '三项都要说清去哪改，实际 ' + JSON.stringify(r.hints));
   });
 
   await test('★ 顶部全局开关 / 站点开关控件仍在且已绑定', async () => {

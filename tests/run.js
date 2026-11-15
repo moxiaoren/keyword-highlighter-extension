@@ -231,7 +231,9 @@ const specs = [
   './specs/list-search-hit.test.js',
   './specs/trim-shape.test.js',
   /* 自动行参与比对（别名 / 收敛 / 严格开关 / ⚙ 待配置）。口径见 specs/auto-compare.test.js 头部 */
-  './specs/auto-compare.test.js'
+  './specs/auto-compare.test.js',
+  /* 校验中心（T5）：三处配置的只读汇总。口径见 specs/compare-center.test.js 头部 */
+  './specs/compare-center.test.js'
 ];
 
 (async () => {

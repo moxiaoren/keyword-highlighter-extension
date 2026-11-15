@@ -1681,6 +1681,8 @@
     renderMergeForm();
     /* 【2.0.8.19 需求①】软著三方比对：软著证明字段 ＝ 授权书字段。 */
     renderCompareForm();
+    /* 【T5】校验中心：只画不判，口径全在 compare/center.js 的 summary(cfg)。 */
+    renderCheckCenter();
     /* 【2.0.8.7 需求②】AI 审核：账号 / Token / 模型 / 只跑本地 的回显（图标与结论区不持久化）。 */
     aaLoad(cfg);
   }
@@ -1851,6 +1853,40 @@
       return;
     }
     for (let i = 0; i < rows.length; i++) box.appendChild(compareRowEl(rows[i]));
+  }
+
+  /* ---- 【T5】校验中心 ----
+   * 「图怎么取 / 谁和谁比 / 放行哪些平台」的汇总。判定与文案都在 compare/center.js，
+   * 这里只负责把 summary(cfg) 画成三行；要改配置，行尾 hint 会指到对应位置。 */
+  function renderCheckCenter() {
+    const box = $('check-center');
+    if (!box) return;
+    box.innerHTML = '';
+    const C = (KH.Compare && KH.Compare.Center) || null;
+    if (!C || typeof C.summary !== 'function') return;
+    const items = C.summary(cfg) || [];
+    for (let i = 0; i < items.length; i += 1) {
+      const it = items[i];
+      const li = document.createElement('li');
+      li.className = 'kh-cc-item';
+      li.setAttribute('data-cc', it.key || '');
+      const name = document.createElement('strong');
+      name.textContent = it.title || '';
+      const tag = document.createElement('span');
+      tag.className = 'kh-cc-tag' + (it.changed ? ' is-changed' : '');
+      tag.textContent = it.tag || '';
+      const text = document.createElement('span');
+      text.className = 'kh-cc-text';
+      text.textContent = it.text || '';
+      const hint = document.createElement('span');
+      hint.className = 'kh-cc-hint';
+      hint.textContent = it.hint || '';
+      li.appendChild(name);
+      li.appendChild(tag);
+      li.appendChild(text);
+      li.appendChild(hint);
+      box.appendChild(li);
+    }
   }
 
   function wireCompareForm() {

@@ -705,3 +705,22 @@ body {
 .kh-csv-table tr.is-bad td { color: var(--warn-ink); }
 #undo-row { align-items: center; }
 #undo-row .kh-dim { font-size: var(--fs-sm); }
+
+/* ============================================================================
+ * T5 · 校验中心（设置页 › 图片识别 › 🧭 校验中心）
+ * 只读汇总三行；每行 = 名称 + 默认/已改 + 一句话 + 去哪改。
+ * ========================================================================= */
+.kh-cc-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; }
+.kh-cc-item {
+  display: grid; grid-template-columns: auto auto 1fr; gap: 4px 10px; align-items: baseline;
+  padding: 8px 10px; border: 1px solid var(--border-2); border-radius: var(--r-sm); background: var(--card-2);
+}
+.kh-cc-item strong { font-size: var(--fs-sm); color: var(--text); }
+.kh-cc-tag {
+  padding: 0 6px; border-radius: 999px; background: var(--bg); color: var(--text-3);
+  font-size: var(--fs-xs); white-space: nowrap;
+}
+.kh-cc-tag.is-changed { background: var(--brand-soft); color: var(--brand-deep); }
+.kh-cc-text { color: var(--text-2); font-size: var(--fs-sm); }
+.kh-cc-hint { grid-column: 1 / -1; color: var(--text-3); font-size: var(--fs-xs); }
+
