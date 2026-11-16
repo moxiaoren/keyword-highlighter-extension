@@ -1671,16 +1671,12 @@
     $('pf-noteFontSize').value = (cfg.importantNote || {}).fontSize || '';
     limitInput($('pf-notePanelWidth'), KH.Config.PANEL_WIDTH_MIN, KH.Config.PANEL_WIDTH_MAX);
     $('pf-notePanelWidth').value = cfg.notePanelWidth;
-    /* 【台账 #7】承诺对象放行名单回显：走同一个归一函数（存储里可能是逗号串、坏值）。 */
-    $('pf-promiseOk').value = KH.Config.normalizeNoteCheck(cfg.noteCheck).promiseOk.join('\n');
     /* 置顶排序（2.0.2.6 需求②）：候选与回显都要重建（关键词表变了候选就得跟着变）。 */
     renderPinOrder();
     /* 【2.0.8.4 需求④】AI 助手的接口配置（与上面那块"重要笔记"同属样式/配置页）。 */
     renderAiForm();
     /* 【2.0.8.6 需求①】图文合并的标题表（字段 → 自定义标题 + 默认不展示）。 */
     renderMergeForm();
-    /* 【2.0.8.19 需求①】软著三方比对：软著证明字段 ＝ 授权书字段。 */
-    renderCompareForm();
     /* 【T5】校验中心：只画不判，口径全在 compare/center.js 的 summary(cfg)。 */
     renderCheckCenter();
     /* 【2.0.8.7 需求②】AI 审核：账号 / Token / 模型 / 只跑本地 的回显（图标与结论区不持久化）。 */
@@ -1784,80 +1780,10 @@
     for (let i = 0; i < rows.length; i++) box.appendChild(mergeRowEl(rows[i]));
   }
 
-  /* ---- 【2.0.8.19 需求①】软著三方比对 ----
-   * 只维护 `imgCompare.rows = [{left, right}]`；归一的真源是 `KH.Config.normalizeImgCompare`。
-   * 判定与结论行都在 `compare/`（rules.js 的 compareOf / compareProblems、present.js 的 compareText），这里不做任何判定，
-   * 免得设置页和面板各说一套。 */
-  let cmpWired = false;
-  function compareRowsOf() {
-    const n = KH.Config.normalizeImgCompare;
-    const cur = (typeof n === 'function') ? n(cfg.imgCompare) : (cfg.imgCompare || { rows: [] });
-    return cur.rows || [];
-  }
-
-  function compareRowEl(row) {
-    const box = document.createElement('div');
-    box.className = 'kh-compare-row';
-    const mk = (tag, cls, attrs) => {
-      const el = document.createElement(tag);
-      if (cls) el.className = cls;
-      Object.keys(attrs || {}).forEach((k) => {
-        if (k === 'text') el.textContent = attrs[k];
-        else el.setAttribute(k, attrs[k]);
-      });
-      return el;
-    };
-    const left = mk('input', 'kh-input kh-cmp-left', { type: 'text', placeholder: '软著证明上的字段（如：著作权人）' });
-    left.value = row.left || '';
-    const arrow = mk('span', 'kh-cmp-arrow', { text: '＝' });
-    const right = mk('input', 'kh-input kh-cmp-right', { type: 'text', placeholder: '授权书上的字段（如：授权公司）' });
-    right.value = row.right || '';
-    const del = mk('button', 'kh-mini-btn', { type: 'button', text: '删掉' });
-    box.appendChild(left);
-    box.appendChild(arrow);
-    box.appendChild(right);
-    box.appendChild(del);
-    const collect = () => {
-      const rows = [];
-      const all = $('cmp-rows').querySelectorAll('.kh-compare-row');
-      for (let i = 0; i < all.length; i++) {
-        const l = all[i].querySelector('.kh-cmp-left');
-        const r = all[i].querySelector('.kh-cmp-right');
-        const lv = l ? String(l.value || '').trim() : '';
-        const rv = r ? String(r.value || '').trim() : '';
-        if (!lv && !rv) continue;
-        rows.push({ left: lv, right: rv });
-      }
-      return rows;
-    };
-    const save = () => saveNested({ imgCompare: { on: true, rows: collect() } }).then(renderCompareForm);
-    left.addEventListener('change', save);
-    right.addEventListener('change', save);
-    del.addEventListener('click', () => saveNested({
-      imgCompare: { on: true, rows: collect().filter((r) => !(r.left === left.value.trim() && r.right === right.value.trim())) }
-    }).then(renderCompareForm));
-    return box;
-  }
-
-  function renderCompareForm() {
-    const box = $('cmp-rows');
-    if (!box) return;
-    if (!cmpWired) { cmpWired = true; wireCompareForm(); }
-    box.innerHTML = '';
-    const rows = compareRowsOf();
-    if (!rows.length) {
-      const empty = document.createElement('div');
-      empty.className = 'kh-muted';
-      empty.textContent = '还没配。点「+ 添加一组」，左边写软著证明上的字段名，右边写授权书上的字段名（两边可以是同一个名字，例如都写「登记号」）。';
-      box.appendChild(empty);
-      return;
-    }
-    for (let i = 0; i < rows.length; i++) box.appendChild(compareRowEl(rows[i]));
-  }
-
   /* ---- 【T5】校验中心 ----
-   * 「图怎么取 / 谁和谁比 / 放行哪些平台」的汇总。判定与文案都在 compare/center.js，
-   * 这里只负责把 summary(cfg) 画成三行；要改配置，行尾 hint 会指到对应位置。 */
+   * 「图怎么取 / 谁和谁比」的汇总。判定与文案都在 compare/center.js，
+   * 这里只负责把 summary(cfg) 画成两行；要改配置，行尾 hint 会指到对应位置
+   * （谁和谁比只汇总各关键词里标的「比对」，真源在关键词编辑弹窗）。 */
   function renderCheckCenter() {
     const box = $('check-center');
     if (!box) return;
@@ -1887,21 +1813,6 @@
       li.appendChild(hint);
       box.appendChild(li);
     }
-  }
-
-  function wireCompareForm() {
-    const add = $('cmp-add');
-    if (!add) return;
-    add.addEventListener('click', () => {
-      const box = $('cmp-rows');
-      if (!box) return;
-      const empty = box.querySelector('.kh-muted');
-      if (empty && !box.querySelector('.kh-compare-row')) box.innerHTML = '';
-      box.appendChild(compareRowEl({ left: '', right: '' }));
-      const rows = box.querySelectorAll('.kh-compare-row');
-      const last = rows[rows.length - 1];
-      if (last) { const f = last.querySelector('.kh-cmp-left'); if (f) f.focus(); }
-    });
   }
 
   function wireMergeForm() {
@@ -1973,13 +1884,6 @@
     const w = KH.Config.normalizePanelWidth($('pf-notePanelWidth').value);
     $('pf-notePanelWidth').value = w;
     await mutate(() => KH.Store.patch({ notePanelWidth: w }));
-  });
-  /* 【台账 #7】承诺对象放行名单：改完立刻生效（写回前先归一，再把归一结果回显 —— 用户才知道
-   * 哪几条被去重/清空了）。归一函数只有 `KH.Config.normalizeNoteCheck` 一份。 */
-  $('pf-promiseOk').addEventListener('change', async () => {
-    const list = KH.Config.normalizeNoteCheck($('pf-promiseOk').value).promiseOk;
-    $('pf-promiseOk').value = list.join('\n');
-    await mutate(() => KH.Store.patch({ noteCheck: { promiseOk: list } }));
   });
 
   /* ---- 【2.0.8.4 需求④】AI 助手：保存与「测试连接」 ----

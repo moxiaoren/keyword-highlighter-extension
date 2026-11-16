@@ -19,7 +19,7 @@ const OUT = path.resolve(__dirname, '..', 'release', 'notes', 'img');
  * 关键：必须画在**面板自己的 shadowRoot 里**——STYLE 是随面板 `ensure()` 注入的，
  * 画在 light DOM 里会丢 `.kh-table-fetch` / `.kh-merge-conflict` 的全部样式（黄底、橙条、
  * 感叹号、虚线分隔都来自那份样式表），截出来就是一张没样式的裸表。 */
-const PAINT_MERGE = (mergeRows, compare, rows) => {
+const PAINT_MERGE = (mergeRows, rows) => {
   const P = window.KH.ImportantNote.panel;
   P.ensure(document);
   const root = P.root;
@@ -36,7 +36,7 @@ const PAINT_MERGE = (mergeRows, compare, rows) => {
   host.innerHTML = '<table class="kh-table-fetch"><tbody>' +
     rows.map((r) => '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td></tr>').join('') +
     '</tbody></table>';
-  window.KH.ImportantNote.panel.decorateMerge(host, { mergeRows: mergeRows || [], compare: compare || null });
+  window.KH.ImportantNote.panel.decorateMerge(host, { mergeRows: mergeRows || [] });
   /* 只截表格本身：画板有 padding，整块截会把下一行残影带进图里 */
   const t = host.querySelector('table');
   const b = (t || host).getBoundingClientRect();
@@ -86,8 +86,8 @@ const OPEN_EDITOR = (kw) => {
       }
       return r.result.value;
     };
-    const paintMerge = (rows, mergeRows, compare) =>
-      inExt('(' + PAINT_MERGE.toString() + ')(' + JSON.stringify(mergeRows || []) + ',' + JSON.stringify(compare || null) + ',' + JSON.stringify(rows) + ')');
+    const paintMerge = (rows, mergeRows) =>
+      inExt('(' + PAINT_MERGE.toString() + ')(' + JSON.stringify(mergeRows || []) + ',' + JSON.stringify(rows) + ')');
 
     const shoot = async (name, rect) => {
       if (!rect) throw new Error('没有画板');
@@ -102,36 +102,12 @@ const OPEN_EDITOR = (kw) => {
     /* ① 2.0.8.19 冲突行：页面值 abc1234 vs 图上值 ABX9999 ⇒ 浅黄底 + 左橙条 + 感叹号 */
     let rect = await paintMerge(
       [['著作权人', '甲公司'], ['登记号', 'abc1234']],
-      [{ field: '登记号', title: '登记号', hit: true, value: 'abc1234', ocrValue: 'ABX9999', from: 'need', onConflict: 'mark' }],
-      null
+      [{ field: '登记号', title: '登记号', hit: true, value: 'abc1234', ocrValue: 'ABX9999', from: 'need', onConflict: 'mark' }]
     );
     await page.waitForTimeout(200);
     await shoot('conflict-row.png', rect);
 
-    /* ② 2.0.8.21 结论行：著作权人 甲 vs 授权书 乙 ⇒ 表格下方一行结论 */
-    rect = await paintMerge(
-      [['著作权人', '甲公司'], ['登记号', 'abc1234']],
-      [],
-      { hasDoc: true, docCount: 1, rows: [
-        { left: '著作权人', right: '授权公司', rv: ['乙公司'], lvOcr: [] },
-        { left: '登记号', right: '登记号', rv: ['abc1234'], lvOcr: ['abc1234'] }
-      ] }
-    );
-    await page.waitForTimeout(200);
-    await shoot('compare-line.png', rect);
-
-    /* ③ 2.0.8.21 判不出授权书：只配同名字段 ⇒ 明说，不罗列三条缺字段 */
-    rect = await paintMerge(
-      [['登记号', 'abc1234']],
-      [],
-      { hasDoc: false, docCount: 0, docAmbiguous: true, rightNames: ['登记号'], rows: [
-        { left: '登记号', right: '登记号', rv: [], lvOcr: [] }
-      ] }
-    );
-    await page.waitForTimeout(200);
-    await shoot('no-doc-ambiguous.png', rect);
-
-    /* ④ 2.0.8.20 编辑弹窗顶部的指向提醒 */
+    /* ② 2.0.8.20 编辑弹窗顶部的指向提醒 */
     await inExt('(' + OPEN_EDITOR.toString() + ')(' + JSON.stringify({
       word: '一对一', note: '', imgOcr: true, imgOcrKeyword: '一对一@开发这',
       fetchEnabled: true, fetchLabels: '开发者@2|被授权公司'

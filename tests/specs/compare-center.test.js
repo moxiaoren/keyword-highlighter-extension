@@ -1,7 +1,7 @@
-/* tests/specs/compare-center.test.js — 【T5】校验中心：三处配置的只读汇总
+/* tests/specs/compare-center.test.js — 【T5】校验中心：两处配置的只读汇总
  * ----------------------------------------------------------------------------
- * 用户 m09277 起做 T5（专家报告 pm.md「校验中心」）：一屏列出「图怎么取 / 谁和谁比 /
- * 放行哪些平台」，并标出当前是默认值还是改过。
+ * 一屏列出「图怎么取 / 谁和谁比」，并标出当前是默认值还是改过。
+ * 2026-11-16 用户拍板：承诺对象放行名单整项退场，第三行（放行哪些平台）已删。
  * 本文件只测纯函数 KH.Compare.Center.summary(cfg)，不碰设置页 DOM。
  */
 'use strict';
@@ -13,16 +13,14 @@ module.exports = async function run() {
   const Center = KH.Compare.Center;
   const cfgOf = (over) => Object.assign({}, over || {});
 
-  suite('校验中心 · T5（图怎么取 / 谁和谁比 / 放行哪些平台）');
+  suite('校验中心 · T5（图怎么取 / 谁和谁比）');
 
-  await test('默认配置：三项都在，且都标「默认」', () => {
+  await test('默认配置：两项都在，且都标「默认」', () => {
     const items = Center.summary(cfgOf());
-    eq(items.length, 3);
-    eq(items.map((x) => x.key).join(','), 'ocr,pairs,allow');
+    eq(items.length, 2);
+    eq(items.map((x) => x.key).join(','), 'ocr,pairs');
     eq(items[0].tag, '默认');
     eq(items[1].tag, '默认');
-    eq(items[2].tag, '默认');
-    truthy(items[2].text.indexOf('vivo') >= 0 && items[2].text.indexOf('维沃') >= 0, items[2].text);
   });
 
   await test('★ 图怎么取：抓取字段带 #图 ⇒ 说清「只要图片」的几个', () => {
@@ -38,24 +36,26 @@ module.exports = async function run() {
     truthy(items[0].text.indexOf('不会进表') >= 0, items[0].text);
   });
 
-  await test('谁和谁比：配了额外的对 ⇒ 原样列出，并说明优先于内置兜底', () => {
-    const items = Center.summary(cfgOf({ imgCompare: { on: true, rows: [{ left: '著作权人', right: '授权公司' }] } }));
-    eq(items[1].text, '著作权人 ↔ 授权公司');
+  /* 【2026-11-16】谁和谁比现在只汇总各关键词里标的「比对」（`#比=对象`）；设置页那张全局表已退场。 */
+  await test('谁和谁比：汇总关键词里标的对 ⇒ 列出，并指到关键词编辑弹窗', () => {
+    const items = Center.summary(cfgOf({ keywords: [{ fetchLabels: '著作权人#比=授权公司' }] }));
+    eq(items[1].text, '已标：著作权人 ↔ 授权公司');
     eq(items[1].tag, '已改');
-    truthy(items[1].hint.indexOf('优先') >= 0, items[1].hint);
+    truthy(items[1].hint.indexOf('关键词') >= 0, items[1].hint);
   });
 
-  await test('谁和谁比：总开关关掉 ⇒ 明说一律不判', () => {
-    const items = Center.summary(cfgOf({ imgCompare: { on: false, rows: [] } }));
-    truthy(items[1].text.indexOf('已关闭') >= 0, items[1].text);
-    eq(items[1].tag, '已改');
+  await test('谁和谁比：两条关键词标了同一对 ⇒ 只列一次', () => {
+    const items = Center.summary(cfgOf({ keywords: [
+      { fetchLabels: '著作权人#比=授权公司' },
+      { fetchLabels: '授权公司#比=著作权人' }
+    ] }));
+    eq(items[1].text, '已标：著作权人 ↔ 授权公司', '方向相反也算同一对');
   });
 
-  await test('★ 放行哪些平台：改过名单 ⇒ 标已改，并回显默认名单做对照', () => {
-    const items = Center.summary(cfgOf({ noteCheck: { promiseOk: ['某平台'] } }));
-    eq(items[2].text, '某平台');
-    eq(items[2].tag, '已改');
-    truthy(items[2].hint.indexOf('默认：vivo、维沃、天宸') >= 0, items[2].hint);
+  await test('谁和谁比：没标 ⇒ 明说抓取字段之间不判等', () => {
+    const items = Center.summary(cfgOf({}));
+    truthy(items[1].text.indexOf('没标') >= 0, items[1].text);
+    eq(items[1].tag, '默认');
   });
 
   await test('图怎么取：改了引擎/上限也算「已改」', () => {

@@ -358,6 +358,10 @@
    * `一对一#表|包名` ⇒ 只有「一对一」会往表里补行，「包名」只做命中判定。
    * 标记必须**逐词**给 —— 一个词误配不波及其它词，这就是"收严"的全部含义。 */
   const KV_MARK = /(?:#|＃)\s*(?:表|kv)\s*$/i;
+  /* 【2.0.11 需求】`#比`（`#cmp` 同义）：**逐词**的比对标记 —— 同一张图上，所有带这个标记的项
+   * 都得在（静态词本身 / 动态字段抓到的值），缺一个就判「不一致」并点名缺哪个。
+   * 与 `#表` 相互独立，可以写在一起（顺序不限），都不写＝不比对。 */
+  const KV_CMP = /(?:#|＃)\s*(?:比|cmp)\s*$/i;
   /* 【2.0.6.5 需求③】标记后面跟着**分隔符**（逗号/顿号/分号/空白）时，那里也是断词点：
    * 用户常写 `登记号#表,著作权人#表`，旧实现整串当一个 chip、而它恰好以 `#表` 结尾 ⇒
    * `stripKvMarks` 只剥末尾那一个标记，剩下的 `登记号#表,著作权人` 会被当**字面量**编译进正则
@@ -365,7 +369,7 @@
    * （「也没增加表格」）。两个症状是同一个根因。
    * 只在**标记之后**放宽：普通词里的逗号照旧是正文字符（`a,b` 仍是一个词），口径没变；
    * 标记后直接跟字（`一对一#表包名`）也不拆 —— 那不是分隔写法，按旧行为整段当正文。 */
-  const KV_TAIL_SEP = /(?:#|＃)\s*(?:表|kv)([\s,，、;；]+)/gi;
+  const KV_TAIL_SEP = /(?:#|＃)\s*(?:表|kv|比|cmp)([\s,，、;；]+)/gi;
   /**
    * 按 `|`（含全角）切词，并在「标记 + 分隔符」处补切一刀。标记留在前一段里（`kvWords` 靠它认词）。
    * @returns {string[]} 已 trim、已剔空段
@@ -390,15 +394,38 @@
     return out.map((c) => c.trim()).filter(Boolean);
   }
 
-  /** 去掉标记后的关键词原文（喂 `buildPattern` / 空白容忍重试）：标记本身绝不能被当成匹配字面 */
-  function stripKvMarks(raw) {
-    return kvChips(raw).map((c) => c.replace(KV_MARK, '').trim()).filter(Boolean).join('|');
+  /**
+   * 一个 chip 尾部的逐词标记：`#表`（进表）与 `#比`（比对）。两者相互独立、可以连写，顺序不限。
+   * @returns {{body:string, mark:boolean, markText:string, cmp:boolean}} `body` 已剥掉全部标记
+   */
+  function chipTags(chip) {
+    let s = String(chip == null ? '' : chip).trim();
+    let mark = false;
+    let markText = '';
+    let cmp = false;
+    for (;;) {
+      const c = KV_CMP.exec(s);
+      if (c) { cmp = true; s = s.slice(0, c.index).trim(); continue; }
+      const m = KV_MARK.exec(s);
+      if (m) { mark = true; markText = m[0]; s = s.slice(0, m.index).trim(); continue; }
+      break;
+    }
+    return { body: s, mark: mark, markText: markText, cmp: cmp };
   }
 
-  /** 带标记的那些词（标记已剥掉）——**只有它们**允许把图上「词 + 分隔符 + 值」并进抓取表 */
+  /** 去掉标记后的关键词原文（喂 `buildPattern` / 空白容忍重试）：标记本身绝不能被当成匹配字面 */
+  function stripKvMarks(raw) {
+    return kvChips(raw).map((c) => chipTags(c).body).filter(Boolean).join('|');
+  }
+
+  /** 带 `#表` 的那些词 —— **只有它们**允许把图上「词 + 分隔符 + 值」并进抓取表 */
   function kvWords(raw) {
-    return kvChips(raw).filter((c) => KV_MARK.test(c))
-      .map((c) => c.replace(KV_MARK, '').trim()).filter(Boolean);
+    return kvChips(raw).map((c) => chipTags(c)).filter((t) => t.mark).map((t) => t.body).filter(Boolean);
+  }
+
+  /** 带 `#比` 的那些词（标记已剥）——**只有它们**参与「同一张图上必须都在」的比对 */
+  function kvCmpWords(raw) {
+    return kvChips(raw).map((c) => chipTags(c)).filter((t) => t.cmp).map((t) => t.body).filter(Boolean);
   }
 
   /* ---------------- 【2.0.7.1 需求②】按抓取字段限定 OCR 关键词 ----------------
@@ -433,10 +460,8 @@
    *  只要有一个 `@…` 不是真配过的字段名就停手 —— 剩下那段（含那些 `@`）按普通词处理，
    *  老用户把 `@` 当普通字符的写法一个字都不变。 */
   function splitScope(chip, known) {
-    let s = String(chip == null ? '' : chip).trim();
-    let mark = '';
-    const km = KV_MARK.exec(s);
-    if (km) { mark = km[0]; s = s.slice(0, km.index).trim(); }
+    const tags = chipTags(chip);
+    let s = tags.body;
     const scopes = [];
     for (;;) {
       const m = /@([^@\s]+)$/.exec(s);
@@ -448,7 +473,9 @@
       if (scopes.indexOf(hit) < 0) scopes.unshift(hit);
       s = s.slice(0, m.index).trim();
     }
-    return { text: s + mark, scopes: scopes, scope: scopes.join(',') };
+    /* `text` 继续带 `#表`（下游 `parseLabelSpec` 本来就会剥 `#`）；`#比` 只作为标志带出，
+     * 绝不留在文本里 —— 它若被当成取值后缀喂给 `extractFor`，字段名就配不上了。 */
+    return { text: s + (tags.mark ? tags.markText : ''), scopes: scopes, scope: scopes.join(','), cmp: tags.cmp };
   }
 
   /**
@@ -565,10 +592,13 @@
    * 造一个**脱离文档**的文本节点，把整段识别文本当成"一个文本节点"跑同一个入口 ——
    * 于是"图片命中"与"文本命中"的匹配语义不会打架。
    */
-  function matchedInText(rule, text, field) {
+  /**
+   * 一段文本里找关键词组（已剥标记）：正则优先、字面兜底，再走 `TextNorm` 宽松兜底。
+   * 从 `matchedInText` 里拆出来：`#比` 的每个词也要按**同一套口径**判「在不在图上」，
+   * 否则「比对一致」与本条规则的命中会用两套比较规则，用户会看到自相矛盾。
+   */
+  function findInRaw(rawKeyword, text) {
     const U = (KH.Scanner && KH.Scanner.util) || {};
-    const known = scopeKnown(rule);
-    const rawKeyword = stripKvMarks(scopedRaw(rule && rule.meta && rule.meta.imgOcrKeyword, field, known)).trim();
     const pattern = rawKeyword ? patternOf(rawKeyword) : null;
     const literal = literalPatternOf(rawKeyword);
     if ((!pattern && !literal) || typeof U.matchIn !== 'function') return [];
@@ -617,6 +647,26 @@
     return out.length ? out : direct;
   }
 
+  function matchedInText(rule, text, field) {
+    const known = scopeKnown(rule);
+    const rawKeyword = stripKvMarks(scopedRaw(rule && rule.meta && rule.meta.imgOcrKeyword, field, known)).trim();
+    if (!rawKeyword) return [];
+    return findInRaw(rawKeyword, text);
+  }
+
+  /**
+   * 「这个值在识别文本里出现过没有」——**全工程唯一的'值在图上'比较点**。
+   * 词边界 / 全半角 / 零宽 / 空白折叠的口径全在 `KH.TextNorm.findInText`；这里只锁参数。
+   * 为什么必须单点：`judgeInfo`（图片动态判据）与 `cmpJudge`（`#比` 比对项）问的是同一个问题，
+   * 各写一遍就会出现"面板说命中、比对说没命中"的两套口径 —— meta-check 红线钉着"只许一处"。
+   * @returns {null|{start:number,end:number,text:string,key?:string}} 没有 TextNorm 时 `null`
+   */
+  function valueInText(raw, needle) {
+    const TN = KH.TextNorm;
+    if (!TN || typeof TN.findInText !== 'function') return null;
+    return TN.findInText(raw, needle, { boundary: true });
+  }
+
   /**
    * 【2.0.2.19 需求③】动态命中的**唯一判决点**。
    * 用户口径：「图片命中关键词配置支持配置抓取字段内容（动态结果）：例如配置抓取字段 姓名、截图，
@@ -660,7 +710,7 @@
        * 旧写法是"剔空白 + 小写 + `indexOf`"——没有边界、没有全半角折叠，
        * 用户的现场（OCR 把 `abc1234` 认成 `ａｂｃ１２３４`）就是它造成的假不一致。 */
       if (!TN) { missingValues.push(needle); continue; }
-      const hit = TN.findInText(raw, needle, { boundary: true });
+      const hit = valueInText(raw, needle);
       if (hit) {
         found.push({ start: hit.start, end: hit.end, text: hit.text, how: 'found', key: hit.key });
         continue;
@@ -686,6 +736,98 @@
     };
   }
 
+  /* ---------------- 【2.0.11 需求】「比对」：同一张图上，打了标记的项必须都在 ----------------
+   *
+   * 用户口径（m00001）：「金融理财类 vivo 承诺函，只要图片；需要比对致方是不是 a 公司、承诺方是不是
+   * b 公司。就配置图片命中词 a 公司和 b 公司 …… 如果命中，那就是一致」。
+   * ⇒ 不再内置「开发者 vs 企业名称 / 承诺对象 vs 放行名单」这套只看某个字段的比对；改成**用户点名**：
+   *   哪几项要核对，就在词/字段尾打 `#比`；同一张图上它们全在＝一致，缺哪个点名说出来。
+   *   一项都没打标记＝这张图不比，行为与升级前完全一样。
+   *
+   * 两类项：
+   *   - 静态词（图片命中关键词 + `#比`）：「这个词本身」要出现在图上；
+   *   - 动态字段（图上须有的字段值 + `#比`）：它抓到的值（任一）要在图上；
+   *     取值与判命中同口径（`Fetch.extractFor` + `TextNorm.findInText`）。
+   */
+
+  /**
+   * 这张图上要核对的项（带值，供 `cmpJudge` 用）。没打 `#比` 就返回空数组。
+   * @param {object} rule 规则快照
+   * @param {string} field 图所属抓取字段（`@字段名` 作用域）
+   * @param {Element} anchor 命中所在格（动态字段要在这里取值；缺省＝不取动态项）
+   */
+  function cmpReqs(rule, field, anchor) {
+    const meta = (rule && rule.meta) || {};
+    const known = scopeKnown(rule);
+    const key = String(field == null ? '' : field).trim();
+    const out = [];
+
+    /* ① 静态词：`@字段名` 的作用域规则与 `scopedRaw` 一致（该字段有专属词就只用它们） */
+    const kw = [];
+    for (const chip of kvChips(meta.imgOcrKeyword)) {
+      const sp = splitScope(chip, known);
+      if (!sp.cmp) continue;
+      const word = chipTags(sp.text).body;
+      if (word) kw.push({ word: word, scopes: sp.scopes });
+    }
+    const kmine = key ? kw.filter((p) => p.scopes.some((sc) => sameField(sc, key))) : [];
+    for (const p of (kmine.length ? kmine : kw.filter((p) => !p.scopes.length))) {
+      if (out.some((o) => o.kind === 'word' && o.name === p.word)) continue;
+      out.push({ name: p.word, kind: 'word', word: p.word });
+    }
+
+    /* ② 动态字段：值用**用户自己写的 spec** 取（与 `needInfo` 同一份实现） */
+    const parse = (KH.Fetch && typeof KH.Fetch.parseLabelSpec === 'function') ? KH.Fetch.parseLabelSpec : null;
+    const parts = String(meta.imgOcrNeed || '').split(/[,，、|;]/)
+      .map((w) => w.trim()).filter(Boolean)
+      .map((w) => splitScope(w, known)).filter((p) => p.cmp);
+    const mine = key ? parts.filter((p) => p.scopes.some((sc) => sameField(sc, key))) : [];
+    const pick = mine.length ? mine : parts.filter((p) => !p.scopes.length);
+    for (const p of pick) {
+      const raw = String(p.text || '').trim();
+      if (!raw) continue;
+      let name = chipTags(raw).body;
+      if (parse) {
+        try { const q = parse(raw); if (q && q.label) name = String(q.label).trim(); } catch (e) { /* 用裸名 */ }
+      }
+      if (!name) continue;
+      if (out.some((o) => o.kind === 'need' && o.name === name)) continue;
+      let values = [];
+      if (anchor) {
+        const sub = { meta: Object.assign({}, meta, { imgOcrNeed: raw }) };
+        try { values = needInfo(anchor, sub, field).values; } catch (e) { values = []; }
+      }
+      out.push({ name: name, kind: 'need', values: values });
+    }
+    return out;
+  }
+
+  /**
+   * 判决：所有 `#比` 项都在 → `same`（一致）；缺任一项 → `diff`（不一致，点名缺哪些）。
+   * 没配比对项 → `null`（不显示任何结论，也不涂色）。
+   * @returns {null|{state:'same'|'diff', items:Array<{name:string,kind:string,ok:boolean}>, missing:string[]}}
+   */
+  function cmpJudge(rule, text, field, reqs) {
+    const list = reqs || [];
+    if (!list.length) return null;
+    const raw = String(text || '');
+    const items = [];
+    for (const r of list) {
+      let ok = false;
+      if (r.kind === 'word') {
+        ok = findInRaw(r.word, raw).length > 0;
+      } else {
+        for (const v of (r.values || [])) {
+          const needle = String(v == null ? '' : v);
+          if (!needle.trim()) continue;
+          if (valueInText(raw, needle)) { ok = true; break; }
+        }
+      }
+      items.push({ name: r.name, kind: r.kind, ok: ok });
+    }
+    const missing = items.filter((i) => !i.ok).map((i) => i.name);
+    return { state: missing.length ? 'diff' : 'same', items: items, missing: missing };
+  }
   /** 判决 = `judgeInfo().hits`（唯一实现；诊断字段由 `judgeInfo` 带出） */
   function judge(rule, text, need, field) {
     return judgeInfo(rule, text, need, field).hits;
@@ -1376,6 +1518,8 @@
         it.matched = ji.hits;
         it.needMissingValues = ji.missingValues;
         it.needWeakValues = ji.weakValues || [];
+        /* 【2.0.11】比对结论与命中一次算完：同一张图上 `#比` 的项全在＝一致 */
+        it.cmp = cmpJudge(it.rule, text, it.label, it.cmpReqs);
         it.lineList = (it.kind === 'pdf') ? pdfLineList : (msg.lineList || []);
         it.ocrMs = msg.ocrMs || msg.ms;
         if (it.kind === 'pdf') {
@@ -1556,6 +1700,8 @@
         const label = String(labelOfImg.get(got.img) || '');
         /* 【2.0.7.1 需求②】这张图属于哪个字段，就只用那个字段的（+ 全局）词/判据 */
         const nf = needFor(label);
+        /* 【2.0.11】这张图要核对哪几项（只有打了 `#比` 才有；没有就是空数组） */
+        const creq = cmpReqs(rule, label, anchor.cell);
         const item = {
           key: key, ruleId: rule.ruleId, rule: rule,
           /* 面板行的关键词标签显示**图片命中关键词**（用户确认第 6 条）——它才是"在图里找什么" */
@@ -1566,6 +1712,7 @@
           need: nf.values, needWant: nf.want, needMissing: nf.missing,
           needWeak: nf.weak || [], needFrom: nf.fromExtra || [],
           needMissingValues: [], lineList: [],
+          cmpReqs: creq, cmp: null,
           cellText: String((anchor.cell && anchor.cell.textContent) || '').trim().slice(0, 120)
         };
         if (cached) {
@@ -1576,6 +1723,7 @@
           item.matched = ji.hits;
           item.needMissingValues = ji.missingValues;
           item.needWeakValues = ji.weakValues || [];
+          item.cmp = cmpJudge(rule, cached.text, label, creq);
           item.lineList = cached.lineList || [];
           /* 【耗时徽标必须跟着缓存走】(K80 · 真机踩到) 条目表每次重建都从缓存重建，
            * 而 `ocrMs` 此前只活在**当时那个条目对象**上 ⇒ 页面一有变动（重建）耗时徽标就空了。
@@ -1606,6 +1754,8 @@
         const cached = textCache.get(src) || textCache.get(absOf(src));
         const label = String(got.label || '');
         const nf = needFor(label);
+        /* 【2.0.11】这张图要核对哪几项（只有打了 `#比` 才有；没有就是空数组） */
+        const creq = cmpReqs(rule, label, anchor.cell);
         const item = {
           key: key, ruleId: rule.ruleId, rule: rule, kind: 'pdf',
           keyword: String((rule.meta && rule.meta.imgOcrKeyword) || ''),
@@ -1614,6 +1764,7 @@
           need: nf.values, needWant: nf.want, needMissing: nf.missing,
           needWeak: nf.weak || [], needFrom: nf.fromExtra || [],
           needMissingValues: [], lineList: [],
+          cmpReqs: creq, cmp: null,
           cellText: String((anchor.cell && anchor.cell.textContent) || '').trim().slice(0, 120)
         };
         if (cached) {
@@ -1624,6 +1775,7 @@
           item.matched = ji.hits;
           item.needMissingValues = ji.missingValues;
           item.needWeakValues = ji.weakValues || [];
+          item.cmp = cmpJudge(rule, cached.text, label, creq);
           item.lineList = cached.lineList || [];
           item.ocrMs = cached.ocrMs;
         } else if (failSrc.has(src) && Date.now() - failSrc.get(src) < FAIL_MEMO_MS) {
@@ -1811,7 +1963,10 @@
     needSpecs: needSpecs,
     /** 【2.0.4 需求①】「键值行进表」标记：`kvWords(raw)` = 带 `#表`/`#kv` 标记的词（已剥标记）；
      *  `stripKvMarks(raw)` = 去掉标记的关键词原文（喂匹配用）。重要笔记那边读同一份实现。 */
-    kvWords: kvWords, stripKvMarks: stripKvMarks,
+    kvWords: kvWords, stripKvMarks: stripKvMarks, kvCmpWords: kvCmpWords, chipTags: chipTags,
+    /** 【2.0.11 需求】「比对」：`cmpReqs(rule,field,anchor)` = 这张图要核对哪几项（只有 `#比` 的条目），
+     *  `cmpJudge(rule,text,field,reqs)` 判决 → `{state:'same'|'diff', items, missing}`（空＝不比）。 */
+    cmpReqs: cmpReqs, cmpJudge: cmpJudge, findInRaw: findInRaw,
     /** 列带排版（2.0.2.19 需求②⑤）：`layout(lineList)` → 模型；`layoutHtml(模型)` → 表格 HTML */
     layout: layout, layoutHtml: layoutHtml,
     /** 匹配口径的唯一编译点（诊断/单测用；见 `ocrPatternOf`） */

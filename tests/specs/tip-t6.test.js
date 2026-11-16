@@ -56,22 +56,22 @@ module.exports = async function run() {
     eq(P.diffKind('same'), '');
   });
 
-  await test('规则层：同值不再重复「一致」，只说两边原值', () => {
-    const v = R.qualVerdict('北京甲科技有限公司', '北京甲科技有限公司');
+  await test('规则层：同值判一致，悬停只说两边原值（配置对）', () => {
+    const pairs = R.pairsOfLabels('企业名称#比=开发者');
+    const v = R.autoVerdict({ labels: ['企业名称'], value: '北京甲科技有限公司',
+      pairs: pairs, get: () => ({ found: true, value: '北京甲科技有限公司' }) });
     eq(v.state, 'same');
     eq(v.how, 'same');
-    eq(v.note, '');
-    const c = R.qualVerdict('北京甲科技有限公司', '北京甲科技有限');
-    eq(c.state, 'same');
-    eq(c.how, 'contain');
-    truthy(c.note.indexOf('北京甲科技有限公司') >= 0, c.note);
+    truthy(v.note.indexOf('北京甲科技有限公司') >= 0, v.note);
+    const c = R.autoVerdict({ labels: ['企业名称'], value: '北京甲科技有限公司（集团）',
+      pairs: pairs, get: () => ({ found: true, value: '北京甲科技有限公司' }) });
+    eq(c.state, 'same', '括号补充不算不一致');
   });
 
   await test('★ 配置对按括号补充判同 ⇒ 悬停第一句带「括号补充」', () => {
-    const cfg = { imgCompare: { on: true, rows: [{ left: '著作权人', right: '开发者' }] } };
     const v = R.autoVerdict({
       labels: ['著作权人'], value: '北京甲科技（集团）有限公司', dev: '北京甲科技有限公司', devPresent: true,
-      cfg: cfg, get: () => ({ found: true, value: '北京甲科技有限公司' })
+      pairs: R.pairsOfLabels('著作权人#比=开发者'), get: () => ({ found: true, value: '北京甲科技有限公司' })
     });
     eq(v.state, 'same');
     eq(v.how, 'fold-core');

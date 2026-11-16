@@ -40,7 +40,7 @@
    *   · 主流形：4 位年份 + 2 位字母 + 6–9 位数字，如 `2026SA0112833`、`2019SR0456789`；
    *   · 中文形：`软著登字第1234567号`、`第1234567号`。
    * 纯数字、纯字母、把公司名/电话带进来的一律不算。 */
-  var CODE_RE = /^(?:19|20)\d{2}[A-Z]{2}\d{6,9}$/;
+  var CODE_RE = /^(?:19|20)\d{2}[A-Z]{1,3}\d{5,10}$/;
   var CN_CODE_RE = /^(?:软著登字第|第)\d{4,8}号$/;
   function okCode(v) {
     var s = String(v == null ? '' : v).replace(/\s+/g, '').toUpperCase();
@@ -82,7 +82,9 @@
    * 登记号是两件事；证书类的登记号改走形状优先（`regNoValues`）。 */
   var DEFS = [
     { id: 'owner', label: '著作权人', words: ['著作权人', '著作权所有者', '版权所有人', '版权人'], line: /(著作权人|著作权所有者|版权所有人|版权人)/, ok: okName },
-    { id: 'regNo', label: '登记号', words: ['登记号'], line: /(登记号|软著登字第)/, strong: /登\s*记\s*号/, ok: okCode },
+    /* 【2026-11-16】APP 电子版权证书上的编号常叫「认证号」（也写「认证编号」），
+     * 与软著的「登记号」是同一种东西：都必须是「年号 + 字母 + 数字」形状，不进这形状的一律不收。 */
+    { id: 'regNo', label: '登记号', words: ['登记号', '认证号', '认证编号'], line: /(登记号|认证号|认证编号|软著登字第)/, strong: /登\s*记\s*号|认\s*证\s*号|认\s*证\s*编\s*号/, ok: okCode },
     { id: 'licensor', label: '授权方', words: ['授权方', '授权人', '授权单位', '授权公司', '甲方'], notAfter: '被', line: /(?<!被)(授权方|授权人|授权单位|授权公司|甲方)/, rev: /^(.{2,40}?)\s*[（(]\s*(?:授权公司|授权方|授权单位|甲方)\s*[）)]/, ok: okName },
     { id: 'licensee', label: '被授权方', words: ['被授权方', '被授权人', '被授权单位', '被授权公司', '乙方'], line: /(被授权方|被授权人|被授权单位|被授权公司|乙方)/, rev: /^(.{2,40}?)\s*[（(]\s*(?:被授权公司|被授权方|被授权单位|乙方)\s*[）)]/, ok: okName },
     { id: 'appName', label: '应用名称', words: ['应用名称', '软件名称', '应用名', '软件名'], line: /(应用名称|软件名称|APP\s*名称|应用名|软件名)/i, ok: okName },
@@ -223,7 +225,24 @@
     return s;
   }
 
-  /** 一行里按「精确 → 宽松」找字段标签；命中就把 match 带回来（取值要按真正命中的那段切）。 */
+  /* 【2026-11-16 用户样图】软著证书的版式把四字标签**逐字拉开**（`著 作 权 人：`、
+   * `登 记 号：`）。原来的标签正则只认连写，这类证书只能靠正文兜底捞公司名 ——
+   * 页面上还有代理机构、发证机关时就会抓错人。这里给每个字段词补一条「字间可插空格」的写法，
+   * 命中位置仍按原行切，取值逻辑一点没变（匹配到的就是带空格那段，切完照样干净）。 */
+  var SPACED_CACHE = {};
+  function spacedOf(word) {
+    var w = String(word == null ? '' : word);
+    if (w.length < 3) return null;
+    if (SPACED_CACHE[w]) return SPACED_CACHE[w];
+    var parts = [];
+    for (var i = 0; i < w.length; i++) {
+      parts.push(w.charAt(i).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    }
+    SPACED_CACHE[w] = new RegExp(parts.join('\\s*'));
+    return SPACED_CACHE[w];
+  }
+
+  /** 一行里按「精确 → 宽松 → 字间空格」找字段标签；命中就把 match 带回来（取值要按真正命中的那段切）。 */
   function firstHit(line, def) {
     var tries = [];
     if (def.strong) tries.push(def.strong);
@@ -232,6 +251,15 @@
     for (var i = 0; i < tries.length; i++) {
       var m = tries[i].exec(line);
       if (m) return { m: m };
+    }
+    var words = def.words || [];
+    for (var k = 0; k < words.length; k++) {
+      var r = spacedOf(words[k]);
+      if (!r) continue;
+      var sm = r.exec(line);
+      /* 只认**真的带空格**的命中：`授\s*权\s*方` 也能零宽匹配「被授权方」，
+       * 那就把「被授权方」的标签判成「授权方」了（本 spec 有专门一条守这个）。 */
+      if (sm && /\s/.test(sm[0])) return { m: sm };
     }
     return null;
   }
@@ -305,7 +333,7 @@
   /* 版式兜底：登记号/授权期限有很稳的形状，标签被 OCR 认坏时还能捞回来。 */
   function fallbackText(full, id) {
     if (id === 'regNo') {
-      var m = /(?:19|20)\d{2}\s*[A-Za-z]{2}\s*\d{6,9}/.exec(full);
+      var m = /(?:19|20)\d{2}\s*[A-Za-z]{1,3}\s*\d{5,10}/.exec(full);
       if (m) return m[0].replace(/\s+/g, '').toUpperCase();
       var cn = /((?:软著登字第|第)\s*\d{4,8}\s*号)/.exec(full);
       if (cn) return cn[1].replace(/\s+/g, '');
@@ -487,20 +515,21 @@
       if (!s || !okCode(s)) return;
       if (out.indexOf(s) < 0) out.push(s);
     }
-    /* ① 固定形状：年份 + 2 位字母 + 6–9 位数字。标签读成 `记 号` 也不影响。 */
-    var m = /(?:19|20)\d{2}\s*[A-Za-z]{2}\s*\d{6,9}/.exec(full);
+    /* ① 固定形状：年份 + 1–3 位字母 + 5–10 位数字（`2026SR0635345` / `2023SR1234567`）。
+     *    标签读成 `记 号` / `认 证 号` 也不影响。 */
+    var m = /(?:19|20)\d{2}\s*[A-Za-z]{1,3}\s*\d{5,10}/.exec(full);
     if (m) { add(m[0]); return out; }
     /* ② 登记号标签行：标签可能被读散（`登 记 号` / `记 号`），在行内找代码。 */
     for (var i = 0; i < lines.length; i++) {
       var line = lines[i];
-      if (!/登\s*记\s*号/.test(line) && !/记\s*号/.test(line)) continue;
-      var code = /((?:19|20)\d{2}\s*[A-Za-z]{2}\s*\d{6,9})/.exec(line) ||
+      if (!/登\s*记\s*号/.test(line) && !/认\s*证\s*号/.test(line) && !/认\s*证\s*编\s*号/.test(line) && !/记\s*号/.test(line)) continue;
+      var code = /((?:19|20)\d{2}\s*[A-Za-z]{1,3}\s*\d{5,10})/.exec(line) ||
                  /((?:软著登字第|第)\s*\d{4,8}\s*号)/.exec(line);
       if (code) { add(code[1]); return out; }
     }
     /* ③ 中文形兜底：`证书号 软著登字第…号` 那一行不是登记号，跳过。 */
     for (var j = 0; j < lines.length; j++) {
-      if (/证书号/.test(lines[j]) && !/登记号/.test(lines[j])) continue;
+      if (/证书号/.test(lines[j]) && !/登记号|认证号/.test(lines[j])) continue;
       var cn = /((?:软著登字第|第)\s*\d{4,8}\s*号)/.exec(lines[j]);
       if (cn) { add(cn[1]); return out; }
     }

@@ -46,6 +46,9 @@ const specs = [
   './specs/img-ocr.test.js',
   /* 图片词条的作用域（可连写多个 `@字段名`）与批量改写口径：与 fields.js 那份镜像对账（2.0.7.2 需求①） */
   './specs/imgkw-batch.test.js',
+  /* 【2.0.11 · 用户 m00001】「比对」标记 `#比`：写在图片命中词/动态词上，同一张图都到齐＝一致 */
+  './specs/compare-mark.test.js',
+  './specs/compare-field-pairs.test.js',
   /* K70 编辑弹窗布局：R4 独立验收（红队）的清单层复核 —— 与 R3 的用例换角度，互不替代 */
   './specs/k70-editor-layout-r4.test.js',
   /* K71「抓取后续字段」模块启用：编译层的门 / 迁移规则 / 清理清单在声明层的判定 */
@@ -199,9 +202,6 @@ const specs = [
   /* 2.0.8.18 需求②（P1）：合并行冲突呈现 —— 每行 onConflict 五档（mark/both/ocr/fetch/skip），
    * 策略只决定显示哪个值，另一路永远留在悬停里。口径见 tests/specs/v20818p1.test.js 头部 */
   './specs/v20818p1.test.js',
-  /* 2.0.8.19 需求（P4）：软著三方比对 —— 开发者=被授权公司 / 著作权人=授权公司 / 两个登记号一致；
-   * 不一致且没有授权书时给一行结论。口径见 tests/specs/v20818p4.test.js 头部 */
-  './specs/v20818p4.test.js',
   /* #116：写错的 `@字段名` 不再静默——诊断清单（只提示、不改判定），见 scope-issues.test.js */
   './specs/scope-issues.test.js',
   /* 2.0.10 四条需求的不变式：中英文标点 1:1 折叠 + 空行硬边界 / 图片命中词宽松兜底 /

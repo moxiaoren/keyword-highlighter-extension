@@ -4399,9 +4399,12 @@ module.exports = async function runContent(ctx) {
       return r.result.value;
     };
     try {
-      /* 两张真表格：① 企业名称与开发者同值（一致）+ 承诺对象华为（待确认）
-       *              ② 开发者行在但值是空的（未查明：不涂色但要留标记）
-       *                  —— 注意「整行缺失」现在是 ⚙ 待配置（真缺配置），不再冒充未查明。 */
+      /* 【2026-11-16 · 用户 m00548】内置自动比对（企业名称↔开发者 / 承诺对象↔放行名单）已退场，
+       * 现在**只剩**开发者 ↔ 核准主体名称 这条独立链路（同法人也算一致）。三态/超时都从它来：
+       *   ① 名字相同 + 法人相同 ⇒ 一致（✔）
+       *   ② 名字不同 + 法人不同 ⇒ 待确认（⚠）
+       *   ③ 两边法人都查不到 ⇒ 未查明（？，不涂色）
+       *   ④ 20 秒没回执 ⇒ 超时（⏱，不涂色） */
       await page.evaluate(() => {
         const mk = (id, rows) => {
           const box = document.createElement('div');
@@ -4411,12 +4414,18 @@ module.exports = async function runContent(ctx) {
             '<tr><td class="kh-table-label">' + r[0] + '</td><td>' + r[1] + '</td></tr>').join('') + '</tbody></table>';
           document.body.appendChild(box);
         };
-        mk('e2e-verdict-two', [
+        mk('e2e-verdict-same', [
           ['开发者', '北京知行灵动科技有限公司'],
-          ['企业名称', '北京知行灵动科技有限公司'],
-          ['承诺对象', '华为技术有限公司']
+          ['核准主体名称', '北京知行灵动科技有限公司']
         ]);
-        mk('e2e-verdict-unknown', [['开发者', ''], ['企业名称', '北京知行灵动科技有限公司']]);
+        mk('e2e-verdict-diff', [
+          ['开发者', '北京知行灵动科技有限公司'],
+          ['核准主体名称', '华为技术有限公司']
+        ]);
+        mk('e2e-verdict-unknown', [
+          ['开发者', '南京石诚星桥科技有限公司'],
+          ['核准主体名称', '杭州矩远科技有限公司']
+        ]);
         /* 【台账 #8】超时是第四态：开发者与核准主体两边都查不到法人，但原因是「20 秒没回执」。 */
         mk('e2e-verdict-timeout', [
           ['开发者', '北京知行灵动科技有限公司'],
@@ -4424,45 +4433,50 @@ module.exports = async function runContent(ctx) {
         ]);
       });
 
+      /* 法人查询全部打桩：这条用例验的是「结论如何呈现」，不是数据源靠不靠得住。
+       * 每个盒子一个桩，避免上一个盒子的结论串到下一个。 */
       const rowsOut = await inExt('(function () {'
-        + 'var out = []; var boxes = ["e2e-verdict-two", "e2e-verdict-unknown", "e2e-verdict-timeout"];'
+        + 'var out = []; var boxes = ["e2e-verdict-same", "e2e-verdict-diff", "e2e-verdict-unknown", "e2e-verdict-timeout"];'
+        + 'var stubs = {'
+        + '  "e2e-verdict-same": function () { return Promise.resolve({ rep: "张三", timedOut: false }); },'
+        + '  "e2e-verdict-diff": function (n) { return Promise.resolve({ rep: String(n).indexOf("华为") >= 0 ? "李四" : "张三", timedOut: false }); },'
+        + '  "e2e-verdict-unknown": function () { return Promise.resolve({ rep: "", timedOut: false }); },'
+        + '  "e2e-verdict-timeout": function () { return Promise.resolve({ rep: "", timedOut: true }); }'
+        + '};'
         + 'return (async function () {'
         + 'for (var b = 0; b < boxes.length; b++) {'
         + '  var el = document.getElementById(boxes[b]);'
-        + '  if (boxes[b] === "e2e-verdict-timeout") {'
-        + '    window.KH.ImportantNote.panel.lookupEntity = function () { return Promise.resolve({ rep: "", timedOut: true }); };'
-        + '  }'
+        + '  window.KH.ImportantNote.panel.lookupEntity = stubs[boxes[b]];'
         + '  window.KH.ImportantNote.panel.decorateChecks(el, {});'
-        + '  if (boxes[b] === "e2e-verdict-timeout") await new Promise(function (r) { setTimeout(r, 80); });'
+        + '  await new Promise(function (r) { setTimeout(r, 80); });'
         + '  var tds = el.querySelectorAll("td.kh-table-label");'
         + '  for (var i = 0; i < tds.length; i++) {'
         + '    var m = tds[i].querySelector(".kh-verdict");'
         + '    var vcell = tds[i].parentNode.querySelectorAll("td")[1];'
-        + '    var ev = vcell ? vcell.querySelector(".kh-evidence") : null;'
-        + '    var evA = ev ? ev.querySelector(".kh-evidence-link") : null;'
+        + '    var ev = vcell ? !!vcell.querySelector(".kh-evidence") : false;'
         + '    out.push({ box: boxes[b], label: window.KH.Compare.Sources.labelText(tds[i]),'
         + '      mark: m ? String(m.textContent) : "", state: m ? String(m.getAttribute("data-state") || "") : "",'
         + '      bg: String(tds[i].style.background || ""), tip: String(tds[i].title || ""),'
-        + '      ev: ev ? String(ev.textContent || "") : "", evHref: evA ? String(evA.getAttribute("href") || "") : "" });'
+        + '      ev: ev });'
         + '  }'
         + '}'
         + 'return out; })(); })()');
       console.log('        三态标记: ' + JSON.stringify(rowsOut.map((x) => ({ b: x.box, l: x.label, m: x.mark, s: x.state, bg: x.bg }))));
-      console.log('        判定证据: ' + JSON.stringify(rowsOut.map((x) => ({ l: x.label, ev: x.ev, href: x.evHref }))));
 
       const pick = (box, label) => rowsOut.filter((x) => x.box === box && x.label === label)[0];
-      const same = pick('e2e-verdict-two', '企业名称');
-      const warn = pick('e2e-verdict-two', '承诺对象');
-      const unknown = pick('e2e-verdict-unknown', '企业名称');
-      truthy(same && warn && unknown, '三行都要画出来，实际 ' + JSON.stringify(rowsOut.map((x) => x.label)));
-      eq(same.mark, '✔ 一致', '一致态要挂「✔ 一致」');
+      const same = pick('e2e-verdict-same', '核准主体名称');
+      const warn = pick('e2e-verdict-diff', '核准主体名称');
+      const unknown = pick('e2e-verdict-unknown', '核准主体名称');
+      truthy(same && warn && unknown, '三行都要画出来，实际 ' + JSON.stringify(rowsOut.map((x) => x.box + ':' + x.label)));
+      eq(same.mark, '✔ 一致', '同法人链路：名字相同 ⇒ 一致态要挂「✔ 一致」');
       eq(same.state, 'same');
-      eq(warn.mark, '⚠ 待确认', '待确认态要挂「⚠ 待确认」');
+      eq(warn.mark, '⚠ 待确认', '名字与法人都不同 ⇒ 待确认态要挂「⚠ 待确认」');
+      eq(warn.state, 'diff');
       truthy(same.mark !== warn.mark, '两态文案必须不同（只靠底色不够）');
       eq(unknown.mark, '？ 未查明', '未查明要挂独立的第三态标记');
       eq(unknown.bg, '', '未查明不涂色');
       truthy(String(unknown.tip).indexOf('无法核实') >= 0, '未查明的悬停说明必须非空且写明原因，实际 = ' + JSON.stringify(unknown.tip));
-      eq(unknown.label, '企业名称', '标记是后缀，字段名照旧认得出来');
+      eq(unknown.label, '核准主体名称', '标记是后缀，字段名照旧认得出来');
       /* 【台账 #8】超时是第四态：同样是「不改底色」，但徽标与悬停都要写「超时」，
        * 和「？未查明」分得开（一个该等会儿再看，一个就是查不到）。 */
       const timeout = pick('e2e-verdict-timeout', '核准主体');
@@ -4472,18 +4486,15 @@ module.exports = async function runContent(ctx) {
       truthy(timeout.mark !== unknown.mark, '超时与未查明的文案必须不同');
       eq(timeout.bg, '', '超时同样不改底色');
       truthy(String(timeout.tip).indexOf('超时') >= 0, '悬停要写明超时，实际 = ' + JSON.stringify(timeout.tip));
-      /* 【台账 #6】证据要就地可见：命中值 / 来源 / 读取时间 / 原页入口。 */
-      truthy(String(same.ev || '').indexOf('值：北京知行灵动科技有限公司') >= 0, '证据行要写出命中值，实际 = ' + JSON.stringify(same.ev));
-      truthy(String(same.ev || '').indexOf('源：本页抓取') >= 0, '证据行要写出处，实际 = ' + JSON.stringify(same.ev));
-      truthy(/读取：\d{2}:\d{2}/.test(String(same.ev || '')), '证据行要写读取时间，实际 = ' + JSON.stringify(same.ev));
-      truthy(/^https?:/.test(String(same.evHref || '')), '原页入口必须可点，实际 = ' + JSON.stringify(same.evHref));
-      truthy(String(unknown.ev || '').indexOf('值：北京知行灵动科技有限公司') >= 0, '未查明行也要有证据，实际 = ' + JSON.stringify(unknown.ev));
-      truthy(/读取：\d{2}:\d{2}/.test(String(unknown.ev || '')), '未查明行的读取时间也要在，实际 = ' + JSON.stringify(unknown.ev));
+      /* 【2.0.11 · 用户 m00001】逐字段证据行（值 / 来源 / 读取时间 / 原页）已删。 */
+      eq(same.ev, false, '判定行的值格里不许再出现证据行');
+      eq(warn.ev, false, '待确认行同样不再画证据行');
+      eq(unknown.ev, false, '未查明行也不再画证据行（值 / 读取时间都不出现）');
       await shot(page, '28-verdict-marks');
     } finally {
       await page.evaluate(() => {
         try { delete window.KH.ImportantNote.panel.lookupEntity; } catch (e) {}
-        ['e2e-verdict-two', 'e2e-verdict-unknown', 'e2e-verdict-timeout'].forEach((id) => {
+        ['e2e-verdict-same', 'e2e-verdict-diff', 'e2e-verdict-unknown', 'e2e-verdict-timeout'].forEach((id) => {
           const el = document.getElementById(id);
           if (el) el.remove();
         });

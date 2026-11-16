@@ -1042,6 +1042,13 @@
   text-overflow: ellipsis; white-space: nowrap;
 }
 .kh-lrow-suffix.is-open { color: var(--brand-deep); background: var(--brand-soft); }
+/* 【2026-11-16】抓取字段的「和谁比」：勾上「比对」才出现。
+ * 没选对象时标黄——但文案本身就写着「和谁比…」，不靠颜色也读得出来。 */
+.kh-lrow-cmp-sel {
+  flex: 0 0 auto; max-width: 168px; height: 22px; padding: 0 4px;
+  font-size: 11px; line-height: 20px;
+}
+.kh-lrow-cmp-sel.is-warn { border-color: var(--warning); color: var(--warn-ink); background: var(--warning-soft); }
 .kh-list-del { flex: 0 0 auto; }
 .kh-lrow-detail {
   display: flex; flex-direction: column; gap: 8px; min-width: 0;

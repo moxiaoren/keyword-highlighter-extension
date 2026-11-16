@@ -137,57 +137,6 @@
   C.isPersonName = isPersonName;
   C.repOf = repOf;
 
-  /* ---------- ③ 承诺对象放行名单 ---------- */
-
-  /* 明确点名了别家平台 ⇒ 即使行文里也带「应用平台」也不放行。反面清单不随配置走。 */
-  const PROMISE_OTHER = /华为|huawei|小米|xiaomi|oppo|广东欢太|欢太|应用宝|腾讯|荣耀|honor|三星|samsung|魅族|meizu|中兴|努比亚|一加|realme|抖音|快手|百度|阿里/i;
-  const PROMISE_GENERIC = /未指定具体平台|各?应用平台|各?应用市场|各?应用商店|各大渠道|所有渠道/;
-
-  /** 放行名单唯一取值路径：调用方给 → 用它；没给 → 配置默认；清洗一律走 Config。 */
-  function promiseOkList(input) {
-    let src = input;
-    if (src && typeof src === 'object' && !Array.isArray(src)) src = src.promiseOk;
-    if (src === undefined || src === null) {
-      const d = (KH.Config && KH.Config.defaults && KH.Config.defaults.noteCheck) || null;
-      src = d ? d.promiseOk : [];
-    }
-    const CFG = KH.Config || null;
-    if (CFG && typeof CFG.normalizeNoteCheck === 'function') return CFG.normalizeNoteCheck(src).promiseOk;
-    return Array.isArray(src) ? src.map((s) => raw(s).trim()).filter(Boolean) : [];
-  }
-
-  /** 名单项按**字面子串**匹配（两侧都 keyOf）：用户填的通配符不会被当成通配。返回命中的那一项。 */
-  function listHit(target, list) {
-    const kt = keyOf(target);
-    if (!kt) return '';
-    for (let i = 0; i < list.length; i += 1) {
-      const k = keyOf(list[i]);
-      if (k && kt.indexOf(k) >= 0) return raw(list[i]);
-    }
-    return '';
-  }
-
-  /**
-   * @returns {{state:'ok'|'warn'|'unknown', how:string, hit:string, list:string[]}}
-   *   ok   = 命中放行名单 / 无具体平台的泛称
-   *   warn = 点名了别家平台，或名单为空且认不出
-   */
-  function allowList(target, list) {
-    const t = raw(target).trim();
-    const names = promiseOkList(list);
-    if (!t) return { state: 'unknown', how: 'empty', hit: '', list: names };
-    const hit = names.length ? listHit(t, names) : '';
-    if (hit) return { state: 'ok', how: 'list', hit: hit, list: names };
-    if (!PROMISE_OTHER.test(t) && PROMISE_GENERIC.test(t)) {
-      return { state: 'ok', how: 'generic', hit: '', list: names };
-    }
-    return { state: 'warn', how: names.length ? 'miss' : 'empty-list', hit: '', list: names };
-  }
-
-  C.allowList = allowList;
-  C.promiseOkList = promiseOkList;
-  C.listHit = listHit;
-
   /* ---------- ④ 正文里有没有（隐私政策） ---------- */
 
   const ORG_SUFFIX_WORDS = ['公司', '中心', '集团', '银行', '医院', '学校', '大学', '学院', '工作室',

@@ -1,0 +1,37 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>高亮词助手 2.0.12 更新说明</title><style>
+:root{--bg:#f7f8fa;--card:#fff;--fg:#1b1f24;--muted:#5b6672;--line:#e3e7ec;
+--fix:#c0392b;--new:#1f7a4d;--chg:#1f5fa8;--gate:#6b5bd2;--other:#6b7684;}
+@media (prefers-color-scheme:dark){:root{--bg:#14171a;--card:#1c2024;--fg:#e6e9ec;--muted:#9aa5b1;--line:#2b3138;
+--fix:#ff8b80;--new:#6fd39b;--chg:#7fb6f5;--gate:#b3a8ff;--other:#9aa5b1;}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif}
+.wrap{max-width:820px;margin:0 auto;padding:40px 20px 64px}
+header .ver{font-size:34px;font-weight:700;letter-spacing:-.5px}
+header .meta{color:var(--muted);font-size:14px;margin-top:6px}
+.badge{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:600;margin-left:8px;vertical-align:3px}
+.badge.beta{background:#fff0d6;color:#8a5a00}
+.badge.stable{background:#e2f4e8;color:#1f7a4d}
+@media (prefers-color-scheme:dark){.badge.beta{background:#3a2b12;color:#ffc86b}.badge.stable{background:#14301f;color:#6fd39b}}
+ul.items{list-style:none;padding:0;margin:28px 0 0}
+.item{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--other);border-radius:10px;
+padding:14px 16px;margin-bottom:12px}
+.item-fix{border-left-color:var(--fix)}.item-new{border-left-color:var(--new)}
+.item-chg{border-left-color:var(--chg)}.item-gate{border-left-color:var(--gate)}
+.tag{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:6px;margin-bottom:8px;
+color:var(--muted);background:rgba(127,127,127,.12)}
+.item-fix .tag{color:var(--fix)}.item-new .tag{color:var(--new)}.item-chg .tag{color:var(--chg)}.item-gate .tag{color:var(--gate)}
+.item-body p{margin:0 0 8px}.item-body p:last-child{margin-bottom:0}
+code{font:13px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;background:rgba(127,127,127,.14);
+padding:1px 5px;border-radius:5px}
+a{color:var(--chg)}
+.gates{margin-top:28px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 18px}
+.gates h2{font-size:15px;margin:0 0 10px;color:var(--muted);font-weight:600}
+.gates dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px 18px;margin:0}
+.gates dl>div{margin:0}
+.gates dt{font-size:12px;color:var(--muted)}.gates dd{margin:2px 0 0;font-weight:600;font-variant-numeric:tabular-nums}
+footer{margin-top:36px;color:var(--muted);font-size:14px;border-top:1px solid var(--line);padding-top:16px}
+footer a{margin-right:16px}
+table.list{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+table.list th,table.list td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);font-size:14px}
+table.list th{color:var(--muted);font-weight:600}table.list tr:last-child td{border-bottom:0}
+</style></head><body><div class="wrap"><header><div class="ver">高亮词助手 2.0.12</div><div class="meta">2026-11-16 · 稳定版<span class="badge stable">稳定版</span></div><div class="meta">这一版改了什么、为什么改；条目与扩展内「更新日志」同源。</div></header><ul class="items"><li class="item item-new"><span class="tag">新增·比对写进添加关键词</span><div class="item-body">图片命中关键词 / 图片动态关键词的每一行，多了「进表 / 比对」两枚勾选：勾上「比对」就等于声明「这张图上必须出现这一项」，同一张图上勾了的项全在＝一致，缺哪一个会点名；静态词按词判、动态字段按它这次抓到的值判。抓取后续字段的每一行也多了「比对」勾选，且必须选「和谁比」（落库写成 开发者#比=著作权人）：两边都有值才判，相等＝一致，不等＝待确认并写出两边值。</div></li><li class="item item-new"><span class="tag">新增·比对结论只有一句</span><div class="item-body">每张图的悬停第一句就是比对结论（一致 / 不一致：缺 X），卡片头上多一枚汇总（✓ 比对一致 / ⚠ 比对不一致：缺 X / 比对待识别…）。逐字段的「值：… · 源：本页抓取 · 法人未查到 · 读取：08:43」这类证据行整条删掉，不再占版面。</div></li><li class="item item-chg"><span class="tag">改动·软著三方比对退场</span><div class="item-body">表格下方的结论行、设置页「软著三方比对」那张全局比对表都不再有了——同样的核对可以用关键词里的比对配出来。设置项 imgCompare 一并退场，老配置不影响使用。</div></li><li class="item item-chg"><span class="tag">改动·内置兜底退场</span><div class="item-body">企业名称 ↔ 开发者、承诺对象 ↔ 放行名单、著作权人 / 主办单位 ↔ 开发者 这三条自动兜底不再默默参与。要判就明确配：勾「比对」并选对象；不配就不判、不涂色，也不再显示 ⚙ 待配置 的噪声。</div></li><li class="item item-other"><span class="tag">保留·开发者 ↔ 核准主体名称</span><div class="item-body">这一对仍单独走同法人链路：同名直接算同一主体不联网；名字不同就查两家法人，同法人也算一致；查不到如实写「未查明」。只有这一对查法人，其它字段对只做字面比对。</div></li><li class="item item-fix"><span class="tag">修复·法人查询不再张冠李戴</span><div class="item-body">通道换成：先在不激活的后台标签页里读爱企查（登录态可用时最准），失败再走 360 三种问法；解析必须校验查询名就在“法定代表人”前面不远处，中间插了别家名字一律不认。此前会把「相关企业」里别家的法人当成本家的（实测曾把杭州矩远答成“哔哩哔哩”）。查不到就写查不到，6 小时内不重复联网。</div></li><li class="item item-chg"><span class="tag">改动·证书编号放宽</span><div class="item-body">软著证书 / APP 电子版权证书自动进表的登记号（＝认证号，只是叫法不同）改成按形状认：年号 + 1~3 位字母 + 5~10 位数字，如 2023SR0488550、2026S0635345。逐字带空格的标签（著 作 权 人：/ 登 记 号：）也照取；「证书号 软著登字第 N 号」仍不会被当成登记号。</div></li><li class="item item-chg"><span class="tag">改动·校验中心只汇总</span><div class="item-body">设置页「🧭 校验中心」保留两行（图怎么取 / 谁和谁比），「谁和谁比」改成只读汇总各关键词里标的比对；没标就明说「抓取字段之间不做判等」，不再提供第二个配置入口。</div></li><li class="item item-gate"><span class="tag">自检</span><div class="item-body">单测 1266 项全过（0 跳过），机械红线 72 条全绿，真机内容层 87 + UI 层 162 = 249 项全过。</div></li></ul><footer><a href="https://moxiaoren.github.io/keyword-highlighter-extension/notes/">全部版本说明</a><a href="https://github.com/moxiaoren/keyword-highlighter-extension/releases">Releases</a><a href="https://moxiaoren.github.io/keyword-highlighter-extension/">项目主页</a></footer></div></body></html>

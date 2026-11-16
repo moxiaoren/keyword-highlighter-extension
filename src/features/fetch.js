@@ -565,6 +565,8 @@
   const SLICE_SUFFIX_RE = /%\s*([^%!@#^~*]*)$/;
   /* 【2.0.8.8 需求④】`~` = 该字段内容格**不完整展示**（只裁显示，值不变）。放最后匹配，不影响既有后缀。 */
   const CLIP_SUFFIX_RE = /~\s*$/;
+  /* 【2026-11-16】抓取字段之间的比对标记：`#比` / `#比=对象`（必须在最末）。 */
+  const CMP_SUFFIX_RE = /(?:#|＃)\s*(?:比|cmp)\s*(?:=\s*([^|｜\s~@#!%^]+))?\s*$/i;
   /* 【2.0.8.12 需求①】`*` = 该字段内容格**做成超链接**（值本身是网址就直链，否则按模板拼）。
    *  `*` 后面紧跟的是可选的链接模板（`{v}` 会被替换成 URL 编码后的值）；只放行 http/https，
    *  其它协议（javascript: / data: …）一律不生成链接 —— 笔记里的值来自任意网页，不能当可执行入口。 */
@@ -573,6 +575,13 @@
   function parseLabelSpec(t) {
     let s = String(t == null ? '' : t).trim();
     let offset = '';
+    /* 【2026-11-16 用户拍板·方案 A】抓取字段之间的比对：`开发者#比=著作权人`。
+     * 含义＝这一行的值要和「著作权人」那一行的值比（同名＝一致）。
+     * 标记必须收尾（与 #表 / #比 同一套写法），不写对象的 `#比` 单独存在＝还没指定对手。
+     * ⚠️ 必须最先剥：`#` 后面没有「图/数字」时 `IMG_SUFFIX_RE` 也会命中 `#`，
+     *    排在它后面这条标记就会被当成图片选项吃掉，字段名跟着变成 `开发者#比=著作权人` ⇒ 整条静默失效。 */
+    let cmpOn = false;
+    let cmpTarget = '';
     let imgOnly = false;
     let imgLimit = 0;
     let imgPick = [];
@@ -584,7 +593,14 @@
     let clip = false;
     let link = false;
     let linkTpl = '';
-    for (let guard = 0; guard < 7; guard++) {
+    for (let guard = 0; guard < 8; guard++) {
+      const mcmp = CMP_SUFFIX_RE.exec(s);
+      if (mcmp) {
+        cmpOn = true;
+        cmpTarget = String(mcmp[1] || '').trim();
+        s = s.slice(0, mcmp.index).replace(/^[ \u3000]+|[ \u3000]+$/g, '');
+        continue;
+      }
       /* `~` 必须**最先**剥：其它后缀的正则都允许"尾巴上还有别的字符"，
        * 最后剥的话 `%20~` 会被切片正则整串吃成 `20~`、`@2~` 变成非法位置。
        * 它只是显示选项（值一个字不改），先剥掉不影响任何取值语义。 */
@@ -669,7 +685,7 @@
       }
       break;
     }
-    return { label: s, simple: simple, imgOnly: imgOnly, imgLimit: imgLimit, imgPick: imgPick, noImg: noImg, offset: offset, offsetInvalid: isOffsetInvalid(offset), stripSpace: stripSpace, anchor: anchor, sliceSpec: sliceSpec, clip: clip, link: link, linkTpl: linkTpl };
+    return { label: s, simple: simple, imgOnly: imgOnly, imgLimit: imgLimit, imgPick: imgPick, noImg: noImg, offset: offset, offsetInvalid: isOffsetInvalid(offset), stripSpace: stripSpace, anchor: anchor, sliceSpec: sliceSpec, clip: clip, link: link, linkTpl: linkTpl, cmpOn: cmpOn, cmpTarget: cmpTarget };
   }
 
   /**

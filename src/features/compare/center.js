@@ -4,8 +4,8 @@
  * 设置页「校验中心」的唯一数据源：把当前真正在生效的三处配置汇总成几句话，
  * 并标出「默认」还是「你改过」。纯函数，不碰 DOM、不读存储（调用方把 cfg 传进来）。
  *   · 图怎么取      —— 抓取字段 + 识别引擎 + 每张上限 + 跨域放行站点
- *   · 谁和谁比      —— imgCompare.on / rows（另有内置的三条兜底规则）
- *   · 放行哪些平台  —— noteCheck.promiseOk（承诺对象）
+ *   · 谁和谁比      —— 各关键词「抓取后续字段」里标了「比对」的字段对（`#比=对象`）；
+ *                      设置页那张全局比对表、内置三条与软著三方比对都已退场（2026-11-16）
  * ========================================================================= */
 
 (function () {
@@ -59,46 +59,48 @@
     };
   }
 
+  /** 各关键词里标了「比对」的字段对（只汇总，不给改：真源在每条关键词的抓取字段里）。 */
+  function pairsInfo(cfg) {
+    const F = KH.Fetch;
+    const kws = (cfg && cfg.keywords instanceof Array) ? cfg.keywords : [];
+    const out = [];
+    const seen = new Set();
+    if (!F || typeof F.parseLabels !== 'function') return out;
+    for (let i = 0; i < kws.length; i += 1) {
+      const text = raw(kws[i] && kws[i].fetchLabels).trim();
+      if (!text) continue;
+      let list = [];
+      try { list = F.parseLabels(text) || []; } catch (e) { list = []; }
+      for (let j = 0; j < list.length; j += 1) {
+        const it = list[j] || {};
+        if (!it.cmpOn) continue;
+        const left = raw(it.label).trim();
+        const right = raw(it.cmpTarget).trim();
+        if (!left || !right || left === right) continue;
+        const sig = [left, right].sort().join('\u0001');
+        if (seen.has(sig)) continue;
+        seen.add(sig);
+        out.push(left + ' ↔ ' + right);
+      }
+    }
+    return out;
+  }
+
   function pairItem(cfg) {
-    const ic = (cfg && cfg.imgCompare) || {};
-    const on = ic.on !== false;
-    const rows = (ic.rows instanceof Array ? ic.rows : []).filter((r) => r && raw(r.left).trim() && raw(r.right).trim());
-    if (!on) {
-      return { key: 'pairs', title: '谁和谁比', changed: true,
-        text: '已关闭：自动行的比对一律不判（企业名称 / 承诺对象 / 主体行也不判）',
-        hint: '要恢复比对，打开「软著三方比对」里的总开关' };
-    }
-    if (!rows.length) {
+    const list = pairsInfo(cfg);
+    if (!list.length) {
       return { key: 'pairs', title: '谁和谁比', changed: false,
-        text: '没配额外的对。内置仍在跑：企业名称 ↔ 开发者、著作权人 / 主办单位 ↔ 开发者、承诺对象 ↔ 放行名单',
-        hint: '想比别的字段，在下面「软著三方比对」里加一组' };
+        text: '没标：抓取字段之间不做判等（开发者 ↔ 核准主体名称 是单独一条链路，不受这里影响）',
+        hint: '想比两个字段，在关键词编辑弹窗 › 抓取后续字段里勾「比对」并选对象' };
     }
-    const text = rows.map((r) => raw(r.left).trim() + ' ↔ ' + raw(r.right).trim()).join('；');
-    return { key: 'pairs', title: '谁和谁比', changed: true, text: text,
-      hint: '加的对优先于内置兜底；两边都可以是页面或图片' };
+    return { key: 'pairs', title: '谁和谁比', changed: true, text: '已标：' + list.join('；'),
+      hint: '在关键词编辑弹窗 › 抓取后续字段里改；两边都可以是页面或图片' };
   }
 
-  function allowItem(cfg) {
-    let list = [];
-    try {
-      const src = (cfg && cfg.noteCheck != null) ? cfg.noteCheck : defaults().noteCheck;
-      list = KH.Config && typeof KH.Config.normalizeNoteCheck === 'function'
-        ? KH.Config.normalizeNoteCheck(src).promiseOk
-        : ((src && src.promiseOk) || []);
-    } catch (e) { list = []; }
-    const def = (defaults().noteCheck && defaults().noteCheck.promiseOk) || ['vivo', '维沃', '天宸'];
-    const changed = JSON.stringify(list) !== JSON.stringify(def);
-    const text = list.length ? list.join('、') : '空：只放行「没点具体平台的泛称」，其余都要人工确认';
-    return {
-      key: 'allow', title: '放行哪些平台', changed: changed, text: text,
-      hint: changed ? '这是你自己改过的名单（默认：' + def.join('、') + '）' : '当前就是默认名单'
-    };
-  }
-
-  /** @returns {Array<{key,title,text,changed,hint,tag}>} 三项，顺序固定。 */
+  /** @returns {Array<{key,title,text,changed,hint,tag}>} 两项，顺序固定。 */
   function summary(cfg) {
     const mk = (it) => Object.assign({ hint: '' }, it, { tag: it.changed ? '已改' : '默认' });
-    return [mk(ocrItem(cfg)), mk(pairItem(cfg)), mk(allowItem(cfg))];
+    return [mk(ocrItem(cfg)), mk(pairItem(cfg))];
   }
 
   C.Center = C.Center || {};

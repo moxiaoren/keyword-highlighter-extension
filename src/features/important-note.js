@@ -383,13 +383,6 @@
       font: inherit; font-size: 10px; line-height: 16px; color: #2f6fb5;
     }
     .kh-merge-more:hover { text-decoration: underline; }
-    /* 【2.0.8.19 · P4】软著三方比对结论：表格下方一行。深浅色都读得清，
-     * 右边留一点内边距让长公司名换行时不顶到边框。 */
-    .kh-compare-line {
-      margin: 6px 0 0; padding: 6px 8px; border-radius: 6px;
-      background: #fef2f2; color: #b91c1c; box-shadow: inset 3px 0 0 #dc2626;
-      font-size: 12px; line-height: 1.55; word-break: break-word;
-    }
     /* 命中计数小标：一张卡命中多个时才出现（N>1），点了在下面铺开下拉。 */
     .khin-tag-more {
       flex: 0 0 auto; font-size: 10px; font-weight: 600; line-height: 15px; padding: 0 5px;
@@ -530,10 +523,13 @@
     .kh-verdict[data-state="timeout"] { background: #fff7ed; color: #9a3412; border-color: #fdba74; border-style: dashed; }
   /* 【2.0.13】⚙ 待配置：责任在配置，不在数据 —— 用中性的靛色虚线，别和「⚠ 待确认」混成一种黄。 */
   .kh-verdict[data-state="unset"] { background: #eef2ff; color: #3730a3; border-color: #a5b4fc; border-style: dashed; }
-    /* 【台账 #6】判定证据：命中值 / 来源 / 时间 / 原页入口，就地可见，不再只藏在悬停 title 里。 */
-    .kh-evidence { display: block; margin-top: 2px; font-size: 10px; line-height: 14px; color: inherit; opacity: .82; white-space: normal; word-break: break-word; }
-    .kh-evidence-link { text-decoration: underline; color: inherit; cursor: pointer; }
-    .kh-evidence-sep { opacity: .55; margin: 0 4px; }
+    /* 【2.0.11 · 用户 m00001】比对结论只有一句：✓ 一致 / ⚠ 不一致：缺谁。
+     * 旧的「值 · 源 · 读取：08:43」证据行已删（撑高表格又抢注意力）。
+     * 颜色只是辅助：文字里的 ✓ / ⚠ 自己就能读出来，灰度也分得清。 */
+    .kh-cmp-badge { display: block; margin-top: 4px; padding: 1px 5px; border-radius: 3px; font-size: 11px; line-height: 15px; }
+    .kh-cmp-badge.is-ok { background: #e6f4ea; color: #1b5e20; }
+    .kh-cmp-badge.is-bad { background: #fdf3d7; color: #7c4a03; }
+    .kh-cmp-badge.is-busy { background: #eef2ff; color: #3730a3; }
     /* 字段标题格里的文本（= 设置「抓取字段」里填的那个名字）**不必整段展示**，省下的宽度留给内容。
      * 用户 2026-10-11 原话："抓取字段的标题内容可以不完整展示…实际抓取到的内容展示还是需要完整展示的，节省宽度"。
      * 做法：标题文本包一层 .kh-lbt（见下方 noteFragment 的补包裹），**宽度上限 + 单行裁切**，
@@ -670,6 +666,20 @@
     return hit + (st === 'done' ? 10 : st === 'fail' ? 5 : st === 'pending' ? 2 : 1);
   }
 
+  /** 【2.0.11 · 比对】这张图的比对结论：只有配了「比对」项才有话说，没配返回空串（不占位）。
+   * 一致 = 勾了的项在图上都到齐；不一致 = 点名缺哪一项。判定在 `ImgOcr.cmpJudge`。 */
+  function cmpTipOf(it) {
+    const V = (KH.OcrCopy && KH.OcrCopy.VIEW) || {};
+    const cmp = it && it.cmp;
+    if (!cmp || String(it.state || '') !== 'done') return '';
+    const names = (cmp.items || []).map((x) => (x && x.name) || '').filter(Boolean);
+    if (cmp.state === 'diff') {
+      const miss = (cmp.missing || []).filter(Boolean);
+      return KH.OcrCopy.render(V.imgCmpDiffTip, { missing: (miss.length ? miss : names).join('、') });
+    }
+    return KH.OcrCopy.render(V.imgCmpSameTip, { names: names.join('、') });
+  }
+
   /** 图片：三态该挂哪一个 / 悬停说什么（`it` 为空 ⇒ null = 只清状态） */
   function stateOfImg(it, V) {
     if (!it) return null;
@@ -722,7 +732,11 @@
     if (!im || !im.classList) return;
     const got = k.of(it, (KH.OcrCopy && KH.OcrCopy.VIEW) || {});
     const want = got ? got.cls : '';
-    const tip = got ? got.tip : null;
+    /* 【2.0.11 · 比对】同一枚图既要说出「命中了什么词」，也要说出「比对项齐没齐」。
+     * 比对结论排在前面：它是用户新配的那件事（致方/承诺方是否就是那两家），命中词只是细节。 */
+    const cmpLine = cmpTipOf(it);
+    let tip = got ? got.tip : null;
+    if (cmpLine) tip = tip ? cmpLine + '\n' + tip : cmpLine;
     /* 【2.0.6.2 需求④】只写**真正变了的**属性：旧写法每次都 `remove` 三态再 `add` 一遍，
      * 即使状态没变也会让 `class` 属性连跳两次；而调度器的 MutationObserver 恰好盯着 `class`
      * （`attributeFilter:['class']`）⇒ 自己触发自己，页面越静它越扫，用户看到的就是"没操作也在闪/在重建"。 */
@@ -796,6 +810,55 @@
         markOnePdf(el, s ? (atPdf.get(s) || null) : null);
       }
     }
+    syncCmpBadge(bodyEl, imgItems);
+  }
+
+  /**
+   * 【2.0.11 · 用户 m00001】卡片头的一句比对结论：勾了「比对」的项全到齐 ⇒ ✓ 一致；
+   * 缺哪个就点名 ⇒ ⚠ 不一致：缺 X。没配比对项就把旧的摘掉（不留空地、不留上一张卡的结论）。
+   * 判定与逐图结论同源（`it.cmp` 来自 `ImgOcr.cmpJudge`），这里只做汇总，不重新判。
+   * @param {Element} bodyEl 卡片正文容器
+   * @param {Array} imgItems `ImgOcr.items()`
+   */
+  function syncCmpBadge(bodyEl, imgItems) {
+    if (!bodyEl || typeof bodyEl.querySelectorAll !== 'function') return;
+    const V = (KH.OcrCopy && KH.OcrCopy.VIEW) || {};
+    const old = bodyEl.querySelector('.kh-cmp-badge');
+    const list = (imgItems || []).filter((it) => it && it.cmp && Array.isArray(it.cmp.items) && it.cmp.items.length);
+    if (!list.length) {
+      if (old && old.parentNode) old.parentNode.removeChild(old);
+      return;
+    }
+    const done = list.filter((it) => String(it.state || '') === 'done');
+    const bad = done.filter((it) => it.cmp && it.cmp.state === 'diff');
+    let cls;
+    let text;
+    if (!done.length) {
+      cls = 'is-busy';
+      text = V.cmpBadgeBusy || '';
+    } else if (bad.length) {
+      const miss = [];
+      for (const it of bad) {
+        for (const m of (it.cmp.missing || [])) if (m && miss.indexOf(m) < 0) miss.push(m);
+      }
+      cls = 'is-bad';
+      text = KH.OcrCopy.render(V.cmpBadgeDiff, { missing: miss.join('、') });
+    } else {
+      cls = 'is-ok';
+      text = V.cmpBadgeSame || '';
+    }
+    const doc = bodyEl.ownerDocument || (typeof document !== 'undefined' ? document : null);
+    if (!doc) return;
+    let box = old;
+    if (!box) {
+      box = doc.createElement('div');
+      box.className = 'kh-cmp-badge';
+      bodyEl.appendChild(box);
+    }
+    const wantCls = 'kh-cmp-badge ' + cls;
+    if (box.className !== wantCls) box.className = wantCls;
+    if (String(box.textContent || '') !== text) box.textContent = text;
+    if (String(box.getAttribute('title') || '') !== text) box.title = text;
   }
 
   /**
@@ -1838,29 +1901,6 @@
     return false;
   }
 
-  /* ================= 【2.0.8.19 · P4】软著三方比对 =================
-   * 用户业务（2026-11-09 原话）：软著证明里有著作权人、登记号，要与页面上的开发者比对；
-   * **不一致就必须有软著授权书**（授权公司、被授权公司、登记号）。三组要一一对上：
-   *   开发者 = 被授权公司、著作权人 = 授权公司、两个登记号一致。
-   *
-   * 为什么不做成"同名字段合并"：`imgMerge` 只按**同一个字段名**比较，而这六项是
-   * 两组不同名字（开发者↔被授权公司、著作权人↔授权公司）。所以 `imgCompare.rows`
-   * 由用户显式配「左边字段 / 右边字段」，这里只负责取值与判等。
-   *
-   * 角色怎么认（Q6 拍板：借 `it.label`，不新增存储）：
-   *   · 一张图的 OCR 进表行里出现了**右侧字段**（授权公司/被授权公司/登记号里的前两个），
-   *     这张图就是授权书；其余图（软著证明）算"自己的文档"。
-   *   · 登记号两边都有，所以「只出现在右侧、从不出现在左侧」的字段才是判角色的锚
-   *     （`rightOnly`）。全是双侧字段时退回「有右无左」。
-   *   · 同角色多张图取**并集**（Q7）；同一个字段在同一侧出现两个值 ⇒ 报「授权书内部不一致」。
-   */
-  /** 一张卡的比对行从哪来：只在配置了比对、且有 OCR 进表行时才算（没配就是零成本）。 */
-  function compareRowsFor(meta, cfg) {
-    const ic = cfg && cfg.imgCompare;
-    if (!ic || ic.on === false || !ic.rows || !ic.rows.length) return [];
-    try { return ocrExtraRows(meta) || []; } catch (e) { return []; }
-  }
-
   const head = {
     /**
      * 命中集 → 有效条目（顺序 = 入参顺序 = 文档序，全程**不排序**）。
@@ -1955,6 +1995,21 @@
      */
     build(hits, ignored, cfg) {
       const rawMap = new Map();     // note\0kw\0adj -> { note, kw, adj, pinIds, imgSize, bg }
+      /* 【2026-11-16 用户拍板·方案 A】关键词自己写的比对对子（`开发者#比=著作权人`）。
+       * 一张卡上所有命中的规则并起来：同一对只留一条（按字段键排序后的签名去重）。 */
+      const pairMap = new Map();
+      const addPairs = (rawLabels) => {
+        if (!rawLabels) return;
+        const RULES = KH.Compare && KH.Compare.Rules;
+        if (!RULES || typeof RULES.pairsOfLabels !== 'function') return;
+        const ps = RULES.pairsOfLabels(rawLabels) || [];
+        for (let pi = 0; pi < ps.length; pi++) {
+          const p = ps[pi];
+          const sig = [p.kl, p.kr].sort().join('\u0001');
+          if (!sig || pairMap.has(sig)) continue;
+          pairMap.set(sig, p);
+        }
+      };
       for (const h of hits || []) {
         if (!h || !h.meta) continue;
         let note = String(h.meta.importantNote || '').trim();
@@ -1963,6 +2018,7 @@
         if (fieldsHtml) note = note ? (note + '\n' + fieldsHtml) : fieldsHtml;
         if (!note) continue;                                   // 空内容忽略
         if (ignored && ignored.has(note)) continue;
+        addPairs(h.meta.fetchLabels);
         const kw = String(h.meta.text || h.meta.display || '').trim();
         if (!kw) continue;
         /* `→ 后半截` 只在**和前半截不是同一个词**时才显示（2.0.2.17 需求④）。
@@ -1976,9 +2032,6 @@
          * 两张卡本来就该合成一条记录（去重键是 note\0kw\0adj），拆开会让同一张卡上的词显示两遍。 */
         const pinId = String(h.meta.pinId || '').trim().toLowerCase();
         const merge = mergeRowsFor(h.meta, cfg);
-        /* 【2.0.8.19 · P4】比对行也按命中来源取：同 `note` 的多条规则要**合成一份**再判，
-         * 否则一张卡里两个词各自看到半张图，结论就只对了一半。 */
-        const cmpRows = compareRowsFor(h.meta, cfg);
         const key = note + '\u0000' + kw + '\u0000' + adj;
         const prev = rawMap.get(key);
         if (prev) {
@@ -1987,7 +2040,6 @@
             const p = prev.mergeMap.get(m.field);
             if (!p || (!p.hit && m.hit)) prev.mergeMap.set(m.field, m);
           });
-          if (cmpRows.length) prev.cmpRows = (prev.cmpRows || []).concat(cmpRows);
           continue;   // 去重（但把 pinId / 合并行收进来）
         }
         rawMap.set(key, {
@@ -1995,7 +2047,6 @@
           pinIds: new Set(pinId ? [pinId] : []),
           imgSize: h.meta.imgSize || '',
           mergeMap: new Map(merge.map((m) => [m.field, m])),
-          cmpRows: cmpRows,
           noteFontSize: h.meta.noteFontSize || '',
           bg: h.meta.impNoteBg || ''
         });
@@ -2004,8 +2055,7 @@
       const noteMap = new Map();    // note -> { note, imgSize, noteFontSize, bg, entrySet, pinIds }
       rawMap.forEach((r) => {
         let g = noteMap.get(r.note);
-        if (!g) { g = { note: r.note, imgSize: r.imgSize, noteFontSize: r.noteFontSize, bg: r.bg, entrySet: new Set(), pinIds: new Set(), mergeMap: new Map(), cmpRows: [] }; noteMap.set(r.note, g); }
-        if (r.cmpRows && r.cmpRows.length) g.cmpRows = g.cmpRows.concat(r.cmpRows);
+        if (!g) { g = { note: r.note, imgSize: r.imgSize, noteFontSize: r.noteFontSize, bg: r.bg, entrySet: new Set(), pinIds: new Set(), mergeMap: new Map() }; noteMap.set(r.note, g); }
         (r.mergeMap ? Array.from(r.mergeMap.values()) : []).forEach((m) => {
           /* 同一字段在多张卡上都有配置行 ⇒ 合成一行；这一轮真命中的那条优先
            * （否则可能被同字段的「没命中」覆盖掉，合并行就永远出不来）。 */
@@ -2026,7 +2076,7 @@
           const i = k.indexOf('\u0000');
           entries.push({ kw: k.slice(0, i), adj: k.slice(i + 1) });
         });
-        items.push({ note: g.note, entries, pinIds: Array.from(g.pinIds), imgSize: g.imgSize || '', noteFontSize: g.noteFontSize || '', bg: g.bg || '', mergeRows: Array.from(g.mergeMap.values()), compare: KH.Compare.Rules.compareOf(g.cmpRows, cfg) });
+        items.push({ note: g.note, entries, pinIds: Array.from(g.pinIds), imgSize: g.imgSize || '', noteFontSize: g.noteFontSize || '', bg: g.bg || '', mergeRows: Array.from(g.mergeMap.values()), pairs: Array.from(pairMap.values()) });
       });
       return items;
     },
@@ -2252,74 +2302,6 @@
     return mark;
   }
 
-  /**
-   * 【台账 #6 · 2026-11-14】判定证据行：命中值 / 来源 / 读取时间 / 原页入口四件，就地挂在值格里。
-   * 旧样子只有悬停 title，鼠标不悬停就只剩一个「✔ 一致」——判据要求「就地看到」；
-   * 证据行是普通块级元素（不进 `.kh-val-box`，不参与裁切测量），不改变表格列宽逻辑。
-   * 无 URL（比如非网页环境）时写「原页 未取到」，不发请求、不抛错。
-   * @param {Element} tr 判定行
-   * @param {{value?:string, source?:string, url?:string, at?:number, label?:string}} spec 证据
-   * @returns {Element|null} 证据节点
-   */
-  function setEvidence(tr, spec) {
-    if (!tr || !tr.querySelectorAll) return null;
-    const tds = tr.querySelectorAll('td');
-    if (!tds || tds.length < 2) return null;
-    const host = tds[1];
-    const s = spec || {};
-    const value = String(s.value == null ? '' : s.value).trim();
-    const source = String(s.source || '本页抓取').trim();
-    const url = String(s.url || '').trim();
-    const sig = [value, source, url].join('\u0001');
-    if (tr.getAttribute && tr.getAttribute('data-kh-ev-sig') === sig) return host.querySelector('.kh-evidence');
-    if (tr.setAttribute) tr.setAttribute('data-kh-ev-sig', sig);
-    let box = host.querySelector ? host.querySelector('.kh-evidence') : null;
-    if (!box) {
-      const doc = host.ownerDocument || (typeof document !== 'undefined' ? document : null);
-      if (!doc) return null;
-      box = doc.createElement('div');
-      box.className = 'kh-evidence';
-      host.appendChild(box);
-    }
-    while (box.firstChild) box.removeChild(box.firstChild);
-    const doc = box.ownerDocument || document;
-    const add = (text, cls) => {
-      const sp = doc.createElement('span');
-      if (cls) sp.className = cls;
-      sp.textContent = text;
-      box.appendChild(sp);
-      return sp;
-    };
-    const shown = value.length > 26 ? value.slice(0, 26) + '…' : value;
-    add((s.label ? s.label + '：' : '值：') + (shown || '未取到'));
-    const sep = () => add(' · ', 'kh-evidence-sep');
-    sep();
-    add('源：' + source);
-    sep();
-    const ts = Number(s.at) > 0 ? Number(s.at) : 0;
-    if (ts) {
-      const d = new Date(ts);
-      const p2 = (n) => (n < 10 ? '0' + n : String(n));
-      add('读取：' + p2(d.getHours()) + ':' + p2(d.getMinutes()));
-    } else {
-      add('读取：未取到');
-    }
-    if (url) {
-      sep();
-      const a = doc.createElement('a');
-      a.className = 'kh-evidence-link';
-      a.setAttribute('href', url);
-      a.setAttribute('target', '_blank');
-      a.setAttribute('rel', 'noreferrer');
-      a.textContent = '原页 ↗';
-      a.title = url;
-      box.appendChild(a);
-    } else {
-      sep();
-      add('原页 未取到');
-    }
-    return box;
-  }
 
   /** 类别名：取第一条命中词所属规则的备注（`adj`）；没备注就空着，不硬编「未分类」。 */
   function catOf(item) {
@@ -2756,41 +2738,20 @@
       try { fields = S.readFields(table); } catch (e) { return; }
       this.paintPolicy(table, fields);
       this.paintEntity(el, table, fields);
-      this.paintAuto(table, fields);
+      /* 【2026-11-16】比对对子只来自这个关键词里的 `#比=对象`，由 build() 汇总成 item.pairs 传下去。 */
+      this.paintAuto(table, fields, item);
     },
 
     /**
-     * 【2026-11-13】证书之外的两种自动行：
-     *   · `企业名称`（营业执照 / 资质）—— 与卡片里抓取到的「开发者」比对：
-     *     一致标绿、不一致标黄、缺一边不涂色（判定在 `Compare.Rules.qualVerdict`）；
-     *   · `承诺对象`（承诺函）—— 放行名单（设置页可配，默认 vivo / 维沃 / 广东天宸）、无具体平台的泛称标绿，
-     *     其余平台标黄（判定在 `Compare.Rules.promiseVerdict`）；`承诺方` 只是说明，不上色。
+     * 【2026-11-16 用户拍板】自动行只判这个关键词里标了「比对」的字段对（`开发者#比=著作权人`）：
+     * 某行的字段名命中对子的一侧，就拿另一侧的值来判等（判定在 `Compare.Rules.autoVerdict`）。
+     * 内置三条（企业名称 ↔ 开发者、承诺对象 ↔ 放行名单、著作权人 / 主办单位兜底）、设置页那张
+     * 全局比对表与软著三方比对都已退场；开发者 ↔ 核准主体名称 走 paintEntity 的独立链路（含同法人查询）。
      * 行定位按字段名文本（自动行没有 DOM 标记，同值行还会被合并成一行）。
      */
-    paintAuto(table, fields) {
+    paintAuto(table, fields, item) {
       if (!table || !table.querySelectorAll) return;
       const dev = String((fields && fields.dev) || '').trim();
-      /* 【台账 #6】原页入口就是当前页（判定值全部来自本页抓取表）。 */
-      const pageUrl = (typeof location !== 'undefined' && location && location.href) ? location.href : '';
-      /* 【2.0.13 · 用户 2026-11-15 拍板「第 2 条严格」】总开关关掉 = 一律不上色。
-       * 「关掉」不能只是「不再画新的」：上一轮画上去的底色/标记/证据还挂在行上，
-       * 用户会以为开关没生效。本函数画过的行都带 `data-kh-auto-sig`，按这个标记撤回。 */
-      const ic = this.cfg && this.cfg.imgCompare;
-      if (ic && ic.on === false) {
-        const trsOff = table.querySelectorAll('tr');
-        for (let oi = 0; oi < trsOff.length; oi++) {
-          const trOff = trsOff[oi];
-          if (!trOff.getAttribute || trOff.getAttribute('data-kh-auto-sig') === null) continue;
-          tintRow(trOff, '');
-          setCheckTip(trOff, '');
-          setVerdictMark(trOff, '');
-          if (trOff.removeAttribute) { trOff.removeAttribute('data-kh-auto-sig'); trOff.removeAttribute('data-kh-ev-sig'); }
-          const hostOff = trOff.querySelectorAll('td')[1];
-          const boxOff = hostOff && hostOff.querySelector ? hostOff.querySelector('.kh-evidence') : null;
-          if (boxOff && boxOff.parentNode) boxOff.parentNode.removeChild(boxOff);
-        }
-        return;
-      }
       /* 【2.0.13 · R3】判定收进 `compare/rules.js`，呈现收进 `compare/present.js`；
        * 本函数只剩三件事：取值 → 交给规则 → 把结论落到行上。 */
       const RULES = (KH.Compare && KH.Compare.Rules) || null;
@@ -2798,6 +2759,18 @@
       const Sources = (KH.Compare && KH.Compare.Sources) || null;
       if (!RULES || !PRESENT || !Sources) return;
       const trs = table.querySelectorAll('tr');
+      /* 【2026-11-16】关键词内写的比对对子：只有**两侧的行都在这张表里**才拿来判。
+       * 否则每张卡都会凭空多出一枚「？未查明」，把真正的差异淹掉。 */
+      const kwPairs = [];
+      const allPairs = (item && item.pairs instanceof Array) ? item.pairs : [];
+      for (let pi = 0; pi < allPairs.length; pi++) {
+        const p = allPairs[pi];
+        if (!p) continue;
+        const a = Sources.field(table, p.left);
+        const b = Sources.field(table, p.right);
+        if (a && a.found && b && b.found) kwPairs.push(p);
+      }
+      const pairSig = kwPairs.map((p) => p.kl + '~' + p.kr).join(',');
       /* 「开发者」这一行在不在：用来把「没配」和「配了没取到」分开（第 3 条）。 */
       const devTr = rowOfField(table, 'dev');
       for (let i = 0; i < trs.length; i++) {
@@ -2813,21 +2786,30 @@
           dev: dev,
           devPresent: !!devTr,
           cfg: this.cfg,
+          pairs: kwPairs,
           get: (f) => fetchField(table, f)
         });
-        if (!v) continue;
+        if (!v) {
+          /* 这一行以前判过、现在没有对子了（改了关键词里的比对）⇒ 撤回标记与底色，别留上一轮的结论。 */
+          if (tr.hasAttribute && tr.hasAttribute('data-kh-auto-sig')) {
+            tr.removeAttribute('data-kh-auto-sig');
+            tintRow(tr, '');
+            setCheckTip(tr, '');
+            setVerdictMark(tr, '', '');
+          }
+          continue;
+        }
         const pres = PRESENT.presentVerdict({
           what: v.what, state: v.state, note: v.note, color: v.color,
-          source: v.source, value: val, url: pageUrl, at: Date.now()
+          source: v.source, value: val
         });
         /* 同样内容不重画；值变了（OCR 重跑 / 用户改配置）才重判。 */
-        const sig = [val, dev, pres.state, v.note].join('\u0001');
+        const sig = [val, dev, pres.state, v.note, pairSig].join('\u0001');
         if (tr.getAttribute('data-kh-auto-sig') === sig) continue;
         tr.setAttribute('data-kh-auto-sig', sig);
         tintRow(tr, pres.color);
         setCheckTip(tr, pres.tip);
         setVerdictMark(tr, pres.state, pres.tip);
-        setEvidence(tr, pres.evidence);
       }
     },
 
@@ -3009,8 +2991,6 @@
       const dev = String(fields.dev || '').trim();
       const ent = String(fields.entity || '').trim();
       if (!dev || !ent) return;
-      /* 【台账 #6】证据行的原页入口（本页）。 */
-      const pageUrl = (typeof location !== 'undefined' && location && location.href) ? location.href : '';
       /* 同一行有两种来法，不能一律跳：
        *   ① 两边名字一字不差 ⇒ 抓取表把它们合并成了一行（见 fetch.js 的「同值合行」）。
        *      名字相同就是同一主体，不用联网 —— 直接按「同法人」染绿，悬停写清依据。
@@ -3026,7 +3006,6 @@
               + '开发者「' + dev + '」；核准主体「' + ent + '」';
             setCheckTip(devTr, tipSame);
             setVerdictMark(devTr, 'same', tipSame);
-            setEvidence(devTr, { value: dev, source: '本页抓取 · 两边名字相同', url: pageUrl, at: Date.now() });
           }
         }
         return;
@@ -3064,9 +3043,6 @@
           /* 【台账 #5】未查明是独立的第三态：不涂色，但必须带标记与文案。 */
           setVerdictMark(devTr, timedOut ? 'timeout' : 'unknown', tip);
           setVerdictMark(entTr, timedOut ? 'timeout' : 'unknown', tip);
-          const srcUnknown = timedOut ? '本页抓取 · 法人查询超时' : '本页抓取 · 法人未查到';
-          setEvidence(devTr, { value: dev, source: srcUnknown, url: pageUrl, at: Date.now() });
-          setEvidence(entTr, { value: ent, source: srcUnknown, url: pageUrl, at: Date.now() });
           return;
         }
         const color = verdict === 'same' ? KH.Compare.COLOR_OK : KH.Compare.COLOR_BAD;
@@ -3078,9 +3054,6 @@
         setCheckTip(entTr, tip);
         setVerdictMark(devTr, verdict, tip);
         setVerdictMark(entTr, verdict, tip);
-        const srcEnt = '本页抓取 · 法人查询';
-        setEvidence(devTr, { value: dev, source: srcEnt, url: pageUrl, at: Date.now() });
-        setEvidence(entTr, { value: ent, source: srcEnt, url: pageUrl, at: Date.now() });
       }).catch(() => {
         /* 查询失败 = 未查明：不涂色，但要留标记与说明（不然失败和「没校验」长得一样）。 */
         const tip = '同法人校验：无法核实（查询失败，不改底色）\n' + sides;
@@ -3088,8 +3061,6 @@
         setCheckTip(entTr, tip);
         setVerdictMark(devTr, 'unknown', tip);
         setVerdictMark(entTr, 'unknown', tip);
-        setEvidence(devTr, { value: dev, source: '本页抓取 · 法人查询失败', url: pageUrl, at: Date.now() });
-        setEvidence(entTr, { value: ent, source: '本页抓取 · 法人查询失败', url: pageUrl, at: Date.now() });
       });
     },
 
@@ -3161,51 +3132,14 @@
       /* 【2.0.8.7 需求①】只留**这次真的命中**的行：没命中的字段与没配一样，不留空壳。 */
       const rows = ((item && item.mergeRows) || []).filter((r) => r && r.hit);
       const table = el.querySelector('table.kh-table-fetch');
-      /* 【2.0.8.19 · P4】结论行与合并行是两件事：比对只看「表里的值 vs 别的图/页面上的值」，
-       * 即使一条合并行都没配、表格里什么都没有，只要配了比对且有问题，这一行也必须出来。 */
-      const clearCmp = () => {
-        const old = el.querySelectorAll('.kh-compare-line');
-        for (let i = 0; i < old.length; i++) if (old[i].parentNode) old[i].parentNode.removeChild(old[i]);
-      };
       if (!table) {
         clearRows();
-        clearCmp();
         return;
       }
       const TN = KH.TextNorm;
-      const keyOf = (s) => (TN ? TN.keyOf(s) : String(s == null ? '' : s).replace(/\s+/g, '').toLowerCase());
       /* 【2.0.13 · A2】字段名改走 `NC.labelsOf`（剥掉左列上的判定标记），
        * 与 `paintAuto` 共用同一个取数实现 —— 顺带修掉「浮窗复用旧卡时结论行误报缺字段」。 */
       const valueOf = (field) => fetchValueOf(table, field);
-      /* 【2.0.8.19 · P4】结论行贴在合并表下方（Q8）：一行说清「要不要授权书 / 哪一组对不上」。
-       * 签名用结论原文本身（文案已包含两路值）—— 文本没变就不重排。 */
-      const paintCmp = (text) => {
-        if (!text) { clearCmp(); return; }
-        const cur = el.querySelector('.kh-compare-line');
-        if (cur && cur.getAttribute('data-kh-cmp-sig') === text) return;
-        clearCmp();
-        const doc = el.ownerDocument || document;
-        const div = doc.createElement('div');
-        div.className = 'kh-compare-line';
-        div.setAttribute('data-kh-cmp-sig', text);
-        /* 读屏也要能听到结论：这是一条"必须让人看见"的提示，不能只靠颜色。 */
-        div.setAttribute('role', 'status');
-        div.textContent = text;
-        table.parentNode.insertBefore(div, table.nextSibling);
-      };
-      /* 【2.0.8.19】只有"这张卡真的出现了比对相关的内容"才出结论：否则每个配了比对的页面
-       * （没有软著证明、没有授权书）都会多一行红字，纯噪音。证据 = 左侧页面值 / 左侧图值 / 右侧授权书值。 */
-      const cmp = item && item.compare;
-      let cmpEvidence = false;
-      if (cmp && cmp.rows) {
-        for (let ci = 0; ci < cmp.rows.length; ci++) {
-          const cr = cmp.rows[ci] || {};
-          let dv = '';
-          try { dv = String(valueOf(cr.left) || '').trim(); } catch (e) { dv = ''; }
-          if (dv || (cr.lvOcr && cr.lvOcr.length) || (cr.rv && cr.rv.length)) { cmpEvidence = true; break; }
-        }
-      }
-      paintCmp(cmpEvidence ? KH.Compare.Present.compareText(KH.Compare.Rules.compareProblems(cmp, valueOf), !!(cmp && cmp.hasDoc)) : '');
       if (!rows.length) {
         clearRows();
         table.removeAttribute('data-kh-merge-sig');

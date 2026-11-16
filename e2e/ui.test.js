@@ -186,7 +186,7 @@ module.exports = async function runUi(ctx) {
     includes(r.secHeadText, '样式', '顶部要有一行指路「相关设置在 样式 → 重要笔记」（两个外观默认值已搬到那里）');
   });
 
-  await test('★ 校验中心：图怎么取 / 谁和谁比 / 放行哪些平台三项都在（T5）', async () => {
+  await test('★ 校验中心：图怎么取 / 谁和谁比 两项都在（T5）', async () => {
     const r = await opt.evaluate(() => {
       const sec = document.getElementById('sec-ocr');
       if (!sec) return null;
@@ -206,11 +206,11 @@ module.exports = async function runUi(ctx) {
       return out;
     });
     truthy(r && r.hasCard, '设置页要有「🧭 校验中心」折叠卡，实际 ' + JSON.stringify(r));
-    eq(r.keys.join(','), 'ocr,pairs,allow', '三项顺序固定：图怎么取 / 谁和谁比 / 放行哪些平台，实际 ' + JSON.stringify(r.keys));
-    eq(r.titles.join(','), '图怎么取,谁和谁比,放行哪些平台', '标题要说人话，实际 ' + JSON.stringify(r.titles));
+    eq(r.keys.join(','), 'ocr,pairs', '两项顺序固定：图怎么取 / 谁和谁比，实际 ' + JSON.stringify(r.keys));
+    eq(r.titles.join(','), '图怎么取,谁和谁比', '标题要说人话，实际 ' + JSON.stringify(r.titles));
     truthy(r.tags.every((t) => t === '默认' || t === '已改'), '每项都要标默认/已改，实际 ' + JSON.stringify(r.tags));
-    truthy(r.texts.every((t) => t.length > 0), '三项都要有当前生效值的摘要，实际 ' + JSON.stringify(r.texts));
-    truthy(r.hints.every((t) => t.length > 0), '三项都要说清去哪改，实际 ' + JSON.stringify(r.hints));
+    truthy(r.texts.every((t) => t.length > 0), '两项都要有当前生效值的摘要，实际 ' + JSON.stringify(r.texts));
+    truthy(r.hints.every((t) => t.length > 0), '两项都要说清去哪改，实际 ' + JSON.stringify(r.hints));
   });
 
   await test('★ 顶部全局开关 / 站点开关控件仍在且已绑定', async () => {
@@ -1711,6 +1711,213 @@ module.exports = async function runUi(ctx) {
       const cfg = await KH.Store.load();
       const kw = (cfg.keywords || []).find((x) => x.text === 'K70门禁词');
       if (kw) await KH.Store.removeKeywords([kw.id]);
+    });
+  });
+
+  /* 【2.0.11 m00001】「比对」与「进表」并排的逐行勾选：真机验一遍"勾得上、落得下、重开还在"。
+   * 单测（tests/specs/compare-mark.test.js）只证明字符串口径；这里证明**这条路径真的通**：
+   * 弹窗里每行两枚勾选框 → 勾上写 `#比` → 存进 chrome.storage → 重开渲染回勾选态。 */
+  await test('★ #比：图片命中词逐行有「进表 / 比对」两枚勾选，勾上落库写 #比、重开仍是勾选态', async () => {
+    await openFreshEditor();
+    await opt.evaluate(() => {
+      const g = (k) => document.getElementById('fld-' + k);
+      const setText = (k, v) => {
+        const el = g(k);
+        el.value = v;
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+      };
+      /* 核心词放到最后再填：列表弹窗保存会重绘表单，未提交成词条的裸值会被冲掉。 */
+      /* 前置条件（K70 口径）：抓取模块总开关 → 抓到字段 → 识别图片文字，缺一这一格就是禁用态，
+       * 「修改」按钮点不动（真机实测：只填值不勾总开关 = disabled）。 */
+      const fe = g('fetchEnabled');
+      if (fe && !fe.checked) { fe.checked = true; fe.dispatchEvent(new Event('change', { bubbles: true })); }
+      setText('fetchLabels', '应用截图');
+      const ocr = g('imgOcr'); ocr.checked = true; ocr.dispatchEvent(new Event('change', { bubbles: true }));
+      setText('imgOcrKeyword', '致方公司');
+    });
+    await opt.click('.kh-cand-box[data-for="fld-imgOcrKeyword"] .kh-list-btn');
+    await opt.waitForTimeout(300);
+    const rows = await opt.evaluate(() => [...document.querySelectorAll('.kh-modal .kh-lrow')].map((r) => {
+      const markT = r.querySelector('.kh-lrow-mark:not(.kh-lrow-cmp) .kh-lrow-mark-t');
+      const cmpT = r.querySelector('.kh-lrow-cmp .kh-lrow-mark-t');
+      const cmpCb = r.querySelector('.kh-lrow-cmp input[type="checkbox"]');
+      return {
+        name: (r.querySelector('.kh-lrow-name') || {}).value || '',
+        mark: markT ? markT.textContent : '',
+        cmp: cmpT ? cmpT.textContent : '',
+        cmpOn: !!(cmpCb && cmpCb.checked),
+        boxes: r.querySelectorAll('.kh-lrow-mark-cb').length
+      };
+    }));
+    eq(rows.length, 1, '弹窗里就一条词：' + JSON.stringify(rows));
+    eq(rows[0].mark, '进表', '「进表」勾选还在原位');
+    eq(rows[0].cmp, '比对', '「比对」与「进表」并排出现');
+    eq(rows[0].boxes, 2, '一行正好两枚勾选框');
+    eq(rows[0].cmpOn, false, '存量词默认不参与比对（不勾 = 旧行为）');
+
+    await opt.evaluate(() => { document.querySelector('.kh-modal .kh-lrow-cmp input').click(); });
+    await opt.waitForTimeout(120);
+    /* 列表弹窗改了行 = dirty：按 Esc 会先弹「有未保存的修改」而不是关窗（批2 的既有行为），
+     * 所以这里走它自己的「保存」（onSave: commit），让改动真的写回字段。 */
+    await opt.evaluate(() => {
+      const modals = document.querySelectorAll('.kh-modal');
+      const m = modals[modals.length - 1];
+      const btn = Array.from(m.querySelectorAll('button')).reverse()
+        .find((b) => /^保存$/.test((b.textContent || '').trim()));
+      if (btn) btn.click();
+    });
+    await opt.waitForTimeout(400);
+    await opt.evaluate(() => {
+      const el = document.getElementById('fld-text');
+      el.value = 'K11比对勾选';
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      const btns = Array.from(document.querySelectorAll('.kh-modal .kh-btn'));
+      const save = btns.reverse().find((b) => /^(保存|添加)$/.test((b.textContent || '').trim()));
+      if (save) save.click();
+    });
+    await opt.waitForTimeout(900);
+    const stored = await opt.evaluate(async () => {
+      const r2 = await new Promise((res) => chrome.storage.local.get(['keywords'], res));
+      const k = (r2.keywords || []).find((x) => x.text === 'K11比对勾选');
+      return k ? String(k.imgOcrKeyword || '') : null;
+    });
+    eq(stored, '致方公司#比', '勾上「比对」⇒ 词尾写 #比 落库');
+
+    await opt.evaluate(async () => {
+      const cfg = await KH.Store.load();
+      const kw = (cfg.keywords || []).find((x) => x.text === 'K11比对勾选');
+      if (kw) KH.ui.openEditor({ keyword: kw, cfg, mode: 'options' });
+    });
+    await opt.waitForTimeout(700);
+    await opt.click('.kh-cand-box[data-for="fld-imgOcrKeyword"] .kh-list-btn');
+    await opt.waitForTimeout(300);
+    const again = await opt.evaluate(() => {
+      const cb = document.querySelector('.kh-modal .kh-lrow-cmp input');
+      const lab = document.querySelector('.kh-modal .kh-lrow-cmp');
+      return { on: !!(cb && cb.checked), lit: !!(lab && lab.classList.contains('is-on')) };
+    });
+    eq(again.on, true, '重开后勾选态要还原');
+    eq(again.lit, true, '勾上时勾选框要有 is-on 高亮（不靠记性）');
+
+    await opt.keyboard.press('Escape');
+    await opt.waitForTimeout(200);
+    await closeEditor();
+    await opt.evaluate(async () => {
+      const cfg = await KH.Store.load();
+      /* 兜底：早先几轮把「核心词没提交成功」的空词也存进去了，一并清掉（别留给后面的组）。 */
+      const junk = (cfg.keywords || []).filter((x) => x.text === 'K11比对勾选'
+        || (!String(x.text || '').trim() && /致方公司/.test(String(x.imgOcrKeyword || ''))));
+      if (junk.length) await KH.Store.removeKeywords(junk.map((x) => x.id));
+    });
+  });
+
+  /* 【2.0.11 m01013】抓取字段之间的比对：每行「比对」勾选 + 必填「和谁比」。
+   * 单测（tests/specs/compare-field-pairs.test.js）证明写法与判定；这里证明**真机这条路通**：
+   * 勾上 → 行内出现「和谁比」下拉（候选＝本关键词其它抓取字段）→ 选完落库 `#比=对象` → 重开还原。 */
+  await test('★ 抓取字段比对：勾「比对」出「和谁比」下拉，选完落库 `#比=对象`、重开还原', async () => {
+    await openFreshEditor();
+    const set = (k, v) => opt.evaluate(({ k, v }) => {
+      const el = document.getElementById('fld-' + k);
+      el.value = v;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    }, { k, v });
+    await opt.evaluate(() => {
+      const fe = document.getElementById('fld-fetchEnabled');
+      if (fe && !fe.checked) { fe.checked = true; fe.dispatchEvent(new Event('change', { bubbles: true })); }
+    });
+    await set('fetchLabels', '开发者|著作权人');
+    await opt.click('.kh-cand-box[data-for="fld-fetchLabels"] .kh-list-btn');
+    await opt.waitForTimeout(300);
+    const before = await opt.evaluate(() => {
+      const rows = [...document.querySelectorAll('.kh-modal .kh-lrow')];
+      const r0 = rows[0] || {};
+      const cb = r0.querySelector ? r0.querySelector('.kh-lrow-cmp input[type="checkbox"]') : null;
+      const lab = r0.querySelector ? r0.querySelector('.kh-lrow-cmp .kh-lrow-mark-t') : null;
+      const sel = r0.querySelector ? r0.querySelector('.kh-lrow-cmp-sel') : null;
+      return {
+        n: rows.length,
+        cmp: lab ? lab.textContent : '',
+        on: !!(cb && cb.checked),
+        selHidden: sel ? !!sel.hidden : null,
+        hasSel: !!sel
+      };
+    });
+    eq(before.n, 2, '两条抓取字段：' + JSON.stringify(before));
+    eq(before.cmp, '比对', '抓取字段行也要有「比对」勾选');
+    eq(before.selHidden, true, '没勾「比对」时不显示「和谁比」');
+    eq(before.on, false, '存量字段默认不参与比对');
+
+    /* 勾上 ⇒ 行内出现「和谁比」，候选来自**其它**抓取字段（不含自己）。 */
+    await opt.evaluate(() => { document.querySelector('.kh-modal .kh-lrow-cmp input').click(); });
+    await opt.waitForTimeout(150);
+    const opts0 = await opt.evaluate(() => {
+      const sel = document.querySelector('.kh-modal .kh-lrow-cmp-sel');
+      if (!sel) return null;
+      return { hidden: !!sel.hidden, opts: [...sel.options].map((o) => ({ v: o.value, t: o.textContent })) };
+    });
+    truthy(opts0, '勾上后要出现「和谁比」下拉');
+    eq(opts0.hidden, false, '勾上后下拉要露出来');
+    eq(opts0.opts.map((o) => o.v).join(','), ',著作权人', '首项是提示、候选只有另一个字段（不含自己）');
+
+    await opt.evaluate(() => {
+      const sel = document.querySelector('.kh-modal .kh-lrow-cmp-sel');
+      sel.value = '著作权人';
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await opt.waitForTimeout(150);
+    /* 弹窗自己的「保存」收口（改了行 = dirty，Esc 会先弹确认框）。 */
+    await opt.evaluate(() => {
+      const modals = document.querySelectorAll('.kh-modal');
+      const m = modals[modals.length - 1];
+      const btn = Array.from(m.querySelectorAll('button')).reverse()
+        .find((b) => /^保存$/.test((b.textContent || '').trim()));
+      if (btn) btn.click();
+    });
+    await opt.waitForTimeout(400);
+    await set('text', 'K12字段比对');
+    await opt.evaluate(() => {
+      const btns = Array.from(document.querySelectorAll('.kh-modal .kh-btn'));
+      const save = btns.reverse().find((b) => /^(保存|添加)$/.test((b.textContent || '').trim()));
+      if (save) save.click();
+    });
+    await opt.waitForTimeout(900);
+    const stored = await opt.evaluate(async () => {
+      const r2 = await new Promise((res) => chrome.storage.local.get(['keywords'], res));
+      const k = (r2.keywords || []).find((x) => x.text === 'K12字段比对');
+      return k ? String(k.fetchLabels || '') : null;
+    });
+    truthy(stored, '关键词要落库：' + stored);
+    truthy(stored.indexOf('开发者#比=著作权人') >= 0, '勾上 + 选了对象 ⇒ 落库写 #比=对象：' + stored);
+
+    /* 重开：勾选态与对象都要还原（不靠记性）。 */
+    await opt.evaluate(async () => {
+      const cfg = await KH.Store.load();
+      const kw = (cfg.keywords || []).find((x) => x.text === 'K12字段比对');
+      if (kw) KH.ui.openEditor({ keyword: kw, cfg, mode: 'options' });
+    });
+    await opt.waitForTimeout(700);
+    await opt.click('.kh-cand-box[data-for="fld-fetchLabels"] .kh-list-btn');
+    await opt.waitForTimeout(300);
+    const again = await opt.evaluate(() => {
+      const r0 = document.querySelector('.kh-modal .kh-lrow');
+      const cb = r0 && r0.querySelector('.kh-lrow-cmp input');
+      const sel = r0 && r0.querySelector('.kh-lrow-cmp-sel');
+      return { on: !!(cb && cb.checked), target: sel ? sel.value : '', hidden: sel ? !!sel.hidden : null };
+    });
+    eq(again.on, true, '重开后勾选态要还原');
+    eq(again.target, '著作权人', '重开后「和谁比」要还原成选过的对象');
+    eq(again.hidden, false, '重开后下拉仍可见');
+
+    await opt.keyboard.press('Escape');
+    await opt.waitForTimeout(200);
+    await closeEditor();
+    await opt.evaluate(async () => {
+      const cfg = await KH.Store.load();
+      const junk = (cfg.keywords || []).filter((x) => x.text === 'K12字段比对');
+      if (junk.length) await KH.Store.removeKeywords(junk.map((x) => x.id));
     });
   });
 

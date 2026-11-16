@@ -1255,46 +1255,10 @@ module.exports = async function run() {
     }
   });
 
-  /* 【2026-11-13 用户需求】营业执照/资质自动补的「企业名称」按开发者比对涂色；
-   * 承诺函自动补的「承诺对象」按平台白名单涂绿/涂黄；「承诺方」只展示不上色。 */
-  await test('自动行涂色：企业名称与开发者一致 ⇒ 绿，承诺对象白名单外 ⇒ 黄', () => {
-    const div = H.el('div', {}, []);
-    div.innerHTML = KH.Fetch.rowsToTableHtml([
-      { label: '开发者', rows: [[{ t: '北京知行灵动科技有限公司' }]], opt: null },
-      { label: '企业名称', rows: [[{ t: '北京知行灵动科技有限公司' }]], opt: null },
-      { label: '承诺对象', rows: [[{ t: '华为技术有限公司' }]], opt: null },
-      { label: '承诺方', rows: [[{ t: '广州丙科技有限公司' }]], opt: null }
-    ]);
-    const panel = shadowPanel();
-    panel.decorateChecks(div, {});
-    const trs = div.querySelectorAll('tr');
-    /* 开发者与企业名称同值 ⇒ 表格把两行并成一行；合并行也要按「与开发者一致」判绿 */
-    eq(trs[0].querySelectorAll('td')[0].style.background, KH.Compare.COLOR_OK, '企业名称与开发者一致 ⇒ 浅绿');
-    eq(trs[1].querySelectorAll('td')[0].style.background, KH.Compare.COLOR_BAD, '华为 ⇒ 浅黄');
-    falsy(trs[2].querySelectorAll('td')[0].style.background, '承诺方只展示，不上色');
-    truthy(String(trs[1].querySelectorAll('td')[0].getAttribute('title') || '').indexOf('承诺对象') >= 0,
-      '悬停要说明为什么黄');
-    if (div.parentNode) div.parentNode.removeChild(div);
-  });
-
-  await test('自动行涂色：企业名称与开发者不一致 / 承诺对象是 vivo ⇒ 黄 / 绿', () => {
-    const div = H.el('div', {}, []);
-    div.innerHTML = KH.Fetch.rowsToTableHtml([
-      { label: '开发者', rows: [[{ t: '上海乙信息技术有限公司' }]], opt: null },
-      { label: '企业名称', rows: [[{ t: '北京知行灵动科技有限公司' }]], opt: null },
-      { label: '承诺对象', rows: [[{ t: '维沃移动通信有限公司' }]], opt: null }
-    ]);
-    const panel = shadowPanel();
-    panel.decorateChecks(div, {});
-    const trs = div.querySelectorAll('tr');
-    eq(trs[1].querySelectorAll('td')[0].style.background, KH.Compare.COLOR_BAD, '两家不一致 ⇒ 浅黄');
-    eq(trs[2].querySelectorAll('td')[0].style.background, KH.Compare.COLOR_OK, 'vivo/维沃 ⇒ 浅绿');
-    if (div.parentNode) div.parentNode.removeChild(div);
-  });
-
-  /* 【台账 #3/#4/#5 · 2026-11-14】颜色不动，另挂一枚**不靠颜色**的标记：
-   * ✔ 一致 / ⚠ 待确认 / ？ 未查明。灰度截图、色觉障碍、打印时三态仍要分得清。 */
-  await test('★ 判定行两态各带非颜色标记：✔ 一致 / ⚠ 待确认', () => {
+  /* 【2026-11-16 用户拍板】内置三条自动比对（企业名称 ↔ 开发者、承诺对象 ↔ 放行名单、
+   * 著作权人 / 主办单位 ↔ 开发者 兜底）已退场：没配比对对时这些行一律不上色、也不挂标记。
+   * 保留的是「开发者 ↔ 核准主体名称」独立链路（含同法人），用例见本文件末尾。 */
+  await test('★ 内置自动行已退场：企业名称 / 承诺对象都不再自动上色（要判就在设置里配比对对）', () => {
     const div = H.el('div', {}, []);
     div.innerHTML = KH.Fetch.rowsToTableHtml([
       { label: '开发者', rows: [[{ t: '北京知行灵动科技有限公司' }]], opt: null },
@@ -1304,28 +1268,54 @@ module.exports = async function run() {
     const panel = shadowPanel();
     panel.decorateChecks(div, {});
     const trs = div.querySelectorAll('tr');
-    /* 开发者与企业名称同值 ⇒ 表格并成一行，这一行是「一致」 */
-    const sameCell = trs[0].querySelectorAll('td')[0];
+    for (let i = 0; i < trs.length; i++) {
+      const cell = trs[i].querySelectorAll('td')[0];
+      falsy(cell.style.background, '第 ' + i + ' 行不许自动上色');
+      eq(cell.querySelector('.kh-verdict'), null, '第 ' + i + ' 行不许挂判定标记');
+    }
+    if (div.parentNode) div.parentNode.removeChild(div);
+  });
+
+  /* 【台账 #3/#4/#5 · 2026-11-14】颜色不动，另挂一枚**不靠颜色**的标记：
+   * ✔ 一致 / ⚠ 待确认 / ？ 未查明。灰度截图、色觉障碍、打印时三态仍要分得清。 */
+  await test('★ 判定行两态各带非颜色标记：✔ 一致 / ⚠ 待确认（配置对）', () => {
+    const mk = (other) => {
+      const div = H.el('div', {}, []);
+      div.innerHTML = KH.Fetch.rowsToTableHtml([
+        { label: '企业名称', rows: [[{ t: '北京知行灵动科技有限公司' }]], opt: null },
+        { label: '主办单位', rows: [[{ t: other }]], opt: null }
+      ]);
+      return div;
+    };
+    const panel = shadowPanel();
+    /* 【2026-11-16】比对只认关键词里标的 `#比=对象`（item.pairs）；设置页那张全局表已退场。 */
+    const item = { pairs: KH.Compare.Rules.pairsOfLabels('企业名称#比=主办单位') };
+    const divSame = mk('北京知行灵动科技有限公司');
+    panel.decorateChecks(divSame, item);
+    const sameCell = divSame.querySelectorAll('tr')[0].querySelectorAll('td')[0];
     const sameMark = sameCell.querySelector('.kh-verdict');
     truthy(sameMark, '★ 一致行必须有非颜色标记（只涂浅绿不够）');
     eq(String(sameMark.textContent), '✔ 一致');
     eq(sameMark.getAttribute('data-state'), 'same', '状态挂在 data-state 上，样式只认它');
-    const warnCell = trs[1].querySelectorAll('td')[0];
+    const divDiff = mk('上海乙信息技术有限公司');
+    panel.decorateChecks(divDiff, item);
+    const warnCell = divDiff.querySelectorAll('tr')[0].querySelectorAll('td')[0];
     const warnMark = warnCell.querySelector('.kh-verdict');
     truthy(warnMark, '★ 不一致行必须有非颜色标记');
     eq(String(warnMark.textContent), '⚠ 待确认');
     truthy(String(warnMark.textContent) !== String(sameMark.textContent), '两态文案必须不同');
     truthy(String(sameCell.getAttribute('title') || '').length > 0, '悬停说明还在');
-    if (div.parentNode) div.parentNode.removeChild(div);
+    if (divSame.parentNode) divSame.parentNode.removeChild(divSame);
+    if (divDiff.parentNode) divDiff.parentNode.removeChild(divDiff);
   });
 
-  await test('★ 未查明是独立第三态：不涂色、有标记、悬停非空', () => {
+  await test('★ 未查明是独立第三态：不涂色、有标记、悬停非空（配置对，另一侧值是空的）', () => {
     const div = H.el('div', {}, []);
     div.innerHTML = '<table class="kh-table-fetch"><tbody>' +
       '<tr><td class="kh-table-label">企业名称</td><td>北京知行灵动科技有限公司</td></tr>' +
       '<tr><td class="kh-table-label">开发者</td><td></td></tr></tbody></table>';
     const panel = shadowPanel();
-    panel.decorateChecks(div, {});
+    panel.decorateChecks(div, { pairs: KH.Compare.Rules.pairsOfLabels('企业名称#比=开发者') });
     const td = div.querySelectorAll('tr')[0].querySelectorAll('td')[0];
     falsy(td.style.background, '未查明不许涂色');
     const mark = td.querySelector('.kh-verdict');
@@ -1340,60 +1330,53 @@ module.exports = async function run() {
     const div = H.el('div', {}, []);
     div.innerHTML = KH.Fetch.rowsToTableHtml([
       { label: '开发者', rows: [[{ t: '北京知行灵动科技有限公司' }]], opt: null },
-      { label: '承诺对象', rows: [[{ t: '华为技术有限公司' }]], opt: null }
+      { label: '著作权人', rows: [[{ t: '华为技术有限公司' }]], opt: null }
     ]);
     const panel = shadowPanel();
-    panel.decorateChecks(div, {});
+    /* 【2026-11-16】这里刻意用一个**非主体名**的字段（著作权人）：开发者 ↔ 核准主体名称/主办单位
+     * 这类主体名要走去查法人的那条链路（paintEntity），本用例验的是纯字面比对的标记。 */
+    const item = { pairs: KH.Compare.Rules.pairsOfLabels('著作权人#比=开发者') };
+    panel.decorateChecks(div, item);
     const cell = div.querySelectorAll('tr')[1].querySelectorAll('td')[0];
     const first = cell.querySelector('.kh-verdict');
     truthy(first, '前提：这一格真的挂了标记');
-    eq(String(KH.Compare.Sources.labelText(cell)), '承诺对象', 'labelText 要从右端把徽标剥掉');
-    eq(KH.Compare.Sources.labelsOf(cell).join('|'), '承诺对象', 'labelsOf 也照旧只认字段名');
-    /* 值改成 vivo ⇒ 判定从「待确认」翻成「一致」：文案要更新，节点要复用（每轮换新会闪） */
-    cell.parentNode.querySelectorAll('td')[1].textContent = '维沃移动通信有限公司';
-    panel.decorateChecks(div, {});
+    eq(String(KH.Compare.Sources.labelText(cell)), '著作权人', 'labelText 要从右端把徽标剥掉');
+    eq(KH.Compare.Sources.labelsOf(cell).join('|'), '著作权人', 'labelsOf 也照旧只认字段名');
+    /* 值改成与开发者同名 ⇒ 判定从「待确认」翻成「一致」：文案要更新，节点要复用（每轮换新会闪） */
+    cell.parentNode.querySelectorAll('td')[1].textContent = '北京知行灵动科技有限公司';
+    panel.decorateChecks(div, item);
     const second = cell.querySelector('.kh-verdict');
     truthy(second === first, '同一张卡重画要复用标记节点');
     eq(String(second.textContent), '✔ 一致', '判定变了，标记要跟着变');
     if (div.parentNode) div.parentNode.removeChild(div);
   });
-  /* 【台账 #6】判定证据要就地可见：命中值 / 来源 / 读取时间 / 原页入口，不能只藏在悬停 title 里。 */
-  await test('★ 判定行就地显示证据：值 / 来源 / 时间 / 原页入口', () => {
+  /* 【2.0.11 · 用户 m00001】逐字段证据行（值 / 来源 / 读取时间 / 原页入口）已删。
+   * 用户原话：「并不需要直接展示详细说明」——结论只在徽标与悬停里说，不往值格里堆细节。 */
+  await test('★ 判定行不再画逐字段证据行（值 / 来源 / 时间 / 原页）', () => {
     const div = H.el('div', {}, []);
     div.innerHTML = KH.Fetch.rowsToTableHtml([
       { label: '开发者', rows: [[{ t: '北京知行灵动科技有限公司' }]], opt: null },
       { label: '企业名称', rows: [[{ t: '华为技术有限公司' }]], opt: null }
     ]);
     const panel = shadowPanel();
-    panel.decorateChecks(div, {});
+    panel.decorateChecks(div, { pairs: KH.Compare.Rules.pairsOfLabels('企业名称#比=开发者') });
     const tr = div.querySelectorAll('tr')[1];
-    const box = tr.querySelectorAll('td')[1].querySelector('.kh-evidence');
-    truthy(box, '★ 判定行的值格里必须有证据行');
-    const text = String(box.textContent || '');
-    truthy(text.indexOf('值：华为技术有限公司') >= 0, '命中值要就地写出来：' + text);
-    truthy(text.indexOf('源：本页抓取') >= 0, '来源要写清：' + text);
-    truthy(/读取：\d{2}:\d{2}/.test(text), '读取时间要写出来：' + text);
-    const link = box.querySelector('.kh-evidence-link');
-    truthy(link, '★ 原页入口必须可点');
-    eq(link.getAttribute('href'), location.href, '原页链接指向当前页');
-    eq(link.getAttribute('target'), '_blank');
-    eq(String(link.textContent), '原页 ↗');
+    eq(tr.querySelectorAll('td')[1].querySelector('.kh-evidence'), null, '★ 值格里不许再出现证据行');
+    const mark = tr.querySelectorAll('td')[0].querySelector('.kh-verdict');
+    truthy(mark, '判定本身要留着');
+    truthy(String(mark.getAttribute('title') || '').length > 0, '结论改在悬停里说');
     if (div.parentNode) div.parentNode.removeChild(div);
   });
 
-  await test('★ 未查明行也带证据（值仍在，来源说清未查明）', () => {
+  await test('★ 未查明行也不画证据行（标记仍是 ？ 未查明）', () => {
     const div = H.el('div', {}, []);
     div.innerHTML = '<table class="kh-table-fetch"><tbody>' +
       '<tr><td class="kh-table-label">企业名称</td><td>北京知行灵动科技有限公司</td></tr>' +
       '<tr><td class="kh-table-label">开发者</td><td></td></tr></tbody></table>';
     const panel = shadowPanel();
-    panel.decorateChecks(div, {});
+    panel.decorateChecks(div, { pairs: KH.Compare.Rules.pairsOfLabels('企业名称#比=开发者') });
     const tr = div.querySelectorAll('tr')[0];
-    const box = tr.querySelectorAll('td')[1].querySelector('.kh-evidence');
-    truthy(box, '未查明也是判定行，证据不能缺');
-    const text = String(box.textContent || '');
-    truthy(text.indexOf('值：北京知行灵动科技有限公司') >= 0, text);
-    truthy(text.indexOf('源：本页抓取') >= 0, text);
+    eq(tr.querySelectorAll('td')[1].querySelector('.kh-evidence'), null, '未查明也不画证据行');
     eq(tr.querySelectorAll('td')[0].querySelector('.kh-verdict').getAttribute('data-state'), 'unknown');
     if (div.parentNode) div.parentNode.removeChild(div);
   });
@@ -1442,30 +1425,34 @@ module.exports = async function run() {
     }
   });
 
-  /* 【台账 #7】判定要真的读面板当前的配置（this.cfg），不能偷偷回落到写死的默认值。
-   * 判据「改名单无需改代码即生效」在面板这一层就是这条接线。 */
-  await test('★ 面板按当前配置判：cfg 里放行华为 ⇒ 华为绿、vivo 黄（不用改代码）', () => {
-    const make = (target) => {
+  /* 【台账 #7·2026-11-16 改口径】判定只认这个关键词里标的比对（item.pairs）：
+   * 同一张表换成另一对 ⇒ 判定跟着变；把对子删掉 ⇒ 上一轮的标记与底色要撤回。 */
+  await test('★ 面板按关键词里标的比对判：换对子 ⇒ 判定跟着变；删掉对子 ⇒ 撤回标记', () => {
+    const make = () => {
       const div = H.el('div', {}, []);
       div.innerHTML = KH.Fetch.rowsToTableHtml([
-        { label: '开发者', rows: [[{ t: '北京知行灵动科技有限公司' }]], opt: null },
-        { label: '承诺对象', rows: [[{ t: target }]], opt: null }
+        { label: '企业名称', rows: [[{ t: '北京知行灵动科技有限公司' }]], opt: null },
+        { label: '主办单位', rows: [[{ t: '上海乙信息技术有限公司' }]], opt: null },
+        { label: '开发者', rows: [[{ t: '北京知行灵动科技有限公司' }]], opt: null }
       ]);
       return div;
     };
     const panel = shadowPanel();
-    panel.cfg = { noteCheck: { promiseOk: ['华为'] } };   // 设置页改完写进配置的形状
-    const dHuawei = make('华为技术有限公司');
-    panel.decorateChecks(dHuawei, {});
-    const hwCell = dHuawei.querySelectorAll('tr')[1].querySelectorAll('td')[0];
-    eq(hwCell.style.background, KH.Compare.COLOR_OK, '★ 华为在自定义名单里 ⇒ 浅绿');
-    eq(String(hwCell.querySelector('.kh-verdict').textContent), '✔ 一致');
-    const dVivo = make('维沃移动通信有限公司');
-    panel.decorateChecks(dVivo, {});
-    const vivoCell = dVivo.querySelectorAll('tr')[1].querySelectorAll('td')[0];
-    eq(vivoCell.style.background, KH.Compare.COLOR_BAD, '★ 自定义名单里没有 vivo ⇒ 浅黄（默认名单不再兜底）');
-    eq(String(vivoCell.querySelector('.kh-verdict').textContent), '⚠ 待确认');
-    if (dHuawei.parentNode) dHuawei.parentNode.removeChild(dHuawei);
-    if (dVivo.parentNode) dVivo.parentNode.removeChild(dVivo);
+    const dA = make();
+    panel.decorateChecks(dA, { pairs: KH.Compare.Rules.pairsOfLabels('企业名称#比=主办单位') });
+    const aCell = dA.querySelectorAll('tr')[0].querySelectorAll('td')[0];
+    eq(aCell.style.background, KH.Compare.COLOR_BAD, '两家不一致 ⇒ 浅黄');
+    eq(String(aCell.querySelector('.kh-verdict').textContent), '⚠ 待确认');
+    const dB = make();
+    panel.decorateChecks(dB, { pairs: KH.Compare.Rules.pairsOfLabels('企业名称#比=开发者') });
+    const bCell = dB.querySelectorAll('tr')[0].querySelectorAll('td')[0];
+    eq(bCell.style.background, KH.Compare.COLOR_OK, '★ 换成同值的一对 ⇒ 浅绿');
+    eq(String(bCell.querySelector('.kh-verdict').textContent), '✔ 一致');
+    /* 同一张卡：对子删掉后重画 ⇒ 标记与底色必须撤回（否则屏幕上留着上一轮的结论） */
+    panel.decorateChecks(dB, { pairs: [] });
+    eq(bCell.querySelector('.kh-verdict'), null, '★ 删掉对子后标记要撤掉');
+    falsy(bCell.style.background, '底色也要还原');
+    if (dA.parentNode) dA.parentNode.removeChild(dA);
+    if (dB.parentNode) dB.parentNode.removeChild(dB);
   });
 };

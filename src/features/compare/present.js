@@ -98,43 +98,9 @@
     };
   }
 
-
-  /**
-   * 问题清单 → 表格下方那一行结论（无问题 ⇒ 空串 ⇒ 不渲染）。
-   * 文案全部来自 KH.OcrCopy.VIEW；右侧字段名从配置取值后拼进来，不写死。
-   */
-  function compareText(problems, hasDoc) {
-    if (!problems || !problems.length) return '';
-    const V = (KH.OcrCopy && KH.OcrCopy.VIEW) || {};
-    const render = (KH.OcrCopy && typeof KH.OcrCopy.render === 'function')
-      ? KH.OcrCopy.render
-      : (t, o) => String(t).replace(/\{(\w+)\}/g, (m, k) => (o && o[k] != null ? String(o[k]) : ''));
-    const msgs = [];
-    const namesOf = (arr) => (arr || []).map((n) => '「' + n + '」').join('');
-    for (let i = 0; i < problems.length; i++) {
-      const p = problems[i];
-      if (p.kind === 'noDoc') {
-        msgs.push(render(V.cmpNoDoc || '', { names: namesOf(p.names) }));
-      } else if (p.kind === 'noDocAmbig') {
-        msgs.push(V.cmpNoDocAmbig || '');
-      } else if (p.kind === 'mismatch') {
-        msgs.push(render(V.cmpMismatch || '', { left: p.row.left, right: p.row.right, lv: p.lv, rv: p.rv }));
-      } else if (p.kind === 'docMulti') {
-        msgs.push(render(V.cmpDocMulti || '', { right: p.row.right, vals: p.rv }));
-      } else if (p.kind === 'missRight') {
-        msgs.push(render(V.cmpMissRight || '', { right: p.row.right }));
-      } else if (p.kind === 'missLeft') {
-        msgs.push(render(V.cmpMissLeft || '', { left: p.row.left }));
-      }
-    }
-    const out = [];
-    for (let i = 0; i < msgs.length; i++) if (msgs[i] && out.indexOf(msgs[i]) < 0) out.push(msgs[i]);
-    return out.join(V.cmpSep || '；');
-  }
   P.toneOf = toneOf;
-  P.tipFor = tipFor;
   P.diffKind = diffKind;
   P.nextStepFor = nextStepFor;
+  P.tipFor = tipFor;
   P.presentVerdict = presentVerdict;
-  P.compareText = compareText;
 })();

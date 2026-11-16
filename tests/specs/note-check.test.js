@@ -20,7 +20,7 @@ const ROOT = path.join(__dirname, '..', '..');
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 
 /** 后台模块不是 content_scripts，单测里用独立沙盒加载（不污染内核的 window.KH）。 */
-function loadEntity() {
+function loadEntity(extra) {
   const mem = {};
   const chrome = {
     storage: {
@@ -30,6 +30,8 @@ function loadEntity() {
       }
     }
   };
+  /* 爱企查通道要 chrome.tabs / chrome.scripting：默认不给（模拟「没有标签页能力」），用例按需塞垫片。 */
+  if (extra && extra.chrome) Object.assign(chrome, extra.chrome);
   const sandbox = {
     console: console,
     chrome: chrome,
@@ -328,6 +330,133 @@ module.exports = async function run() {
     eq(Entity.parseRep('<div>甲公司 基本信息 法定代表人：李四</div>', '甲公司'), '李四');
   });
 
+  /* ---- 2026-11-16 实测事故：360 结果页底部「相关企业」区块把别家的法人安到查询公司头上
+   *      （杭州矩远科技有限公司 → 「哔哩哔哩」）。这里锁住「中间插了别家公司名一律不认」。 ---- */
+
+  await test('parseRep 收紧：查询名后面紧接「相关企业」再是别家公司的法人 ⇒ 空串，不许安错人', () => {
+    const html = '<div>杭州矩远科技有限公司 相关企业 哔哩哔哩科技有限公司 法定代表人 陈睿他投资的 5 家公司</div>';
+    eq(Entity.parseRep(html, '杭州矩远科技有限公司'), '', '别家公司卡片里的法人不是这家公司的法人');
+  });
+
+  await test('parseRep 收紧：查询名与「法定代表人」之间超过 45 字 ⇒ 空串（那是页面另一处的内容）', () => {
+    const pad = '填'.repeat(60);
+    eq(Entity.parseRep('<div>甲公司 基本信息 ' + pad + ' 法定代表人：李四</div>', '甲公司'), '');
+  });
+
+  /* ---- 2026-11-16 爱企查通道（用户登录后免费查法人；不新增权限，开后台标签页读 DOM） ---- */
+
+  suite('entity · 爱企查通道（后台标签页读 DOM）');
+
+  await test('pickRep：标签旁的候选里挑人名（跳过机构词、单字、公司名本身）', () => {
+    eq(Entity.pickRep([{ v: '法定代表人' }, { v: '科技有限公司' }, { v: '叶' }, { v: '叶天' }]), '叶天');
+    eq(Entity.pickRep([{ v: '李四' }], '武汉壹捌壹零企业管理有限公司'), '李四');
+    eq(Entity.pickRep([{ v: '武汉壹捌壹零企业管理有限公司' }], '武汉壹捌壹零企业管理有限公司'), '', '公司名本身不是法人');
+    eq(Entity.pickRep([]), '');
+    eq(Entity.pickRep(['张三']), '张三', '裸字符串也认');
+    eq(Entity.pickRep([{ v: '阿依古丽·买买提' }]), '阿依古丽·买买提', '少数民族名带 · 也认');
+  });
+
+  await test('爱企查：没登录 ⇒ 快速失败并关掉标签页，绝不猜人名', async () => {
+    const created = [];
+    const removed = [];
+    const E = loadEntity({ chrome: {
+      tabs: {
+        create: async (o) => { created.push(o.url); return { id: 71 }; },
+        update: async (id, o) => { created.push(o.url); },
+        remove: async (id) => { removed.push(id); }
+      },
+      scripting: {
+        executeScript: async () => [{ result: { url: 'https://aiqicha.baidu.com/s?q=x', links: [], gate: false, needLogin: true } }]
+      }
+    } });
+    let err = '';
+    try { await E.fromAiqicha('武汉壹捌壹零企业管理有限公司'); } catch (e) { err = String(e && e.message || e); }
+    truthy(/没登录/.test(err), '要说清是没登录：' + err);
+    deepEq(removed, [71], '失败也要把后台标签页关掉');
+    truthy(/aiqicha\.baidu\.com\/s\?q=/.test(created[0]), '先开搜索页');
+  });
+
+  await test('爱企查：被人机验证拦住 ⇒ 快速失败并关标签页', async () => {
+    const removed = [];
+    const E = loadEntity({ chrome: {
+      tabs: {
+        create: async () => ({ id: 72 }),
+        update: async () => {},
+        remove: async (id) => { removed.push(id); }
+      },
+      scripting: {
+        executeScript: async () => [{ result: { url: 'https://aiqicha.baidu.com/cbae/tr', links: [], gate: true, needLogin: false } }]
+      }
+    } });
+    let err = '';
+    try { await E.fromAiqicha('杭州矩远科技有限公司'); } catch (e) { err = String(e && e.message || e); }
+    truthy(/验证/.test(err), '要说清是人机验证：' + err);
+    deepEq(removed, [72]);
+  });
+
+  await test('爱企查：登录态下走「搜索页 → 详情页」拿到法人（标签页必关）', async () => {
+    const seen = [];
+    const removed = [];
+    const E = loadEntity({ chrome: {
+      tabs: {
+        create: async (o) => { seen.push('create'); return { id: 73 }; },
+        update: async (id, o) => { seen.push('detail:' + o.url); },
+        remove: async (id) => { removed.push(id); }
+      },
+      scripting: {
+        /* 第一次问：搜索结果页（有一条同名链接）；之后问：详情页（标签 + 相邻值）。 */
+        executeScript: async (o) => {
+          if (o.func.name === 'aiqSearchProbe') {
+            return [{ result: { url: 'https://aiqicha.baidu.com/s?q=x', gate: false, needLogin: false,
+              links: [{ href: 'https://aiqicha.baidu.com/company_detail_92224280590439', text: '武汉壹捌壹零企业管理有限公司' }] } }];
+          }
+          return [{ result: { url: 'https://aiqicha.baidu.com/company_detail_92224280590439',
+            title: '武汉壹捌壹零企业管理有限公司 - 壹捌壹零 - 爱企查',
+            cands: [{ v: '为叶天。经营范围包括一般' }, { v: '叶天' }] } }];
+        }
+      }
+    } });
+    const r = await E.fromAiqicha('武汉壹捌壹零企业管理有限公司');
+    eq(r.rep, '叶天');
+    eq(r.source, 'aiqicha');
+    truthy(/company_detail_/.test(seen.join('|')), '要去详情页，不能在搜索页读');
+    deepEq(removed, [73], '拿到结果也要关标签页');
+  });
+
+  await test('爱企查：详情页标题不是这家公司 ⇒ 不认（防串页）', async () => {
+    const removed = [];
+    const E = loadEntity({ chrome: {
+      tabs: {
+        create: async () => ({ id: 74 }),
+        update: async () => {},
+        remove: async (id) => { removed.push(id); }
+      },
+      scripting: {
+        executeScript: async (o) => {
+          if (o.func.name === 'aiqSearchProbe') {
+            return [{ result: { url: 'https://aiqicha.baidu.com/s?q=x', gate: false, needLogin: false,
+              links: [{ href: 'https://aiqicha.baidu.com/company_detail_1', text: '杭州矩远科技有限公司' }] } }];
+          }
+          return [{ result: { url: 'https://aiqicha.baidu.com/company_detail_1',
+            title: '别家公司 - 爱企查', cands: [{ v: '王五' }] } }];
+        }
+      }
+    } });
+    let err = '';
+    try { await E.fromAiqicha('杭州矩远科技有限公司'); } catch (e) { err = String(e && e.message || e); }
+    truthy(err.length > 0, '串页要报错，不能把别家的法人当结果');
+    deepEq(removed, [74]);
+  });
+
+  await test('查不到会记 6 小时负缓存：同一家公司第二次不再打网络', async () => {
+    const first = await Entity.lookup({ name: '杭州某某某科技有限公司' });
+    falsy(first.ok, '单测环境不联网，第一次必然查不到');
+    falsy(first.cached, '第一次没走缓存');
+    const second = await Entity.lookup({ name: '杭州某某某科技有限公司' });
+    falsy(second.ok);
+    truthy(second.cached, '第二次应命中负缓存，不再连打三个问法');
+  });
+
   await test('查询不联网时如实返回 ok:false（未查明，不编造法人）', async () => {
     const r = await Entity.lookup({ name: '北京某某科技有限公司' });
     falsy(r.ok);
@@ -403,46 +532,10 @@ module.exports = async function run() {
     eq(NC.matchMode('本政策由北京某某信息技术有限公司提供。', '北京某某科技有限公司'), 0, '两家不同公司不许近似');
   });
 
-  /* 【2026-11-13 用户需求】营业执照/资质抽出的「企业名称」要跟开发者比对；承诺函判承诺对象。
-   * 抽取层（ocr-auto）只负责抽得对，绿/黄口径全部收在这里，面板只照着画。 */
-  suite('note-check · 2.0.10.1 资质企业名比对 / 承诺对象判定');
-
-  await test('企业名称与开发者一致 ⇒ 绿；不一致 ⇒ 黄；缺开发者 ⇒ 不涂色', () => {
-    const same = NC.qualVerdict('北京知行灵动科技有限公司', '北京知行灵动科技有限公司');
-    eq(same.state, 'same');
-    eq(same.color, NC.COLOR_OK);
-    const diff = NC.qualVerdict('北京知行灵动科技有限公司', '上海乙信息技术有限公司');
-    eq(diff.state, 'diff');
-    eq(diff.color, NC.COLOR_BAD);
-    const none = NC.qualVerdict('北京知行灵动科技有限公司', '');
-    eq(none.state, 'unknown');
-    eq(none.color, '', '没有开发者就不许凭猜涂色');
-  });
-
-  await test('企业名称允许括号补充说明/空白差异，但不许把短名当同一家', () => {
-    const v = NC.qualVerdict('北京知行灵动科技有限公司（甲方）', '北京知行灵动科技有限公司');
-    eq(v.state, 'same', '括号补充说明不进比对口径');
-    eq(NC.qualVerdict('北京知行灵动科技有限公司', '知行灵动').state, 'diff',
-      '只写 4 个字属于写法不明，不能当同一家放绿');
-  });
-
-  await test('承诺对象：vivo / 维沃 / 广东天宸 与无指向泛称 ⇒ 绿', () => {
-    for (const t of ['维沃移动通信有限公司', 'vivo', '广东天宸网络科技有限公司', '各应用平台', '应用商店', '未指定具体平台']) {
-      const v = NC.promiseVerdict(t);
-      eq(v.state, 'ok', t + ' 应放行（绿）');
-      eq(v.color, NC.COLOR_OK);
-    }
-  });
-
-  await test('承诺对象：白名单外的平台一律黄，认不出也黄', () => {
-    for (const t of ['华为技术有限公司', '小米科技有限责任公司', 'OPPO广东移动通信有限公司',
-      '广东欢太科技有限公司', '应用宝', '荣耀终端有限公司', '某某不知名公司']) {
-      const v = NC.promiseVerdict(t);
-      eq(v.state, 'warn', t + ' 应提示人工确认（黄）');
-      eq(v.color, NC.COLOR_BAD);
-    }
-    eq(NC.promiseVerdict('').state, 'unknown', '空值不涂色');
-  });
+  /* 【2026-11-16 用户拍板】内置三条自动比对（企业名称 ↔ 开发者、承诺对象 ↔ 放行名单、
+   * 著作权人 / 主办单位 ↔ 开发者 兜底）已退场，qualVerdict / promiseVerdict 随之下线；
+   * 现在只有用户自己配的比对对才判（见 compare-mark / auto-compare 的用例）。
+   * 保留的判定：开发者 ↔ 核准主体名称 + 同法人（legalRep / sameLegalRep）。 */
 
   /* 【台账 #3/#4/#5 · 2026-11-14】三态必须**不靠颜色**也分得清：图标 + 文案，唯一真源在这里。
    * 颜色只是辅助 —— 灰度截图、色觉障碍、打印出来时浅绿/浅黄/不涂色三态长得一样（WCAG 1.4.1）。 */
@@ -480,65 +573,13 @@ module.exports = async function run() {
   });
 
   await test('★ 未查明的判定说明不许是空串（空串 = 和「没配校验」长得一样）', () => {
-    const q = NC.qualVerdict('北京知行灵动科技有限公司', '');
+    const q = NC.Rules.autoVerdict({ labels: ['企业名称'], value: '北京知行灵动科技有限公司',
+      pairs: NC.Rules.pairsOfLabels('企业名称#比=开发者'), get: () => ({ found: true, value: '' }) });
     eq(q.state, 'unknown');
     eq(q.color, '', '未查明不涂色');
     truthy(String(q.note || '').trim().length > 0, '★ 悬停说明必须非空');
-    const p = NC.promiseVerdict('');
-    eq(p.state, 'unknown');
-    truthy(String(p.note || '').trim().length > 0, '承诺对象缺失同理');
     eq(NC.sameLegalRep({ name: '北京知行灵动科技有限公司' }, { name: '' }), 'unknown', '缺一边 = 未查明');
   });
 
-  /* 【台账 #7】放行名单从写死的正则改成配置项：业务线换平台不用改代码发版。
-   * 判据：名单进 chrome.storage 且随导入导出走；改名单无需改代码即生效；单测覆盖空名单/自定义名单。
-   * 这里锁判定层；「进 storage / 随导出走」由 storage.test.js 的往返用例锁。 */
-  suite('note-check · 承诺对象放行名单可配（台账 #7）');
 
-  await test('★ 默认名单＝原写死名单：vivo / 维沃 / 天宸 仍放行，华为仍黄（升级行为不变）', () => {
-    for (const t of ['vivo移动通信有限公司', '维沃移动通信有限公司', '广东天宸网络科技有限公司']) {
-      eq(NC.promiseVerdict(t).state, 'ok', t + ' 应在默认放行名单里');
-    }
-    eq(NC.promiseVerdict('华为技术有限公司').state, 'warn');
-    truthy(String(NC.promiseVerdict('vivo').note).indexOf('vivo') >= 0, '说明里要写出命中的是哪份名单');
-  });
-
-  await test('★ 自定义名单立即生效：加华为 ⇒ 华为变绿、vivo 变黄（无需改代码）', () => {
-    const ok = NC.promiseVerdict('华为技术有限公司', { promiseOk: ['华为'] });
-    eq(ok.state, 'ok');
-    eq(ok.color, NC.COLOR_OK);
-    truthy(ok.note.indexOf('华为') >= 0, '说明要写出当前名单');
-    const vivo = NC.promiseVerdict('vivo移动通信有限公司', { promiseOk: ['华为'] });
-    eq(vivo.state, 'warn', '不在名单里的 vivo 必须交人工确认');
-    truthy(vivo.note.indexOf('华为') >= 0);
-  });
-
-  await test('★ 空名单是合法配置：具体平台一律不放行、泛称仍放行、文案写明「名单为空」', () => {
-    const v = NC.promiseVerdict('vivo移动通信有限公司', { promiseOk: [] });
-    eq(v.state, 'warn');
-    truthy(v.note.indexOf('放行名单为空') >= 0, '★ 不能说成「不是 vivo…」——名单本来就是空的');
-    eq(NC.promiseVerdict('各应用平台', { promiseOk: [] }).state, 'ok', '泛称与名单无关');
-    eq(NC.promiseVerdict('', { promiseOk: [] }).state, 'unknown');
-  });
-
-  await test('★ 名单项按字面匹配：填 .* 不会被当成通配', () => {
-    eq(NC.promiseVerdict('vivo移动通信', { promiseOk: ['.*'] }).state, 'warn');
-    eq(NC.promiseVerdict('某某.*公司', { promiseOk: ['.*'] }).state, 'ok', '字面出现才算命中');
-  });
-
-  await test('★ 归一：数组/逗号/顿号/换行都认，去空、去重（忽略大小写）、单项限量', () => {
-    const C = KH.Config;
-    deepEq(C.normalizeNoteCheck('vivo，华为、vivo\n\n 天宸 ').promiseOk, ['vivo', '华为', '天宸']);
-    deepEq(C.normalizeNoteCheck(['VIVO', 'vivo']).promiseOk, ['VIVO'], '重复项保留第一次写法');
-    deepEq(C.normalizeNoteCheck('').promiseOk, []);
-    truthy(C.normalizeNoteCheck(C.defaults.noteCheck).promiseOk.length >= 3, '默认名单不许被归一清空');
-    eq(C.normalizeNoteCheck('x'.repeat(100)).promiseOk[0].length, C.NOTE_CHECK_ITEM_MAX);
-  });
-
-  await test('★ 读路径归一：存储里的逗号串被修成数组，坏值回默认名单（不静默丢用户配置）', () => {
-    const out = KH.Config.normalize({ noteCheck: { promiseOk: '华为、小米' } });
-    deepEq(out.config.noteCheck.promiseOk, ['华为', '小米']);
-    const bad = KH.Config.normalize({ noteCheck: 42 });
-    deepEq(bad.config.noteCheck.promiseOk, KH.Config.defaults.noteCheck.promiseOk, '坏值回默认名单');
-  });
 };

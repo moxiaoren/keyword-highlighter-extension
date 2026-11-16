@@ -621,6 +621,8 @@
           const known = knownFields();
           const isKv = !!spec.kvBatch;
           const isTok = !!spec.token;
+          /* 【2026-11-16】只有「抓取后续字段」这一格有「和谁比」：它自己的行就是候选来源。 */
+          const isFetchList = isTok && String(spec.key || '') === 'fetchLabels';
           /* 图片动态关键词（`suffixChip`）的条目 = 字段名 + 取值后缀 + @指向 + #表：
            * 后缀也要结构化编辑，所以这里的行同时带「指向」与「后缀」两件。 */
           const hasSuffix = isTok || (isKv && !!spec.suffixChip);
@@ -636,6 +638,14 @@
           const origRaw = String(st.raw == null ? '' : st.raw);
           const origRows = isKv ? kvRows(origRaw, known) : split(origRaw).map((raw) => ({ raw: raw }));
           const rows = [];
+          /* 【2026-11-16】「和谁比」下拉的候选＝当前所有行的字段名，所以任何一处改名/增删都要重算。
+           * 每一行把自己的重算函数登记进来，改名时统一刷（行被重建时列表会清空，不会攒野回调）。 */
+          const cmpSels = [];
+          const refreshCmpSels = () => {
+            for (let i = 0; i < cmpSels.length; i++) {
+              try { cmpSels[i](); } catch (e) { /* 关掉弹窗时行已拆，忽略 */ }
+            }
+          };
           for (let i = 0; i < origRows.length; i++) {
             const o = origRows[i];
             const row = { orig: i, gone: false, dirty: false, isNew: false, picked: false, el: null };
@@ -643,12 +653,24 @@
               row.name = o.name;
               row.scopes = (o.scopes || []).slice();
               row.mark = !!o.mark;
+              /* 【#比】比对标记和进表一样是逐词标记：不复制过来的话，重开弹窗时勾选态会全丢。 */
+              row.cmp = !!o.cmp;
               /* 【#116】保留**原文那一段**：诊断要看用户到底写了什么。
                * 下面 `suffixChip` 的 `specOf` 会把后缀/`@` 吃进 spec，`row.name` 只剩裸词，
                * 若用拼回来的文字诊断，`@字段` 这一段就凭空消失了（正好是我们要抓的错）。 */
               row.origChip = String(o.raw == null ? '' : o.raw);
               if (spec.suffixChip) { row.spec = specOf(row.name); row.name = row.spec.label; }
-            } else if (isTok) { row.name = specOf(o.raw).label; row.spec = specOf(o.raw); }
+            } else if (isTok) {
+              /* 【2026-11-16】先剥 `#比=对象` 再交给 parseLabelSpec：标记在末尾，剥完字段名才干净。
+               * 不复制过来就会像上一轮的 #比 一样 —— 重开弹窗时勾选态与对象全丢。 */
+              const rawTok = String(o.raw == null ? '' : o.raw).trim();
+              const fc = FETCH_CMP_RE.exec(rawTok);
+              const bare = fc ? rawTok.slice(0, fc.index).trim() : rawTok;
+              row.cmp = !!fc;
+              row.cmpTarget = fc ? String(fc[1] || '').trim() : '';
+              row.name = specOf(bare).label;
+              row.spec = specOf(bare);
+            }
             else row.name = String(o.raw == null ? '' : o.raw);
             rows.push(row);
           }
@@ -706,7 +728,7 @@
           let filterQ = '';
           let filterHits = -1;
           const extraText = (row) => isKv
-            ? ((row.scopes || []).join(' ') + ' ' + ((row.scopes && row.scopes.length) ? '' : '全部字段') + (row.mark ? ' #表' : ''))
+            ? ((row.scopes || []).join(' ') + ' ' + ((row.scopes && row.scopes.length) ? '' : '全部字段') + (row.mark ? ' #表' : '') + (row.cmp ? ' #比' : ''))
             : hasSuffix ? (row.spec && typeof F.suffixTextOf === 'function' ? F.suffixTextOf(row.spec) : '') : '';
           /* 行文字＝名称 + 附加部分；与旧实现逐字等价（改名/筛选口径一个字节都不许变） */
           const rowText = (row) => (isKv || hasSuffix) ? (row.name + ' ' + extraText(row)) : row.name;
@@ -769,6 +791,7 @@
               let one = String(row.name || '').trim();
               for (const sc of (row.scopes || [])) one += '@' + sc;
               if (row.mark) one += ' #表';
+              if (row.cmp) one += ' #比';
               return one;
             };
             const rawAll = alive().map(issueChip).join('|');
@@ -1109,6 +1132,8 @@
               dirty = true;
               /* 【#116】改字的同时重算指向诊断：改对了提醒立刻消失，不用关掉再开 */
               refreshIssues();
+              /* 【2026-11-16】字段一改名，别人「和谁比」的候选表就变了。 */
+              if (isFetchList) refreshCmpSels();
             });
             nameInp.addEventListener('keydown', (ev) => {
               if (!ev) return;
@@ -1153,8 +1178,30 @@
               row._markCb = markCb;
               row._markLab = markLab;
               row._paintMark = paintMark;
+              /* 【2.0.11 需求】「比对」与「进表」并排：一件是「把它并进表」，一件是「拿它核对这张图」，
+               * 都是逐词开关，所以同一行、同一副勾选框样式，不再另开一栏。 */
+              const cmpCb = h('input', { class: 'kh-lrow-mark-cb', type: 'checkbox' });
+              cmpCb.checked = !!row.cmp;
+              const cmpLab = h('label', { class: 'kh-lrow-mark kh-lrow-cmp' + (row.cmp ? ' is-on' : '') }, [
+                cmpCb, h('span', { class: 'kh-lrow-mark-t', text: '比对' })
+              ]);
+              cmpLab.title = '勾上：这张图上还要出现这一项（词本身，或字段抓到的值）；同一张图上勾了的项全在＝一致，缺哪个会点名';
+              const paintCmp = () => {
+                if (cmpCb.checked !== !!row.cmp) cmpCb.checked = !!row.cmp;
+                cmpLab.classList.toggle('is-on', !!row.cmp);
+              };
+              cmpCb.addEventListener('change', () => {
+                row.cmp = !!cmpCb.checked;
+                row.dirty = true;
+                dirty = true;
+                paintCmp();
+              });
+              row._cmpCb = cmpCb;
+              row._cmpLab = cmpLab;
+              row._paintCmp = paintCmp;
               main.appendChild(scopeBtn);
               main.appendChild(markLab);
+              main.appendChild(cmpLab);
             }
             let detail = null;
             if (hasSuffix) {
@@ -1171,6 +1218,64 @@
                 sfxBtn.classList.toggle('is-open', !detail.hidden);
               });
               main.appendChild(sfxBtn);
+            }
+            if (isFetchList) {
+              /* 【2026-11-16 用户拍板·方案 A】与图片词的「比对」同一套外观，区别只有一条：
+               * 这里**必须指定对象**（用户原话「配置对比，必须指定对象」），所以勾上就露出下拉。
+               * 没选对象时下拉标黄并写「和谁比…」——不判，也不假装一致。 */
+              const cmpCb = h('input', { class: 'kh-lrow-mark-cb', type: 'checkbox' });
+              cmpCb.checked = !!row.cmp;
+              const cmpLab = h('label', { class: 'kh-lrow-mark kh-lrow-cmp' + (row.cmp ? ' is-on' : '') }, [
+                cmpCb, h('span', { class: 'kh-lrow-mark-t', text: '比对' })
+              ]);
+              cmpLab.title = '勾上：这一行的值要和另一行比（同名或同法人＝一致）；勾了必须选「和谁比」';
+              const sel = h('select', { class: 'kh-input kh-lrow-cmp-sel' });
+              sel.title = '和哪一行比？只能选这个关键词里已填的抓取字段';
+              const paintSel = () => {
+                const names = [];
+                for (const r of rows) {
+                  if (r === row || r.gone) continue;
+                  const n = String(r.name == null ? '' : r.name).trim();
+                  if (n && names.indexOf(n) < 0) names.push(n);
+                }
+                sel.textContent = '';
+                sel.appendChild(h('option', { value: '', text: row.cmpTarget ? '（重新选）' : '和谁比…' }));
+                let has = false;
+                for (const n of names) {
+                  const o = h('option', { value: n, text: n });
+                  if (n === row.cmpTarget) { o.selected = true; has = true; }
+                  sel.appendChild(o);
+                }
+                /* 对手被改名或删掉了：仍显示它，但不能悄悄替用户换一个对象（换了就等于改了判据）。 */
+                if (row.cmpTarget && !has) {
+                  const o = h('option', { value: row.cmpTarget, text: row.cmpTarget + '（已不在列表）' });
+                  o.selected = true;
+                  sel.appendChild(o);
+                }
+                sel.value = row.cmpTarget || '';
+                sel.hidden = !row.cmp;
+                sel.classList.toggle('is-warn', !!row.cmp && !row.cmpTarget);
+                cmpCb.checked = !!row.cmp;
+                cmpLab.classList.toggle('is-on', !!row.cmp);
+              };
+              cmpCb.addEventListener('change', () => {
+                row.cmp = !!cmpCb.checked;
+                if (!row.cmp) row.cmpTarget = '';
+                row.dirty = true;
+                dirty = true;
+                paintSel();
+              });
+              sel.addEventListener('change', () => {
+                row.cmpTarget = String(sel.value == null ? '' : sel.value).trim();
+                row.dirty = true;
+                dirty = true;
+                paintSel();
+              });
+              row._paintCmpSel = paintSel;
+              cmpSels.push(paintSel);
+              paintSel();
+              main.appendChild(cmpLab);
+              main.appendChild(sel);
             }
             const del = h('button', { class: 'kh-mini-btn kh-list-del', type: 'button', text: '×', title: '删掉这一条' });
             del.addEventListener('click', () => dropRow(row));
@@ -1263,6 +1368,7 @@
 
           function renderAll() {
             listEl.textContent = '';
+            cmpSels.length = 0;
             for (const row of rows) {
               if (row.gone) continue;
               row.el = buildRow(row);
@@ -1282,9 +1388,14 @@
             if (isKv) {
               row.scopes = (row.scopes || []).slice();
               row.mark = !!row.mark;
+              row.cmp = !!row.cmp;
               if (spec.suffixChip && !row.spec) row.spec = specOf(row.name || '');
             }
             if (isTok && !row.spec) row.spec = specOf(row.name || '');
+            if (isFetchList) {
+              row.cmp = !!row.cmp;
+              row.cmpTarget = String(row.cmpTarget == null ? '' : row.cmpTarget).trim();
+            }
             const at = afterRow ? rows.indexOf(afterRow) : rows.length - 1;
             rows.splice(at + 1, 0, row);
             row.el = buildRow(row);
@@ -1396,6 +1507,13 @@
             ops.push(mkBtn('设为进表', () => {
               forPicked((row) => { row.mark = true; if (row._paintMark) row._paintMark(); });
             }, '勾上后：图里「这个词：值」会并进重要笔记的抓取表'));
+            /* 【2.0.11 需求】比对标记也走同一份批量条：勾上＝这张图上必须有它 */
+            ops.push(mkBtn('取消比对', () => {
+              forPicked((row) => { row.cmp = false; if (row._paintCmp) row._paintCmp(); });
+            }));
+            ops.push(mkBtn('设为比对', () => {
+              forPicked((row) => { row.cmp = true; if (row._paintCmp) row._paintCmp(); });
+            }, '勾上后：同一张图上这些项都得在（词本身 / 字段抓到的值）——全在＝一致，缺哪个会点名'));
           }
           /* 左「批量改」/ 右「危险区」：删除永远在最后一格，且和改指向隔开至少一条分隔线。 */
           const opsBar = h('div', { class: 'kh-list-ops' }, [
@@ -1413,11 +1531,17 @@
               for (const o of add) {
                 if (spec.suffixChip) {
                   const sp = specOf(o.name);
-                  addRow({ name: sp.label, spec: sp, scopes: o.scopes, mark: o.mark }, null, { keepFocus: true });
-                } else addRow({ name: o.name, scopes: o.scopes, mark: o.mark }, null, { keepFocus: true });
+                  addRow({ name: sp.label, spec: sp, scopes: o.scopes, mark: o.mark, cmp: o.cmp }, null, { keepFocus: true });
+                } else addRow({ name: o.name, scopes: o.scopes, mark: o.mark, cmp: o.cmp }, null, { keepFocus: true });
               }
             } else if (isTok) {
-              for (const one of split(v)) { const sp = specOf(one); addRow({ name: sp.label, spec: sp }, null, { keepFocus: true }); }
+              for (const one of split(v)) {
+                const rawOne = String(one == null ? '' : one).trim();
+                const fc = isFetchList ? FETCH_CMP_RE.exec(rawOne) : null;
+                const bare = fc ? rawOne.slice(0, fc.index).trim() : rawOne;
+                const sp = specOf(bare);
+                addRow({ name: sp.label, spec: sp, cmp: !!fc, cmpTarget: fc ? String(fc[1] || '').trim() : '' }, null, { keepFocus: true });
+              }
             } else {
               for (const one of split(v)) addRow({ name: one }, null, { keepFocus: true });
             }
@@ -1441,10 +1565,14 @@
               /* 存储顺序：字段名 + 取值后缀 + @指向 + #表（`splitScope` 先剥 #表、再从末尾剥 @，
                * 剩下的整段才交给 `parseLabelSpec` —— 写成别的顺序就读不回来）。 */
               const full = name + (row.spec ? suffixOf(row.spec) : '');
-              const t = kvPatch({ name: full, scopes: row.scopes, mark: row.mark }, { scopes: row.scopes, mark: row.mark });
+              const t = kvPatch({ name: full, scopes: row.scopes, mark: row.mark, cmp: row.cmp }, { scopes: row.scopes, mark: row.mark, cmp: row.cmp });
               return t == null ? '' : t;
             }
-            if (isTok) return name + suffixOf(row.spec);
+            if (isTok) {
+              /* 【2026-11-16】`#比=对象` 必须收尾（`parseLabelSpec` 与 `FETCH_CMP_RE` 都是从末尾剥）。 */
+              const tail = isFetchList && row.cmp ? ('#比' + (row.cmpTarget ? '=' + row.cmpTarget : '')) : '';
+              return name + suffixOf(row.spec) + tail;
+            }
             return name;
           };
 
@@ -1459,7 +1587,7 @@
             return serialize(row);
           };
           const tip = isKv
-            ? '每行一条；「指向」用可搜索多选设置，#表 表示命中后并入抓取表。没改过的条目保存时原样保留。'
+            ? '每行一条；「指向」用可搜索多选设置，#表 表示命中后并入抓取表；勾「比对」表示这张图上必须有它（全在＝一致）。没改过的条目保存时原样保留。'
             : isTok
               ? '每行一个抓取字段；点行里的「取值：…」展开设置，不用手敲 #图3 / ^[复制] / %1-3；勾「不完整展示」= 内容格折 3 行。'
               : '每行一条，保存时用 | 连接。';
@@ -1732,7 +1860,13 @@
    *  存储串一个字节不动 —— 这是纯展示口径（用户 m00625：指向只在「修改」弹窗里看）。 */
   function kvDisplayName(raw) {
     let s = String(raw == null ? '' : raw).trim();
-    s = s.replace(/(?:#|＃)\s*(?:表|kv)\s*$/i, '').trim();
+    for (;;) {
+      const cm = KV_CMP_RE.exec(s);
+      if (cm) { s = s.slice(0, cm.index).trim(); continue; }
+      const mm = KV_MARK_RE.exec(s);
+      if (mm) { s = s.slice(0, mm.index).trim(); continue; }
+      break;
+    }
     for (;;) {
       const m = /@\s*([^@\s]+)$/.exec(s);
       if (!m) break;
@@ -1759,11 +1893,16 @@
       /* 【2.0.7.1 需求③】`#表` 是「这个命中词要往重要笔记的抓取表补行」的标记，不是名字的一部分；
        * 剥成徽标才看得见"词是词、标记是标记"（此前它跟着词一起当名字，和隔壁框的后缀画法两副面孔）。 */
       if (kv) {
-        const m = /(?:#|＃)\s*(?:表|kv)\s*$/i.exec(String(tok));
-        if (m) {
-          const name = String(tok).slice(0, m.index).trim();
-          if (name) { out.push({ i: i, raw: tok, name: name, suffix: '#表' }); continue; }
+        let rest = String(tok);
+        let badge = '';
+        for (;;) {
+          const cm = KV_CMP_RE.exec(rest);
+          if (cm) { badge = '#比' + badge; rest = rest.slice(0, cm.index).trim(); continue; }
+          const mm = KV_MARK_RE.exec(rest);
+          if (mm) { badge = '#表' + badge; rest = rest.slice(0, mm.index).trim(); continue; }
+          break;
         }
+        if (badge && rest) { out.push({ i: i, raw: tok, name: rest, suffix: badge }); continue; }
       }
       const spec = (F && typeof F.parseLabelSpec === 'function') ? F.parseLabelSpec(tok) : null;
       if (spec) {
@@ -1794,7 +1933,13 @@
    *   载入副作用），管理端与内容端共用一份即可删掉这段镜像。
    */
   const KV_MARK_RE = /(?:#|＃)\s*(?:表|kv)\s*$/i;
-  const KV_TAIL_SEP_RE = /(?:#|＃)\s*(?:表|kv)([\s,，、;；]+)/gi;
+  /* 【2.0.11 需求】`#比`：**逐词**的比对标记（同一张图上打了标记的项都得在）。与 `#表` 独立、可连写。 */
+  const KV_CMP_RE = /(?:#|＃)\s*(?:比|cmp)\s*$/i;
+  /* 【2026-11-16 用户拍板·方案 A】抓取后续字段之间的比对：`开发者#比=著作权人`。
+   * 和图片词上的 `#比` 是同一套标记，但抓取字段这一侧**必须带对象**（用户原话
+   * 「配置对比，必须指定对象」）——所以这里连 `=xxx` 一起剥，剥完才知道和谁比。 */
+  const FETCH_CMP_RE = /(?:#|＃)\s*(?:比|cmp)\s*(?:=\s*([^|｜\s~@#!%^]+))?\s*$/i;
+  const KV_TAIL_SEP_RE = /(?:#|＃)\s*(?:表|kv|比|cmp)([\s,，、;；]+)/gi;
   const KV_AT_RE = /@([^@\s]+)$/;
 
   /** 切词：与 `img-ocr.js` 的 `kvChips` 同口径（`|`/`｜` 永远切一刀，`#表` 后面跟分隔符也切） */
@@ -1835,8 +1980,17 @@
   function kvRows(raw, known) {
     const ks = (known || []).filter(Boolean);
     return kvChips(raw).map((chip) => {
-      const km = KV_MARK_RE.exec(chip);
-      const body = km ? chip.slice(0, km.index) : chip;
+      /* 尾部两个逐词标记都剥掉（顺序不限）：`#表` 进表、`#比` 比对 */
+      let body = chip;
+      let mark = false;
+      let cmp = false;
+      for (;;) {
+        const cm = KV_CMP_RE.exec(body);
+        if (cm) { cmp = true; body = body.slice(0, cm.index).trim(); continue; }
+        const mm = KV_MARK_RE.exec(body);
+        if (mm) { mark = true; body = body.slice(0, mm.index).trim(); continue; }
+        break;
+      }
       let name = body.trim();
       /* 【2.0.7.2 需求①】一个词**可以连写多个** `@字段名`（`一对一@截图@名称`）：从后往前剥，
        * 只要有一个不是真配过的字段名就停手（剩下那段含 `@` 按普通词，老配置零影响）。
@@ -1851,7 +2005,7 @@
         if (scopes.indexOf(hit) < 0) scopes.unshift(hit);
         name = name.slice(0, at.index).trim();
       }
-      return { raw: chip, name: name, scopes: scopes, scope: scopes.join(','), mark: !!km };
+      return { raw: chip, name: name, scopes: scopes, scope: scopes.join(','), mark: mark, cmp: cmp };
     });
   }
 
@@ -1866,7 +2020,9 @@
     if (!row || !row.name) return null;
     const scopes = (p.scopes === undefined) ? (row.scopes || []) : (p.scopes || []);
     const mark = (p.mark === undefined) ? row.mark : !!p.mark;
-    return row.name + scopes.map((s) => '@' + s).join('') + (mark ? '#表' : '');
+    const cmp = (p.cmp === undefined) ? row.cmp : !!p.cmp;
+    /* 写回顺序：名字 + `@指向` + `#表` + `#比`（解析端从末尾逐个剥，两种标记顺序其实都认） */
+    return row.name + scopes.map((s) => '@' + s).join('') + (mark ? '#表' : '') + (cmp ? '#比' : '');
   }
 
   /**

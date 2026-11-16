@@ -69,25 +69,6 @@ module.exports = async function run() {
       eq(C.legalRep({ name: '甲公司' }, { name: '乙公司' }).state, 'unknown');
     });
 
-  suite('比对核心 · 承诺对象放行名单（R1）');
-    test('命中名单 ⇒ ok，并带回命中的那一项', () => {
-      const r = C.allowList('维沃移动通信有限公司', ['vivo', '维沃']);
-      eq(r.state, 'ok');
-      eq(r.hit, '维沃');
-    });
-
-    test('点名别家平台 ⇒ warn；泛称 ⇒ ok', () => {
-      eq(C.allowList('华为应用市场', ['vivo']).state, 'warn');
-      eq(C.allowList('各大应用商店', ['vivo']).state, 'ok');
-      eq(C.allowList('各大应用商店', ['vivo']).how, 'generic');
-    });
-
-    test('空名单也判：说明里能区分「名单为空」', () => {
-      eq(C.allowList('华为', []).state, 'warn');
-      eq(C.allowList('华为', []).how, 'empty-list');
-      eq(C.allowList('', []).state, 'unknown');
-    });
-
   suite('比对核心 · 隐私政策正文（R1）');
     test('原文 / 括号补充 / 行政区划 / 差一字 四级命中', () => {
       const body = '本政策由上海松江融媒体中心制定，适用于某某清理大师。';

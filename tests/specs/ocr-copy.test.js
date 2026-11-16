@@ -27,7 +27,9 @@ const PLACEHOLDERS = ['n', 'host', 'matched',
   'names',
   /* 【2.0.11 · T1】右键卡候选行：{name}=要固定的字段名（证书/备案/授权书…），
    * {spec}=完整字段串（证书#图），复制成功/失败都要把它原样说给用户。 */
-  'name', 'spec'];
+  'name', 'spec',
+  /* 【2.0.11 · 比对】一张图上勾了「比对」的项指名道姓缺哪几个（`cmpBadgeDiff` / `imgCmpDiffTip`） */
+  'missing'];
 
 module.exports = async function run() {
   const { KH } = require('../bootstrap');

@@ -75,8 +75,7 @@ const PAINT = (cases) => {
     colors: { OK: NC.COLOR_OK, BAD: NC.COLOR_BAD },
     panelClickables: clickable,
     evidenceishText: evid,
-    hasQual: typeof (NC.Rules && NC.Rules.qualVerdict) === 'function',
-    hasPromise: typeof (NC.Rules && NC.Rules.promiseVerdict) === 'function'
+    hasAuto: typeof (NC.Rules && NC.Rules.autoVerdict) === 'function'
   };
 };
 
