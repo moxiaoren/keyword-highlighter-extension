@@ -126,6 +126,42 @@ module.exports = async function run() {
     eq(tabCalls.length, 0, '不许为了一个错别字去开标签页');
   });
 
+  await test('★ 标签页撞上「继续访问」拦截页：直接读用户已经打开的那张页（2026-11-17 zs.cszesu 案例）', async () => {
+    const long = '<p>平台隐私政策：本政策说明个人信息处理规则与用户权利，含收集范围、使用目的、保存期限、'
+      + '共享情形、注销渠道与投诉方式。' + '请在使用前完整阅读并理解。'.repeat(30) + '</p>';
+    const tabs = {
+      query: () => Promise.resolve([{ id: 30, url: 'https://zs.cszesu.test/scenead-frontend/agreement?type=1' }]),
+      create: () => Promise.resolve({ id: 9, url: 'chrome-error://chromewebdata/' }),
+      remove: () => Promise.resolve(),
+      onUpdated: { addListener: () => {}, removeListener: () => {} }
+    };
+    const scripting = {
+      executeScript: (o) => {
+        if (o && o.target && o.target.tabId === 30) return Promise.resolve([{ result: long.replace(/<[^>]+>/g, '') }]);
+        return Promise.reject(new Error('Frame with ID 0 is showing error page'));
+      }
+    };
+    const { Policy } = loadPolicy(async () => { throw new TypeError('Failed to fetch'); }, { tabs: tabs, scripting: scripting });
+    const r = await Policy.fetchText('http://zs.cszesu.test/scenead-frontend/agreement?type=1', { hints: ['隐私政策'] });
+    truthy(r.ok, '用户开着的那张页有正文，就该读它：' + JSON.stringify(r));
+    eq(r.via, 'tab', '走的还是标签页读取这条路');
+    truthy(r.text.indexOf('个人信息处理规则') >= 0, '正文要回来');
+  });
+
+  await test('★ 拦住了又没开着的页：原因里必须告诉用户点一次「继续访问网站」', async () => {
+    const tabs = {
+      query: () => Promise.resolve([]),
+      create: () => Promise.resolve({ id: 9, url: 'chrome-error://chromewebdata/' }),
+      remove: () => Promise.resolve(),
+      onUpdated: { addListener: () => {}, removeListener: () => {} }
+    };
+    const scripting = { executeScript: () => Promise.reject(new Error('Frame with ID 0 is showing error page')) };
+    const { Policy } = loadPolicy(async () => { throw new TypeError('Failed to fetch'); }, { tabs: tabs, scripting: scripting });
+    const r = await Policy.fetchText('http://zs.cszesu.test/scenead-frontend/agreement?type=1');
+    falsy(r.ok, '读不到就不许装成功');
+    truthy(/继续访问/.test(r.reason), '要说清怎么自救：' + r.reason);
+  });
+
   await test('非 http(s) / PDF / 空页面 / 网络失败都要给出人话原因，不许装成功', async () => {
     const { Policy } = loadPolicy(async () => { throw new Error('net down'); });
     const bad = await Policy.fetchText('javascript:void(0)');

@@ -246,6 +246,48 @@
    * 所以 complete 只当作「可以开始抓」，空白就继续轮询；读到就停、超时就关。
    * 代价：会短暂开一张后台标签页（active:false），读完立刻关掉；
    * 不抢前台、不改用户当前页。 */
+  /** 同一个页面的两种写法（只看主机与路径，忽略协议与末尾斜杠）。 */
+  function samePage(a, b) {
+    const norm = (u) => {
+      const m = /^(https?):\/\/([^\/?#]+)([^?#]*)/i.exec(String(u || ''));
+      if (!m) return '';
+      const host = m[2].toLowerCase().replace(/:80$|:443$/, '');
+      const p = (m[3] || '/').replace(/\/+$/, '') || '/';
+      return host + p;
+    };
+    const x = norm(a);
+    return !!x && x === norm(b);
+  }
+
+  /* ---------------- 兜底①·b：复用用户已经开着的那张页 ----------------
+   * 有的站只支持 http，Chrome 会把它升级成 https 并停在一张「此网站不支持安全连接」的
+   * 拦截页上；这时**任何**程序化导航都过不去（拦截页也注入不了脚本）。
+   * 但用户手动点过「继续访问网站」之后，那张页就是有正文的 —— 直接读它，不再开新页。 */
+  async function readOpenTab(url, hints) {
+    const tabs = (typeof chrome !== 'undefined' && chrome.tabs) || null;
+    const scripting = (typeof chrome !== 'undefined' && chrome.scripting) || null;
+    if (!tabs || !tabs.query || !scripting || !scripting.executeScript) return { ok: false };
+    let list = null;
+    try { list = await tabs.query({}); } catch (e) { return { ok: false }; }
+    if (!Array.isArray(list)) return { ok: false };
+    for (let i = 0; i < list.length; i++) {
+      const t = list[i];
+      if (!t || typeof t.id !== 'number' || !samePage(t.url, url)) continue;
+      let res = null;
+      try {
+        res = await scripting.executeScript({
+          target: { tabId: t.id },
+          func: function () { return (document.body && document.body.innerText) || ''; }
+        });
+      } catch (e) { continue; }
+      const text = (res && res[0] && typeof res[0].result === 'string') ? res[0].result : '';
+      if (flatLite(text).length >= MIN_TEXT) {
+        return { ok: true, text: text.slice(0, MAX_TEXT), covers: hints.length > 0 && covers(text, hints) };
+      }
+    }
+    return { ok: false };
+  }
+
   function readViaTab(url, hints) {
     return new Promise((resolve) => {
       const tabs = (typeof chrome !== 'undefined' && chrome.tabs) || null;
@@ -525,6 +567,7 @@
     }
 
     const tabReasons = [];
+    let blockedByTls = false;
     const flatLen = () => flatLite(text).length;
     const thin = () => flatLen() < MIN_TEXT;
     const missHints = () => hints.length > 0 && !covers(text, hints);
@@ -547,6 +590,17 @@
           break;
         }
         tabReasons.push((cu === u ? '' : '换 ' + cu.split(':')[0] + ' 后 ') + (tab.reason || '后台标签页也没读到'));
+        /* 错误页（多半是 https 证书拦截）：先看用户是不是已经把这张页打开、点过「继续访问」了 —— 读那张。 */
+        if (tab.errorPage) {
+          const share = await readOpenTab(cu, hints);
+          if (share.ok) {
+            text = share.text;
+            via = 'tab';
+            tabReasons.pop();
+            break;
+          }
+          blockedByTls = true;
+        }
         /* 只有「错误页」才值得换协议重试；登录墙/空壳换协议也一样。 */
         if (!tab.errorPage) break;
       }
@@ -570,6 +624,7 @@
       bits.push('页面里没读到正文（可能需要登录或脚本渲染）');
       for (let i = 0; i < tabReasons.length; i++) bits.push('后台标签页：' + tabReasons[i]);
       if (tried.length > 1) bits.push('试过的地址：' + tried.join('、'));
+      if (blockedByTls) bits.push('这个站只支持 http，浏览器把它升级成 https 后被安全提示拦住了。在浏览器里打开它、点一次「继续访问网站」（或站点设置里允许不安全内容）后再试，工具会直接读那张已经打开的页');
       out = { ok: false, reason: bits.join('；') };
     } else {
       out = { ok: true, text: text, len: text.length };

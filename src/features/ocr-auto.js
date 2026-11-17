@@ -134,18 +134,15 @@
     BY_ID[def0.id] = def0;
   }
 
-  /* 文档类型 → 要抽的字段（顺序即进表顺序，与用户点名顺序一致） */
+  /* 文档类型 → 要抽的字段（顺序即进表顺序，与用户点名顺序一致）。
+   * 【2026-11-17 用户第 3 条】只保留「计算机软件著作权登记证书」（含 APP 电子版权证书）与
+   * 软著「登记事项变更或补充证明」两套模板；授权书 / 备案核准 / 合作协议 / 营业执照 / 承诺函
+   * 的自动进表全部退场（这些内容改由关键词配置表达）。
+   * 唯一例外是「授权期限」：见 rowsFor 末尾 —— 它对任何非证书文档仍单独抽一次。 */
   var SETS = {
     cert: ['owner', 'regNo'],
-    auth: ['licensor', 'licensee', 'appName', 'pkg', 'term'],
-    /* APP 备案核准：主体 + 备案号 + 应用名 + 域名 */
-    record: ['registrant', 'recordNo', 'appName', 'domain'],
-    /* 资质 / 合作协议：谁授权给谁 + 应用 + 期限 + 合作内容 */
-    agreement: ['licensor', 'licensee', 'appName', 'pkg', 'term', 'coop'],
-    /* 营业执照 / 各类资质：只抽主体公司，进表后与「开发者」比对 */
-    license: ['company'],
-    /* 承诺函：写给哪个平台 + 谁出具的 */
-    promise: ['promiseTo', 'promiser']
+    /* 软著「登记事项变更或补充证明」：同一份文件给出变更后的主体名与原本的登记号 */
+    amend: ['owner', 'regNo']
   };
 
   /* 授权方/被授权方进表时必须写明是**哪一种**授权（2026-11-12 用户点名）：
@@ -190,19 +187,24 @@
 
   function docOf(it) {
     var label = String((it && it.label) || '');
+    if (/变更或补充证明|变更证明|变补字/.test(label)) return 'amend';
     if (/授权书/.test(label)) return 'auth';
     if (/承诺函|承诺书/.test(label)) return 'promise';
     if (/备案核准|备案通知|备案证明|APP\s*备案|应用备案/i.test(label)) return 'record';
+    /* 【2026-11-17 用户报障】「电子版权认证证书」里也含「认证证书」，原来先判 license 就把它
+     * 当成营业执照类文档，只抽企业名称、不抽著作权人与认证号。证书标题必须先判。 */
+    if (CERT_TITLE.test(label) || /登记证书|版权证书/.test(label)) return 'cert';
     if (/营业执照|企业法人营业执照|许可证|资质证书|认证证书/.test(label)) return 'license';
     if (/合作协议|联运协议|推广协议|代理协议|资质|许可协议|授权协议/.test(label)) return 'agreement';
-    if (/登记证书|版权证书/.test(label)) return 'cert';
     var head = headOf(it);
+    if (/变更或补充证明|变更证明|变补字/.test(head)) return 'amend';
     if (/授权书/.test(head)) return 'auth';
     if (/承诺函|承诺书/.test(head)) return 'promise';
     if (/备案核准|备案通知|备案证明|APP\s*备案|应用备案/i.test(head)) return 'record';
+    /* 证书判定必须在 license 之前：见上面 label 分支的同一条说明。 */
+    if (CERT_TITLE.test(head) || certTitle(it)) return 'cert';
     if (/营业执照|企业法人营业执照|许可证|资质证书|认证证书/.test(head)) return 'license';
     if (/合作协议|联运协议|推广协议|代理协议|许可协议|授权协议/.test(head)) return 'agreement';
-    if (CERT_TITLE.test(head) || certTitle(it)) return 'cert';
     return '';
   }
 
@@ -473,6 +475,47 @@
     if (op !== cl) return false;
     return true;
   }
+  /* 变更或补充证明：主体名不在「著作权人：X」里，而在
+   *   `著作权人姓名或名称` 下面那条 `变更后内容：X` 里（上面还有一条软件名称的「变更后内容」，
+   *   所以必须跟着标签行定位，不能全文扫）。登记号仍是「登记号：2022SR1484008」，走 regNoValues。 */
+  function amendOwnerValues(lines) {
+    var out = [];
+    function addRest(rest) {
+      var s = clean(rest).replace(/[（(]?\[?简称[^\]}]*\]?[)）]?/g, '').replace(/\s*[Vv]\d+(\.\d+)*\s*$/, '').trim();
+      if (!s) return;
+      var os = orgsIn(s);
+      if (os.length) { for (var i = 0; i < os.length; i++) add(os[i]); return; }
+      var pn = okPersonName(s);
+      if (pn) add(pn);
+    }
+    function add(v) {
+      var s = clean(v);
+      if (!okOwnerName(s)) return;
+      if (out.indexOf(s) >= 0) return;
+      out.push(s);
+    }
+    for (var i = 0; i < lines.length; i++) {
+      var line = String(lines[i] || '');
+      if (!/著作权人/.test(line)) continue;
+      var same = /变更后内容\s*[：:]\s*(.+)$/.exec(line);
+      if (same) { addRest(same[1]); continue; }
+      for (var j = i + 1; j < lines.length && j <= i + 4; j++) {
+        var m = /变更后内容\s*[：:]\s*(.+)$/.exec(String(lines[j] || ''));
+        if (m) { addRest(m[1]); break; }
+      }
+    }
+    /* 兜底：整份文件只有一条「变更后内容」，且正文里没出现「著作权人」标签。 */
+    if (!out.length) {
+      var only = [];
+      for (var k = 0; k < lines.length; k++) {
+        var mm = /变更后内容\s*[：:]\s*(.+)$/.exec(String(lines[k] || ''));
+        if (mm) only.push(mm[1]);
+      }
+      if (only.length === 1) addRest(only[0]);
+    }
+    return out.slice(0, 8);
+  }
+
   function ownerValues(lines, full) {
     var out = [];
     var fromLabel = 0;
@@ -805,7 +848,14 @@
   function rowsFor(it) {
     if (!it || it.state !== 'done' || !it.text) return [];
     var doc = docOf(it);
-    if (!doc) return [];
+    if (!doc) {
+      /* 认不出文档类型时只留一条活口：授权期限（授权书版式千变万化，标题常常认不出来）。 */
+      var lines0 = textOf(it).split(/\r?\n/);
+      var tv0 = singleValue(BY_ID.term, lines0, lines0.join('\n'));
+      return (tv0 && BY_ID.term.ok(tv0))
+        ? [{ label: BY_ID.term.label, value: tv0, doc: '', kind: '', src: String(it.src || '') }]
+        : [];
+    }
     var kind = kindOf(it);
     var overrides = LABELS[kind] || {};
     var ids = SETS[doc] || [];
@@ -813,14 +863,14 @@
     var full = lines.join('\n');
     var out = [];
     var seen = {};
-    /* 授权书的角色判断需要看全文，先算一次；正常标签路径取到值时优先用标签值。 */
-    var roles = (doc === 'auth' || doc === 'agreement') ? authRoles(lines, full) : null;
     for (var k = 0; k < ids.length; k++) {
       var def = BY_ID[ids[k]];
       if (!def) continue;
       var vals = [];
       if (def.id === 'owner' && doc === 'cert') {
         vals = ownerValues(lines, full);
+      } else if (def.id === 'owner' && doc === 'amend') {
+        vals = amendOwnerValues(lines, full);
       } else if (def.id === 'regNo' && doc === 'cert') {
         vals = regNoValues(lines, full);
       } else if (def.id === 'company' && doc === 'license') {
@@ -830,13 +880,7 @@
       } else if (def.id === 'promiser' && doc === 'promise') {
         vals = promiserValues(lines, full);
       } else {
-        var normal = singleValue(def, lines, full);
-        var roleVal = roles ? (roles[def.id] || '') : '';
-        var one = normal;
-        /* 授权方/被授权方：标签取到的若不是主体名（整句正文），而实体线索能给出主体，
-         * 就用实体线索 —— 「甲方（授权方）：」这类写法真正的主体在括号前后，不在冒号后。 */
-        if (roleVal && (!normal || !looksLikeEntity(normal))) one = roleVal;
-        else if (!one) one = roleVal;
+        var one = singleValue(def, lines, full);
         if (one && def.ok(one)) vals = [one];
       }
       for (var vi = 0; vi < vals.length; vi++) {
@@ -849,6 +893,19 @@
         if (seen[sig]) continue;
         seen[sig] = 1;
         out.push({ label: label, value: v, doc: doc, kind: kind, src: String(it.src || '') });
+      }
+    }
+    /* 授权期限：授权书等模板已退场，但这一行仍要自动进表（用户 2026-11-17 点名保留）。 */
+    if (doc === 'auth' || doc === 'agreement') {
+      var termDef = BY_ID.term;
+      var tv = termDef ? singleValue(termDef, lines, full) : '';
+      if (tv && termDef.ok(tv)) {
+        var TN2 = KH.TextNorm;
+        var tsig = TN2 ? (TN2.keyOf(termDef.label) + '|' + TN2.keyOf(tv)) : (termDef.label + '|' + tv);
+        if (!seen[tsig]) {
+          seen[tsig] = 1;
+          out.push({ label: termDef.label, value: tv, doc: doc, kind: kind, src: String(it.src || '') });
+        }
       }
     }
     return out;

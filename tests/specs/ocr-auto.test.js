@@ -55,32 +55,13 @@ module.exports = async function run() {
     eq(rows[0].doc, 'cert');
   });
 
-  await test('★ 授权书：自动出五个字段，顺序与用户点名一致', () => {
+  /* 【2026-11-17 用户第 3 条】除「计算机软件著作权登记证书」（含 APP 电子版权证书）与软著
+   * 「登记事项变更或补充证明」外，授权书 / 备案核准 / 合作协议 / 营业执照 / 承诺函的自动进表
+   * 全部退场，这些内容改由关键词配置表达。唯一例外：授权期限仍要自动进表。 */
+  await test('★ 授权书模板已退场：只留「授权期限」，不再出授权方/被授权方/应用名称/包名', () => {
     const rows = A.rowsFor({ state: 'done', label: '计算机软件著作权登记证书授权书', src: 'b.png', text: AUTH });
-    eq(rows.map((r) => r.label).join(','), '软著授权方,软著被授权方,应用名称,包名,授权期限');
-    const m = map(rows);
-    eq(m['软著授权方'], '北京知行灵动科技有限公司');
-    eq(m['软著被授权方'], '上海云启信息技术有限公司');
-    eq(m['应用名称'], '云启助手');
-    eq(m['包名'], 'com.yunqi.helper');
-    eq(m['授权期限'], '2024年1月1日至2026年12月31日');
-    eq(rows[0].doc, 'auth');
-    eq(rows[0].kind, 'auth-soft', '软著授权书要标明归属');
-  });
-
-  await test('★ 「被授权方」不会被「授权方」的标签抢走', () => {
-    const text = ['APP电子版权证书授权书', '被授权方：上海云启信息技术有限公司', '包名：com.yunqi.helper'].join('\n');
-    const m = map(A.rowsFor({ state: 'done', label: 'APP电子版权证书授权书', src: 'c.png', text }));
-    truthy(!m['APP电子版权授权方'], '没有「授权方」这一行时不许把「被授权方」的值顶上来');
-    eq(m['APP电子版权被授权方'], '上海云启信息技术有限公司');
-  });
-
-  await test('★ 授权方/被授权方带文档归属：软著与 APP 电子版权不混名', () => {
-    const soft = map(A.rowsFor({ state: 'done', label: '计算机软件著作权登记证书授权书', src: 's.png', text: AUTH }));
-    truthy(soft['软著授权方'] && soft['软著被授权方'], '软著授权书');
-    const app = map(A.rowsFor({ state: 'done', label: 'APP电子版权证书授权书', src: 'a.png', text: AUTH }));
-    truthy(app['APP电子版权授权方'] && app['APP电子版权被授权方'], 'APP 电子版权授权书');
-    truthy(!app['软著授权方'], '不能沿用软著的字段名');
+    eq(rows.map((r) => r.label).join(','), '授权期限', '退场后只剩授权期限这一行');
+    truthy((rows[0].value || '').indexOf('2024年1月1日') >= 0, '期限照旧认得出');
   });
 
   await test('★ 认不出文档类型 ⇒ 一行都不出（不许在普通截图里瞎猜）', () => {
@@ -106,11 +87,10 @@ module.exports = async function run() {
     eq(m['登记号'], '2020SR0123456');
   });
 
-  await test('★ 包名形状不对 ⇒ 只少这一行，别的行照出', () => {
-    const text = ['计算机软件著作权登记证书授权书', '被授权方：上海云启信息技术有限公司', '包名：com yunqi helper'].join('\n');
-    const m = map(A.rowsFor({ state: 'done', label: '授权书', src: 'g.png', text }));
-    eq(m['软著被授权方'], '上海云启信息技术有限公司');
-    truthy(!m['包名'], '不带点的不是包名');
+  await test('★ 授权书里的包名 / 被授权方不再自动进表', () => {
+    const text = ['计算机软件著作权登记证书授权书', '被授权方：上海云启信息技术有限公司', '包名：com.yunqi.helper'].join('\n');
+    const rows = A.rowsFor({ state: 'done', label: '授权书', src: 'g.png', text });
+    eq(rows.length, 0, '没有授权期限 ⇒ 一行都不出');
   });
 
   await test('★ 登记号/授权期限有形状兜底（标签被 OCR 认坏时仍能捞回）', () => {
@@ -252,29 +232,20 @@ module.exports = async function run() {
     eq(m2['登记号'], '2020SR0455725');
   });
 
-  await test('★ 反向版式：名字在前、（被授权公司）在后 —— 真实版权授权书样例', () => {
+  await test('★ 真实版权授权书样例：模板已退场，只留授权期限', () => {
     const SAMPLE = [
       '版权授权书',
       '致趣娱科技（深圳) 有限公司（被授权公司)：',
       '《包包源头》(以下简称“授权应用，软件著作权登记号：2022SR0727825)是我司自是我司白',
-      '主研发或有合法分授权的移动应用产品，我司对授权应用拥有独立、完整的著作权或合法授又或合法技',
-      '权，足以授权贵司运营授权应用。现我司授予贵司授权应用的运营权，贵司可自行运营授权宁运营授权',
-      '应用，也可授权第三方运营授权应用。',
-      '在授权期限内，贵司对授权应用享有非独家、不可转让、可分授权的、有限的权利，包括但L，包括但.',
-      '不限于：',
-      '授权期限：2025年9月12日至2050年12月31 日',
-      '授权地域：中国大陆范围'
+      '在授权期限内，贵司对授权应用享有非独家、不可转让、可分授权的、有限的权利。',
+      '授权期限：2025年9月12日至2050年12月31 日'
     ].join('\n');
     const rows = A.rowsFor({ state: 'done', label: '计算机软件著作权登记证书授权书', src: 'b.png', text: SAMPLE });
-    const m = map(rows);
-    eq(m['软著被授权方'], '致趣娱科技（深圳) 有限公司', '名字写在标签左边，也要取到');
-    eq(m['软著授权方'], '我司', '正文只写「我司」，至少把主体关系标出来');
-    eq(m['应用名称'], '包包源头', '书名号里、后面跟「以下简称」的是应用名');
-    truthy((m['授权期限'] || '').indexOf('2025年9月12日') >= 0, '期限要认出来');
-    truthy(rows.every((r) => r.kind === 'auth-soft'), '正文有 2022SR ⇒ 软著，不受配置字段名影响');
+    eq(rows.map((r) => r.label).join(','), '授权期限', '被授权方 / 授权方 / 应用名称都不再自动出');
+    truthy((rows[0].value || '').indexOf('2025年9月12日') >= 0, '期限仍认得出');
   });
 
-  await test('★ APP 备案核准：主体叫主办单位，编号是 ICP备…号-6A', () => {
+  await test('★ APP 备案核准模板已退场：主办单位 / 备案号 / 域名都不再自动进表', () => {
     const SAMPLE = [
       'APP备案核准通知书',
       '主办单位：北京知行灵动科技有限公司',
@@ -283,16 +254,11 @@ module.exports = async function run() {
       '网站域名：app.baobaoyuantou.com',
       '服务内容：移动应用'
     ].join('\n');
-    const rows = A.rowsFor({ state: 'done', label: 'APP备案核准函', src: 'r.png', text: SAMPLE });
-    const m = map(rows);
-    eq(m['APP备案主办单位'], '北京知行灵动科技有限公司', '备案类不叫著作权人，叫主办单位');
-    eq(m['APP备案号'], '京ICP备2023012345号-6A', '编号要带省简称与 -6A 后缀');
-    eq(m['APP备案应用名称'], '包包源头');
-    eq(m['APP备案域名'], 'app.baobaoyuantou.com');
-    truthy(rows.every((r) => r.kind === 'record-app'), 'kind 固定 record-app');
+    eq(A.docOf({ state: 'done', label: 'APP备案核准函', text: SAMPLE }), 'record', '类型仍认得');
+    eq(A.rowsFor({ state: 'done', label: 'APP备案核准函', src: 'r.png', text: SAMPLE }).length, 0, '但不再自动进表');
   });
 
-  await test('★ 资质合作协议：甲乙双方 + 应用 + 期限 + 合作内容', () => {
+  await test('★ 合作协议模板已退场：授权方 / 应用 / 包名 / 合作内容都不再自动进表，只剩授权期限', () => {
     const SAMPLE = [
       '软件合作推广协议',
       '甲方（授权方）：北京知行灵动科技有限公司',
@@ -303,14 +269,47 @@ module.exports = async function run() {
       '合作内容：在指定渠道推广并运营授权应用'
     ].join('\n');
     const rows = A.rowsFor({ state: 'done', label: '软件合作推广协议', src: 'a.png', text: SAMPLE });
+    eq(rows.map((r) => r.label).join(','), '授权期限');
+    truthy((rows[0].value || '').indexOf('2025年9月12日') >= 0);
+  });
+
+  /* 【2026-11-17 用户优化1】软著「登记事项变更或补充证明」：主体名在「著作权人姓名或名称」
+   * 下面那条「变更后内容：」里，上面还有一条软件名称的「变更后内容」，不能拿错。 */
+  await test('★ 软著变更证明：著作权人取「变更后内容」里的新主体，登记号照取', () => {
+    const text = [
+      '中华人民共和国国家版权局',
+      '计算机软件著作权登记事项变更或补充证明',
+      '编号： 软著变补字第202627257号',
+      '登记号：2022SR1484008',
+      '变更或补充事项：',
+      '软件名称',
+      '变更后内容：选点到家按摩软件[简称：选点到家]V1.0',
+      '著作权人姓名或名称',
+      '变更后内容：安庆市选点到家网络科技有限公司',
+      '注：此变更证明书同计算机软件著作权登记证书一并使用。'
+    ].join('\n');
+    const it = { state: 'done', label: '', src: 'a.png', text };
+    eq(A.docOf(it), 'amend');
+    const rows = A.rowsFor(it);
+    eq(rows.map((r) => r.label).join(','), '著作权人,登记号');
     const m = map(rows);
-    eq(m['合作授权方'], '北京知行灵动科技有限公司');
-    eq(m['合作被授权方'], '致趣娱科技（深圳）有限公司');
-    eq(m['应用名称'], '包包源头');
-    eq(m['包名'], 'com.baobao.yt');
-    truthy((m['授权期限'] || '').indexOf('2025年9月12日') >= 0);
-    truthy((m['合作内容'] || '').indexOf('推广') >= 0);
-    truthy(rows.every((r) => r.kind === 'agreement-qual'), '没有软著/APP 证据 ⇒ 中性合作名头');
+    eq(m['著作权人'], '安庆市选点到家网络科技有限公司', '拿著作权人下面那条，不拿软件名称那条');
+    eq(m['登记号'], '2022SR1484008');
+  });
+
+  await test('★ APP 电子版权认证证书：字段名写着证书也认得出，只出著作权人 + 认证号，不出企业名称', () => {
+    const text = [
+      '电子版权认证证书',
+      '证书号：电子认证第R20260000153077号',
+      '企业名称:长沙厚德乐群科技有限公司',
+      '著作权人:长沙厚德乐群科技有限公司',
+      '认证号：2026SA0151284'
+    ].join('\n');
+    const it = { state: 'done', label: 'APP电子版权认证证书', src: 'b.png', text };
+    eq(A.docOf(it), 'cert', '「认证证书」不能把它判成营业执照类');
+    const rows = A.rowsFor(it);
+    eq(rows.map((r) => r.label).join(','), '著作权人,登记号');
+    eq(map(rows)['登记号'], '2026SA0151284');
   });
 
   await test('★ 条目没跑完 / 没文本 ⇒ 不抽', () => {
@@ -384,107 +383,41 @@ module.exports = async function run() {
     eq(owners.join('|'), '北京甲科技有限公司|上海乙信息技术有限公司');
   });
 
-  await test('★ 授权书无线索①：甲方 / 乙方写在同一句里', () => {
-    const text = [
-      '授权书',
-      '北京甲科技有限公司（以下简称“甲方”）同意授权上海乙信息技术有限公司（以下简称“乙方”）在指定渠道运营。'
-    ].join('\n');
-    const m = map(A.rowsFor({ state: 'done', label: '计算机软件著作权登记证书授权书', text }));
-    eq(m['软著授权方'], '北京甲科技有限公司');
-    eq(m['软著被授权方'], '上海乙信息技术有限公司', '标签取到整句时，用实体线索判角色');
+  await test('★ 授权书无线索（甲方/乙方、A 授权 B、致：收件人）不再自动猜授权方与被授权方', () => {
+    const t1 = ['授权书', '北京甲科技有限公司（以下简称“甲方”）同意授权上海乙信息技术有限公司（以下简称“乙方”）在指定渠道运营。'].join('\n');
+    const t2 = ['授权书', '北京甲科技有限公司授权上海乙信息技术有限公司运营授权应用。', '包名：com.demo.app'].join('\n');
+    const t3 = ['授权书', '致：上海乙信息技术有限公司', '北京甲科技有限公司（我司）特此授予贵司运营权。'].join('\n');
+    for (const text of [t1, t2, t3]) {
+      const rows = A.rowsFor({ state: 'done', label: '计算机软件著作权登记证书授权书', text });
+      eq(rows.length, 0, '模板退场后不再猜角色');
+    }
   });
 
-  await test('★ 授权书无线索②：A 授权 B —— 动词前是授权方、动词后是被授权方', () => {
-    const text = [
-      '授权书',
-      '北京甲科技有限公司授权上海乙信息技术有限公司运营授权应用。',
-      '包名：com.demo.app'
-    ].join('\n');
-    const rows = A.rowsFor({ state: 'done', label: '计算机软件著作权登记证书授权书', text });
-    const m = map(rows);
-    eq(m['软著授权方'], '北京甲科技有限公司');
-    eq(m['软著被授权方'], '上海乙信息技术有限公司');
-    truthy(rows.every((r) => r.kind === 'auth-soft'), '包名里的 app 不许把文档判成 APP 版权');
-  });
-
-  await test('★ 授权书无线索③：致：收件人 + 我司（公司名）', () => {
-    const text = [
-      '授权书',
-      '致：上海乙信息技术有限公司',
-      '北京甲科技有限公司（我司）特此授予贵司运营权。'
-    ].join('\n');
-    const m = map(A.rowsFor({ state: 'done', label: '计算机软件著作权登记证书授权书', text }));
-    eq(m['软著被授权方'], '上海乙信息技术有限公司', '致… 的收件人');
-    eq(m['软著授权方'], '北京甲科技有限公司', '正文只写「我司」时，括号里的公司名优先');
-  });
-
-  /* 【2026-11-13 用户需求】营业执照 / 各类资质：抽公司进表；承诺函：判承诺对象 + 承诺方。
-   * 抽取层只负责「抽得对」，绿/黄由比对层（规则层 outputs）决定。 */
-  await test('★ 营业执照：认文档类型，按「名称」抽出企业名称', () => {
-    const text = [
+  /* 【2026-11-17 用户第 3 条】营业执照 / 资质证书 / 承诺函的自动进表也退场：
+   * 主体名与平台名改由关键词配置表达，抽取层不再替用户猜。 */
+  await test('★ 营业执照 / 资质证书模板已退场：不再自动抽企业名称', () => {
+    const biz = [
       '营业执照',
       '统一社会信用代码 91110108MA01ABCD2X',
       '名称 北京知行灵动科技有限公司',
       '类型 有限责任公司(自然人投资或控股)',
       '法定代表人 张三',
-      '住所 北京市海淀区中关村大街1号',
-      '经营范围 技术开发、技术咨询'
+      '住所 北京市海淀区中关村大街1号'
     ].join('\n');
-    const it = { state: 'done', src: 'b.png', label: '营业执照', text };
-    eq(A.docOf(it), 'license');
-    eq(A.kindOf(it), 'license');
-    const m = map(A.rowsFor(it));
-    eq(m['企业名称'], '北京知行灵动科技有限公司');
-    eq(m['法定代表人'], undefined, '资质类只出企业名称，不抽法定代表人');
+    const it = { state: 'done', src: 'b.png', label: '营业执照', text: biz };
+    eq(A.docOf(it), 'license', '类型仍认得');
+    eq(A.rowsFor(it).length, 0, '但不再自动进表');
+    const lic = ['增值电信业务经营许可证', '企业名称：上海乙信息技术有限公司', '许可证编号：B2-20230001', '有效期至：2028年12月31日'].join('\n');
+    eq(A.rowsFor({ state: 'done', src: 'c.png', label: '增值电信业务经营许可证', text: lic }).length, 0);
   });
 
-  await test('★ 资质证书：企业名称进表，许可证编号不许混进公司名', () => {
-    const text = [
-      '增值电信业务经营许可证',
-      '企业名称：上海乙信息技术有限公司',
-      '许可证编号：B2-20230001',
-      '有效期至：2028年12月31日'
-    ].join('\n');
-    const it = { state: 'done', src: 'c.png', label: '增值电信业务经营许可证', text };
-    eq(A.docOf(it), 'license');
-    const m = map(A.rowsFor(it));
-    eq(m['企业名称'], '上海乙信息技术有限公司');
-  });
-
-  await test('★ 承诺函 vivo：承诺对象取「致：」收件人，承诺方取标签值', () => {
-    const text = [
-      '应用上架承诺函',
-      '致：维沃移动通信有限公司',
-      '我司承诺遵守平台规则，所提交材料真实有效。',
-      '承诺方：北京甲科技有限公司'
-    ].join('\n');
-    const it = { state: 'done', src: 'd.png', label: '应用上架承诺函', text };
-    eq(A.docOf(it), 'promise');
-    const m = map(A.rowsFor(it));
-    eq(m['承诺对象'], '维沃移动通信有限公司');
-    eq(m['承诺方'], '北京甲科技有限公司');
-  });
-
-  await test('★ 承诺函 华为：照常抽取两层字段，平台好坏交给判定层', () => {
-    const text = [
-      '应用上架承诺函',
-      '承诺对象：华为技术有限公司',
-      '承诺单位：北京甲科技有限公司',
-      '承诺内容：所提交材料真实有效。'
-    ].join('\n');
-    const m = map(A.rowsFor({ state: 'done', src: 'e.png', label: '应用上架承诺函', text }));
-    eq(m['承诺对象'], '华为技术有限公司');
-    eq(m['承诺方'], '北京甲科技有限公司');
-  });
-
-  await test('★ 承诺函无指向：落「应用平台」泛称，承诺方回落「我司」', () => {
-    const text = [
-      '应用上架承诺函',
-      '本公司承诺遵守各应用平台的上架规范。'
-    ].join('\n');
-    const m = map(A.rowsFor({ state: 'done', src: 'f.png', label: '承诺函', text }));
-    eq(m['承诺对象'], '应用平台');
-    eq(m['承诺方'], '我司');
+  await test('★ 承诺函模板已退场：承诺对象 / 承诺方不再自动进表', () => {
+    const t1 = ['应用上架承诺函', '致：维沃移动通信有限公司', '我司承诺遵守平台规则，所提交材料真实有效。', '承诺方：北京甲科技有限公司'].join('\n');
+    const t2 = ['应用上架承诺函', '承诺对象：华为技术有限公司', '承诺单位：北京甲科技有限公司'].join('\n');
+    const t3 = ['应用上架承诺函', '本公司承诺遵守各应用平台的上架规范。'].join('\n');
+    for (const text of [t1, t2, t3]) {
+      eq(A.rowsFor({ state: 'done', src: 'e.png', label: '应用上架承诺函', text }).length, 0, '交给关键词配置');
+    }
   });
 
   await test('★ 集成契约：进表路径真的接了自动行，且脚本在 manifest 里', () => {

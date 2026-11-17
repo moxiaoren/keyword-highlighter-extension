@@ -4890,7 +4890,16 @@
        * 静态词明明命中、表里却一行不出 —— 用户报的「#表 偶发不生效」）。
        * `matched` 缺失 = 老条目（没有判决信息），按 done 照旧放行。 */
       if (!it || it.ruleId !== ruleId || it.state !== 'done' || !it.text) continue;
-      if (Array.isArray(it.matched) && !it.matched.length) continue;
+      /* 【2026-11-17】证书的结构化行（著作权人 / 登记号）不该被「图片命中词没中」连坐：
+       * 没配或没中命中词时，rowsFor 仍会按文档类型给出这两行，用户报的「没自动提取进表」就是这条门禁吞的。
+       * 但**词表行（词 | 值）仍要求命中**，否则出现「表格有行、图上却没有红框」的自相矛盾画面。 */
+      const pushAutoRows = () => {
+        if (!autoOn) return;
+        let autoRows = [];
+        try { autoRows = autoApi.rowsFor(it) || []; } catch (e) { autoRows = []; }
+        for (const ar of autoRows) pushRow(ar.label, ar.value, ar.src, 'auto');
+      };
+      if (Array.isArray(it.matched) && !it.matched.length) { pushAutoRows(); continue; }
       const matchers = matchersFor(it.label);
       if (!matchers.length && !autoOn) continue;
       const rawLines = String(it.text).split(/\r?\n/);

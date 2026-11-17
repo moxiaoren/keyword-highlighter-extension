@@ -92,12 +92,13 @@ module.exports = async function run() {
 
   await test('★ 候选行不参与字段解析（不会被当成抓取到的 entity）', () => {
     const p = shadowPanel();
-    p.imgItems = [ctxItem({ text: recordText, label: 'APP备案核准' })];
+    /* 2026-11-17：备案核准模板已退场，候选行改用证书（著作权人 / 登记号）来造。 */
+    p.imgItems = [ctxItem({ text: certText, label: '软件著作权登记证书' })];
     const card = p.ctxCard(document);
     const table = card.querySelector('table');
     truthy(card.querySelectorAll('.khin-ghost-row').length >= 1, '先确认真有候选行');
     eq(KH.Compare.Sources.readFields(table).entity, '', 'readFields 必须跳过 ghost 行');
-    eq(KH.Compare.Sources.field(table, 'APP备案主办单位').found, false, '按名取字段也要跳过');
+    eq(KH.Compare.Sources.field(table, '著作权人').found, false, '按名取字段也要跳过');
   });
 
   await test('★ 「固定为字段」只复制字段串，并当场把结果说出来', async () => {
