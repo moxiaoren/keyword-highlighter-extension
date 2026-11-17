@@ -245,9 +245,13 @@ function assetsFor(version) {
         const headMan = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'manifest.json'), 'utf8')).version;
         if (headMan === v) commitish = execSync('git rev-parse HEAD', { cwd: path.join(__dirname, '..') }).toString().trim();
       } catch (e) { commitish = def; }
-      const made = await api('POST', '/repos/' + OWNER + '/' + REPO + '/releases', {
-        tag_name: tag, target_commitish: commitish, name: tag, body: body, draft: false, prerelease: pre
-      });
+      /* 【2026-11-17 修】tag 已经在远端时不要再传 target_commitish：本地 HEAD 可能还没推上去
+       * （本机 github.com 断线、源码只能用 API 推的场景），GitHub 会拿它校验并回 422 invalid。
+       * tag 已存在 ⇒ 直接按已有 tag 建 Release。 */
+      const tagRef = await api('GET', '/repos/' + OWNER + '/' + REPO + '/git/ref/tags/' + tag);
+      const payload = { tag_name: tag, name: tag, body: body, draft: false, prerelease: pre };
+      if (!(tagRef.ok && tagRef.json && tagRef.json.object)) payload.target_commitish = commitish;
+      const made = await api('POST', '/repos/' + OWNER + '/' + REPO + '/releases', payload);
       if (!made.ok) { console.log('  ✗ ' + tag + ' 建 Release 失败（HTTP ' + made.status + '）：' + String(made.text).slice(0, 160)); continue; }
       rel = made.json;
       created++;

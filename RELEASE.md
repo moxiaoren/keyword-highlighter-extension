@@ -28,7 +28,7 @@
 ## 发布链路：只走本地（2026-11-11 定稿）
 
 **唯一发布路径 = 本机三连**：`release-beta.js` / `release.js` 出包 → `publish-gh.js` 推 gh-pages →
-（稳定版再跑 `gh-release.js` 建 Release）。**CI 不参与发布**。
+（**每条通道出包后都要再跑 `gh-release.js` 建 Release**：测试版标 pre-release，稳定版标正式）。**CI 不参与发布**。
 
 - `.github/workflows/release.yml` 已在仓库里**手动停用**（Actions 页面状态 `disabled_manually`），
   所以 `git push` 一个 tag 不会再触发它、也不会再出现 Release 红 X。
@@ -64,7 +64,7 @@ node "C:/Users/caitiff/.dsh/profiles/desktop/node_modules/answer-me-with-html/sk
 | `scripts/release-beta.js` | **测试版流水线**（与正式版完全分离）：复用 `package.js` 的门禁与打包 → 改 manifest 三处 → 重打成测试版 zip → 用测试版密钥签 crx → 写 `latest-beta.json` / `update-beta.xml` | `node scripts/release-beta.js` |
 | `scripts/update-config.js` | **只重生成更新配置**（latest.json / latest-beta.json / update.xml / update-beta.xml），不重新打包 | `node scripts/update-config.js --channel stable --zip <zip> --crx <crx>` |
 | `scripts/publish-gh.js` | 推到 gh-pages（**不需要 git**，走 GitHub API）。**测试版必须加 `--beta-only`**：否则它还要去收集稳定版清单、而稳定版产物不在本机 ⇒ 直接中止；站点资产（语言包 + OCR 模型）没变时加 `--skip-assets`（旧名 `--skip-lang` 仍兼容；gh-pages 建 tree 用 `base_tree`，不发＝原地保留）。**首次带模型发版必须去掉它**，否则站点上没有 `models/`，主引擎首次识别会 404 | 测试版：`GH_TOKEN=… node scripts/publish-gh.js --beta-only`<br>稳定版：`GH_TOKEN=… node scripts/publish-gh.js` |
-| `scripts/gh-release.js` | **线上 Release（只放稳定版）**：测试版**不建** Release；稳定版的说明 = **这一段测试版要点的汇总** + 本版正式说明；附件挂 crx（`--with-zip` 发版时多挂 zip）、幂等。`--prune-test` 删掉所有测试版 Release（含 tag），`--prune-above=<ver>` 删版本号大于该值的 | `node scripts/gh-release.js`（稳定版发完跑） |
+| `scripts/gh-release.js` | **线上 Release（每个版本都建）**：测试版建 `v<ver>-beta` 并标 pre-release，稳定版建 `v<ver>` 标正式（用户口径 2026-11-09）；测试版说明取本版 changelog，稳定版说明 = **这一段测试版要点的汇总** + 本版正式说明；附件挂 crx/zip、幂等（已存在就只更新说明）。tag 已在远端时不再传 `target_commitish`（本地 HEAD 未推时 GitHub 会回 422）。`--prune-test` 删掉所有测试版 Release（含 tag），`--prune-above=<ver>` 删版本号大于该值的 | `node scripts/gh-release.js`（**出包 + publish-gh 之后立刻跑**）或 `--all` 补历史 |
 | `scripts/check-changelog-quotes.js` | 改完 changelog **先跑它**：文案行必须恰好 2 个半角双引号（正文用「」），否则整个文件语法错 | `node scripts/check-changelog-quotes.js` |
 | `scripts/package.js` | 只打包 zip + `latest.json`（门禁 + 真机回归也在这一步） | `node scripts/package.js` |
 | `.github/workflows/release.yml` | **已停用（2026-11-11）**：原为「打 tag 自动发布」，因与本地发布抢同一份字节、必撞「同名版本禁止覆盖」闸，现改为**只走本地发布**（见上节）。文件保留作历史，恢复时要先启用 workflow 并停掉本地 publish | 无（不要再用它发版） |
@@ -93,6 +93,7 @@ node "C:/Users/caitiff/.dsh/profiles/desktop/node_modules/answer-me-with-html/sk
 # 测试版（release-beta.js 出测试版 zip + crx + latest-beta.json + update-beta.xml）
 node scripts/release-beta.js
 node scripts/publish-gh.js --beta-only --skip-assets   # 站点资产有变时去掉 --skip-assets
+GH_TOKEN=… node scripts/gh-release.js                  # 建 v<ver>-beta Release（pre-release）
 
 # 测好后晋级稳定版（同一个版本号，走另一条通道）
 node scripts/release.js --promote --key release/key.pem
@@ -129,6 +130,7 @@ node scripts/bump-version.js beta     # 先把版本号推一格（多轮测试�
 node scripts/release-beta.js          # 产出 release/keyword-highlighter-beta-v<ver>.{zip,crx}
                                       #   + release/latest-beta.json + release/update-beta.xml
 node scripts/publish-gh.js --beta-only --skip-assets   # 推 gh-pages（需要 GH_TOKEN）
+GH_TOKEN=… node scripts/gh-release.js                  # 建 v<ver>-beta Release + 挂 zip/crx
 ```
 
 测试者这边：打开扩展弹窗 → 点「🔀 稳定版」→ **再点一下确认** → 切到「测试版」。
