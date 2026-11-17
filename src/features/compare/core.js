@@ -205,7 +205,23 @@
   }
 
   /**
-   * @returns {null | {ok:boolean, items:Array, missing:string[], len:number}}
+   * 【2.0.12.1】主体名写在链接参数里也算：很多 APP 的隐私政策页是**通用模板**，正文里的
+   * 主体位置是空的（「本政策适用于（以下简称"我们"）」），公司名与应用名只出现在
+   * `?appName=…&appTheme=…` 这类查询参数里。只认「正文没命中、参数里有」这一种补充，
+   * 绝不因此放宽正文命中：正文里写了**别家**名字时，这里仍不会把它当成命中。
+   */
+  function paramHit(url, needle) {
+    const u = raw(url).trim();
+    if (u.indexOf('?') < 0) return false;
+    const n = flat(needle);
+    if (n.length < 2) return false;
+    let dec = u;
+    try { dec = decodeURIComponent(u); } catch (e) { dec = u; }
+    return flat(dec).indexOf(n) >= 0 || flat(u).indexOf(n) >= 0;
+  }
+
+  /**
+   * @returns {null | {ok:boolean, items:Array, missing:string[], len:number, paramUsed:number}}
    *   null = 这张卡没有可校验的内容（没有正文 / 没有可比的项）
    */
   function policyVerdict(fields) {
@@ -213,10 +229,16 @@
     const policy = raw(f.policy).trim();
     if (flat(policy).length < 8) return null;
     const items = [];
+    const srcUrl = raw(f.url).trim() || raw(f.link).trim();
     const add = (key, needle) => {
       const v = raw(needle).trim();
       if (!v) return;
       const r = policyMatch(policy, v, key);
+      /* 正文没写、链接参数里有 ⇒ 算命中（mode 5：通用模板页），文案会点名「来自链接参数」。 */
+      if (!r.hit && paramHit(srcUrl, v)) {
+        items.push({ key: key, needle: v, hit: true, mode: 5 });
+        return;
+      }
       items.push({ key: key, needle: v, hit: r.hit, mode: r.mode });
     };
     add('title', f.title);
@@ -227,13 +249,15 @@
     const missing = [];
     if (!raw(f.title).trim()) missing.push('title');
     if (!raw(f.dev).trim()) missing.push('dev');
-    return { ok: items.every((it) => it.hit), items: items, missing: missing, len: flat(policy).length };
+    const paramUsed = items.filter((it) => it.mode === 5).length;
+    return { ok: items.every((it) => it.hit), items: items, missing: missing, len: flat(policy).length, paramUsed: paramUsed };
   }
 
   C.policyMatch = policyMatch;
   C.contains = contains;
   C.matchMode = matchMode;
   C.linkHit = linkHit;
+  C.paramHit = paramHit;
   C.policyVerdict = policyVerdict;
 
   /* ---------- ⑤ 非颜色标记（唯一文案真源） ---------- */

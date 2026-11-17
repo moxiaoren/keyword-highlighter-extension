@@ -2845,7 +2845,8 @@
         sourceLine = '正文来源：卡片抓取值（' + flatLen(cardBody) + ' 字）；正在抓取链接正文…';
         this.requestPolicyText(src.url, table, fields, NC);
       }
-      const eff = { title: fields.title, dev: fields.dev, link: fields.link, entity: fields.entity, policy: body };
+      /* 【2.0.12.1】把政策链接也带进判定：通用模板页常把主体名放在 URL 参数里（appName / appTheme）。 */
+      const eff = { title: fields.title, dev: fields.dev, link: fields.link, entity: fields.entity, policy: body, url: (src && src.url) || '' };
       /* 签名只放正文长度 + 抽样哈希：正文可能有 12 万字符，整段塞进属性会把 DOM 撑肿。 */
       let bh = 0;
       for (let bi = 0; bi < body.length; bi += 37) bh = (bh * 31 + body.charCodeAt(bi)) | 0;
@@ -2880,9 +2881,11 @@
         /* 【2.0.8.22】近似命中要说明白：用户看到卡片写「上海市松江区…」、正文写「上海松江…」，
          * 不注明就会怀疑插件在乱认。 */
         const tail = it.hit
-          ? ('：在隐私政策正文里找到了' + (it.mode === 4
-            ? '（正文写法差 1 个字，多为 OCR / 录入误差）'
-            : (it.mode >= 2 ? '（写法略有差异，已按同一主体匹配）' : '')))
+          ? (it.mode === 5
+            ? '：正文是通用模板（没写主体名），链接参数里写着这一项'
+            : ('：在隐私政策正文里找到了' + (it.mode === 4
+              ? '（正文写法差 1 个字，多为 OCR / 录入误差）'
+              : (it.mode >= 2 ? '（写法略有差异，已按同一主体匹配）' : ''))))
           : '：正文里没有这段文字';
         return name + '「' + shown + '」' + tail;
       };
@@ -2922,8 +2925,11 @@
       }
       /* 【T6】悬停最多三句：结论 → 逐项依据（压成一行）→ 比对口径。 */
       const miss = (v.missing || []).map((k) => labelOf[k] || k);
+      const tipHead = v.ok
+        ? (v.paramUsed ? '一致（正文是通用模板，主体名取自链接参数）' : '一致（主标题 / 开发者 / 链接 都在正文里）')
+        : '不一致（有项没对上）';
       const tip = [
-        '隐私政策校验：' + (v.ok ? '一致（主标题 / 开发者 / 链接 都在正文里）' : '不一致（有项没对上）'),
+        '隐私政策校验：' + tipHead,
         '正文 ' + v.len + ' 字（' + sourceLine + '）；' + (lines.join('；') || '没有可比的项') + (miss.length ? '；没抓到：' + miss.join(' / ') : ''),
         '忽略空格 / 全半角差异按原文找；链接整串找不到时只比域名。'
       ].join('\n');

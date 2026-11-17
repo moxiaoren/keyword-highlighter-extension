@@ -32,7 +32,8 @@
 (function () {
   const Policy = {};
   /* 缓存键升版：旧键里可能存着「模板正文/空壳」且 TTL 7 天，换了抓取策略也不能被它粘住。 */
-  const CACHE_KEY = 'khPolicyCacheV2';
+  /* V3（2.0.12.2）：抓取策略改了（够长的模板页也要读渲染结果），旧缓存里可能粘着「模板正文」。 */
+  const CACHE_KEY = 'khPolicyCacheV3';
   const TTL_MS = 7 * 24 * 3600 * 1000;
   /* 失败只记 1 小时：站点临时抽风/证书恢复后不该锁用户 7 天。 */
   /* 【2026-11-11】失败缓存从 1 小时缩到 10 分钟：协议/证书这类失败多半是瞬时的，
@@ -49,6 +50,16 @@
    * 开发者写法不同）**不再升级去开后台标签页**：静态 HTML 里已经有整篇政策，开标签页既慢又会
    * 撞上 Chrome 的协议升级错误页，把「其实读到了」的结论污染成「没抓到」。 */
   const STRONG_TEXT = 3000;
+  /* 【2.0.12.2】用户 2026-11-17 案例：ysxy.html?appName=…&appTheme=…
+   * 静态 HTML 里「企业信息信用查询帮 / 上海昂思通…」出现 0 次，正文 7845 字全是模板；
+   * 页内脚本 params.get('appName') → decodeURIComponent → 写进 DOM，渲染后正文里才有。
+   * 所以「正文够长」不等于「内容齐」：HTML 里有从 URL 取参写 DOM 的痕迹时，值得开一次
+   * 后台标签页读渲染结果（active:false，读完就关）。 */
+  const PARAM_DRIVEN_RE = /(?:URLSearchParams|location\.search|location\.href|params\.get\s*\(|searchParams\.get\s*\()/i;
+  function paramDriven(html, url) {
+    if (String(url || '').indexOf('?') < 0) return false;
+    return PARAM_DRIVEN_RE.test(String(html || ''));
+  }
   const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
 
   const ENTITIES = {
@@ -519,7 +530,7 @@
     const missHints = () => hints.length > 0 && !covers(text, hints);
     /* 「正文已经够长、只是缺个提示词」不再升级：卡片标题有错别字（红蜻挺/红蜻蜓）也会走到这里，
      * 而这时静态 HTML 里其实已经有整篇政策 —— 去开标签页纯属自找错误页。 */
-    const needDeep = () => !hardReason && (thin() || (missHints() && flatLen() < STRONG_TEXT));
+    const needDeep = () => !hardReason && (thin() || (missHints() && (flatLen() < STRONG_TEXT || paramDriven(html, pageUrl))));
 
     /* 静态结果「太短」或「缺目标词且正文不长」才升级：短 = 空壳/模板；缺词 = 正文可能是后填的。
      * 标签页落在错误页时，换另一个协议再试一次（sknow：https 证书错误、http 才有正文）。 */

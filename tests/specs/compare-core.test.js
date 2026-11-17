@@ -97,6 +97,42 @@ module.exports = async function run() {
       eq(C.policyVerdict({ policy: '本政策适用于某某清理大师，由甲甲公司提供。' }), null);
     });
 
+    test('★ 通用模板页：正文没写主体名、链接参数里有 ⇒ 算命中（mode 5），并标出来源', () => {
+      /* 真实案例：agreement-*.cos 的 ysxy.html 正文 7845 字里一个主体名都没有，
+       * App 名与公司在 ?appName= / ?appTheme= 里；以前会误判「不一致」。 */
+      const url = 'https://x.test/util/ysxy.html?appName=' + encodeURIComponent('企业信息信用查询帮')
+        + '&appTheme=' + encodeURIComponent('上海昂思通科技有限责任公司杭州第五分公司');
+      const v = C.policyVerdict({
+        title: '企业信息信用查询帮',
+        dev: '上海昂思通科技有限责任公司杭州第五分公司',
+        url: url,
+        policy: '本政策适用于（以下简称“我们”）在中国大陆提供的APP及相关产品和服务。联系方式为 users_feedback@126.com。'
+      });
+      truthy(v && v.ok, '正文是通用模板、参数里有 ⇒ 一致');
+      eq(v.paramUsed, 2, '两项都来自链接参数');
+      eq(v.items.map((it) => it.mode).join(','), '5,5');
+    });
+
+    test('★ 正文里写了别家名字 ⇒ 仍然判不一致（参数命中不许掩盖真差异）', () => {
+      const v = C.policyVerdict({
+        title: '甲应用',
+        dev: '乙乙科技有限公司',
+        url: 'https://x.test/p?appName=' + encodeURIComponent('甲应用'),
+        policy: '甲应用的隐私政策由丙丙科技有限公司提供。'
+      });
+      eq(v.ok, false, '正文里是丙丙公司，开发者是乙乙公司 ⇒ 不一致');
+      eq(v.items.filter((it) => !it.hit).map((it) => it.key).join(','), 'dev');
+    });
+
+    test('★ 链接没有查询参数 ⇒ 不做参数兜底（还是按正文判断）', () => {
+      const v = C.policyVerdict({ title: '甲应用', dev: '乙乙科技有限公司', url: 'https://x.test/p',
+        policy: '甲应用的隐私政策正文。' });
+      eq(v.ok, false);
+      eq(C.paramHit('https://x.test/p', '甲应用'), false);
+      eq(C.paramHit('https://x.test/p?a=' + encodeURIComponent('甲应用'), '甲应用'), true);
+      eq(C.paramHit('https://x.test/p?a=%E7%94%B2', '甲'), false, '单字太短不参与');
+    });
+
   suite('比对核心 · 标记与底色（R1）');
     test('七态文案唯一真源；未知态返回 null', () => {
       eq(C.markOf('same').label, '✔ 一致');

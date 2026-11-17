@@ -263,6 +263,38 @@ module.exports = async function run() {
     truthy(r.text.indexOf('北京某某科技有限公司') >= 0, '命中的必须是渲染后的正文');
   });
 
+  await test('★ 正文够长但主体名由链接参数在 JS 里渲染（ysxy.html 案例）：照样升级后台标签页', async () => {
+    /* 用户 2026-11-17 报的真实站：agreement-*.cos.../util/ysxy.html?appName=…&appTheme=…
+     * 静态 HTML 里那两个名字出现 0 次，7845 字全是通用模板；页内脚本 params.get('appName')
+     * 才把它们写进正文。以前「正文够长就不再开标签页」，于是永远比不到。 */
+    const stub = tabStub('企业信息信用查询帮 隐私政策\n上海昂思通科技有限责任公司杭州第五分公司 提供'
+      + '\n本政策说明我们如何收集、使用、保存与共享您的个人信息，以及您行使各项权利的方式。');
+    const tpl = '<p>' + '本政策适用于（以下简称“我们”）在中国大陆提供的APP及相关产品和服务。'.repeat(120)
+      + '</p><p>联系方式为 users_feedback@126.com</p>'
+      + "<script>var s = location.search; var params = new URLSearchParams(s);"
+      + "var appName = params.get('appName'); appName = decodeURIComponent(appName);</script>";
+    const html = '<html><body>' + tpl + '</body></html>';
+    const { Policy } = loadPolicy(page(html), { tabs: stub.tabs, scripting: stub.scripting });
+    const r = await Policy.fetchText('https://agreement.test/util/ysxy.html?appName=' + encodeURIComponent('企业信息信用查询帮'), {
+      hints: ['企业信息信用查询帮', '上海昂思通科技有限责任公司杭州第五分公司']
+    });
+    eq(r.via, 'tab', '够长的模板页缺目标词时，也要读渲染结果：' + JSON.stringify(r).slice(0, 160));
+    truthy(String(r.text).indexOf('上海昂思通') >= 0, '拿到的必须是渲染后的正文');
+    eq(stub.calls.created.length, 1, '只开一次后台标签页');
+    eq(stub.calls.created[0].active, false, '不抢前台');
+  });
+
+  await test('★ 目标词正文里已经有了：即使 HTML 带取参脚本也不开标签页（省掉一次导航）', async () => {
+    const stub = tabStub('不该来');
+    const html = '<html><body><p>' + '某某清理大师隐私政策正文，说明收集范围与用户权利。'.repeat(200)
+      + '开发者：北京某某科技有限公司</p>'
+      + "<script>var appName = params.get('appName');</script></body></html>";
+    const { Policy } = loadPolicy(page(html), { tabs: stub.tabs, scripting: stub.scripting });
+    const r = await Policy.fetchText('https://spa.test/privacy?appName=x', { hints: ['北京某某科技有限公司'] });
+    eq(r.via, 'fetch', '正文已覆盖目标词 ⇒ 不该再导航');
+    eq(stub.calls.created.length, 0, '不许白开标签页');
+  });
+
   await test('正文只在同源接口 JSON 里：用页面 URL 的同名参数填 `${appId}` 模板，via=fetch+api', async () => {
     const pageHtml = '<html><body><h1>悬浮时钟闹钟 隐私政策</h1>'
       + '<p>本页正文由接口按应用 ID 填充，脚本如下：</p>'
