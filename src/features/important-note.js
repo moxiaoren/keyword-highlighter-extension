@@ -526,10 +526,10 @@
     /* 【2.0.11 · 用户 m00001】比对结论只有一句：✓ 一致 / ⚠ 不一致：缺谁。
      * 旧的「值 · 源 · 读取：08:43」证据行已删（撑高表格又抢注意力）。
      * 颜色只是辅助：文字里的 ✓ / ⚠ 自己就能读出来，灰度也分得清。 */
-    .kh-cmp-badge { display: block; margin-top: 4px; padding: 1px 5px; border-radius: 3px; font-size: 11px; line-height: 15px; }
-    .kh-cmp-badge.is-ok { background: #e6f4ea; color: #1b5e20; }
-    .kh-cmp-badge.is-bad { background: #fdf3d7; color: #7c4a03; }
-    .kh-cmp-badge.is-busy { background: #eef2ff; color: #3730a3; }
+    .kh-cmp-mark { display: inline-block; margin-left: 3px; font-size: 12px; line-height: 1; font-weight: 700; vertical-align: baseline; cursor: help; }
+    .kh-cmp-mark[data-state="ok"] { color: #1b5e20; }
+    .kh-cmp-mark[data-state="part"] { color: #b45309; }
+    .kh-cmp-mark[data-state="bad"] { color: #b45309; }
     /* 字段标题格里的文本（= 设置「抓取字段」里填的那个名字）**不必整段展示**，省下的宽度留给内容。
      * 用户 2026-10-11 原话："抓取字段的标题内容可以不完整展示…实际抓取到的内容展示还是需要完整展示的，节省宽度"。
      * 做法：标题文本包一层 .kh-lbt（见下方 noteFragment 的补包裹），**宽度上限 + 单行裁切**，
@@ -810,55 +810,90 @@
         markOnePdf(el, s ? (atPdf.get(s) || null) : null);
       }
     }
-    syncCmpBadge(bodyEl, imgItems);
+    syncCmpRowMarks(bodyEl, imgItems);
   }
 
   /**
-   * 【2.0.11 · 用户 m00001】卡片头的一句比对结论：勾了「比对」的项全到齐 ⇒ ✓ 一致；
-   * 缺哪个就点名 ⇒ ⚠ 不一致：缺 X。没配比对项就把旧的摘掉（不留空地、不留上一张卡的结论）。
-   * 判定与逐图结论同源（`it.cmp` 来自 `ImgOcr.cmpJudge`），这里只做汇总，不重新判。
+   * 【2026-11-17 用户 m03523】比对结论改成行级小符号，不再在卡片底部占一行：
+   * 一个文档类别（表格一行）配了比对项，就在它的标题格里挂一枚 ✓ / ◐ / ✗：
+   *   ✓ 全部对上（这一类里只要有一张图对上，就算这个项对上）；◐ 部分对上（悬停列出哪些有、哪些没有）；✗ 一个都没对上。
+   * 判定仍与逐图同源（条目上的 cmp 来自 ImgOcr.cmpJudge），这里只做「一类多图 + 多个比对项」的汇总。
    * @param {Element} bodyEl 卡片正文容器
-   * @param {Array} imgItems `ImgOcr.items()`
+   * @param {Array} imgItems ImgOcr.items()
    */
-  function syncCmpBadge(bodyEl, imgItems) {
+  function syncCmpRowMarks(bodyEl, imgItems) {
     if (!bodyEl || typeof bodyEl.querySelectorAll !== 'function') return;
     const V = (KH.OcrCopy && KH.OcrCopy.VIEW) || {};
-    const old = bodyEl.querySelector('.kh-cmp-badge');
-    const list = (imgItems || []).filter((it) => it && it.cmp && Array.isArray(it.cmp.items) && it.cmp.items.length);
-    if (!list.length) {
-      if (old && old.parentNode) old.parentNode.removeChild(old);
-      return;
-    }
-    const done = list.filter((it) => String(it.state || '') === 'done');
-    const bad = done.filter((it) => it.cmp && it.cmp.state === 'diff');
-    let cls;
-    let text;
-    if (!done.length) {
-      cls = 'is-busy';
-      text = V.cmpBadgeBusy || '';
-    } else if (bad.length) {
-      const miss = [];
-      for (const it of bad) {
-        for (const m of (it.cmp.missing || [])) if (m && miss.indexOf(m) < 0) miss.push(m);
+    const R = (tpl, vars) => (tpl ? KH.OcrCopy.render(tpl, vars || {}) : '');
+    /* 这张图 / 这份 PDF 用哪条条目判定（与 markOneImg 同一套取舍：rankOf 高的优先）。 */
+    const best = new Map();
+    const put = (src, it) => {
+      const s = absSrc(src);
+      if (!s || !it) return;
+      const prev = best.get(s);
+      if (!prev || rankOf(it) > rankOf(prev)) best.set(s, it);
+    };
+    for (const it of (imgItems || [])) put(it && it.src, it);
+
+    /* 一行一个类别：把该行所有图 / PDF 的比对项按名字并起来，任一张对上就算这一项对上。 */
+    const rows = new Map();
+    const collect = (el, src) => {
+      const it = best.get(absSrc(src));
+      if (!it || !it.cmp || !Array.isArray(it.cmp.items) || !it.cmp.items.length) return;
+      const tr = el.closest ? el.closest('tr') : null;
+      if (!tr) return;
+      let box = rows.get(tr);
+      if (!box) { box = { items: new Map() }; rows.set(tr, box); }
+      for (const one of it.cmp.items) {
+        const name = String((one && one.name) || '');
+        if (!name) continue;
+        const prev = box.items.get(name);
+        if (!prev) box.items.set(name, { ok: !!(one && one.ok) });
+        else if (one && one.ok) prev.ok = true;
       }
-      cls = 'is-bad';
-      text = KH.OcrCopy.render(V.cmpBadgeDiff, { missing: miss.join('、') });
-    } else {
-      cls = 'is-ok';
-      text = V.cmpBadgeSame || '';
+    };
+    for (const im of bodyEl.querySelectorAll('img')) collect(im, im.currentSrc || im.getAttribute('src') || im.src);
+    for (const el of bodyEl.querySelectorAll('[data-khpdf]')) collect(el, el.getAttribute('data-khpdf'));
+
+    /* 先清掉本轮不再成立的标记（换关键词 / 删掉比对项后不许留上一条结论）。 */
+    for (const mark of bodyEl.querySelectorAll('.kh-cmp-mark')) {
+      const tr = mark.closest ? mark.closest('tr') : null;
+      if (!tr || !rows.has(tr)) {
+        if (mark.parentNode) mark.parentNode.removeChild(mark);
+      }
     }
-    const doc = bodyEl.ownerDocument || (typeof document !== 'undefined' ? document : null);
-    if (!doc) return;
-    let box = old;
-    if (!box) {
-      box = doc.createElement('div');
-      box.className = 'kh-cmp-badge';
-      bodyEl.appendChild(box);
+
+    for (const entry of rows) {
+      const tr = entry[0];
+      const box = entry[1];
+      const cell = tr.querySelector ? tr.querySelector('td') : null;
+      if (!cell) continue;
+      const hit = [];
+      const miss = [];
+      for (const pair of box.items) (pair[1].ok ? hit : miss).push(pair[0]);
+      let state = 'bad';
+      let text = '✗';
+      let tip = R(V.imgCmpDiffTip, { missing: (miss.length ? miss : hit).join('、') });
+      if (!miss.length) {
+        state = 'ok'; text = '✓';
+        tip = R(V.imgCmpSameTip, { names: hit.join('、') });
+      } else if (hit.length) {
+        state = 'part'; text = '◐';
+        tip = R(V.imgCmpPartTip, { names: hit.join('、'), missing: miss.join('、') });
+      }
+      let mark = cell.querySelector ? cell.querySelector('.kh-cmp-mark') : null;
+      if (!mark) {
+        const doc = cell.ownerDocument || (typeof document !== 'undefined' ? document : null);
+        if (!doc) continue;
+        mark = doc.createElement('span');
+        mark.className = 'kh-cmp-mark';
+        cell.appendChild(mark);
+      }
+      if (mark.className !== 'kh-cmp-mark') mark.className = 'kh-cmp-mark';
+      if (mark.getAttribute('data-state') !== state) mark.setAttribute('data-state', state);
+      if (String(mark.textContent || '') !== text) mark.textContent = text;
+      if (String(mark.getAttribute('title') || '') !== tip) mark.title = tip;
     }
-    const wantCls = 'kh-cmp-badge ' + cls;
-    if (box.className !== wantCls) box.className = wantCls;
-    if (String(box.textContent || '') !== text) box.textContent = text;
-    if (String(box.getAttribute('title') || '') !== text) box.title = text;
   }
 
   /**

@@ -49,6 +49,9 @@ const specs = [
   /* 【2.0.11 · 用户 m00001】「比对」标记 `#比`：写在图片命中词/动态词上，同一张图都到齐＝一致 */
   './specs/compare-mark.test.js',
   './specs/compare-field-pairs.test.js',
+  /* 图片侧比对结论改成行标题格的 ✓ / ◐ / ✗（一类多图任一符合即一致，多项分全一致/部分/全不一致）。
+   * 口径见 tests/specs/compare-row-marks.test.js 头部（2026-11-17 · 用户 m03523） */
+  './specs/compare-row-marks.test.js',
   /* K70 编辑弹窗布局：R4 独立验收（红队）的清单层复核 —— 与 R3 的用例换角度，互不替代 */
   './specs/k70-editor-layout-r4.test.js',
   /* K71「抓取后续字段」模块启用：编译层的门 / 迁移规则 / 清理清单在声明层的判定 */
