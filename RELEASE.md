@@ -40,6 +40,20 @@
   并且**不要**在本地和 CI 各发一次 —— 两条路径只能选一条。
 - CI 里保留的是 **e2e 真机回归**（`.github/workflows/e2e.yml`，tag 与 PR 都跑），它只校验、不发布。
 
+### 每版说明页（`release/notes/v<ver>.html`）必须用 Answer me with HTML 生成
+
+- **不许**用 `scripts/release-notes-html.js` 出页面：那是 2.0.8.18 的旧模板（4–5 KB，样式与旧版说明页不一致），只保留它生成 `notes/index.html` 索引的能力。
+- 流程：先写草稿 `.tmp/notes/v<ver>.md`（frontmatter `template: sheet` + `theme: paper`），再用插件 CLI 渲染到站内路径：
+
+```bash
+node "C:/Users/caitiff/.dsh/profiles/desktop/node_modules/answer-me-with-html/skills/answer-me-with-html/scripts/am.mjs" \
+  render - --no-open -o "release/notes/v<ver>.html" < .tmp/notes/v<ver>.md
+```
+
+- 输出必须看到 `✓` 且 `STE ✓ 0 warnings`；有 `STE n warnings` 就按提示改草稿再渲染（最多两轮）。页面应 150–190 KB（自带主题与 CSP），页面里带 `generator: Answer me with HTML`。
+- 稳定版的草稿要**汇总上一个稳定版以来的全部测试版要点**（脚本 `scripts/notes-summary.js` 可帮取摘要），不是只写最后一个测试版。
+- 渲染完再跑 `publish-gh.js`（`SITE_FILE_RE` 已包含 `notes/*.html`），线上校验 `curl -o /dev/null -w '%{http_code} %{size_download}'`。
+
 ## 自动化脚本一览
 
 | 脚本 | 作用 | 典型用法 |

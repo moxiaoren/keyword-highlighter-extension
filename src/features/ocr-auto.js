@@ -165,15 +165,27 @@
     return String((it && it.text) || '');
   }
 
-  /* 标题只在前 4 个非空行里找：证书/授权书的标题永远在顶上，正文里的「授权」二字不算信号。 */
+  /* 标题只在前 6 个非空行里找：证书/授权书的标题永远在顶上，正文里的「授权」二字不算信号。
+   * 【2026-11-17】原来是 4 行 —— 真机上证书截图前面常多出「中华人民共和国国家版权局」
+   * 以及扫描件水印/编号等噪声行，标题被挤出窗口后 `docOf` 认不出证书，自动抽取整条不跑。 */
   function headOf(it) {
     var lines = textOf(it).split(/\r?\n/);
     var out = [];
-    for (var i = 0; i < lines.length && out.length < 4; i++) {
+    for (var i = 0; i < lines.length && out.length < 6; i++) {
       var t = lines[i].trim();
       if (t) out.push(t);
     }
     return out.join(' ');
+  }
+
+  /* 证书标题兜底：前 12 行里只要有一行本身就是证书标题就认（允许前面压着更多噪声行）。 */
+  var CERT_TITLE = /著作权登记证书|电子版权证书|软件著作权登记证书|版权认证证书/;
+  function certTitle(it) {
+    var lines = textOf(it).split(/\r?\n/);
+    for (var i = 0; i < lines.length && i < 12; i++) {
+      if (CERT_TITLE.test(String(lines[i] || '').trim())) return true;
+    }
+    return false;
   }
 
   function docOf(it) {
@@ -190,7 +202,7 @@
     if (/备案核准|备案通知|备案证明|APP\s*备案|应用备案/i.test(head)) return 'record';
     if (/营业执照|企业法人营业执照|许可证|资质证书|认证证书/.test(head)) return 'license';
     if (/合作协议|联运协议|推广协议|代理协议|许可协议|授权协议/.test(head)) return 'agreement';
-    if (/著作权登记证书|电子版权证书|软件著作权登记证书|版权认证证书/.test(head)) return 'cert';
+    if (CERT_TITLE.test(head) || certTitle(it)) return 'cert';
     return '';
   }
 
@@ -445,11 +457,28 @@
   }
 
   /* 著作权人可能是多个主体，也可能是「A 转让给 B」；这里一次收全。 */
+  /* 主体名形状：真公司名括号必须成对，且不许是别的公司名的碎片。
+   * 【2026-11-17 用户报障】APP 电子版权证书那张图的 OCR 把同一行读了两遍、拼在一起
+   * （`芯聆启悦（南玲启悦（南京）网络科技有限公司`：两个左括号一个右括号），
+   * 再叠上「全文兜底」把每行的公司片段都收进来，进表就多出「限责任公司」「cn）核验中心」这种行。 */
+  function okOwnerName(s) {
+    if (!s || s.length < 2 || s.length > 40) return false;
+    /* 片段：从「限责任公司 / 责任公司 / 有限公司」这类中段起头 ⇒ 是别人名字的尾巴 */
+    if (/^(?:限责任|责任公司|限公司|公司|责任有限)/.test(s)) return false;
+    /* 噪音：核验/官网/服务号这类页面尾巴 */
+    if (/扫码|核验|官网|服务号|www\.|\.com/i.test(s)) return false;
+    /* 括号必须成对：成对才说明这一整串是同一个名字，不是两遍 OCR 拼起来的 */
+    var op = (s.match(/[（(]/g) || []).length;
+    var cl = (s.match(/[）)]/g) || []).length;
+    if (op !== cl) return false;
+    return true;
+  }
   function ownerValues(lines, full) {
     var out = [];
+    var fromLabel = 0;
     function add(v) {
       var s = clean(v).replace(/^[\s:：，,、；;]+/, '').trim();
-      if (!s || s.length < 2 || s.length > 40) return;
+      if (!okOwnerName(s)) return;
       if (ISSUER_RE.test(s)) return;
       for (var i = 0; i < out.length; i++) if (out[i] === s) return;
       out.push(s);
@@ -493,10 +522,15 @@
       if (!hit) continue;
       var rest = valueOfHit(lines[i], BY_ID.owner, hit.m);
       if (!rest) rest = valueNextLineRaw(lines, i);
+      var before = out.length;
       addRest(rest);
+      if (out.length > before) fromLabel = 1;
     }
-    /* ② 标签被 OCR 认坏 / 根本没出现时的兜底：正文里的单位名都按著作权人处理。
+    /* ② 只在「① 一个都没取到」时才兜底：标签已经给出权利人时，正文里每行都再扫一遍
+     *    只会把重复拼接的残片、页面尾巴也收进来（2026-11-17 用户报障的多余行）。
+     *    标签被 OCR 认坏 / 根本没出现时的兜底：正文里的单位名都按著作权人处理。
      *    跳过软件名称、代理机构、审核发证这些行，避免把无关主体当成权利人。 */
+    if (fromLabel) return out.slice(0, 8);
     for (var j = 0; j < lines.length; j++) {
       var ln = lines[j];
       if (/软件名称|应用名称|APP\s*名称|简称|版本|代理|经办|受理|发证|登记机关|审核|地址|电话|邮编|邮箱|日期/i.test(ln)) continue;
