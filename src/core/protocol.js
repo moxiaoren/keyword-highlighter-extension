@@ -95,6 +95,12 @@
      * 用 PDF_GRAB_RESULT 把地址回推给原标签页。只认 .pdf，抓到即关掉新标签。 */
     PDF_GRAB: 'kh:pdf:grab',
     PDF_GRAB_RESULT: 'kh:pdf:grabResult',
+    /* 【2026-11-18 用户口径②】主世界钩子抓到地址后，内容脚本用它回一句「收工」：
+     * payload { requestId, url } —— 后台据此撤钩子、清定时器，不再盯新标签。 */
+    PDF_GRAB_DONE: 'kh:pdf:grabDone',
+    /* 【2026-11-18 用户口径①】点 PDF 小标要打开**正文**：内容脚本开新标签不稳（站点可能拦），
+     * 统一走后台 chrome.tabs.create（payload { url }）。 */
+    PDF_OPEN: 'kh:pdf:open',
     /* 【2.0.8.5】网页对话：面板要求打开/聚焦对话页、以及对对话页做一次自检（选择器是否还认得出）。 */
     AI_WEB_OPEN: 'kh:ai:webOpen',
     AI_WEB_PROBE: 'kh:ai:webProbe',

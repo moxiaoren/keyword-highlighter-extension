@@ -750,6 +750,27 @@
    *     取值与判命中同口径（`Fetch.extractFor` + `TextNorm.findInText`）。
    */
 
+  /** 【2026-11-18 用户口径③】这个词是不是**已配置的抓取字段名**：是则比对的是它的值，而不是字面词。
+   * 返回配置里的原写法（`known` 里的那个），空串 = 普通词。 */
+  function configuredField(name, known) {
+    const n = String(name == null ? '' : name).trim();
+    if (!n) return '';
+    const TN = KH.TextNorm;
+    const key = TN ? TN.keyOf(n) : n.replace(WHITE_ALL, '').toLowerCase();
+    for (const k of (known || [])) {
+      const kk = TN ? TN.keyOf(k) : String(k).replace(WHITE_ALL, '').toLowerCase();
+      if (kk && kk === key) return k;
+    }
+    return '';
+  }
+
+  /** 一个字段在当前格上的取值（与 `needInfo` 同一份实现：`Fetch.extractFor` + `!`/`^`/`%` 修饰） */
+  function cmpFieldValues(anchor, rawSpec, field, meta) {
+    if (!anchor) return [];
+    const sub = { meta: Object.assign({}, meta || {}, { imgOcrNeed: String(rawSpec || '') }) };
+    try { return needInfo(anchor, sub, field).values || []; } catch (e) { return []; }
+  }
+
   /**
    * 这张图上要核对的项（带值，供 `cmpJudge` 用）。没打 `#比` 就返回空数组。
    * @param {object} rule 规则快照
@@ -772,6 +793,18 @@
     }
     const kmine = key ? kw.filter((p) => p.scopes.some((sc) => sameField(sc, key))) : [];
     for (const p of (kmine.length ? kmine : kw.filter((p) => !p.scopes.length))) {
+      /* 【2026-11-18 用户口径③】`#比` 写的若是**已配置的抓取字段名**（开发者 / 著作权人），
+       * 比的是那个字段的**值**：页面上取到的「a公司」出现在图上即算一致，
+       * 不再要求图上出现「开发者」这三个字。用户原话：
+       * 「开发者是公司，需要比对的里面出现了 a公司，就是一致的。不需要出现"开发者"这样的字眼」。
+       * 判定复用 `needInfo` —— 与「图片动态关键词」同一份取值实现，不另写一套。 */
+      const fld = configuredField(p.word, known);
+      if (fld) {
+        if (!out.some((o) => o.kind === 'need' && o.name === fld)) {
+          out.push({ name: fld, kind: 'need', values: cmpFieldValues(anchor, fld, field, meta) });
+        }
+        continue;
+      }
       if (out.some((o) => o.kind === 'word' && o.name === p.word)) continue;
       out.push({ name: p.word, kind: 'word', word: p.word });
     }
@@ -792,12 +825,7 @@
       }
       if (!name) continue;
       if (out.some((o) => o.kind === 'need' && o.name === name)) continue;
-      let values = [];
-      if (anchor) {
-        const sub = { meta: Object.assign({}, meta, { imgOcrNeed: raw }) };
-        try { values = needInfo(anchor, sub, field).values; } catch (e) { values = []; }
-      }
-      out.push({ name: name, kind: 'need', values: values });
+      out.push({ name: name, kind: 'need', values: cmpFieldValues(anchor, raw, field, meta) });
     }
     return out;
   }
@@ -823,7 +851,8 @@
           if (valueInText(raw, needle)) { ok = true; break; }
         }
       }
-      items.push({ name: r.name, kind: r.kind, ok: ok });
+      /* `values` 带出去：面板要区分「图上有值但文字不同」与「页面这个字段根本没取到值」 */
+      items.push({ name: r.name, kind: r.kind, ok: ok, values: (r.kind === 'need' ? ((r.values || []).length) : 0) });
     }
     const missing = items.filter((i) => !i.ok).map((i) => i.name);
     return { state: missing.length ? 'diff' : 'same', items: items, missing: missing };
@@ -909,6 +938,40 @@
     if (!want.length) return info;                    // 留空即旧行为：没有动态判据
     const Fetch = KH.Fetch || {};
     const TN = KH.TextNorm;
+    /* 【2026-11-18 用户口径③】点名与页面标签常常只差个后缀（用户写「开发者」，页面上是「开发者名称」）：
+     * 只要页面标签**以点名开头**就认同一个字段，值照取 —— 否则比对项永远报「没取到值」，
+     * 用户看到的就是「明明页面上有 a公司，却说缺开发者」。 */
+    const wantKeyOf = (s) => (TN ? TN.keyOf(String(s).replace(WHITE_ALL, '')) : String(s).replace(WHITE_ALL, '').toLowerCase());
+    const wantKeys = want.map(wantKeyOf).filter(Boolean);
+    const wantHit = (s) => {
+      const k = wantKeyOf(String(s == null ? '' : s).trim());
+      if (!k) return false;
+      for (let i = 0; i < wantKeys.length; i++) {
+        const w = wantKeys[i];
+        if (!w) continue;
+        if (k === w) return true;
+        if (w.length >= 2 && k.indexOf(w) === 0) return true;
+      }
+      return false;
+    };
+    /* 页面上真实写着、且「以点名开头」的字段名（用于差个后缀时取值；找不到就空数组） */
+    const tolerantLabels = (hit) => {
+      const found = [];
+      try {
+        let el = (hit && hit.cell) ? hit.cell : hit;
+        while (el && el.nodeType === 3) el = el.parentNode;
+        while (el && el.nodeType === 1 && el.tagName !== 'TABLE') el = el.parentNode;
+        if (!el || el.tagName !== 'TABLE' || typeof el.querySelectorAll !== 'function') return found;
+        const cells = el.querySelectorAll('td, th');
+        for (let i = 0; i < cells.length; i++) {
+          const t = String(cells[i].textContent || '').trim();
+          if (!t || t.length > 24 || found.indexOf(t) >= 0) continue;
+          if (!wantHit(t)) continue;
+          found.push(t);
+        }
+      } catch (e) {}
+      return found;
+    };
     if (typeof Fetch.extractFor !== 'function' && !TN) { info.missing = want.slice(); return info; }
     const anchor = (hitOrCell && hitOrCell.cell) ? hitOrCell.cell : hitOrCell;
     /* 【2.0.8.18 P0.5】DOM 取不到值时**不直接放弃**：同一张卡里别的图已经「进表」出来的值
@@ -934,6 +997,15 @@
       try {
         entries = Fetch.extractFor(anchor, labelsArg, meta.fetchScope, null) || [];
       } catch (e) { entries = []; }
+      /* 【2026-11-18 用户口径③】点名与页面标签只差后缀时（写「开发者」、页面是「开发者名称」），
+       * `extractFor` 按点名一个格子都找不到 ⇒ 先在这张表里找到**页面上真实的那个标签**，
+       * 再用它取一次值。只在空手时走这一步，精确命中时行为完全不变。 */
+      if (!entries.length) {
+        const real = tolerantLabels(anchor);
+        if (real.length) {
+          try { entries = Fetch.extractFor(anchor, real.join('|'), meta.fetchScope, null) || []; } catch (e) { entries = []; }
+        }
+      }
     }
     const out = [];
     const outKeys = [];
@@ -963,7 +1035,7 @@
       if (!label) continue;
       let bare = label;
       try { bare = String(base(label) || label); } catch (e) { bare = label; }
-      if (want.indexOf(label) < 0 && want.indexOf(bare) < 0) continue;
+      if (!wantHit(label) && !wantHit(bare)) continue;
       if (seen.indexOf(label) < 0) seen.push(label);
       if (seen.indexOf(bare) < 0) seen.push(bare);
       for (const row of (en.rows || [])) {

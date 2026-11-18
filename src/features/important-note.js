@@ -675,6 +675,16 @@
     const names = (cmp.items || []).map((x) => (x && x.name) || '').filter(Boolean);
     if (cmp.state === 'diff') {
       const miss = (cmp.missing || []).filter(Boolean);
+      /* 【2026-11-18 用户口径③】「没取到值」与「图上有值但文字不同」是两回事，分开说：
+       * 前者该去查字段名/页面取值，后者才该去查图。混成一句「图上没有开发者」会把人引错方向。 */
+      const empty = (cmp.items || [])
+        .filter((x) => x && x.kind === 'need' && !x.ok && !(x.values > 0))
+        .map((x) => (x && x.name) || '').filter(Boolean);
+      const gone = miss.filter((n) => empty.indexOf(n) < 0);
+      const lines = [];
+      if (gone.length) lines.push(KH.OcrCopy.render(V.imgCmpDiffTip, { missing: gone.join('、') }));
+      if (empty.length) lines.push(KH.OcrCopy.render(V.imgCmpEmptyTip, { names: empty.join('、') }));
+      if (lines.length) return lines.join('\n');
       return KH.OcrCopy.render(V.imgCmpDiffTip, { missing: (miss.length ? miss : names).join('、') });
     }
     return KH.OcrCopy.render(V.imgCmpSameTip, { names: names.join('、') });
@@ -2434,33 +2444,25 @@
        * 不需要识别到下一张上一张"）→ 取不到单元格时退化到最近的 table，再没有就只当单张。 */
       this.root.addEventListener('click', (e) => {
         const t = e.target;
-        /* 【2.0.6.5 需求②】点 PDF 占位 → 同一套灯箱：舞台是占位牌，右侧给抽出来的全文与命中词。
+        /* 点 PDF 小标 → 新标签打开**正文**（2.0.6.5 起曾经走图片灯箱，用户实测说「走的是大图展示，
+         * 不是 pdf 正文」）。命中/失败状态仍由小标的 tip 表达。
          * 判定只看元素自身与父亲（不用 `closest('*kh-*')` —— meta-check 对带 kh- 的 closest 直接红灯）。 */
         const pdfEl = (t && t.classList && t.classList.contains('khin-pdf')) ? t
           : ((t && t.parentNode && t.parentNode.classList && t.parentNode.classList.contains('khin-pdf')) ? t.parentNode : null);
+        /* 【2026-11-18 用户口径①】点 PDF 小标要看**正文**：不再套图片灯箱（灯箱舞台只有一块占位牌，
+         * 正文得去右边文字栏里找，用户原话「点击之后是走的大图展示，不是pdf正文」）。
+         * 开标签交给后台 `MSG.PDF_OPEN`：内容脚本的 window.open 会被站点拦、也会被本插件的抓取钩子截走。 */
         if (pdfEl) {
           e.preventDefault();
           const ps = absSrc(pdfEl.getAttribute('data-khpdf'));
           if (!ps) return;
-          let pit = null;
-          for (const it of (this.imgItems || [])) {
-            if (String(it && it.kind) === 'pdf' && absSrc(it.src) === ps) { pit = it; break; }
+          const MSG = KH.MSG || {};
+          const rt = (typeof chrome !== 'undefined' && chrome.runtime) ? chrome.runtime : null;
+          if (rt && rt.sendMessage && MSG.PDF_OPEN) {
+            try { rt.sendMessage({ type: MSG.PDF_OPEN, url: ps }, () => { void rt.lastError; }); } catch (er) {}
+          } else {
+            try { window.open(ps, '_blank', 'noopener'); } catch (er) {}
           }
-          const cachedText = (KH.ImgOcr && typeof KH.ImgOcr.textOf === 'function') ? KH.ImgOcr.textOf(ps) : '';
-          /* 没抽到字时得说清卡在哪一步，否则点开就是一栏空白（文案来自真源，不在这里写中文）。 */
-          const V = (KH.OcrCopy && KH.OcrCopy.VIEW) || {};
-          const stt = String((pit && pit.state) || '');
-          const err = (pit && (pit.error || pit.why)) || '';
-          const hint = stt === 'done' ? (V.pdfEmptyTip || '')
-            : ((stt === 'fail' || stt === 'blocked') ? ((V.pdfFailTip || '') + (err ? '（' + err + '）' : '')) : (V.pdfBusyTip || ''));
-          openLightbox(ps, (pit && pit.label) || '', [{
-            src: ps,
-            alt: (pit && pit.label) || '',
-            pdf: true,
-            text: String((pit && pit.text) || cachedText || ''),
-            hits: hitWords(pit),
-            hint: hint
-          }], 0);
           return;
         }
         if (!t || t.tagName !== 'IMG' || !t.src) return;

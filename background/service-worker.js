@@ -177,6 +177,8 @@ function tabIdOf(msg, sender) {
  * 为什么不自己开标签拿地址：地址由页面脚本在点击时才拼出来，DOM 里没有。 */
 const PDF_GRAB_URL = /\.pdf(?=$|[?#&/])/i;
 const PDF_GRAB_PARAMS = ['file', 'url', 'src', 'pdf', 'download'];
+const PDF_GRAB_TTL = 9000;
+const PDF_HOOK_KEY = '__khPdfHook';
 function grabParamUrl(u) {
   try {
     const s = String(u == null ? '' : u);
@@ -212,67 +214,196 @@ function headIsPdf(u) {
     .catch(() => false)
     .then((ok) => { clearTimeout(t); return ok; });
 }
-function pdfGrab(msg, sender) {
+
+/* 【2026-11-18 用户口径②】抓地址不能再抢前台。
+ * 页面多半是「点一下 → window.open / 开个新标签」，这一步发生在**页面的主世界**，隔离世界改不到；
+ * 所以用 `chrome.scripting.executeScript({ world: 'MAIN' })` 临时按一个钩子：
+ *   · 覆盖 window.open：拿到地址就**不真的开窗**；
+ *   · 捕获阶段拦 .pdf 锚点：preventDefault，把地址截下来；
+ * 抓到后用 `CustomEvent('kh:pdf:grabbed')` 交给内容脚本（跨世界传值只能走 DOM 事件），
+ * 内容脚本回 `MSG.PDF_GRAB_DONE` 收工 —— 从头到尾**没有新标签**，前台不会被抢。
+ * 钩子装不上（站点 CSP / 旧内核）就退回「盯新标签」：新标签一出现立刻压后台、原标签切回前台。
+ * 两个函数是注入到页面里跑的，必须自包含，拿不到本文件的任何东西。 */
+function mainWorldPdfHook(rid, KEY, clickMode) {
+  var doc = document;
+  var st = { rid: rid, stopped: false, open: window.open, click: null, stop: null };
+  /* clickMode=false（用户自己点）：只旁听，绝不 preventDefault、绝不动 window.open ——
+   * 页面上原生的 PDF 链接该开标签就开，用户的点击不能被插件改写。 */
+  function send(url) {
+    if (st.stopped) return;
+    var u = String(url == null ? '' : url).trim();
+    if (!u) return;
+    try {
+      doc.dispatchEvent(new CustomEvent('kh:pdf:grabbed', { detail: JSON.stringify({ requestId: rid, url: u }) }));
+    } catch (e) {}
+  }
+  try { if (window[KEY] && typeof window[KEY].stop === 'function') window[KEY].stop(); } catch (e) {}
+  if (clickMode) {
+    /* 只有「插件替用户点」这一次才接管开窗：截到地址就不真的开。 */
+    window.open = function (u) {
+      try { if (u) send(u); } catch (e) {}
+      return null;
+    };
+  }
+  function PDFP(a) {
+    try { return /\.pdf(?=$|[?#&/])/i.test(a.href || '') || !a.isTrusted; } catch (e) { return false; }
+  }
+  st.click = function (ev) {
+    try {
+      var t = ev.target;
+      var host = (t && t.closest) ? t.closest('.content-pdf, [class*="content-pdf"], [data-pdf]') : null;
+      var a = (t && t.closest) ? t.closest('a[href], area[href]') : null;
+      if (!host && !a) return;
+      var href = a ? (a.href || a.getAttribute('href') || '') : '';
+      if (!href) {
+        /* 控件里没有锚点：地址只有页面脚本知道，走 window.open 那条（clickMode 已接管）或干脆抓不到 */
+        if (clickMode) send('');
+        return;
+      }
+      if (!/^https?:/i.test(href)) return;
+      /* 旁听模式下只在「这次点击跟 PDF 控件有关」时给地址，普通链接一律放过 */
+      if (!host && !PDFP(a)) return;
+      /* 用户真点（可信事件）且不在 PDF 控件内 ⇒ 一律放过：原生 PDF 链接该开标签就开（用户口径 m05354） */
+      if (!host && ev.isTrusted) return;
+      if (clickMode) { ev.preventDefault(); ev.stopPropagation(); }
+      send(href);
+    } catch (e) {}
+  };
+  doc.addEventListener('click', st.click, true);
+  st.stop = function () {
+    st.stopped = true;
+    try { window.open = st.open; } catch (e) {}
+    try { doc.removeEventListener('click', st.click, true); } catch (e) {}
+    try { if (window[KEY] === st) delete window[KEY]; } catch (e) {}
+  };
+  window[KEY] = st;
+}
+function mainWorldPdfHookStop(KEY) {
+  try { if (window[KEY] && typeof window[KEY].stop === 'function') window[KEY].stop(); } catch (e) {}
+}
+function khPdfHookInstall(tabId, requestId, clickMode) {
+  return new Promise((resolve) => {
+    try {
+      chrome.scripting.executeScript({
+        target: { tabId: tabId },
+        world: 'MAIN',
+        args: [requestId, PDF_HOOK_KEY, !!clickMode],
+        func: mainWorldPdfHook
+      }, () => { void chrome.runtime.lastError; resolve(true); });
+    } catch (e) { resolve(false); }
+  });
+}
+function khPdfHookStop(tabId) {
+  try {
+    chrome.scripting.executeScript({
+      target: { tabId: tabId },
+      world: 'MAIN',
+      args: [PDF_HOOK_KEY],
+      func: mainWorldPdfHookStop
+    }, () => { void chrome.runtime.lastError; });
+  } catch (e) {}
+}
+
+/** 一次抓取会话：钩子抓到地址 → finish(url)；钩子没装上 → 盯新标签（新标签一律压后台）。
+ *  map 以 requestId 索引，`[MSG.PDF_GRAB_DONE]` 靠它找到对应会话收工。 */
+const PDF_GRABS = new Map();
+function openPdfGrab(tabId, requestId, clickMode) {
+  const st = { done: false, createdId: 0, click: !!clickMode, timer: null, poll: null, probed: new Set(), onCreated: null, onUpdated: null, finish: null };
+  function stopWatch() {
+    if (st.timer) { clearTimeout(st.timer); st.timer = null; }
+    if (st.poll) { clearInterval(st.poll); st.poll = null; }
+    if (st.onCreated) { try { chrome.tabs.onCreated.removeListener(st.onCreated); } catch (e) {} }
+    if (st.onUpdated) { try { chrome.tabs.onUpdated.removeListener(st.onUpdated); } catch (e) {} }
+  }
+  function closeTab(id) {
+    if (!id || id === tabId) return;
+    try { chrome.tabs.remove(id); } catch (e) {}
+  }
+  function backToPage() {
+    try { chrome.tabs.update(tabId, { active: true }); } catch (e) {}
+  }
+  st.finish = function (url) {
+    if (st.done) return;
+    st.done = true;
+    stopWatch();
+    khPdfHookStop(tabId);
+    if (PDF_GRABS.get(requestId) === st) PDF_GRABS.delete(requestId);
+    /* 只有「插件替用户点」那次才允许关标签/切前台；用户自己点的标签一律不碰（用户口径 m05354） */
+    if (st.click) { closeTab(st.createdId); backToPage(); }
+    try { chrome.tabs.sendMessage(tabId, { type: MSG.PDF_GRAB_RESULT, requestId: requestId, url: url || '' }); } catch (e) {}
+  };
+  function consider(id, u) {
+    if (st.done || !id) return;
+    const direct = pdfUrlOf(u);
+    if (direct) { if (!st.createdId) st.createdId = id; st.finish(direct); return; }
+    const http = /^https?:/i.test(String(u || '')) ? String(u).split('#')[0] : grabParamUrl(u);
+    if (!http || st.probed.has(http)) return;
+    st.probed.add(http);
+    headIsPdf(http).then((ok) => { if (ok) { if (!st.createdId) st.createdId = id; st.finish(http); } });
+  }
+  st.onCreated = (tab) => {
+    if (st.done || !tab || tab.id == null || tab.id === tabId) return;
+    if (!st.createdId) st.createdId = tab.id;
+    if (tab.id !== st.createdId) return;
+    /* 只用来读地址，不该打断你正在看的页面：立刻压后台，把原标签还回前台 */
+    try { chrome.tabs.update(tab.id, { active: false }); } catch (e) {}
+    backToPage();
+    consider(tab.id, tab.url || tab.pendingUrl);
+  };
+  st.onUpdated = (id, info, tab) => {
+    if (st.done || id === tabId) return;
+    if (!st.createdId) st.createdId = id;
+    if (id !== st.createdId) return;
+    consider(id, (info && info.url) || (tab && tab.url));
+  };
+  /* 用户在页面上自己点开的新标签**不归我们管**：只装钩子旁听地址，不盯标签、不关标签 */
+  if (st.click) {
+    chrome.tabs.onCreated.addListener(st.onCreated);
+    chrome.tabs.onUpdated.addListener(st.onUpdated);
+  }
+  /* onUpdated 会漏（同一 URL 重复上报、标签页定向前就先定位）→ 300ms 轮询兜底 */
+  st.poll = setInterval(() => {
+    if (st.done || !st.createdId) return;
+    try {
+      chrome.tabs.get(st.createdId, (tab) => {
+        if (chrome.runtime.lastError || !tab) return;
+        consider(st.createdId, tab.url || tab.pendingUrl);
+      });
+    } catch (e) {}
+  }, 300);
+  st.timer = setTimeout(() => st.finish(''), PDF_GRAB_TTL);
+  PDF_GRABS.set(requestId, st);
+  return st;
+}
+async function pdfGrab(msg, sender) {
   const requestId = String((msg && msg.requestId) || '');
   const tabId = (sender && sender.tab && sender.tab.id != null) ? sender.tab.id : -1;
-  if (!requestId || tabId < 0) return Promise.resolve({ ok: false, error: '没有可回推的标签页' });
-  return new Promise((resolve) => {
-    let done = false;
-    let createdId = 0;
-    let timer = null;
-    let poll = null;
-    const probed = new Set();
-    function closeTab(id) {
-      if (!id || id === tabId) return;
-      try { chrome.tabs.remove(id); } catch (e) {}
-    }
-    function finish(url, extraId) {
-      if (done) return;
-      done = true;
-      if (timer) clearTimeout(timer);
-      if (poll) clearInterval(poll);
-      try { chrome.tabs.onCreated.removeListener(onCreated); } catch (e) {}
-      try { chrome.tabs.onUpdated.removeListener(onUpdated); } catch (e) {}
-      closeTab(createdId);
-      closeTab(extraId);
-      try { chrome.tabs.sendMessage(tabId, { type: MSG.PDF_GRAB_RESULT, requestId: requestId, url: url || '' }); } catch (e) {}
-      resolve({ ok: !!url, url: url || '' });
-    }
-    function consider(id, u) {
-      if (done || !id) return;
-      const direct = pdfUrlOf(u);
-      if (direct) { if (!createdId) createdId = id; finish(direct, id); return; }
-      const http = /^https?:/i.test(String(u || '')) ? String(u).split('#')[0] : grabParamUrl(u);
-      if (!http || probed.has(http)) return;
-      probed.add(http);
-      headIsPdf(http).then((ok) => { if (ok) { if (!createdId) createdId = id; finish(http, id); } });
-    }
-    const onCreated = (tab) => {
-      if (done || !tab || tab.id == null || tab.id === tabId) return;
-      if (!createdId) createdId = tab.id;
-      if (tab.id !== createdId) return;
-      consider(tab.id, tab.url || tab.pendingUrl);
-    };
-    const onUpdated = (id, info, tab) => {
-      if (done || id === tabId) return;
-      if (!createdId) createdId = id;
-      if (id !== createdId) return;
-      consider(id, (info && info.url) || (tab && tab.url));
-    };
-    chrome.tabs.onCreated.addListener(onCreated);
-    chrome.tabs.onUpdated.addListener(onUpdated);
-    /* onUpdated 会漏（同一 URL 重复上报、标签页定向前就先定位）→ 300ms 轮询兜底 */
-    poll = setInterval(() => {
-      if (done || !createdId) return;
-      try {
-        chrome.tabs.get(createdId, (tab) => {
-          if (chrome.runtime.lastError || !tab) return;
-          consider(createdId, tab.url || tab.pendingUrl);
-        });
-      } catch (e) {}
-    }, 300);
-    timer = setTimeout(() => finish(''), 9000);
-  });
+  if (!requestId || tabId < 0) return { ok: false, error: '没有可回推的标签页' };
+  const clickMode = !!(msg && msg.click);
+  const prev = PDF_GRABS.get(requestId);
+  if (prev && prev.finish) prev.finish('');
+  openPdfGrab(tabId, requestId, clickMode);
+  /* 先把钩子装好再回话：内容脚本拿到 `{armed:true}` 才去点，否则仍有竞态 */
+  const armed = await khPdfHookInstall(tabId, requestId, clickMode);
+  return { ok: true, armed: armed, click: clickMode, requestId: requestId };
+}
+function pdfGrabDone(msg) {
+  const requestId = String((msg && msg.requestId) || '');
+  const st = PDF_GRABS.get(requestId);
+  if (!st) return { ok: false };
+  const raw = String((msg && msg.url) || '');
+  st.finish(pdfUrlOf(raw) || raw);
+  return { ok: true };
+}
+/** 点 PDF 小标看**正文**：内容脚本自己开标签会被站点拦，统一由这里开。 */
+function pdfOpen(msg) {
+  const raw = String((msg && msg.url) || '');
+  const url = pdfUrlOf(raw) || raw;
+  if (!/^https?:/i.test(url)) return { ok: false, error: '地址不可用' };
+  try {
+    chrome.tabs.create({ url: url, active: true });
+    return { ok: true, url: url };
+  } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
 }
 const HANDLERS = {
   [MSG.STATE_QUERY]: async () => {
@@ -360,6 +491,8 @@ const HANDLERS = {
 
   /* ---- 【2026-11-18 用户口径】没有地址的 PDF 控件：点一次，把新标签的 .pdf 地址抓回来 ---- */
   [MSG.PDF_GRAB]: (msg, sender) => pdfGrab(msg, sender),
+  [MSG.PDF_GRAB_DONE]: (msg) => pdfGrabDone(msg),
+  [MSG.PDF_OPEN]: (msg) => pdfOpen(msg),
 
   /* ---- ocr：内容脚本/设置页 → background → offscreen 文档（引擎在那里跑） ---- */
   [MSG.OCR_IMAGE]: (msg, sender) => self.OcrHost.submitImage(msg, sender),

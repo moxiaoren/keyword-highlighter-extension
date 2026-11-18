@@ -164,28 +164,55 @@
     autoPdfDirty = true;
     scheduleAutoPdfRefresh();
   }
-  /** 开一个抓取窗口：doClick=true 替用户点控件；false 只等用户自己点开的新标签 */
+  /** 开一次抓取窗口：doClick=true 替用户点控件；false 只等用户自己点（不模拟点击）。
+   *  两条回执都认：①主世界钩子截到地址 → `kh:pdf:grabbed` 事件，**根本不产生新标签**，前台不被打断；
+   *  ②钩子没装上 → 后台盯新标签，再用 `MSG.PDF_GRAB_RESULT` 兜回来。 */
   function openGrabWindow(host, doClick) {
     const MSG = KH.MSG || {};
     const rt = (typeof chrome !== 'undefined' && chrome.runtime) ? chrome.runtime : null;
     if (!rt || !rt.sendMessage || !MSG.PDF_GRAB) return;
     const requestId = 'khp' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     let finished = false;
-    const cleanup = () => { try { rt.onMessage.removeListener(onMsg); } catch (e) {} };
+    const cleanup = (markDone) => {
+      if (markDone) finished = true;
+      try { rt.onMessage.removeListener(onMsg); } catch (e) {}
+      try {
+        if (typeof document !== 'undefined' && document.removeEventListener) {
+          document.removeEventListener('kh:pdf:grabbed', onGrab, true);
+        }
+      } catch (e) {}
+      if (autoPdfClicking) autoPdfClicking.delete(host);
+    };
+    function take(url) {
+      if (finished || !url) return;
+      cleanup(true);
+      rememberAutoPdf(host, url);
+    }
     function onMsg(m) {
       if (!m || m.type !== MSG.PDF_GRAB_RESULT || m.requestId !== requestId) return;
-      finished = true;
-      cleanup();
-      if (m.url) rememberAutoPdf(host, m.url);
+      take(m.url);
+    }
+    function onGrab(ev) {
+      let d = ev && ev.detail;
+      if (typeof d === 'string') { try { d = JSON.parse(d); } catch (e) { d = null; } }
+      if (!d || d.requestId !== requestId) return;
+      take(d.url);
+      /* 钩子已经截到地址：叫后台立刻撤钩子，别干等 9 秒超时 */
+      try { rt.sendMessage({ type: MSG.PDF_GRAB_DONE, requestId: requestId, url: d.url }, () => { void rt.lastError; }); } catch (e) {}
     }
     try {
       rt.onMessage.addListener(onMsg);
-      rt.sendMessage({ type: MSG.PDF_GRAB, requestId: requestId }, () => {
-        if (rt.lastError) { cleanup(); return; }
-        if (doClick) setTimeout(() => { try { host.click(); } catch (e) {} }, 40);
+      if (typeof document !== 'undefined' && document.addEventListener) document.addEventListener('kh:pdf:grabbed', onGrab, true);
+      /* click=真：这次是插件替用户点控件（钩子可以拦，不产生新标签）。
+       * click=假：用户自己点的，**不许影响页面自身行为** —— 钩子只旁听地址，标签照常打开、也不关。 */
+      rt.sendMessage({ type: MSG.PDF_GRAB, requestId: requestId, click: !!doClick }, (res) => {
+        if (rt.lastError) { cleanup(true); return; }
+        /* 后台把钩子装好才回话：armed=true 就去点（点下去不会被开成新标签）；
+         * armed=false 说明钩子装不上，仍点一次，靠后台把新标签压到后台再关掉。 */
+        if (doClick) setTimeout(() => { try { if (!finished) host.click(); } catch (e) {} }, res && res.armed ? 20 : 60);
       });
-      setTimeout(() => { if (!finished) cleanup(); }, 12000);
-    } catch (e) { cleanup(); }
+      setTimeout(() => { if (!finished) cleanup(true); }, 12000);
+    } catch (e) { cleanup(true); }
   }
   /* 脚本 click 可能被页面当成不可信事件丢掉（isTrusted=false）→ 用户真点时也开一个抓取窗口，
    * 这次不再模拟点击，只盯他点开的新标签：抓得到就记住地址，抓完由后台把标签关掉。 */

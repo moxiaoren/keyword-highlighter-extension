@@ -405,6 +405,17 @@ module.exports = async function run() {
         '锚点取不到时也要说清楚（不许静默）');
     });
 
+    await test('★ 2026-11-18 用户口径：点名「开发者」，页面标签写「开发者名称」⇒ 取值仍要取到', () => {
+      /* 用户报「提示无著作权人、开发者之类，但实际出现了对应内容」的一半原因在这里：
+       * 页面标签常常比点名多个后缀（开发者名称 / 开发者单位），等值比较 ⇒ 取不到值 ⇒ 永远判缺。 */
+      const anchor = table([['开发者名称', 'a公司']]).rows[0].children[0];
+      const rule = { meta: { imgOcr: true, imgOcrKeyword: '', imgOcrNeed: '开发者', fetchLabels: '开发者' } };
+      eq(JSON.stringify(IO.needInfo(anchor, rule).values), JSON.stringify(['a公司']),
+        '★ 标签以点名开头 ⇒ 认这个字段，值照取');
+      const strict = IO.needInfo(anchor, { meta: { imgOcrNeed: '著作权人', fetchLabels: '著作权人' } });
+      eq(JSON.stringify(strict.values), JSON.stringify([]), '（对照）完全不同的字段名不许被容差捞过来');
+    });
+
     await test('★ 后缀不参与命中：字段名带 ! ^ 也只按裸名比', () => {
       eq(JSON.stringify(IO.needNames('开发者 ! ^高价')), JSON.stringify(['开发者']),
         '★ 用户担心的「加的后缀也参与命中」在这里被否掉');
