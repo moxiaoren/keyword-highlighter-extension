@@ -66,6 +66,9 @@ module.exports = async function run() {
   const F = KH.Fetch;
   const N = KH.ImportantNote;
   const sent = () => (global.__OCR_SENT__ || []);
+  /* 抓取回填会请调度器整页重算；单测里关掉它 —— 本文件只验地址能不能拿到、条目建不建得出来 */
+  const savedRebuild = KH.rebuild;
+  KH.rebuild = null;
 
   suite('2.0.6.5 需求②：PDF 占位 — 认引用与占位符');
 
@@ -128,6 +131,39 @@ module.exports = async function run() {
     F.rememberAutoPdf(dataPdf, 'https://x.test/d.pdf');
     eq(F.pdfRefOf(dataPdf), '', '`[data-pdf]` 空壳也不带地址');
     truthy(F.autoPdfOf(dataPdf).indexOf('.pdf') > 0, '`[data-pdf]` 形态同样认（选择器覆盖）');
+  });
+
+  /* 【2026-11-18 用户实测 m04718】上一版只把地址记在内存里：面板读到的是渲染时快照、PDF 条目
+   * 只在 build 里建 ⇒ 抓到地址后什么都不变（用户看到「点了、标签开了、面板没东西」）。
+   * 下面两条钉住两件事：重算时能建出条目、页面重画换掉元素也还能取回地址。 */
+  await test('★ 2026-11-18（m04718）：没有 href 的 PDF 控件抓到地址后，也要建 PDF 条目', () => {
+    KH.features.get('img-ocr').clear(null, { reason: 'destroy' });
+    const before = sent().length;
+    const sp = H.el('span', { 'class': 'content-pdf' }, [H.txt('PDF')]);
+    F.rememberAutoPdf(sp, 'https://x.test/cdn/auto2.pdf');
+    const a = pdfRow([sp]);
+    O.build({}, {}, [hitOf(a)]);
+    const items = O.items();
+    eq(items.length, 1, '抓到地址 ⇒ 与 &#96;<a href>&#96; 同口径建条目');
+    eq(items[0].kind, 'pdf');
+    eq(items[0].src, 'https://x.test/cdn/auto2.pdf');
+    const last = sent()[sent().length - 1];
+    eq(sent().length - before, 1, '必须真的发出去一条请求');
+    eq(last.type, 'kh:ocr:pdf', '★ 走 OCR_PDF（离线引擎读不了 PDF）');
+  });
+
+  await test('★ 2026-11-18（m04718）：页面重画换掉控件，按「页地址 + 下标」还能取回地址', () => {
+    const D = (typeof document !== 'undefined') ? document : global.document;
+    const url = 'https://x.test/cdn/auto3.pdf';
+    const first = H.el('span', { 'class': 'content-pdf' }, [H.txt('PDF')]);
+    D.body.appendChild(first);
+    F.rememberAutoPdf(first, url);
+    eq(F.autoPdfOf(first), url, '同一个元素当然取得到');
+    first.parentNode.removeChild(first);
+    const second = H.el('span', { 'class': 'content-pdf' }, [H.txt('PDF')]);
+    D.body.appendChild(second);
+    eq(F.autoPdfOf(second), url, '★ 新元素（同页同下标）也要取得到 —— 否则重画一次就得重新点一次');
+    second.parentNode.removeChild(second);
   });
 
   suite('2.0.6.5 需求②：PDF 条目走 OCR 管线（发的是 OCR_PDF）');
@@ -212,4 +248,8 @@ module.exports = async function run() {
     N.markPdf(busy, null);
     falsy(has(busy, 'khin-pdfbusy'), '`it` 为空 ⇒ 三个状态框全清（换帧/无条目时不许留残影）');
   });
+
+  /* 等一拍：抓取回填的重算定时器还挂着，别让它落到后面的用例里（会污染调度器断言） */
+  await new Promise((r) => setTimeout(r, 250));
+  KH.rebuild = savedRebuild;
 };

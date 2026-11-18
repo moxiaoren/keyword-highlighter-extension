@@ -1583,6 +1583,21 @@
         /* 【2.0.7.1 需求②】带上它所在的抓取字段：作用域关键词与面板行都要知道"这张 PDF 属于哪个字段" */
         out.push({ src: src, label: (labelOfCell && labelOfCell.get) ? String(labelOfCell.get(cell) || '') : '' });
       }
+      /* 【2026-11-18 用户实测 m04718】`<span class="content-pdf">PDF</span>` 这类没有 href 的控件：
+       * 地址由 `KH.Fetch.kickAutoPdf` 点开一次抓回来（`F.autoPdfOf`），这里必须同样认，
+       * 否则面板重画也不会为它建条目（条目只在 build 里建，`consumeOnly` 会跳过整个 build）。 */
+      if (F.AUTO_PDF_SEL) {
+        let nodes = [];
+        try { nodes = cell.querySelectorAll(F.AUTO_PDF_SEL); } catch (e) { nodes = []; }
+        for (const el of nodes) {
+          if (out.length >= max) return out;
+          if (isExtUi(el)) continue;
+          const src = (typeof F.autoPdfOf === 'function') ? F.autoPdfOf(el) : '';
+          if (!src || seen.has(src)) continue;
+          seen.add(src);
+          out.push({ src: src, label: (labelOfCell && labelOfCell.get) ? String(labelOfCell.get(cell) || '') : '' });
+        }
+      }
     }
     return out;
   }

@@ -167,10 +167,51 @@ function tabIdOf(msg, sender) {
 /* ---------------- 【2026-11-18 用户口径】没有地址的 PDF 控件 ----------------
  * 页面把 PDF 做成 `<span class="content-pdf">PDF</span>`，地址只有点开才知道。
  * 约定：内容脚本先发 `MSG.PDF_GRAB{requestId}` 开窗 → 拿到回执后点页面控件 →
- * 这里盯住新开的标签，URL 是 `.pdf` 就抓住、关掉标签、用 `MSG.PDF_GRAB_RESULT` 回推给原标签页。
- * 边界：只认 `.pdf`（$ / ? / # 三种收尾）、9 秒窗口、每个 requestId 只回一次。
- * 为什么不自己开标签拿地址：这类控件的地址由页面脚本在点击时才拼出来，DOM 里没有。 */
-const PDF_GRAB_URL = /\.pdf(?:$|[?#])/i;
+ * 这里盯住新开的标签，认出 PDF 就抓住、关掉标签、用 `MSG.PDF_GRAB_RESULT` 回推给原标签页。
+ * 认地址的三种形态（实测都会出现）：
+ *   ① 直链 `https://.../xxx.pdf`：.pdf 可能在路径里，后面还挂着 ?v=1、#page=2；
+ *   ② 跳板页把真地址塞在 ?file= / ?url= 参数里（Chrome 自带 PDF 阅读器就是这样）；
+ *   ③ 既不是 .pdf 结尾、参数也解不出来 —— 对新标签做一次 HEAD，content-type 含 pdf 就认。
+ * 边界：9 秒窗口、每个 requestId 只回一次、**无论成败都关掉本次点开的新标签**
+ * （用户实测 m04718：只认 .pdf 时阅读器地址匹配不上，标签就一直挂着）。
+ * 为什么不自己开标签拿地址：地址由页面脚本在点击时才拼出来，DOM 里没有。 */
+const PDF_GRAB_URL = /\.pdf(?=$|[?#&/])/i;
+const PDF_GRAB_PARAMS = ['file', 'url', 'src', 'pdf', 'download'];
+function grabParamUrl(u) {
+  try {
+    const s = String(u == null ? '' : u);
+    const qi = s.indexOf('?');
+    if (qi < 0) return '';
+    const sp = new URLSearchParams(s.split('#')[0].slice(qi + 1));
+    for (const k of PDF_GRAB_PARAMS) {
+      const raw = sp.get(k);
+      if (!raw) continue;
+      let v = raw;
+      try { v = decodeURIComponent(raw); } catch (e) { v = raw; }
+      if (/^https?:/i.test(v)) return v;
+    }
+  } catch (e) { /* 非法 URL → 当没解到 */ }
+  return '';
+}
+function pdfDirectOf(u) {
+  const s = String(u == null ? '' : u).trim();
+  if (!/^https?:/i.test(s)) return '';
+  const noHash = s.split('#')[0];
+  return PDF_GRAB_URL.test(noHash) ? noHash : '';
+}
+function pdfUrlOf(u) {
+  const s = String(u == null ? '' : u).trim();
+  if (!s) return '';
+  return pdfDirectOf(s) || pdfDirectOf(grabParamUrl(s));
+}
+function headIsPdf(u) {
+  const ctl = (typeof AbortController === 'function') ? new AbortController() : null;
+  const t = setTimeout(() => { try { if (ctl) ctl.abort(); } catch (e) {} }, 2500);
+  return fetch(u, { method: 'HEAD', credentials: 'omit', signal: ctl ? ctl.signal : undefined })
+    .then((r) => String((r.headers && r.headers.get('content-type')) || '').toLowerCase().indexOf('pdf') >= 0)
+    .catch(() => false)
+    .then((ok) => { clearTimeout(t); return ok; });
+}
 function pdfGrab(msg, sender) {
   const requestId = String((msg && msg.requestId) || '');
   const tabId = (sender && sender.tab && sender.tab.id != null) ? sender.tab.id : -1;
@@ -179,36 +220,57 @@ function pdfGrab(msg, sender) {
     let done = false;
     let createdId = 0;
     let timer = null;
-    const pdfOf = (u) => {
-      const s = String(u == null ? '' : u);
-      return (s && PDF_GRAB_URL.test(s.split('#')[0])) ? s : '';
-    };
-    const finish = (url) => {
+    let poll = null;
+    const probed = new Set();
+    function closeTab(id) {
+      if (!id || id === tabId) return;
+      try { chrome.tabs.remove(id); } catch (e) {}
+    }
+    function finish(url, extraId) {
       if (done) return;
       done = true;
       if (timer) clearTimeout(timer);
+      if (poll) clearInterval(poll);
       try { chrome.tabs.onCreated.removeListener(onCreated); } catch (e) {}
       try { chrome.tabs.onUpdated.removeListener(onUpdated); } catch (e) {}
-      if (createdId) { try { chrome.tabs.remove(createdId); } catch (e) {} }
+      closeTab(createdId);
+      closeTab(extraId);
       try { chrome.tabs.sendMessage(tabId, { type: MSG.PDF_GRAB_RESULT, requestId: requestId, url: url || '' }); } catch (e) {}
       resolve({ ok: !!url, url: url || '' });
-    };
+    }
+    function consider(id, u) {
+      if (done || !id) return;
+      const direct = pdfUrlOf(u);
+      if (direct) { if (!createdId) createdId = id; finish(direct, id); return; }
+      const http = /^https?:/i.test(String(u || '')) ? String(u).split('#')[0] : grabParamUrl(u);
+      if (!http || probed.has(http)) return;
+      probed.add(http);
+      headIsPdf(http).then((ok) => { if (ok) { if (!createdId) createdId = id; finish(http, id); } });
+    }
     const onCreated = (tab) => {
-      if (done || !tab || tab.id == null) return;
-      createdId = tab.id;
-      const u = pdfOf(tab.url || tab.pendingUrl);
-      if (u) finish(u);
+      if (done || !tab || tab.id == null || tab.id === tabId) return;
+      if (!createdId) createdId = tab.id;
+      if (tab.id !== createdId) return;
+      consider(tab.id, tab.url || tab.pendingUrl);
     };
     const onUpdated = (id, info, tab) => {
-      if (done) return;
-      if (id !== tabId && createdId && id !== createdId) return;
-      const u = pdfOf((info && info.url) || (tab && tab.url));
-      if (!u) return;
-      if (id !== tabId) createdId = id;
-      finish(u);
+      if (done || id === tabId) return;
+      if (!createdId) createdId = id;
+      if (id !== createdId) return;
+      consider(id, (info && info.url) || (tab && tab.url));
     };
     chrome.tabs.onCreated.addListener(onCreated);
     chrome.tabs.onUpdated.addListener(onUpdated);
+    /* onUpdated 会漏（同一 URL 重复上报、标签页定向前就先定位）→ 300ms 轮询兜底 */
+    poll = setInterval(() => {
+      if (done || !createdId) return;
+      try {
+        chrome.tabs.get(createdId, (tab) => {
+          if (chrome.runtime.lastError || !tab) return;
+          consider(createdId, tab.url || tab.pendingUrl);
+        });
+      } catch (e) {}
+    }, 300);
     timer = setTimeout(() => finish(''), 9000);
   });
 }

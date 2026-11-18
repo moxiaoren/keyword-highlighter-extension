@@ -106,25 +106,69 @@
    * 只认 `.pdf` 地址、9 秒窗口、抓到即关标签；同一个元素只试一次。 */
   const AUTO_PDF_SEL = '.content-pdf, [class*="content-pdf"], [data-pdf]';
   const autoPdfCache = new WeakMap();
+  const autoPdfByKey = (typeof Map === 'function') ? new Map() : null;
   const autoPdfTried = typeof WeakSet === 'function' ? new WeakSet() : null;
+  const autoPdfClicking = typeof WeakSet === 'function' ? new WeakSet() : null;
+  let autoPdfDirty = false;
+  let autoPdfRefreshTimer = 0;
+  let autoPdfClickBound = false;
+  let autoPdfLastAt = 0;
   function autoPdfHostOf(el) {
     try { return (el && el.closest) ? el.closest(AUTO_PDF_SEL) : null; } catch (e) { return null; }
   }
+  /** 页地址 + 控件在同类控件里的下标：页面重画换掉元素后，地址还能按同一个键找回来 */
+  function autoPdfKeyOf(host) {
+    if (!host || typeof document === 'undefined' || !document.querySelectorAll) return '';
+    let idx = -1;
+    try {
+      const all = document.querySelectorAll(AUTO_PDF_SEL);
+      for (let i = 0; i < all.length; i++) { if (all[i] === host) { idx = i; break; } }
+    } catch (e) { idx = -1; }
+    if (idx < 0) return '';
+    const base = (typeof location !== 'undefined' && location.href) ? String(location.href).split('#')[0] : '';
+    return base + '#' + idx;
+  }
   function autoPdfOf(el) {
     const host = autoPdfHostOf(el) || el;
-    return (host && autoPdfCache.get(host)) || '';
+    if (!host) return '';
+    const hit = autoPdfCache.get(host);
+    if (hit) return hit;
+    if (!autoPdfByKey) return '';
+    const key = autoPdfKeyOf(host);
+    const saved = key ? autoPdfByKey.get(key) : '';
+    if (saved) autoPdfCache.set(host, saved);
+    return saved || '';
+  }
+  /* 抓到地址 → 必须重算一轮：面板里的抓取结果是渲染时的一次性快照（important-note 的
+   * collectEffective），PDF 条目也只在 img-ocr 的 build 里建（consumeOnly 会整体早退）。
+   * 防递归：抓取本来就发生在 build 内部，所以延后一拍、同一批只重算一次。 */
+  function scheduleAutoPdfRefresh() {
+    if (autoPdfRefreshTimer) return;
+    /* 一页里可能有好几个这种控件：把重算节流到 1.5s 一次，别让整页连续重建 */
+    const wait = Math.max(120, 1500 - (Date.now() - autoPdfLastAt));
+    autoPdfRefreshTimer = setTimeout(() => {
+      autoPdfRefreshTimer = 0;
+      if (!autoPdfDirty) return;
+      autoPdfLastAt = Date.now();
+      autoPdfDirty = false;
+      try { const p = KH.ImportantNote && KH.ImportantNote.panel; if (p && p.host && p.refresh) p.refresh(); } catch (e) {}
+      try { if (KH.rebuild) KH.rebuild({ source: 'auto-pdf' }); } catch (e) {}
+    }, wait);
   }
   function rememberAutoPdf(el, url) {
     const host = autoPdfHostOf(el) || el;
-    if (host && url) autoPdfCache.set(host, String(url));
+    if (!host || !url) return;
+    const val = String(url);
+    autoPdfCache.set(host, val);
+    if (autoPdfByKey) { const key = autoPdfKeyOf(host); if (key) autoPdfByKey.set(key, val); }
+    autoPdfDirty = true;
+    scheduleAutoPdfRefresh();
   }
-  function kickAutoPdf(el) {
-    const host = autoPdfHostOf(el);
-    if (!host || autoPdfCache.get(host) || (autoPdfTried && autoPdfTried.has(host))) return;
+  /** 开一个抓取窗口：doClick=true 替用户点控件；false 只等用户自己点开的新标签 */
+  function openGrabWindow(host, doClick) {
     const MSG = KH.MSG || {};
     const rt = (typeof chrome !== 'undefined' && chrome.runtime) ? chrome.runtime : null;
     if (!rt || !rt.sendMessage || !MSG.PDF_GRAB) return;
-    if (autoPdfTried) autoPdfTried.add(host);
     const requestId = 'khp' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     let finished = false;
     const cleanup = () => { try { rt.onMessage.removeListener(onMsg); } catch (e) {} };
@@ -136,12 +180,35 @@
     }
     try {
       rt.onMessage.addListener(onMsg);
-      rt.sendMessage({ type: MSG.PDF_GRAB, requestId }, () => {
+      rt.sendMessage({ type: MSG.PDF_GRAB, requestId: requestId }, () => {
         if (rt.lastError) { cleanup(); return; }
-        setTimeout(() => { try { host.click(); } catch (e) {} }, 40);
+        if (doClick) setTimeout(() => { try { host.click(); } catch (e) {} }, 40);
       });
       setTimeout(() => { if (!finished) cleanup(); }, 12000);
     } catch (e) { cleanup(); }
+  }
+  /* 脚本 click 可能被页面当成不可信事件丢掉（isTrusted=false）→ 用户真点时也开一个抓取窗口，
+   * 这次不再模拟点击，只盯他点开的新标签：抓得到就记住地址，抓完由后台把标签关掉。 */
+  function bindAutoPdfUserClick() {
+    if (autoPdfClickBound || typeof document === 'undefined' || !document.addEventListener) return;
+    autoPdfClickBound = true;
+    document.addEventListener('click', (ev) => {
+      const t = ev && ev.target;
+      if (!t || !t.closest) return;
+      let host = null;
+      try { host = t.closest(AUTO_PDF_SEL); } catch (e) { host = null; }
+      if (!host || autoPdfOf(host)) return;
+      if (autoPdfClicking && autoPdfClicking.has(host)) return;
+      if (autoPdfClicking) autoPdfClicking.add(host);
+      openGrabWindow(host, false);
+    }, true);
+  }
+  function kickAutoPdf(el) {
+    const host = autoPdfHostOf(el);
+    if (!host || autoPdfOf(host) || (autoPdfTried && autoPdfTried.has(host))) return;
+    if (autoPdfTried) autoPdfTried.add(host);
+    bindAutoPdfUserClick();
+    openGrabWindow(host, true);
   }
   function pdfPlaceholder(el) {
     const src = pdfRefOf(el) || autoPdfOf(el);
