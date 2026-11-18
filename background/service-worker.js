@@ -164,6 +164,54 @@ function tabIdOf(msg, sender) {
 
 /* ---------------- 消息路由（统一协议） ---------------- */
 
+/* ---------------- 【2026-11-18 用户口径】没有地址的 PDF 控件 ----------------
+ * 页面把 PDF 做成 `<span class="content-pdf">PDF</span>`，地址只有点开才知道。
+ * 约定：内容脚本先发 `MSG.PDF_GRAB{requestId}` 开窗 → 拿到回执后点页面控件 →
+ * 这里盯住新开的标签，URL 是 `.pdf` 就抓住、关掉标签、用 `MSG.PDF_GRAB_RESULT` 回推给原标签页。
+ * 边界：只认 `.pdf`（$ / ? / # 三种收尾）、9 秒窗口、每个 requestId 只回一次。
+ * 为什么不自己开标签拿地址：这类控件的地址由页面脚本在点击时才拼出来，DOM 里没有。 */
+const PDF_GRAB_URL = /\.pdf(?:$|[?#])/i;
+function pdfGrab(msg, sender) {
+  const requestId = String((msg && msg.requestId) || '');
+  const tabId = (sender && sender.tab && sender.tab.id != null) ? sender.tab.id : -1;
+  if (!requestId || tabId < 0) return Promise.resolve({ ok: false, error: '没有可回推的标签页' });
+  return new Promise((resolve) => {
+    let done = false;
+    let createdId = 0;
+    let timer = null;
+    const pdfOf = (u) => {
+      const s = String(u == null ? '' : u);
+      return (s && PDF_GRAB_URL.test(s.split('#')[0])) ? s : '';
+    };
+    const finish = (url) => {
+      if (done) return;
+      done = true;
+      if (timer) clearTimeout(timer);
+      try { chrome.tabs.onCreated.removeListener(onCreated); } catch (e) {}
+      try { chrome.tabs.onUpdated.removeListener(onUpdated); } catch (e) {}
+      if (createdId) { try { chrome.tabs.remove(createdId); } catch (e) {} }
+      try { chrome.tabs.sendMessage(tabId, { type: MSG.PDF_GRAB_RESULT, requestId: requestId, url: url || '' }); } catch (e) {}
+      resolve({ ok: !!url, url: url || '' });
+    };
+    const onCreated = (tab) => {
+      if (done || !tab || tab.id == null) return;
+      createdId = tab.id;
+      const u = pdfOf(tab.url || tab.pendingUrl);
+      if (u) finish(u);
+    };
+    const onUpdated = (id, info, tab) => {
+      if (done) return;
+      if (id !== tabId && createdId && id !== createdId) return;
+      const u = pdfOf((info && info.url) || (tab && tab.url));
+      if (!u) return;
+      if (id !== tabId) createdId = id;
+      finish(u);
+    };
+    chrome.tabs.onCreated.addListener(onCreated);
+    chrome.tabs.onUpdated.addListener(onUpdated);
+    timer = setTimeout(() => finish(''), 9000);
+  });
+}
 const HANDLERS = {
   [MSG.STATE_QUERY]: async () => {
     const { globalEnabled = true } = await chrome.storage.local.get('globalEnabled');
@@ -247,6 +295,9 @@ const HANDLERS = {
     try { await chrome.runtime.openOptionsPage(); return { ok: true }; }
     catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
   },
+
+  /* ---- 【2026-11-18 用户口径】没有地址的 PDF 控件：点一次，把新标签的 .pdf 地址抓回来 ---- */
+  [MSG.PDF_GRAB]: (msg, sender) => pdfGrab(msg, sender),
 
   /* ---- ocr：内容脚本/设置页 → background → offscreen 文档（引擎在那里跑） ---- */
   [MSG.OCR_IMAGE]: (msg, sender) => self.OcrHost.submitImage(msg, sender),

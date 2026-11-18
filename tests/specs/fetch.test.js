@@ -119,6 +119,17 @@ module.exports = async function run() {
     eq(out.match(/KHIMG/g).length, 2, '两张图都要保留');
   });
 
+  await test('★ 2026-11-18：`#图` 只留图片时，PDF 附件也要留下（不占图片名额、按文档顺序）', () => {
+    const PDFPH = (name, src) => '\u0001KHPDF\u0001' + encodeURIComponent(name) + '|' + encodeURIComponent(src) + '\u0001ENDPDF\u0001';
+    const txt = '说明 ' + PH('图一', 'https://ex.com/a.png') + ' 中间 ' + PDFPH('证书', 'https://cdn.ex.com/cert.pdf') + ' 尾巴 ' + PH('图二', 'https://ex.com/b.png');
+    const out = F.applyImgPolicy(txt, { imgOnly: true, imgLimit: 1 }, { n: 0 });
+    console.log('        仅图片 + PDF = ' + JSON.stringify(out));
+    truthy(out.indexOf('说明') < 0 && out.indexOf('尾巴') < 0, '文字仍要丢掉');
+    eq((out.match(/KHIMG/g) || []).length, 1, '图片仍受「前 N 张」限制（第 2 张被丢掉）');
+    eq((out.match(/KHPDF/g) || []).length, 1, 'PDF 占位必须留下（用户口径：仅图片字段也要收 PDF 内容）');
+    truthy(out.indexOf('KHPDF') > out.indexOf('KHIMG'), '顺序按文档来：图一 在 PDF 之前');
+  });
+
   await test('★ 需求①：`#0` = 该字段的图既不识别、也不带进抓取内容（与 `#图` 意图相反）', () => {
     const p = F.parseLabels('包名#0|截图#图');
     console.log('        ' + JSON.stringify(p));

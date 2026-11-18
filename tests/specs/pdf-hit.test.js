@@ -107,6 +107,29 @@ module.exports = async function run() {
     truthy(!/iframe|embed|object/i.test(html), '★ 绝不能把 `<embed>`/`<iframe>` 塞进面板（会真去加载阅读器）');
   });
 
+  await test('★ 2026-11-18 用户口径：没有地址的 PDF 控件（span.content-pdf）点一次拿到地址后照常占位', () => {
+    /* 现场：`<span class="content-pdf">PDF</span>` 由页面脚本在点击时才拼出地址，DOM 里没有 href。
+     * 约定：内容脚本点一次（kickAutoPdf）→ 后台把新标签的 .pdf 地址回推（PDF_GRAB_RESULT）→ rememberAutoPdf。 */
+    const span = H.el('span', { class: 'content-pdf' }, [H.txt('PDF')]);
+    eq(F.pdfRefOf(span), '', '这种控件 DOM 里没有地址（所以不能靠 pdfRefOf 判）');
+    eq(F.autoPdfOf(span), '', '还没点过 ⇒ 没有地址');
+    const url = 'https://x.test/cdn/auto.pdf?sign=1';
+    F.rememberAutoPdf(span, url);
+    eq(F.autoPdfOf(span), url, '★ 抓回来的地址要挂在控件上（下一轮重建直接用）');
+    const mark = F.pdfPlaceholder(span);
+    truthy(mark && mark.indexOf('KHPDF') >= 0, '拿到地址后与 `<a href>` 完全同一条链路（落成占位）');
+    truthy(new RegExp('data-khpdf="' + url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '"').test(F.restoreImgs(mark)),
+      '★ 占位里带的是真地址（后台据此下载抽字）');
+    const td = H.el('td', {}, [span]);
+    const got = F.cellText(td, false);
+    truthy(got.indexOf('KHPDF') >= 0, '★ 单元格正文里必须是 PDF 占位，不是「PDF」两个字');
+    truthy(got.indexOf('PDF') >= 0, '占位符自身含 KHPDF 字样');
+    const dataPdf = H.el('span', { 'data-pdf': '' }, [H.txt('查看')]);
+    F.rememberAutoPdf(dataPdf, 'https://x.test/d.pdf');
+    eq(F.pdfRefOf(dataPdf), '', '`[data-pdf]` 空壳也不带地址');
+    truthy(F.autoPdfOf(dataPdf).indexOf('.pdf') > 0, '`[data-pdf]` 形态同样认（选择器覆盖）');
+  });
+
   suite('2.0.6.5 需求②：PDF 条目走 OCR 管线（发的是 OCR_PDF）');
 
   await test('★ 值格里的 PDF 链接 ⇒ 建 `kind:pdf` 条目，且发出去的是 `kh:ocr:pdf`', () => {

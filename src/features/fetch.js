@@ -100,9 +100,52 @@
   }
 
   /** `<a>/<iframe>/<embed>/<object>` → 可还原占位符（正文里留一条「PDF」痕迹，点击才去抽文字） */
+  /* 【2026-11-18 用户口径】没有地址的 PDF 控件＝`<span class="content-pdf">PDF</span>` 这类：
+   * 地址只有点开才知道。这里替用户点一次，由后台盯住新开的标签把 `.pdf` 地址抓回来；
+   * 取到后与 `<a href>` 完全同一条链路（占位 → 后台抽字 → 命中/进表/比对）。
+   * 只认 `.pdf` 地址、9 秒窗口、抓到即关标签；同一个元素只试一次。 */
+  const AUTO_PDF_SEL = '.content-pdf, [class*="content-pdf"], [data-pdf]';
+  const autoPdfCache = new WeakMap();
+  const autoPdfTried = typeof WeakSet === 'function' ? new WeakSet() : null;
+  function autoPdfHostOf(el) {
+    try { return (el && el.closest) ? el.closest(AUTO_PDF_SEL) : null; } catch (e) { return null; }
+  }
+  function autoPdfOf(el) {
+    const host = autoPdfHostOf(el) || el;
+    return (host && autoPdfCache.get(host)) || '';
+  }
+  function rememberAutoPdf(el, url) {
+    const host = autoPdfHostOf(el) || el;
+    if (host && url) autoPdfCache.set(host, String(url));
+  }
+  function kickAutoPdf(el) {
+    const host = autoPdfHostOf(el);
+    if (!host || autoPdfCache.get(host) || (autoPdfTried && autoPdfTried.has(host))) return;
+    const MSG = KH.MSG || {};
+    const rt = (typeof chrome !== 'undefined' && chrome.runtime) ? chrome.runtime : null;
+    if (!rt || !rt.sendMessage || !MSG.PDF_GRAB) return;
+    if (autoPdfTried) autoPdfTried.add(host);
+    const requestId = 'khp' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    let finished = false;
+    const cleanup = () => { try { rt.onMessage.removeListener(onMsg); } catch (e) {} };
+    function onMsg(m) {
+      if (!m || m.type !== MSG.PDF_GRAB_RESULT || m.requestId !== requestId) return;
+      finished = true;
+      cleanup();
+      if (m.url) rememberAutoPdf(host, m.url);
+    }
+    try {
+      rt.onMessage.addListener(onMsg);
+      rt.sendMessage({ type: MSG.PDF_GRAB, requestId }, () => {
+        if (rt.lastError) { cleanup(); return; }
+        setTimeout(() => { try { host.click(); } catch (e) {} }, 40);
+      });
+      setTimeout(() => { if (!finished) cleanup(); }, 12000);
+    } catch (e) { cleanup(); }
+  }
   function pdfPlaceholder(el) {
-    const src = pdfRefOf(el);
-    if (!src) return '';
+    const src = pdfRefOf(el) || autoPdfOf(el);
+    if (!src) { kickAutoPdf(el); return ''; }
     const enc = (s) => encodeURIComponent(s == null ? '' : String(s)).replace(/'/g, '%27');
     const name = String((el.getAttribute && (el.getAttribute('title') || el.getAttribute('download'))) || '');
     return PDF_OPEN + enc(name) + '|' + enc(src) + PDF_CLOSE;
@@ -350,6 +393,13 @@
           segs.push(pdf);
           if (tag !== 'A') return;
         }
+      }
+      /* 【2026-11-18 用户口径】没有地址的 PDF 控件（`<span class="content-pdf">PDF</span>`）：
+       * 地址靠点一次取（见 autoPdfOf / kickAutoPdf）。取到了就当引用处理（正文只留占位）；
+       * 还没取到就照旧读它那几个字，下一轮重建会补上。 */
+      if (autoPdfOf(node)) {
+        const autoPdf = pdfPlaceholder(node);
+        if (autoPdf) { segs.push(autoPdf); return; }
       }
       if (isInteractive(node)) return;
       /* K79：读这一层的值时**跳过它内部嵌的表格**（内表算独立的一层，见 `insideNestedTable`） */
@@ -844,6 +894,10 @@
    * 否则值与 OCR 文本永远对不上（2.0.4 需求② 真机红就是这么来的：老实现取 `textContent` 没有占位符，
    * 换到行文本后占位符跟着进来了）。
    */
+  /* PDF 占位（KHPDF 哨兵）：它不是图片、也不参与「前 N 张」的序号，但在「#图」（只留图片）
+   * 字段里必须留下 —— 用户 2026-11-18 口径：「抓取字段仅图片的后缀，把这种 pdf 也内容可进范围」。 */
+  const PDF_RE = new RegExp('\u0001KHPDF\u0001[^|]*\\|[^\u0001]*\u0001ENDPDF\u0001', 'g');
+
   function stripImgPlaceholders(text) {
     return String(text == null ? '' : text).replace(IMG_RE, '');
   }
@@ -896,8 +950,26 @@
       return keep ? m : '';
     });
     s = s.replace(/[ \t]{2,}/g, ' ').replace(/^[ \t]+|[ \t]+$/g, '');
-    /* 只留图：文字一个不留（占位符按序号/上限过滤后的那份） */
-    if (opt.imgOnly) return kept.length ? kept.join(' ') : '';
+    /* 只留图：文字一个不留（占位符按序号/上限过滤后的那份）。
+     * 【2026-11-18 用户口径】PDF 附件也算「内容」——它既不是文字、也不占图片名额，
+     * 所以「#图」字段里要照常留下 PDF 占位（否则配了「仅图片」就再也看不到那份 PDF）。 */
+    if (opt.imgOnly) {
+      const comb = new RegExp(IMG_RE.source + '|' + PDF_RE.source, 'g');
+      const merged = [];
+      let hit;
+      let n = 0;
+      while ((hit = comb.exec(s))) {
+        const m = hit[0];
+        if (m.indexOf('\u0001KHIMG\u0001') === 0) {
+          n++;
+          const keepImg = pick ? (pick.indexOf(n) >= 0) : (!limit || n <= limit);
+          if (keepImg) merged.push(m);
+        } else {
+          merged.push(m);
+        }
+      }
+      return merged.length ? merged.join(' ') : '';
+    }
     return s;
   }
 
@@ -2085,6 +2157,8 @@
     /* PDF 引用识别（2.0.6.5 需求②）：占位符与 DOM 两条路必须用**同一判据**，否则条目与占位
      * 标记对不上号（一个按页面元素建条目、一个按渲染出来的 `data-khpdf` 挂状态）。 */
     pdfRefOf, pdfPlaceholder,
+    /* 【2026-11-18 用户口径】没有地址的 PDF 控件：只读判据 + 单测注入口（点一次→抓新标签地址） */
+    AUTO_PDF_SEL, autoPdfHostOf, autoPdfOf, rememberAutoPdf,
     rowsToTableHtml, blockFor, triggerOk, fakeRightValue, nearestTable, isPlaceholderText,
     /* 图片选项（仅图片 / 前 N 张）：单测直接锁 */
     applyImgPolicy,

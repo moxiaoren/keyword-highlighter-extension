@@ -941,7 +941,7 @@
             const imgModeSel = h('select', { class: 'kh-input kh-sfx-mode' }, [
               h('option', { value: 'none', text: '图与文字都留（默认）' }),
               h('option', { value: '#0', text: '不要图片（#0）' }),
-              h('option', { value: '#图', text: '只要图片（#图）' }),
+              h('option', { value: '#图', text: '只要图片（#图，PDF 照留）' }),
               h('option', { value: '#PICK', text: '指定第几张图（#图1,3）' }),
               h('option', { value: '#图N', text: '图片，最多 N 张（#图N）' }),
               h('option', { value: '#N', text: '图上文字与图，最多 N 张（#N）' })
@@ -2150,7 +2150,7 @@
      * 现在一项一行：左边记号（等宽），右边白话。记号本身与解析顺序**一个字都没改**。 */
     const rows = [
       ['#1', '右邻这一格'],
-      ['#图', '只要图片'],
+      ['#图', '只要图片（PDF 附件照留）'],
       ['#图3', '只要图片，最多 3 张（3 换成你要的张数）'],
       ['#3', '图上文字与图，最多 3 张'],
       ['#0', '这个字段不要图'],

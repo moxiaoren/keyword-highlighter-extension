@@ -90,6 +90,11 @@
      * payload: { url } → { ok:true, text, len, cached?, url } | { ok:false, reason, url }
      * 只读：抓不到就如实失败，面板退回卡片抓取值并在悬停里写明原因。 */
     POLICY_TEXT: 'kh:policy:text',
+    /* 【2026-11-18 用户口径】没有地址的 PDF 控件（`<span class="content-pdf">PDF</span>` 这类）：
+     * 内容脚本先开一个 9 秒窗口 → 点一下页面控件 → 后台盯住新标签把 `.pdf` 地址抓回来 →
+     * 用 PDF_GRAB_RESULT 把地址回推给原标签页。只认 .pdf，抓到即关掉新标签。 */
+    PDF_GRAB: 'kh:pdf:grab',
+    PDF_GRAB_RESULT: 'kh:pdf:grabResult',
     /* 【2.0.8.5】网页对话：面板要求打开/聚焦对话页、以及对对话页做一次自检（选择器是否还认得出）。 */
     AI_WEB_OPEN: 'kh:ai:webOpen',
     AI_WEB_PROBE: 'kh:ai:webProbe',
