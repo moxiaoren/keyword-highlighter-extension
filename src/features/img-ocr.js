@@ -842,6 +842,58 @@
   }
 
   /**
+   * 【用户 m07376 问题一 / 三】这张图**自己 OCR 出来的字段值**。
+   *
+   * 病根：`#比` 的取值只来自页面 DOM（`needInfo`），而软著证书 / 授权书上的「著作权人」
+   * 「登记号」并不在页面 DOM 里 —— 它们是这张图的 OCR 结果被 `OcrAuto.rowsFor` 抽成卡片行的。
+   * 于是比对永远拿不到值，面板就报「没取到值：登记号、著作权人」（卡片上其实明明白白有）。
+   *
+   * 这里只做一件事：把同一份 `rowsFor` 抽出来的行按字段名对上去，拿它的值。
+   * 与卡片行同一个来源 ⇒ 卡片显示什么、比对就比什么，不会再出现两套口径。
+   * @param {string} raw 识别文本
+   * @param {string} name 比对项名（可能带 `@1` 一类后缀，先剥掉）
+   * @returns {string[]} 命中的值（去重；没有就空数组）
+   */
+  function textFieldValues(raw, name, label) {
+    const A = (typeof KH !== 'undefined' && KH && KH.OcrAuto) || null;
+    if (!A || typeof A.rowsFor !== 'function') return [];
+    const want0 = String(name == null ? '' : name).replace(/[@#＃!^%].*$/, '').trim();
+    if (!want0) return [];
+    const rows = [];
+    /* `rowsFor` 只认 `state:'done'` 的条目（面板里那一份）；这里补同形入参。
+     * 两次跑取并集：①带条目 label（与卡片行同源）；②不带 label（纯按正文标题判类型）。
+     * 为什么必须两次 —— 真机踩到：字段叫「…登记证书授权书」，`docOf` 按「授权书」判成 auth，
+     * 而 auth 的字段集里没有证书的 著作权人 / 登记号 ⇒ 第一遍是空的；正文标题其实是证书。 */
+    const body = String(raw == null ? '' : raw);
+    /* 第三遍：正文像证书时按证书再抽一次。
+     * 为什么必须有 —— 自动进表已按「只留证书」收敛（`ocr-auto.js` SETS 只有 cert/amend），
+     * 而字段名里带「授权书」时 `docOf` 会先判成 auth ⇒ 前两遍都是空的，
+     * 可用户要的恰恰是「这张授权书上的著作权人和登记号」。*/ 
+    const docLabels = [String(label || ''), ''];
+    if (/计算机软件|软件著作权|登记号/.test(body)) docLabels.push('计算机软件著作权登记证书');
+    if (/电子版权/.test(body)) docLabels.push('APP电子版权证书');
+    for (const withLabel of docLabels) {
+      let one = [];
+      try { one = A.rowsFor({ state: 'done', text: body, label: withLabel }) || []; } catch (e) { one = []; }
+      for (const r of one) rows.push(r);
+    }
+    const TN = KH.TextNorm;
+    const keyOf = (s) => (TN && typeof TN.keyOf === 'function'
+      ? TN.keyOf(s) : String(s == null ? '' : s).replace(/\s+/g, '').toLowerCase());
+    const want = keyOf(want0);
+    if (!want) return [];
+    const out = [];
+    for (const r of rows) {
+      const lab = keyOf(r && r.label);
+      if (!lab) continue;
+      if (lab !== want && !(want.length >= 2 && lab.indexOf(want) === 0)) continue;
+      const v = String((r && r.value) || '').trim();
+      if (v && out.indexOf(v) < 0) out.push(v);
+    }
+    return out;
+  }
+
+  /**
    * 判决：所有 `#比` 项都在 → `same`（一致）；缺任一项 → `diff`（不一致，点名缺哪些）。
    * 没配比对项 → `null`（不显示任何结论，也不涂色）。
    * @returns {null|{state:'same'|'diff', items:Array<{name:string,kind:string,ok:boolean}>, missing:string[]}}
@@ -853,17 +905,22 @@
     const items = [];
     for (const r of list) {
       let ok = false;
+      /* 值优先用页面 DOM / 上一轮进表值；一个都没有时退回**这张图自己 OCR 出来的字段值**
+       * （证书 / 授权书的 著作权人、登记号 属于后者）。 */
+      const vals = (r.kind === 'need')
+        ? ((r.values && r.values.length) ? r.values : textFieldValues(raw, r.name, field))
+        : [];
       if (r.kind === 'word') {
         ok = findInRaw(r.word, raw).length > 0;
       } else {
-        for (const v of (r.values || [])) {
+        for (const v of vals) {
           const needle = String(v == null ? '' : v);
           if (!needle.trim()) continue;
           if (valueInText(raw, needle)) { ok = true; break; }
         }
       }
-      /* `values` 带出去：面板要区分「图上有值但文字不同」与「页面这个字段根本没取到值」 */
-      items.push({ name: r.name, kind: r.kind, ok: ok, values: (r.kind === 'need' ? ((r.values || []).length) : 0) });
+      /* `values` 带出去：面板要区分「图上有值但文字不同」与「这个字段根本没取到值」 */
+      items.push({ name: r.name, kind: r.kind, ok: ok, values: (r.kind === 'need' ? vals.length : 0) });
     }
     const missing = items.filter((i) => !i.ok).map((i) => i.name);
     return { state: missing.length ? 'diff' : 'same', items: items, missing: missing };

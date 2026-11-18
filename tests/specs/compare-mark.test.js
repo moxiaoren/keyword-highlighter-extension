@@ -162,4 +162,39 @@ module.exports = async function run() {
       eq(O.matchedInText(rule('', '开发者#比'), '开发者', '截图').length, 0);
       eq(O.judgeInfo(rule('', '开发者#比'), '开发者', [], '截图').hits.length, 0);
     });
+
+  /* ---------- 用户 m07376 问题一 / 三：证书与授权书 ----------
+   * 现象：卡片上明明有「著作权人 · 宣城星岑科技有限公司」「登记号 · 2026SA0177412」，
+   * 面板却说「没取到值…在页面上没有内容，没法比」。
+   * 病根：比对只从页面 DOM 取值，而这两个值是**这张图 OCR 出来**的（OcrAuto 抽成卡片行）。 */
+
+  const AUTH_TEXT = '计算机软件著作权\n授权书\n授权方：宣城星岑科技有限公司\n被授权方：安徽普类智能科技有限公司\n'
+    + '授权方系《录音无损转文字》(登记号：\n2026SA0177412)作品的唯一合法人著作权方。';
+  const CERT_TEXT = '中华人民共和国国家版权局\n计算机软件著作权登记证书\n'
+    + '软件名称： 听栗英语APP V1.0\n著作权人： 云南拓景信息技术有限公司\n登 记 号： 2026SR0846404';
+
+  await test('★ 字段名里带「授权书」时，也要按证书正文判一致（不能因为 docOf 判成 auth 就没值）', () => {
+    const r = rule('', '登记号#比|著作权人#比');
+    const label = '计算机软件著作权登记证书授权书';
+    const reqs = O.cmpReqs(r, label, null);
+    eq(reqs.length, 2);
+    const j = O.cmpJudge(r, AUTH_TEXT, label, reqs);
+    eq(j.state, 'same', JSON.stringify(j));
+    eq(j.items[0].values > 0, true, '取到值就要带个数（面板据此不再报「没取到值」）');
+  });
+
+  await test('★ 软著证书的 登记号 / 著作权人 同样按图上的值判一致', () => {
+    const r = rule('', '登记号#比|著作权人#比');
+    const label = '计算机软件著作权登记证书';
+    const j = O.cmpJudge(r, CERT_TEXT, label, O.cmpReqs(r, label, null));
+    eq(j.state, 'same', JSON.stringify(j));
+  });
+
+  await test('★ 图上确实没有的项仍然判不一致（不能一律放行）', () => {
+    const r = rule('', '包名#比|登记号#比');
+    const label = '计算机软件著作权登记证书';
+    const j = O.cmpJudge(r, CERT_TEXT, label, O.cmpReqs(r, label, null));
+    eq(j.state, 'diff');
+    eq(j.missing.join('|'), '包名');
+  });
 };

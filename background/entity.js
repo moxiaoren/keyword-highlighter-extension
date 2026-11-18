@@ -34,6 +34,8 @@
   const MAX_ENTRIES = 200;
   const TIMEOUT_MS = 12000;
   const GAP_MS = 1200;
+/* 360 让爱企查先跑多久：给足登录态标签页首屏渲染的时间，又不至于整轮变慢。 */
+const SO360_HEADSTART_MS = 1200;
   const MAX_HTML = 400000;
   const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
 
@@ -462,17 +464,35 @@
     }
     /* 只查单位：个人当主体时，面板那边直接按「本人就是法人」处理，不该来打网络。 */
     const errors = [];
-    /* 2026-11-16：爱企查优先（用浏览器里的登录态开后台标签页读 DOM，最准），360 兜底。 */
+    /* 2026-11-16：爱企查优先（用浏览器里的登录态开后台标签页读 DOM，最准），360 兜底。
+     * 【2026-11-18 用户问题二】两条通道原来是**串行**的：爱企查 9s 预算用满再交给 360 打三枪，
+     * 合计常常超过面板 20s 的等待，卡片就留一个「⏱ 超时」。现在同时起跑：
+     * 爱企查先跑，360 延后 SO360_HEADSTART_MS 再上（爱企查先出结论就不白打 360），
+     * 谁先给出结论用谁，慢的那条自己结束。 */
     const channels = [fromAiqicha, fromSo360];
-    for (let i = 0; i < channels.length; i++) {
-      try {
-        const r = await serial(() => channels[i](name));
-        cache[key] = { rep: r.rep, source: r.source, at: Date.now(), name: name };
-        await writeCache(cache);
-        return { ok: true, rep: r.rep, source: r.source, name: name };
-      } catch (err) {
-        errors.push(String((err && err.message) || err));
-      }
+    const r = await new Promise(function (resolve) {
+      let pending = channels.length;
+      let done = false;
+      channels.forEach(function (ch, i) {
+        const go = function () {
+          serial(function () { return ch(name); }).then(function (out) {
+            if (done) return;
+            done = true;
+            resolve(out);
+          }).catch(function (err) {
+            errors.push(String((err && err.message) || err));
+            pending -= 1;
+            if (!done && pending === 0) { done = true; resolve(null); }
+          });
+        };
+        if (i === 0) go();
+        else setTimeout(go, SO360_HEADSTART_MS);
+      });
+    });
+    if (r && r.rep) {
+      cache[key] = { rep: r.rep, source: r.source, at: Date.now(), name: name };
+      await writeCache(cache);
+      return { ok: true, rep: r.rep, source: r.source, name: name };
     }
     const errText = errors.join('；') || '查询失败';
     cache[key] = { rep: '', miss: true, error: errText, at: Date.now(), name: name };

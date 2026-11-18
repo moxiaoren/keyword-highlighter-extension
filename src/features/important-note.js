@@ -5091,6 +5091,34 @@
     });
   }
 
+  /* 【用户 m07376 问题二】后台查到了晚到的法人结果 ⇒ 先把值塞进面板缓存，再重画一次。
+   * 重画走 `panel.refresh()`：`paintEntity` 的签名守卫要求行是新的，刷新恰好重建行；
+   * 而这一步的查询全打在缓存上，是同步的，不会再发网络请求。
+   * 节流 300ms：同一张卡的两个公司名可能先后回来，别连着重画两次。 */
+  let entReadyTimer = 0;
+  const entReadyNames = [];
+  function onEntityReady(msg) {
+    const name = String((msg && msg.name) || '').trim();
+    const rep = String((msg && msg.rep) || '').trim();
+    if (!name || !rep) return;
+    if (panel._entCache && typeof panel._entCache.set === 'function') panel._entCache.set(name, rep);
+    if (entReadyNames.indexOf(name) < 0) entReadyNames.push(name);
+    if (entReadyTimer) return;
+    entReadyTimer = setTimeout(() => {
+      entReadyTimer = 0;
+      entReadyNames.length = 0;
+      if (panel.host) panel.refresh();
+    }, 300);
+  }
+  if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage &&
+      typeof chrome.runtime.onMessage.addListener === 'function') {
+    const MSG = (KH && KH.MSG) || {};
+    chrome.runtime.onMessage.addListener((msg) => {
+      if (!msg || msg.type !== MSG.ENTITY_READY) return;
+      try { onEntityReady(msg); } catch (e) { /* 重画失败不影响主流程 */ }
+    });
+  }
+
   /* `paintHits` 直接导出给单测：灯箱要在垫片里走完 openLightbox 那条路成本太高（宿主/影子根/
    * 相册/停靠都在里面），而这个函数是纯 DOM 构造，喂文本就能验。
    * `markPdf` 同理由：三态判据（蓝/绿/红）就是这条需求的验收点，不该为了测它去搭整块面板。 */

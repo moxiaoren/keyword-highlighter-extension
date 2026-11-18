@@ -162,5 +162,21 @@ module.exports = async function run() {
     eq(KH.Scope.scopeIssues('一对一@开发者|x@登记号|y@著作权人', ['开发者', '登记号', '著作权人'],
       { needText: true }).length, 0);
   });
+
+  /* ---------- 用户 m07376 问题四：`#比` 是比对标记，不是字段名的一部分 ----------
+   * 真机现象：`@融资担保业务经营许可证#比` 被报成「不是已配的抓取字段」。
+   * 运行时 `splitScope` 本来就剥 `#比`，所以功能其实是生效的 —— 纯诊断误报。 */
+
+  await test('★ `@字段#比` 不再被报成「不是已配的抓取字段」', () => {
+    eq(KH.Scope.scopeIssues('@融资担保业务经营许可证#比', ['融资担保业务经营许可证']).length, 0);
+    eq(KH.Scope.scopeIssues('@计算机软件著作权登记证书授权书#比',
+      ['计算机软件著作权登记证书授权书']).length, 0);
+  });
+
+  await test('★ `#比` 与 `#表` 任意顺序都能剥干净', () => {
+    eq(KH.Scope.scopeIssues('@开发者#表#比', ['开发者']).length, 0);
+    eq(KH.Scope.scopeIssues('@开发者#比#表', ['开发者']).length, 0);
+    eq(KH.Scope.splitChip('致方#表#比', []).name, '致方');
+  });
 };
 

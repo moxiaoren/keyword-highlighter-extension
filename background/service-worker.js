@@ -480,7 +480,21 @@ const HANDLERS = {
 
   /* ---- 【2.0.8.8 需求③】查法定代表人（免费免登陆：爱企查 → 必应，见 background/entity.js）----
    * 只读查询：失败一律回 `{ok:false,error}`，面板据此保持原底色（用户口径：未查明不改色）。 */
-  [MSG.ENTITY_LOOKUP]: (msg) => self.KH.Entity.lookup(msg || {}),
+  [MSG.ENTITY_LOOKUP]: (msg, sender) => {
+    const name = String((msg && msg.name) || '').trim();
+    const p = self.KH.Entity.lookup(msg || {});
+    /* 【用户 m07376 问题二】面板只等 20 秒，而爱企查标签页常常要更久。
+     * 结果晚到也要送回去：同一标签页里的面板收到 ENTITY_READY 就地重画，
+     * 用户不用关卡片重开（以前只写后台缓存，面板停在「⏱ 超时」）。 */
+    const tabId = (sender && sender.tab && sender.tab.id) || 0;
+    if (tabId) {
+      p.then((res) => {
+        if (!res || !res.ok || !res.rep) return;
+        try { chrome.tabs.sendMessage(tabId, { type: MSG.ENTITY_READY, name: name, rep: String(res.rep) }); } catch (e) { /* 标签页已关 */ }
+      }, () => { /* 查询失败：面板自己按未查明收口 */ });
+    }
+    return p;
+  },
 
   /* ---- 【2.0.8.15 需求①】隐私政策链接正文（用户口径：打开链接明明有，判定却说没有）----
    * 内容脚本里的 fetch 按页面来源走 CORS，政策站点不会放行；这里用扩展来源抓 + 7 天缓存，

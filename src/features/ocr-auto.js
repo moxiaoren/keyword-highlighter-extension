@@ -42,8 +42,32 @@
    * 纯数字、纯字母、把公司名/电话带进来的一律不算。 */
   var CODE_RE = /^(?:19|20)\d{2}[A-Z]{1,3}\d{5,10}$/;
   var CN_CODE_RE = /^(?:软著登字第|第)\d{4,8}号$/;
-  function okCode(v) {
+  /* OCR 常把数字认成字母（0↔O、1↔I/l、5↔S、8↔B、2↔Z…）。证书图上「2026SR08464O4」只因
+   * 一个 O 就整条丢掉，卡片上就没有登记号（2026-11-18 用户样图）。
+   * 这里只把**数字位**上的易混字符改回来，字母段（SR / SA）原样保留 ——
+   * 否则「2026SR」这类字母段会被吃成数字，纯数字串也会误判成编号。 */
+  var CONFUSE = { O: '0', Q: '0', D: '0', I: '1', L: '1', Z: '2', A: '4', S: '5', G: '6', T: '7', B: '8' };
+  function fixDigits(s) {
+    var o = '';
+    for (var i = 0; i < s.length; i++) {
+      var c = s.charAt(i);
+      o += (CONFUSE[c] || c);
+    }
+    return o;
+  }
+  /* 归一后的编号（判形状与展示都用它，卡片上显示的是修好的号码）。 */
+  function normalizeCode(v) {
     var s = String(v == null ? '' : v).replace(/\s+/g, '').toUpperCase();
+    var m = /^([0-9OQDILSZAGTB]{4})([A-Z]{1,3})([0-9A-Z]{5,10})$/.exec(s);
+    if (m) {
+      var y = fixDigits(m[1]);
+      var tail = fixDigits(m[3]);
+      if (/^(?:19|20)\d{2}$/.test(y) && /^\d{5,10}$/.test(tail)) return y + m[2] + tail;
+    }
+    return s;
+  }
+  function okCode(v) {
+    var s = normalizeCode(v);
     if (!s || s.length > 40) return false;
     return CODE_RE.test(s) || CN_CODE_RE.test(s);
   }
@@ -185,10 +209,16 @@
     return false;
   }
 
+  /* 【2026-11-18 用户问题五】抓取字段名常常是「计算机软件著作权登记证书授权书」这种
+   * 复合叫法 —— 图片本身是证书，只因为名字里带「授权书」就被判成授权书，登记号/著作权人
+   * 整条不抽。判据：正文前 12 行有证书标题、且有登记号/认证号 ⇒ 按证书抽。 */
+  function isCertBody(it) {
+    return certTitle(it) && /登\s*记\s*号|认\s*证\s*号/.test(textOf(it));
+  }
   function docOf(it) {
     var label = String((it && it.label) || '');
     if (/变更或补充证明|变更证明|变补字/.test(label)) return 'amend';
-    if (/授权书/.test(label)) return 'auth';
+    if (/授权书/.test(label)) return isCertBody(it) ? 'cert' : 'auth';
     if (/承诺函|承诺书/.test(label)) return 'promise';
     if (/备案核准|备案通知|备案证明|APP\s*备案|应用备案/i.test(label)) return 'record';
     /* 【2026-11-17 用户报障】「电子版权认证证书」里也含「认证证书」，原来先判 license 就把它
@@ -198,7 +228,7 @@
     if (/合作协议|联运协议|推广协议|代理协议|资质|许可协议|授权协议/.test(label)) return 'agreement';
     var head = headOf(it);
     if (/变更或补充证明|变更证明|变补字/.test(head)) return 'amend';
-    if (/授权书/.test(head)) return 'auth';
+    if (/授权书/.test(head)) return isCertBody(it) ? 'cert' : 'auth';
     if (/承诺函|承诺书/.test(head)) return 'promise';
     if (/备案核准|备案通知|备案证明|APP\s*备案|应用备案/i.test(head)) return 'record';
     /* 证书判定必须在 license 之前：见上面 label 分支的同一条说明。 */
@@ -588,27 +618,33 @@
   function regNoValues(lines, full) {
     var out = [];
     function add(v) {
-      var s = String(v == null ? '' : v).replace(/\s+/g, '').toUpperCase();
-      if (!s || !okCode(s)) return;
+      var s = normalizeCode(v);
+      if (!s || !okCode(s)) return false;
       if (out.indexOf(s) < 0) out.push(s);
+      return true;
     }
     /* ① 固定形状：年份 + 1–3 位字母 + 5–10 位数字（`2026SR0635345` / `2023SR1234567`）。
-     *    标签读成 `记 号` / `认 证 号` 也不影响。 */
-    var m = /(?:19|20)\d{2}\s*[A-Za-z]{1,3}\s*\d{5,10}/.exec(full);
-    if (m) { add(m[0]); return out; }
-    /* ② 登记号标签行：标签可能被读散（`登 记 号` / `记 号`），在行内找代码。 */
+     *    标签读成 `记 号` / `认 证 号` 也不影响。
+     *    数字位允许 OCR 易混字符（O/I/S/B…），由 normalizeCode 改回来再判形状。 */
+    var SHAPE = /([0-9OQDILSZAGTB]{4}\s*[A-Za-z]{1,3}\s*[0-9OQDILSZAGTB]{5,10})/;
+    var m = SHAPE.exec(full);
+    if (m && add(m[1])) return out;
+    /* ② 登记号标签行：标签可能被读散（`登 记 号` / `记 号`），在行内找代码；
+     *    号码被挤到**下一行**时（竖排证书常见）再看一眼下一行。 */
+    var LABEL = /登\s*记\s*号|认\s*证\s*号|认\s*证\s*编\s*号|记\s*号/;
     for (var i = 0; i < lines.length; i++) {
       var line = lines[i];
-      if (!/登\s*记\s*号/.test(line) && !/认\s*证\s*号/.test(line) && !/认\s*证\s*编\s*号/.test(line) && !/记\s*号/.test(line)) continue;
-      var code = /((?:19|20)\d{2}\s*[A-Za-z]{1,3}\s*\d{5,10})/.exec(line) ||
+      if (!LABEL.test(line)) continue;
+      var code = SHAPE.exec(line) ||
                  /((?:软著登字第|第)\s*\d{4,8}\s*号)/.exec(line);
-      if (code) { add(code[1]); return out; }
+      if (!code && lines[i + 1]) code = SHAPE.exec(lines[i + 1]);
+      if (code && add(code[1])) return out;
     }
     /* ③ 中文形兜底：`证书号 软著登字第…号` 那一行不是登记号，跳过。 */
     for (var j = 0; j < lines.length; j++) {
       if (/证书号/.test(lines[j]) && !/登记号|认证号/.test(lines[j])) continue;
       var cn = /((?:软著登字第|第)\s*\d{4,8}\s*号)/.exec(lines[j]);
-      if (cn) { add(cn[1]); return out; }
+      if (cn && add(cn[1])) return out;
     }
     return out;
   }

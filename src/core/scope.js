@@ -15,6 +15,10 @@
 
   const WHITE_ALL = /\s+/g;
   const KV_MARK = /(?:#|＃)\s*(?:表|kv)\s*$/i;
+  /* `#比` 是**比对标记**，不是字段名的一部分（用户 m07376 问题四：`@融资担保业务经营许可证#比`
+   * 被报成「不是已配的抓取字段」纯属诊断误报 —— 运行时 `splitScope` 早把它剥掉了）。
+   * 这里与 KV_MARK 一起循环剥，顺序不限：`致方#表#比` / `致方#比#表` 都要能剥干净。 */
+  const CMP_MARK = /(?:#|＃)\s*(?:比|cmp)\s*$/i;
   /* 取值后缀（`^锚点` `!` `%`）绝不可能出现在**字段名**里：它属于「抓取后续字段」那一格 */
   const SUFFIX_RE = /[!^%]/;
 
@@ -60,8 +64,14 @@
   function splitChip(chip, known) {
     let s = String(chip == null ? '' : chip).trim();
     let mark = '';
-    const km = KV_MARK.exec(s);
-    if (km) { mark = km[0]; s = s.slice(0, km.index).trim(); }
+    let cmpMark = '';
+    for (;;) {
+      const cm = CMP_MARK.exec(s);
+      if (cm) { cmpMark = cm[0] + cmpMark; s = s.slice(0, cm.index).trim(); continue; }
+      const km = KV_MARK.exec(s);
+      if (km) { mark = km[0]; s = s.slice(0, km.index).trim(); continue; }
+      break;
+    }
     const list = known || [];
     const scopes = [];
     for (;;) {
@@ -74,7 +84,7 @@
       if (scopes.indexOf(hit) < 0) scopes.unshift(hit);
       s = s.slice(0, m.index).trim();
     }
-    return { name: s, scopes: scopes, mark: mark, rest: s + mark };
+    return { name: s, scopes: scopes, mark: mark, rest: s + cmpMark + mark };
   }
 
   /** 编辑距离（只用来给"是不是某个已配字段"的建议，不做模糊判定） */
@@ -143,8 +153,13 @@
   function issueOf(chip, known, opts) {
     const orig = String(chip == null ? '' : chip);
     let s = orig.trim();
-    const km = KV_MARK.exec(s);
-    if (km) s = s.slice(0, km.index).trim();
+    for (;;) {
+      const cm = CMP_MARK.exec(s);
+      if (cm) { s = s.slice(0, cm.index).trim(); continue; }
+      const km = KV_MARK.exec(s);
+      if (km) { s = s.slice(0, km.index).trim(); continue; }
+      break;
+    }
     const list = known || [];
     for (;;) {
       const m = /@([^@\s]+)$/.exec(s);
