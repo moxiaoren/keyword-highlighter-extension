@@ -185,8 +185,11 @@
     };
     function take(url) {
       if (finished || !url) return;
+      /* 页面把相对地址（assets/x.pdf）交给 window.open 是常态：取到的原始参数必须先绝对化。 */
+      const u = absPdfUrl(url);
+      if (!u) return;
       cleanup(true);
-      rememberAutoPdf(host, url);
+      rememberAutoPdf(host, u);
     }
     function onMsg(m) {
       if (!m || m.type !== MSG.PDF_GRAB_RESULT || m.requestId !== requestId) return;
@@ -2263,7 +2266,7 @@
      * 标记对不上号（一个按页面元素建条目、一个按渲染出来的 `data-khpdf` 挂状态）。 */
     pdfRefOf, pdfPlaceholder,
     /* 【2026-11-18 用户口径】没有地址的 PDF 控件：只读判据 + 单测注入口（点一次→抓新标签地址） */
-    AUTO_PDF_SEL, autoPdfHostOf, autoPdfOf, rememberAutoPdf,
+    AUTO_PDF_SEL, autoPdfHostOf, autoPdfOf, rememberAutoPdf, absPdfUrl,
     rowsToTableHtml, blockFor, triggerOk, fakeRightValue, nearestTable, isPlaceholderText,
     /* 图片选项（仅图片 / 前 N 张）：单测直接锁 */
     applyImgPolicy,

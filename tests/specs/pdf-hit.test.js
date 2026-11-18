@@ -249,6 +249,13 @@ module.exports = async function run() {
     falsy(has(busy, 'khin-pdfbusy'), '`it` 为空 ⇒ 三个状态框全清（换帧/无条目时不许留残影）');
   });
 
+  await test('★ 抓到的相对地址要绝对化：页面把 assets/x.pdf 交给 window.open 是常态', () => {
+    eq(F.absPdfUrl('assets/attachment.pdf'), new URL('assets/attachment.pdf', location.href).href,
+      '相对地址必须按当前页解析，否则面板里存的是用不了的短地址');
+    eq(F.absPdfUrl('  assets/a.pdf  '), new URL('assets/a.pdf', location.href).href, '两侧空白要剪掉');
+    eq(F.absPdfUrl('https://cdn.test/a.pdf'), 'https://cdn.test/a.pdf', '已经是绝对地址就原样留着');
+    eq(F.absPdfUrl('javascript:void(0)'), '', '脚本伪地址不许当 PDF 地址');
+  });
   /* 等一拍：抓取回填的重算定时器还挂着，别让它落到后面的用例里（会污染调度器断言） */
   await new Promise((r) => setTimeout(r, 250));
   KH.rebuild = savedRebuild;

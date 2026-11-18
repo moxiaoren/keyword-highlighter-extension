@@ -250,25 +250,29 @@ function mainWorldPdfHook(rid, KEY, clickMode) {
     st.stub = function (u) {
       try { if (u) send(u); } catch (e) {}
       restoreOpen();
-      return null;
+      /* 页面可能拿返回值当窗口用（`.focus()` / `.close()`），给个哑对象比 null 安全。 */
+      return { focus: function () {}, close: function () {}, closed: false, location: { href: String(u || '') } };
     };
     try { window.open = st.stub; } catch (e) { st.stub = null; }
   }
-  /* 唯一会动页面行为的地方：**我们自己的合成点击**落在 PDF 控件里、且控件里没有真 http 链接时，
-   * 拦掉默认跳转（有真链接就不必拦，后台盯标签就能拿到地址）。
-   * 用户真点的（isTrusted）与页面上的其他链接一律不碰。 */
+  /* 唯一会动页面行为的地方：**我们自己的合成点击**落在「有明确 .pdf 地址的锚点」上时，
+   * 截下地址并拦掉默认跳转（地址已知，不必真开标签）。
+   * 【用户实测 2026-11-18】旧写法对 PDF 控件内的一切合成点击都 preventDefault + stopPropagation，
+   * 而真实站点是「控件本身没有 href、由页面自己的 click 监听去 window.open」——
+   * 拦掉冒泡，页面脚本压根不执行，window.open 一次都没调 ⇒ 永远抓不到地址。
+   * 现在：控件的地址未知时**不拦**，让页面自己跑，靠 st.stub 截 window.open。
+   * 用户真点的（isTrusted）一律不碰。 */
   st.click = function (ev) {
     try {
       if (!clickMode || (ev && ev.isTrusted)) return;
       var t = ev && ev.target;
-      var host = (t && t.closest) ? t.closest('.content-pdf, [class*="content-pdf"], [data-pdf]') : null;
-      if (!host) return;
-      var a = (t && t.closest) ? t.closest('a[href], area[href]') : null;
+      if (!t || !t.closest) return;
+      var a = t.closest('a[href], area[href]');
       var href = a ? (a.href || a.getAttribute('href') || '') : '';
-      if (href && /^https?:/i.test(href)) return;
+      var known = href && /^https?:/i.test(href) && /\.pdf(?=$|[?#&/])/i.test(href.split('#')[0]);
+      if (!known) return;
+      send(href);
       ev.preventDefault();
-      ev.stopPropagation();
-      if (!href) send('');
     } catch (e) {}
   };
   if (clickMode) doc.addEventListener('click', st.click, true);
