@@ -230,9 +230,20 @@
       openGrabWindow(host, false);
     }, true);
   }
+  const autoPdfTriedByKey = (typeof Map === 'function') ? new Map() : null;
+  const AUTO_PDF_MAX_GRABS = 8;
+  let autoPdfGrabCount = 0;
   function kickAutoPdf(el) {
     const host = autoPdfHostOf(el);
     if (!host || autoPdfOf(host) || (autoPdfTried && autoPdfTried.has(host))) return;
+    /* 【用户实测 m05720】页面每重画一次控件就换新节点，WeakSet 记不住它 ⇒ 反复开抓取窗口，
+     * 主世界钩子一轮接一轮挂上去，页面自己的 window.open 与点击就全被吞了。
+     * 再按「页地址 + 控件下标」记一份，并给一页最多 8 次的上限。 */
+    const key = autoPdfKeyOf(host);
+    if (key && autoPdfTriedByKey && autoPdfTriedByKey.has(key)) return;
+    if (autoPdfGrabCount >= AUTO_PDF_MAX_GRABS) return;
+    if (key && autoPdfTriedByKey) autoPdfTriedByKey.set(key, Date.now());
+    autoPdfGrabCount++;
     if (autoPdfTried) autoPdfTried.add(host);
     bindAutoPdfUserClick();
     openGrabWindow(host, true);

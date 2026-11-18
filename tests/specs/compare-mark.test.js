@@ -140,4 +140,26 @@ module.exports = async function run() {
       eq(r.state, 'diff');
       eq(r.missing.join('|'), '开发者');
     });
+  /* 【2026-11-18 用户 m05666】比对项退出命中判定：
+   * 「配了比对，且能不能比对成功的情况，这个词不影响图片是不是标红框。
+   *   比如图片1配了 a 和 b，其中 a 是比对。OCR 有 a 无 b ⇒ 绿框无命中；有 a 有 b ⇒ 红框，b 命中。」
+   * ⇒ `#比` 的词不进命中词正则；只有比对取值（needSpecs(withCmp)）才带它们。 */
+  suite('2.0.11 比对项不进命中判定（用户 m05666）');
+
+    await test('★ 配了 #比 的词不算命中：图上有 a 无 b ⇒ 不命中', () => {
+      const r = rule('甲公司#比|乙公司');
+      eq(O.matchedInText(r, '兹证明 甲公司', '截图').length, 0, 'a 只用于比对，不算命中');
+      eq(O.judgeInfo(r, '兹证明 甲公司', [], '截图').hits.length, 0, '框该是绿的');
+    });
+
+    await test('★ 有 a 有 b ⇒ 只有 b 算命中（红框点名的也只有 b）', () => {
+      const hits = O.judgeInfo(rule('甲公司#比|乙公司'), '甲公司 乙公司', [], '截图').hits;
+      eq(hits.length, 1);
+      eq(hits[0].text, '乙公司');
+    });
+
+    await test('★ 动态判据里带 #比 的字段同样不参与命中（只在比对时取值）', () => {
+      eq(O.matchedInText(rule('', '开发者#比'), '开发者', '截图').length, 0);
+      eq(O.judgeInfo(rule('', '开发者#比'), '开发者', [], '截图').hits.length, 0);
+    });
 };

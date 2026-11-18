@@ -493,6 +493,17 @@
     if (mine.length) return mine.map((p) => p.text).join('|');
     return parts.filter((p) => !p.scopes.length).map((p) => p.text).join('|');
   }
+  /** 【用户口径 m05666】只取「参与命中判定」的词：带 `#比` 的那些**只用来比**，
+   *  绝不能让图片变红/变绿。作用域规则与 `scopedRaw` 完全一致，唯一差别是剔掉 cmp 词。 */
+  function scopedHitRaw(raw, field, known) {
+    const chips = kvChips(raw);
+    if (!chips.length) return '';
+    const parts = chips.map((c) => splitScope(c, known));
+    const key = String(field == null ? '' : field).trim();
+    const mine = key ? parts.filter((p) => !p.cmp && p.scopes.some((sc) => sameField(sc, key))) : [];
+    if (mine.length) return mine.map((p) => p.text).join('|');
+    return parts.filter((p) => !p.cmp && !p.scopes.length).map((p) => p.text).join('|');
+  }
 
   /* ---------------- 【#116 需求】指向诊断：写错的 `@字段名` 不再静默 ----------------
    * 现状：`splitScope` 遇到配不上的 `@…` 就停手、整段按普通词处理（2.0.7.1 是为了让把
@@ -531,7 +542,7 @@
    */
   function ocrPatternOf(rule, field) {
     const known = scopeKnown(rule);
-    const raw = stripKvMarks(scopedRaw(rule && rule.meta && rule.meta.imgOcrKeyword, field, known)).trim();
+    const raw = stripKvMarks(scopedHitRaw(rule && rule.meta && rule.meta.imgOcrKeyword, field, known)).trim();
     if (!raw) return null;
     return patternOf(raw);
   }
@@ -649,7 +660,7 @@
 
   function matchedInText(rule, text, field) {
     const known = scopeKnown(rule);
-    const rawKeyword = stripKvMarks(scopedRaw(rule && rule.meta && rule.meta.imgOcrKeyword, field, known)).trim();
+    const rawKeyword = stripKvMarks(scopedHitRaw(rule && rule.meta && rule.meta.imgOcrKeyword, field, known)).trim();
     if (!rawKeyword) return [];
     return findInRaw(rawKeyword, text);
   }
@@ -691,7 +702,7 @@
       start: h.start, end: h.end, text: h.text, how: 'stat'
     }));
     const known = scopeKnown(rule);
-    const hasStatic = !!stripKvMarks(scopedRaw(rule && rule.meta && rule.meta.imgOcrKeyword, field, known)).trim();
+    const hasStatic = !!stripKvMarks(scopedHitRaw(rule && rule.meta && rule.meta.imgOcrKeyword, field, known)).trim();
     const dyn = (need || []).filter(Boolean);
     if (!dyn.length) return { hits: stat, missingValues: [], weakValues: [], staticMiss: false };
     const TN = KH.TextNorm;
@@ -768,7 +779,7 @@
   function cmpFieldValues(anchor, rawSpec, field, meta) {
     if (!anchor) return [];
     const sub = { meta: Object.assign({}, meta || {}, { imgOcrNeed: String(rawSpec || '') }) };
-    try { return needInfo(anchor, sub, field).values || []; } catch (e) { return []; }
+    try { return needInfo(anchor, sub, field, { withCmp: true }).values || []; } catch (e) { return []; }
   }
 
   /**
@@ -886,7 +897,7 @@
    *  —— 与「抓取字段」同一套语法、同一份实现（`Fetch.extractFor` 自己会解析）。
    *  旧实现只留裸名（`parseLabelSpec(s).label`），于是 `^高价` 静默失效、拿到的是原始整格
    *  「a公司 高价值」，用户要的「a公司」永远出不来。`raw` 因此必须原样带走。 */
-  function needSpecs(rawLabels, field, known) {
+  function needSpecs(rawLabels, field, known, withCmp) {
     const out = [];
     const parse = (KH.Fetch && typeof KH.Fetch.parseLabelSpec === 'function') ? KH.Fetch.parseLabelSpec : null;
     const parts = String(rawLabels || '').split(/[,，、|;]/)
@@ -895,7 +906,10 @@
     const key = String(field == null ? '' : field).trim();
     const mine = key ? parts.filter((p) => p.scopes.some((sc) => sameField(sc, key))) : [];
     /* 覆盖式：这个字段有 `@字段名` 词 ⇒ 只用它们；否则用全部无作用域的（旧行为） */
-    const pick = mine.length ? mine : parts.filter((p) => !p.scopes.length);
+    const pickAll = mine.length ? mine : parts.filter((p) => !p.scopes.length);
+    /* 【用户口径 m05666】`#比` 项**只用来比**：不进动态判据、不决定图片红/绿框。
+     * 只有比对取值自己（`cmpFieldValues`）才带着它们进来。 */
+    const pick = withCmp ? pickAll : pickAll.filter((p) => !p.cmp);
     for (const p of pick) {
       const raw = String(p.text || '').trim();
       if (!raw) continue;
@@ -929,10 +943,10 @@
    *   `want` 是用户点名的字段名（已剥后缀）；
    *   `missing` 是**点名了但没在抓取结果里出现**的字段名。
    */
-  function needInfo(hitOrCell, rule, field) {
+  function needInfo(hitOrCell, rule, field, opts) {
     const meta = (rule && rule.meta) || {};
     const known = scopeKnown(rule);
-    const specs = needSpecs(meta.imgOcrNeed, field, known);
+    const specs = needSpecs(meta.imgOcrNeed, field, known, !!(opts && opts.withCmp));
     const want = specs.map((s) => s.label);
     const info = { values: [], want: want, missing: [], weak: [], fromExtra: [] };
     if (!want.length) return info;                    // 留空即旧行为：没有动态判据

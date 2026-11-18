@@ -226,9 +226,14 @@ function headIsPdf(u) {
  * 两个函数是注入到页面里跑的，必须自包含，拿不到本文件的任何东西。 */
 function mainWorldPdfHook(rid, KEY, clickMode) {
   var doc = document;
-  var st = { rid: rid, stopped: false, open: window.open, click: null, stop: null };
-  /* clickMode=false（用户自己点）：只旁听，绝不 preventDefault、绝不动 window.open ——
-   * 页面上原生的 PDF 链接该开标签就开，用户的点击不能被插件改写。 */
+  var prev = window[KEY];
+  try { if (prev && typeof prev.stop === 'function') prev.stop(); } catch (e) {}
+  var st = { rid: rid, stopped: false, open: window.open, stub: null, click: null, timer: 0 };
+  /* 还原 window.open 前先确认「现在挂的还是我们那个」：页面自己换过就不许覆盖。 */
+  function restoreOpen() {
+    try { if (st.stub && window.open === st.stub) window.open = st.open; } catch (e) {}
+    st.stub = null;
+  }
   function send(url) {
     if (st.stopped) return;
     var u = String(url == null ? '' : url).trim();
@@ -237,45 +242,47 @@ function mainWorldPdfHook(rid, KEY, clickMode) {
       doc.dispatchEvent(new CustomEvent('kh:pdf:grabbed', { detail: JSON.stringify({ requestId: rid, url: u }) }));
     } catch (e) {}
   }
-  try { if (window[KEY] && typeof window[KEY].stop === 'function') window[KEY].stop(); } catch (e) {}
+  /* clickMode=false（用户自己点）：**一个字节都不改页面** —— 不覆盖 window.open、不挂监听。
+   * clickMode=true（插件替用户点）：只接管 window.open 一下，截到地址立刻还原。
+   * 【用户实测 m05720】旧写法把 window.open 一直挂到 9 秒超时，页面自己的开窗全被吞掉；
+   * 现在截到（或 8 秒自愈定时器到期）就一定还原。 */
   if (clickMode) {
-    /* 只有「插件替用户点」这一次才接管开窗：截到地址就不真的开。 */
-    window.open = function (u) {
+    st.stub = function (u) {
       try { if (u) send(u); } catch (e) {}
+      restoreOpen();
       return null;
     };
+    try { window.open = st.stub; } catch (e) { st.stub = null; }
   }
-  function PDFP(a) {
-    try { return /\.pdf(?=$|[?#&/])/i.test(a.href || '') || !a.isTrusted; } catch (e) { return false; }
-  }
+  /* 唯一会动页面行为的地方：**我们自己的合成点击**落在 PDF 控件里、且控件里没有真 http 链接时，
+   * 拦掉默认跳转（有真链接就不必拦，后台盯标签就能拿到地址）。
+   * 用户真点的（isTrusted）与页面上的其他链接一律不碰。 */
   st.click = function (ev) {
     try {
-      var t = ev.target;
+      if (!clickMode || (ev && ev.isTrusted)) return;
+      var t = ev && ev.target;
       var host = (t && t.closest) ? t.closest('.content-pdf, [class*="content-pdf"], [data-pdf]') : null;
+      if (!host) return;
       var a = (t && t.closest) ? t.closest('a[href], area[href]') : null;
-      if (!host && !a) return;
       var href = a ? (a.href || a.getAttribute('href') || '') : '';
-      if (!href) {
-        /* 控件里没有锚点：地址只有页面脚本知道，走 window.open 那条（clickMode 已接管）或干脆抓不到 */
-        if (clickMode) send('');
-        return;
-      }
-      if (!/^https?:/i.test(href)) return;
-      /* 旁听模式下只在「这次点击跟 PDF 控件有关」时给地址，普通链接一律放过 */
-      if (!host && !PDFP(a)) return;
-      /* 用户真点（可信事件）且不在 PDF 控件内 ⇒ 一律放过：原生 PDF 链接该开标签就开（用户口径 m05354） */
-      if (!host && ev.isTrusted) return;
-      if (clickMode) { ev.preventDefault(); ev.stopPropagation(); }
-      send(href);
+      if (href && /^https?:/i.test(href)) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      if (!href) send('');
     } catch (e) {}
   };
-  doc.addEventListener('click', st.click, true);
+  if (clickMode) doc.addEventListener('click', st.click, true);
   st.stop = function () {
+    if (st.stopped) return;
     st.stopped = true;
-    try { window.open = st.open; } catch (e) {}
+    restoreOpen();
     try { doc.removeEventListener('click', st.click, true); } catch (e) {}
+    try { if (st.timer) clearTimeout(st.timer); } catch (e) {}
+    st.timer = 0;
     try { if (window[KEY] === st) delete window[KEY]; } catch (e) {}
   };
+  /* 页面内自愈：后台标签页被回收 / stop 没送到时，8 秒后也一定还原（绝不长期劫持）。 */
+  try { st.timer = setTimeout(function () { try { st.stop(); } catch (e) {} }, 8000); } catch (e) {}
   window[KEY] = st;
 }
 function mainWorldPdfHookStop(KEY) {
@@ -345,9 +352,11 @@ function openPdfGrab(tabId, requestId, clickMode) {
     if (st.done || !tab || tab.id == null || tab.id === tabId) return;
     if (!st.createdId) st.createdId = tab.id;
     if (tab.id !== st.createdId) return;
-    /* 只用来读地址，不该打断你正在看的页面：立刻压后台，把原标签还回前台 */
-    try { chrome.tabs.update(tab.id, { active: false }); } catch (e) {}
-    backToPage();
+    /* 只有「插件替用户点」的那次才压后台：用户自己点开的标签必须正常打开（用户口径 m05354） */
+    if (st.click) {
+      try { chrome.tabs.update(tab.id, { active: false }); } catch (e) {}
+      backToPage();
+    }
     consider(tab.id, tab.url || tab.pendingUrl);
   };
   st.onUpdated = (id, info, tab) => {
@@ -356,8 +365,8 @@ function openPdfGrab(tabId, requestId, clickMode) {
     if (id !== st.createdId) return;
     consider(id, (info && info.url) || (tab && tab.url));
   };
-  /* 用户在页面上自己点开的新标签**不归我们管**：只装钩子旁听地址，不盯标签、不关标签 */
-  if (st.click) {
+  /* 两个模式都旁听新标签：用户自己点开的那次也能把地址记下来（不压后台、不关标签、不切前台） */
+  {
     chrome.tabs.onCreated.addListener(st.onCreated);
     chrome.tabs.onUpdated.addListener(st.onUpdated);
   }

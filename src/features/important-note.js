@@ -523,13 +523,6 @@
     .kh-verdict[data-state="timeout"] { background: #fff7ed; color: #9a3412; border-color: #fdba74; border-style: dashed; }
   /* 【2.0.13】⚙ 待配置：责任在配置，不在数据 —— 用中性的靛色虚线，别和「⚠ 待确认」混成一种黄。 */
   .kh-verdict[data-state="unset"] { background: #eef2ff; color: #3730a3; border-color: #a5b4fc; border-style: dashed; }
-    /* 【2.0.11 · 用户 m00001】比对结论只有一句：✓ 一致 / ⚠ 不一致：缺谁。
-     * 旧的「值 · 源 · 读取：08:43」证据行已删（撑高表格又抢注意力）。
-     * 颜色只是辅助：文字里的 ✓ / ⚠ 自己就能读出来，灰度也分得清。 */
-    .kh-cmp-mark { display: inline-block; margin-left: 3px; font-size: 12px; line-height: 1; font-weight: 700; vertical-align: baseline; cursor: help; }
-    .kh-cmp-mark[data-state="ok"] { color: #1b5e20; }
-    .kh-cmp-mark[data-state="part"] { color: #b45309; }
-    .kh-cmp-mark[data-state="bad"] { color: #b45309; }
     /* 字段标题格里的文本（= 设置「抓取字段」里填的那个名字）**不必整段展示**，省下的宽度留给内容。
      * 用户 2026-10-11 原话："抓取字段的标题内容可以不完整展示…实际抓取到的内容展示还是需要完整展示的，节省宽度"。
      * 做法：标题文本包一层 .kh-lbt（见下方 noteFragment 的补包裹），**宽度上限 + 单行裁切**，
@@ -824,10 +817,13 @@
   }
 
   /**
-   * 【2026-11-17 用户 m03523】比对结论改成行级小符号，不再在卡片底部占一行：
-   * 一个文档类别（表格一行）配了比对项，就在它的标题格里挂一枚 ✓ / ◐ / ✗：
-   *   ✓ 全部对上（这一类里只要有一张图对上，就算这个项对上）；◐ 部分对上（悬停列出哪些有、哪些没有）；✗ 一个都没对上。
-   * 判定仍与逐图同源（条目上的 cmp 来自 ImgOcr.cmpJudge），这里只做「一类多图 + 多个比对项」的汇总。
+   * 【用户口径 m05666】比对结论改成**和隐私政策同一套**呈现：
+   *   整行底色（`KH.Compare.COLOR_OK / COLOR_BAD`）+ 标题格右侧一枚非颜色徽标（✔ 一致 / ⚠ 待确认）
+   *   + 悬停说明（结论 / 缺哪项 / 口径）。
+   * 上一版是在标题格里塞 ✓◐✗ 三个小符号：行里图多、比对项多时挤成两行（用户实测），
+   * 而且「命中后单元格底色没改」—— 结论与底色必须一起表达，不能只留符号。
+   * 判定仍与逐图同源（条目上的 cmp 来自 `ImgOcr.cmpJudge`），这里只做「一行多图 + 多个比对项」的汇总：
+   * 同一行里任一张图对上，这一项就算对上。
    * @param {Element} bodyEl 卡片正文容器
    * @param {Array} imgItems ImgOcr.items()
    */
@@ -835,6 +831,9 @@
     if (!bodyEl || typeof bodyEl.querySelectorAll !== 'function') return;
     const V = (KH.OcrCopy && KH.OcrCopy.VIEW) || {};
     const R = (tpl, vars) => (tpl ? KH.OcrCopy.render(tpl, vars || {}) : '');
+    const C = (typeof KH !== 'undefined' && KH && KH.Compare) || null;
+    const colorOf = (C && typeof C.colorOf === 'function') ? C.colorOf : () => '';
+    const sigOf = (tr) => String((tr && tr.getAttribute && tr.getAttribute('data-kh-imgcmp-sig')) || '');
     /* 这张图 / 这份 PDF 用哪条条目判定（与 markOneImg 同一套取舍：rankOf 高的优先）。 */
     const best = new Map();
     const put = (src, it) => {
@@ -858,51 +857,66 @@
         const name = String((one && one.name) || '');
         if (!name) continue;
         const prev = box.items.get(name);
-        if (!prev) box.items.set(name, { ok: !!(one && one.ok) });
-        else if (one && one.ok) prev.ok = true;
+        const ok = !!(one && one.ok);
+        if (!prev) box.items.set(name, { ok: ok, kind: String((one && one.kind) || ''), values: Number((one && one.values) || 0) });
+        else {
+          if (ok) prev.ok = true;
+          prev.values = Math.max(prev.values, Number((one && one.values) || 0));
+        }
       }
     };
     for (const im of bodyEl.querySelectorAll('img')) collect(im, im.currentSrc || im.getAttribute('src') || im.src);
     for (const el of bodyEl.querySelectorAll('[data-khpdf]')) collect(el, el.getAttribute('data-khpdf'));
 
-    /* 先清掉本轮不再成立的标记（换关键词 / 删掉比对项后不许留上一条结论）。 */
+    /* 撤销上一轮画过、这一轮不再成立的行（换关键词 / 删掉比对项后不许留旧结论）。
+     * 单测垫片不支持属性选择器 ⇒ 直接遍历 tr 看签名。 */
+    for (const tr of bodyEl.querySelectorAll('tr')) {
+      if (rows.has(tr) || !sigOf(tr)) continue;
+      tr.removeAttribute('data-kh-imgcmp-sig');
+      tintRow(tr, '');
+      setCheckTip(tr, '');
+      setVerdictMark(tr, '', '');
+    }
+    /* 旧版是标题格里的 ✓◐✗ 小符号：一律清掉（同一件事只许留一套呈现）。 */
     for (const mark of bodyEl.querySelectorAll('.kh-cmp-mark')) {
-      const tr = mark.closest ? mark.closest('tr') : null;
-      if (!tr || !rows.has(tr)) {
-        if (mark.parentNode) mark.parentNode.removeChild(mark);
-      }
+      if (mark.parentNode) mark.parentNode.removeChild(mark);
     }
 
     for (const entry of rows) {
       const tr = entry[0];
       const box = entry[1];
-      const cell = tr.querySelector ? tr.querySelector('td') : null;
-      if (!cell) continue;
       const hit = [];
       const miss = [];
-      for (const pair of box.items) (pair[1].ok ? hit : miss).push(pair[0]);
-      let state = 'bad';
-      let text = '✗';
-      let tip = R(V.imgCmpDiffTip, { missing: (miss.length ? miss : hit).join('、') });
+      const empty = [];
+      for (const pair of box.items) {
+        const name = pair[0];
+        const one = pair[1];
+        if (one.ok) { hit.push(name); continue; }
+        miss.push(name);
+        /* 「页面这个字段就没取到值」与「图上有值但文字不同」要分开说：前者去查字段名，后者才去查图。 */
+        if (one.kind === 'need' && !(one.values > 0)) empty.push(name);
+      }
+      const state = miss.length ? 'diff' : 'same';
+      const lines = [];
       if (!miss.length) {
-        state = 'ok'; text = '✓';
-        tip = R(V.imgCmpSameTip, { names: hit.join('、') });
-      } else if (hit.length) {
-        state = 'part'; text = '◐';
-        tip = R(V.imgCmpPartTip, { names: hit.join('、'), missing: miss.join('、') });
+        lines.push(R(V.imgCmpSameTip, { names: hit.join('、') }));
+      } else {
+        const gone = miss.filter((n) => empty.indexOf(n) < 0);
+        /* 有对上的项时把「有哪项、缺哪项」一起说（旧行为是用 ◐ 表达部分一致，
+         * 现在没有 ◐ 了，信息只能落在悬停里）。 */
+        if (gone.length && hit.length) lines.push(R(V.imgCmpPartTip, { names: hit.join('、'), missing: gone.join('、') }));
+        else if (gone.length) lines.push(R(V.imgCmpDiffTip, { missing: gone.join('、') }));
+        if (empty.length) lines.push(R(V.imgCmpEmptyTip, { names: empty.join('、') }));
+        if (!lines.length) lines.push(R(V.imgCmpDiffTip, { missing: miss.join('、') }));
       }
-      let mark = cell.querySelector ? cell.querySelector('.kh-cmp-mark') : null;
-      if (!mark) {
-        const doc = cell.ownerDocument || (typeof document !== 'undefined' ? document : null);
-        if (!doc) continue;
-        mark = doc.createElement('span');
-        mark.className = 'kh-cmp-mark';
-        cell.appendChild(mark);
-      }
-      if (mark.className !== 'kh-cmp-mark') mark.className = 'kh-cmp-mark';
-      if (mark.getAttribute('data-state') !== state) mark.setAttribute('data-state', state);
-      if (String(mark.textContent || '') !== text) mark.textContent = text;
-      if (String(mark.getAttribute('title') || '') !== tip) mark.title = tip;
+      if (V.imgCmpRuleTip) lines.push(V.imgCmpRuleTip);
+      const tip = lines.filter(Boolean).join('\n');
+      const sig = state + '|' + hit.join('、') + '|' + miss.join('、');
+      if (sigOf(tr) === sig) continue;
+      tr.setAttribute('data-kh-imgcmp-sig', sig);
+      tintRow(tr, colorOf(state));
+      setCheckTip(tr, tip);
+      setVerdictMark(tr, state, tip);
     }
   }
 
