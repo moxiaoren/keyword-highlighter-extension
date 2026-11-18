@@ -1837,6 +1837,17 @@
 
   const queue = [];
   let draining = false;
+  /* 【2.0.12.10 性能·旧页拖累】正在跑的那一条 + 已取消的 requestId。
+   * 用户口径：识别只该服务**当前标签页当前页面**。取消（页面导航/关闭、标签页关掉）时
+   * 既摘掉排队中的，也把在跑的那条记进来 —— `runJob` 在每个块、每个方向、每个密排档之前
+   * 查一次，查到就立刻收口：不再为"已经离开的页面"把剩下 3 个方向 / 3 档密排全烧完，
+   * 后面的新页面也不用排在它们后面干等。 */
+  let currentJob = null;
+  const ABORTED = new Set();
+  function isAborted(id) { return ABORTED.has(id); }
+  function abortError() {
+    return Object.assign(new Error('识别已取消（页面已离开）'), { code: 'cancelled' });
+  }
 
   function enqueue(job) {
     if (job.tabId != null) queue.push(job);
@@ -1844,10 +1855,23 @@
     drain();
   }
 
-  function cancelForTab(tabId) {
+  /** 给了 pageId 就只撤那一页；同 tabId 的上一页/下一页不许互相误伤（真机踩到过） */
+  function cancelForTab(tabId, pageId) {
+    const pid = pageId ? String(pageId) : '';
+    const ofPage = (j) => !pid || !j.pageId || j.pageId === pid;
     let n = 0;
+    /* 排队中的直接摘掉就够了，**不要**再往 ABORTED 里塞：那些 job 再也进不了 drain，
+     * 塞进去的 requestId 没人删 ⇒ 集合只增不减（长会话里几百条）。只有"已经在引擎里"的那条才要标记。 */
     for (let i = queue.length - 1; i >= 0; i--) {
-      if (queue[i].tabId === tabId) { queue.splice(i, 1); n++; }
+      if (queue[i].tabId === tabId && ofPage(queue[i])) {
+        queue.splice(i, 1);
+        n++;
+      }
+    }
+    /* 在跑的那条也要收口：它已经在引擎里，撤不掉，但可以在下一个检查点停 */
+    if (currentJob && currentJob.tabId === tabId && ofPage(currentJob)) {
+      ABORTED.add(currentJob.requestId);
+      n += 1;
     }
     return n;
   }
@@ -1863,6 +1887,11 @@
     for (let i = queue.length - 1; i >= 0; i--) {
       if (queue[i].requestId === requestId) { queue.splice(i, 1); n++; }
     }
+    /* 只有"正在跑"的那条需要标记，下一个检查点收口（排队中被摘掉的不会再进 drain，标了就是泄漏） */
+    if (currentJob && currentJob.requestId === requestId) {
+      ABORTED.add(requestId);
+      n += 1;
+    }
     return n;
   }
 
@@ -1872,6 +1901,8 @@
     try {
       while (queue.length) {
         const job = queue.shift();
+        /* 排到它时页面已经走了 ⇒ 一次都不跑（省掉整张图的所有遍数） */
+        if (isAborted(job.requestId)) { ABORTED.delete(job.requestId); continue; }
         await runJob(job);
       }
     } finally {
@@ -1881,6 +1912,10 @@
 
   async function runJob(job) {
     const t0 = performance.now();
+    currentJob = job;
+    /* 收口的唯一判据：这条 job 被取消过。只在"任务内部换阶段"的边界调用 ——
+     * 引擎调用本身不可中断（WASM 单线程），但一整张图的 4 遍方向 / 3 档密排是可以不跑的。 */
+    const throwIfAborted = () => { if (isAborted(job.requestId)) throw abortError(); };
     let kind = '';
     let engineReason = '';
     /* 【T51】整图 bitmap 的唯一持有者：`openSized` 交出来、`finally` 里 close（正常/异常/回落都走那里）。
@@ -1905,6 +1940,7 @@
         langs = await pickLangs(job.keyword);             // 兼容引擎才需要语言包（主引擎自带中英）
         worker = await getEngine(langs);
       }
+      throwIfAborted();
       const got = await bytesFromRequest(job);
       /* 【2.0.2.4 需求②】同一张图（同字节）+ 同引擎 + 同语言包 ⇒ 直接回先前那笔结果，
        * 解码与识别全跳过。`cached:true` 如实标记，真机与单测都据此核对"这张图只烧了一次"。
@@ -2164,6 +2200,7 @@
         const empties = [];
         let rawLines = 0, confSum = 0, keptN = 0, passes = 0, psm = PSM_BLOCK, pre0 = null;
         for (let i = 0; i < chunks.length; i++) {
+          throwIfAborted();                 // 每块之前：取消后剩下的块不再识别
           const pre = await chunkFor(f, i, k);
           if (i === 0) { pre0 = pre; psm = (chunks.length === 1 && pre.singleLine) ? PSM_SINGLE : PSM_BLOCK; }
           await setPsm(psm);
@@ -2248,6 +2285,7 @@
       let denseRescaled = false;
       let denseBanded = false;
       if (base.stat.lines === 0) {
+        throwIfAborted();                   // 整帧放大重采 = 再扫一遍整张图，先看还要不要
         denseRescaled = true;
         try {
           const s2 = await scanFrame(0, false, DENSE_RESCALE);
@@ -2266,6 +2304,7 @@
        * 109 那张常规字重图要第 2 档（5 条）才命中，粗体那张第 1 档（3 条）就成）。 */
       if (orig.h >= 400 && base.stat.lines > 0 && hitsOf(base.lines) === 0
           && base.plan.coverage.usedChunks === 1 && !base.plan.coverage.truncated) {
+        throwIfAborted();
         denseBanded = true;
         for (const plan of denseBandPlans(orig.w, orig.h)) {
           if (hitsOf(base.lines) > 0) break;              // 上一档已经命中 ⇒ 不再加密
@@ -2275,6 +2314,8 @@
           } catch (e) { /* 切带失败就用原结果 */ }
         }
       }
+      /* 【2.0.12.10 试过又撤掉的一条】"一个检测框都没有就不试转"：看起来只省空图，实际上
+       * **倒置/横排截图首遍常常就是 0 框**（S1-c 不变量 4 的用例正是这样），撤掉这条才不伤识别度。 */
       /* ⚠ 必须在 2× 重采**之后**再算：重采可能把 base 换掉（否则会在"已读空的旧 stat"上判试转）。 */
       const baseNeeds = needsRotation(base.stat);
       /* 【S3-① 补口（第二版，实测修正）】第一版用"行召回偏低"当预兆（`needsTiltProbe`）——**判不出来**：
@@ -2286,6 +2327,7 @@
         const scans = { 0: base };
         const cands = orientation.candidates;
         if (baseNeeds) {
+          throwIfAborted();                             // 试转是最贵的一档：取消后一遍都不跑
           const tries = rotationsFor(base.stat);          // 首遍全空 ⇒ 3 遍，否则 2 遍
           for (let i = 0; i < tries; i++) {
             const deg = ROT_ORDER[i];
@@ -2409,6 +2451,8 @@
         try { baseBmp.close(); } catch (e) { /* 已关/已失效：忽略 */ }
         baseBmp = null;
       }
+      if (currentJob === job) currentJob = null;
+      ABORTED.delete(job.requestId);
     }
   }
 
@@ -2534,7 +2578,7 @@
 
     if (msg.type === MSG.OCR_IMAGE) {
       enqueue({
-        requestId: msg.requestId, tabId: msg.tabId,
+        requestId: msg.requestId, tabId: msg.tabId, pageId: (msg.pageId || ''),
         src: msg.src, dataUrl: msg.dataUrl, keyword: msg.keyword,
         /* 引擎由 background 注入（#16 D-16.1：内容脚本不传）。缺失时 `chooseEngine` 会如实回
          * `missing-engine` —— 我们**不猜**，猜错了就是"用户以为在用主引擎、其实一直在用兜底"。 */
@@ -2558,7 +2602,7 @@
        * 而设置页自检的 job 正好**没有 tabId** ⇒ 会把自检那条误撤掉（潜在 bug，S1-b 一并修）。 */
       let cancelled = 0;
       if (msg.requestId) cancelled += cancelForRequest(msg.requestId);
-      if (msg.tabId != null) cancelled += cancelForTab(msg.tabId);
+      if (msg.tabId != null) cancelled += cancelForTab(msg.tabId, msg.pageId);
       return settle(Promise.resolve({ cancelled: cancelled }));
     }
     /* 语言包只服务**兼容引擎**（主引擎自带中英能力，没有"包"这个维度）。

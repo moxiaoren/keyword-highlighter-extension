@@ -54,6 +54,11 @@
   const CACHE_MAX = 200;
   /** 同时最多提交几张（引擎侧本来就是串行的，这里只是别把消息队列灌爆） */
   const MAX_INFLIGHT = 4;
+  /* 【2.0.12.10 性能·旧页拖累】这一"页"的身份。
+   * 取消不能只按 tabId：B → A 是同一个标签页，而 B 的 pagehide 是**异步**到后台的 ——
+   * 等它到时 A 已经排上了图，一刀切会把新页的任务当旧页的撤掉（实测：A 首图 14.9s → 20.0s，
+   * 就是被撤掉后重跑了一遍）。让取消带上 pageId，只撤"同一页"的任务。 */
+  const PAGE_ID = 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 
   /** 当前这轮扫描的图片命中项：key = ruleId|src */
   let items = new Map();
@@ -1418,6 +1423,7 @@
     try {
       chrome.runtime.sendMessage(Object.assign({
         type: isPdf ? MSG.OCR_PDF : MSG.OCR_IMAGE,
+        pageId: PAGE_ID,
         keyword: (entry.rule && entry.rule.meta && entry.rule.meta.display) || entry.keyword || ''
         /* 【S2 引擎选择不从这里发】`imgOcr.engine` 由 **background 单点读取并注入**（#16 D-16.1）：
          * offscreen 读不到 `chrome.storage`，而内容脚本读又会让"用户改了设置"与"这条 job 排队"
@@ -1711,8 +1717,9 @@
         it.engine = msg.engine || '';
         it.engineReason = msg.engineReason || '';
         if (msg.code === 'lang-missing') it.why = 'lang-missing';
-        /* 需求⑨：失败的图记一笔，别让下一轮扫描再排一次（右键手动那种条目不记） */
-        if (it.src && !/^ctxmenu\|/.test(it.key)) noteFail(it.src);
+        /* 需求⑨：失败的图记一笔，别让下一轮扫描再排一次（右键手动那种条目不记）。
+         * 【2.0.12.10】被取消不算失败：页面走了才取消，冻 10 分钟会让"后退回来"的同一张图不再识别。 */
+        if (it.src && msg.code !== 'cancelled' && !/^ctxmenu\|/.test(it.key)) noteFail(it.src);
       }
     }
     if (targets.length) notify();
@@ -2072,6 +2079,17 @@
       if (msg.type !== MSG.OCR_RESULT) return false;
       onResult(msg);
       return false;
+    });
+  }
+
+  /* 【2.0.12.10 性能·旧页拖累 OCR】页面真要离开（导航走 / 关标签页 / 进前进后退缓存）时，
+   * 主动告诉后台「这一页的识别都别做了」。只在后台做取消是不够的：后台看不到"这一帧的
+   * 内容脚本已经不在了"，而这里恰好知道。离页后内容脚本里的 token 账已无人归还，
+   * 那些排队中的任务只会白烧 CPU、并让**下一个页面**的图排在它们后面。
+   * 用 pagehide 而不是 unload：unload 在新版浏览器里常被忽略，pagehide 一定发。 */
+  if (typeof window !== 'undefined' && window.addEventListener) {
+    window.addEventListener('pagehide', () => {
+      try { chrome.runtime.sendMessage({ type: MSG.OCR_CANCEL, pageId: PAGE_ID }); } catch (e) { /* 后台不在：忽略 */ }
     });
   }
 

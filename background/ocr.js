@@ -278,6 +278,8 @@
       frameId: sender ? sender.frameId : undefined,
       /* 用户点名入口的路由标记：内容脚本靠回执上的 `via` 认领（右键 →「截图」卡；大图 → 灯箱等待者） */
       via: (msg && msg.via) ? String(msg.via) : '',
+      /* 发起这一页的身份：取消时只撤"同一页"的任务（同 tabId 的上一页/下一页不能互相误伤） */
+      pageId: (msg && msg.pageId) ? String(msg.pageId) : '',
       engine: engine, isExtPage: isExtPage, at: now, lastProgressAt: 0, sawProgress: false, timer: null
     };
     imageJobs.set(requestId, job);
@@ -289,9 +291,9 @@
       route(job, { type: MSG.OCR_QUEUED, requestId: requestId, src: msg.src, via: 'contextMenu' });
     }
     await toOffscreen(kind === 'pdf'
-      ? { to: 'offscreen', type: MSG.OCR_PDF, requestId: requestId, tabId: tabId, src: msg.src, keyword: msg.keyword }
+      ? { to: 'offscreen', type: MSG.OCR_PDF, requestId: requestId, tabId: tabId, pageId: job.pageId, src: msg.src, keyword: msg.keyword }
       : {
-        to: 'offscreen', type: MSG.OCR_IMAGE, requestId: requestId, tabId: tabId,
+        to: 'offscreen', type: MSG.OCR_IMAGE, requestId: requestId, tabId: tabId, pageId: job.pageId,
         src: msg.src, dataUrl: msg.dataUrl, keyword: msg.keyword, engine: engine
       });
     return { ok: true, requestId: requestId, queued: true };
@@ -377,11 +379,19 @@
     return false;
   }
 
-  function cancelTab(tabId) {
+  /**
+   * 撤掉某个标签页的识别任务。给了 pageId 就**只撤那一页**的 ——
+   * B → A 是同一个 tabId，而 B 的 pagehide 是异步到的：只按 tabId 撤会把 A 刚排上的图
+   * 当旧的撤掉（真机实测 14.9s → 20.0s）。没给 pageId 的（导航开始、关标签页）按整个标签页撤。
+   */
+  function cancelTab(tabId, pageId) {
+    const pid = pageId ? String(pageId) : '';
     for (const [id, job] of Array.from(imageJobs.entries())) {
-      if (job.tabId === tabId) { imageJobs.delete(id); disarm(job); }
+      if (job.tabId !== tabId) continue;
+      if (pid && job.pageId && job.pageId !== pid) continue;
+      imageJobs.delete(id); disarm(job);
     }
-    return toOffscreen({ to: 'offscreen', type: MSG.OCR_CANCEL, tabId: tabId });
+    return toOffscreen({ to: 'offscreen', type: MSG.OCR_CANCEL, tabId: tabId, pageId: pid });
   }
 
   self.OcrHost = {

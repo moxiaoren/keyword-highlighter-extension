@@ -805,4 +805,38 @@ module.exports = async function run() {
     truthy(O.items().some((it) => it.via === 'contextMenu'), '右键手动识别照旧');
     KH.features.get('img-ocr').clear(null, { reason: 'destroy' });
   });
+
+  suite('图片命中：离页与取消（2.0.12.10 旧页拖累）');
+
+  await test('★ 页面离开（pagehide）⇒ 主动取消本页识别，且带上本页 pageId', () => {
+    KH.features.get('img-ocr').clear(null, { reason: 'destroy' });
+    const before = (global.__OCR_SENT__ || []).length;
+    const a = anchorWith([srcImg('data:image/png;base64,pagehide1')]);
+    O.build({}, {}, [hitOf(a)]);
+    const sent = global.__OCR_SENT__ || [];
+    const img = sent[sent.length - 1];
+    truthy(img && img.pageId, '提交识别时必须带 pageId（取消要靠它精确到页）');
+    global.window.__khFire('pagehide');
+    const cancel = sent[sent.length - 1];
+    eq(cancel.type, KH.MSG.OCR_CANCEL, 'pagehide 必须发取消');
+    eq(cancel.pageId, img.pageId, '取消必须带同一页的 pageId；按 tabId 一刀切会误伤新页面（真机 14.9s→23.1s）');
+    eq(cancel.tabId, undefined, '内容脚本不该自己编 tabId：后台用 sender.tab.id 认');
+    truthy(sent.length >= before + 2, '取消是另外一条消息，不许顶掉识别请求');
+    KH.features.get('img-ocr').clear(null, { reason: 'destroy' });
+  });
+
+  await test('★ 被取消不算失败：不落失败备忘，页面回来还能再识别', () => {
+    KH.features.get('img-ocr').clear(null, { reason: 'destroy' });
+    const before = (global.__OCR_SENT__ || []).length;
+    const a = anchorWith([srcImg('data:image/png;base64,cancelMemo')]);
+    O.build({}, {}, [hitOf(a)]);
+    eq((global.__OCR_SENT__ || []).length - before, 1, '先真发出去一条');
+    driveOcrResults(() => ({ ok: false, error: '识别已取消', code: 'cancelled', src: 'data:image/png;base64,cancelMemo' }), before);
+    eq(O.items()[0].state, 'fail', '取消在条目上仍表现为没结果');
+    eq(O.items()[0].why || '', '', '但不许写成 retry-later（那是真失败的说法）');
+    const afterCancel = (global.__OCR_SENT__ || []).length;
+    O.build({}, {}, [hitOf(a)]);
+    truthy((global.__OCR_SENT__ || []).length > afterCancel, '★ 取消不冻 10 分钟：重建后必须重新提交（否则后退回来这张图永远不识别）');
+    KH.features.get('img-ocr').clear(null, { reason: 'destroy' });
+  });
 };

@@ -527,7 +527,8 @@ const HANDLERS = {
   [MSG.OCR_PDF]: (msg, sender) => self.OcrHost.submitPdf(msg, sender),
 
   [MSG.OCR_CANCEL]: (msg, sender) => self.OcrHost.cancelTab(
-    (sender && sender.tab && sender.tab.id != null) ? sender.tab.id : msg.tabId
+    (sender && sender.tab && sender.tab.id != null) ? sender.tab.id : msg.tabId,
+    msg.pageId
   ),
 
   [MSG.OCR_LANG_STATE]: (msg) => self.OcrHost.ask(msg),
@@ -601,6 +602,14 @@ chrome.runtime.onConnect.addListener((port) => {
   });
 });
 
+/* 【2.0.12.10 性能·旧页拖累 OCR —— 这里故意不挂 chrome.tabs.onUpdated】试过，撤掉了：
+ * 导航开始时就按 tabId 撤整个标签页的任务，看起来最直接，但事件是**异步**送到后台的，
+ * 而新页面内容脚本排队可能更早 ⇒ 上一条取消会把**新页面**刚排上的图当旧页的撤掉。
+ * 真机实测（700×900 密排 8 张）：这条监听在时，A 页首图 14.9s → 20.0s / 23.1s，去掉就回到 14.9s。
+ * 现在的取消只来自两处，都不会误伤：①页面自己的 pagehide（带 pageId，见
+ * src/features/img-ocr.js，后台 cancelTab(tabId, pageId) 只撤同一页）；②标签页关闭（onRemoved）。
+ * 页面崩溃等 pagehide 收不到的情形，由 offscreen 的看门狗兜底（无进度 120s / 绝对 10 分钟）。
+ */
 /* 标签页关闭 → 丢掉它在排队的识别任务（免得为一个已经不存在的页面白烧 CPU）；
  * 顺手清掉它的标签页级禁用记录（【2.0.7.2 需求⑤】"关掉标签页就自动取消"的硬保证：
  * 靠"页面没了自然不高亮"是不够的，tabId 会被浏览器复用，残留记录会让新标签页一开就是灰的） */
@@ -622,3 +631,4 @@ chrome.storage.onChanged.addListener((changes, area) => {
   const { globalEnabled = true } = await chrome.storage.local.get('globalEnabled');
   await updateIcon(globalEnabled);
 })();
+
