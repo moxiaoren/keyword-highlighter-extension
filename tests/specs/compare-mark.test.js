@@ -163,37 +163,66 @@ module.exports = async function run() {
       eq(O.judgeInfo(rule('', '开发者#比'), '开发者', [], '截图').hits.length, 0);
     });
 
-  /* ---------- 用户 m07376 问题一 / 三：证书与授权书 ----------
-   * 现象：卡片上明明有「著作权人 · 宣城星岑科技有限公司」「登记号 · 2026SA0177412」，
-   * 面板却说「没取到值…在页面上没有内容，没法比」。
-   * 病根：比对只从页面 DOM 取值，而这两个值是**这张图 OCR 出来**的（OcrAuto 抽成卡片行）。 */
+  /* ---------- 用户 m07238：比对基准 = **证书图自动进表的值** ----------
+   * 链路：软著字段抓到的证书图 → 自动进表「著作权人 a公司 / 登记号 X」；
+   * 图片动态词 `登记号@计算机软件著作权登记证书授权书#比` → 拿证书进表的值去比授权书图上有没有。
+   * 授权书自己抽出来的值**不能**当基准（那样永远一致 = 假通过）。 */
 
   const AUTH_TEXT = '计算机软件著作权\n授权书\n授权方：宣城星岑科技有限公司\n被授权方：安徽普类智能科技有限公司\n'
     + '授权方系《录音无损转文字》(登记号：\n2026SA0177412)作品的唯一合法人著作权方。';
   const CERT_TEXT = '中华人民共和国国家版权局\n计算机软件著作权登记证书\n'
     + '软件名称： 听栗英语APP V1.0\n著作权人： 云南拓景信息技术有限公司\n登 记 号： 2026SR0846404';
+  const AUTH_LABEL = '计算机软件著作权登记证书授权书';
+  const CERT_LABEL = '计算机软件著作权登记证书';
+  const certRule = () => ({
+    meta: {
+      pinId: 'r1', imgOcr: true, imgOcrKeyword: '',
+      imgOcrNeed: '登记号@' + AUTH_LABEL + '#比|著作权人@' + AUTH_LABEL + '#比',
+      fetchLabels: '计算机软件著作权登记证书#图|APP电子版权证书#图'
+    }
+  });
+  const ocrItem = (label, text, src) => ({ ruleId: 'r1', state: 'done', text: text, label: label, src: src, matched: [] });
+  const withItems = (list, fn) => {
+    const orig = O.items;
+    O.items = () => list;
+    try { return fn(); } finally { O.items = orig; }
+  };
 
-  await test('★ 字段名里带「授权书」时，也要按证书正文判一致（不能因为 docOf 判成 auth 就没值）', () => {
-    const r = rule('', '登记号#比|著作权人#比');
-    const label = '计算机软件著作权登记证书授权书';
-    const reqs = O.cmpReqs(r, label, null);
-    eq(reqs.length, 2);
-    const j = O.cmpJudge(r, AUTH_TEXT, label, reqs);
-    eq(j.state, 'same', JSON.stringify(j));
-    eq(j.items[0].values > 0, true, '取到值就要带个数（面板据此不再报「没取到值」）');
+  await test('★ 证书图进表的 登记号 / 著作权人 就是比对基准：授权书图上都有 ⇒ 一致', () => {
+    const r = certRule();
+    const list = [ocrItem(CERT_LABEL, CERT_TEXT, 'http://x/cert.png'), ocrItem(AUTH_LABEL, AUTH_TEXT, 'http://x/auth.png')];
+    const j = withItems(list, () => {
+      const reqs = O.cmpReqs(r, AUTH_LABEL, null);
+      eq(reqs.length, 2);
+      const hit = O.cmpJudge(r, AUTH_TEXT, AUTH_LABEL, reqs);
+      const ok = O.cmpJudge(r, AUTH_TEXT.replace('2026SA0177412', '2026SR0846404').replace('宣城星岑科技有限公司', '云南拓景信息技术有限公司'), AUTH_LABEL, reqs);
+      return { reqs: reqs, hit: hit, ok: ok };
+    });
+    eq(j.reqs[0].values.join('|'), '2026sr0846404', '基准取证书进表的值，不是授权书自己的');
+    eq(j.hit.state, 'diff', JSON.stringify(j.hit));
+    eq(j.ok.state, 'same', JSON.stringify(j.ok));
   });
 
-  await test('★ 软著证书的 登记号 / 著作权人 同样按图上的值判一致', () => {
-    const r = rule('', '登记号#比|著作权人#比');
-    const label = '计算机软件著作权登记证书';
-    const j = O.cmpJudge(r, CERT_TEXT, label, O.cmpReqs(r, label, null));
-    eq(j.state, 'same', JSON.stringify(j));
+  await test('★ 没有证书图进表 ⇒ 不拿授权书自己的值顶上（values 0 ⇒ 面板报「没取到值」）', () => {
+    const r = certRule();
+    const list = [ocrItem(AUTH_LABEL, AUTH_TEXT, 'http://x/auth.png')];
+    const j = withItems(list, () => {
+      const reqs = O.cmpReqs(r, AUTH_LABEL, null);
+      return { reqs: reqs, judge: O.cmpJudge(r, AUTH_TEXT, AUTH_LABEL, reqs) };
+    });
+    eq(j.reqs[0].values.length, 0, '授权书自己抽的登记号不许当基准');
+    eq(j.judge.state, 'diff');
+    eq(j.judge.items[0].values, 0);
   });
 
   await test('★ 图上确实没有的项仍然判不一致（不能一律放行）', () => {
-    const r = rule('', '包名#比|登记号#比');
-    const label = '计算机软件著作权登记证书';
-    const j = O.cmpJudge(r, CERT_TEXT, label, O.cmpReqs(r, label, null));
+    const r = certRule();
+    const list = [ocrItem(CERT_LABEL, CERT_TEXT, 'http://x/cert.png'), ocrItem(AUTH_LABEL, AUTH_TEXT, 'http://x/auth.png')];
+    const j = withItems(list, () => {
+      const r2 = certRule();
+      r2.meta.imgOcrNeed = '包名@' + AUTH_LABEL + '#比';
+      return O.cmpJudge(r2, AUTH_TEXT, AUTH_LABEL, O.cmpReqs(r2, AUTH_LABEL, null));
+    });
     eq(j.state, 'diff');
     eq(j.missing.join('|'), '包名');
   });

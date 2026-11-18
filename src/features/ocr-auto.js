@@ -215,9 +215,17 @@
   function isCertBody(it) {
     return certTitle(it) && /登\s*记\s*号|认\s*证\s*号/.test(textOf(it));
   }
+  /* 【2026-11-18 用户口径】著作权人 / 登记号只允许从**真正的证书**里自动进表：
+   * 授权书即使挂在「计算机软件著作权登记证书」字段下，正文是授权书就不抽这两个字段
+   * （授权书里的「授权方」不是著作权人，抽进去会把比对引到错的值上）。
+   * 比对另走图片动态词 `#比`，值仍取这张图的 OCR 文本，不受这里影响。 */
+  function headIsAuth(it) {
+    return /授权书/.test(headOf(it));
+  }
   function docOf(it) {
     var label = String((it && it.label) || '');
     if (/变更或补充证明|变更证明|变补字/.test(label)) return 'amend';
+    if (headIsAuth(it)) return 'auth';
     if (/授权书/.test(label)) return isCertBody(it) ? 'cert' : 'auth';
     if (/承诺函|承诺书/.test(label)) return 'promise';
     if (/备案核准|备案通知|备案证明|APP\s*备案|应用备案/i.test(label)) return 'record';
@@ -881,7 +889,7 @@
    * @param {object} it `KH.ImgOcr.items()` 里的条目（`state/text/label/src`）
    * @returns {{label:string,value:string,doc:string,src:string}[]}
    */
-  function rowsFor(it) {
+  function rowsFor(it, opts) {
     if (!it || it.state !== 'done' || !it.text) return [];
     var doc = docOf(it);
     if (!doc) {

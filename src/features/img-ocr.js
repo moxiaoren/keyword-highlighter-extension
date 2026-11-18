@@ -775,11 +775,83 @@
     return '';
   }
 
-  /** 一个字段在当前格上的取值（与 `needInfo` 同一份实现：`Fetch.extractFor` + `!`/`^`/`%` 修饰） */
+  /** 比对项的字段名（`登记号@字段#比` → `登记号`），与 `needSpecs` 同一套解析 */
+  function cmpNameOf(rawSpec) {
+    const raw = String(rawSpec || '').trim();
+    if (!raw) return '';
+    let name = '';
+    const parse = (KH.Fetch && typeof KH.Fetch.parseLabelSpec === 'function') ? KH.Fetch.parseLabelSpec : null;
+    if (parse) {
+      try { const q = parse(chipTags(raw).body); if (q && q.label) name = String(q.label).trim(); } catch (e) { name = ''; }
+    }
+    if (!name) name = chipTags(raw).body;
+    return String(name || '').replace(/[@#＃!^%].*$/, '').trim();
+  }
+
+  /** 同一规则里**证书图** OCR 出来的行（`OcrAuto.rowsFor`）= 比对基准。
+   * 用户口径（m07238）：软著字段抓到的证书图自动进表「著作权人 a公司 / 登记号 X」，
+   * 比对就拿这两个值去比授权书图上有没有 —— 不用授权书自己抽出来的值（那是假通过）。
+   * 只读 `rowsFor` 的结构化行：授权书按 `docOf` 归 auth，产量里没有这两个字段。 */
+  function certBaselineValues(meta, rawSpec) {
+    const A = KH.OcrAuto;
+    const IO = KH.ImgOcr;
+    if (!A || typeof A.rowsFor !== 'function' || !IO || typeof IO.items !== 'function') return [];
+    const wantName = cmpNameOf(rawSpec);
+    if (!wantName) return [];
+    const TN = KH.TextNorm;
+    const keyOf = (s) => (TN && typeof TN.keyOf === 'function'
+      ? TN.keyOf(s) : String(s == null ? '' : s).replace(WHITE_ALL, '').toLowerCase());
+    const want = keyOf(wantName);
+    if (!want) return [];
+    const pinId = String((meta && meta.pinId) || '');
+    let list = [];
+    try { list = IO.items() || []; } catch (e) { return []; }
+    const out = [];
+    const seen = [];
+    for (const it of list) {
+      if (!it || it.state !== 'done' || !it.text) continue;
+      if (pinId && String(it.ruleId || '') !== pinId) continue;
+      let rows = [];
+      try { rows = A.rowsFor(it) || []; } catch (e) { rows = []; }
+      for (const r of rows) {
+        const lab = keyOf(r && r.label);
+        if (!lab) continue;
+        if (lab !== want && !(want.length >= 2 && lab.indexOf(want) === 0)) continue;
+        const v = String((r && r.value) || '').trim();
+        if (!v || v.length < NEED_MIN_LEN) continue;
+        const k = keyOf(v);
+        if (seen.indexOf(k) >= 0) continue;
+        seen.push(k);
+        out.push(v.toLowerCase());
+      }
+    }
+    return out;
+  }
+
+  /** 一个字段在**当前格**上的取值 ∪ **证书图进表的值**（用户 m07238 口径）。
+   * 前一半沿用 `needInfo`（`Fetch.extractFor` + `!`/`^`/`%` 修饰 + 进表行）；
+   * 后一半读同一份 `OcrAuto.rowsFor`，不依赖「面板这一轮是否已经算好」（避免时序空值）。 */
   function cmpFieldValues(anchor, rawSpec, field, meta) {
-    if (!anchor) return [];
+    /* 没有锚点 ≠ 没有值：授权书/PDF 这类没有格子的命中也应拿到基准值。 */
     const sub = { meta: Object.assign({}, meta || {}, { imgOcrNeed: String(rawSpec || '') }) };
-    try { return needInfo(anchor, sub, field, { withCmp: true }).values || []; } catch (e) { return []; }
+    let vals = [];
+    try { vals = needInfo(anchor, sub, field, { withCmp: true }).values || []; } catch (e) { vals = []; }
+    let base = [];
+    try { base = certBaselineValues(meta, rawSpec); } catch (e) { base = []; }
+    const TN = KH.TextNorm;
+    const keyOf = (s) => (TN && typeof TN.keyOf === 'function'
+      ? TN.keyOf(s) : String(s == null ? '' : s).replace(WHITE_ALL, '').toLowerCase());
+    const out = [];
+    const seen = [];
+    for (const v of vals.concat(base)) {
+      const s = String(v == null ? '' : v).trim();
+      if (!s) continue;
+      const k = keyOf(s);
+      if (seen.indexOf(k) >= 0) continue;
+      seen.push(k);
+      out.push(s);
+    }
+    return out;
   }
 
   /**
@@ -842,58 +914,6 @@
   }
 
   /**
-   * 【用户 m07376 问题一 / 三】这张图**自己 OCR 出来的字段值**。
-   *
-   * 病根：`#比` 的取值只来自页面 DOM（`needInfo`），而软著证书 / 授权书上的「著作权人」
-   * 「登记号」并不在页面 DOM 里 —— 它们是这张图的 OCR 结果被 `OcrAuto.rowsFor` 抽成卡片行的。
-   * 于是比对永远拿不到值，面板就报「没取到值：登记号、著作权人」（卡片上其实明明白白有）。
-   *
-   * 这里只做一件事：把同一份 `rowsFor` 抽出来的行按字段名对上去，拿它的值。
-   * 与卡片行同一个来源 ⇒ 卡片显示什么、比对就比什么，不会再出现两套口径。
-   * @param {string} raw 识别文本
-   * @param {string} name 比对项名（可能带 `@1` 一类后缀，先剥掉）
-   * @returns {string[]} 命中的值（去重；没有就空数组）
-   */
-  function textFieldValues(raw, name, label) {
-    const A = (typeof KH !== 'undefined' && KH && KH.OcrAuto) || null;
-    if (!A || typeof A.rowsFor !== 'function') return [];
-    const want0 = String(name == null ? '' : name).replace(/[@#＃!^%].*$/, '').trim();
-    if (!want0) return [];
-    const rows = [];
-    /* `rowsFor` 只认 `state:'done'` 的条目（面板里那一份）；这里补同形入参。
-     * 两次跑取并集：①带条目 label（与卡片行同源）；②不带 label（纯按正文标题判类型）。
-     * 为什么必须两次 —— 真机踩到：字段叫「…登记证书授权书」，`docOf` 按「授权书」判成 auth，
-     * 而 auth 的字段集里没有证书的 著作权人 / 登记号 ⇒ 第一遍是空的；正文标题其实是证书。 */
-    const body = String(raw == null ? '' : raw);
-    /* 第三遍：正文像证书时按证书再抽一次。
-     * 为什么必须有 —— 自动进表已按「只留证书」收敛（`ocr-auto.js` SETS 只有 cert/amend），
-     * 而字段名里带「授权书」时 `docOf` 会先判成 auth ⇒ 前两遍都是空的，
-     * 可用户要的恰恰是「这张授权书上的著作权人和登记号」。*/ 
-    const docLabels = [String(label || ''), ''];
-    if (/计算机软件|软件著作权|登记号/.test(body)) docLabels.push('计算机软件著作权登记证书');
-    if (/电子版权/.test(body)) docLabels.push('APP电子版权证书');
-    for (const withLabel of docLabels) {
-      let one = [];
-      try { one = A.rowsFor({ state: 'done', text: body, label: withLabel }) || []; } catch (e) { one = []; }
-      for (const r of one) rows.push(r);
-    }
-    const TN = KH.TextNorm;
-    const keyOf = (s) => (TN && typeof TN.keyOf === 'function'
-      ? TN.keyOf(s) : String(s == null ? '' : s).replace(/\s+/g, '').toLowerCase());
-    const want = keyOf(want0);
-    if (!want) return [];
-    const out = [];
-    for (const r of rows) {
-      const lab = keyOf(r && r.label);
-      if (!lab) continue;
-      if (lab !== want && !(want.length >= 2 && lab.indexOf(want) === 0)) continue;
-      const v = String((r && r.value) || '').trim();
-      if (v && out.indexOf(v) < 0) out.push(v);
-    }
-    return out;
-  }
-
-  /**
    * 判决：所有 `#比` 项都在 → `same`（一致）；缺任一项 → `diff`（不一致，点名缺哪些）。
    * 没配比对项 → `null`（不显示任何结论，也不涂色）。
    * @returns {null|{state:'same'|'diff', items:Array<{name:string,kind:string,ok:boolean}>, missing:string[]}}
@@ -907,9 +927,10 @@
       let ok = false;
       /* 值优先用页面 DOM / 上一轮进表值；一个都没有时退回**这张图自己 OCR 出来的字段值**
        * （证书 / 授权书的 著作权人、登记号 属于后者）。 */
-      const vals = (r.kind === 'need')
-        ? ((r.values && r.values.length) ? r.values : textFieldValues(raw, r.name, field))
-        : [];
+      /* 值只认 `r.values`：页面 DOM ∪ **证书图自动进表的值**（`needInfo` 的 `extraValues`）。
+       * 不再退回这张图自己的抽取行 —— 用户口径（m07238）：比对基准必须是「证书图进表的值」，
+       * 拿授权书自己抽出来的值去比，永远是「一致」= 假通过。 */
+      const vals = (r.kind === 'need') ? (r.values || []) : [];
       if (r.kind === 'word') {
         ok = findInRaw(r.word, raw).length > 0;
       } else {
@@ -1662,7 +1683,9 @@
         it.needMissingValues = ji.missingValues;
         it.needWeakValues = ji.weakValues || [];
         /* 【2.0.11】比对结论与命中一次算完：同一张图上 `#比` 的项全在＝一致 */
-        it.cmp = cmpJudge(it.rule, text, it.label, it.cmpReqs);
+        /* 【用户 m07238】比对值可能是**同一规则里另一张图**（证书）刚进表的：这轮结果到达后
+         * 重算整条规则的 `cmpReqs`+`cmp`，别沿用建条目时那份（那时证书还没识别完 ⇒ 「没取到值」）。 */
+        recordCmpForRule(it.rule);
         it.lineList = (it.kind === 'pdf') ? pdfLineList : (msg.lineList || []);
         it.ocrMs = msg.ocrMs || msg.ms;
         if (it.kind === 'pdf') {
@@ -1871,6 +1894,9 @@
           needWeak: nf.weak || [], needFrom: nf.fromExtra || [],
           needMissingValues: [], lineList: [],
           cmpReqs: creq, cmp: null,
+          /* 比对值要等 OCR 回来才齐（证书图的基准值），所以锚点留在条目上：
+           * 结果到达时用它重算 `cmpReqs`（`recordCmp`），不能沿用建条目时那份空值。 */
+          anchorCell: anchor.cell || null,
           cellText: String((anchor.cell && anchor.cell.textContent) || '').trim().slice(0, 120)
         };
         if (cached) {
@@ -1923,6 +1949,9 @@
           needWeak: nf.weak || [], needFrom: nf.fromExtra || [],
           needMissingValues: [], lineList: [],
           cmpReqs: creq, cmp: null,
+          /* 比对值要等 OCR 回来才齐（证书图的基准值），所以锚点留在条目上：
+           * 结果到达时用它重算 `cmpReqs`（`recordCmp`），不能沿用建条目时那份空值。 */
+          anchorCell: anchor.cell || null,
           cellText: String((anchor.cell && anchor.cell.textContent) || '').trim().slice(0, 120)
         };
         if (cached) {
@@ -2055,6 +2084,21 @@
     const out = Array.from(items.values());
     for (const pair of manual) if (!items.has(pair[0])) out.push(pair[1]);
     return out;
+  }
+
+  /** 【用户 m07238】同一规则下每张图的结果都会影响别的图的比对结论（证书进表 → 授权书比对），
+   * 所以一笔结果到达就重算整条规则的：取值（`cmpReqs`）与判决（`cmp`）。**只算已经 done 的**。 */
+  function recordCmpForRule(rule) {
+    if (!rule) return;
+    const ruleId = String(rule.ruleId || '');
+    for (const it of allItems()) {
+      if (!it || it.state !== 'done' || !it.text) continue;
+      if (ruleId && String(it.ruleId || '') !== ruleId) continue;
+      try {
+        it.cmpReqs = cmpReqs(rule, it.label, it.anchorCell || null);
+        it.cmp = cmpJudge(rule, it.text, it.label, it.cmpReqs);
+      } catch (e) { /* 一条算不出来不影响别的图 */ }
+    }
   }
 
   KH.ImgOcr = {
