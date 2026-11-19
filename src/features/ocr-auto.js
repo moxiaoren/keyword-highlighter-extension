@@ -55,16 +55,71 @@
     }
     return o;
   }
+  /* 从 s[i] 起读一个「年份 + 字母段 + 流水号」：读不出返回 ''。
+   * 用逐位扫描而不是整串正则，因为 OCR 对登记号的破坏不止「数字读成字母」：
+   *   ① 年份读重：`202424SR0242674`（把年份尾巴又读了一遍）；
+   *   ② 流水号开头的 0 读成字母：`2024SRO242674`（字母段末尾那个 O 其实属于流水号）；
+   *   ③ 数字位读成字母：`2O26SR1OO1O64`。
+   * 规则：年份 4 位（允许易混字符，修好后必须是 19xx/20xx）；年份之后、字母段之前多出来的数字
+   * 一律丢弃（流水号不可能在字母段前面）；字母段最多 3 位；流水号只认数字与易混字符，读到别的
+   * 字符就停；不足 7 位时把字母段末尾的易混字母（O→0 之类）挪进流水号；超过 7 位裁到 7 位。 */
+  function codeAt(s, i) {
+    var year = fixDigits(String(s).slice(i, i + 4));
+    if (!/^(?:19|20)\d{2}$/.test(year)) return '';
+    var j = i + 4;
+    /* 只丢纯数字：S/A/B/G/T/Z/I/L 这些既是易混数字也是合法字母段（SR/SA），不能当多余字符丢掉。 */
+    while (j < s.length && /[0-9]/.test(s.charAt(j))) j++;
+    var letters = '';
+    while (j < s.length && letters.length < 3 && /[A-Za-z]/.test(s.charAt(j))) {
+      letters += s.charAt(j).toUpperCase();
+      j++;
+    }
+    if (!letters) return '';
+    var num = '';
+    while (j < s.length && num.length < 12) {
+      var ch = s.charAt(j).toUpperCase();
+      if (/[0-9]/.test(ch)) { num += ch; j++; continue; }
+      if (CONFUSE[ch]) { num += CONFUSE[ch]; j++; continue; }
+      break;
+    }
+    while (num.length < 7 && letters.length > 1) {
+      var last = letters.charAt(letters.length - 1);
+      if (!CONFUSE[last]) break;
+      letters = letters.slice(0, -1);
+      num = CONFUSE[last] + num;
+    }
+    if (!/^\d{5,10}$/.test(num)) return '';
+    if (num.length > 7) num = num.slice(0, 7);
+    return year + letters + num;
+  }
+
+  /* 一段文字里所有能读成登记号的位置（同一编号只留一次）。空格先去掉：竖排/被拆开的号码常带空格。 */
+  function codesIn(text) {
+    var out = [];
+    var s = String(text == null ? '' : text).replace(/\s+/g, '');
+    for (var i = 0; i < s.length; i++) {
+      if (!/[0-9OQDILSZAGTB]/.test(s.charAt(i))) continue;
+      var c = codeAt(s, i);
+      if (!c || out.indexOf(c) >= 0) continue;
+      out.push(c);
+      if (out.length >= 8) break;
+    }
+    return out;
+  }
+
   /* 归一后的编号（判形状与展示都用它，卡片上显示的是修好的号码）。 */
   function normalizeCode(v) {
-    var s = String(v == null ? '' : v).replace(/\s+/g, '').toUpperCase();
-    var m = /^([0-9OQDILSZAGTB]{4})([A-Z]{1,3})([0-9A-Z]{5,10})$/.exec(s);
-    if (m) {
-      var y = fixDigits(m[1]);
-      var tail = fixDigits(m[3]);
-      if (/^(?:19|20)\d{2}$/.test(y) && /^\d{5,10}$/.test(tail)) return y + m[2] + tail;
+    var raw = String(v == null ? '' : v).replace(/\s+/g, '').toUpperCase();
+    if (!raw) return '';
+    /* 中文形（软著登字第…号）原样保留：它不走「年 + 字母 + 流水号」这条路。 */
+    if (CN_CODE_RE.test(raw)) return raw;
+    var s = raw.replace(/[^0-9A-Z]/g, '');
+    for (var i = 0; i < s.length; i++) {
+      if (!/[0-9OQDILSZAGTB]/.test(s.charAt(i))) continue;
+      var c = codeAt(s, i);
+      if (c) return c;
     }
-    return s;
+    return raw;
   }
   function okCode(v) {
     var s = normalizeCode(v);
@@ -466,9 +521,39 @@
       }
       if (!dup) out.push({ name: name, index: m.index, end: m.index + m[0].length });
     }
-    return out;
+    /* 【2026-11-19 用户报障】惰性后缀把一家公司切成两个主体：
+     * `南京楷灿科技有限公司杭州分公司` 先匹配到「…有限公司」，再从「杭州分公司」起匹配出「杭州分公司」；
+     * `鼎信数智技术集团股份有限公司` 同理被切成「…集团」+「股份有限公司」。
+     * 相邻命中（中间只隔零个或一个括号/点/空白）合并成同一个名字；跨「、」「；」不合并。 */
+    var merged = [];
+    /* 同一行判定：flat 里的换行还在，跨行的两个片段不算一家公司。 */
+    function lineAt(at) { return flat.lastIndexOf('\n', Math.max(0, at - 1)); }
+    for (var k = 0; k < out.length; k++) {
+      var cur = out[k];
+      var prev = merged[merged.length - 1];
+      if (prev && cur.index >= prev.end && cur.index <= prev.end + 2 &&
+          lineAt(cur.index) === lineAt(prev.end)) {
+        var gap = flat.slice(prev.end, cur.index);
+        if (!gap || /^[（()）·\-]+$/.test(gap)) {
+          var nameEnd = cur.end;
+          /* 命中停在「（杭州分公司」这种半截括号上：按已并入的左括号把同一行的右括号补齐，
+           * 否则 okOwnerName 的括号配对校验会把整个名字丢掉。 */
+          var seg = flat.slice(prev.index, nameEnd);
+          var opens = (seg.match(/[（(]/g) || []).length;
+          var closes = (seg.match(/[）)]/g) || []).length;
+          while (opens > closes && nameEnd < flat.length && /[）)]/.test(flat.charAt(nameEnd))) {
+            nameEnd += 1;
+            closes += 1;
+          }
+          prev.name = orgTrim(flat.slice(prev.index, nameEnd));
+          prev.end = nameEnd;
+          continue;
+        }
+      }
+      merged.push({ name: cur.name, index: cur.index, end: cur.end });
+    }
+    return merged;
   }
-
   function orgsIn(text) {
     var hits = orgHits(text);
     var out = [];
@@ -626,14 +711,18 @@
   function regNoValues(lines, full) {
     var out = [];
     function add(v) {
+      /* 归一里已经把「年份读重 / 流水号 0 读成字母 / 末尾多读一位」修好了（见 codeAt）。 */
       var s = normalizeCode(v);
       if (!s || !okCode(s)) return false;
       if (out.indexOf(s) < 0) out.push(s);
       return true;
     }
-    /* ① 固定形状：年份 + 1–3 位字母 + 5–10 位数字（`2026SR0635345` / `2023SR1234567`）。
-     *    标签读成 `记 号` / `认 证 号` 也不影响。
-     *    数字位允许 OCR 易混字符（O/I/S/B…），由 normalizeCode 改回来再判形状。 */
+    /* ① 逐位扫描优先：被 OCR 破坏的编号（`202424SR…` / `2024SRO…`）不符合任何整串形状，
+     *    只能按「年份 + 字母段 + 流水号」逐位还原。 */
+    var found = codesIn(full);
+    if (found.length && add(found[0])) return out;
+    /* ①·b 整串形状兜底：年份 + 1–3 位字母 + 5–10 位数字（`2026SR0635345` / `2023SR1234567`）。
+     *     标签读成 `记 号` / `认 证 号` 也不影响。 */
     var SHAPE = /([0-9OQDILSZAGTB]{4}\s*[A-Za-z]{1,3}\s*[0-9OQDILSZAGTB]{5,10})/;
     var m = SHAPE.exec(full);
     if (m && add(m[1])) return out;
@@ -643,10 +732,22 @@
     for (var i = 0; i < lines.length; i++) {
       var line = lines[i];
       if (!LABEL.test(line)) continue;
-      var code = SHAPE.exec(line) ||
-                 /((?:软著登字第|第)\s*\d{4,8}\s*号)/.exec(line);
-      if (!code && lines[i + 1]) code = SHAPE.exec(lines[i + 1]);
-      if (code && add(code[1])) return out;
+      var cand = '';
+      var inLine = codesIn(line);
+      if (inLine.length) cand = inLine[0];
+      else {
+        var mm = SHAPE.exec(line) || /((?:软著登字第|第)\s*\d{4,8}\s*号)/.exec(line);
+        cand = mm ? mm[1] : '';
+      }
+      if (!cand && lines[i + 1]) {
+        var nx = codesIn(lines[i + 1]);
+        if (nx.length) cand = nx[0];
+        else {
+          var mm2 = SHAPE.exec(lines[i + 1]);
+          cand = mm2 ? mm2[1] : '';
+        }
+      }
+      if (cand && add(cand)) return out;
     }
     /* ③ 中文形兜底：`证书号 软著登字第…号` 那一行不是登记号，跳过。 */
     for (var j = 0; j < lines.length; j++) {

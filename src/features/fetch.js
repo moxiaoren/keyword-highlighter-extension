@@ -116,17 +116,38 @@
   function autoPdfHostOf(el) {
     try { return (el && el.closest) ? el.closest(AUTO_PDF_SEL) : null; } catch (e) { return null; }
   }
-  /** 页地址 + 控件在同类控件里的下标：页面重画换掉元素后，地址还能按同一个键找回来 */
+  function autoPdfRowLabel(host) {
+    try {
+      const tr = (host && host.closest) ? host.closest('tr') : null;
+      if (!tr || !tr.querySelector) return '';
+      const head = tr.querySelector('th, td');
+      if (!head || head === host || (head.contains && head.contains(host))) return '';
+      return String(head.innerText || head.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+    } catch (e) { return ''; }
+  }
+  /** 页地址 + **行标签 + 行内下标**：页面重画/换顺序后地址还能找回来。
+   *  【2.0.14 · 问题③】旧键是「控件在全页同类控件里的下标」——渲染顺序一变，两个字段的地址就互换，
+   *  面板会把两个独立 PDF 显示成「A/B」合并形式。行标签是字段自己的名字，重画不会变。 */
   function autoPdfKeyOf(host) {
     if (!host || typeof document === 'undefined' || !document.querySelectorAll) return '';
+    const base = (typeof location !== 'undefined' && location.href) ? String(location.href).split('#')[0] : '';
+    const label = autoPdfRowLabel(host);
+    if (label) {
+      let inRow = 0;
+      try {
+        const tr = host.closest('tr');
+        const same = tr ? tr.querySelectorAll(AUTO_PDF_SEL) : [];
+        for (let i = 0; i < same.length; i++) { if (same[i] === host) { inRow = i; break; } }
+      } catch (e) { inRow = 0; }
+      return base + '#r:' + label + ':' + inRow;
+    }
     let idx = -1;
     try {
       const all = document.querySelectorAll(AUTO_PDF_SEL);
       for (let i = 0; i < all.length; i++) { if (all[i] === host) { idx = i; break; } }
     } catch (e) { idx = -1; }
     if (idx < 0) return '';
-    const base = (typeof location !== 'undefined' && location.href) ? String(location.href).split('#')[0] : '';
-    return base + '#' + idx;
+    return base + '#' + idx;   // 取不到行：退回整页下标（老页面兜底）
   }
   function autoPdfOf(el) {
     const host = autoPdfHostOf(el) || el;

@@ -1425,6 +1425,42 @@ module.exports = async function run() {
     }
   });
 
+  /* 【2.0.14 · 问题②】爱企查/360 的失败原因要带回面板：只写「未查明」时用户分不出
+   * 是没登录、被拦，还是链路根本没通。 */
+  await test('★ 后台回的失败原因要原样带回来（不再只剩一个「未查明」）', async () => {
+    const had = Object.prototype.hasOwnProperty.call(global, 'chrome') ? global.chrome : undefined;
+    const panel = shadowPanel();
+    panel._entTimeoutMs = 200;
+    panel._entCache = new Map();
+    const reason = '爱企查没登录（在浏览器里登录后再试）';
+    global.chrome = { runtime: { lastError: null, sendMessage: function (msg, cb) { cb({ ok: false, error: reason }); } } };
+    try {
+      const res = await panel.lookupEntity('北京易车互联信息技术有限公司');
+      eq(res.rep, '', '前提：没查到法人');
+      eq(res.error, reason, '★ 失败原因必须带回来，否则面板只能说「未查明」');
+    } finally {
+      if (had === undefined) delete global.chrome; else global.chrome = had;
+    }
+  });
+
+  await test('★ 未查明行的悬停要点名真实原因（爱企查要登录 ≠ 查不到这家公司）', async () => {
+    const div = H.el('div', {}, []);
+    div.innerHTML = KH.Fetch.rowsToTableHtml([
+      { label: '开发者', rows: [[{ t: '北京易车互联信息技术有限公司' }]], opt: null },
+      { label: '核准主体', rows: [[{ t: '北京易车信息科技有限公司' }]], opt: null }
+    ]);
+    if (document.body) document.body.appendChild(div);
+    const panel = shadowPanel();
+    panel.lookupEntity = () => Promise.resolve({ rep: '', timedOut: false, error: '爱企查没登录（在浏览器里登录后再试）' });
+    panel.decorateChecks(div, {});
+    await new Promise((r) => setTimeout(r, 20));
+    const cell = div.querySelectorAll('tr')[1].querySelectorAll('td')[0];
+    const mark = cell.querySelector('.kh-verdict');
+    eq(String(mark.getAttribute('data-state')), 'unknown', '前提：仍然收在「未查明」态');
+    truthy(String(cell.getAttribute('title') || '').indexOf('爱企查没登录') >= 0, '★ 悬停必须写出后台给的原因');
+    if (div.parentNode) div.parentNode.removeChild(div);
+  });
+
   /* 【台账 #7·2026-11-16 改口径】判定只认这个关键词里标的比对（item.pairs）：
    * 同一张表换成另一对 ⇒ 判定跟着变；把对子删掉 ⇒ 上一轮的标记与底色要撤回。 */
   await test('★ 面板按关键词里标的比对判：换对子 ⇒ 判定跟着变；删掉对子 ⇒ 撤回标记', () => {

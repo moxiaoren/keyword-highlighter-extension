@@ -44,6 +44,7 @@ function loadPolicy(fetchImpl, extraChrome) {
     setTimeout: setTimeout,
     clearTimeout: clearTimeout,
     AbortController: AbortController,
+    URL: URL,   /* policy.js 用 new URL(src, pageUrl) 绝对化 iframe 地址：浏览器里恒有，桩环境要补 */
     TextDecoder: TextDecoder,
     fetch: fetchImpl
   };
@@ -59,6 +60,35 @@ const page = (html, type) => async () => ({
   status: 200,
   headers: { get: () => type || 'text/html; charset=utf-8' },
   text: async () => html
+});
+
+/* GBK 编码样本：Node 没有 gbk 编码器，用解码表反推（每轮只建一次表）。 */
+function gbkBytes(str) {
+  const dec = new TextDecoder('gb18030');
+  const map = new Map();
+  const pair = new Uint8Array(2);
+  for (let a = 0x81; a <= 0xfe; a++) {
+    for (let b = 0x40; b <= 0xfe; b++) {
+      pair[0] = a; pair[1] = b;
+      const ch = dec.decode(pair);
+      if (ch.length === 1 && ch !== '\ufffd' && !map.has(ch)) map.set(ch, [a, b]);
+    }
+  }
+  const out = [];
+  for (const ch of str) {
+    if (ch.charCodeAt(0) < 0x80) { out.push(ch.charCodeAt(0)); continue; }
+    const p = map.get(ch);
+    if (!p) throw new Error('GBK 表里没有这个字：' + ch);
+    out.push(p[0], p[1]);
+  }
+  return new Uint8Array(out);
+}
+/** 按字节回的桩：只有 arrayBuffer、没有 text（模拟真浏览器的 fetch 响应）。 */
+const binPage = (bytes, type) => async () => ({
+  ok: true,
+  status: 200,
+  headers: { get: () => type || 'text/plain' },
+  arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
 });
 
 module.exports = async function run() {
@@ -177,6 +207,55 @@ module.exports = async function run() {
 
     const rErr = await Policy.fetchText('https://example.test/privacy');
     falsy(rErr.ok); truthy(/net down/.test(rErr.reason), '网络错误原因要带回来');
+  });
+
+  suite('policy · 抓取四例：GBK / JSON 包 HTML / 脚本正文 / iframe');
+
+  await test('没有 charset 的 GBK 文本：按 UTF-8 解出乱码时自动改用 GBK', async () => {
+    const body = '隐私政策\n欢迎使用“画质猫”。河南悦森信息技术有限公司（以下简称“我们”或“运营者”）'
+      + '非常重视您的个人信息保护，本政策说明我们如何收集、使用、保存与共享您的个人信息，'
+      + '以及您享有的查询、更正、删除与注销权利。';
+    const { Policy } = loadPolicy(binPage(gbkBytes(body), 'text/plain'));
+    const r = await Policy.fetchText('https://oss.test/kh.txt');
+    truthy(r.ok, 'GBK 文本要能抓到：' + JSON.stringify(r).slice(0, 200));
+    truthy(r.text.indexOf('河南悦森信息技术有限公司') >= 0, '正文不能是乱码');
+    truthy(r.text.indexOf('\ufffd') < 0, '不许留替换字符');
+  });
+
+  await test('application/json 里装的是整页 HTML（163yu）：按网页取正文，不判「不是网页」', async () => {
+    const html = '<!DOCTYPE html><html><body><h1>御府和田玉隐私政策</h1>'
+      + '<p>本政策由上海御福工艺品有限公司发布，说明个人信息处理规则与用户权利，含收集范围、'
+      + '使用目的、保存期限、共享情形、注销渠道与投诉方式，请在使用前完整阅读并理解。</p></body></html>';
+    const { Policy } = loadPolicy(page(JSON.stringify(html), 'application/json; charset=utf-8'));
+    const r = await Policy.fetchText('https://www.163yu.test/about/yinsi.html');
+    truthy(r.ok, 'JSON 包 HTML 要能抓到：' + JSON.stringify(r).slice(0, 200));
+    truthy(r.text.indexOf('上海御福工艺品有限公司') >= 0, '正文要回来');
+    truthy(r.text.indexOf('御府和田玉') >= 0, '标题要回来');
+  });
+
+  await test('正文写在 <script> 里的站（dengban）：脚本中的中文串并入正文', async () => {
+    const html = '<html><body><h1>用户隐私政策</h1><p>' + '本政策说明个人信息处理规则与用户权利。'.repeat(6) + '</p>'
+      + '<script>var cfg={productName:"灯伴",companyFullName:"天津飞遇科技有限公司"};</script></body></html>';
+    const { Policy } = loadPolicy(page(html));
+    const r = await Policy.fetchText('https://h5.dengban.test/privacy');
+    truthy(r.ok);
+    truthy(r.text.indexOf('灯伴') >= 0, '脚本里的产品名要进正文');
+    truthy(r.text.indexOf('天津飞遇科技有限公司') >= 0, '脚本里的公司名要进正文');
+  });
+
+  await test('正文在跨域 iframe 里（suanya）：去拉 iframe 的正文', async () => {
+    const impl = async (u) => {
+      if (String(u).indexOf('rulecenter.test') >= 0) {
+        return page('<html><body><h1>智行旅行隐私政策</h1><p>上海蒜芽信息科技有限公司 说明个人信息处理规则与用户权利，'
+          + '含收集范围、使用目的、保存期限、共享情形、注销渠道与投诉方式。</p></body></html>')();
+      }
+      return page('<html><body><img src="a.png"><iframe src="https://rulecenter.test/rule/164.html"></iframe></body></html>')();
+    };
+    const { Policy } = loadPolicy(impl);
+    const r = await Policy.fetchText('https://m.suanya.test/yun/common/privacyPolicy?appid=5208', { hints: ['智行旅行'] });
+    truthy(r.ok, 'iframe 里的正文要抓回来：' + JSON.stringify(r).slice(0, 240));
+    truthy(r.text.indexOf('智行旅行') >= 0);
+    truthy(/frame/.test(r.via), 'via 要标出走了 iframe：' + r.via);
   });
 
   suite('note-check · 从哪儿取链接 + 全角零宽不影响匹配');

@@ -166,6 +166,14 @@
     return m2 ? String(m2[1]).toLowerCase() : 'utf-8';
   }
 
+  /** 解出来有多少个 U+FFFD（替换字符）：用来判断「这个字符集猜错了」。 */
+  function badCount(s) {
+    let n = 0;
+    const str = String(s || '');
+    for (let i = 0; i < str.length; i++) if (str.charCodeAt(i) === 0xfffd) n++;
+    return n;
+  }
+
   function decodeBytes(buf, type) {
     let bytes;
     try { bytes = (buf instanceof Uint8Array) ? buf : new Uint8Array(buf); } catch (e) { bytes = null; }
@@ -173,11 +181,22 @@
     let cs = sniffCharset(type, bytes);
     /* gb2312 / gbk 一律按超集 gb18030 解，避免生僻字变问号。 */
     if (/^(gb2312|gbk|x-gbk|gb18030)$/i.test(cs)) cs = 'gb18030';
-    try {
-      return new TextDecoder(cs).decode(bytes);
-    } catch (e) {
-      try { return new TextDecoder('utf-8').decode(bytes); } catch (e2) { return ''; }
+    const tryDecode = (name) => {
+      try { return new TextDecoder(name).decode(bytes); } catch (e) { return null; }
+    };
+    let out = tryDecode(cs);
+    if (out == null) out = tryDecode('utf-8') || '';
+    /* 【2026-11-19 用户报障】OSS 上的 .txt 没有 charset、内容其实是 GBK：按 UTF-8 硬解
+     * 出来是 7000 多个 U+FFFD，正文等于全丢（「画质猫」案例）。解出替换字符就按 GBK 再解一遍，
+     * 谁坏得少用谁 —— 不认识字符集的站也救得回来。 */
+    if (cs !== 'gb18030') {
+      const bad = badCount(out);
+      if (bad > 0) {
+        const alt = tryDecode('gb18030');
+        if (alt != null && badCount(alt) < bad) return alt;
+      }
     }
+    return out;
   }
 
   /* ---------------- 网络 ---------------- */
@@ -485,6 +504,94 @@
     }
   }
 
+  /** 响应体是不是「JSON 字符串里装着 HTML」（163yu 回 application/json，body 却是整页网页）。 */
+  function unwrapJsonHtml(raw) {
+    const s = String(raw || '').trim();
+    if (!s || (s.charAt(0) !== '"' && s.charAt(0) !== '{' && s.charAt(0) !== '[')) return '';
+    try {
+      const v = JSON.parse(s);
+      if (typeof v === 'string' && /<\s*(?:!doctype|html|body|head|div|p|h1|meta)\b/i.test(v)) return v;
+      if (v && typeof v === 'object') {
+        const ks = ['html', 'content', 'body', 'data'];
+        for (let i = 0; i < ks.length; i++) {
+          const x = v[ks[i]];
+          if (typeof x === 'string' && /<\s*(?:!doctype|html|body|div|p)\b/i.test(x)) return x;
+        }
+      }
+    } catch (e) { /* 不是 JSON，交给原逻辑 */ }
+    return '';
+  }
+
+  /** <script> 里的中文串并入正文（dengban 案例：正文全在脚本的对象字面量里）。 */
+  function scriptStrings(html) {
+    const src = String(html || '');
+    const out = [];
+    const seen = {};
+    let size = 0;
+    const blocks = /<script\b[^>]*>([\s\S]*?)<\/script\s*>/gi;
+    let m;
+    let guard = 0;
+    while ((m = blocks.exec(src)) !== null && guard++ < 120) {
+      const js = m[1] || '';
+      /* 下限 2：产品名常常只有两个字（dengban 的「灯伴」），4 字起会把它们漏掉。 */
+      const lits = /"((?:[^"\\\n]|\\.){2,400})"|'((?:[^'\\\n]|\\.){2,400})'/g;
+      let q;
+      let g2 = 0;
+      while ((q = lits.exec(js)) !== null && g2++ < 400) {
+        const raw = q[1] || q[2] || '';
+        if (!/[\u4e00-\u9fa5]/.test(raw)) continue;
+        const t = decodeEntities(raw
+          .replace(/\\u([0-9a-fA-F]{4})/g, (x, h) => String.fromCharCode(parseInt(h, 16)))
+          .replace(/\\[nrt]/g, ' ')
+          .replace(/\\"/g, '"')
+          .replace(/\\'/g, "'"));
+        if (flatLite(t).length < 2 || seen[t]) continue;
+        seen[t] = 1;
+        out.push(t);
+        size += t.length;
+        if (size > 40000) return out.join('\n');
+      }
+    }
+    return out.join('\n');
+  }
+
+  /** 页面里的 iframe 地址（suanya 案例：正文全在这个跨域 iframe 里，主文档一无所有）。 */
+  function frameSources(html, pageUrl) {
+    const src = String(html || '');
+    const re = /<iframe\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/gi;
+    const out = [];
+    let m;
+    let guard = 0;
+    while ((m = re.exec(src)) !== null && guard++ < 60) {
+      let abs = '';
+      try { abs = new URL(m[1], pageUrl).toString(); } catch (e) { abs = ''; }
+      if (!/^https?:\/\//i.test(abs) || out.indexOf(abs) >= 0) continue;
+      out.push(abs);
+      if (out.length >= 3) break;
+    }
+    return out;
+  }
+
+  /** 拉 iframe 正文（扩展有 host 权限，不必去碰页面；跨域也能读）。命中目标词就停。 */
+  async function readFrames(pageUrl, html, hints) {
+    const list = frameSources(html, pageUrl);
+    if (!list.length) return '';
+    const parts = [];
+    for (let i = 0; i < list.length; i++) {
+      try {
+        const page = await getPage(list[i]);
+        const unwrapped = unwrapJsonHtml(page.html);
+        const srcHtml = unwrapped || page.html || '';
+        let body = (/json/i.test(page.type) && !unwrapped) ? flattenJson(srcHtml) : Policy.stripHtml(srcHtml);
+        const extra = scriptStrings(srcHtml);
+        if (extra && flatLite(body).length < STRONG_TEXT) body += '\n' + extra;
+        if (flatLite(body).length >= 2) parts.push(body.slice(0, 60000));
+        if (hints.length && covers(parts.join('\n'), hints)) break;
+      } catch (e) { /* 单个 iframe 拉不到不影响主结论 */ }
+    }
+    return parts.join('\n');
+  }
+
   async function probeApi(pageUrl, html, hints) {
     const origin = originOf(pageUrl);
     if (!origin) return '';
@@ -550,14 +657,29 @@
       tried.push(cu);
       try {
         const p = await getPage(cu);
-        const body = (p.type.indexOf('text/plain') >= 0 ? p.html : Policy.stripHtml(p.html)).slice(0, MAX_TEXT);
+        const isText = p.type.indexOf('text/plain') >= 0;
+        const isJson = /json/i.test(p.type);
+        const isHtml = !p.type || p.type.indexOf('html') >= 0;
+        /* 【2.0.14】响应头说 JSON、body 其实是「JSON 字符串里装着整页 HTML」（163yu）：
+         * 先拆包按 HTML 取正文；只有真 JSON 才按值压平 —— 否则整篇政策被当成「不是网页」丢掉。 */
+        const unwrapped = isJson ? unwrapJsonHtml(p.html) : '';
+        const srcHtml = unwrapped || p.html;
+        let body = isText ? srcHtml : ((isJson && !unwrapped) ? flattenJson(srcHtml) : Policy.stripHtml(srcHtml));
+        /* 正文全写在 <script> 里的站（dengban）：脚本里的中文串并入正文。 */
+        if (isHtml || unwrapped) {
+          const extra = scriptStrings(srcHtml);
+          if (extra) body += '\n' + extra;
+        }
+        body = body.slice(0, MAX_TEXT);
         if (p.type.indexOf('pdf') >= 0) {
           if (!flatLite(text).length) hardReason = '链接是 PDF，读不出文字';
-        } else if (p.type && p.type.indexOf('html') < 0 && p.type.indexOf('text/plain') < 0) {
+        } else if (!isText && !isJson && !isHtml) {
           if (!flatLite(text).length) hardReason = '链接不是网页（' + p.type + '）';
-        } else if (flatLite(body).length > flatLite(text).length) {
-          text = body;
-          html = p.html || '';
+        } else if (flatLite(body).length > flatLite(text).length || (!html && (isHtml || !!unwrapped))) {
+          /* 【2.0.14】主体是 <img>/<iframe>、静态文本为空时也要留住 html ——
+           * 后面要靠它找 iframe 地址（suanya 案例：正文全在跨域 iframe 里）。 */
+          if (flatLite(body).length > flatLite(text).length) text = body;
+          html = srcHtml || '';
           pageUrl = cu;
         }
       } catch (err) {
@@ -603,6 +725,15 @@
         }
         /* 只有「错误页」才值得换协议重试；登录墙/空壳换协议也一样。 */
         if (!tab.errorPage) break;
+      }
+    }
+
+    /* 正文可能整段在 iframe 里（suanya：主文档只有一个跨域 iframe，静态抓和标签页都读不到）。 */
+    if (needDeep()) {
+      const framed = await readFrames(pageUrl, html, hints);
+      if (framed) {
+        text = (flatLen() ? (text + '\n' + framed) : framed).slice(0, MAX_TEXT);
+        via = (via === 'fetch') ? 'fetch+frame' : (via + '+frame');
       }
     }
 

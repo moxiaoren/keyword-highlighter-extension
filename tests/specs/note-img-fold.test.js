@@ -46,6 +46,25 @@ module.exports = async function run() {
    * ① 卡片里的图：命中铺红框、title 说出命中的词
    * ========================================================================== */
 
+  /* 【2.0.14 · 问题④】用户口径：比对一致不要红框，比对不一致仍要红框提示。 */
+  await test('★ 勾了比对的图：一致不铺红框，不一致才铺（即使命中动态词）', () => {
+    const p = shadowPanel();
+    p.bodyEl = bodyWithImgs(['https://ex.com/same.png', 'https://ex.com/diff.png']);
+    const need = (ok) => ({ name: '登记号', kind: 'need', ok: ok, values: 1 });
+    p.imgItems = [
+      { key: 'r|s', src: 'https://ex.com/same.png', state: 'done', text: 't',
+        matched: [{ text: '交友' }],
+        cmp: { state: 'same', items: [need(true)], missing: [] } },
+      { key: 'r|d', src: 'https://ex.com/diff.png', state: 'done', text: 't',
+        matched: [],
+        cmp: { state: 'diff', items: [need(false)], missing: ['登记号'] } }
+    ];
+    p.applyImgMarks();
+    const ims = p.bodyEl.querySelectorAll('img');
+    eq(ims[0].classList.contains('khin-imghit'), false, '比对一致：命中动态词也不许铺红框');
+    eq(ims[1].classList.contains('khin-imghit'), true, '比对不一致：必须铺红框提示');
+  });
+
   await test('★ 命中的图铺红框并说出命中了哪个词；没命中的铺绿框且说清为什么没中', () => {
     const p = shadowPanel();
     p.bodyEl = bodyWithImgs(['https://ex.com/a.png', 'https://ex.com/b.png']);

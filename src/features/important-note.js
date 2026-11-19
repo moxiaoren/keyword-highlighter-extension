@@ -687,7 +687,13 @@
   function stateOfImg(it, V) {
     if (!it) return null;
     const st = String(it.state || '');
-    const words = hitWords(it);
+    const words = hitWords(it);    /* 【2.0.14 · 问题④】勾了「比对」的图，判定跟比对走：一致不铺红框，不一致才铺（悬停点名缺哪项）。
+     * 比对优先于关键词命中：同一张图可能既命中动态词、又对不上证书值 —— 后者才是要用户处理的。 */
+    const cmp = it && it.cmp;
+    if (st === 'done' && cmp && (cmp.state === 'same' || cmp.state === 'diff')) {
+      if (cmp.state === 'diff') return { cls: 'khin-imghit', tip: cmpTipOf(it) || (V.imgMissTip || '') };
+      return { cls: 'khin-imgmiss', tip: cmpTipOf(it) || '' };
+    }
     if (st === 'done' && words.length) {
       /* 走 `VIEW.imgHitTip` 的字面引用（不写成 `V.imgHitTip`）：`tests/specs/ocr-copy.test.js`
        * 的「不变量 10」就按 `VIEW.xxx` 这个名字做源码契约检查，免得哪天有人又在这儿写死中文。 */
@@ -3073,10 +3079,10 @@
       devTr.setAttribute('data-kh-ent-sig', sig);
       /* 兼容两种回法：字符串（老写法 / 单测打的桩）与 { rep, timedOut }（lookupEntity 现在给这个）。 */
       const asSide = (v) => (v && typeof v === 'object')
-        ? { rep: String(v.rep || ''), timedOut: !!v.timedOut }
-        : { rep: String(v || ''), timedOut: false };
+        ? { rep: String(v.rep || ''), timedOut: !!v.timedOut, error: String(v.error || '') }
+        : { rep: String(v || ''), timedOut: false, error: '' };
       const repOfSide = (name) => {
-        if (KH.Compare.isPersonName(name)) return Promise.resolve({ rep: String(name), timedOut: false });
+        if (KH.Compare.isPersonName(name)) return Promise.resolve({ rep: String(name), timedOut: false, error: '' });
         return this.lookupEntity(name).then((got) => asSide(got));
       };
       Promise.all([repOfSide(dev), repOfSide(ent)]).then((sides0) => {
@@ -3086,8 +3092,10 @@
         if (el && el.isConnected === false) return;
         if (table && table.isConnected === false) return;
         const verdict = KH.Compare.legalRep({ name: dev, rep: reps[0] }, { name: ent, rep: reps[1] }).state;
-        const sides = '开发者「' + dev + '」→ ' + (reps[0] || '未查到法人')
-          + '；核准主体「' + ent + '」→ ' + (reps[1] || '未查到法人');
+        /* 查不到法人时把失败原因跟在后面（爱企查要登录 / 超时 / 站点改版），面板不再只有一个「未查明」。 */
+        const why = (s) => (s.rep ? '' : (s.error ? '（' + s.error + '）' : ''));
+        const sides = '开发者「' + dev + '」→ ' + (reps[0] || '未查到法人') + why(sides0[0])
+          + '；核准主体「' + ent + '」→ ' + (reps[1] || '未查到法人') + why(sides0[1]);
         if (verdict === 'unknown') {
           /* 不改底色，但原因要说得清：【台账 #8】等满 20 秒没回执 = 超时（可以等会儿再看），
            * 其余才是「未查明」。两种情况以前都只写「未查明」，用户分不出该重试还是该放弃。 */
@@ -3113,7 +3121,8 @@
         setVerdictMark(entTr, verdict, tip);
       }).catch(() => {
         /* 查询失败 = 未查明：不涂色，但要留标记与说明（不然失败和「没校验」长得一样）。 */
-        const tip = '同法人校验：无法核实（查询失败，不改底色）\n' + sides;
+        /* 走到这里说明 Promise 链自己出错了，拿不到每一侧的结果：不能引用 then 里的 `sides`（越作用域）。 */
+        const tip = '同法人校验：无法核实（查询失败，不改底色）\n稍后重新打开这张卡会自动重查。';
         setCheckTip(devTr, tip);
         setCheckTip(entTr, tip);
         setVerdictMark(devTr, 'unknown', tip);
@@ -3137,11 +3146,13 @@
          * 否则这层 Promise 和 paintEntity 的 .then 会一直挂着。 */
         let settled = false;
         let timer = 0;
-        const finish = (v, timedOut) => {
+        /* 【2.0.14 · 问题②】把失败原因也带回面板：以前只回空串，界面永远写「未查明」，
+         * 用户分不出是没登录爱企查、被拦、还是链路根本没通。 */
+        const finish = (v, timedOut, error) => {
           if (settled) return;
           settled = true;
           if (timer) { clearTimeout(timer); timer = 0; }
-          resolve({ rep: String(v || ''), timedOut: !!timedOut });
+          resolve({ rep: String(v || ''), timedOut: !!timedOut, error: String(error || '') });
         };
         /* 等待上限默认 20 秒（判据口径）；单测把 this._entTimeoutMs 调小即可不等真 20 秒。 */
         const waitMs = Number(this._entTimeoutMs) > 0 ? Number(this._entTimeoutMs) : 20000;
@@ -3152,8 +3163,9 @@
         const MSG = (KH && KH.MSG) || {};
         try {
           api.runtime.sendMessage({ type: MSG.ENTITY_LOOKUP, name: key }, (res) => {
-            if (api.runtime.lastError) { finish(''); return; }
+            if (api.runtime.lastError) { finish('', false, api.runtime.lastError.message || '后台通道没接通'); return; }
             const rep = (res && res.ok && res.rep) ? String(res.rep) : '';
+            const why = rep ? '' : String((res && res.error) || '');
             if (rep) {
               /*【2.0.8.12 性能】缓存原来无上限：一天里翻几十张网页面，公司名会一条条攒着不释放。
                 留最近 200 条足够（同一张卡内的重复查询都落在最近几十条里），超了就把最早的删掉。*/
@@ -3163,7 +3175,7 @@
                 if (!first.done) this._entCache.delete(first.value);
               }
             }
-            finish(rep);
+            finish(rep, false, why);
           });
         } catch (e) { finish(''); }
       });
