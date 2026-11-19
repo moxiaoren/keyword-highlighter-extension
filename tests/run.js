@@ -241,7 +241,9 @@ const specs = [
   /* 校验中心（T5）：三处配置的只读汇总。口径见 specs/compare-center.test.js 头部 */
   './specs/compare-center.test.js',
   /* 悬停降维（T6）：结论先行 / 最多三句 / 差异类型。口径见 specs/tip-t6.test.js 头部 */
-  './specs/tip-t6.test.js'
+  './specs/tip-t6.test.js',
+  /* 2.0.14 案例页（后台详情页整份快照的行结构）下的 PDF 归属三条 + 证书/勾选行。见 specs/platform-replica.test.js 头部 */
+  './specs/platform-replica.test.js'
 ];
 
 (async () => {
