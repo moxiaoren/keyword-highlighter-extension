@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-19T16:59:12.393Z",
+  "generatedAt": "2026-11-19T17:27:10.815Z",
   "version": "2.0.14",
   "fileCount": 6112,
   "files": {
@@ -5911,7 +5911,7 @@
     "scripts/lib/version.js": "eb296aeed89119e1f4a01518d8943e3dc86323965dd276cf9e0dd50f73093060",
     "scripts/meta-check.js": "caaae3dcc484ec0f6947162546b2a21df2dca6ab011220795ce38aa2537766e0",
     "scripts/notes-summary.js": "d654e02bfc501a1adab52682e7313b84114fc8cfb37dcae5ac65f400022c9138",
-    "scripts/package.js": "1cbf36e13a5cae46b821189e73936e366f9a92acf5aadc271208e2512c7775da",
+    "scripts/package.js": "cbedb44b606f77c85aceb6429327a938ac367e6893889b2c5c7df6732fd21454",
     "scripts/publish-gh.js": "04b6962ea91db58d7f60e8a707e31a634c4714e7ee9751f7abc9e3c3c6609c45",
     "scripts/regression-areas.js": "586f77ff24a441fcc44c0eb7e5a5ad2bcfc3f9d97668060a67272e4c887f6572",
     "scripts/release-audit.js": "26ee53764801c6e9f3ef0a34424192c414e38111492861e57c210b544d2eb8c6",
