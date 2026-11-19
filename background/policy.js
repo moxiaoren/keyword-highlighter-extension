@@ -697,6 +697,32 @@
      * 而这时静态 HTML 里其实已经有整篇政策 —— 去开标签页纯属自找错误页。 */
     const needDeep = () => !hardReason && (thin() || (missHints() && (flatLen() < STRONG_TEXT || paramDriven(html, pageUrl))));
 
+    /* 【2.0.14 方案 C】浏览器把 http 升级成 https、停在「不支持安全连接」错误页时，
+     * 后台标签页一个字的正文都读不到（错误页注入不了，扩展也点不了它）。
+     * 这里完全绕开标签页：直接用扩展 fetch 抓 http 版，并把脚本中文串、跨域 iframe 一起并进来。 */
+    const httpAltOf = (x) => /^https:\/\//i.test(String(x || '')) ? 'http://' + String(x).slice(8) : '';
+    const httpFallback = async (x) => {
+      const cand = httpAltOf(x);
+      if (!cand) return null;
+      if (tried.indexOf(cand) < 0) tried.push(cand);
+      let p;
+      try { p = await getPage(cand); } catch (e) { return null; }
+      const isText = p.type.indexOf('text/plain') >= 0;
+      const isJson = /json/i.test(p.type);
+      const isHtml = !p.type || p.type.indexOf('html') >= 0;
+      if (!isText && !isJson && !isHtml) return null;
+      const unwrapped = isJson ? unwrapJsonHtml(p.html) : '';
+      const srcHtml = unwrapped || p.html;
+      let body = isText ? srcHtml : ((isJson && !unwrapped) ? flattenJson(srcHtml) : Policy.stripHtml(srcHtml));
+      if (isHtml || unwrapped) {
+        const extra = scriptStrings(srcHtml);
+        if (extra) body += '\n' + extra;
+      }
+      const framed = await readFrames(cand, srcHtml, hints);
+      if (framed) body += '\n' + framed;
+      return { text: body.slice(0, MAX_TEXT), url: cand };
+    };
+
     /* 静态结果「太短」或「缺目标词且正文不长」才升级：短 = 空壳/模板；缺词 = 正文可能是后填的。
      * 标签页落在错误页时，换另一个协议再试一次（sknow：https 证书错误、http 才有正文）。 */
     if (needDeep()) {
@@ -722,6 +748,14 @@
             break;
           }
           blockedByTls = true;
+          /* 方案 C：别让用户去点错误页 —— 直接抓 http 版正文。 */
+          const fb = await httpFallback(cu);
+          if (fb && (covers(fb.text, hints) || flatLite(fb.text).length > flatLen())) {
+            text = fb.text;
+            via = 'fetch+http';
+            pageUrl = fb.url;
+            break;
+          }
         }
         /* 只有「错误页」才值得换协议重试；登录墙/空壳换协议也一样。 */
         if (!tab.errorPage) break;
@@ -755,7 +789,7 @@
       bits.push('页面里没读到正文（可能需要登录或脚本渲染）');
       for (let i = 0; i < tabReasons.length; i++) bits.push('后台标签页：' + tabReasons[i]);
       if (tried.length > 1) bits.push('试过的地址：' + tried.join('、'));
-      if (blockedByTls) bits.push('这个站只支持 http，浏览器把它升级成 https 后被安全提示拦住了。在浏览器里打开它、点一次「继续访问网站」（或站点设置里允许不安全内容）后再试，工具会直接读那张已经打开的页');
+      if (blockedByTls) bits.push('这个站只支持 http，浏览器把链接升级成 https 后停在安全提示页（错误页读不到正文）。扩展已经直接抓过 http 版，' + (flatLen() ? '但正文里仍然缺要核对的内容' : '但页面靠脚本渲染、静态抓不到正文') + '；要彻底免点，可在浏览器设置里关掉「始终使用安全连接」');
       out = { ok: false, reason: bits.join('；') };
     } else {
       out = { ok: true, text: text, len: text.length };

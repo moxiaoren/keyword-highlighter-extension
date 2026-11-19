@@ -178,7 +178,7 @@ module.exports = async function run() {
     truthy(r.text.indexOf('个人信息处理规则') >= 0, '正文要回来');
   });
 
-  await test('★ 拦住了又没开着的页：原因里必须告诉用户点一次「继续访问网站」', async () => {
+  await test('★ 拦住了又抓不到 http 版：原因里要告诉用户关掉「始终使用安全连接」', async () => {
     const tabs = {
       query: () => Promise.resolve([]),
       create: () => Promise.resolve({ id: 9, url: 'chrome-error://chromewebdata/' }),
@@ -189,7 +189,31 @@ module.exports = async function run() {
     const { Policy } = loadPolicy(async () => { throw new TypeError('Failed to fetch'); }, { tabs: tabs, scripting: scripting });
     const r = await Policy.fetchText('http://zs.cszesu.test/scenead-frontend/agreement?type=1');
     falsy(r.ok, '读不到就不许装成功');
-    truthy(/继续访问/.test(r.reason), '要说清怎么自救：' + r.reason);
+    truthy(/安全连接/.test(r.reason), '要说清怎么自救：' + r.reason);
+  });
+
+  await test('★ 方案 C：浏览器停在安全提示页时，直接抓 http 版正文，不用用户点「继续访问网站」', async () => {
+    const long = '<p>' + '平台隐私政策：本政策说明个人信息处理规则、收集范围、使用目的、共享情形与保存期限。'.repeat(12) + '</p>';
+    const shell = '<div id="app"></div>';
+    let httpCalls = 0;
+    const fetchImpl = async (url) => {
+      if (/^https:/i.test(String(url))) throw new TypeError('Failed to fetch');
+      httpCalls++;
+      const body = httpCalls === 1 ? shell : long;   /* 首次静态抓只拿到空壳，方案 C 再抓时才是正文 */
+      return { ok: true, status: 200, headers: { get: () => 'text/html; charset=utf-8' }, text: async () => body };
+    };
+    const tabs = {
+      query: () => Promise.resolve([]),
+      create: () => Promise.resolve({ id: 9, url: 'chrome-error://chromewebdata/' }),
+      remove: () => Promise.resolve(),
+      onUpdated: { addListener: () => {}, removeListener: () => {} }
+    };
+    const scripting = { executeScript: () => Promise.reject(new Error('Frame with ID 0 is showing error page')) };
+    const { Policy } = loadPolicy(fetchImpl, { tabs: tabs, scripting: scripting });
+    const r = await Policy.fetchText('https://zs.cszesu.test/agreement?type=1', { hints: ['隐私政策'] });
+    truthy(r.ok, '方案 C 要能直接拿到正文：' + JSON.stringify(r));
+    eq(r.via, 'fetch+http', '走的是 http 兜底这条路');
+    truthy(r.text.indexOf('个人信息处理规则') >= 0, '正文要回来');
   });
 
   await test('非 http(s) / PDF / 空页面 / 网络失败都要给出人话原因，不许装成功', async () => {
