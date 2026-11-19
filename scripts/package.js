@@ -186,15 +186,17 @@ function regressionLine() {
   const reds = pick(GATE.meta, /通过 (\d+) · 警告 \d+ · 错误 \d+/);
   if (reds !== null) parts.push('机械红线 **' + reds + '** 项');
 
-  /* 真机两层共用同一个累加器（_e2e/t.js 的 results），所以：
-   *   内容层 = 「内容层真浏览器测试」之后的通过数；
-   *   UI 层  = 「UI 层真浏览器测试」之后的通过数 − 内容层（**推导量**，不是直接读数）。
+  /* 两层是两个独立的测试进程（content.test.js / ui.test.js 各跑一次，各自从 0 计数），
+   * 报告里的「通过 N」就是这一层自己的条数：
+   *   内容层 = 「内容层真浏览器测试」报告里那一层的通过数；
+   *   UI 层  = 「UI 层真浏览器测试」报告里那一层的通过数。
+   * （曾经按「两层共用同一个累加器」做减法，把 UI 层 162 算成 162−87=75，说明里少报了一半。）
    * 任一层没跑（数 0 / 标题缺失 / --skip-e2e）就**整项不写**，不写 0 冒充结果。 */
   const mC = GATE.e2e.match(/内容层真浏览器测试[\s\S]*?通过 (\d+) · 失败 \d+/);
   const mU = GATE.e2e.match(/UI 层真浏览器测试[\s\S]*?通过 (\d+) · 失败 \d+/);
   if (mC && mU) {
     const c = Number(mC[1]);
-    const u = Number(mU[1]) - c;
+    const u = Number(mU[1]);
     if (c > 0 && u > 0) parts.push('真浏览器回归 **内容层 ' + c + ' + UI 层 ' + u + '**');
   }
 
