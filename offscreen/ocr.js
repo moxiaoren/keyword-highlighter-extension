@@ -1610,6 +1610,26 @@
     return null;
   }
 
+  /** 【2.0.14 需求一】两条行框在横向上是否重叠（拿不到 x/x2 就返回 true = 退回旧口径）。
+   * 18px 去重兜底原本只看纵向距离，多栏排版里左右同高的两条会被误删一条。 */
+  function spanXOverlap(a, b) {
+    const a0 = Number(a && a.x), a1 = Number(a && a.x2), b0 = Number(b && b.x), b1 = Number(b && b.x2);
+    if (!isFinite(a0) || !isFinite(a1) || !isFinite(b0) || !isFinite(b1)) return true;
+    return a0 < b1 && b0 < a1;
+  }
+
+  /** 【2.0.14 需求一】首遍已经读到「很多行」⇒ 再切成横带不会多出字。
+   * 切带的用途是补「读漏了」，不是「读到了但没这个词」：首遍在一张 900px 高的图上读到十几行，
+   * 说明整块喂进去 det 召回正常，切成 3/5 条只会把同一批像素再看 8 遍（实测每图 ~4.5s 白烧）。
+   * 判据故意保守：行数必须达到「每 70px 至少一行」且不少于 6 行 —— 109 那张只读到 4–5 行，
+   * 继续走切带；空白/装饰图没有行，根本进不到这里。 */
+  function layoutCovered(orig, lines) {
+    const H = Number(orig && orig.h) || 0;
+    const n = (lines || []).filter((l) => l && isFinite(Number(l.y))).length;
+    if (H <= 0) return false;
+    return n >= Math.max(6, Math.round(H / 70));
+  }
+
   const PURE = {
     CHUNK_H: CHUNK_H, CHUNK_OVERLAP: CHUNK_OVERLAP, CHUNK_MAX: CHUNK_MAX,
     CHUNK_H_RELAXED: CHUNK_H_RELAXED, MIN_OVERLAP: MIN_OVERLAP, ROT_ORDER: ROT_ORDER.slice(),
@@ -1632,7 +1652,8 @@
     TILT_CANDIDATES: TILT_CANDIDATES.slice(), pickTilt: pickTilt,
     ADOPT_MIN_CONF: ADOPT_MIN_CONF, isCredible: isCredible,
     DENSE_RESCALE: DENSE_RESCALE, picksBetter: picksBetter,
-    judgeOrientation: judgeOrientation, noticeOf: noticeOf,
+    judgeOrientation: judgeOrientation, noticeOf: noticeOf, spanXOverlap: spanXOverlap,
+    layoutCovered: layoutCovered,
     langsForKeyword: langsForKeyword, countHits: countHits
   };
   self.__khOcrPure = PURE;
@@ -1950,7 +1971,11 @@
       /* 键 = 字节 + 引擎 + 语言包（**不含关键词**，票 #33） */
       const cacheKey = imgHash ? [imgHash, kind, langs.join('+')].join('|') : '';
       const cachedEntry = cacheKey ? resultCache.get(cacheKey) : null;
-      if (cachedEntry && (cachedEntry.denseRescaled || countHits(cachedEntry.lines, job.keyword) > 0)) {
+      /* 【2.0.14 需求一】缓存放宽到「关键词无关」的那一档：只有这一遍已经把该试的都试完、
+       * 仍然一个命中都没有（exhaustedAll）才允许换词复用 —— 那时换任何词都只会走同一条零命中
+       * 路径（试转 / 密排切带都按「零命中」触发），结果必然与重跑一致。缓存那遍若命中了，
+       * 就仍只按「新词在这批行里也命中」复用，否则可能白拿一条没跑过密排切带的结果。 */
+      if (cachedEntry && (cachedEntry.denseRescaled || cachedEntry.exhaustedAll || countHits(cachedEntry.lines, job.keyword) > 0)) {
         reply(Object.assign({}, cachedEntry.payload, {
           cached: true, queueMs: Math.round(performance.now() - t0), totalMs: Math.round(performance.now() - t0)
         }));
@@ -2051,7 +2076,7 @@
            * 空行/纯空白不参与（否则会被吞掉）。18px 闸仍比常规行距(24px)小 ⇒ 不会跨物理行误吞。
            * 留哪条**与近失那遍同一口径：conf 高的胜**（真机就是靠这个选对原图写法：「第171行 12.00」
            * conf=100 胜出；只按 y 小保下来的那条 conf=99，会让真值逐字命中白掉 1）；conf 持平则保先出现的。 */
-          if (prev && keyOf(l.t) !== '' && keyOf(prev.t) === keyOf(l.t) && Math.abs(prev.y - l.y) < 18) {
+          if (prev && keyOf(l.t) !== '' && keyOf(prev.t) === keyOf(l.t) && Math.abs(prev.y - l.y) < 18 && spanXOverlap(prev, l)) {
             if (l.conf > prev.conf) out[out.length - 1] = l;
             continue;
           }
@@ -2199,11 +2224,13 @@
         const lines = [];
         const empties = [];
         let rawLines = 0, confSum = 0, keptN = 0, passes = 0, psm = PSM_BLOCK, pre0 = null;
+        /* 【2.0.14 需求一】PSM 去抖：同一帧里各块从没变过 PSM，逐块重设一遍是白花的 IPC。 */
+        let psmSet = null;
         for (let i = 0; i < chunks.length; i++) {
           throwIfAborted();                 // 每块之前：取消后剩下的块不再识别
           const pre = await chunkFor(f, i, k);
           if (i === 0) { pre0 = pre; psm = (chunks.length === 1 && pre.singleLine) ? PSM_SINGLE : PSM_BLOCK; }
-          await setPsm(psm);
+          if (psmSet !== psm) { await setPsm(psm); psmSet = psm; }
           const raw = await recognizeChunk(pre, chunks[i]);
           passes += 1;
           rawLines += raw.length;
@@ -2303,7 +2330,9 @@
        * 档位从粗到细（`denseBandPlans`）：**一旦命中关键词就停**（粗档能成只花粗档的钱；
        * 109 那张常规字重图要第 2 档（5 条）才命中，粗体那张第 1 档（3 条）就成）。 */
       if (orig.h >= 400 && base.stat.lines > 0 && hitsOf(base.lines) === 0
-          && base.plan.coverage.usedChunks === 1 && !base.plan.coverage.truncated) {
+          && base.plan.coverage.usedChunks === 1 && !base.plan.coverage.truncated
+          /* 【2.0.14 需求一】首遍已经把整页读得很密 ⇒ 切带只是白烧。见 layoutCovered 头注。 */
+          && !layoutCovered(orig, base.lines)) {
         throwIfAborted();
         denseBanded = true;
         for (const plan of denseBandPlans(orig.w, orig.h)) {
@@ -2435,7 +2464,9 @@
        * 连同 `lines`/`denseRescaled`/`denseBanded` 一起存：`lines` 判"本词命中不命中"，
        * 后两个分别记"整帧放大重采跑过"（可给换词放行）与"密排切带跑过"（只作诊断，票据 #53）。 */
       resultCachePut(cacheKey, {
-        payload: payload, lines: finalLines, denseRescaled: denseRescaled, denseBanded: denseBanded
+        payload: payload, lines: finalLines, denseRescaled: denseRescaled, denseBanded: denseBanded,
+        /* 零命中且没被截断 ⇒ 该试的都试过了，换词可以白拿（见命中处注释）。 */
+        exhaustedAll: countHits(finalLines, job.keyword) === 0 && !payload.truncated
       });
       reply(payload);
     } catch (err) {

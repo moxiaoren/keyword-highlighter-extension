@@ -310,6 +310,25 @@
     /* 正文至少留得住一行（用户 2026-10-07 的"被挤没"就是缩到 0 了）—— 再多交给它自己滚 */
     .khin-body { flex: 1 1 auto; min-height: 60px; overflow-y: auto; padding: 6px 0; }
     .khin-body.khin-collapsed { display: none; }
+    /* 【2.0.14 需求二】重要笔记分页（默认关；开着才有这些节点）。
+     * 分页条放在 .khin-body 外面 —— 放里面会被卡片一起滚走。
+     * 页容器不许有水平 padding：.khin-item 的 10px 内边距与 .khin-item-kw 的 -62px
+     * 派生宽度是同一套契约，多一层横向留白会让关键词标签溢出。 */
+    .khin-ptabs { display: flex; gap: 4px; padding: 4px 10px 2px; overflow-x: auto; flex: 0 0 auto; touch-action: pan-x; }
+    .khin-ptabs[hidden] { display: none; }
+    .khin-ptab {
+      flex: 0 0 auto; max-width: 9em; display: inline-flex; align-items: center; gap: 4px;
+      padding: 3px 9px; border: 1px solid #e2e8f0; border-radius: 999px; background: #fff;
+      color: #334155; font-size: 11px; line-height: 1.4; cursor: pointer; font-family: inherit;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .khin-ptab .khin-ptab-name { overflow: hidden; text-overflow: ellipsis; }
+    .khin-ptab .khin-ptab-n { color: #64748b; font-variant-numeric: tabular-nums; }
+    .khin-ptab.is-on { background: #eff6ff; border-color: #93c5fd; color: #1d4ed8; }
+    .khin-ptab.is-on .khin-ptab-n { color: #1d4ed8; }
+    .khin-ptab:focus-visible { outline: 2px solid #2563eb; outline-offset: 1px; }
+    :host([data-kh-theme="dark"]) .khin-ptab { background: #1b2431; border-color: #334155; color: #cbd5e1; }
+    :host([data-kh-theme="dark"]) .khin-ptab.is-on { background: #1e3a5f; border-color: #3b82f6; color: #dbeafe; }
 
     /* 整页只有图片命中时这份列表是空的，但它仍占着 min-height:60px 的 flex 槽位
      * ⇒ 面板顶部白出一条 60px 的带子（T29 / F6.1）。它必须和别的分区一样有自己的
@@ -2378,6 +2397,62 @@
     return '';
   }
 
+  /** 类别名全称（不截断）：页的身份要用它，显示才用 catOf 的截断名。
+   * 否则「项目管理规范」与「项目管理流程」会被截成同一个「项目管理规范…」而合成一页。 */
+  function catFullOf(item) {
+    const entries = (item && item.entries) || [];
+    for (let i = 0; i < entries.length; i++) {
+      const adj = tagText(entries[i] && entries[i].adj);
+      if (adj) return adj;
+    }
+    return '';
+  }
+
+  /** 一张卡在分页视图里被置顶到第几位（-1 = 没置顶）。
+   * 匹配口径与 head.sortByPins 完全一致（关键词文本 + 规则 id 两路），只是这里要下标不要排序。 */
+  function pinRankOf(item, pins) {
+    const order = (pins || []).map((p) => tagText(p).toLowerCase());
+    if (!order.length) return -1;
+    let best = -1;
+    const consider = (v) => {
+      const k = tagText(v).toLowerCase();
+      if (!k) return;
+      const i = order.indexOf(k);
+      if (i >= 0 && (best < 0 || i < best)) best = i;
+    };
+    for (const e of (item && item.entries) || []) consider(e && e.kw);
+    for (const p of (item && item.pinIds) || []) consider(p);
+    return best;
+  }
+
+  /** 页表：置顶页（有置顶卡才出）→ 各分组页（按首次出现顺序，不是字典序）→ 未分组页（恒最后）。
+   * 置顶卡只出现在置顶页（用户 2026-11-19 口径），不重复。hasCtx 为真时未分组页也要在
+   * ——右键截图卡归它。 */
+  function buildPages(items, pins, hasCtx) {
+    const pages = [];
+    const byKey = new Map();
+    const add = (key, label, kind) => {
+      const page = { key: key, label: label, kind: kind, count: 0 };
+      byKey.set(key, page);
+      pages.push(page);
+      return page;
+    };
+    const list = items || [];
+    let pinCount = 0;
+    for (const it of list) if (pinRankOf(it, pins) >= 0) pinCount += 1;
+    if (pinCount) add('pin', '置顶', 'pin').count = pinCount;
+    for (const it of list) {
+      if (pinRankOf(it, pins) >= 0) continue;
+      const full = catFullOf(it);
+      const key = full ? 'g:' + full : 'other';
+      let page = byKey.get(key);
+      if (!page) page = add(key, full || '未分组', full ? 'group' : 'other');
+      page.count += 1;
+    }
+    if (hasCtx && !byKey.get('other')) add('other', '未分组', 'other');
+    return pages;
+  }
+
   const panel = {
     host: null,
     root: null,          // shadow 内的 .khin-wrap
@@ -2393,6 +2468,12 @@
     /* 上一轮用过的置顶表签名（见 `render`）：卡间顺序不进 `head.changed`，靠它认
      * "用户改了置顶排序"。空串 = 没配/没排序过（与 `pins.join()` 的空表结果一致 ⇒ 首轮不误判脏）。 */
     pinSig: '',
+    /* 【2.0.14 需求二】分页状态：当前页 key（空串 = 还没定）、页表、各页滚动位置。
+     * 只做会话内记忆（全仓没有 localStorage 用法，与 this.tab 一致），刷新回第一页。 */
+    notePage: '',
+    pages: [],
+    pageScroll: {},
+    pagedSig: false,
     /* 【2.0.4 需求④】卡片复用缓存（见 `renderItems`）：上一轮每张卡对应的**正文串**。
      * 正文没变的卡留用原元素（连里面的 `<img>` 一起），只重画标签区；
      * 旧版每次 `textContent=''` 整块重建 ⇒ 图重新解码、滚动位置归零 = 用户看到的"闪"。 */
@@ -2673,6 +2754,11 @@
       const pinSig = pins.join('\u0001');
       const pinChanged = this.pinSig !== pinSig;
       this.pinSig = pinSig;
+      /* 【2.0.14 需求二】分页开关一变必须整块重画（页签与「只挂当前页」的落位都变了）。
+       * 与 pinSig 同理：卡片内容没变时 head.changed 返回 false，光靠它屏上不会换成页签视图。 */
+      const pagedOn = !!(cfg && cfg.importantNote && cfg.importantNote.pagedTabs);
+      const pagedChanged = this.pagedSig !== pagedOn;
+      this.pagedSig = pagedOn;
       const sorted = pins.length ? head.sortByPins(items, pins) : items;
 
       if (!sorted.length && !this.ctxItems().length) {
@@ -2685,7 +2771,7 @@
        * 面板宿主建出来了、里面却没有那张「截图」卡）。
        * 收起态（FAB）与外壳缺失都必须重建一次：前者要换壳、后者要建壳。 */
       const shellMissing = !this.panelEl;
-      const dirty = shellMissing || this.minimized || pinChanged || head.changed(this.items, sorted);
+      const dirty = shellMissing || this.minimized || pinChanged || pagedChanged || head.changed(this.items, sorted);
       this.items = sorted;
       if (dirty) this.renderContent();
       else {
@@ -3435,6 +3521,9 @@
                 '<span class="khin-notecount"></span>' +
                 '<span class="khin-notearrow">' + KH.OcrCopy.VIEW.noteCollapse + '</span>' +
               '</div>' +
+              /* 【2.0.14 需求二】分页条（默认关；开着且有 2 页以上才显示）。放在 body 外面，
+               * 否则卡片一滚它就跟着滚走。 */
+              '<div class="khin-ptabs" role="tablist" hidden></div>' +
               '<div class="khin-body" id="khin-note-body"></div>' +
             '</div>' +
             '<div class="khin-ai" hidden></div>' +
@@ -3446,6 +3535,7 @@
         this.noteBarEl = this.root.querySelector('.khin-notebar');
         this.noteCountEl = this.root.querySelector('.khin-notecount');
         this.noteArrowEl = this.root.querySelector('.khin-notearrow');
+        this.ptabsEl = this.root.querySelector('.khin-ptabs');
         /* 笔记题头是"整行可点的 div"，键盘完全够不着（T29 / F4.2）：补 role/tabindex/
          * aria-expanded 之后，回车与空格要跟点击做同一件事（给元素直接绑，不用 closest 反查）。 */
         const onActivate = (el, fn) => el.addEventListener('keydown', (e) => {
@@ -3455,6 +3545,13 @@
           this.noteCollapsed = !this.noteCollapsed;
           this.applyNoteCollapsed();
         };
+        /* 【2.0.14 需求二】分页页签走事件委托（页签每次重画，逐个绑监听会跟着丢）。 */
+        if (this.ptabsEl) this.ptabsEl.addEventListener('click', (e) => {
+          const btn = e.target && e.target.closest ? e.target.closest('.khin-ptab') : null;
+          if (!btn) return;
+          e.stopPropagation();
+          this.setNotePage(btn.getAttribute('data-page') || '');
+        });
         /* 笔记区收起/展开（2026-10-11 用户：两边都很长时互相抢占，收一边让另一边）。
          * 只翻转标记 + 换类名，不重建 DOM —— 展开时正文还在（收起期间不重渲染也不清空）。 */
         this.noteBarEl.addEventListener('click', (e) => {
@@ -4136,6 +4233,8 @@
       /* 收起态也要说给读屏听（T29 / F4.2）：视觉上换了箭头字符，aria-expanded 才是
        * 辅助技术读得懂的那一位。这里已确保 bodyEl（= 面板在展开态）存在，题头就在。 */
       if (this.noteBarEl) this.noteBarEl.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      /* 【2.0.14 需求二】收起时整条分页条一起收；展开时按页数决定显不显。 */
+      if (this.ptabsEl) this.ptabsEl.hidden = collapsed || (this.pages || []).length <= 1;
     },
 
     /**
@@ -4429,6 +4528,18 @@
       const prevNotes = this.cardNotes || [];
       const els = [];
       const notes = [];
+      /* 【2.0.14 需求二】分页：默认关（cfg.importantNote.pagedTabs），关着走原来那条路。
+       * 开着时只把当前页的卡挂进 DOM —— 别的页不挂，clipValueBoxes 量到的就都是可见卡，
+       * 不会因为隐藏页宽度为 0 把内容误收成一行。 */
+      const paging = !!(this.cfg && this.cfg.importantNote && this.cfg.importantNote.pagedTabs);
+      const pins = paging ? head.parsePins(this.cfg) : [];
+      this.pages = paging ? buildPages(this.items, pins, !!this.ctxEl) : [];
+      if (paging) {
+        const keys = this.pages.map((p) => p.key);
+        if (keys.indexOf(this.notePage) < 0) this.notePage = keys[0] || '';
+      }
+      let insertAt = 0;
+      const keepSet = new Set();
       /* 右键卡永远排最后：先摘下来，收尾统一由 `renderCtxCard()` 追加 */
       if (this.ctxEl && this.ctxEl.parentNode) this.ctxEl.parentNode.removeChild(this.ctxEl);
       /* 卡级内联样式两个分支都要落：复用旧卡时必须能**清掉**旧值（词级图片尺寸/字号/底色
@@ -4497,13 +4608,19 @@
         this.decorateChecks(el, item);
         els.push(el);
         notes.push(note);
-        /* 落位：同一位置已经是对的元素就跳过，避免无谓的 DOM 移动（移动即重排） */
-        const cur = this.bodyEl.children[i];
-        if (cur !== el) this.bodyEl.insertBefore(el, cur || null);
+        /* 落位：同一位置已经是对的元素就跳过，避免无谓的 DOM 移动（移动即重排）。
+         * 分页时只落当前页的卡，别的页的卡先不挂（仍在 els 里，切页时复用）。 */
+        const pageKey = !paging ? '' : (pinRankOf(item, pins) >= 0 ? 'pin' : (catFullOf(item) ? 'g:' + catFullOf(item) : 'other'));
+        if (!paging || pageKey === this.notePage) {
+          keepSet.add(el);
+          const cur = this.bodyEl.children[insertAt];
+          if (cur !== el) this.bodyEl.insertBefore(el, cur || null);
+          insertAt += 1;
+        }
       }
       /* 条数变少了：把不在本次名单里的旧卡摘掉（按"在不在名单"判，
        * 挪过位的老卡不会被误删） */
-      const keep = new Set(els);
+      const keep = paging ? keepSet : new Set(els);
       const kids = Array.prototype.slice.call(this.bodyEl.children);
       for (const child of kids) {
         if (!keep.has(child)) this.bodyEl.removeChild(child);
@@ -4515,6 +4632,14 @@
       /* 【2.0.2.16 需求⑦】右键「截图」卡排**最下方**，由 renderCtxCard 收尾追加；
        * 它自己也带签名闸，没变化就不重建。 */
       this.renderCtxCard();
+      if (paging) {
+        /* 右键截图卡归「未分组」页：不在当前页就先摘下来（内容还在，切回来时 renderCtxCard 会再挂）。 */
+        if (this.ctxEl && this.notePage !== 'other' && this.ctxEl.parentNode) this.ctxEl.parentNode.removeChild(this.ctxEl);
+        this.renderPageTabs();
+      } else if (this.ptabsEl) {
+        this.ptabsEl.hidden = true;
+        this.ptabsEl.textContent = '';
+      }
       /* 【2.0.8.13 需求①】整块重排之后统一量一次：超出一行的内容格才收成一行。
        * 【2.0.8.14 需求②】先**同步**量一次：旧写法只挂双 rAF，新卡会先按"未收行"的展开态
        * 绘一到两帧、半拍后再收成一行，看起来就是内容先铺开又缩回去的一闪。同步量完再补一帧
@@ -4522,6 +4647,50 @@
       const clipRoot = this.root || null;
       clipValueBoxes(clipRoot);
       scheduleClip(clipRoot);
+    },
+
+    /** 【2.0.14 需求二】画分页条。只有一页时整条隐藏（一页页签没信息量还占一行高度）。 */
+    renderPageTabs() {
+      if (!this.ptabsEl) return;
+      const doc = document;
+      const pages = this.pages || [];
+      if (pages.length <= 1) {
+        this.ptabsEl.hidden = true;
+        this.ptabsEl.textContent = '';
+        return;
+      }
+      this.ptabsEl.hidden = this.noteCollapsed === true;
+      const frag = doc.createDocumentFragment();
+      pages.forEach((p, i) => {
+        const btn = doc.createElement('button');
+        btn.type = 'button';
+        btn.className = 'khin-ptab' + (p.key === this.notePage ? ' is-on' : '');
+        btn.setAttribute('role', 'tab');
+        btn.setAttribute('data-page', p.key);
+        btn.setAttribute('aria-selected', p.key === this.notePage ? 'true' : 'false');
+        btn.id = 'khin-ptab-' + i;
+        btn.title = p.label;
+        const name = doc.createElement('span');
+        name.className = 'khin-ptab-name';
+        name.textContent = p.label;
+        btn.appendChild(name);
+        const num = doc.createElement('span');
+        num.className = 'khin-ptab-n';
+        num.textContent = String(p.count || 0);
+        btn.appendChild(num);
+        frag.appendChild(btn);
+      });
+      this.ptabsEl.textContent = '';
+      this.ptabsEl.appendChild(frag);
+    },
+
+    /** 切页：先存旧页滚动位置，重画后还原新页那次的位置（会话内记忆）。 */
+    setNotePage(key) {
+      if (!key || key === this.notePage) return;
+      if (this.bodyEl) this.pageScroll[this.notePage || ''] = this.bodyEl.scrollTop || 0;
+      this.notePage = key;
+      this.renderItems();
+      if (this.bodyEl) this.bodyEl.scrollTop = this.pageScroll[key] || 0;
     },
 
     /**

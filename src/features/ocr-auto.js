@@ -132,6 +132,182 @@
     return /^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z0-9_]+)+$/.test(v);
   }
 
+  /* ---------------- 有效期推算（2.0.14 需求三） ----------------
+   * 「有效期为 N 年，自双方均盖章之日起生效」⇒ 盖章日起算，到期日 = 周年日；
+   * 「若到期双方无异议，自动续约 N 年」⇒ 按次数叠加，没写次数按 1 次，写「次数不限」⇒ 长期；
+   * 日期读不到时不猜，输出「待补：盖章日期（有效期N年）」。
+   * 到期日口径（用户 2026-11-19 例子）：盖章 2026-01-01 + 3 年 ⇒ 2029-01-01。 */
+  var CN_DIGIT = { '〇': 0, '零': 0, '一': 1, '二': 2, '两': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9 };
+  var CN_FIN = { '壹': 1, '贰': 2, '叁': 3, '肆': 4, '伍': 5, '陆': 6, '柒': 7, '捌': 8, '玖': 9, '拾': 10 };
+  var NUM_CH = '0-9〇零一二两三四五六七八九十壹贰叁肆伍陆柒捌玖拾';
+
+  function numOf(raw) {
+    var t = String(raw == null ? '' : raw).replace(/\s+/g, '');
+    if (!t) return 0;
+    if (/^[0-9]+$/.test(t)) return parseInt(t, 10) || 0;
+    var at = t.indexOf('十');
+    if (at >= 0) {
+      var hi = at === 0 ? 1 : (CN_DIGIT[t.charAt(at - 1)] || CN_FIN[t.charAt(at - 1)] || 0);
+      var lo = at === t.length - 1 ? 0 : (CN_DIGIT[t.charAt(at + 1)] || CN_FIN[t.charAt(at + 1)] || 0);
+      return hi * 10 + lo;
+    }
+    var n = 0;
+    for (var i = 0; i < t.length; i++) {
+      var c = t.charAt(i);
+      var d = CN_DIGIT[c];
+      if (d == null) d = CN_FIN[c];
+      if (d == null) return 0;
+      n = n * 10 + d;
+    }
+    return n;
+  }
+
+  var DATE_CN = /((?:19|20)\d{2})\s*年\s*(\d{1,2})\s*月(?:\s*(\d{1,2})\s*[日号]?)?/;
+  var DATE_NUM = /((?:19|20)\d{2})\s*[-./]\s*(\d{1,2})\s*[-./]\s*(\d{1,2})(?!\d)/;
+  function dateOf(s) {
+    var t = String(s == null ? '' : s);
+    var m = DATE_NUM.exec(t);
+    var y = 0, mo = 0, d = 0, hasDay = false;
+    if (m) { y = +m[1]; mo = +m[2]; d = +m[3]; hasDay = true; }
+    else {
+      m = DATE_CN.exec(t);
+      if (!m) return null;
+      y = +m[1]; mo = +m[2]; d = m[3] ? +m[3] : 1; hasDay = !!m[3];
+    }
+    if (!(y >= 1990 && y <= 2100) || mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+    if (d > new Date(y, mo, 0).getDate()) return null;
+    return { y: y, m: mo, d: d, hasDay: hasDay };
+  }
+
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+  function fmtDate(t) { return t.y + '-' + pad2(t.m) + '-' + pad2(t.d); }
+
+  function addMonths(t, n) {
+    var m0 = (t.m - 1) + n;
+    var y = t.y + Math.floor(m0 / 12);
+    var mo = (m0 % 12 + 12) % 12 + 1;
+    var last = new Date(y, mo, 0).getDate();
+    return { y: y, m: mo, d: Math.min(t.d, last) };
+  }
+  function addYears(t, n) { return addMonths(t, n * 12); }
+  function addDays(t, n) {
+    var dt = new Date(t.y, t.m - 1, t.d + n);
+    return { y: dt.getFullYear(), m: dt.getMonth() + 1, d: dt.getDate() };
+  }
+  function addDur(t, dur) {
+    if (!dur || !dur.n) return t;
+    if (dur.unit === 'y') return addYears(t, dur.n);
+    if (dur.unit === 'm') return addMonths(t, dur.n);
+    return addDays(t, dur.n);
+  }
+  function durText(dur) {
+    if (!dur || !dur.n) return '';
+    return dur.n + (dur.unit === 'y' ? '年' : (dur.unit === 'm' ? '个月' : '天'));
+  }
+
+  /* 期间：只认「有效期/期限」附近紧邻的数字 + 单位，避免把正文里「三年内不得…」当期间。 */
+  function durationOf(full) {
+    var t = String(full == null ? '' : full);
+    var re = new RegExp('(?:有效期|授权期限|合作期限|合同期限|协议期限|期限)\\s*(?:为|是|限|共)?\\s*([' + NUM_CH + ']{1,4})\\s*(年|个月|月|天|日)');
+    var m = re.exec(t);
+    if (!m) return null;
+    var n = numOf(m[1]);
+    if (!n || n > 120) return null;
+    var u = m[2];
+    return { unit: (u === '年') ? 'y' : ((u === '天' || u === '日') ? 'd' : 'm'), n: n };
+  }
+
+  /* 自动续约条款：是否自动、每次多久、最多几次、是否不限次数。 */
+  function renewalOf(full) {
+    var t = String(full == null ? '' : full);
+    var auto = /自动续约|自动续期|自动续展|自动延期/.test(t)
+      || /(?:无异议|未提出异议|没有异议)[^。；\n]{0,20}(?:自动)?(?:续约|续期|续展|延长)/.test(t);
+    if (!auto) return null;
+    var once = { unit: 'y', n: 1 };
+    var dm = new RegExp('(?:续约|续期|续展|延长)\\s*(?:期限|期)?\\s*(?:为|是)?\\s*([' + NUM_CH + ']{1,4})\\s*(年|个月|月|天|日)').exec(t);
+    if (dm) {
+      var n = numOf(dm[1]);
+      if (n && n <= 120) {
+        var u = dm[2];
+        once = { unit: (u === '年') ? 'y' : ((u === '天' || u === '日') ? 'd' : 'm'), n: n };
+      }
+    }
+    var unlimited = /次数不限|不限次数|无限次|可无限(?:次)?续|直至一方|直到一方|随时(?:书面)?(?:通知)?(?:终止|解除)/.test(t);
+    var max = null;
+    var mm = new RegExp('(?:最多|至多|不超过|上限为?|限)\\s*(?:续约|续期|续签)?\\s*([' + NUM_CH + ']{1,3})\\s*次').exec(t)
+      || new RegExp('([' + NUM_CH + ']{1,3})\\s*次为限').exec(t);
+    if (mm) {
+      var k = numOf(mm[1]);
+      if (k > 0 && k <= 90) max = k;
+    }
+    return { auto: true, once: once, unlimited: unlimited, max: max };
+  }
+
+  /* 起算日：第一优先是「自 YYYY 年 M 月 D 日起生效」这类显式写法；
+   * 其次是盖章/签章行上的日期；再次是签署/签订日期行。
+   * 多个候选取最晚那个（「双方均盖章之日」= 两方都完成的那天）。 */
+  function startDateOf(lines, full) {
+    var explicit = /自\s*((?:19|20)\d{2}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*[日号]?)\s*(?:起|开始)/.exec(full)
+      || /((?:19|20)\d{2}\s*[-./]\s*\d{1,2}\s*[-./]\s*\d{1,2})\s*(?:起|开始)/.exec(full);
+    if (explicit) {
+      var d0 = dateOf(explicit[1]);
+      if (d0) return d0;
+    }
+    var pool = [];
+    for (var i = 0; i < lines.length; i++) {
+      var ln = String(lines[i] || '');
+      if (!ln) continue;
+      /* 有效期区间行（两个日期 + 至/到）不是盖章日。 */
+      if (/(?:至|到|—|－|~|～)\s*(?:19|20)\d{2}/.test(ln)) continue;
+      if (!/盖章|签章|签署|签订|签约|签发|出具|日期/.test(ln)) continue;
+      var d = dateOf(ln);
+      if (d && d.hasDay) pool.push(d);
+    }
+    if (!pool.length) return null;
+    pool.sort(function (a, b) { return (a.y * 10000 + a.m * 100 + a.d) - (b.y * 10000 + b.m * 100 + b.d); });
+    return pool[pool.length - 1];
+  }
+
+  /* 显式起止（两个日期 + 至/到）仍走原 singleValue 口径，本函数不重复处理。 */
+  function hasExplicitRange(full) {
+    var t = String(full == null ? '' : full);
+    return /(?:19|20)\d{2}[^。；\n]{0,14}(?:至|到|—|－|~|～)[^。；\n]{0,14}(?:19|20)\d{2}/.test(t);
+  }
+
+  /* 有效期进表文案。没有可算的期间/续约条款、或已被显式区间覆盖时返回空串。 */
+  function termCalc(full) {
+    var t = String(full == null ? '' : full);
+    if (!t || hasExplicitRange(t)) return '';
+    var dur = durationOf(t);
+    var ren = renewalOf(t);
+    if (!dur && !ren) return '';
+    if (!dur && ren) {
+      /* 「有效期至 2025 年 12 月 1 日，到期自动续约一年」：终期已写明，直接在终期上叠加续约。 */
+      var exp = /有效期\s*(?:至|到)\s*((?:19|20)\d{2}\s*[-./年]\s*\d{1,2}\s*[-./月]\s*\d{1,2}\s*[日号]?)/.exec(t);
+      var endAt = exp ? dateOf(exp[1]) : null;
+      if (!endAt) return '';
+      if (ren.unlimited) return '长期（有效期至 ' + fmtDate(endAt) + '，到期无异议自动续约' + durText(ren.once) + '，次数不限）';
+      var expTimes = (ren.max == null) ? 1 : ren.max;
+      var endExp = { y: endAt.y, m: endAt.m, d: endAt.d };
+      for (var q = 0; q < expTimes; q++) endExp = addDur(endExp, ren.once);
+      return fmtDate(endAt) + ' 至 ' + fmtDate(endExp) + '（到期无异议自动续约' + durText(ren.once) + '×' + expTimes + '次）';
+    }
+    var start = startDateOf(t.split(/\r?\n/), t);
+    if (!start) return '待补：盖章日期（有效期' + (dur ? durText(dur) : '续约') + '）';
+    var end = dur ? addDur({ y: start.y, m: start.m, d: start.d }, dur) : null;
+    if (ren) {
+      if (!dur) return '';
+      if (ren.unlimited) {
+        return '长期（自 ' + fmtDate(start) + ' 起，有效期' + durText(dur) + '，到期无异议自动续约）';
+      }
+      var times = (ren.max == null) ? 1 : ren.max;
+      for (var k = 0; k < times; k++) end = addDur(end, ren.once);
+      return fmtDate(start) + ' 至 ' + fmtDate(end) + '（有效期' + durText(dur) + (start.hasDay ? '' : '，按月初估算')
+        + '，到期无异议自动续约' + durText(ren.once) + '×' + times + '次）';
+    }
+    return fmtDate(start) + ' 至 ' + fmtDate(end) + '（有效期' + durText(dur) + (start.hasDay ? '' : '，按月初估算') + '）';
+  }
+
   /* 授权期限：必须有年份 + 起止关系（`2024年1月1日至2026年12月31日`、`2024-01-01 - 2026-12-31`）。 */
   function okTerm(v) {
     return v.length <= 60 && /(19|20)\d{2}/.test(v) && /(至|到|—|－|-|~|～|起)/.test(v);
@@ -1044,7 +1220,13 @@
     if (doc === 'auth' || doc === 'agreement') {
       var termDef = BY_ID.term;
       var tv = termDef ? singleValue(termDef, lines, full) : '';
-      if (tv && termDef.ok(tv)) {
+      /* 相对期间（有效期 N 年 + 盖章日起算 / 自动续约）要自己算：这一行文字里没有现成的起止日期。 */
+      var tc = '';
+      if (!tv || !termDef || !termDef.ok(tv)) {
+        tc = termCalc(full);
+        if (tc) tv = tc;
+      }
+      if (tv && (tc || termDef.ok(tv))) {
         var TN2 = KH.TextNorm;
         var tsig = TN2 ? (TN2.keyOf(termDef.label) + '|' + TN2.keyOf(tv)) : (termDef.label + '|' + tv);
         if (!seen[tsig]) {
@@ -1061,6 +1243,7 @@
     docOf: docOf,
     kindOf: kindOf,
     fieldsOf: function (doc) { return (SETS[doc] || []).slice(); },
+    termCalc: termCalc,
     DEFS: DEFS,
     LABELS: LABELS
   };

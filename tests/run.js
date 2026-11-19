@@ -217,6 +217,9 @@ const specs = [
   './specs/release-audit.test.js',
   /* 稳定版说明的测试版汇总：范围/去重/注入说明页草稿/三条出口共用一份数据。见 specs/notes-summary.test.js */
   './specs/notes-summary.test.js',
+  /* 【2.0.14 需求二】重要笔记按页收录：开关默认关 / 页序 / 置顶不重复 / 只挂当前页 /
+   * 单页隐藏页签 / 全名不截断 / 切页记住滚动位置。见 specs/note-paging.test.js 头部 */
+  './specs/note-paging.test.js',
   /* 能力清单唯一真源（台账 2026-11-14 第 1 条）：定位句干净、两层条数与 id、
    * 每个界面落点的 probe 真能命中、首屏胶囊与卖点 chip 同源。见 specs/abilities.test.js */
   './specs/abilities.test.js',

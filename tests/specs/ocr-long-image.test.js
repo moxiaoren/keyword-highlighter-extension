@@ -979,7 +979,8 @@ module.exports = async function run() {
     truthy(prog.every((p) => p.requestId === 'r2'), 'progress 必须带 requestId（否则 background 只能当全局脉冲续命）');
     truthy(prog.every((p) => p.phase === 'band'), 'phase 供面板区分「下载语言包」与「识别分块」');
     truthy(prog[0].hits >= 1, '进度里带上"已确认命中几处"，面板才能先说「已命中 2 处」');
-    truthy(prog.every((p) => callsOf(env.calls.params, '6').length >= 6), '每块必须走 PSM 6（整块版面），不许再回 PSM 11');
+    eq(callsOf(env.calls.params, '6').length, 1, '★ 需求一 PSM 去抖：同一帧里各块 PSM 不变 ⇒ 只设一次（逐块重设是白花的 IPC）');
+    truthy(callsOf(env.calls.params, '11').length === 0, '每块必须走 PSM 6（整块版面），不许再回 PSM 11');
   });
 
   await test('★ 不变量 4（端到端）：首遍全空 ⇒ 试转 180/270/90，只有严格更优才采用（并复用那一遍）', async () => {
@@ -1162,6 +1163,57 @@ module.exports = async function run() {
     eq(r6.cached === true, false, '不同图不许被当成缓存命中');
   });
 
+  await test('★ 需求一：行框横向不重叠的两条不许被 18px 兜底吞掉（多栏「备注：无」）', () => {
+    const P = loadOffscreen({ lines: () => null }).self.__khOcrPure;
+    truthy(P.spanXOverlap, 'spanXOverlap 必须挂进 __khOcrPure（纯判据，喂数据出结论）');
+    eq(P.spanXOverlap({ x: 10, x2: 200 }, { x: 50, x2: 260 }), true, '同一行左右有重叠 ⇒ 仍按旧口径去重');
+    eq(P.spanXOverlap({ x: 10, x2: 200 }, { x: 240, x2: 400 }), false, '左右两栏同高但横向不相交 ⇒ 不许去重（这是今天的真 bug）');
+    eq(P.spanXOverlap({ x: 10 }, { x: 240, x2: 400 }), true, '拿不到 x2 ⇒ 退回旧口径（宁可多留一行，不许漏字）');
+  });
+
+  await test('★ 需求一：上一笔零命中且已跑完全链 ⇒ 换词直接复用，不再烧一遍', async () => {
+    /* 零命中 ⇒ 试转 / 密排切带这些「按零命中触发」的加档都已经跑过了，这批行就是这套管线能抽到的上限；
+     * 换个词只是换「哪些算命中」，抽出来的行不会变 ⇒ 复用安全（缓存那遍命中的情况仍走严格口径，见上一条）。 */
+    const env = loadOffscreen({ lines: LINES });
+    env.job({ type: MSG.OCR_IMAGE, requestId: 'z1', tabId: 7, keyword: '美女', dataUrl: 'data:,W=300;H=200' });
+    const r1 = await env.result('z1');
+    eq(r1.cached === true, false, '第一笔是实打实跑的，不许标 cached');
+    env.job({ type: MSG.OCR_IMAGE, requestId: 'z2', tabId: 7, keyword: '帅哥', dataUrl: 'data:,W=300;H=200' });
+    const r2 = await env.result('z2');
+    eq(env.calls.recognize, 1, '两个词在这张图上都零命中 ⇒ 引擎只许烧一次');
+    eq(r2.cached, true, '复用要如实标 cached');
+    eq(r2.text, r1.text, '复用后的文本与首笔一致（回执里没有 hits 字段，命中由文本+词在内容侧算）');
+    eq(r2.lines, r1.lines, '行读数一并复用');
+  });
+  await test('★ 需求一：首遍已读到密排（每 70px 至少一行、且 ≥6 行）⇒ 不再整帧切带白烧 8 遍', async () => {
+    /* 纯判据先钉住口径 */
+    const P = loadOffscreen({ lines: () => null }).self.__khOcrPure;
+    const dense = [];
+    for (let i = 0; i < 14; i++) dense.push({ t: '第' + i + '行', conf: 95, y: 20 + i * 60 });
+    eq(P.layoutCovered({ w: 700, h: 900 }, dense), true, '900px 高读到 14 行（每 60px 一行）⇒ 认定读密了');
+    eq(P.layoutCovered({ w: 900, h: 600 }, dense.slice(0, 5)), false, '只读到 5 行 ⇒ 还得走切带（109 那张就是这个形状）');
+    eq(P.layoutCovered({ w: 300, h: 200 }, dense.slice(0, 6)), true, '矮图读到 6 行也算密（阈值下限 6 行）');
+    eq(P.layoutCovered({ w: 300, h: 200 }, []), false, '一行都没读到 ⇒ 不归这条管（走重采/试转）');
+
+    /* 端到端：同样的零命中，行多 ⇒ 只烧 1 次 */
+    const envDense = loadOffscreen({ lines: () => ({ conf: 95, lines: dense }) });
+    envDense.job({ type: MSG.OCR_IMAGE, requestId: 'g1', tabId: 7, keyword: '供应商', dataUrl: 'data:,W=700;H=900' });
+    const rd = await envDense.result('g1');
+    eq(envDense.calls.recognize, 1, '首遍读密了 ⇒ 不许再切 3/5 条横带（那是 8 次额外识别）');
+    eq(rd.ok, true);
+    eq(rd.lines, 14, '行数不受影响（只是不再重扫）');
+
+    /* 对照：行少 ⇒ 切带照旧（这条是防止把 109 的真实形状一起关掉） */
+    const envSparse = loadOffscreen({
+      lines: (i) => (i === 0
+        ? { conf: 95, lines: [{ t: '费用结算说明', conf: 95, y: 20 }] }
+        : { conf: 92, lines: [{ t: '供应商 甲', conf: 92, y: 20 }] })
+    });
+    envSparse.job({ type: MSG.OCR_IMAGE, requestId: 'g2', tabId: 7, keyword: '供应商', dataUrl: 'data:,W=900;H=600' });
+    const rs = await envSparse.result('g2');
+    truthy(envSparse.calls.recognize > 1, '行少 ⇒ 切带必须照跑，把关键词捞回来');
+    truthy(String(rs.text || '').indexOf('供应商') >= 0, '关键词必须回来');
+  });
 };
 
 /** 小工具：数一下数组里等于某值的元素（读起来比 filter().length 顺） */

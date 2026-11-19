@@ -426,7 +426,10 @@
          * 值现在是**关键词 id**（设置页下拉框给的），面板按 `meta.pinId`（= 规则 ruleId）匹配；
          * 2.0.2.5 的手写卡片文本照旧生效（`head.sortByPins` 两路都认）。
          * 口径与归一见 `pinOrderKeys`；匹配与排序在 `important-note.js` 的 `head.sortByPins`。 */
-        pinOrder: ''
+        pinOrder: '',
+        /* 【2.0.14 需求二】重要笔记按页收纳（置顶页 → 分组页 → 未分组页）。
+         * 默认关：关着时渲染路径与旧版一致；开着才建 .khin-ptabs。 */
+        pagedTabs: false
       },
 
       /** 重要笔记面板的**默认宽度**（px；T26 / 用户 2026-10-12：200 → 250）。

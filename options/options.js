@@ -1673,6 +1673,8 @@
     $('pf-notePanelWidth').value = cfg.notePanelWidth;
     /* 置顶排序（2.0.2.6 需求②）：候选与回显都要重建（关键词表变了候选就得跟着变）。 */
     renderPinOrder();
+    /* 【2.0.14 需求二】分页开关回显（默认关）。 */
+    $('pf-notePaged').checked = !!(cfg.importantNote || {}).pagedTabs;
     /* 【2.0.8.4 需求④】AI 助手的接口配置（与上面那块"重要笔记"同属样式/配置页）。 */
     renderAiForm();
     /* 【2.0.8.6 需求①】图文合并的标题表（字段 → 自定义标题 + 默认不展示）。 */
@@ -1885,6 +1887,11 @@
     $('pf-notePanelWidth').value = w;
     await mutate(() => KH.Store.patch({ notePanelWidth: w }));
   });
+  /* 【2.0.14 需求二】重要笔记分页开关。落盘走嵌套子键 importantNote.pagedTabs（不新增顶层键）。 */
+  $('pf-notePaged').addEventListener('change', async () => {
+    await saveNested({ importantNote: { pagedTabs: $('pf-notePaged').checked === true } });
+  });
+
 
   /* ---- 【2.0.8.4 需求④】AI 助手：保存与「测试连接」 ----
    * 全部走 `saveNested`（它按子键合并，写半截不会丢兄弟键 —— 尤其是 apiKey）。
