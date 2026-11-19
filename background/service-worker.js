@@ -318,8 +318,16 @@ function khPdfHookStop(tabId) {
 /** 一次抓取会话：钩子抓到地址 → finish(url)；钩子没装上 → 盯新标签（新标签一律压后台）。
  *  map 以 requestId 索引，`[MSG.PDF_GRAB_DONE]` 靠它找到对应会话收工。 */
 const PDF_GRABS = new Map();
+/* 【2.0.15 · PDF 错指】每个页面标签同时只允许一个抓取窗口：
+ * 旧实现允许多个 requestId 在同一页并行等待（各字段各开一个），谁的窗口都愿意认领下一个新标签
+ * ⇒ 字段 A 等的标签被字段 B 的会话先认领，A 就存下了 B 的地址（用户 m10954 的现场）。
+ * 抓取本来就是"点一下、开一个标签"的串行动作，同一页并行没有意义。 */
+const PDF_GRAB_BY_TAB = new Map();
 function openPdfGrab(tabId, requestId, clickMode) {
-  const st = { done: false, createdId: 0, click: !!clickMode, timer: null, poll: null, probed: new Set(), onCreated: null, onUpdated: null, finish: null };
+  const st = { done: false, createdId: 0, click: !!clickMode, armAt: Date.now(), timer: null, poll: null, probed: new Set(), onCreated: null, onUpdated: null, finish: null };
+  /* 同一页上一个窗口必须收工（它等的那次点击已经过去了，留着只会抢别人的标签） */
+  const prevTab = PDF_GRAB_BY_TAB.get(tabId);
+  if (prevTab && prevTab !== st && prevTab.finish) prevTab.finish('');
   function stopWatch() {
     if (st.timer) { clearTimeout(st.timer); st.timer = null; }
     if (st.poll) { clearInterval(st.poll); st.poll = null; }
@@ -339,10 +347,24 @@ function openPdfGrab(tabId, requestId, clickMode) {
     stopWatch();
     khPdfHookStop(tabId);
     if (PDF_GRABS.get(requestId) === st) PDF_GRABS.delete(requestId);
+    if (PDF_GRAB_BY_TAB.get(tabId) === st) PDF_GRAB_BY_TAB.delete(tabId);
     /* 只有「插件替用户点」那次才允许关标签/切前台；用户自己点的标签一律不碰（用户口径 m05354） */
     if (st.click) { closeTab(st.createdId); backToPage(); }
     try { chrome.tabs.sendMessage(tabId, { type: MSG.PDF_GRAB_RESULT, requestId: requestId, url: url || '' }); } catch (e) {}
   };
+  /* 只认「本页自己开出来的」标签：openerTabId 必须等于正在抓取的页面。
+   * 为什么不再无条件认领：抓取窗口最长 9 秒（PDF_GRAB_TTL），这段时间里用户
+   * 自己开的标签、或插件替另一个字段点开的 PDF，都会被当成这一轮的产物，
+   * 于是 A 字段存下 B 的地址（两字段同值被面板合并成「A/B」），
+   * 或者反过来把用户的标签关掉（m10954 的现场）。 */
+  function isOurs(tab) {
+    if (!tab || tab.id == null || tab.id === tabId) return false;
+    if (tab.openerTabId == null || tab.openerTabId !== tabId) return false;
+    /* 「替用户点」的那次：只认点击之后 3 秒内出现的标签。
+     * 更晚出现的是用户自己后来开的（跳转/新窗口），不能算作这次点击的产物。 */
+    if (st.click && Date.now() - st.armAt > 3000) return false;
+    return true;
+  }
   function consider(id, u) {
     if (st.done || !id) return;
     const direct = pdfUrlOf(u);
@@ -353,7 +375,7 @@ function openPdfGrab(tabId, requestId, clickMode) {
     headIsPdf(http).then((ok) => { if (ok) { if (!st.createdId) st.createdId = id; st.finish(http); } });
   }
   st.onCreated = (tab) => {
-    if (st.done || !tab || tab.id == null || tab.id === tabId) return;
+    if (st.done || !isOurs(tab)) return;
     if (!st.createdId) st.createdId = tab.id;
     if (tab.id !== st.createdId) return;
     /* 只有「插件替用户点」的那次才压后台：用户自己点开的标签必须正常打开（用户口径 m05354） */
@@ -365,7 +387,8 @@ function openPdfGrab(tabId, requestId, clickMode) {
   };
   st.onUpdated = (id, info, tab) => {
     if (st.done || id === tabId) return;
-    if (!st.createdId) st.createdId = id;
+    /* 还没认领时也只接受本页发起的标签（openerTabId 对不上就跳过，见 isOurs） */
+    if (!st.createdId) { if (!isOurs(tab)) return; st.createdId = id; }
     if (id !== st.createdId) return;
     consider(id, (info && info.url) || (tab && tab.url));
   };
@@ -386,6 +409,7 @@ function openPdfGrab(tabId, requestId, clickMode) {
   }, 300);
   st.timer = setTimeout(() => st.finish(''), PDF_GRAB_TTL);
   PDF_GRABS.set(requestId, st);
+  PDF_GRAB_BY_TAB.set(tabId, st);
   return st;
 }
 async function pdfGrab(msg, sender) {

@@ -166,6 +166,66 @@ module.exports = async function run() {
     second.parentNode.removeChild(second);
   });
 
+  /* 【2.0.15 · 用户 m10932/m10954】PDF 抓取的"地址对不对"是这条链的根：
+   * 两个字段抓住同一份 PDF ⇒ 内容相同 ⇒ 面板按"内容一致"合并成「A/B」，其中一个字段被藏起来。
+   * 下面三条钉住：①同一地址只能归一个字段；②同一控件换了地址仍要更新；③后台只认本页开出来的标签。 */
+  await test('★ 2.0.15：两个字段确实是同一份 PDF ⇒ 都记住（合并成一列是预期，不许拦）', () => {
+    const D = (typeof document !== 'undefined') ? document : global.document;
+    const url = 'https://x.test/cdn/shared-one.pdf';
+    const a = H.el('span', { class: 'content-pdf' }, [H.txt('PDF')]);
+    const b = H.el('span', { class: 'content-pdf' }, [H.txt('PDF')]);
+    D.body.appendChild(a); D.body.appendChild(b);
+    F.rememberAutoPdf(a, url);
+    F.rememberAutoPdf(b, url);
+    eq(F.autoPdfOf(a), url, '第一个字段拿到地址');
+    eq(F.autoPdfOf(b), url, '★ 第二个字段也拿到同一地址（用户 m11077：真一样时合并是预期）');
+    eq(b.getAttribute('data-khpdf-dup'), null, '不许给控件打「重复」标记');
+    D.body.removeChild(a); D.body.removeChild(b);
+  });
+
+  await test('★ 2.0.15：一行两个标题格、PDF 在第三格 ⇒ 行标签取**紧邻**的那个标题（不是最左）', () => {
+    const cellA = H.el('td'); cellA.appendChild(H.txt('互联网信息服务算法备案合作证明'));
+    const cellB = H.el('td'); cellB.appendChild(H.txt('AI生成应用承诺函'));
+    const valueCell = H.el('td');
+    const pdf = H.el('span', { class: 'content-pdf' }, [H.txt('PDF')]);
+    valueCell.appendChild(pdf);
+    const tr = H.el('tr'); tr.appendChild(cellA); tr.appendChild(cellB); tr.appendChild(valueCell);
+    tr.cells = tr.children; tr.cells.forEach((td, i) => { td.cellIndex = i; }); tr.rowIndex = 0;
+    const tbody = H.el('tbody'); tbody.appendChild(tr);
+    const table = H.el('table'); table.appendChild(tbody); table.rows = [tr];
+    const D = (typeof document !== 'undefined') ? document : global.document;
+    D.body.appendChild(table);
+    const key = F.autoPdfKeyOf(pdf);
+    truthy(/AI生成应用承诺函/.test(key), '★ 键里必须是紧邻控件的标题（AI生成应用承诺函）');
+    truthy(!/互联网信息服务算法备案合作证明/.test(key), '不许拿最左那格当这个名字（会把两个字段的地址记混）');
+    D.body.removeChild(table);
+  });
+
+  await test('★ 2.0.15：同一个控件换了地址，仍然要更新（不是一律拒绝）', () => {
+    const D = (typeof document !== 'undefined') ? document : global.document;
+    const sp = H.el('span', { class: 'content-pdf' }, [H.txt('PDF')]);
+    D.body.appendChild(sp);
+    F.rememberAutoPdf(sp, 'https://x.test/cdn/v1.pdf');
+    F.rememberAutoPdf(sp, 'https://x.test/cdn/v2.pdf');
+    eq(F.autoPdfOf(sp), 'https://x.test/cdn/v2.pdf', '★ 重新抓到的地址要覆盖旧的（字段确实换了 PDF）');
+    D.body.removeChild(sp);
+  });
+
+  await test('★ 2.0.15：后台只认「本页开出来的」标签（openerTabId 对不上就不认领）', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const src = fs.readFileSync(path.join(__dirname, '..', '..', 'background', 'service-worker.js'), 'utf8');
+    truthy(/function isOurs\(tab\)[\s\S]{0,320}tab\.openerTabId == null \|\| tab\.openerTabId !== tabId/.test(src),
+      '认领判据必须比对 openerTabId（用户自己开的标签 openerTabId 为空）');
+    truthy(/st\.onCreated = \(tab\) => \{\s*\n\s*if \(st\.done \|\| !isOurs\(tab\)\) return;/.test(src),
+      'onCreated 必须先过 isOurs，不再无条件认领第一个新标签');
+    truthy(/if \(!st\.createdId\) \{ if \(!isOurs\(tab\)\) return; st\.createdId = id; \}/.test(src),
+      'onUpdated 在未认领时也要过 isOurs');
+    truthy(/const PDF_GRAB_BY_TAB = new Map\(\)/.test(src), '每页同时只允许一个抓取窗口');
+    truthy(/prevTab\.finish\(''\)/.test(src), '★ 同一页开新窗口时要先让上一个收工（否则它抢走新标签）');
+    truthy(/st\.click && Date\.now\(\) - st\.armAt > 3000/.test(src), '替用户点的那次只认 3 秒内出现的标签');
+  });
+
   suite('2.0.6.5 需求②：PDF 条目走 OCR 管线（发的是 OCR_PDF）');
 
   await test('★ 值格里的 PDF 链接 ⇒ 建 `kind:pdf` 条目，且发出去的是 `kh:ocr:pdf`', () => {

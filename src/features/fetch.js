@@ -116,10 +116,26 @@
   function autoPdfHostOf(el) {
     try { return (el && el.closest) ? el.closest(AUTO_PDF_SEL) : null; } catch (e) { return null; }
   }
+  /* 取**紧挨着控件的那一格**文字当行标签，而不是整行第一格。
+   * 【2.0.15 · 用户 m11077】现场是「一个 PDF 控件挂在两个标题格（左）后面」：
+   *   | 标题A | 标题B | PDF |
+   * 旧实现取第一格（标题A）⇒ 地址被记到「标题A」名下；之后再按标签订阅回来的地址
+   * 就可能落到同名但不同的字段上（用户看到的「配的是 B，抓回来却是别处的」）。
+   * 紧邻的标题才是这个控件自己的名字；取不到再退回第一格（老页面兜底）。 */
   function autoPdfRowLabel(host) {
     try {
       const tr = (host && host.closest) ? host.closest('tr') : null;
       if (!tr || !tr.querySelector) return '';
+      const cells = tr.children || [];
+      let cell = host;
+      while (cell && cell.parentNode !== tr) cell = cell.parentNode;
+      const idx = cell ? Array.prototype.indexOf.call(cells, cell) : -1;
+      for (let i = idx - 1; i >= 0; i--) {
+        const c = cells[i];
+        if (!c || (c.contains && c.contains(host))) continue;
+        const t = String(c.innerText || c.textContent || '').replace(/\s+/g, ' ').trim();
+        if (t) return t.slice(0, 40);
+      }
       const head = tr.querySelector('th, td');
       if (!head || head === host || (head.contains && head.contains(host))) return '';
       return String(head.innerText || head.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 40);
@@ -176,6 +192,11 @@
       try { if (KH.rebuild) KH.rebuild({ source: 'auto-pdf' }); } catch (e) {}
     }, wait);
   }
+  /* 【2.0.15 · PDF 错指】这里**不拦同址**：两个字段拿到同一份 PDF 是合法形态
+   * （一行标题格里挂着一个 PDF、两个标签共用它），面板按"内容一致"合并成一列也是预期行为
+   * （用户口径 m11077：「如果确实一样，合并是合理且符合预期的」）。
+   * 要修的是"配的是 A、抓回来的却是 B 的地址"——那属于认领错了标签，
+   * 由后台的按标签认领 + 每页同时只允许一个抓取窗口来保证，不在这里做地址去重。 */
   function rememberAutoPdf(el, url) {
     const host = autoPdfHostOf(el) || el;
     if (!host || !url) return;
@@ -2287,7 +2308,7 @@
      * 标记对不上号（一个按页面元素建条目、一个按渲染出来的 `data-khpdf` 挂状态）。 */
     pdfRefOf, pdfPlaceholder,
     /* 【2026-11-18 用户口径】没有地址的 PDF 控件：只读判据 + 单测注入口（点一次→抓新标签地址） */
-    AUTO_PDF_SEL, autoPdfHostOf, autoPdfOf, rememberAutoPdf, absPdfUrl,
+    AUTO_PDF_SEL, autoPdfHostOf, autoPdfOf, autoPdfKeyOf, rememberAutoPdf, absPdfUrl,
     rowsToTableHtml, blockFor, triggerOk, fakeRightValue, nearestTable, isPlaceholderText,
     /* 图片选项（仅图片 / 前 N 张）：单测直接锁 */
     applyImgPolicy,
