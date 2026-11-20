@@ -365,6 +365,48 @@ module.exports = async function run() {
     eq(stub.calls.removed.join(','), '7', '失败也要关页');
   });
 
+  /** 【2.0.14.4 · m12586 A 档】串行队列桩：每次建页发一个自增 id，记录「同一时刻有几张页活着」。 */
+  function serialStub(text) {
+    const calls = { created: [], removed: [] };
+    const listeners = [];
+    let nextId = 100;
+    let live = 0;
+    let maxLive = 0;
+    const tabs = {
+      create: (arg) => {
+        calls.created.push(arg);
+        const id = nextId++;
+        live++;
+        if (live > maxLive) maxLive = live;
+        setTimeout(() => { listeners.slice().forEach((fn) => { try { fn(id, { status: 'complete' }); } catch (e) { /* ignore */ } }); }, 0);
+        return Promise.resolve({ id: id });
+      },
+      remove: (id) => { calls.removed.push(id); live--; return Promise.resolve(); },
+      onUpdated: {
+        addListener: (fn) => listeners.push(fn),
+        removeListener: (fn) => { const i = listeners.indexOf(fn); if (i >= 0) listeners.splice(i, 1); }
+      }
+    };
+    const scripting = { executeScript: () => Promise.resolve([{ result: text }]) };
+    return { tabs: tabs, scripting: scripting, calls: calls, max: () => maxLive };
+  }
+
+  await test('★ 同一时刻只开一张后台标签页：连点两次「读取」也不许并排开两张', async () => {
+    const body = '某某清理大师隐私政策\n开发者：北京某某科技有限公司\n' + '完整正文'.repeat(60);
+    const stub = serialStub(body);
+    const { Policy } = loadPolicy(async () => { throw new TypeError('failed to fetch'); }, { tabs: stub.tabs, scripting: stub.scripting });
+    const rs = await Promise.all([
+      Policy.fetchText('https://a.test/p1'),
+      Policy.fetchText('https://a.test/p2')
+    ]);
+    eq(rs.length, 2, '两次请求都要有结果');
+    rs.forEach((r, i) => truthy(r && r.ok, '第 ' + (i + 1) + ' 次也要读到正文：' + JSON.stringify(r)));
+    eq(stub.calls.created.length, 2, '两次都要真的开过后台标签页');
+    eq(stub.max(), 1, '同一时刻最多一张后台标签页（否则页签栏会闪成一片）');
+    eq(stub.calls.removed.length, 2, '两次读完都要立刻关掉');
+    eq(stub.calls.created.map((c) => c.active).join(','), 'false,false', '一律后台打开、不许抢前台');
+  });
+
   /* ------------------------------------------------------------------
    * 【2.0.8.22】用户 2026-11-11 报的 5 个案例，病根分三类，各锁一条：
    *   · 编码：GBK/UTF-16 站点按 UTF-8 解会整片乱码；

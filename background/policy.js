@@ -307,7 +307,18 @@
     return { ok: false };
   }
 
+  /* 【2.0.14.4 · m12586 A 档】同一时刻只允许一张后台标签页：读完（成功/失败/超时）才轮到下一个。
+   * 用户现场：同时触发几次「读取隐私政策」会连开好几张后台标签，页签栏一片闪、还互相抢执行机会。
+   * 串行之后：任何时刻最多一张、读完立刻关，用户看到的就是「页签栏短暂闪一下」。 */
+  let tabQueue = Promise.resolve();
   function readViaTab(url, hints) {
+    const run = () => readViaTabOnce(url, hints);
+    const next = tabQueue.then(run, run);
+    tabQueue = next.then(() => null, () => null);
+    return next;
+  }
+
+  function readViaTabOnce(url, hints) {
     return new Promise((resolve) => {
       const tabs = (typeof chrome !== 'undefined' && chrome.tabs) || null;
       const scripting = (typeof chrome !== 'undefined' && chrome.scripting) || null;

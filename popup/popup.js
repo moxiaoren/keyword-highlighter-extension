@@ -112,6 +112,30 @@
     } catch (e) { return null; }
   }
 
+  /* 【2.0.14.4 需求】快捷键提示：把 toggle-site 的按键直接画在按钮上。
+     用户要「这个功能加个快捷键」时才发现命令早就有了（Ctrl+Shift+S），
+     只是弹窗里一个字都不提，没人知道。命令缺失（用户自己改过 / 浏览器没分配）
+     时小标签整个不显示 —— 宁可没有，也不显示一个按了没用的键。 */
+  let siteShortcut = '';
+  let siteShortcutLoaded = false;
+  async function loadSiteShortcut() {
+    if (siteShortcutLoaded) return siteShortcut;
+    siteShortcutLoaded = true;
+    try {
+      const all = await chrome.commands.getAll();
+      for (const c of all || []) {
+        if (c && c.name === 'toggle-site' && c.shortcut) { siteShortcut = String(c.shortcut); break; }
+      }
+    } catch (e) { /* 旧内核没有 commands API：不显示小标签 */ }
+    return siteShortcut;
+  }
+  function paintSiteKey() {
+    const el = $('btn-site-key');
+    if (!el) return;
+    el.textContent = siteShortcut;
+    if (siteShortcut) el.removeAttribute('hidden'); else el.setAttribute('hidden', '');
+  }
+
   /** 指定标签页在内容脚本里的**真值**：`siteEnabled`（受全局开关 × 本标签页禁用 × 站点规则共同决定）
    *  与 `tabDisabled`（本标签页是否被标签页级临时禁用，【2.0.7.2 需求⑤】）。
    *  站点卡原来只读 `siteDisabledMap`，于是被网址规则禁掉的页面显示「生效中」，按钮点两次页面零变化（C7 F-2）。
@@ -355,6 +379,7 @@
       $('btn-site').disabled = true;
       $('btn-site-icon').textContent = '🚫';
       $('btn-site-text').textContent = '禁用本标签页';
+      paintSiteKey();
       return;
     }
     const badge = $('site-badge');
@@ -368,21 +393,28 @@
     $('btn-site').classList.toggle('is-site-disabled', !!disabled);
     $('btn-site').title = disabled ? '恢复本标签页的高亮（关掉这个标签页后自动恢复）'
       : '临时禁用本标签页的高亮：这个标签页里打开什么网址都不高亮，关掉它就自动取消';
+    paintSiteKey();
   }
 
   /** 页面确实没高亮、但不是"本标签页禁用"造成的（全局暂停 / 历史站点级禁用 / 网址规则）：
-   *  badge 说实话，按钮按"点了有没有用"决定 */
-  function setSiteBlockedView(blocked, label, btnTitle) {
+   *  badge 说实话；**按钮永远可点**。
+   *  【2.0.14.4 · 用户 m12534】旧写法按"点了有没有用"把按钮 disabled —— 可是「禁用本标签页」
+   *  是**标签页级**的：它给这个标签页挂标记，之后导航到什么网址都保持禁用，跟当前这页现在
+   *  亮不亮毫无关系。黑名单页上点不了，用户就得先开一个能启用的网址、点一下、再回来，
+   *  等于把「禁用这个标签页」错当成「禁用这个网址」。所以这里只改说明，不禁用按钮。 */
+  function setSiteBlockedView(label, reasonText) {
     const badge = $('site-badge');
     badge.classList.remove('is-unknown');
     badge.textContent = label;
     badge.classList.add('is-disabled');
 
-    $('btn-site').disabled = !!blocked;
+    $('btn-site').disabled = false;
     $('btn-site-icon').textContent = '🚫';
     $('btn-site-text').textContent = '禁用本标签页';
     $('btn-site').classList.remove('is-site-disabled');
-    $('btn-site').title = btnTitle;
+    $('btn-site').title = '临时禁用本标签页的高亮：这个标签页里打开什么网址都不高亮，关掉它就自动取消'
+      + (reasonText ? '（' + reasonText + '）' : '');
+    paintSiteKey();
   }
 
   /* ---------------- 渲染：关键词数（配置项计数，与命中统计无关） ---------------- */
@@ -411,6 +443,9 @@
     }
     $('site-name').textContent = hostname;
     $('site-name').title = hostname;
+    /* 快捷键小标签：按键真值由浏览器给，这里只负责画 */
+    await loadSiteShortcut();
+    paintSiteKey();
 
     /* 历史站点级禁用（storage.local.siteDisabledMap 的存量）：**只读不写**。
      * 它是旧版「禁用本站」留下的整站禁用，新按钮管不到它，只能去设置页那份历史列表里恢复 ——
@@ -436,16 +471,17 @@
 
     /* ③ 页面确实没高亮，归因决定 badge 说实话、按钮有没有用 */
     if (legacyDisabled) {
-      setSiteBlockedView(true, '已禁用',
-        '该站点在旧版本被「禁用本站」禁过（历史记录，升级不改变它）；这个按钮现在只管当前标签页，请到设置页的「历史站点级禁用」列表里恢复');
+      setSiteBlockedView('已禁用',
+        '该站点在旧版本被「禁用本站」禁过；恢复要到设置页的「历史站点级禁用」列表里操作');
       return;
     }
     if (globalEnabled === false) {
-      setSiteBlockedView(false, '已暂停', '临时禁用本标签页高亮（当前全局高亮已暂停）');
+      setSiteBlockedView('已暂停', '全局高亮已暂停，这个标签页仍可单独禁用');
       return;
     }
-    /* 既没被本标签页禁用、也没暂停 ⇒ 只能是被网址规则挡掉了：此时点按钮没用，如实禁用并说明去哪改 */
-    setSiteBlockedView(true, '已禁用', '该页面被网址规则禁用，请到设置页调整规则');
+    /* 既没被本标签页禁用、也没暂停 ⇒ 只能是被网址规则挡掉了。
+     * 说明写进 title，按钮照样可点：禁用是标签页级的，不受当前页是否高亮影响。 */
+    setSiteBlockedView('已禁用', '该页面被网址规则禁用，到设置页可调整规则');
   }
 
   /* ---------------- 更新通道切换 ----------------
@@ -537,6 +573,10 @@
 
     curTabDisabled = !!res.disabled;
     setSiteDisabledView(curTabDisabled, true);
+    /* 【2.0.14.4】再走一遍完整判据：黑名单页上"恢复"之后页面仍被网址规则挡着，
+     * 只按 tabDisabled 画会错说「生效中」。等一拍让内容脚本收下推送（它重评后才答 STATE_QUERY）。 */
+    await new Promise((r) => setTimeout(r, 120));
+    try { await render(); } catch (e) { /* 重画失败就保持上面的乐观态，不弹错 */ }
     /* 页面里的高亮由后台推 `TAB_DISABLED_CHANGED` 触发热生效（content 收到就重评上线/下线），
      * 所以这里不额外再发一条 —— 推送发不出去时（该页没有内容脚本）也没有需要它做的事。 */
     toast(curTabDisabled ? '已禁用本标签页的高亮' : '已恢复本标签页的高亮', 'ok');

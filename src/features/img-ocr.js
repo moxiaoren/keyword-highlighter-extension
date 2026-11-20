@@ -793,6 +793,31 @@
     return String(name || '').replace(/[@#＃!^%].*$/, '').trim();
   }
 
+  /** 【2.0.14.4 · m12710】在 OCR 文本里按字段名取值：「著作权人：X」「登记号 X」，值也可落在下一行。
+   *  PDF / 证书版式千变万化，`rowsFor` 的结构化抽行认不出文档类型时（没标题、或条目是授权书式文档），
+   *  用户仍认为「OCR 明明抓到了」——这条是最小兜底：只认「字段名 + 分隔 + 值」这一种写法。 */
+  function labeledValueInText(text, names) {
+    const lines = String(text == null ? '' : text).split(/\r?\n/);
+    for (let i = 0; i < lines.length; i++) {
+      const line = String(lines[i] || '');
+      for (let n = 0; n < names.length; n++) {
+        const nm = String(names[n] || '');
+        if (!nm) continue;
+        const at = line.indexOf(nm);
+        if (at < 0) continue;
+        /* 「著作权人（甲方）：X」这种括号注解要先剪掉，值只从分隔符之后取。 */
+        let rest = line.slice(at + nm.length)
+          .replace(/^[（(][^）)]*[）)]/, '')
+          .replace(/^[\s:：=为是\-—－_]+/, '')
+          .trim();
+        if (!rest) rest = String(lines[i + 1] || '').trim();
+        rest = rest.replace(/[\s\u3000]+$/, '').slice(0, 60);
+        if (rest) return rest;
+      }
+    }
+    return '';
+  }
+
   /** 同一规则里**证书图** OCR 出来的行（`OcrAuto.rowsFor`）= 比对基准。
    * 用户口径（m07238）：软著字段抓到的证书图自动进表「著作权人 a公司 / 登记号 X」，
    * 比对就拿这两个值去比授权书图上有没有 —— 不用授权书自己抽出来的值（那是假通过）。
@@ -830,6 +855,36 @@
         out.push(v.toLowerCase());
       }
     }
+    /* 【2.0.14.4 · m12710】结构化抽行一条都没出时，退一步按字段名在这条规则的 OCR 文本里取值。
+     * 用户现场：PDF 里明明抓到了「著作权人 / 登记号」，`#比` 却报「没取到值」——
+     * 因为 `rowsFor` 只对认出文档类型的证书抽这两行（授权书式 PDF、没标题的扫描件都抽不出来）。
+     * 仍然**不是**「拿被判这张图自己抽出来的行去比」：这里按字段名在文本行里找「字段名：值」，
+     * 值本来就印在文档上；主路径（证书结构化行）拿到值时绝不走这条。 */
+    if (!out.length) {
+      const defs = (A.DEFS || []);
+      for (let d = 0; d < defs.length && !out.length; d++) {
+        const def = defs[d];
+        if (!def) continue;
+        const names = [def.label].concat(def.words || []);
+        let hitName = false;
+        for (let n = 0; n < names.length; n++) { if (keyOf(names[n]) === want) { hitName = true; break; } }
+        if (!hitName) continue;
+        for (const it of list) {
+          if (!it || it.state !== 'done' || !it.text) continue;
+          /* 只对 PDF 条目放宽：图片条目仍只认证书结构化行，避免「拿授权书自己的值当基准」的假通过 */
+          if (String(it.kind || '') !== 'pdf') continue;
+          if (pinId && String(it.ruleId || '') !== pinId) continue;
+          const v = labeledValueInText(it.text, names);
+          if (!v) continue;
+          if (typeof def.ok === 'function') { try { if (!def.ok(v)) continue; } catch (e) { continue; } }
+          const k = keyOf(v);
+          if (seen.indexOf(k) >= 0) continue;
+          seen.push(k);
+          out.push(v.toLowerCase());
+          break;
+        }
+      }
+    }
     return out;
   }
 
@@ -851,6 +906,8 @@
     for (const v of vals.concat(base)) {
       const s = String(v == null ? '' : v).trim();
       if (!s) continue;
+      /* 【2.0.14.4 · m12710】PDF 占位串（`\u0001KHPDF\u0001…`）混进来会把「没取到」说成「有值但不同」 */
+      if (s.indexOf('\u0001') >= 0) continue;
       const k = keyOf(s);
       if (seen.indexOf(k) >= 0) continue;
       seen.push(k);
@@ -1143,7 +1200,9 @@
           /* 先剔图片占位符（`\u0001KHIMG\u0001alt|url\u0001ENDIMG\u0001`）再剔空白：
            * 只删开头那个标记会把 url 留在值里，值与 OCR 文本就永远对不上（真机抓到的红）。
            * 剥离实现只有一份，与 `#0`（不要图）共用。 */
-          const plain = (typeof Fetch.stripImgPlaceholders === 'function') ? Fetch.stripImgPlaceholders(raw) : raw;
+          const plain = (typeof Fetch.stripAllPlaceholders === 'function')
+            ? Fetch.stripAllPlaceholders(raw)
+            : ((typeof Fetch.stripImgPlaceholders === 'function') ? Fetch.stripImgPlaceholders(raw) : raw);
           pushValue(plain);
         }
       }

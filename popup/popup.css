@@ -171,6 +171,21 @@ body {
   border-color: var(--success-strong);
   color: var(--white);
 }
+/* 【2.0.14.4 需求】快捷键小标签：读 chrome.commands 的 toggle-site 真值。
+   命令缺失时 JS 给它挂 hidden，整块不占位。用 kbd 语义 + token 配色，不写死颜色。 */
+.kh-pop-key {
+  margin-left: 5px;
+  padding: 0 4px;
+  border: 1px solid var(--border-2);
+  border-radius: 4px;
+  background: var(--bg-2);
+  color: var(--text-3);
+  font-family: inherit;
+  font-size: calc(var(--fs-sm) - 1px);
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.kh-pop-key[hidden] { display: none; }
 
 /* ---------------------------------------------------------------- ④ 工具行 */
 /* 只有「诊断 / 仅计数 / 更新通道」三个按钮（2026-10-05：线上更新与更新提示条已从插件入口移除，

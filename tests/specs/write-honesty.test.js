@@ -151,7 +151,7 @@ module.exports = async function run() {
     truthy(/eff === null/.test(body), '内容脚本不可达要有降级分支');
     truthy(/当前页面不支持站点设置/.test(body), '降级文案');
     truthy(/globalEnabled === false/.test(body), '★ 全局暂停要单独归因（badge 说实话：已暂停）');
-    truthy(/setSiteBlockedView\(true, '已禁用'/.test(body), '★ 网址规则挡掉的页面不得再显示「生效中」');
+    truthy(/setSiteBlockedView\('已禁用'/.test(body), '★ 网址规则挡掉的页面不得再显示「生效中」');
     truthy(/网址规则/.test(body), '要告诉用户去哪改（设置页规则）');
   });
 

@@ -161,4 +161,38 @@ module.exports = async function run() {
     truthy(/id="btn-site-text">禁用本标签页/.test(html), '按钮文案应是「禁用本标签页」');
     falsy(/id="btn-site-text">禁用本站/.test(html), '「禁用本站」的按钮文案应已退场');
   });
+
+  suite('2.0.14.4 需求 · 黑名单页也能禁用本标签页 + 快捷键看得见');
+
+  await test('★ 弹窗：被网址规则挡掉的页面也必须能点按钮（禁用是标签页级的）', () => {
+    const p = code(readSrc('popup/popup.js'));
+    truthy(/function setSiteBlockedView\(label, reasonText\)/.test(p),
+      'blocked 视图不再收 blocked 参数（禁不禁用与"当前这页亮不亮"无关）');
+    truthy(/\('btn-site'\)\.disabled = false/.test(p), '★ 黑名单页上按钮必须保持可点');
+    falsy(/disabled = !!blocked/.test(p), '★ 不许再按"点了有没有用"把按钮禁掉');
+    truthy((p.match(/setSiteBlockedView\(/g) || []).length >= 4,
+      '三处 blocked 归因（历史站点禁用 / 全局暂停 / 网址规则）都要走新签名');
+  });
+
+  await test('★ 快捷键有了可见入口：按钮上画 chrome.commands 的 toggle-site 真值', () => {
+    const p = code(readSrc('popup/popup.js'));
+    truthy(/chrome\.commands\.getAll\(\)/.test(p), '要读浏览器里的真实按键（不写死 Ctrl+Shift+S）');
+    truthy(/name === 'toggle-site'/.test(p), '读的必须是标签页级禁用那条命令');
+    truthy(/function paintSiteKey\(\)/.test(p), '画小标签的实现应在');
+    const html = readSrc('popup/popup.html');
+    truthy(/id="btn-site-key"/.test(html), '按钮里要有快捷键小标签');
+  });
+
+  await test('★ 后台：Ctrl+Shift+S 按下去有回执（徽标闪 OFF / ON）', () => {
+    const sw = code(readSrc('background/service-worker.js'));
+    truthy(/flashTabState\(next\)/.test(sw), 'toggle-site 分支要闪徽标，否则黑名单页上像没反应');
+    truthy(/function flashTabState\(disabled\)/.test(sw), '回执实现应在');
+    truthy(/text: disabled \? 'OFF' : 'ON'/.test(sw), '禁止=OFF、恢复=ON');
+  });
+
+  await test('★ 文案不再说"站点"：命令描述与按钮都是标签页语义', () => {
+    const msg = readSrc('_locales/zh_CN/messages.json');
+    truthy(/禁用\/恢复本标签页/.test(msg), '命令描述应写标签页');
+    falsy(/临时禁用当前站点/.test(msg), '旧的「临时禁用当前站点」应退场');
+  });
 };

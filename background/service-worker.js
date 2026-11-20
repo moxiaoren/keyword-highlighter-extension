@@ -56,6 +56,19 @@ async function notifyTabDisabled(tabId, disabled) {
   catch (e) { /* 见上：没有接收方是正常情况，不是错误 */ }
 }
 
+/** 【2.0.14.4 需求】快捷键要"看得见"：标签页级禁用在黑名单页上按下去，页面本来就没高亮，
+ *  肉眼看不到任何变化 ⇒ 用户以为快捷键没生效（用户 m12534 的原话就是「点不了/没反应」）。
+ *  用 action 徽标闪一下 OFF / ON 1.6 秒当回执，完了清空（徽标平时为空，不占位、不劫持别处）。 */
+let flashTabTimer = 0;
+async function flashTabState(disabled) {
+  try { await chrome.action.setBadgeText({ text: disabled ? 'OFF' : 'ON' }); } catch (e) { return; }
+  if (flashTabTimer) { try { clearTimeout(flashTabTimer); } catch (e) {} }
+  flashTabTimer = setTimeout(() => {
+    flashTabTimer = 0;
+    try { chrome.action.setBadgeText({ text: '' }); } catch (e) { /* 扩展已卸载：忽略 */ }
+  }, 1600);
+}
+
 /* ---------------- 切页广播（2.0.6.2 需求⑤） ----------------
  * 用户口径：切到**不可高亮**的标签页（黑名单 / 白名单以外 / 该站被禁用 / chrome 内部页）时，
  * 不许把上一个标签页的高亮与重要笔记缓存清掉；切到**可高亮**页时才完全清理
@@ -146,6 +159,8 @@ chrome.commands.onCommand.addListener(async (command) => {
       if (!tabs.length || tabs[0].id == null) break;
       const next = await TabDisabled.setDisabled(tabs[0].id);
       await notifyTabDisabled(tabs[0].id, next);
+      /* 徽标回执：黑名单页上页面本来就没高亮，不闪一下等于按了没反应 */
+      await flashTabState(next);
       break;
     }
     case 'open-settings':
@@ -300,7 +315,13 @@ function khPdfHookInstall(tabId, requestId, clickMode) {
         world: 'MAIN',
         args: [requestId, PDF_HOOK_KEY, !!clickMode],
         func: mainWorldPdfHook
-      }, () => { void chrome.runtime.lastError; resolve(true); });
+      }, () => {
+        /* 【2.0.14.4 · 用户 m12586】以前无条件 resolve(true)：注入失败（受保护页面 / 权限变更）
+         * 也回报"钩子已就位"，内容脚本照样去点，页面自己开的新标签就把前台抢走了。
+         * 现在如实回报 —— 装不上就让调用方走"盯新标签 + 立刻压回后台"那条路。 */
+        const err = chrome.runtime.lastError;
+        resolve(!err);
+      });
     } catch (e) { resolve(false); }
   });
 }
@@ -390,6 +411,13 @@ function openPdfGrab(tabId, requestId, clickMode) {
     /* 还没认领时也只接受本页发起的标签（openerTabId 对不上就跳过，见 isOurs） */
     if (!st.createdId) { if (!isOurs(tab)) return; st.createdId = id; }
     if (id !== st.createdId) return;
+    /* 【2.0.14.4 · 用户 m12586】替用户点出来的标签会抢前台：一认领就压回后台，
+     * 并把前台还给原标签页。只对 click 模式这么做 —— 用户自己点开的（click=false）不许动，
+     * 那是他自己要看的标签。 */
+    if (st.click) {
+      try { chrome.tabs.update(id, { active: false }); } catch (e) {}
+      try { chrome.tabs.update(tabId, { active: true }); } catch (e) {}
+    }
     consider(id, (info && info.url) || (tab && tab.url));
   };
   /* 两个模式都旁听新标签：用户自己点开的那次也能把地址记下来（不压后台、不关标签、不切前台） */

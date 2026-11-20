@@ -1148,6 +1148,14 @@
     return String(text == null ? '' : text).replace(IMG_RE, '');
   }
 
+  /** 占位串**一律**剥掉（图片 `KHIMG` + PDF `KHPDF`）：判据比较只看文字。
+   *  【2.0.14.4 · m12710】用户现场：`著作权人#比` 取到的候选值里混着 PDF 占位串
+   *  （`\u0001KHPDF\u0001|url\u0001ENDPDF\u0001下载`），于是「页面上没取到值」被误说成
+   *  「图上有值但不同」。剥完只剩文字，两种情形才分得清。 */
+  function stripAllPlaceholders(text) {
+    return stripImgPlaceholders(text).replace(PDF_RE, '');
+  }
+
   /**
    * `1,3` / `1，3` → `[1,3]`（1 起数、去重、升序、最多 12 个）。
    * 序号是**整字段的图片序号**（跨格累计，和 `#N` 的"前 N 张"同一套计数），不是"这一格里第几张"。
@@ -2410,6 +2418,8 @@
     applyImgPolicy,
     /** 图片占位符剥离（只留文字）：`#0` 与图片动态关键词的判据比较共用（见 `stripImgPlaceholders`） */
     stripImgPlaceholders,
+    /** 图片 + PDF 占位串一起剥（抓取字段取值进比对基准时用；见 `stripAllPlaceholders`） */
+    stripAllPlaceholders,
     /** 层级后缀剥离（内层/本层/外层）：把 label 归一到字段名（`computeBlock` 的字段选项与单测用） */
     baseLabelOf,
     /* 「抓取字段的值格（含图）」**只读访问口**（img-ocr 取图用；不改抓取内容语义） */

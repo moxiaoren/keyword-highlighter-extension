@@ -70,6 +70,28 @@ module.exports = async function run() {
   const savedRebuild = KH.rebuild;
   KH.rebuild = null;
 
+  suite('2.0.14.4 需求 · 无感抓取：钩子装不上要如实回报，抢来的标签立刻压回后台');
+
+  await test('★ 钩子注入失败必须回报 armed=false（否则点了就抢前台）', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const sw = fs.readFileSync(path.join(__dirname, '..', '..', 'background', 'service-worker.js'), 'utf8');
+    const fn = sw.slice(sw.indexOf('function khPdfHookInstall'), sw.indexOf('function khPdfHookStop'));
+    truthy(/const err = chrome\.runtime\.lastError/.test(fn), '★ 要看 lastError，不许无条件 resolve(true)');
+    truthy(/resolve\(!err\)/.test(fn), '★ 装没装上要如实回报（内容脚本据此决定点不点）');
+    falsy(/void chrome\.runtime\.lastError; resolve\(true\)/.test(fn), '旧的无条件 true 应退场');
+  });
+
+  await test('★ 认领的抓取标签立刻压回后台、前台还给原标签（只限替用户点的）', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const sw = fs.readFileSync(path.join(__dirname, '..', '..', 'background', 'service-worker.js'), 'utf8');
+    const fn = sw.slice(sw.indexOf('function openPdfGrab'), sw.indexOf('async function pdfGrab('));
+    truthy(/if \(st\.click\) \{/.test(fn), '★ 只对 click 模式动手（用户自己点开的标签不许压）');
+    truthy(/chrome\.tabs\.update\(id, \{ active: false \}\)/.test(fn), '★ 抓取标签要压后台');
+    truthy(/chrome\.tabs\.update\(tabId, \{ active: true \}\)/.test(fn), '★ 前台要还给原标签页');
+  });
+
   suite('2.0.6.5 需求②：PDF 占位 — 认引用与占位符');
 
   await test('★ 四种引用写法都认，`.pdf` 后面带查询串/锚点也认', () => {
@@ -271,6 +293,28 @@ module.exports = async function run() {
     eq(rows.length, 1, '★ `登记号#表` 对 PDF 也加得出表格行');
     eq(rows[0].label, '登记号');
     eq(rows[0].value, '2025SR0456628', '值不许把下一行（著作权人）吞进来');
+  });
+
+  await test('★ m12710：PDF 里有「著作权人：X / 登记号：Y」但认不出证书标题时，#比 仍取得到值', () => {
+    KH.features.get('img-ocr').clear(null, { reason: 'destroy' });
+    const a = pdfRow([link('https://x.test/plain.pdf')],
+      { imgOcrKeyword: '著作权人#比|登记号#比', fetchLabels: '报告|著作权人|登记号' });
+    O.build({}, {}, [hitOf(a)]);
+    eq(O.items().length, 1, 'PDF 要建出条目（否则后面根本无从比对）');
+    const it = O.items()[0];
+    const text = '著作权人：北京山禾不动产管理有限公司\n登记号：2025SR0456628';
+    O._onResult({
+      requestId: sent()[sent().length - 1].requestId, ok: true, via: 'pdf',
+      src: 'https://x.test/plain.pdf', text: text, lines: text.split('\n'),
+      pages: 1, confidence: 0, ocrMs: 8
+    });
+    eq(KH.OcrAuto.rowsFor(it).length, 0, '前提：没有证书标题 ⇒ 结构化抽行一条都没有');
+    const owner = (it.cmpReqs || []).filter((r) => r.name === '著作权人')[0];
+    truthy(owner, '著作权人这一项要进比对清单');
+    truthy(owner.values.some((v) => String(v).indexOf('北京山禾') >= 0),
+      '★ 值要能从这条 PDF 的文本里取到（结构化抽行认不出文档类型时的兜底）');
+    truthy(owner.values.every((v) => String(v).indexOf('\u0001') < 0),
+      '值里不许混进 PDF 占位串（那会把「没取到」说成「有值但不同」）');
   });
 
   suite('2.0.6.5 需求②：PDF 占位三态（蓝=读中 / 绿=没命中 / 红=命中）');

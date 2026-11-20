@@ -9,7 +9,7 @@
     "message": "开启/关闭高亮"
   },
   "shortcutToggleSite": {
-    "message": "临时禁用当前站点"
+    "message": "禁用/恢复本标签页"
   },
   "shortcutOpenSettings": {
     "message": "打开设置页"
