@@ -1208,6 +1208,60 @@ if (manifest && manifest.version) {
   }
 }
 
+/* ===== 仓库体积守卫（2026-11-20 · 台账「测试用例/回归体积」） =====
+
+/* 背景：release/.impact-baseline.json 由出包脚本自动生成。历史上有 7 个版本（10.7–21.4 MB）
+ * 被当成普通源码提交，把 .git 撑到 197 MB —— 而「这次提交到底多大」肉眼永远看不出来。
+ * 两条红线，分别管交付仓与工作区仓（工作区仓装着 _cases / docs / _stage 这些大体量文档）：
+ *   ① 单个跟踪文件 ≤ 8 MB（vendor/ 与 release/models/ 是产品本体：wasm + 模型，走许可名单）；
+ *   ② 跟踪内容合计：交付仓 ≤ 60 MB、工作区仓 ≤ 64 MB。
+ * 阈值按 2026-11-20 实测定：交付仓 37.1 MB（最大 vendor wasm 13.6 MB）、工作区仓 47.7 MB
+ * （最大 team/BASELINE-SHA256.json 4.0 MB）—— 8 MB 仍能拦住历史那次 10.7 MB 起的基线膨胀。
+ * 只数当前 HEAD 的 git ls-files：历史体积清不掉，要清只能 filter-repo 重写。
+ * 不在 git 仓里（脱仓交付的副本）⇒ 跳过，不算红灯。 */
+{
+  const { execFileSync } = require('child_process');
+  const MAX_FILE = 8 * 1024 * 1024;
+  const EXEMPT = ['vendor/', 'release/models/'];
+  const TOTAL_LIMIT = { '交付仓': 60, '工作区仓': 64 };
+  const mb = (n) => (n / 1048576).toFixed(1) + ' MB';
+  const scan = (dir) => {
+    if (!fs.existsSync(path.join(dir, '.git'))) return null;
+    let out = null;
+    try {
+      out = execFileSync('git', ['ls-files', '-z'], {
+        cwd: dir, encoding: 'utf8', maxBuffer: 128 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore']
+      });
+    } catch (err) { return null; }
+    return out.split('\u0000').filter(Boolean).map((rel) => {
+      let size = 0;
+      try { size = fs.statSync(path.join(dir, rel)).size; } catch (err) { size = 0; }
+      return { rel: rel, size: size };
+    });
+  };
+  const judge = (label, dir) => {
+    const files = scan(dir);
+    if (!files) return;
+    const total = files.reduce((s, f) => s + f.size, 0);
+    const big = files.filter((f) => f.size > MAX_FILE && !EXEMPT.some((p) => f.rel.indexOf(p) === 0))
+      .sort((a, b) => b.size - a.size);
+    const top = files.slice().sort((a, b) => b.size - a.size).slice(0, 3)
+      .map((f) => f.rel + ' ' + mb(f.size)).join('、');
+    const limit = TOTAL_LIMIT[label];
+    if (big.length) {
+      bad(label + '有单个跟踪文件超过 8 MB（生成物被当源码提交了？）',
+        big.map((f) => f.rel + '  ' + mb(f.size)).join('\n      '));
+    } else if (total > limit * 1024 * 1024) {
+      bad(label + '的跟踪内容到 ' + mb(total) + '，超过 ' + limit + ' MB 上限', '最大的三个：' + top);
+    } else {
+      ok(label + '体积守卫（' + files.length + ' 个文件 / ' + mb(total) + '，上限 ' + limit
+        + ' MB；最大 ' + top + '）');
+    }
+  };
+  judge('交付仓', root);
+  judge('工作区仓', path.join(root, '..', '..'));
+}
+
 /* ------------------------------------------------------------------ 输出 */
 
 /* README 里的「机械红线（N 项）」必须就是本次实测条数 —— 手写数字一定会烂（票 #42）。
