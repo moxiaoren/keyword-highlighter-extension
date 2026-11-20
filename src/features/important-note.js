@@ -479,6 +479,8 @@
       white-space: nowrap;
     }
     .khin-pdf:hover { background: #e3e9f2; }
+    /* 【2.0.14.6 · m13311】先占位、后认领：地址还没抓回来时是这张灰牌（不参与红/绿判定） */
+    .khin-pdf.khin-pdf-pending { box-shadow: inset 0 0 0 2px #94a3b8; color: #64748b; }
     .khin-pdf.khin-pdfbusy { box-shadow: inset 0 0 0 2px #3b82f6; color: #1d4ed8; }
     .khin-pdf.khin-pdfmiss { box-shadow: inset 0 0 0 2px #22c55e; color: #15803d; }
     .khin-pdf.khin-pdfhit { box-shadow: inset 0 0 0 2px #ef4444; color: #b91c1c; }
@@ -836,7 +838,10 @@
     if (atPdf.size) {
       for (const el of bodyEl.querySelectorAll('[data-khpdf]')) {
         const s = absSrc(el.getAttribute('data-khpdf'));
-        markOnePdf(el, s ? (atPdf.get(s) || null) : null);
+        /* 【2.0.14.6 · 用户 m13311】还在等地址的牌（`data-khpdf=""`）不动它：
+         * 它自己带着「正在抓取」的说明，地址回来后整张卡片重画就换成真牌了。 */
+        if (!s) continue;
+        markOnePdf(el, atPdf.get(s) || null);
       }
     }
     syncCmpRowMarks(bodyEl, imgItems);
@@ -976,21 +981,34 @@
     const out = hitWords(it);
     const seen = Object.create(null);
     for (const w of out) seen[w] = 1;
-    const ok = Object.create(null);
-    for (const one of ((it && it.cmp && it.cmp.items) || [])) {
-      if (one && one.ok && one.name) ok[String(one.name)] = 1;
-    }
-    if (!Object.keys(ok).length) return out;
     const low = String((it && it.text) || '').toLowerCase();
+    const need = (w) => {
+      const s = String(w == null ? '' : w).trim();
+      if (s.length < 2 || s.length > 40 || seen[s]) return;
+      if (low.indexOf(s.toLowerCase()) < 0) return;
+      seen[s] = 1;
+      out.push(s);
+    };
+    /* 比对项名（著作权人 / 登记号）本身常写在被比对象里（PDF 是「著作权人：X」那种行） */
+    for (const one of ((it && it.cmp && it.cmp.items) || [])) {
+      if (one && one.name) need(one.name);
+    }
+    /* 【2.0.14.6 · 用户 m13328】对比只在**一致**时不让图片变红框；识别原文的高亮两种情况都要有。
+     * 所以这里不再按 `cmp.items[].ok` 过滤：值来自 ①这张图/PDF 自己抽出的结构化行（不一致时也写着值）
+     * ②取到的候选值里确实出现在本文的那些。 */
+    const rows = (function () {
+      try { return (KH.OcrAuto.rowsFor(it) || []); } catch (e) { return []; }
+    })();
     for (const req of ((it && it.cmpReqs) || [])) {
-      if (!req || req.kind !== 'need' || !ok[String(req.name || '')]) continue;
-      for (const v of (req.values || [])) {
-        const w = String(v == null ? '' : v).trim();
-        if (w.length < 2 || w.length > 40 || seen[w]) continue;
-        if (low.indexOf(w.toLowerCase()) < 0) continue;
-        seen[w] = 1;
-        out.push(w);
+      if (!req || req.kind !== 'need') continue;
+      const name = String(req.name || '');
+      for (const row of rows) {
+        const lb = String((row && row.label) || '');
+        if (!lb || !name) continue;
+        if (lb.indexOf(name) < 0 && name.indexOf(lb) < 0) continue;
+        need(row.value != null ? row.value : row.val);
       }
+      for (const v of (req.values || [])) need(v);
     }
     return out;
   }
@@ -5340,7 +5358,7 @@
    * 相册/停靠都在里面），而这个函数是纯 DOM 构造，喂文本就能验。
    * `markPdf` 同理由：三态判据（蓝/绿/红）就是这条需求的验收点，不该为了测它去搭整块面板。 */
   KH.ImportantNote = {
-    panel, head, collectEffective, IMG_PROTOCOL_OK, paintHits, ocrHits, ocrExtraRows, markPdf: markOnePdf,
+    panel, head, collectEffective, IMG_PROTOCOL_OK, paintHits, ocrHits, ocrExtraRows, applyImgMarksTo, markPdf: markOnePdf,
     /* 【2.0.8.7】合并闸门是「图这次真的 OCR 命中才出行」的判据所在 —— 纯函数 + 只读
      * `KH.ImgOcr.items()`，导出给单测，免得为了验一条判定去搭整块面板。 */
     mergeRowsFor, ocrFieldHit, rowBgOf, catOf,

@@ -404,12 +404,27 @@
     };
     openGrabWindow(job.host, true, done);
   }
+  /** 【2.0.14.6 · 用户 m13311】「先一次性填入占用，再按顺序认领地址」用的临时地址键：
+   * 取控件键（页地址 + 行标签 + 同签名序号）的哈希，**同一个控件永远同一个临时牌**，
+   * 不同字段的控件各算各的 —— 否则表格按「内容一致」合并时，两张不同字段的等待牌会被并成一列。 */
+  function autoPdfTokenKey(host) {
+    const k = String(autoPdfKeyOf(host) || '');
+    let h = 2166136261;
+    for (let i = 0; i < k.length; i++) { h ^= k.charCodeAt(i); h = (h * 16777619) >>> 0; }
+    return (h >>> 0).toString(36);
+  }
   function pdfPlaceholder(el) {
     const src = pdfRefOf(el) || autoPdfOf(el);
-    if (!src) { kickAutoPdf(el); return ''; }
     const enc = (s) => encodeURIComponent(s == null ? '' : String(s)).replace(/'/g, '%27');
     const name = String((el.getAttribute && (el.getAttribute('title') || el.getAttribute('download'))) || '');
-    return PDF_OPEN + enc(name) + '|' + enc(src) + PDF_CLOSE;
+    if (src) return PDF_OPEN + enc(name) + '|' + enc(src) + PDF_CLOSE;
+    /* 【2.0.14.6 · m13311】地址还没抓到：只要是自动抓取控件，就先占一个位（`#pend:<hash>`），
+     * 牌子上写「抓取中」；地址一回来，`rememberAutoPdf` 触发面板重画，这张牌换成真地址。
+     * 普通 `<a>` / iframe 不在此列（它们的地址由 `pdfRefOf` 给，没有就是没有）。 */
+    const ctl = autoPdfControlOf(el);
+    if (!ctl) { kickAutoPdf(el); return ''; }
+    kickAutoPdf(ctl);
+    return PDF_OPEN + enc(name || 'PDF') + '|' + enc('#pend:' + autoPdfTokenKey(ctl)) + PDF_CLOSE;
   }
 
   /** 交互控件标签：命中即剔出正文（「编辑」「查看更多」「收起」等动态控件不抓） */
@@ -598,6 +613,11 @@
       (_, n, u) => {
         let name = '', src = '';
         try { name = decodeURIComponent(n); src = decodeURIComponent(u); } catch (err) { return ''; }
+        /* 【2.0.14.6 · m13311】先占位：地址还没抓到的那些也立刻出牌（灰边 + 「抓取中」），
+         * 地址回来后面板重画就换成 `data-khpdf=<真地址>`，三态框由 `KH.ImportantNote` 挂。 */
+        if (/^#pend:/.test(src)) {
+          return '<span class="khin-pdf khin-pdf-pending" data-khpdf="" data-khpdf-pend="' + escA(src.slice(6)) + '" title="正在抓取 PDF 地址…">PDF</span>';
+        }
         if (!/^https?:\/\//i.test(src)) return '';
         /* `data-khpdf` 是 PDF 条目与占位标记之间的**唯一约定**（`KH.PdfOcr` 按它挂三态与点击） */
         return '<span class="khin-pdf" data-khpdf="' + escA(src) + '" title="' + escA(name || src) + '">PDF</span>';
@@ -665,8 +685,16 @@
       const ctl = autoPdfControlOf(node);
       if (ctl) {
         const src = autoPdfOf(ctl);
-        if (!src) kickAutoPdf(ctl);
-        else if (pdfSeen[src]) return;
+        if (!src) {
+          /* 【2.0.14.6 · m13311】没地址也先占位：按「控件」去重（临时牌各是各的），
+           * 不能按空的 src 去重 —— 那样一格三份 PDF 只会剩一张牌。 */
+          kickAutoPdf(ctl);
+          const kk = 'p:' + autoPdfTokenKey(ctl);
+          if (pdfSeen[kk]) return;
+          pdfSeen[kk] = 1;
+          const pending = pdfPlaceholder(ctl);
+          if (pending) { segs.push(pending); return; }
+        } else if (pdfSeen[src]) return;
         else {
           pdfSeen[src] = 1;
           const autoPdf = pdfPlaceholder(ctl);
@@ -793,8 +821,16 @@
           const ctl = autoPdfControlOf(n);
           if (ctl) {
             const src = autoPdfOf(ctl);
-            if (!src) kickAutoPdf(ctl);
-            else if (!pdfSeen[src]) {
+            if (!src) {
+              /* 同 `cellText`：等待中的牌按控件去重，一格几份就出几张 */
+              kickAutoPdf(ctl);
+              const kk = 'p:' + autoPdfTokenKey(ctl);
+              if (!pdfSeen[kk]) {
+                pdfSeen[kk] = 1;
+                const ph3 = pdfPlaceholder(ctl);
+                if (ph3) cands.push({ node: n, ph: ph3 });
+              }
+            } else if (!pdfSeen[src]) {
               pdfSeen[src] = 1;
               const ph2 = pdfPlaceholder(ctl);
               if (ph2) cands.push({ node: n, ph: ph2 });

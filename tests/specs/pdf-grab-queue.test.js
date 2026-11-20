@@ -2,7 +2,8 @@
  * 2.0.14.5 需求（用户 m13119）：
  *  ① PDF 抓取一份一份来 —— 一个值格挂三份 PDF 时不许同时点开三个标签（串行队列）；
  *  ② PDF 不受 `imgOcrMax` 截断（那是图片的额度），一格三份就出三张牌；
- *  ③ 比对一致时识别原文仍要标出对上的值（不然只剩绿框，用户以为没命中）。
+ *  ③ 比对一致与不一致，识别原文都要标出图上写着的值（比对只决定图片红框，m13328）。
+ *  ④ 地址没抓回来之前也要先出占位，回来只换那一张（m13311）。
  */
 const fs = require('fs');
 const path = require('path');
@@ -52,31 +53,48 @@ module.exports = async function run() {
     } finally { document.body.removeChild(table); }
   });
 
-  await test('★ 比对一致时识别原文仍要高亮：标出对上的值，不是只给绿框', () => {
-    const it = {
+  await test('★ 比对一致与不一致，识别原文都要高亮（比对只决定图片红框）', () => {
+    const make = (state, oks) => ({
       text: '著作权人 北京山禾不动产管理有限公司\n登记号 2025SR0456628',
       matched: [],
-      cmp: { state: 'same', items: [
-        { name: '著作权人', kind: 'need', ok: true },
-        { name: '登记号', kind: 'need', ok: true }
+      cmp: { state: state, items: [
+        { name: '著作权人', kind: 'need', ok: oks[0] },
+        { name: '登记号', kind: 'need', ok: oks[1] }
       ] },
       cmpReqs: [
         { name: '著作权人', kind: 'need', values: ['北京山禾不动产管理有限公司'] },
         { name: '登记号', kind: 'need', values: ['2025SR0456628'] }
       ]
-    };
-    const hits = KH.ImportantNote.ocrHits(it);
-    truthy(hits.indexOf('北京山禾不动产管理有限公司') >= 0, '★ 对上的著作权人要标出来');
-    truthy(hits.indexOf('2025SR0456628') >= 0, '★ 对上的登记号要标出来');
-    const bad = Object.assign({}, it, { cmpReqs: [
-      { name: '著作权人', kind: 'need', values: ['北京山禾不动产管理有限公司'] },
-      { name: '登记号', kind: 'need', values: ['2025SR0456628'] }
-    ], cmp: { state: 'diff', items: [
-      { name: '著作权人', kind: 'need', ok: true },
-      { name: '登记号', kind: 'need', ok: false }
-    ] } });
-    const hits2 = KH.ImportantNote.ocrHits(bad);
-    truthy(hits2.indexOf('北京山禾不动产管理有限公司') >= 0, '对上的那项照标');
-    truthy(hits2.indexOf('2025SR0456628') < 0, '★ 没对上的项不许标（那是待处理的差异）');
+    });
+    const same = KH.ImportantNote.ocrHits(make('same', [true, true]));
+    truthy(same.indexOf('北京山禾不动产管理有限公司') >= 0, '★ 一致时对上的著作权人也要标');
+    truthy(same.indexOf('2025SR0456628') >= 0, '★ 一致时对上的登记号也要标');
+    const diff = KH.ImportantNote.ocrHits(make('diff', [true, false]));
+    truthy(diff.indexOf('北京山禾不动产管理有限公司') >= 0, '★ 不一致时同样要标（用户 m13328：其他都是不变的）');
+    truthy(diff.indexOf('2025SR0456628') >= 0, '★ 没对上的那个值图上写着也要标');
+  });
+
+  await test('★ 先占位再认领：地址没回来也立刻出牌，回来只换那一张', () => {
+    const mk = () => H.el('span', { class: 'content-pdf' });
+    const s1 = mk(); const s2 = mk(); const s3 = mk();
+    const r = rowOf('APP电子版权证书', [s1, s2, s3]);
+    document.body.appendChild(r.tr);
+    try {
+      const F = KH.Fetch;
+      const t1 = F.cellText(r.valueCell, false);
+      const chips = String(t1).split('\u0001KHPDF\u0001').slice(1);
+      eq(chips.length, 3, '★ 三份 PDF 先各占一个位（不许因为没地址就少画）');
+      /* 占位地址进串前会 encodeURIComponent ⇒ `#pend:` 落成 `%23pend%3A` */
+      truthy(chips.every((c) => c.indexOf('%23pend%3A') >= 0), '★ 占位是临时地址 #pend:');
+      const html = F.restoreImgs(t1);
+      eq((html.match(/khin-pdf-pending/g) || []).length, 3, '★ 三张等待牌');
+      eq((html.match(/data-khpdf=""/g) || []).length, 3, '★ 还没有真地址');
+      F.rememberAutoPdf(s2, 'https://x.test/b.pdf');
+      const t2 = F.cellText(r.valueCell, false);
+      const chips2 = String(t2).split('\u0001KHPDF\u0001').slice(1).map((c) => { try { return decodeURIComponent(c); } catch (err) { return c; } });
+      truthy(chips2.some((c) => c.indexOf('https://x.test/b.pdf') >= 0), '★ 认领到的那一份换成真地址');
+      eq(String(t2).split('\u0001KHPDF\u0001').length - 1, 3, '★ 另外两张仍是占位');
+      eq((String(t2).match(/%23pend%3A/g) || []).length, 2, '★ 只剩两张等待牌');
+    } finally { document.body.removeChild(r.tr); }
   });
 };
