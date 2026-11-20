@@ -706,12 +706,12 @@
   function stateOfImg(it, V) {
     if (!it) return null;
     const st = String(it.state || '');
-    const words = hitWords(it);    /* 【2.0.14 · 问题④】勾了「比对」的图，判定跟比对走：一致不铺红框，不一致才铺（悬停点名缺哪项）。
-     * 比对优先于关键词命中：同一张图可能既命中动态词、又对不上证书值 —— 后者才是要用户处理的。 */
+    const words = hitWords(it);    /* 【2.0.15 · 问题③】用户口径：比对「一致」只表示**这一项**不用管，不是整张图不用管 ——
+     * 图同时还命中别的词（图片命中/动态词）时该红框照样红；「不一致」恒红框（缺项本身要用户处理）。 */
     const cmp = it && it.cmp;
-    if (st === 'done' && cmp && (cmp.state === 'same' || cmp.state === 'diff')) {
-      if (cmp.state === 'diff') return { cls: 'khin-imghit', tip: cmpTipOf(it) || (V.imgMissTip || '') };
-      return { cls: 'khin-imgmiss', tip: cmpTipOf(it) || '' };
+    const cmpSame = st === 'done' && cmp && cmp.state === 'same';
+    if (st === 'done' && cmp && cmp.state === 'diff') {
+      return { cls: 'khin-imghit', tip: cmpTipOf(it) || (V.imgMissTip || '') };
     }
     if (st === 'done' && words.length) {
       /* 走 `VIEW.imgHitTip` 的字面引用（不写成 `V.imgHitTip`）：`tests/specs/ocr-copy.test.js`
@@ -719,6 +719,7 @@
       return { cls: 'khin-imghit', tip: KH.OcrCopy.render(KH.OcrCopy.VIEW.imgHitTip, { matched: words.join('、') }) };
     }
     if (st === 'done' || st === 'fail') {
+      if (cmpSame) return { cls: 'khin-imgmiss', tip: cmpTipOf(it) || (V.imgMissTip || '') };
       const why = st === 'fail' ? (V.imgFailTip || '') : missReason(it);
       return { cls: 'khin-imgmiss', tip: (V.imgMissTip || '') + (why ? '（' + why + '）' : '') };
     }
@@ -3134,6 +3135,11 @@
 
     /** 需求③：开发者 / 核准主体 两边查法定代表人，再判断是否同一人。 */
     paintEntity(el, table, fields, NC) {
+      /* 【2.0.15 · 问题②】同法人校验改成可选打开、**默认关闭**：爱企查这条链路经常
+       * 查不到（未登录 / 验证 / 改版），以前每张卡都挂一个「？未查明」等于噪音。
+       * 关着时这里直接收工 —— 不联网、不涂色、也不写未查明标记。 */
+      const nc = this.cfg && this.cfg.importantNote;
+      if (!(nc && nc.entityCheck)) return;
       const devTr = rowOfField(table, 'dev');
       const entTr = rowOfField(table, 'entity');
       if (!devTr || !entTr) return;

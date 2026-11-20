@@ -1675,6 +1675,8 @@
     renderPinOrder();
     /* 【2.0.14 需求二】分页开关回显（默认关）。 */
     $('pf-notePaged').checked = !!(cfg.importantNote || {}).pagedTabs;
+    /* 【2.0.15 · 问题②】同法人校验回显（默认关）。 */
+    $('pf-noteEntityCheck').checked = !!(cfg.importantNote || {}).entityCheck;
     /* 【2.0.8.4 需求④】AI 助手的接口配置（与上面那块"重要笔记"同属样式/配置页）。 */
     renderAiForm();
     /* 【2.0.8.6 需求①】图文合并的标题表（字段 → 自定义标题 + 默认不展示）。 */
@@ -1890,6 +1892,10 @@
   /* 【2.0.14 需求二】重要笔记分页开关。落盘走嵌套子键 importantNote.pagedTabs（不新增顶层键）。 */
   $('pf-notePaged').addEventListener('change', async () => {
     await saveNested({ importantNote: { pagedTabs: $('pf-notePaged').checked === true } });
+  });
+  /* 【2.0.15 · 问题②】同法人校验开关（默认关）。落 importantNote.entityCheck。 */
+  $('pf-noteEntityCheck').addEventListener('change', async () => {
+    await saveNested({ importantNote: { entityCheck: $('pf-noteEntityCheck').checked === true } });
   });
 
 

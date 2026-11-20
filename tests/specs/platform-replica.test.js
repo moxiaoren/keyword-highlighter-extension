@@ -115,4 +115,41 @@ module.exports = async function run() {
         '★ 勾选行要读到勾选文案（授权方名字在这里）');
     } finally { D().body.removeChild(table); }
   });
+
+  /* 【2.0.15 · 用户 m11605】一个 PDF 在面板里冒出 3 张同址占位：页面的控件是**多层同名节点**
+   * （`content-pdf` 里套 `content-pdf-icon`，外层容器类名也含 content-pdf），旧写法对每个
+   * 匹配节点各放一条占位。现在只认簇里最外层那个，并在一次取值内按地址去重。 */
+  await test('★ 控件套控件：只出一张牌，地址挂在最外层', () => {
+    const inner = H.el('span', { 'class': 'content-pdf' }, [H.txt('PDF')]);
+    const outer = H.el('div', { 'class': 'content-pdf' }, [inner]);
+    const row = snapRow('APP电子版权证书', [outer]);
+    const table = mount([row]);
+    try {
+      truthy(F.autoPdfControlOf(inner) === null, '里层节点不再算控件');
+      truthy(F.autoPdfControlOf(outer) === outer, '★ 簇里最外层才是控件');
+      F.rememberAutoPdf(inner, 'https://x.test/cdn/app.pdf');
+      eq(F.autoPdfOf(outer), 'https://x.test/cdn/app.pdf', '★ 地址要挂到最外层：取值只问最外层');
+      const txt = String(F.cellText(row.valueCell, false));
+      eq((txt.match(/KHPDF/g) || []).length, 1, '★ 一个 PDF 只许一张牌（旧写法这里出多张同址占位）');
+      truthy(txt.indexOf(encodeURIComponent('https://x.test/cdn/app.pdf')) >= 0, '占位里带的是这份 PDF 的地址');
+    } finally { D().body.removeChild(table); }
+  });
+
+  await test('★ 两个字段各配一个 PDF：各出一张牌、各指向自己的地址（一一对应）', () => {
+    const pa = pdfCtl(); const pb = pdfCtl();
+    const ra = snapRow('APP电子版权证书', [pa]);
+    const rb = snapRow('ICP证', [pb]);
+    const table = mount([ra, rb]);
+    try {
+      F.rememberAutoPdf(pa, 'https://x.test/cdn/app.pdf');
+      F.rememberAutoPdf(pb, 'https://x.test/cdn/icp.pdf');
+      const ta = String(F.cellText(ra.valueCell, false));
+      const tb = String(F.cellText(rb.valueCell, false));
+      eq((ta.match(/KHPDF/g) || []).length, 1, 'APP电子版权证书格：一张牌');
+      eq((tb.match(/KHPDF/g) || []).length, 1, 'ICP证格：一张牌');
+      truthy(ta.indexOf(encodeURIComponent('https://x.test/cdn/app.pdf')) >= 0, 'APP电子版权证书格：地址是它自己的');
+      truthy(tb.indexOf(encodeURIComponent('https://x.test/cdn/icp.pdf')) >= 0, '★ ICP证格：地址不许指向电子版权证书');
+      truthy(ta.indexOf(encodeURIComponent('https://x.test/cdn/icp.pdf')) < 0, '两个字段的地址互不串台');
+    } finally { D().body.removeChild(table); }
+  });
 };

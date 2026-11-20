@@ -1107,6 +1107,8 @@ module.exports = async function run() {
       { label: '隐私政策内容', rows: [[{ t: '某某清理大师由北京某某科技有限公司运营。' }]], opt: null }
     ]);
     const panel = shadowPanel();
+    /* 【2.0.15 · 问题②】同法人校验默认关了：要验这条链路得显式打开 */
+    panel.cfg = { importantNote: { entityCheck: true } };
     panel.decorateChecks(div, {});
     const trs = div.querySelectorAll('tr');
     const policyTr = trs[trs.length - 1];
@@ -1392,6 +1394,8 @@ module.exports = async function run() {
     /* 同法人判定在 Promise 回调里画，回调会先看 isConnected —— 垫片的 div 不挂到文档上会被当已卸载跳过 */
     if (document.body) document.body.appendChild(div);
     const panel = shadowPanel();
+    /* 【2.0.15 · 问题②】同法人校验默认关了：要验这条链路得显式打开 */
+    panel.cfg = { importantNote: { entityCheck: true } };
     panel.lookupEntity = () => Promise.resolve({ rep: '', timedOut: true });
     panel.decorateChecks(div, {});
     await new Promise((r) => setTimeout(r, 20));
@@ -1451,6 +1455,8 @@ module.exports = async function run() {
     ]);
     if (document.body) document.body.appendChild(div);
     const panel = shadowPanel();
+    /* 【2.0.15 · 问题②】同法人校验默认关了：要验这条链路得显式打开 */
+    panel.cfg = { importantNote: { entityCheck: true } };
     panel.lookupEntity = () => Promise.resolve({ rep: '', timedOut: false, error: '爱企查没登录（在浏览器里登录后再试）' });
     panel.decorateChecks(div, {});
     await new Promise((r) => setTimeout(r, 20));
@@ -1458,6 +1464,28 @@ module.exports = async function run() {
     const mark = cell.querySelector('.kh-verdict');
     eq(String(mark.getAttribute('data-state')), 'unknown', '前提：仍然收在「未查明」态');
     truthy(String(cell.getAttribute('title') || '').indexOf('爱企查没登录') >= 0, '★ 悬停必须写出后台给的原因');
+    if (div.parentNode) div.parentNode.removeChild(div);
+  });
+
+  /* 【2.0.15 · 问题②】用户口径：爱企查确认法人一直跑不通 ⇒ 改成可选打开、**默认关闭**。
+   * 关着时不许联网，也不许挂「？未查明」——关着就是「没做这项校验」，不是「查不到」。 */
+  await test('★ 同法人校验默认关闭：不查法人、不挂未查明标记', async () => {
+    const div = H.el('div', {}, []);
+    div.innerHTML = KH.Fetch.rowsToTableHtml([
+      { label: '开发者', rows: [[{ t: '北京易车互联信息技术有限公司' }]], opt: null },
+      { label: '核准主体', rows: [[{ t: '北京易车信息科技有限公司' }]], opt: null }
+    ]);
+    if (document.body) document.body.appendChild(div);
+    const panel = shadowPanel();
+    let called = 0;
+    panel.lookupEntity = () => { called++; return Promise.resolve({ rep: '', timedOut: false, error: 'x' }); };
+    panel.cfg = { importantNote: {} };     // 默认配置：entityCheck 没有 / 为假
+    panel.decorateChecks(div, {});
+    await new Promise((r) => setTimeout(r, 20));
+    eq(called, 0, '★ 默认关闭 ⇒ 一次法人查询都不许发（爱企查跑不通，别白打）');
+    eq(div.querySelectorAll('.kh-verdict').length, 0, '★ 也不许挂「？未查明」：关着就是没校验，不是查不到');
+    const cell = div.querySelectorAll('tr')[1].querySelectorAll('td')[0];
+    falsy(cell.style.background, '关着也不涂色');
     if (div.parentNode) div.parentNode.removeChild(div);
   });
 

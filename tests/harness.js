@@ -145,6 +145,8 @@ class ShimElement {
    * `root.querySelectorAll('tr')` 等都用到了后代语义，不实现会静默返回空。
    */
   _matchesSelector(el, sel) {
+    const groups = String(sel).split(',');
+    if (groups.length > 1) return groups.some((g) => g.trim() && this._matchesSelector(el, g.trim()));
     const tokens = String(sel).trim().split(/\s+/).filter(Boolean);
     if (!tokens.length) return false;
     const last = tokens[tokens.length - 1];

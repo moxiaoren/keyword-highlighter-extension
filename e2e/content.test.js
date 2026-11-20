@@ -4379,6 +4379,11 @@ module.exports = async function runContent(ctx) {
   group('判定三态的非颜色标记（台账 #3/#4/#5：灰度下也必须分得清）', { aspects: ['visual'] });
 
   await test('★ 一致 / 待确认 / 未查明三态各有非颜色标记（不靠比色也分得开）', async () => {
+    /* 同法人校验 2.0.14.2 起默认关闭（用户 m11605）：这条用例验的是三态呈现，先把开关打开再加载页面。
+     * 注意别在页内改 `panel.cfg` —— 面板会按存储刷新 cfg，中途会把它覆盖回真实配置（本轮实测到的坑）。 */
+    await api.setConfig(Object.assign({}, CONFIG, {
+      importantNote: Object.assign({}, CONFIG.importantNote || {}, { entityCheck: true })
+    }));
     await fresh('list.html');
     /* 内容脚本跑在隔离世界，主世界拿不到 window.KH —— 用 CDP 取扩展上下文的 id（同 e2e/verify-20819.js）。
      * 断言只看 DOM 里的标记元素与文案，不比较颜色：这正是这条需求的意义。 */
@@ -4448,7 +4453,8 @@ module.exports = async function runContent(ctx) {
         + '  var el = document.getElementById(boxes[b]);'
         + '  window.KH.ImportantNote.panel.lookupEntity = stubs[boxes[b]];'
         + '  window.KH.ImportantNote.panel.decorateChecks(el, {});'
-        + '  await new Promise(function (r) { setTimeout(r, 80); });'
+        /* 80ms 不够：diff 态要走完 Promise.all(两次法人查询)+判决+涂色，真机负载下常读不到标记（2026-11-20 实测）。 */
+        + '  await new Promise(function (r) { setTimeout(r, 400); });'
         + '  var tds = el.querySelectorAll("td.kh-table-label");'
         + '  for (var i = 0; i < tds.length; i++) {'
         + '    var m = tds[i].querySelector(".kh-verdict");'
@@ -4500,6 +4506,7 @@ module.exports = async function runContent(ctx) {
         });
       }).catch(() => {});
       await cdp.detach().catch(() => {});
+      await api.setConfig(CONFIG).catch(() => {});
     }
   });
 

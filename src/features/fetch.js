@@ -116,6 +116,23 @@
   function autoPdfHostOf(el) {
     try { return (el && el.closest) ? el.closest(AUTO_PDF_SEL) : null; } catch (e) { return null; }
   }
+  /* 一个控件 = 一张牌。`closest` 取的是**最近的**匹配节点，所以 `<span class="content-pdf">` 里
+   * 套 `<i class="content-pdf-icon">` 时里外两层都算"控件"，各出一张同址占位（用户实测：
+   * 一个 APP电子版权证书的 PDF 在面板里冒出 3 张牌）；外层 `<td class="…content-pdf…">`
+   * 同理。这里只认**簇里最外层**那一个（自己没有祖先也匹配），其余节点交给它。 */
+  function autoPdfRootOf(node) {
+    let root = (autoPdfHostOf(node) === node) ? node : autoPdfHostOf(node);
+    if (!root) return null;
+    let p = root.parentElement || root.parentNode || null;
+    for (let i = 0; p && i < 8; i++, p = p.parentElement || p.parentNode || null) {
+      if (autoPdfHostOf(p) === p) root = p;
+    }
+    return root;
+  }
+  function autoPdfControlOf(node) {
+    if (!node || node.nodeType !== 1 || !node.closest) return null;
+    return (autoPdfHostOf(node) === node && autoPdfRootOf(node) === node) ? node : null;
+  }
   /* 取**紧挨着控件的那一格**文字当行标签，而不是整行第一格。
    * 【2.0.15 · 用户 m11077】现场是「一个 PDF 控件挂在两个标题格（左）后面」：
    *   | 标题A | 标题B | PDF |
@@ -201,8 +218,16 @@
     const host = autoPdfHostOf(el) || el;
     if (!host || !url) return;
     const val = String(url);
-    autoPdfCache.set(host, val);
-    if (autoPdfByKey) { const key = autoPdfKeyOf(host); if (key) autoPdfByKey.set(key, val); }
+    const mark = (node) => {
+      if (!node) return;
+      autoPdfCache.set(node, val);
+      if (autoPdfByKey) { const key = autoPdfKeyOf(node); if (key) autoPdfByKey.set(key, val); }
+    };
+    mark(host);
+    /* 控件簇最外层也要记一份：取值时只认最外层（见 autoPdfControlOf），否则「外层类名也含
+     * content-pdf」的页面里地址记在了里层、取值却问外层 ⇒ 拿不到地址，占位与文字都错。 */
+    const root = autoPdfRootOf(host);
+    if (root && root !== host) mark(root);
     autoPdfDirty = true;
     scheduleAutoPdfRefresh();
   }
@@ -524,6 +549,8 @@
     if (!el) return '';
     const skipNested = !!(opts && opts.skipNestedTables);
     const segs = [];
+    /* 同一次取值里，同一个 PDF 只留一条占位（控件常有多层节点同时命中） */
+    const pdfSeen = {};
     const walk = (node) => {
       if (node.nodeType === 3) {
         /* 浮层里的文字不算字段内容（`underOverlay` 从**父元素**往上找，所以这里传文本节点是对的） */
@@ -547,7 +574,19 @@
       /* 【2026-11-18 用户口径】没有地址的 PDF 控件（`<span class="content-pdf">PDF</span>`）：
        * 地址靠点一次取（见 autoPdfOf / kickAutoPdf）。取到了就当引用处理（正文只留占位）；
        * 还没取到就照旧读它那几个字，下一轮重建会补上。 */
-      if (autoPdfOf(node)) {
+      /* 【2.0.15 · 一个 PDF 冒出 3 张牌】只让控件簇最外层那一个出占位，并在一次取值内按地址
+       * 去重；别的字段的控件各有各的地址，不会被这次去重吃掉（用户口径：抓取字段与占位一一对应）。 */
+      const ctl = autoPdfControlOf(node);
+      if (ctl) {
+        const src = autoPdfOf(ctl);
+        if (!src) kickAutoPdf(ctl);
+        else if (pdfSeen[src]) return;
+        else {
+          pdfSeen[src] = 1;
+          const autoPdf = pdfPlaceholder(ctl);
+          if (autoPdf) { segs.push(autoPdf); return; }
+        }
+      } else if (autoPdfOf(node)) {
         const autoPdf = pdfPlaceholder(node);
         if (autoPdf) { segs.push(autoPdf); return; }
       }
@@ -646,6 +685,7 @@
      * （见 `_e2e/probe-perf-mem.js` 的 `blockFor` 计数）。分段顺序仍是文档序，
      * 只有在候选 ≥2 段时才需要按矩形判断"是不是同一视觉行"。 */
     const cands = [];
+    const pdfSeen = {};
     const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, null);
     let n;
     while ((n = walker.nextNode())) {
@@ -657,8 +697,23 @@
            * 且判据一致 —— 值格取文走的是 `textOfCells` → 本函数，不补这一段时，真机表现是
            * 面板里只剩「下载 PDF」几个字、根本没有占位牌可点（占位符整段被吞掉）。
            * `<a>` 的文字照旧继续下钻（"下载说明书"往往就是真内容）。 */
-          const pdf = pdfPlaceholder(n);
-          if (pdf) cands.push({ node: n, ph: pdf });
+          /* 同一份 PDF 的多层节点（`content-pdf` 套 `content-pdf-icon`）只算一张牌：
+           * 旧写法每个匹配节点各放一次 ⇒ 面板里 3 张同址占位。 */
+          const ref = pdfRefOf(n);
+          if (ref) {
+            if (!pdfSeen[ref]) { pdfSeen[ref] = 1; const ph = pdfPlaceholder(n); if (ph) cands.push({ node: n, ph: ph }); }
+            continue;
+          }
+          const ctl = autoPdfControlOf(n);
+          if (ctl) {
+            const src = autoPdfOf(ctl);
+            if (!src) kickAutoPdf(ctl);
+            else if (!pdfSeen[src]) {
+              pdfSeen[src] = 1;
+              const ph2 = pdfPlaceholder(ctl);
+              if (ph2) cands.push({ node: n, ph: ph2 });
+            }
+          }
           continue;
         }
         const ph = imgPlaceholder(n);
@@ -2308,7 +2363,7 @@
      * 标记对不上号（一个按页面元素建条目、一个按渲染出来的 `data-khpdf` 挂状态）。 */
     pdfRefOf, pdfPlaceholder,
     /* 【2026-11-18 用户口径】没有地址的 PDF 控件：只读判据 + 单测注入口（点一次→抓新标签地址） */
-    AUTO_PDF_SEL, autoPdfHostOf, autoPdfOf, autoPdfKeyOf, rememberAutoPdf, absPdfUrl,
+    AUTO_PDF_SEL, autoPdfHostOf, autoPdfControlOf, autoPdfOf, autoPdfKeyOf, rememberAutoPdf, absPdfUrl,
     rowsToTableHtml, blockFor, triggerOk, fakeRightValue, nearestTable, isPlaceholderText,
     /* 图片选项（仅图片 / 前 N 张）：单测直接锁 */
     applyImgPolicy,
