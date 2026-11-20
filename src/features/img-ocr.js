@@ -1735,26 +1735,63 @@
    * 【不套跨域白名单】PDF 由 offscreen（扩展页 + `host_permissions: <all_urls>`）直接 fetch，
    * 不受页面 CORS 约束；图片要读像素、跨源拿不到，所以才需要那道授权闸门。别照抄。
    */
-  function collectPdfs(anchor, labelOfCell) {
-    const rule = anchor.rule;
-    const max = Math.max(1, (rule.meta && rule.meta.imgOcrMax) || 1);
+  /* 值格常常跨行：`collectRightBlock` 认不出下一行标签（写法差一个字/多一列）时会顺势把
+   * 下面几行一起收进同一个字段。于是**别的字段那行的 PDF** 被记到上面这个字段名下 ——
+   * 用户看到的就是「这个字段根本没有 PDF，笔记里却多出一张、地址还是别人的」。
+   * 判据（保守，只认确定的情况）：这一格所在行的首格文字**正好等于**另一个已配置字段名 ⇒ 不归当前字段。
+   * 首格读不到、或行标签是别的写法（含并排标题格）一律放行，避免把正常跨行取值误伤。 */
+  function rowLabelOfCell(cell) {
+    const tr = cell && cell.parentElement;
+    const first = tr && tr.cells && tr.cells[0];
+    if (!first || first === cell) return '';
+    return String(first.textContent == null ? '' : first.textContent).replace(/\s+/g, '');
+  }
+  function ownsCellFor(label, cell, allLabels) {
+    const rl = rowLabelOfCell(cell);
+    if (!rl) return true;
+    const own = String(label || '').replace(/\s+/g, '');
+    if (own && rl.indexOf(own) >= 0) return true;
+    for (const l of (allLabels || [])) if (l !== own && rl === l) return false;
+    return true;
+  }
+  function collectPdfs(rule, fields) {
     const F = KH.Fetch;
     if (!F || typeof F.pdfRefOf !== 'function') return [];
+    /* 【2.0.15 · PDF 与字段一一对应（用户 m12161）】旧实现把锚点下**所有**抓取字段的值格并成
+     * 一个集合扫一遍，再按 `imgOcrMax`（默认 1）**全局**截断，标签只记「第一个遇到该格的字段名」。
+     * 后果是写死的两条：①配了两个 PDF 字段也只出一张牌；②牌上的名字与地址可以互相张冠李戴。
+     * 现在逐字段取：每个字段只看自己的值格、各自限流、各带自己的字段名 ——
+     * 没配到 PDF 的字段再也不会凭空多出一张牌。 */
+    const perMax = Math.max(1, (rule && rule.meta && rule.meta.imgOcrMax) || 1);
     const out = [];
     const seen = new Set();
-    for (const cell of (anchor.valueCells || [])) {
-      if (!cell || !cell.querySelectorAll) continue;
+    const allLabels = [];
+    for (const f of (fields || [])) {
+      if (!f || f.noImg) continue;
+      const l = String(f.label || '').replace(/\s+/g, '');
+      if (l) allLabels.push(l);
+    }
+    for (const f of (fields || [])) {
+      if (!f || f.noImg) continue;
+      const label = String(f.label || '');
+      const cells = f.cells || [];
+      let got = 0;
+      for (let ci = 0; ci < cells.length && got < perMax; ci++) {
+        const cell = cells[ci];
+        if (!cell || !cell.querySelectorAll) continue;
+        if (!ownsCellFor(label, cell, allLabels)) continue;
       /* 先按标签捞、再由 `pdfRefOf` 判是不是 PDF：一个属性选择器就能少一次遍历，
        * 但那要求垫片也支持 `[href]`（`tests/harness.js` 只认 tag/.class/后代），
        * 判据本来就在 `pdfRefOf` 里，没必要在两处各写一遍。 */
-      for (const el of cell.querySelectorAll('a, iframe, embed, object')) {
-        if (out.length >= max) return out;
-        if (isExtUi(el)) continue;
-        const src = F.pdfRefOf(el);
-        if (!src || seen.has(src)) continue;
-        seen.add(src);
-        /* 【2.0.7.1 需求②】带上它所在的抓取字段：作用域关键词与面板行都要知道"这张 PDF 属于哪个字段" */
-        out.push({ src: src, label: (labelOfCell && labelOfCell.get) ? String(labelOfCell.get(cell) || '') : '' });
+        for (const el of cell.querySelectorAll('a, iframe, embed, object')) {
+          if (got >= perMax) break;
+          if (isExtUi(el)) continue;
+          const src = F.pdfRefOf(el);
+          if (!src || seen.has(src)) continue;
+          seen.add(src);
+          /* 【2.0.7.1 需求②】带上它所在的抓取字段：作用域关键词与面板行都要知道"这张 PDF 属于哪个字段" */
+          out.push({ src: src, label: label });
+          got++;
       }
       /* 【2026-11-18 用户实测 m04718】`<span class="content-pdf">PDF</span>` 这类没有 href 的控件：
        * 地址由 `KH.Fetch.kickAutoPdf` 点开一次抓回来（`F.autoPdfOf`），这里必须同样认，
@@ -1762,13 +1799,15 @@
       if (F.AUTO_PDF_SEL) {
         let nodes = [];
         try { nodes = cell.querySelectorAll(F.AUTO_PDF_SEL); } catch (e) { nodes = []; }
-        for (const el of nodes) {
-          if (out.length >= max) return out;
-          if (isExtUi(el)) continue;
-          const src = (typeof F.autoPdfOf === 'function') ? F.autoPdfOf(el) : '';
-          if (!src || seen.has(src)) continue;
-          seen.add(src);
-          out.push({ src: src, label: (labelOfCell && labelOfCell.get) ? String(labelOfCell.get(cell) || '') : '' });
+          for (const el of nodes) {
+            if (got >= perMax) break;
+            if (isExtUi(el)) continue;
+            const src = (typeof F.autoPdfOf === 'function') ? F.autoPdfOf(el) : '';
+            if (!src || seen.has(src)) continue;
+            seen.add(src);
+            out.push({ src: src, label: label });
+            got++;
+          }
         }
       }
     }
@@ -1850,7 +1889,6 @@
        * 面板据此把「为什么不命中」说出来（旧实现这条路全是静默 `[]`）。 */
       const valueCells = [];
       const labelOfImg = new Map();
-      const labelOfCell = new Map();
       /* 【2.0.7.1 需求②】动态判据按**图片所属抓取字段**分开算（`@字段名` 作用域）；
        * 同一锚点内同字段只算一次（`extractFor` 不便宜），缺省字段用全局那份。 */
       const needCache = new Map();
@@ -1867,10 +1905,7 @@
          * 用 `icon#0` 点名"这个字段的图不参与图片识别"；它的图同时也被 applyImgPolicy 从抓取内容里剔掉。
          * 判定在 Fetch 侧（`cellsForHit` 返回的 `noImg`），这里只照办 —— 不在本模块养第二套后缀语法。 */
         if (f.noImg) continue;
-        for (const c of (f.cells || [])) {
-          valueCells.push(c);
-          if (!labelOfCell.has(c)) labelOfCell.set(c, f.label);
-        }
+        for (const c of (f.cells || [])) valueCells.push(c);
         for (const im of (f.imgs || [])) if (!labelOfImg.has(im)) labelOfImg.set(im, f.label);
       }
       if (!valueCells.length) continue;
@@ -1938,7 +1973,7 @@
       }
       /* ---- PDF（2.0.6.5 需求②）：只是"另一类待抽文字的引用"，与图片共用条目表 / 缓存 /
        * 额度 / 面板通知。键里带 `|pdf|`，避免与同地址的图片条目撞号（现实里也不会同址）。 ---- */
-      for (const got of collectPdfs({ rule: rule, valueCells: valueCells }, labelOfCell)) {
+      for (const got of collectPdfs(rule, fields)) {
         const src = got.src;
         const key = rule.ruleId + '|pdf|' + src;
         if (next.has(key)) continue;
@@ -2192,6 +2227,9 @@
     /** 匹配口径的唯一编译点（诊断/单测用；见 `ocrPatternOf`） */
     ocrPatternOf: ocrPatternOf,
     build: build,
+    /** 【2.0.15 · PDF 与字段一一对应】`collectPdfs(rule, fields)` → `[{src, label}]`：
+     *  逐字段取、每字段各自限流、各带自己的字段名（诊断/单测用；见 build 里的调用）。 */
+    collectPdfs: collectPdfs,
     /** 结果/收口的手动驱动（诊断与单测用：不依赖真实消息往返） */
     _onResult: onResult,
     _sweep: sweepStale

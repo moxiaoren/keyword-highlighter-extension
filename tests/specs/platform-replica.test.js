@@ -152,4 +152,93 @@ module.exports = async function run() {
       truthy(ta.indexOf(encodeURIComponent('https://x.test/cdn/icp.pdf')) < 0, '两个字段的地址互不串台');
     } finally { D().body.removeChild(table); }
   });
+
+  /* 【2.0.15 · 用户 m12161】PDF 必须与抓取字段一一对应：旧实现把锚点下所有字段的值格并成一个
+   * 集合、再按 imgOcrMax 全局截断 ⇒ 两个 PDF 字段只出一张牌，且标签是谁先被扫到就用谁的名字。
+   * 下面三条钉住「逐字段取、各带自己的名字、绝不跨字段借地址」；第四条钉住签名式复用。 */
+  await test('★ 两个字段各配一个 PDF ⇒ 各出一张牌、各带自己的字段名（一一对应）', () => {
+    const pa = H.el('a', { href: 'https://x.test/a.pdf' }, []);
+    const pb = H.el('a', { href: 'https://x.test/b.pdf' }, []);
+    const ca = H.el('td'); ca.appendChild(pa);
+    const cb = H.el('td'); cb.appendChild(pb);
+    const got = KH.ImgOcr.collectPdfs({ ruleId: 'k', meta: { imgOcrMax: 1 } }, [
+      { label: 'APP电子版权证书', cells: [ca] },
+      { label: 'ICP证', cells: [cb] }
+    ]);
+    eq(got.length, 2, '两个字段各一张 —— 不许被「每处最多 1 张」全局砍成一张');
+    eq(got[0].label, 'APP电子版权证书');
+    eq(got[1].label, 'ICP证');
+    truthy(got[0].src !== got[1].src, '地址各是各的');
+  });
+
+  await test('★ 没配 PDF 的字段不会凭空多出一张牌（绝不跨字段借地址）', () => {
+    const pb = H.el('a', { href: 'https://x.test/icp.pdf' }, []);
+    const cb = H.el('td'); cb.appendChild(pb);
+    const empty = H.el('td'); empty.appendChild(H.txt('暂未上传'));
+    const got = KH.ImgOcr.collectPdfs({ ruleId: 'k', meta: {} }, [
+      { label: '应用截图', cells: [empty] },
+      { label: 'ICP证', cells: [cb] }
+    ]);
+    eq(got.length, 1, '只有真正配到 PDF 的那个字段出牌');
+    eq(got[0].label, 'ICP证');
+  });
+
+  await test('★ 同一个行标签下的两个不同控件：地址不许互相顶替', () => {
+    const a = H.el('span', { 'class': 'content-pdf' }, [H.txt('PDF')]);
+    const b = H.el('span', { 'class': 'content-pdf' }, [H.txt('查看')]);
+    const table = mount([snapRow('版权证明', [a]), snapRow('版权证明', [b])]);
+    try {
+      F.rememberAutoPdf(a, 'https://x.test/only-a.pdf');
+      eq(F.autoPdfOf(a), 'https://x.test/only-a.pdf', '自己抓到的地址当然认');
+      eq(F.autoPdfOf(b), '', '★ 行标签相同但控件签名不同 ⇒ 不许领走 a 的地址（这正是「指向错误」）');
+    } finally { D().body.removeChild(table); }
+  });
+
+  await test('★ 同一控件重画后仍复用已抓到的地址（签名一致才算同一处）', () => {
+    const a1 = H.el('span', { 'class': 'content-pdf' }, [H.txt('PDF')]);
+    const t1 = mount([snapRow('APP电子版权证书', [a1])]);
+    F.rememberAutoPdf(a1, 'https://x.test/reuse.pdf');
+    D().body.removeChild(t1);
+    const a2 = H.el('span', { 'class': 'content-pdf' }, [H.txt('PDF')]);
+    const t2 = mount([snapRow('APP电子版权证书', [a2])]);
+    try {
+      eq(F.autoPdfOf(a2), 'https://x.test/reuse.pdf', '行标签 + 控件签名一致 ⇒ 复用，不必再点一次');
+    } finally { D().body.removeChild(t2); }
+  });
+
+  await test('★ 三行同名同款控件：各算各的地址（序号兜底，绝不允许共用一份）', () => {
+    // 类名多带一段：与前面用例里 remember 过的控件签名区分开，避免跨用例共用同一份缓存键
+    const mk = () => H.el('span', { 'class': 'content-pdf kh-ordprobe' }, [H.txt('PDF')]);
+    const a = mk(); const b = mk(); const c = mk();
+    const table = mount([snapRow('版权证明', [a]), snapRow('版权证明', [b]), snapRow('版权证明', [c])]);
+    try {
+      const keys = [F.autoPdfKeyOf(a), F.autoPdfKeyOf(b), F.autoPdfKeyOf(c)];
+      truthy(keys[0] && keys[0] !== keys[1] && keys[1] !== keys[2] && keys[0] !== keys[2],
+        '★ 键里带序号 ⇒ 三行同名控件不会互相顶替（否则一个地址铺满三个字段）');
+      F.rememberAutoPdf(b, 'https://x.test/only-b.pdf');
+      eq(F.autoPdfOf(a), '', '没抓到的行不许借 b 的地址');
+      eq(F.autoPdfOf(c), '', 'c 同样不许借');
+      eq(F.autoPdfOf(b), 'https://x.test/only-b.pdf', 'b 自己的地址照常');
+    } finally { D().body.removeChild(table); }
+  });
+
+  await test('★ 值格跨行收到别人那行的 PDF：不许记到本字段名下（对应位置没 PDF 就不该出牌）', () => {
+    const pa = H.el('a', { href: 'https://x.test/cert.pdf' }, []);
+    const pb = H.el('a', { href: 'https://x.test/icp.pdf' }, []);
+    const ca = H.el('td'); ca.appendChild(pa);
+    const cb = H.el('td'); cb.appendChild(pb);
+    const table = mount([snapRow('APP电子版权证书', [ca]), snapRow('ICP证', [cb])]);
+    try {
+      // 模拟 collectRightBlock 认不出下一行标签、把「ICP证」那格也收进第一个字段
+      const got = KH.ImgOcr.collectPdfs({ ruleId: 'k', meta: {} }, [
+        { label: 'APP电子版权证书', cells: [ca, cb] },
+        { label: 'ICP证', cells: [cb] }
+      ]);
+      eq(got.length, 2, '两个字段各一张 —— 不是三张、也没有把 icp 记到证书名下');
+      eq(got[0].label, 'APP电子版权证书');
+      eq(got[0].src, 'https://x.test/cert.pdf', '★ 本字段只拿自己那行的地址');
+      eq(got[1].label, 'ICP证');
+      eq(got[1].src, 'https://x.test/icp.pdf');
+    } finally { D().body.removeChild(table); }
+  });
 };

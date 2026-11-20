@@ -161,10 +161,43 @@
   /** 页地址 + **行标签 + 行内下标**：页面重画/换顺序后地址还能找回来。
    *  【2.0.14 · 问题③】旧键是「控件在全页同类控件里的下标」——渲染顺序一变，两个字段的地址就互换，
    *  面板会把两个独立 PDF 显示成「A/B」合并形式。行标签是字段自己的名字，重画不会变。 */
+  /* 控件签名（2.0.15 · PDF 错指）：只用来区分「看起来不是一个东西」的控件。
+   * 标签 + 行内下标相同的两个控件，长得一模一样时仍然没法区分（那本来就是同一处）；
+   * 但一个写「PDF」、一个写「查看」、类名也不同时，签名不同 ⇒ 绝不会互相领走对方的地址。
+   * 【为什么必须加】旧键只有「页 + 行标签 + 行内下标」，后台里大量字段的行标签是同一段
+   * 通用文字（甚至为空、退回整页下标），于是另一行抓到的地址被当成这一行的地址填进占位
+   * （用户实测：一个 APP电子版权证书的地址铺满三个不同字段）。
+   * 签名只取语义上稳定、且与地址无关的部分：标签名 + 类名 + 自身文字。别把 data-pdf/
+   * title 里可能出现的 URL 算进来，否则地址一换签名就变、复用直接失效。 */
+  function autoPdfSigOf(node) {
+    if (!node || !node.getAttribute) return '';
+    const cls = String(node.className == null ? '' : node.className).replace(/\s+/g, ' ').trim().slice(0, 60);
+    const txt = String(node.textContent == null ? '' : node.textContent).replace(/\s+/g, ' ').trim().slice(0, 24);
+    return [String(node.tagName || '').toUpperCase(), cls, txt].join('|').slice(0, 120);
+  }
+  /* 同标签 + 同签名的控件在页面上可能有好几个（三个字段都用「PDF」样式的控件、行标签又是同一段
+   * 通用文字）。签名只能证明「长得一样」，证明不了「是同一个」⇒ 再按文档序补一个序号。
+   * 序号随文档序走：重画后顺序不变 ⇒ 还能复用；一旦前面增删了控件，序号会移——
+   * 这时宁可重新点一次，也不许把别人的地址填进来（用户的「指向错误」代价远大于多点一次）。 */
+  function autoPdfOrdOf(host, label, sig) {
+    if (!label) return 0;
+    try {
+      const all = document.querySelectorAll(AUTO_PDF_SEL);
+      let n = 0;
+      for (let i = 0; i < all.length; i++) {
+        const el = all[i];
+        if (el === host) break;
+        if (autoPdfSigOf(el) === sig && autoPdfRowLabel(el) === label) n++;
+      }
+      return n;
+    } catch (e) { return 0; }
+  }
   function autoPdfKeyOf(host) {
     if (!host || typeof document === 'undefined' || !document.querySelectorAll) return '';
     const base = (typeof location !== 'undefined' && location.href) ? String(location.href).split('#')[0] : '';
     const label = autoPdfRowLabel(host);
+    const sig = autoPdfSigOf(host);
+    const ord = autoPdfOrdOf(host, label, sig);
     if (label) {
       let inRow = 0;
       try {
@@ -172,7 +205,7 @@
         const same = tr ? tr.querySelectorAll(AUTO_PDF_SEL) : [];
         for (let i = 0; i < same.length; i++) { if (same[i] === host) { inRow = i; break; } }
       } catch (e) { inRow = 0; }
-      return base + '#r:' + label + ':' + inRow;
+      return base + '#r:' + label + ':' + inRow + ':' + sig + ':o' + ord;
     }
     let idx = -1;
     try {
@@ -180,7 +213,9 @@
       for (let i = 0; i < all.length; i++) { if (all[i] === host) { idx = i; break; } }
     } catch (e) { idx = -1; }
     if (idx < 0) return '';
-    return base + '#' + idx;   // 取不到行：退回整页下标（老页面兜底）
+    /* 取不到行：退回整页下标（老页面兜底）。下标会随重画漂移，所以同样带签名 ——
+     * 漂到别的控件身上时签名对不上，宁可当作「还没抓到」再点一次，也不许张冠李戴。 */
+    return base + '#' + idx + ':' + sig + ':o' + ord;
   }
   function autoPdfOf(el) {
     const host = autoPdfHostOf(el) || el;
@@ -189,9 +224,12 @@
     if (hit) return hit;
     if (!autoPdfByKey) return '';
     const key = autoPdfKeyOf(host);
-    const saved = key ? autoPdfByKey.get(key) : '';
-    if (saved) autoPdfCache.set(host, saved);
-    return saved || '';
+    const rec = key ? autoPdfByKey.get(key) : null;
+    /* 记录是 `{url, sig}`：签名对不上就不认这条记录（那是另一行/另一个控件抓到的），
+     * 绝不把别处的地址当成本控件的地址 —— 用户 m12161 的「指向错误」就是这么来的。 */
+    const url = rec && rec.url && (!rec.sig || rec.sig === autoPdfSigOf(host)) ? rec.url : '';
+    if (url) autoPdfCache.set(host, url);
+    return url || '';
   }
   /* 抓到地址 → 必须重算一轮：面板里的抓取结果是渲染时的一次性快照（important-note 的
    * collectEffective），PDF 条目也只在 img-ocr 的 build 里建（consumeOnly 会整体早退）。
@@ -221,7 +259,10 @@
     const mark = (node) => {
       if (!node) return;
       autoPdfCache.set(node, val);
-      if (autoPdfByKey) { const key = autoPdfKeyOf(node); if (key) autoPdfByKey.set(key, val); }
+      if (autoPdfByKey) {
+        const key = autoPdfKeyOf(node);
+        if (key) autoPdfByKey.set(key, { url: val, sig: autoPdfSigOf(node) });
+      }
     };
     mark(host);
     /* 控件簇最外层也要记一份：取值时只认最外层（见 autoPdfControlOf），否则「外层类名也含
