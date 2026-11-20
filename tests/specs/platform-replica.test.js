@@ -225,14 +225,16 @@ module.exports = async function run() {
   await test('★ 值格跨行收到别人那行的 PDF：不许记到本字段名下（对应位置没 PDF 就不该出牌）', () => {
     const pa = H.el('a', { href: 'https://x.test/cert.pdf' }, []);
     const pb = H.el('a', { href: 'https://x.test/icp.pdf' }, []);
-    const ca = H.el('td'); ca.appendChild(pa);
-    const cb = H.el('td'); cb.appendChild(pb);
-    const table = mount([snapRow('APP电子版权证书', [ca]), snapRow('ICP证', [cb])]);
+    const r1 = snapRow('APP电子版权证书', [pa]);
+    const r2 = snapRow('ICP证', [pb]);
+    const table = mount([r1, r2]);
     try {
-      // 模拟 collectRightBlock 认不出下一行标签、把「ICP证」那格也收进第一个字段
+      // 模拟 collectRightBlock 认不出下一行标签、把「ICP证」那格也收进第一个字段。
+      // 注意 cells 必须是**行自己的值格**（`<td>` 直挂 `<tr>`）：真实页面就是这样，
+      // 早先这条用例把 td 又套一层 td，`rowLabelOfCell` 拿不到行首格，跨行守卫自然失效。
       const got = KH.ImgOcr.collectPdfs({ ruleId: 'k', meta: {} }, [
-        { label: 'APP电子版权证书', cells: [ca, cb] },
-        { label: 'ICP证', cells: [cb] }
+        { label: 'APP电子版权证书', cells: [r1.valueCell, r2.valueCell] },
+        { label: 'ICP证', cells: [r2.valueCell] }
       ]);
       eq(got.length, 2, '两个字段各一张 —— 不是三张、也没有把 icp 记到证书名下');
       eq(got[0].label, 'APP电子版权证书');

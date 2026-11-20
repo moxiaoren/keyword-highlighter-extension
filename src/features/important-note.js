@@ -966,6 +966,36 @@
   }
 
   /**
+   * 【2.0.14.5 · 用户 m13119】识别原文里该标出来的词 = 命中词 + 比对项里**对上的值**。
+   * 旧实现只画命中词：比对配了 `#比` 时这些词被排除在命中之外（`cmp` 词不参与匹配），
+   * 于是「比对一致」只剩一个绿框、原文里一个标记都没有，用户以为压根没命中。
+   * 值取自条目上的 `cmpReqs`（`{name, kind, values}`），只取这一项 `ok` 且原文里真的出现的，
+   * 长度限 2–40：既不会把整段说明当词标，也不会把「没取到值」的空数组画上去。
+   */
+  function ocrHits(it) {
+    const out = hitWords(it);
+    const seen = Object.create(null);
+    for (const w of out) seen[w] = 1;
+    const ok = Object.create(null);
+    for (const one of ((it && it.cmp && it.cmp.items) || [])) {
+      if (one && one.ok && one.name) ok[String(one.name)] = 1;
+    }
+    if (!Object.keys(ok).length) return out;
+    const low = String((it && it.text) || '').toLowerCase();
+    for (const req of ((it && it.cmpReqs) || [])) {
+      if (!req || req.kind !== 'need' || !ok[String(req.name || '')]) continue;
+      for (const v of (req.values || [])) {
+        const w = String(v == null ? '' : v).trim();
+        if (w.length < 2 || w.length > 40 || seen[w]) continue;
+        if (low.indexOf(w.toLowerCase()) < 0) continue;
+        seen[w] = 1;
+        out.push(w);
+      }
+    }
+    return out;
+  }
+
+  /**
    * 图片地址绝对化（只为了**比较**）：卡片里的 `<img src>` 由 `KH.Fetch.imgPlaceholder()` 归一成
    * 绝对地址，而 OCR 条目的 `src` 是引擎侧给的（可能是相对值）—— 两边放进同一个坐标系才能认出
    * "这张图卡片里已经有了"。没有 `location`（单测垫片）或解析失败时原样返回，绝不抛。
@@ -2581,7 +2611,7 @@
           const k = absSrc(it && it.src);
           if (!k) continue;
           if (it.text) textBySrc.set(k, String(it.text));
-          const ws = hitWords(it);
+          const ws = ocrHits(it);
           if (ws.length) hitsBySrc.set(k, (hitsBySrc.get(k) || []).concat(ws));
         }
         const list = [];
@@ -5310,7 +5340,7 @@
    * 相册/停靠都在里面），而这个函数是纯 DOM 构造，喂文本就能验。
    * `markPdf` 同理由：三态判据（蓝/绿/红）就是这条需求的验收点，不该为了测它去搭整块面板。 */
   KH.ImportantNote = {
-    panel, head, collectEffective, IMG_PROTOCOL_OK, paintHits, ocrExtraRows, markPdf: markOnePdf,
+    panel, head, collectEffective, IMG_PROTOCOL_OK, paintHits, ocrHits, ocrExtraRows, markPdf: markOnePdf,
     /* 【2.0.8.7】合并闸门是「图这次真的 OCR 命中才出行」的判据所在 —— 纯函数 + 只读
      * `KH.ImgOcr.items()`，导出给单测，免得为了验一条判定去搭整块面板。 */
     mergeRowsFor, ocrFieldHit, rowBgOf, catOf,

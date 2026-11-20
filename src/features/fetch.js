@@ -275,12 +275,21 @@
   /** 开一次抓取窗口：doClick=true 替用户点控件；false 只等用户自己点（不模拟点击）。
    *  两条回执都认：①主世界钩子截到地址 → `kh:pdf:grabbed` 事件，**根本不产生新标签**，前台不被打断；
    *  ②钩子没装上 → 后台盯新标签，再用 `MSG.PDF_GRAB_RESULT` 兜回来。 */
-  function openGrabWindow(host, doClick) {
+  function openGrabWindow(host, doClick, onDone) {
     const MSG = KH.MSG || {};
     const rt = (typeof chrome !== 'undefined' && chrome.runtime) ? chrome.runtime : null;
-    if (!rt || !rt.sendMessage || !MSG.PDF_GRAB) return;
+    if (!rt || !rt.sendMessage || !MSG.PDF_GRAB) { if (onDone) onDone(''); return; }
     const requestId = 'khp' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     let finished = false;
+    /* 【2.0.14.5 · 用户 m13119】串行队列要能知道「这一份结束了（抓到/没抓到都一样）」，
+     * 否则一次超时就把后面所有 PDF 卡死。`settled` 保证回调只走一次。 */
+    let took = '';
+    let settled = false;
+    const settle = () => {
+      if (settled) return;
+      settled = true;
+      try { if (onDone) onDone(took); } catch (e) {}
+    };
     const cleanup = (markDone) => {
       if (markDone) finished = true;
       try { rt.onMessage.removeListener(onMsg); } catch (e) {}
@@ -297,7 +306,9 @@
       const u = absPdfUrl(url);
       if (!u) return;
       cleanup(true);
+      took = u;
       rememberAutoPdf(host, u);
+      settle();
     }
     function onMsg(m) {
       if (!m || m.type !== MSG.PDF_GRAB_RESULT || m.requestId !== requestId) return;
@@ -317,13 +328,15 @@
       /* click=真：这次是插件替用户点控件（钩子可以拦，不产生新标签）。
        * click=假：用户自己点的，**不许影响页面自身行为** —— 钩子只旁听地址，标签照常打开、也不关。 */
       rt.sendMessage({ type: MSG.PDF_GRAB, requestId: requestId, click: !!doClick }, (res) => {
-        if (rt.lastError) { cleanup(true); return; }
+        if (rt.lastError) { cleanup(true); settle(); return; }
         /* 后台把钩子装好才回话：armed=true 就去点（点下去不会被开成新标签）；
          * armed=false 说明钩子装不上，仍点一次，靠后台把新标签压到后台再关掉。 */
         if (doClick) setTimeout(() => { try { if (!finished) host.click(); } catch (e) {} }, res && res.armed ? 20 : 60);
       });
-      setTimeout(() => { if (!finished) cleanup(true); }, 12000);
-    } catch (e) { cleanup(true); }
+      /* 替用户点的那次只用等一个抓取窗口：钩子命中是即时的，钩子没装上时后台也会在
+       * 开标签后一两秒内认出 PDF。等太久会让串行队列在坏页面上一步一步拖满 9 秒。 */
+      setTimeout(() => { if (!finished) { cleanup(true); settle(); } }, doClick ? 6500 : 12000);
+    } catch (e) { cleanup(true); settle(); }
   }
   /* 脚本 click 可能被页面当成不可信事件丢掉（isTrusted=false）→ 用户真点时也开一个抓取窗口，
    * 这次不再模拟点击，只盯他点开的新标签：抓得到就记住地址，抓完由后台把标签关掉。 */
@@ -342,22 +355,54 @@
     }, true);
   }
   const autoPdfTriedByKey = (typeof Map === 'function') ? new Map() : null;
-  const AUTO_PDF_MAX_GRABS = 8;
+  /* 一页最多点 24 次：一个值格挂三份 PDF 也要够用（旧值 8 在「证书 3 份 + 授权书 1 份 + 别的行」时就截断）。 */
+  const AUTO_PDF_MAX_GRABS = 24;
   let autoPdfGrabCount = 0;
+  /* 【2.0.14.5 · 用户 m13119】抓 PDF 必须**一份一份来**：
+   * 旧实现每次取文都直接开抓取窗口，一个值格里三份 PDF 就是三次点击同时发生 —— 页面瞬间开三个
+   * 标签，而后台同一页只留一个抓取会话（`PDF_GRAB_BY_TAB`），后来的把先来的顶掉，先前那份 PDF
+   * 的地址就记到了别人头上（用户看到的「没对齐标题单元格」）。
+   * 现在只入队：点一份 → 等地址回来（抓到或超时）→ 记下 → 再点下一份，直到这一格没有控件。
+   * 好处还不止是「不乱跳」：地址一回来就 `rememberAutoPdf` → 面板重画，占位是**一张一张补上**的。 */
+  const autoPdfQueue = [];
+  const autoPdfQueued = (typeof WeakSet === 'function') ? new WeakSet() : null;
+  let autoPdfRunning = false;
   function kickAutoPdf(el) {
     const host = autoPdfHostOf(el);
     if (!host || autoPdfOf(host) || (autoPdfTried && autoPdfTried.has(host))) return;
+    if (autoPdfQueued && autoPdfQueued.has(host)) return;
+    if (autoPdfClicking && autoPdfClicking.has(host)) return;
     /* 【用户实测 m05720】页面每重画一次控件就换新节点，WeakSet 记不住它 ⇒ 反复开抓取窗口，
      * 主世界钩子一轮接一轮挂上去，页面自己的 window.open 与点击就全被吞了。
-     * 再按「页地址 + 控件下标」记一份，并给一页最多 8 次的上限。 */
+     * 再按「页地址 + 控件签名 + 序号」记一份（m12161：同标签不同控件不能互相顶），
+     * 并给一页最多 24 次的上限。 */
     const key = autoPdfKeyOf(host);
     if (key && autoPdfTriedByKey && autoPdfTriedByKey.has(key)) return;
     if (autoPdfGrabCount >= AUTO_PDF_MAX_GRABS) return;
-    if (key && autoPdfTriedByKey) autoPdfTriedByKey.set(key, Date.now());
+    if (autoPdfQueued) autoPdfQueued.add(host);
+    autoPdfQueue.push({ host: host, key: key });
+    autoPdfQueuePump();
+  }
+  /** 队列泵：同一时刻只有一个抓取窗口在跑；结束后隔一拍再点下一份（连点太快页面会合并事件）。 */
+  function autoPdfQueuePump() {
+    if (autoPdfRunning) return;
+    const job = autoPdfQueue.shift();
+    if (!job) return;
+    autoPdfRunning = true;
     autoPdfGrabCount++;
-    if (autoPdfTried) autoPdfTried.add(host);
     bindAutoPdfUserClick();
-    openGrabWindow(host, true);
+    let settled = false;
+    const done = (url) => {
+      if (settled) return;
+      settled = true;
+      autoPdfRunning = false;
+      if (autoPdfQueued) autoPdfQueued.delete(job.host);
+      if (autoPdfTried) autoPdfTried.add(job.host);
+      /* 没抓到才记「试过」：抓到了由 `autoPdfOf(host)` 挡第二次，不需要再吃一条重试配额。 */
+      if (!url && job.key && autoPdfTriedByKey) autoPdfTriedByKey.set(job.key, Date.now());
+      setTimeout(autoPdfQueuePump, url ? 120 : 60);
+    };
+    openGrabWindow(job.host, true, done);
   }
   function pdfPlaceholder(el) {
     const src = pdfRefOf(el) || autoPdfOf(el);

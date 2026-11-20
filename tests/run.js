@@ -243,7 +243,9 @@ const specs = [
   /* 悬停降维（T6）：结论先行 / 最多三句 / 差异类型。口径见 specs/tip-t6.test.js 头部 */
   './specs/tip-t6.test.js',
   /* 2.0.14 案例页（后台详情页整份快照的行结构）下的 PDF 归属三条 + 证书/勾选行。见 specs/platform-replica.test.js 头部 */
-  './specs/platform-replica.test.js'
+  './specs/platform-replica.test.js',
+  /* 2.0.14.5（用户 m13119）：PDF 抓取串行（一次只点一份）、一格多份都出牌、比对一致时原文仍高亮 */
+  './specs/pdf-grab-queue.test.js'
 ];
 
 (async () => {

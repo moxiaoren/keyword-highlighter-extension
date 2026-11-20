@@ -1821,7 +1821,10 @@
      * 后果是写死的两条：①配了两个 PDF 字段也只出一张牌；②牌上的名字与地址可以互相张冠李戴。
      * 现在逐字段取：每个字段只看自己的值格、各自限流、各带自己的字段名 ——
      * 没配到 PDF 的字段再也不会凭空多出一张牌。 */
-    const perMax = Math.max(1, (rule && rule.meta && rule.meta.imgOcrMax) || 1);
+    /* 【2.0.14.5 · 用户 m13119】`imgOcrMax` 只管**图片**：一份 PDF 就是一个独立文件，
+     * 一个值格挂三份就要出三张牌（用户口径「直到这个单元格没有 pdf」）。
+     * 这里只留一个防跑飞的上限（6 份/字段），不跟图片抢同一个额度。 */
+    const perMax = 6;
     const out = [];
     const seen = new Set();
     const allLabels = [];
@@ -1846,8 +1849,11 @@
           if (got >= perMax) break;
           if (isExtUi(el)) continue;
           const src = F.pdfRefOf(el);
-          if (!src || seen.has(src)) continue;
-          seen.add(src);
+          /* 去重按「字段 + 地址」：同一份 PDF 挂在两个字段下时，两边各自要有自己的一张牌
+           * （用户口径 m11077：确实一样才合并，不能因为先扫到 A 就把 B 那格吞掉）。 */
+          const sk = label + '\u0001' + src;
+          if (!src || seen.has(sk)) continue;
+          seen.add(sk);
           /* 【2.0.7.1 需求②】带上它所在的抓取字段：作用域关键词与面板行都要知道"这张 PDF 属于哪个字段" */
           out.push({ src: src, label: label });
           got++;
@@ -1862,8 +1868,9 @@
             if (got >= perMax) break;
             if (isExtUi(el)) continue;
             const src = (typeof F.autoPdfOf === 'function') ? F.autoPdfOf(el) : '';
-            if (!src || seen.has(src)) continue;
-            seen.add(src);
+            const sk2 = label + '\u0001' + src;
+            if (!src || seen.has(sk2)) continue;
+            seen.add(sk2);
             out.push({ src: src, label: label });
             got++;
           }
@@ -2034,10 +2041,11 @@
        * 额度 / 面板通知。键里带 `|pdf|`，避免与同地址的图片条目撞号（现实里也不会同址）。 ---- */
       for (const got of collectPdfs(rule, fields)) {
         const src = got.src;
-        const key = rule.ruleId + '|pdf|' + src;
+        const label = String(got.label || '');
+        /* 键里带上字段名：同一份 PDF 挂在两个字段下时，两边各自成条目（面板各自挂占位）。 */
+        const key = rule.ruleId + '|pdf|' + label + '|' + src;
         if (next.has(key)) continue;
         const cached = textCache.get(src) || textCache.get(absOf(src));
-        const label = String(got.label || '');
         const nf = needFor(label);
         /* 【2.0.11】这张图要核对哪几项（只有打了 `#比` 才有；没有就是空数组） */
         const creq = cmpReqs(rule, label, anchor.cell);
