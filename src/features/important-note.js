@@ -43,15 +43,6 @@
   const HOST_ID = 'kh-important-note-host';
 
   /** 摘要列那一行里的正文预览：去掉 Markdown/HTML 记号，压成一行，超长截断。 */
-  function summarizeNote(note) {
-    let s = String(note == null ? '' : note);
-    s = s.replace(/<[^>]*>/g, ' ');
-    s = s.replace(/!\[[^\]]*\]\([^)]*\)/g, ' ');
-    s = s.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');
-    s = s.replace(/[#>*_`~|]/g, ' ');
-    s = s.replace(/\s+/g, ' ').trim();
-    return s.length > 60 ? s.slice(0, 60) + '…' : s;
-  }
 
   const STYLE = `
     :host { all: initial; }

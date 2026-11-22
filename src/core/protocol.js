@@ -98,6 +98,8 @@
      * （payload {url, text}）存进读正文用的同一份缓存。下次面板判定这条链接直接命中缓存 ——
      * 既不开新标签页，也不必再发网络请求，读到的就是用户刚才看到的那份正文。只读、只写缓存。 */
     POLICY_CACHE: 'kh:policy:cache',
+  /* 【2.0.15】设置页「重置数据 → 读正文缓存」：清空本机的政策正文缓存 */
+  POLICY_CACHE_CLEAR: 'kh:policy:cacheClear',
     /* 【2026-11-18 用户口径】没有地址的 PDF 控件（`<span class="content-pdf">PDF</span>` 这类）：
      * 内容脚本先开一个 9 秒窗口 → 点一下页面控件 → 后台盯住新标签把 `.pdf` 地址抓回来 →
      * 用 PDF_GRAB_RESULT 把地址回推给原标签页。只认 .pdf，抓到即关掉新标签。 */
@@ -146,6 +148,8 @@
     OCR_MODEL_IMPORT: 'kh:ocr:modelImport',     // 手动导入单件（离线；base64 传字节）
     OCR_MODEL_CLEAR: 'kh:ocr:modelClear',       // 清除模型缓存（清掉后主引擎需重新下载/导入）
     OCR_PROGRESS: 'kh:ocr:progress',        // 进度（语言包/模型下载各阶段 / 排队情况）
+    /* 设置页「自检」：不经过任何标签页，直接让背景拿一张内置图跑一遍引擎（离线验三件模型能否用）。 */
+    OCR_SELFTEST: 'kh:ocr:selftest',
 
     /* ---- pdf（PDF 文本抽取）----
      * 为什么复用 OCR 这条三段中转：`fetch` + 解压 + 解析都要在**扩展自己的页面**里跑

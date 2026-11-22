@@ -67,7 +67,12 @@
    * 静态抓取读不到正文。那就别抓：用户自己打开它的时候，正文已经在 DOM 里了，抄一份送后台存缓存。
    * 于是「用户点开过一次」之后，面板判定的就是同一份正文。只读本页、只写缓存，不发任何网络请求。
    * 只做顶层 frame（子 frame 的正文属于别的页面），且要求地址像政策页、正文够长，避免把正常页面塞进缓存。 */
-  const POLICY_URL_RE = /(privacy|policy|agreement|terms|protocol|ysxy|pact|statement|zhengce|guize)/i;
+  /* 【2.0.15 · P5】URL 判据收窄：原来含 statement / protocol 这些**宽词**，
+   * 「/statement/」直接命中银行对账单，整页正文就被抄进缓存 —— 这是隐私事故。
+   * 现在只认政策/协议语义强的词，正文里还要求出现隐私/协议字样（见下）。 */
+  const POLICY_URL_RE = /(privacy|privac|policy|ysxy|yinsi|zhengce|guize|pact|agreement|terms|xieyi)/i;
+  /* 正文里必须有政策/协议语义：光看 URL 不够（对账单页面也可能带 policy 字样的路径）。 */
+  const POLICY_TEXT_RE = /(隐私|个人信息|用户信息|个人数据|政策|协议|授权)/;
   function cachePolicyText() {
     try {
       if (window.top !== window) return;
@@ -76,7 +81,10 @@
       /* innerText 不含 shadow DOM：扩展自己画的卡片/面板不会混进正文（它们都在 shadowRoot 里）。 */
       const body = document.body ? String(document.body.innerText || '') : '';
       if (body.replace(/\s+/g, '').length < 400) return;
-      chrome.runtime.sendMessage({ type: MSG.POLICY_CACHE, url: u, text: body.slice(0, 120000) }, () => {
+      if (!POLICY_TEXT_RE.test(body)) return;
+      /* 只送 4 万字（后台缓存上限同为 4 万字）：再多也存不下，白白拷贝一次。
+       * 敏感信息筛查（账单/证件号/银行卡）由后台 Policy.rememberText 统一做。 */
+      chrome.runtime.sendMessage({ type: MSG.POLICY_CACHE, url: u, text: body.slice(0, 40000) }, () => {
         void chrome.runtime.lastError;   // 后台没醒/上下文失效：静默放弃，下次浏览再补
       });
     } catch (e) { /* 读不到就下次再说：缓存是加分项，不许影响高亮 */ }
@@ -105,9 +113,21 @@
   try {
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local') return;
-      const keys = Object.keys(changes);
+      /* 【2.0.15 · P3-A】只把**已知配置键**送进 applyConfig。
+       * 病理：这里原来把每个变更键的 newValue 原样塞进 patch，而 applyConfig 首行是
+       * 宽容 merge（未知键保留）⇒ 政策正文缓存 / 企业缓存 / OCR 模型与语言包标记这些
+       * 几十 KB～几 MB 的对象从此常驻**每个标签页**的 state.config。
+       * configSig 的 noop 只挡住了「不再重建页面」，没挡住这份内存与 IPC。
+       * 判据与 config.js 的 storageKeys() 同一份（defaults 的键），不另立清单。 */
+      const known = (KH.Config && KH.Config.storageKeys) ? KH.Config.storageKeys() : null;
       const patch = {};
-      for (const k of keys) patch[k] = changes[k].newValue;
+      let n = 0;
+      for (const k of Object.keys(changes)) {
+        if (known && known.indexOf(k) < 0) continue;
+        patch[k] = changes[k].newValue;
+        n++;
+      }
+      if (!n) return;
       /* applyConfig 会**复核站点门禁**（白名单 / 禁用本站 / 全局开关都走这条路径），
        * 返回的 siteEnabled 是这次热更新后的真实状态，就绪标记必须跟着它走 ——
        * 否则白名单生效、高亮已经下线，标记却仍停在 on（诊断与回归都会看错）。 */

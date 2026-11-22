@@ -318,22 +318,32 @@
     }
   ];
 
-  function passFilter(kw) {
-    const q = ($('kw-search').value || '').trim().toLowerCase();
-    if (q) {
+/** 筛选条件在**一次重绘**里只读一次：以前每个关键词都要 4~5 次 getElementById（上千条 = 上万次 DOM 查询）。 */
+  function readFilters() {
+    return {
+      q: ($('kw-search').value || '').trim().toLowerCase(),
+      g: $('kw-filter-group').value,
+      st: $('kw-filter-status').value,
+      ax: $('kw-filter-axis').value
+    };
+  }
+
+  function passFilter(kw, f) {
+    const cur = f || readFilters();
+    if (cur.q) {
       const hay = [kw.text, kw.cellVerify, kw.note, kw.importantNote, kw.fetchLabels]
         .map(v => String(v || '').toLowerCase()).join('\n');
-      if (hay.indexOf(q) < 0) return false;
+      if (hay.indexOf(cur.q) < 0) return false;
     }
-    const g = $('kw-filter-group').value;
+    const g = cur.g;
     if (g === '__none__') { if (kw.groupId) return false; }
     else if (g && kw.groupId !== g) return false;
 
-    const st = $('kw-filter-status').value;
+    const st = cur.st;
     if (st === 'on' && kw.enabled === false) return false;
     if (st === 'off' && kw.enabled !== false) return false;
 
-    const ax = $('kw-filter-axis').value;
+    const ax = cur.ax;
     if (ax && typeOf(kw) !== ax) return false;
     return true;
   }
@@ -380,7 +390,8 @@
     for (const g of cfg.groups || []) sel.appendChild(h('option', { value: g.id, text: g.name || '(未命名)' }));
     sel.value = (cur && Array.from(sel.options).some(o => o.value === cur)) ? cur : '';
 
-    filtered = (cfg.keywords || []).filter(passFilter);
+    const f = readFilters();
+    filtered = (cfg.keywords || []).filter((kw) => passFilter(kw, f));
     // 选中集合只保留仍存在的 id（避免"删掉不可见的选中项"或删完残留计数）
     const alive = new Set((cfg.keywords || []).map(k => k.id));
     for (const id of Array.from(selection)) if (!alive.has(id)) selection.delete(id);
@@ -528,7 +539,12 @@
   }
 
   $('btn-kw-add').addEventListener('click', () => ui.openEditor({ cfg, onSaved: reload }));
-  $('kw-search').addEventListener('input', () => renderKeywordTable());
+/** 搜索框每敲一个字就整表重绘（上千行）会明显卡手：160ms 静止后才重绘。 */
+  let kwSearchTimer = 0;
+  $('kw-search').addEventListener('input', () => {
+    if (kwSearchTimer) clearTimeout(kwSearchTimer);
+    kwSearchTimer = setTimeout(() => { kwSearchTimer = 0; renderKeywordTable(); }, 160);
+  });
   $('kw-filter-group').addEventListener('change', () => renderKeywordTable());
   $('kw-filter-status').addEventListener('change', () => renderKeywordTable());
   $('kw-filter-axis').addEventListener('change', () => renderKeywordTable());
@@ -1545,14 +1561,23 @@
       siteDisabled: $('rst-site').checked,
       styles: $('rst-styles').checked
     };
-    if (!sc.keywords && !sc.siteRules && !sc.styles) { D.toast('请至少勾选一块内容', 'error'); return; }
+    /* 【2.0.15】读正文缓存也进这组勾选：隐私说明里承诺「设置页可随时清空」，
+     * 而它不在配置里（chrome.storage.local 的 khPolicyCacheV3），得单独请后台清。 */
+    const clearCache = $('rst-cache').checked;
+    if (!sc.keywords && !sc.siteRules && !sc.styles && !clearCache) { D.toast('请至少勾选一块内容', 'error'); return; }
     const ok = await D.confirmBox(
-      '将清空：' + [sc.keywords ? '关键词与分组' : '', sc.siteRules ? '站点规则/禁用状态' : '', sc.styles ? '样式与配置' : ''].filter(Boolean).join('、')
+      '将清空：' + [sc.keywords ? '关键词与分组' : '', sc.siteRules ? '站点规则/禁用状态' : '', sc.styles ? '样式与配置' : '', clearCache ? '读正文缓存' : ''].filter(Boolean).join('、')
       + '\n\n⚠️ 此操作不可撤销，建议先导出备份。',
       { title: '重置数据', danger: true, saveLabel: '确认重置' }
     );
     if (!ok) return;
-    if (!await mutate(() => KH.Store.reset(sc, cfg))) return;
+    /* 只勾了缓存时不要去动配置：Store.reset 对空选择没有意义，还会白写一次。 */
+    if (sc.keywords || sc.siteRules || sc.styles) {
+      if (!await mutate(() => KH.Store.reset(sc, cfg))) return;
+    }
+    if (clearCache) {
+      try { chrome.runtime.sendMessage({ type: KH.MSG.POLICY_CACHE_CLEAR }, () => { void chrome.runtime.lastError; }); } catch (e) { /* 后台没醒就算了 */ }
+    }
     D.toast('已重置', 'ok');
   });
 

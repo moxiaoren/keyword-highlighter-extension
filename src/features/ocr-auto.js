@@ -1046,73 +1046,6 @@
    * 先认公司/人名，再看线索 —— `致…`（收件人=被授权）、`（以下简称甲方/乙方）`、
    * `A 授权 B`（动词前=授权方、动词后=被授权方）、`我司 / 本公司`（发文方=授权方）。
    * 两个主体都找不到线索时不硬判，宁可不进表。 */
-  function authRoles(lines, full) {
-    var score = {};
-    var names = [];
-    function see(name) {
-      if (!score[name]) { score[name] = { licensor: 0, licensee: 0 }; names.push(name); }
-      return score[name];
-    }
-    function bump(name, role, w) {
-      if (!name) return;
-      var s = see(name);
-      s[role] += w;
-    }
-    function pick(role) {
-      var best = '';
-      var bs = 0;
-      for (var i = 0; i < names.length; i++) {
-        var s = score[names[i]][role];
-        if (s > bs) { bs = s; best = names[i]; }
-      }
-      return bs >= 1.2 ? best : '';
-    }
-    var LIC_CUE = /(授权方|授权人|授权单位|授权公司|甲方|著作权人|版权所有人|版权所有|我司|本公司)/;
-    var LEE_CUE = /(被授权方|被授权人|被授权单位|被授权公司|乙方|贵司|被许可方|被许可人)/;
-    for (var i = 0; i < lines.length; i++) {
-      var line = String(lines[i] || '').replace(/[ \t]+/g, '');
-      if (!line) continue;
-      var hits = orgHits(line);
-      if (!hits.length) continue;
-      var lic = LIC_CUE.test(line);
-      var lee = LEE_CUE.test(line);
-      var addressee = /^致\s*[：:]?\s*/.test(line) || (/[：:]$/.test(line) && i < 6 && !lic);
-      for (var h = 0; h < hits.length; h++) {
-        var name = hits[h].name;
-        var after = line.slice(hits[h].end, hits[h].end + 16);
-        if (/^[（(]?["“”‘’']?(?:以下简称)?["“”‘’']?(?:甲方|授权方|授权人|授权单位|著作权人)/.test(after)) bump(name, 'licensor', 3);
-        if (/^[（(]?["“”‘’']?(?:以下简称)?["“”‘’']?(?:乙方|被授权方|被授权人|被授权单位)/.test(after)) bump(name, 'licensee', 3);
-        if (/^[（(]?我司/.test(after)) bump(name, 'licensor', 3);
-        var before = line.slice(Math.max(0, hits[h].index - 8), hits[h].index);
-        if (/我司|本公司/.test(before)) bump(name, 'licensor', 3);
-        if (addressee) bump(name, 'licensee', 2.5);
-        else if (lic && !lee) bump(name, 'licensor', 1.2);
-        else if (lee && !lic) bump(name, 'licensee', 1.2);
-      }
-      /* 「A 授权 B」句式（排除 `授权方：A` 这种标签行，避免把标签里的「授权」当动词）。 */
-      if (!lic && !lee) {
-        var vm = /(?:授予|授权给|授权予|许可给|许可予|授权|许可)/.exec(line);
-        if (vm) {
-          var left = orgHits(line.slice(0, vm.index));
-          var right = orgHits(line.slice(vm.index));
-          if (left.length) bump(left[left.length - 1].name, 'licensor', 2);
-          if (right.length) bump(right[0].name, 'licensee', 2);
-        }
-      }
-    }
-    var licName = pick('licensor');
-    var leeName = pick('licensee');
-    if (licName && leeName && licName === leeName) leeName = '';
-    var remaining = [];
-    for (var n = 0; n < names.length; n++) {
-      if (names[n] !== licName && names[n] !== leeName) remaining.push(names[n]);
-    }
-    /* 只判出一边、另一边只剩一个主体 ⇒ 用参考关系补齐。 */
-    if (!licName && leeName && remaining.length === 1) licName = remaining[0];
-    if (licName && !leeName && remaining.length === 1) leeName = remaining[0];
-    if (!licName && leeName && /我司|本公司/.test(full)) licName = '我司';
-    return { licensor: licName, licensee: leeName };
-  }
 
   /* 单值字段的取值路径（反向版式 → 精确词 → 通用标签 → 形状兜底 → 文档级兜底）。 */
   function singleValue(def, lines, full) {
@@ -1152,14 +1085,6 @@
 
   /* 这个值本身是不是一个「主体名」：授权书里标签取到的常常是一整句（`”）同意授权…`），
    * 这种值不能压过实体参考判断。 */
-  function looksLikeEntity(v) {
-    if (!v) return false;
-    if (v === '我司' || v === '本公司') return false;
-    var flat = String(v).replace(/\s+/g, '');
-    var os = orgsIn(v);
-    for (var i = 0; i < os.length; i++) if (os[i].replace(/\s+/g, '') === flat) return true;
-    return !!okPersonName(v);
-  }
 
   /**
    * 从一条 OCR 条目里抽出可以进表的行。

@@ -89,15 +89,6 @@
       return !hasWhitelist;
     },
 
-    /** 本地临时禁用/启用当前站点（写 siteDisabledMap；该字段不随导出分享） */
-    async toggleLocal(hostname) {
-      const store = chrome.storage.local;
-      const { siteDisabledMap = {} } = await store.get('siteDisabledMap');
-      const next = !siteDisabledMap[hostname];
-      if (next) siteDisabledMap[hostname] = true; else delete siteDisabledMap[hostname];
-      await store.set({ siteDisabledMap });
-      return !next; // 返回值语义：true = 该站点当前启用高亮
-    }
   };
 
   KH.SiteRules = SiteRules;

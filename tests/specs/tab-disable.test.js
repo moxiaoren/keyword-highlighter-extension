@@ -187,7 +187,8 @@ module.exports = async function run() {
     const sw = code(readSrc('background/service-worker.js'));
     truthy(/flashTabState\(next\)/.test(sw), 'toggle-site 分支要闪徽标，否则黑名单页上像没反应');
     truthy(/function flashTabState\(disabled\)/.test(sw), '回执实现应在');
-    truthy(/text: disabled \? 'OFF' : 'ON'/.test(sw), '禁止=OFF、恢复=ON');
+    truthy(/setActionBadge\(disabled \? 'OFF' : 'ON'\)/.test(sw), '禁止=OFF、恢复=ON');
+    truthy(/function setActionBadge\(text\)/.test(sw), '徽标只有一个写入口，别再让两处 setBadgeText 互相清掉回执');
   });
 
   await test('★ 文案不再说"站点"：命令描述与按钮都是标签页语义', () => {

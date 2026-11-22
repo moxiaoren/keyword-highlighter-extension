@@ -27,7 +27,9 @@
 (function () {
   const Entity = {};
   const CACHE_KEY = 'khEntityCache';
-  const TTL_MS = 7 * 24 * 3600 * 1000;
+  /* 【2.0.15 · P6】7 天 → 24 小时：企业信息是「法人在不在」的瞬时判断，
+   * 留一天够用；留一周只是让企业名与法人名长期躺在本地。 */
+  const TTL_MS = 24 * 3600 * 1000;
   /* 查不到的结论只留 6 小时：法人在公示系统里会变，也不该让一次站点抽风
    * 判「永远查不到」。 */
   const MISS_TTL_MS = 6 * 3600 * 1000;
@@ -424,11 +426,22 @@ const SO360_HEADSTART_MS = 1200;
 
   /* ---------------- 缓存 ---------------- */
 
+  /* 【2.0.15 · P6】读的时候就清过期条目：原来只在命中判定里看 TTL，
+   * 过期条目永远躺在存储里（200 条公司名/法人名），既占配额又长期留着企业标识。 */
   async function readCache() {
     try {
       const o = await chrome.storage.local.get(CACHE_KEY);
       const map = o && o[CACHE_KEY];
-      return (map && typeof map === 'object') ? map : {};
+      if (!map || typeof map !== 'object') return {};
+      const now = Date.now();
+      let dirty = false;
+      for (const k of Object.keys(map)) {
+        const v = map[k];
+        const live = v && (now - (v.at || 0)) < (v.miss ? MISS_TTL_MS : TTL_MS);
+        if (!live) { delete map[k]; dirty = true; }
+      }
+      if (dirty) { try { await chrome.storage.local.set({ [CACHE_KEY]: map }); } catch (e2) {} }
+      return map;
     } catch (e) { return {}; }
   }
 

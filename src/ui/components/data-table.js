@@ -106,10 +106,14 @@
     /* ---------------- 表体 ---------------- */
 
     function renderBody() {
-      D().clear(tbody);
       const list = pageRows();
+      /* 整页先在片段里拼好，最后一次挂上：以前每行都 append 到**已挂载**的 tbody，
+       * 浏览器每行都要重排一次（几千行 = 几千次 layout）。 */
+      const frag = document.createDocumentFragment();
       if (!list.length) {
-        tbody.appendChild(h('tr', {}, [h('td', { class: 'kh-table-empty', colspan: String(o.columns.length), text: o.emptyText || '没有数据' })]));
+        frag.appendChild(h('tr', {}, [h('td', { class: 'kh-table-empty', colspan: String(o.columns.length), text: o.emptyText || '没有数据' })]));
+        D().clear(tbody);
+        tbody.appendChild(frag);
         return;
       }
       for (const row of list) {
@@ -133,8 +137,10 @@
           if (content != null) td.appendChild(typeof content === 'string' ? document.createTextNode(content) : content);
           tr.appendChild(td);
         }
-        tbody.appendChild(tr);
+        frag.appendChild(tr);
       }
+      D().clear(tbody);
+      tbody.appendChild(frag);
     }
 
     /* ---------------- 分页 ---------------- */

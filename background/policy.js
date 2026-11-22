@@ -43,7 +43,15 @@
   const RETRY_MS = 10 * 60 * 1000;
   const MAX_ENTRIES = 80;
   const MAX_HTML = 400000;
-  const MAX_TEXT = 120000;
+  /* 【2.0.15 · P1】单条正文上限 12 万字 → 4 万字：判定政策正文 4 万字足够，
+   * 80 条 × 12 万字 ≈ 9.6MB 会顶到 storage 配额，一旦写不进去，
+   * 同一个 storage.local 里的**用户配置**也会跟着写失败。 */
+  const MAX_TEXT = 40000;
+  /* 整份缓存的字节预算（按 JSON 长度估）：超了就从最旧的开始淘汰。 */
+  const MAX_CACHE_BYTES = 2 * 1024 * 1024;
+  /* 用户浏览时顺手抄下的正文（via='open'）只留 24 小时：它是页面瞬时快照，
+   * 留得越久越可能与现状不一致，也越不该长期躺在本地。网络抓取结果仍按 TTL_MS。 */
+  const TTL_OPEN_MS = 24 * 3600 * 1000;
   const TIMEOUT_MS = 12000;
   const MIN_TEXT = 40;
   /* 【2026-11-11 sknow 案例】正文已经够长（>3000 字）时，个别提示词缺失（卡片标题有错别字、
@@ -142,14 +150,45 @@
     });
   }
 
+  function cacheBytes(map) {
+    try { return JSON.stringify(map).length; } catch (e) { return 0; }
+  }
+
+  /* 【2.0.15 · P1】按「条数 + 字节」双预算淘汰，并检查 lastError 做一次强淘汰重试。
+   * 原来只限条数、整表 set 且不看 lastError：配额顶满后缓存**静默**失效，
+   * 更糟的是 storage.local 是共用的 —— 缓存写爆会把用户的关键词配置一起顶掉
+   * （manifest 没有 unlimitedStorage：Chrome 114+ 约 10MB，109–113 只有 5MB）。 */
   function saveCache(map) {
     try {
-      const keys = Object.keys(map);
+      let keys = Object.keys(map);
       if (keys.length > MAX_ENTRIES) {
         keys.sort((a, b) => (map[a].at || 0) - (map[b].at || 0));
         for (let i = 0; i < keys.length - MAX_ENTRIES; i++) delete map[keys[i]];
       }
-      chrome.storage.local.set({ [CACHE_KEY]: map });
+      /* 字节预算：从最旧的开始扔，至少留 1 条。 */
+      keys = Object.keys(map).sort((a, b) => (map[a].at || 0) - (map[b].at || 0));
+      for (let i = 0; i < keys.length - 1 && cacheBytes(map) > MAX_CACHE_BYTES; i++) delete map[keys[i]];
+      const commit = (payload) => {
+        chrome.storage.local.set({ [CACHE_KEY]: payload }, () => {
+          const err = chrome.runtime.lastError;
+          if (!err) return;
+          /* 写失败（多半是配额满）：压到「最近 8 条、每条 8000 字」再试一次。
+           * 宁可少留历史，也不能让缓存把配置挤掉。 */
+          const slim = {};
+          const ks = Object.keys(payload).sort((a, b) => (payload[b].at || 0) - (payload[a].at || 0)).slice(0, 8);
+          for (const k of ks) {
+            const v = payload[k];
+            if (!v || typeof v !== 'object') continue;
+            if (typeof v.text === 'string' && v.text.length > 8000) {
+              v.text = v.text.slice(0, 8000);
+              v.len = flatLite(v.text).length;
+            }
+            slim[k] = v;
+          }
+          try { chrome.storage.local.set({ [CACHE_KEY]: slim }, () => { void chrome.runtime.lastError; }); } catch (e2) {}
+        });
+      };
+      commit(map);
     } catch (e) { /* 缓存写失败不影响本次结果 */ }
   }
 
@@ -160,11 +199,29 @@
    * 拒绝太短的正文（多半是壳页/登录墙），不让它把好缓存冲掉。
    * @returns {Promise<{ok:boolean, len?:number, reason?:string}>}
    */
+  /* 【2.0.15 · P5】机会式缓存抄的是**整页正文**，落盘前先做一次敏感信息筛查：
+   * 银行对账单 / 账单明细 / 成片的 15–19 位数字（身份证、银行卡、长账号）不进缓存。
+   * 判据宁宽勿窄：误拒只少一条缓存，误存是隐私事故。
+   * 但**不要**看到「身份证」「银行卡」几个字就拒 —— 政策正文本身就在讲这些词，
+   * 所以这里只认「账单/流水/余额」这类只出现在账单里的词。 */
+  const PII_LONG_DIGITS = /(?:^|[^\d])\d{15,19}(?:[^\d]|$)/;
+  const PII_MONEY_WORDS = /(对账单|账单明细|交易明细|账户余额|可用余额|银行卡号|借记卡|贷记卡|还款计划|还款明细)/;
+  const PII_MAIL_RE = /[\w.+-]+@[\w-]+\.[a-z]{2,}/gi;
+  function looksPersonal(body) {
+    const t = String(body || '');
+    if (PII_LONG_DIGITS.test(t)) return true;
+    if (PII_MONEY_WORDS.test(t)) return true;
+    const mails = t.match(PII_MAIL_RE);
+    return !!(mails && mails.length >= 3);
+  }
+  Policy.looksPersonal = looksPersonal;
+
   Policy.rememberText = async function (url, text) {
     const u = String(url || '').trim();
     if (!/^https?:\/\//i.test(u)) return { ok: false, reason: '不是 http(s) 链接' };
     const body = String(text == null ? '' : text).replace(/\r\n?/g, '\n').trim();
     if (flatLite(body).length < MIN_TEXT) return { ok: false, reason: '正文太短，不像政策页' };
+    if (looksPersonal(body)) return { ok: false, reason: '正文像是账单/明细（含证件号或金额流水），不缓存' };
     const map = await loadCache();
     const prev = map[u];
     /* 已有更新鲜的网络抓取结果就别让「用户浏览过的正文」把它盖掉：抓取可能拿到页面没渲染的部分。 */
@@ -175,6 +232,19 @@
     map[u] = { ok: true, text: cut, len: flatLite(cut).length, via: 'open', at: Date.now() };
     saveCache(map);
     return { ok: true, len: cut.length };
+  };
+
+  /* 【2.0.15】隐私说明里承诺「可随时在设置页清空」—— 给它一个真的能按的入口。
+   * 这条缓存不在配置里（键是 khPolicyCacheV3），所以由设置页发消息、这里负责删。 */
+  Policy.clearCache = async function () {
+    const map = await loadCache();
+    const removed = Object.keys(map).length;
+    try {
+      await new Promise((resolve) => {
+        chrome.storage.local.remove(CACHE_KEY, () => { void chrome.runtime.lastError; resolve(); });
+      });
+    } catch (e) { /* 删不掉也不该把设置页卡住 */ }
+    return { ok: true, removed: removed };
   };
 
   /* ---------------- 编码：GBK 站按 UTF-8 解会整片乱码 ---------------- */
@@ -271,9 +341,6 @@
    * `https://…`。这时**不是站点没正文**，是协议用错了。两个协议都试一遍，谁读到正文用谁。 */
   const ERR_PAGE_RE = /^(chrome-error:\/\/|edge-error:\/\/|chrome:\/\/neterror|about:neterror)/i;
 
-  function isErrorPageUrl(u) {
-    return ERR_PAGE_RE.test(String(u || ''));
-  }
 
   function otherScheme(u) {
     const m = /^(https?):\/\//i.exec(String(u || ''));
@@ -619,7 +686,10 @@
     const cache = await loadCache();
     const hit = cache[u];
     const now = Date.now();
-    if (hit && hit.at && hit.ok && (now - hit.at) < TTL_MS) {
+    /* 【2.0.15 · P5】via='open' 是用户浏览时顺手抄的页面快照，只认 24 小时（TTL_OPEN_MS）；
+     * 网络抓取的结果仍按 TTL_MS 走。 */
+    const ttl = (hit && hit.via === 'open') ? TTL_OPEN_MS : TTL_MS;
+    if (hit && hit.at && hit.ok && (now - hit.at) < ttl) {
       const needMore = hints.length > 0 && !covers(hit.text || '', hints);
       /* 页面可能更新了：缓存正文没覆盖目标词时，10 分钟后重抓一次；期间先用旧正文（仍然比卡片值强）。 */
       if (!needMore || (now - hit.at) < RETRY_MS) {

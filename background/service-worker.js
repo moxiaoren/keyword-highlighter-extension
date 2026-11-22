@@ -59,13 +59,19 @@ async function notifyTabDisabled(tabId, disabled) {
 /** 【2.0.14.4 需求】快捷键要"看得见"：标签页级禁用在黑名单页上按下去，页面本来就没高亮，
  *  肉眼看不到任何变化 ⇒ 用户以为快捷键没生效（用户 m12534 的原话就是「点不了/没反应」）。
  *  用 action 徽标闪一下 OFF / ON 1.6 秒当回执，完了清空（徽标平时为空，不占位、不劫持别处）。 */
+/** action 徽标的**唯一**写入口**：闪 OFF/ON 与 1.6 秒后清空都从这里走，别再各写一份 setBadgeText ——
+ *  两处并写时，后写的会把前一处还没到点的回执提前清掉。 */
+function setActionBadge(text) {
+  try { chrome.action.setBadgeText({ text: text || '' }); } catch (e) { /* 扩展已卸载：忽略 */ }
+}
+
 let flashTabTimer = 0;
 async function flashTabState(disabled) {
-  try { await chrome.action.setBadgeText({ text: disabled ? 'OFF' : 'ON' }); } catch (e) { return; }
+  try { setActionBadge(disabled ? 'OFF' : 'ON'); } catch (e) { return; }
   if (flashTabTimer) { try { clearTimeout(flashTabTimer); } catch (e) {} }
   flashTabTimer = setTimeout(() => {
     flashTabTimer = 0;
-    try { chrome.action.setBadgeText({ text: '' }); } catch (e) { /* 扩展已卸载：忽略 */ }
+    setActionBadge('');
   }, 1600);
 }
 
@@ -88,7 +94,6 @@ chrome.tabs.onActivated.addListener(async (info) => {
 
 chrome.runtime.onInstalled.addListener(async (details) => {
   if (details.reason === 'install' || details.reason === 'update') {
-    registerMenus();
     await chrome.tabs.create({ url: chrome.runtime.getURL('welcome/welcome.html') });
   }
 });
@@ -657,6 +662,7 @@ const HANDLERS = {
   [MSG.POLICY_TEXT]: (msg) => self.KH.Policy.fetchText((msg && msg.url) || '', { hints: (msg && msg.hints) || [] }),
   /* 【2.0.14.6 · A 档】机会式缓存：用户自己打开过的政策页，内容脚本把正文送回后台存缓存。只读、无网络。 */
   [MSG.POLICY_CACHE]: (msg) => self.KH.Policy.rememberText((msg && msg.url) || '', (msg && msg.text) || ''),
+  [MSG.POLICY_CACHE_CLEAR]: () => self.KH.Policy.clearCache(),
 
   /* ---- 【2.0.8.5】网页对话（免 Key）：面板 → 后台 → chat.deepseek.com 上的 content/web-chat.js ----
    * 这三条都是"开标签页 / 自检 / 开新对话"，真正的提问走长连接（见文件末尾的 onConnect）。 */
@@ -698,7 +704,7 @@ const HANDLERS = {
   [MSG.OCR_MODEL_DOWNLOAD]: (msg) => self.OcrHost.ask(msg),
   [MSG.OCR_MODEL_IMPORT]: (msg) => self.OcrHost.ask(msg),
   [MSG.OCR_MODEL_CLEAR]: (msg) => self.OcrHost.ask(msg),
-  'kh:ocr:selftest': (msg) => self.OcrHost.submitImage(msg, { tab: null, url: 'chrome-extension://ui/' })
+  [MSG.OCR_SELFTEST]: (msg) => self.OcrHost.submitImage(msg, { tab: null, url: 'chrome-extension://ui/' })
 };
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {

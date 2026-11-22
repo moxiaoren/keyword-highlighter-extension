@@ -739,8 +739,20 @@
     async load(area) {
       const store = (area || (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local));
       if (!store) return this.normalize({});
-      const raw = await store.get(null);
-      return this.normalize(raw);
+      /* 【2.0.15 · P2】只读「已知配置键」，不再 get(null)。
+       * 病理：storage.local 里还躺着政策正文缓存（khPolicyCacheV3）、企业信息缓存、
+       * OCR 模型/语言包标记等大对象；get(null) 会把它们整包反序列化进**每个标签页**
+       * 的 state.config（每个内容脚本启动都调一次 load）。
+       * 语义不变：返回的仍是「已知键 + 默认值」，normalize 本来也只认这些键；
+       * 用户存量配置全在 defaults 的键里，不会丢。 */
+      const raw = await store.get(this.storageKeys());
+      return this.normalize(raw || {});
+    },
+
+    /** 读配置时要取的顶层键（唯一来源：defaults 的键；热更新过滤器也用这一份）。 */
+    storageKeys() {
+      if (!this._storageKeys) this._storageKeys = Object.keys(this.defaults || {});
+      return this._storageKeys;
     },
 
     /**

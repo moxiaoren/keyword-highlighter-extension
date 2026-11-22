@@ -34,6 +34,12 @@ function loadPolicy(fetchImpl, extraChrome) {
           Object.assign(mem, o);
           if (typeof cb === 'function') { cb(); return; }
           return Promise.resolve();
+        },
+        /* 【2.0.15】清空读正文缓存走的是 remove —— 桩里也得有，否则那条用例测的是空气 */
+        remove: (k, cb) => {
+          delete mem[k];
+          if (typeof cb === 'function') { cb(); return; }
+          return Promise.resolve();
         }
       }
     }
@@ -533,5 +539,21 @@ module.exports = async function run() {
     truthy(r.ok, JSON.stringify(r).slice(0, 300));
     truthy(String(r.via).indexOf('api') >= 0, 'via 要带 api：' + r.via);
     truthy(seen.some((x) => /\/api\/privacy\/detail\?appId=42/.test(x)), '候选要填参并请求：' + seen.join(' | '));
+  });
+  /* ---------------- 【2.0.15】设置页能把读正文缓存清干净 ---------------- */
+
+  await test('★ 设置页「读正文缓存」勾选：真的清空，且缓存表不留残余', async () => {
+    const { Policy, mem } = loadPolicy(async () => { throw new Error('不该联网'); });
+    const body = '本政策说明我们如何收集与使用个人信息：收集设备信息、日志信息与账号信息，并说明你享有的查询、更正与删除权利。';
+    truthy((await Policy.rememberText('https://c.test/privacy', body)).ok, '先写一条缓存');
+    truthy(Object.keys(mem.khPolicyCacheV3 || {}).length >= 1, '前提：缓存里确实有东西');
+    const r = await Policy.clearCache();
+    truthy(r.ok, '清空要回报成功');
+    eq(r.removed, 1, '要记下清掉几条：' + JSON.stringify(r));
+    eq(Object.keys(mem.khPolicyCacheV3 || {}).length, 0, '缓存表要真空，不是只清内存副本');
+    const html = read('options/options.html');
+    const js = read('options/options.js');
+    truthy(/id="rst-cache"/.test(html), '设置页要有「读正文缓存」勾选（隐私说明里写了可清空）');
+    truthy(/POLICY_CACHE_CLEAR/.test(js), '勾了要真发消息请后台清，不能只改文案');
   });
 };
