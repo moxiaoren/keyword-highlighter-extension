@@ -178,18 +178,18 @@ module.exports = async function run() {
     truthy(r.text.indexOf('个人信息处理规则') >= 0, '正文要回来');
   });
 
-  await test('★ 拦住了又抓不到 http 版：原因里要告诉用户关掉「始终使用安全连接」', async () => {
+  await test('★ 拦在安全提示页、又没有已打开的同页：说清「请手动打开一次」，不再自作主张开页签', async () => {
+    const created = [];
     const tabs = {
       query: () => Promise.resolve([]),
-      create: () => Promise.resolve({ id: 9, url: 'chrome-error://chromewebdata/' }),
-      remove: () => Promise.resolve(),
-      onUpdated: { addListener: () => {}, removeListener: () => {} }
+      create: (a) => { created.push(a); return Promise.resolve({ id: 9, url: 'chrome-error://chromewebdata/' }); }
     };
     const scripting = { executeScript: () => Promise.reject(new Error('Frame with ID 0 is showing error page')) };
     const { Policy } = loadPolicy(async () => { throw new TypeError('Failed to fetch'); }, { tabs: tabs, scripting: scripting });
     const r = await Policy.fetchText('http://zs.cszesu.test/scenead-frontend/agreement?type=1');
     falsy(r.ok, '读不到就不许装成功');
-    truthy(/安全连接/.test(r.reason), '要说清怎么自救：' + r.reason);
+    truthy(/手动打开/.test(r.reason), '要说清怎么自救：' + r.reason);
+    eq(created.length, 0, 'C 档绝不许新建标签页');
   });
 
   await test('★ 方案 C：浏览器停在安全提示页时，直接抓 http 版正文，不用用户点「继续访问网站」', async () => {
@@ -311,100 +311,62 @@ module.exports = async function run() {
     eq(v.items.length, 3, 'title / dev / 链接 三项都参与（链接只比域名，正文里有它就更稳）');
   });
 
-  suite('policy · 直接抓取失败时退回后台标签页（2.0.8.16 · failed to fetch 兜底）');
+  suite('policy · 直接抓取失败时只读用户已经打开的页（2.0.14.6 C 档 · 不再开新标签）');
 
   /** 造一套最小的 tabs/scripting 桩：建页 → complete → 注入读文本 → 关页。 */
-  function tabStub(text, opts) {
-    const o = opts || {};
-    const calls = { created: [], removed: [], injected: [] };
-    const listeners = [];
+  /** 【2.0.14.6 · m13678 C 档】桩：模拟「用户已经把这个页面开着」——query 查得到同一张页，注入读得到文本。
+   * create 只为断言「一次都没调」而存在。 */
+  function openTabStub(text, pageUrl) {
+    const calls = { created: [], injected: [] };
     const tabs = {
-      create: (arg) => { calls.created.push(arg); return Promise.resolve({ id: 7 }); },
-      remove: (id) => { calls.removed.push(id); return Promise.resolve(); },
-      onUpdated: {
-        addListener: (fn) => listeners.push(fn),
-        removeListener: (fn) => { const i = listeners.indexOf(fn); if (i >= 0) listeners.splice(i, 1); }
-      }
+      query: () => Promise.resolve([{ id: 7, url: pageUrl }]),
+      create: (arg) => { calls.created.push(arg); return Promise.resolve({ id: 8 }); }
     };
     const scripting = {
       executeScript: (arg) => {
         calls.injected.push(arg);
-        if (o.injectError) return Promise.reject(new Error(o.injectError));
-        /* 允许给一串文本：模拟「complete 首抓是空壳、过几拍才渲染出正文」（toutiao 案例）。 */
-        const seq = Array.isArray(text) ? text : [text];
-        const t = seq[Math.min(calls.injected.length - 1, seq.length - 1)];
-        return Promise.resolve([{ result: t }]);
+        return Promise.resolve([{ result: text }]);
       }
     };
-    /* 建页后的下一拍触发 complete（真实浏览器里是导航完成事件） */
-    const kick = () => setTimeout(() => { listeners.slice().forEach((fn) => { try { fn(7, { status: 'complete' }); } catch (e) { /* ignore */ } }); }, 0);
-    const orig = tabs.create;
-    tabs.create = (arg) => { const p = orig(arg); kick(); return p; };
     return { tabs, scripting, calls };
   }
 
-  await test('failed to fetch 时：真导航一次、读 innerText、读完立刻关页，返回 via=tab', async () => {
-    const stub = tabStub('某某清理大师隐私政策\n开发者：北京某某科技有限公司\n我们重视您的隐私，完整正文就在这里，请仔细阅读以下全部条款内容。');
+  await test('直接抓失败、但用户已经开着这个页面：读那张页，via=tab，且一张新标签都不开', async () => {
+    const stub = openTabStub('某某清理大师隐私政策\n开发者：北京某某科技有限公司\n我们重视您的隐私，完整正文就在这里，请仔细阅读以下全部条款内容。', 'https://blocked.test/privacy');
     const { Policy } = loadPolicy(async () => { throw new TypeError('failed to fetch'); }, { tabs: stub.tabs, scripting: stub.scripting });
     const r = await Policy.fetchText('https://blocked.test/privacy');
-    truthy(r.ok, '标签页兜底要能成功：' + JSON.stringify(r));
+    truthy(r.ok, '读已开页要能成功：' + JSON.stringify(r));
     eq(r.via, 'tab');
     truthy(String(r.text).indexOf('北京某某科技有限公司') >= 0, '读到的要是渲染后的正文');
-    eq(stub.calls.created.length, 1, '只开一次后台标签页');
-    eq(stub.calls.created[0].active, false, '不许抢前台');
-    eq(stub.calls.removed.join(','), '7', '读完必须关掉');
+    eq(stub.calls.created.length, 0, 'C 档绝不许新建标签页');
   });
 
-  await test('标签页也读不到时：两边原因都写出来，不许假装成功', async () => {
-    const stub = tabStub('登录后可见');
-    const { Policy } = loadPolicy(async () => { throw new TypeError('failed to fetch'); }, { tabs: stub.tabs, scripting: stub.scripting });
+  await test('既抓不到、用户也没打开：两边原因都写出来，并说清怎么自救', async () => {
+    const created = [];
+    const tabs = { query: () => Promise.resolve([]), create: (a) => { created.push(a); return Promise.resolve({ id: 9 }); } };
+    const scripting = { executeScript: () => Promise.resolve([{ result: '' }]) };
+    const { Policy } = loadPolicy(async () => { throw new TypeError('failed to fetch'); }, { tabs: tabs, scripting: scripting });
     const r = await Policy.fetchText('https://blocked.test/short');
     falsy(r.ok, '空壳页不许判成功');
     truthy(String(r.reason).indexOf('failed to fetch') >= 0, '直接抓取的原因要保留：' + r.reason);
-    truthy(String(r.reason).indexOf('没读到正文') >= 0, '标签页的原因也要写：' + r.reason);
-    eq(stub.calls.removed.join(','), '7', '失败也要关页');
+    truthy(String(r.reason).indexOf('没读到正文') >= 0, '要写清没读到：' + r.reason);
+    truthy(String(r.reason).indexOf('手动打开') >= 0, '要给自救方式：' + r.reason);
+    eq(created.length, 0, '失败时也不许偷偷开标签页');
   });
 
-  /** 【2.0.14.4 · m12586 A 档】串行队列桩：每次建页发一个自增 id，记录「同一时刻有几张页活着」。 */
-  function serialStub(text) {
-    const calls = { created: [], removed: [] };
-    const listeners = [];
-    let nextId = 100;
-    let live = 0;
-    let maxLive = 0;
-    const tabs = {
-      create: (arg) => {
-        calls.created.push(arg);
-        const id = nextId++;
-        live++;
-        if (live > maxLive) maxLive = live;
-        setTimeout(() => { listeners.slice().forEach((fn) => { try { fn(id, { status: 'complete' }); } catch (e) { /* ignore */ } }); }, 0);
-        return Promise.resolve({ id: id });
-      },
-      remove: (id) => { calls.removed.push(id); live--; return Promise.resolve(); },
-      onUpdated: {
-        addListener: (fn) => listeners.push(fn),
-        removeListener: (fn) => { const i = listeners.indexOf(fn); if (i >= 0) listeners.splice(i, 1); }
-      }
-    };
-    const scripting = { executeScript: () => Promise.resolve([{ result: text }]) };
-    return { tabs: tabs, scripting: scripting, calls: calls, max: () => maxLive };
-  }
-
-  await test('★ 同一时刻只开一张后台标签页：连点两次「读取」也不许并排开两张', async () => {
-    const body = '某某清理大师隐私政策\n开发者：北京某某科技有限公司\n' + '完整正文'.repeat(60);
-    const stub = serialStub(body);
-    const { Policy } = loadPolicy(async () => { throw new TypeError('failed to fetch'); }, { tabs: stub.tabs, scripting: stub.scripting });
-    const rs = await Promise.all([
-      Policy.fetchText('https://a.test/p1'),
-      Policy.fetchText('https://a.test/p2')
-    ]);
-    eq(rs.length, 2, '两次请求都要有结果');
-    rs.forEach((r, i) => truthy(r && r.ok, '第 ' + (i + 1) + ' 次也要读到正文：' + JSON.stringify(r)));
-    eq(stub.calls.created.length, 2, '两次都要真的开过后台标签页');
-    eq(stub.max(), 1, '同一时刻最多一张后台标签页（否则页签栏会闪成一片）');
-    eq(stub.calls.removed.length, 2, '两次读完都要立刻关掉');
-    eq(stub.calls.created.map((c) => c.active).join(','), 'false,false', '一律后台打开、不许抢前台');
+  /** 【2.0.14.6 · m13678 C 档】源码级 + 行为级双保险：整个 policy.js 不许再出现新建标签页。 */
+  await test('★ C 档：没有已打开的页时，tabs.create 一次都不许调', async () => {
+    const created = [];
+    const tabs = { query: () => Promise.resolve([]), create: (a) => { created.push(a); return Promise.resolve({ id: 9 }); } };
+    const scripting = { executeScript: () => Promise.resolve([{ result: '' }]) };
+    const { Policy } = loadPolicy(async () => { throw new TypeError('failed to fetch'); }, { tabs: tabs, scripting: scripting });
+    const r = await Policy.fetchText('https://a.test/p1', { hints: ['开发者'] });
+    falsy(r.ok);
+    eq(created.length, 0, 'C 档绝不许新建标签页');
+    truthy(/手动打开|不再自动开新页签/.test(String(r.reason)), '要说清怎么办：' + r.reason);
+    const src = read('background/policy.js');
+    truthy(!/tabs\.create\s*\(/.test(src), 'policy.js 里不许再有 tabs.create');
+    truthy(!/readViaTabOnce/.test(src), '后台标签页轮询实现应当移除');
   });
 
   /* ------------------------------------------------------------------
@@ -432,8 +394,8 @@ module.exports = async function run() {
     truthy(r.text.indexOf('北京某某科技有限公司') >= 0, '解码后中文要原样（不能是乱码）');
   });
 
-  await test('静态正文够长但缺目标词（模板页）：升级后台标签页读渲染后的正文，via=tab', async () => {
-    const stub = tabStub('某某清理大师隐私政策\n开发者：北京某某科技有限公司\n我们重视您的隐私，完整正文就在这里，请仔细阅读以下全部条款内容。');
+  await test('静态正文够长但缺目标词（模板页）：用户开着这页就读它，via=tab', async () => {
+    const stub = openTabStub('某某清理大师隐私政策\n开发者：北京某某科技有限公司\n我们重视您的隐私，完整正文就在这里，请仔细阅读以下全部条款内容。', 'https://spa.test/privacy');
     const html = '<html><body><p>'
       + '某某清理大师隐私政策模板占位，正文由脚本按应用名填充。'.repeat(3)
       + '</p></body></html>';
@@ -442,38 +404,40 @@ module.exports = async function run() {
     truthy(r.ok, JSON.stringify(r).slice(0, 200));
     eq(r.via, 'tab');
     truthy(r.text.indexOf('北京某某科技有限公司') >= 0, '命中的必须是渲染后的正文');
+    eq(stub.calls.created.length, 0, '读已开页，不许再建标签页');
   });
 
-  await test('★ 正文够长但主体名由链接参数在 JS 里渲染（ysxy.html 案例）：照样升级后台标签页', async () => {
+  await test('★ 正文够长但主体名由链接参数在 JS 里渲染（ysxy.html 案例）：用户开着就读渲染结果', async () => {
     /* 用户 2026-11-17 报的真实站：agreement-*.cos.../util/ysxy.html?appName=…&appTheme=…
      * 静态 HTML 里那两个名字出现 0 次，7845 字全是通用模板；页内脚本 params.get('appName')
-     * 才把它们写进正文。以前「正文够长就不再开标签页」，于是永远比不到。 */
-    const stub = tabStub('企业信息信用查询帮 隐私政策\n上海昂思通科技有限责任公司杭州第五分公司 提供'
-      + '\n本政策说明我们如何收集、使用、保存与共享您的个人信息，以及您行使各项权利的方式。');
+     * 才把它们写进正文。C 档读用户已经打开的那张页，绝不新开标签。 */
+    const pageUrl = 'https://agreement.test/util/ysxy.html?appName=' + encodeURIComponent('企业信息信用查询帮');
+    const stub = openTabStub('企业信息信用查询帮 隐私政策\n上海昂思通科技有限责任公司杭州第五分公司 提供'
+      + '\n本政策说明我们如何收集、使用、保存与共享您的个人信息，以及您行使各项权利的方式。', pageUrl);
     const tpl = '<p>' + '本政策适用于（以下简称“我们”）在中国大陆提供的APP及相关产品和服务。'.repeat(120)
       + '</p><p>联系方式为 users_feedback@126.com</p>'
       + "<script>var s = location.search; var params = new URLSearchParams(s);"
       + "var appName = params.get('appName'); appName = decodeURIComponent(appName);</script>";
     const html = '<html><body>' + tpl + '</body></html>';
     const { Policy } = loadPolicy(page(html), { tabs: stub.tabs, scripting: stub.scripting });
-    const r = await Policy.fetchText('https://agreement.test/util/ysxy.html?appName=' + encodeURIComponent('企业信息信用查询帮'), {
+    const r = await Policy.fetchText(pageUrl, {
       hints: ['企业信息信用查询帮', '上海昂思通科技有限责任公司杭州第五分公司']
     });
     eq(r.via, 'tab', '够长的模板页缺目标词时，也要读渲染结果：' + JSON.stringify(r).slice(0, 160));
     truthy(String(r.text).indexOf('上海昂思通') >= 0, '拿到的必须是渲染后的正文');
-    eq(stub.calls.created.length, 1, '只开一次后台标签页');
-    eq(stub.calls.created[0].active, false, '不抢前台');
+    eq(stub.calls.created.length, 0, '只读已开页，不许建标签页');
   });
 
-  await test('★ 目标词正文里已经有了：即使 HTML 带取参脚本也不开标签页（省掉一次导航）', async () => {
-    const stub = tabStub('不该来');
+  await test('★ 目标词正文里已经有了：即使 HTML 带取参脚本也不去读页、不建标签页', async () => {
+    const stub = openTabStub('不该来', 'https://spa.test/privacy?appName=x');
     const html = '<html><body><p>' + '某某清理大师隐私政策正文，说明收集范围与用户权利。'.repeat(200)
       + '开发者：北京某某科技有限公司</p>'
       + "<script>var appName = params.get('appName');</script></body></html>";
     const { Policy } = loadPolicy(page(html), { tabs: stub.tabs, scripting: stub.scripting });
     const r = await Policy.fetchText('https://spa.test/privacy?appName=x', { hints: ['北京某某科技有限公司'] });
-    eq(r.via, 'fetch', '正文已覆盖目标词 ⇒ 不该再导航');
+    eq(r.via, 'fetch', '正文已覆盖目标词 ⇒ 不该再去读页');
     eq(stub.calls.created.length, 0, '不许白开标签页');
+    eq(stub.calls.injected.length, 0, '连注入都不该发生');
   });
 
   await test('正文只在同源接口 JSON 里：用页面 URL 的同名参数填 `${appId}` 模板，via=fetch+api', async () => {
@@ -501,17 +465,15 @@ module.exports = async function run() {
     truthy(r.text.indexOf('合肥元气满点网络科技有限公司') >= 0, '接口 JSON 里的公司名要并进正文');
   });
 
-  await test('标签页 complete 首抓是空串：继续轮询直到渲染出正文（toutiao 案例）', async () => {
-    const stub = tabStub([
-      '',
-      '今日头条隐私政策\n开发者：北京抖音信息服务有限公司\n我们重视您的隐私，本政策说明个人信息的收集、使用、保存、共享与您的权利，请完整阅读。'
-    ]);
-    const { Policy } = loadPolicy(async () => { throw new TypeError('failed to fetch'); },
-      { tabs: stub.tabs, scripting: stub.scripting });
+  await test('模板页 + 用户没打开：不猜、不偷偷开页签，给出打开提示', async () => {
+    const created = [];
+    const tabs = { query: () => Promise.resolve([]), create: (a) => { created.push(a); return Promise.resolve({ id: 9 }); } };
+    const scripting = { executeScript: () => Promise.resolve([{ result: '' }]) };
+    const html = '<html><body><p>加载中…正文由脚本填充</p></body></html>';
+    const { Policy } = loadPolicy(page(html), { tabs: tabs, scripting: scripting });
     const r = await Policy.fetchText('https://toutiao.test/privacy', { hints: ['今日头条'] });
-    truthy(r.ok, JSON.stringify(r).slice(0, 200));
-    eq(r.via, 'tab');
-    truthy(r.text.indexOf('北京抖音信息服务有限公司') >= 0);
-    truthy(stub.calls.injected.length >= 2, '首抓空串必须再抓一次，不能就此判失败');
+    falsy(r.ok, '模板页不许判成功');
+    eq(created.length, 0, '不许开页签');
+    truthy(/手动打开/.test(String(r.reason)), '要提示手动打开：' + r.reason);
   });
 };

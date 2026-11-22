@@ -307,119 +307,18 @@
     return { ok: false };
   }
 
-  /* 【2.0.14.4 · m12586 A 档】同一时刻只允许一张后台标签页：读完（成功/失败/超时）才轮到下一个。
-   * 用户现场：同时触发几次「读取隐私政策」会连开好几张后台标签，页签栏一片闪、还互相抢执行机会。
-   * 串行之后：任何时刻最多一张、读完立刻关，用户看到的就是「页签栏短暂闪一下」。 */
-  let tabQueue = Promise.resolve();
-  function readViaTab(url, hints) {
-    const run = () => readViaTabOnce(url, hints);
-    const next = tabQueue.then(run, run);
-    tabQueue = next.then(() => null, () => null);
-    return next;
-  }
-
-  function readViaTabOnce(url, hints) {
-    return new Promise((resolve) => {
-      const tabs = (typeof chrome !== 'undefined' && chrome.tabs) || null;
-      const scripting = (typeof chrome !== 'undefined' && chrome.scripting) || null;
-      if (!tabs || !tabs.create || !scripting || !scripting.executeScript) {
-        resolve({ ok: false, reason: '这个浏览器不支持后台标签页读取（缺 tabs/scripting 能力）' });
-        return;
-      }
-      let tabId = 0;
-      let done = false;
-      let timer = 0;
-      let attempts = 0;
-      let best = '';
-      /* complete 之后：空白多等一会儿（脚本可能还在跑），有字但缺目标词只再补两三下。 */
-      const MAX_EMPTY = 9;
-      const MAX_PARTIAL = 3;
-      const INTERVAL = 700;
-      const finish = (out) => {
-        if (done) return;
-        done = true;
-        if (timer) clearTimeout(timer);
-        try { tabs.onUpdated.removeListener(onUpdated); } catch (e) { /* ignore */ }
-        if (tabId) {
-          try {
-            const r = tabs.remove(tabId);
-            if (r && typeof r.catch === 'function') r.catch(() => {});
-          } catch (e) { /* 已经关了 */ }
-        }
-        resolve(out);
-      };
-      const enough = () => flatLite(best).length >= MIN_TEXT && covers(best, hints);
-      const settle = () => {
-        if (done) return;
-        if (flatLite(best).length >= MIN_TEXT) {
-          finish({ ok: true, text: best.slice(0, MAX_TEXT), len: best.length });
-          return;
-        }
-        finish({ ok: false, reason: '后台标签页打开后也没读到正文（可能需要登录，或正文是图片/PDF）' });
-      };
-      const schedule = () => {
-        if (done) return;
-        const blank = flatLite(best).length === 0;
-        const limit = blank ? MAX_EMPTY : MAX_PARTIAL;
-        if (attempts >= limit || Date.now() > deadline) { settle(); return; }
-        attempts++;
-        timer = setTimeout(() => { if (!done) grab(); }, INTERVAL);
-      };
-      const deadline = Date.now() + 10000;
-      const grab = () => {
-        if (done) return;
-        let p;
-        try {
-          p = scripting.executeScript({
-            target: { tabId: tabId },
-            func: function () { return (document.body && document.body.innerText) || ''; }
-          });
-        } catch (e) {
-          finish({ ok: false, reason: '后台标签页读取失败：' + String((e && e.message) || e) });
-          return;
-        }
-        Promise.resolve(p).then((res) => {
-          const text = (res && res[0] && typeof res[0].result === 'string') ? res[0].result : '';
-          /* 只留最长的：SPA 首帧可能只有导航壳，后续帧才是正文。 */
-          if (flatLite(text).length > flatLite(best).length) best = text;
-          if (enough()) { finish({ ok: true, text: best.slice(0, MAX_TEXT), len: best.length }); return; }
-          schedule();
-        }, (e) => {
-          /* 错误页（协议被升级 / 证书）注入会直接失败：这时不要傻等，并且明确告诉调用方
-           * 「是错误页」，让它换另一个协议再试一次。 */
-          const msg = String((e && e.message) || e);
-          finish({
-            ok: false,
-            errorPage: /error page/i.test(msg),
-            reason: '后台标签页读不到正文（' + msg + '）'
-          });
-        });
-      };
-      const onUpdated = (id, info) => {
-        if (id !== tabId || !info) return;
-        /* 协议被升级时标签页会停在 `chrome-error://chromewebdata/`：先于注入判定，
-         * 这样调用方可以立刻换协议重试，而不是等 15 秒超时。 */
-        if (info.url && isErrorPageUrl(info.url)) {
-          finish({ ok: false, errorPage: true, reason: '浏览器把链接换成了另一个协议，打开的是错误页' });
-          return;
-        }
-        if (info.status === 'complete') grab();
-      };
-      try { tabs.onUpdated.addListener(onUpdated); } catch (e) { finish({ ok: false, reason: '监听标签页失败：' + String((e && e.message) || e) }); return; }
-      timer = setTimeout(() => finish({ ok: false, reason: '后台标签页 15 秒没加载完' }), 15000);
-      try {
-        const created = tabs.create({ url: url, active: false });
-        Promise.resolve(created).then((tab) => {
-          if (!tab || typeof tab.id !== 'number') { finish({ ok: false, reason: '后台标签页没建起来' }); return; }
-          tabId = tab.id;
-          if (tab.url && isErrorPageUrl(tab.url)) {
-            finish({ ok: false, errorPage: true, reason: '浏览器把链接换成了另一个协议，打开的是错误页' });
-          }
-        }, (e) => finish({ ok: false, reason: '后台标签页没建起来：' + String((e && e.message) || e) }));
-      } catch (e) {
-        finish({ ok: false, reason: '后台标签页没建起来：' + String((e && e.message) || e) });
-      }
-    });
+  /* 【2.0.14.6 · m13678 C 档】彻底不开新标签页：只读用户已经打开的那一张页。
+   * 用户口径：宁可提示「请手动打开一次」，也不要页签乱跳打断手头的事。
+   * 为什么不再开后台标签：MV3 里要拿 JS 渲染后的正文只能真导航一张页；后台标签虽不抢前台，
+   * 但页签栏会闪，连着触发几次就被判成「打扰」。 */
+  async function readViaTab(url, hints) {
+    const share = await readOpenTab(url, hints);
+    if (share && share.ok) return share;
+    return {
+      ok: false,
+      noTab: true,
+      reason: '没有打开这个页面的标签页；2.0.14.6 起为免打扰不再自动开新页签'
+    };
   }
 
   /* ---------------- 兜底②：同源接口兜底 ----------------
@@ -699,8 +598,7 @@
       if (flatLite(text).length >= MIN_TEXT) break;   // 这个协议已经读到正文
     }
 
-    const tabReasons = [];
-    let blockedByTls = false;
+
     const flatLen = () => flatLite(text).length;
     const thin = () => flatLen() < MIN_TEXT;
     const missHints = () => hints.length > 0 && !covers(text, hints);
@@ -734,12 +632,13 @@
       return { text: body.slice(0, MAX_TEXT), url: cand };
     };
 
-    /* 静态结果「太短」或「缺目标词且正文不长」才升级：短 = 空壳/模板；缺词 = 正文可能是后填的。
-     * 标签页落在错误页时，换另一个协议再试一次（sknow：https 证书错误、http 才有正文）。 */
+    /* 【2.0.14.6 · m13678 C 档】页面靠脚本渲染时，只读用户**已经打开**的那张页（换协议也各看一次），
+     * 不再替用户开后台标签；没有就明说「请手动打开一次」。
+     * https 证书/安全提示页仍可直接抓 http 版正文 —— 那条路不开页签。 */
     if (needDeep()) {
-      const tabOrder = [pageUrl].concat(order.filter((x) => x !== pageUrl));
-      for (let i = 0; i < tabOrder.length; i++) {
-        const cu = tabOrder[i];
+      const openOrder = [pageUrl].concat(order.filter((x) => x !== pageUrl));
+      for (let i = 0; i < openOrder.length; i++) {
+        const cu = openOrder[i];
         if (tried.indexOf(cu) < 0) tried.push(cu);
         const tab = await readViaTab(cu, hints);
         if (tab.ok) {
@@ -748,28 +647,6 @@
           if (tabCovers || flatLite(tab.text).length > flatLen()) { text = tab.text; via = 'tab'; }
           break;
         }
-        tabReasons.push((cu === u ? '' : '换 ' + cu.split(':')[0] + ' 后 ') + (tab.reason || '后台标签页也没读到'));
-        /* 错误页（多半是 https 证书拦截）：先看用户是不是已经把这张页打开、点过「继续访问」了 —— 读那张。 */
-        if (tab.errorPage) {
-          const share = await readOpenTab(cu, hints);
-          if (share.ok) {
-            text = share.text;
-            via = 'tab';
-            tabReasons.pop();
-            break;
-          }
-          blockedByTls = true;
-          /* 方案 C：别让用户去点错误页 —— 直接抓 http 版正文。 */
-          const fb = await httpFallback(cu);
-          if (fb && (covers(fb.text, hints) || flatLite(fb.text).length > flatLen())) {
-            text = fb.text;
-            via = 'fetch+http';
-            pageUrl = fb.url;
-            break;
-          }
-        }
-        /* 只有「错误页」才值得换协议重试；登录墙/空壳换协议也一样。 */
-        if (!tab.errorPage) break;
       }
     }
 
@@ -791,6 +668,17 @@
       }
     }
 
+    /* 【2.0.14.6】http 版兜底放在最后：用**原始链接**（https 被拦时抓 http 版）。
+       放前面会抢在 iframe/接口之前改掉 via，也会因为 pageUrl 已被静态循环改写成 http 而永远触发不到。 */
+    /* 只在「既薄又缺目标词」时才试 http 版：已经命中词、或已读到用户自己打开的那张页（via=tab）都不许覆盖。 */
+    if (!hardReason && via !== 'tab' && !covers(text, hints) && flatLen() < STRONG_TEXT) {
+      const fb = await httpFallback(u) || (pageUrl !== u ? await httpFallback(pageUrl) : null);
+      if (fb && (covers(fb.text, hints) || flatLite(fb.text).length > flatLen())) {
+        text = fb.text;
+        via = 'fetch+http';
+      }
+    }
+
     let out;
     if (hardReason) {
       out = { ok: false, reason: hardReason };
@@ -798,9 +686,8 @@
       const bits = [];
       if (directErr) bits.push(directErr);
       bits.push('页面里没读到正文（可能需要登录或脚本渲染）');
-      for (let i = 0; i < tabReasons.length; i++) bits.push('后台标签页：' + tabReasons[i]);
+      bits.push('要读脚本渲染后的正文，请手动打开这个链接一次再点重试：' + (tried[0] || u));
       if (tried.length > 1) bits.push('试过的地址：' + tried.join('、'));
-      if (blockedByTls) bits.push('这个站只支持 http，浏览器把链接升级成 https 后停在安全提示页（错误页读不到正文）。扩展已经直接抓过 http 版，' + (flatLen() ? '但正文里仍然缺要核对的内容' : '但页面靠脚本渲染、静态抓不到正文') + '；要彻底免点，可在浏览器设置里关掉「始终使用安全连接」');
       out = { ok: false, reason: bits.join('；') };
     } else {
       out = { ok: true, text: text, len: text.length };
