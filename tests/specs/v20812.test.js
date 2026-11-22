@@ -1,14 +1,14 @@
 /* tests/specs/v20812.test.js — 2.0.8.12 六项改动
  * ----------------------------------------------------------------------------
  * 用户（2026-11-09，睡觉前授权自主决策）：
- *   侧栏分组与空态三步引导 / 弹窗深链接 / 卡片定位原文 / 长任务进度与取消 /
+ *   侧栏分组与空态三步引导 / 弹窗深链接 / 长任务进度与取消 /
  *   观感批剩余结构项 / 性能优化；另追加「抓取字段可设为超链接」「省略没生效」两条。
  *
  * 这里锁的是**行为契约**（源码里必须存在的关键分支与文案），不是逐字快照：
  *   · 侧栏必须分组，但 7 个 data-tab 一个都不能少（测试与深链接都按 data-tab 走）
  *   · 空态引导必须真的接在三处（分组 / 站点 / 关键词），不能只留个函数没人用
  *   · 弹窗必须走带 #sec- 的深链接，卡片要有 id 才点得到
- *   · 定位必须优先用 CSS.highlights 的 Range + 指纹，只把 window.find 当兜底
+ *   · 卡头「定位原文」已于 2.0.15.1 整块摘除（无入口的死代码），本文件不再锁它
  *   · 长任务必须分批、必须能取消，且取消后如实报告已处理条数
  *   · 省略必须是一行（旧口径折 3 行，等于没省略）
  *
@@ -24,7 +24,7 @@ const ROOT = path.join(__dirname, '..', '..');
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 
 module.exports = function run() {
-  suite('2.0.8.12 六项（侧栏分组 / 空态引导 / 深链接 / 定位原文 / 长任务 / 性能）');
+  suite('2.0.8.12 五项（侧栏分组 / 空态引导 / 深链接 / 长任务 / 性能）');
 
   test('侧栏分组：4 组 + 7 个 data-tab 一个不少', () => {
     const html = read('options/options.html');
@@ -59,17 +59,6 @@ module.exports = function run() {
     truthy(/role="button"/.test(html) && /tabindex="0"/.test(html), '可点卡片要能被键盘访问（role + tabindex）');
     const css = read('popup/popup.css');
     truthy(css.includes('.kh-stat-card.is-link'), '可点卡片要有 pointer / hover 反馈');
-  });
-
-  test('卡片定位原文：优先 CSS.highlights + 指纹，window.find 只兜底', () => {
-    const src = read('src/features/important-note.js');
-    truthy(src.includes('function locateInPage(kw, hints)'), '缺少 locateInPage()');
-    const body = src.slice(src.indexOf('function locateInPage(kw, hints)'), src.indexOf('function locateInPage(kw, hints)') + 2600);
-    truthy(/CSS\.highlights/.test(body), '定位应遍历 CSS.highlights 里的 Range（才知道每个命中在哪）');
-    truthy(/hints/.test(body), '定位要用卡片内容当指纹（否则同词多处仍然跳错）');
-    truthy(/scrollIntoView/.test(body), '定位要滚动到目标');
-    truthy(/window\.find/.test(body), '找不到时应回退 window.find（不能让按钮变成死的）');
-    truthy(src.includes('.kh-locate-mark'), '定位后要给目标加短暂的可见标记');
   });
 
   test('长任务：分批 + 进度 + 可取消，且取消后如实报数', () => {

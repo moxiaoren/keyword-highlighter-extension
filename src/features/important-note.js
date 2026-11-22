@@ -575,13 +575,6 @@
     }
     /* 【2.0.8.12 需求①】抓取字段做成链接时的样式：跟正文同字号，只加下划线暗示可点。 */
     .kh-table .kh-val-link { color: #1a73e8; text-decoration: underline; text-underline-offset: 2px; }
-    /* 定位落点提示（2.0.8.12）：给页面元素临时描边，1.4s 后由 JS 摘掉。 */
-    .kh-locate-mark {
-      outline: 2px solid #2f6fb5 !important;
-      outline-offset: 2px !important;
-      border-radius: 3px;
-      transition: outline-color .2s ease;
-    }
     .kh-table .kh-val-link:hover { color: #0b57d0; }
     /* 【2.0.6.1 需求⑥】同值字段合并后的抬头：只写最短那个名字，后面跟一个「共 N 个」的小标，
      * 点开（原生 details 元素，无需 JS）列出全部字段名。老笔记里没有它，就照旧只显示 .kh-lbt。 */
@@ -1309,66 +1302,6 @@
      *   · 它表达的口径（图给全文栏让位）也已被用户否决：全文栏是浮层，大图尺寸不变。
      * 所以是**删除**，不是改选择器。注释里不留旧规则的数值，免得看着像还有这条规则。 */
   `;
-
-  /**
-   * 【2.0.8.12 需求·卡头定位原文】把用户送到**这一条笔记对应那一处**，而不是全文第一个匹配。
-   *
-   * 旧实现只有 `window.find(kw)`：它永远从文档开头找，同一个词在页面上出现十次时，
-   * 点下面九张卡都会跳回第一处 —— 看着像"定位没反应"。
-   *
-   * 现在的判据：高亮本身就是我们注册的 Range（`CSS.highlights` 各分组里），
-   * 所以不猜 DOM，直接在这些 Range 里筛：
-   *   ① 文本等于这个关键词的优先，其次才认「包含」；
-   *   ② 再用这张卡自己抓到的值（`hints`）当指纹 —— 同一个词出现在两处时，
-   *      哪一处所在的表格行/段落里带着这张卡的值，就是它。
-   * 都找不到才退回 `window.find`（例如页面把高亮组清空、或词在 shadow 里）。
-   * @returns {boolean} 是否定位成功
-   */
-  function locateInPage(kw, hints) {
-    const doc = document;
-    const key = String(kw || '').trim();
-    if (!key) return false;
-    const wanted = (hints || []).map((t) => String(t == null ? '' : t).trim()).filter((t) => t.length >= 2);
-    const cands = [];
-    const store = (typeof CSS !== 'undefined' && CSS && CSS.highlights) ? CSS.highlights : null;
-    if (store && typeof store.forEach === 'function') {
-      store.forEach((hl) => {
-        const list = hl && typeof hl[Symbol.iterator] === 'function' ? Array.from(hl) : [];
-        for (const r of list) {
-          let text = '';
-          try { text = String(r.toString()); } catch (err) { text = ''; }
-          if (text.indexOf(key) < 0) continue;
-          const node = r.startContainer;
-          const el = node && (node.nodeType === 1 ? node : node.parentElement);
-          if (!el) continue;
-          cands.push({ exact: text.trim() === key, el });
-        }
-      });
-    }
-    const blockOf = (el) => (el.closest ? (el.closest('td,th,li,tr,p,section,article,div') || el) : el);
-    let best = null;
-    let bestScore = -1;
-    for (const c of cands) {
-      const block = blockOf(c.el);
-      const text = String((block && block.textContent) || '');
-      let score = c.exact ? 2 : 0;
-      for (const h of wanted) if (text.indexOf(h) >= 0) { score += 3; break; }
-      if (score > bestScore) { bestScore = score; best = block || c.el; }
-    }
-    if (!best) {
-      if (typeof window.find === 'function') {
-        try { return window.find(key, false, false, true, false, false, false); } catch (err) { return false; }
-      }
-      return false;
-    }
-    try { best.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (err) { /* 老浏览器忽略参数 */ }
-    /* 闪一下标出落点：加类 → 1.4s 后摘掉。类名带前缀，避免和页面自己的样式撞车。 */
-    try {
-      best.classList.add('kh-locate-mark');
-      setTimeout(() => { try { best.classList.remove('kh-locate-mark'); } catch (err) { /* 节点已卸载 */ } }, 1400);
-    } catch (err) { /* 页面上是非元素节点 */ }
-    return true;
-  }
 
   /** 【2.0.8.14 需求②】入场动画只播一次（造壳那一刻），此后无论显示多少次都直接呈现。
    *  用户反复报「悬窗无端闪烁」，其中一条独立成因就是这里：`.khin-panel`
