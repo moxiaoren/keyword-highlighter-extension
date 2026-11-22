@@ -193,6 +193,8 @@ function tabIdOf(msg, sender) {
 const PDF_GRAB_URL = /\.pdf(?=$|[?#&/])/i;
 const PDF_GRAB_PARAMS = ['file', 'url', 'src', 'pdf', 'download'];
 const PDF_GRAB_TTL = 9000;
+/* 【2.0.14.7 · B 档】点击后多久内的导航才算这次抓取的产物。太宽会把用户自己的跳转认成 PDF。 */
+const PDF_GRAB_NAV_MS = 4000;
 const PDF_HOOK_KEY = '__khPdfHook';
 function grabParamUrl(u) {
   try {
@@ -352,8 +354,14 @@ const PDF_GRABS = new Map();
  * ⇒ 字段 A 等的标签被字段 B 的会话先认领，A 就存下了 B 的地址（用户 m10954 的现场）。
  * 抓取本来就是"点一下、开一个标签"的串行动作，同一页并行没有意义。 */
 const PDF_GRAB_BY_TAB = new Map();
-function openPdfGrab(tabId, requestId, clickMode) {
-  const st = { done: false, createdId: 0, click: !!clickMode, armAt: Date.now(), timer: null, poll: null, probed: new Set(), onCreated: null, onUpdated: null, finish: null };
+function openPdfGrab(tabId, requestId, clickMode, key) {
+  const st = { done: false, createdId: 0, click: !!clickMode, armAt: Date.now(), timer: null, poll: null, probed: new Set(), onCreated: null, onUpdated: null, onNav: null, onNavTarget: null, finish: null, key: String(key || ''), pageUrl: '', navPending: '' };
+  /* 记住原页地址：同标签页跳转后要拨回来，也用来认出「这次导航不是本页」 */
+  try {
+    chrome.tabs.get(tabId, (tab) => {
+      if (!chrome.runtime.lastError && tab) st.pageUrl = String(tab.url || tab.pendingUrl || '').split('#')[0];
+    });
+  } catch (e) {}
   /* 同一页上一个窗口必须收工（它等的那次点击已经过去了，留着只会抢别人的标签） */
   const prevTab = PDF_GRAB_BY_TAB.get(tabId);
   if (prevTab && prevTab !== st && prevTab.finish) prevTab.finish('');
@@ -362,6 +370,8 @@ function openPdfGrab(tabId, requestId, clickMode) {
     if (st.poll) { clearInterval(st.poll); st.poll = null; }
     if (st.onCreated) { try { chrome.tabs.onCreated.removeListener(st.onCreated); } catch (e) {} }
     if (st.onUpdated) { try { chrome.tabs.onUpdated.removeListener(st.onUpdated); } catch (e) {} }
+    if (st.onNav) { try { chrome.webNavigation.onBeforeNavigate.removeListener(st.onNav); } catch (e) {} }
+    if (st.onNavTarget) { try { chrome.webNavigation.onCreatedNavigationTarget.removeListener(st.onNavTarget); } catch (e) {} }
   }
   function closeTab(id) {
     if (!id || id === tabId) return;
@@ -378,6 +388,9 @@ function openPdfGrab(tabId, requestId, clickMode) {
     if (PDF_GRABS.get(requestId) === st) PDF_GRABS.delete(requestId);
     if (PDF_GRAB_BY_TAB.get(tabId) === st) PDF_GRAB_BY_TAB.delete(tabId);
     /* 只有「插件替用户点」那次才允许关标签/切前台；用户自己点的标签一律不碰（用户口径 m05354） */
+    /* 【2.0.14.7 · B 档】同标签页跳转时页面会被带走、内容脚本随之重载，这条结果消息没人接。
+     * 地址另存一份（按控件令牌），内容脚本重新注入后自己来问。 */
+    if (st.click && url && st.key && st.pageUrl) stashPdf(st.pageUrl, st.key, url);
     if (st.click) { closeTab(st.createdId); backToPage(); }
     try { chrome.tabs.sendMessage(tabId, { type: MSG.PDF_GRAB_RESULT, requestId: requestId, url: url || '' }); } catch (e) {}
   };
@@ -428,10 +441,63 @@ function openPdfGrab(tabId, requestId, clickMode) {
     }
     consider(id, (info && info.url) || (tab && tab.url));
   };
+  /* 【2.0.14.7 · 用户 m13895 B 档】两种「不产生新标签」的形态也要能拿到地址：
+   * ① location.href = … / 表单提交把 PDF 送到**当前标签页**（没有 window.open 可拦）；
+   * ② 子 frame 里 window.open（主世界钩子只装在顶层 frame，抓不到）。
+   * 只在「替用户点」的会话里、且点击后 4 秒内生效；地址必须真的像 PDF（headIsPdf）才认。 */
+  function navCandidate(u) {
+    const s = String(u || '').split('#')[0];
+    if (!/^https?:/i.test(s)) return '';
+    if (st.probed.has(s)) return '';
+    st.probed.add(s);
+    return s;
+  }
+  /* 同标签页跳转：先让它走，700ms 后看地址有没有真的变过去。
+   * 变了（浏览器已经把页面带到 PDF）就拨回原页 —— 地址已先记下，重载后由内容脚本认领；
+   * 没变（服务端 Content-Disposition 直接下载）就只收地址，页面一次都不重载。 */
+  function restoreThenFinish(u) {
+    if (st.done || st.navPending === u) return;
+    st.navPending = u;
+    setTimeout(() => {
+      if (st.done) return;
+      try {
+        chrome.tabs.get(tabId, (tab) => {
+          if (st.done) return;
+          const cur = String((tab && (tab.url || tab.pendingUrl)) || '').split('#')[0];
+          if (cur && st.pageUrl && cur !== st.pageUrl) {
+            try { chrome.tabs.update(tabId, { url: st.pageUrl }); } catch (e) {}
+          }
+          st.finish(u);
+        });
+      } catch (e) { st.finish(u); }
+    }, 700);
+  }
+  st.onNav = (d) => {
+    if (st.done || !d || d.frameId !== 0 || d.tabId !== tabId) return;
+    if (Date.now() - st.armAt > PDF_GRAB_NAV_MS) return;
+    const u = navCandidate(d.url);
+    if (!u || u === st.pageUrl) return;
+    headIsPdf(u).then((ok) => { if (ok && !st.done) restoreThenFinish(u); });
+  };
+  st.onNavTarget = (d) => {
+    if (st.done || !d || d.sourceTabId !== tabId) return;
+    if (Date.now() - st.armAt > PDF_GRAB_NAV_MS) return;
+    const u = navCandidate(d.url);
+    if (!u || u === st.pageUrl) return;
+    headIsPdf(u).then((ok) => {
+      if (!ok || st.done) return;
+      if (!st.createdId && d.tabId != null) st.createdId = d.tabId;
+      st.finish(u);
+    });
+  };
   /* 两个模式都旁听新标签：用户自己点开的那次也能把地址记下来（不压后台、不关标签、不切前台） */
   {
     chrome.tabs.onCreated.addListener(st.onCreated);
     chrome.tabs.onUpdated.addListener(st.onUpdated);
+    if (st.click && chrome.webNavigation) {
+      try { chrome.webNavigation.onBeforeNavigate.addListener(st.onNav); } catch (e) {}
+      try { chrome.webNavigation.onCreatedNavigationTarget.addListener(st.onNavTarget); } catch (e) {}
+    }
   }
   /* onUpdated 会漏（同一 URL 重复上报、标签页定向前就先定位）→ 300ms 轮询兜底 */
   st.poll = setInterval(() => {
@@ -455,10 +521,39 @@ async function pdfGrab(msg, sender) {
   const clickMode = !!(msg && msg.click);
   const prev = PDF_GRABS.get(requestId);
   if (prev && prev.finish) prev.finish('');
-  openPdfGrab(tabId, requestId, clickMode);
+  openPdfGrab(tabId, requestId, clickMode, (msg && msg.key) || '');
   /* 先把钩子装好再回话：内容脚本拿到 `{armed:true}` 才去点，否则仍有竞态 */
   const armed = await khPdfHookInstall(tabId, requestId, clickMode);
   return { ok: true, armed: armed, click: clickMode, requestId: requestId };
+}
+/* 【2.0.14.7 · B 档】同标签页跳转抓到的地址要跨过一次页面重载：存 storage.session，
+ * 内容脚本重新注入后按控件令牌（autoPdfTokenKey）认领回来。5 分钟过期、最多 40 条。 */
+const PDF_STASH_KEY = 'khPdfStash';
+const PDF_STASH_TTL = 5 * 60 * 1000;
+function stashGet() {
+  return new Promise((resolve) => {
+    try {
+      if (!chrome.storage || !chrome.storage.session) { resolve([]); return; }
+      chrome.storage.session.get(PDF_STASH_KEY, (o) => {
+        void chrome.runtime.lastError;
+        const list = (o && Array.isArray(o[PDF_STASH_KEY])) ? o[PDF_STASH_KEY] : [];
+        resolve(list);
+      });
+    } catch (e) { resolve([]); }
+  });
+}
+async function stashPdf(pageUrl, key, url) {
+  if (!pageUrl || !key || !url) return;
+  const now = Date.now();
+  const list = (await stashGet()).filter((x) => x && x.pageUrl && now - x.at < PDF_STASH_TTL);
+  list.push({ pageUrl: String(pageUrl).split('#')[0], key: String(key), url: String(url), at: now });
+  try { chrome.storage.session.set({ [PDF_STASH_KEY]: list.slice(-40) }); } catch (e) {}
+}
+async function pdfStashQuery(msg) {
+  const page = String((msg && msg.pageUrl) || '').split('#')[0];
+  const now = Date.now();
+  const list = (await stashGet()).filter((x) => x && now - x.at < PDF_STASH_TTL && x.pageUrl === page);
+  return { ok: true, items: list.map((x) => ({ key: x.key, url: x.url })) };
 }
 function pdfGrabDone(msg) {
   const requestId = String((msg && msg.requestId) || '');
@@ -581,6 +676,7 @@ const HANDLERS = {
   /* ---- 【2026-11-18 用户口径】没有地址的 PDF 控件：点一次，把新标签的 .pdf 地址抓回来 ---- */
   [MSG.PDF_GRAB]: (msg, sender) => pdfGrab(msg, sender),
   [MSG.PDF_GRAB_DONE]: (msg) => pdfGrabDone(msg),
+  [MSG.PDF_STASH_QUERY]: (msg) => pdfStashQuery(msg),
   [MSG.PDF_OPEN]: (msg) => pdfOpen(msg),
 
   /* ---- ocr：内容脚本/设置页 → background → offscreen 文档（引擎在那里跑） ---- */

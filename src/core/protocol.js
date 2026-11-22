@@ -106,6 +106,8 @@
     /* 【2026-11-18 用户口径②】主世界钩子抓到地址后，内容脚本用它回一句「收工」：
      * payload { requestId, url } —— 后台据此撤钩子、清定时器，不再盯新标签。 */
     PDF_GRAB_DONE: 'kh:pdf:grabDone',
+    /** 【2.0.14.7 · B 档】同标签页跳转拿到的地址要跨过一次页面重载：内容脚本重新注入后按控件令牌认领。 */
+    PDF_STASH_QUERY: 'kh:pdf:stashQuery',
     /* 【2026-11-18 用户口径①】点 PDF 小标要打开**正文**：内容脚本开新标签不稳（站点可能拦），
      * 统一走后台 chrome.tabs.create（payload { url }）。 */
     PDF_OPEN: 'kh:pdf:open',

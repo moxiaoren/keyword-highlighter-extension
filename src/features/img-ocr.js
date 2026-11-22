@@ -1799,19 +1799,59 @@
    * 用户看到的就是「这个字段根本没有 PDF，笔记里却多出一张、地址还是别人的」。
    * 判据（保守，只认确定的情况）：这一格所在行的首格文字**正好等于**另一个已配置字段名 ⇒ 不归当前字段。
    * 首格读不到、或行标签是别的写法（含并排标题格）一律放行，避免把正常跨行取值误伤。 */
-  function rowLabelOfCell(cell) {
+  /* 【2.0.14.7 · m13119】行内可能有**两个并排的标题格**（`<td>互联网信息服务算法备案合作证明</td>
+   * <td>AI生成应用承诺函</td><td colspan=7>PDF</td>`）。旧实现只看**首格**：首格是别人的字段名 ⇒
+   * 这格被判成别人的，紧邻 PDF 的那个标题反而谁都不认领（案例页第三份 PDF 就是这么丢的）。
+   * 现在按「最靠近值格的那个标题格」判归属（用户口径：取紧邻标题），首格规则只作兜底。 */
+  function rowLabelTexts(cell) {
     const tr = cell && cell.parentElement;
-    const first = tr && tr.cells && tr.cells[0];
-    if (!first || first === cell) return '';
-    return String(first.textContent == null ? '' : first.textContent).replace(/\s+/g, '');
+    const cells = (tr && tr.cells) || [];
+    const out = [];
+    for (let i = 0; i < cells.length; i++) {
+      if (cells[i] === cell) break;
+      out.push(String(cells[i].textContent == null ? '' : cells[i].textContent).replace(/\s+/g, ''));
+    }
+    return out;
   }
   function ownsCellFor(label, cell, allLabels) {
-    const rl = rowLabelOfCell(cell);
-    if (!rl) return true;
+    const rls = rowLabelTexts(cell);
+    if (!rls.length) return true;
     const own = String(label || '').replace(/\s+/g, '');
-    if (own && rl.indexOf(own) >= 0) return true;
-    for (const l of (allLabels || [])) if (l !== own && rl === l) return false;
+    const near = rls[rls.length - 1];
+    if (own && near === own) return true;
+    const conf = (allLabels || []);
+    if (conf.indexOf(near) >= 0) return false;
+    const first = rls[0];
+    if (own && first.indexOf(own) >= 0) return true;
+    for (const l of conf) if (l !== own && first === l) return false;
     return true;
+  }
+  /** 两个标题格并排的行：值格里可能有**紧邻标题**那一字段的 PDF，而 `cellsForHit` 只按第一个
+   * 匹配标题取值 ⇒ 这一格不在任何字段的 `cells` 里。按「紧邻标题格 == 字段名」补一份值格清单。 */
+  function twoLabelRowCells(fields) {
+    const F = KH.Fetch;
+    const map = new Map();
+    for (const f of (fields || [])) {
+      if (!f || f.noImg) continue;
+      const own = String(f.label || '').replace(/\s+/g, '');
+      if (!own) continue;
+      const have = f.cells || [];
+      const base = have[0];
+      const tb = (base && typeof F.nearestTable === 'function') ? F.nearestTable(base) : null;
+      if (!tb || !tb.rows) continue;
+      for (const tr of Array.from(tb.rows)) {
+        const tds = Array.from(tr.cells || []);
+        if (tds.length < 3) continue;
+        const val = tds[tds.length - 1];
+        if (have.indexOf(val) >= 0) continue;
+        const labels = tds.slice(0, -1).map((t) => String(t.textContent == null ? '' : t.textContent).replace(/\s+/g, ''));
+        if (labels[labels.length - 1] !== own) continue;
+        const arr = map.get(f) || [];
+        if (arr.indexOf(val) < 0) arr.push(val);
+        map.set(f, arr);
+      }
+    }
+    return map;
   }
   function collectPdfs(rule, fields) {
     const F = KH.Fetch;
@@ -1833,10 +1873,11 @@
       const l = String(f.label || '').replace(/\s+/g, '');
       if (l) allLabels.push(l);
     }
+    const extra = twoLabelRowCells(fields);
     for (const f of (fields || [])) {
       if (!f || f.noImg) continue;
       const label = String(f.label || '');
-      const cells = f.cells || [];
+      const cells = (f.cells || []).concat(extra.get(f) || []);
       let got = 0;
       for (let ci = 0; ci < cells.length && got < perMax; ci++) {
         const cell = cells[ci];

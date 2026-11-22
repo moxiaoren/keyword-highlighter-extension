@@ -327,7 +327,8 @@
       if (typeof document !== 'undefined' && document.addEventListener) document.addEventListener('kh:pdf:grabbed', onGrab, true);
       /* click=真：这次是插件替用户点控件（钩子可以拦，不产生新标签）。
        * click=假：用户自己点的，**不许影响页面自身行为** —— 钩子只旁听地址，标签照常打开、也不关。 */
-      rt.sendMessage({ type: MSG.PDF_GRAB, requestId: requestId, click: !!doClick }, (res) => {
+      /* key 是控件令牌（autoPdfTokenKey）：同标签页跳转会把页面带走，地址得靠它跨过重载认领回来 */
+      rt.sendMessage({ type: MSG.PDF_GRAB, requestId: requestId, click: !!doClick, key: autoPdfTokenKey(host) }, (res) => {
         if (rt.lastError) { cleanup(true); settle(); return; }
         /* 后台把钩子装好才回话：armed=true 就去点（点下去不会被开成新标签）；
          * armed=false 说明钩子装不上，仍点一次，靠后台把新标签压到后台再关掉。 */
@@ -378,6 +379,32 @@
   const autoPdfQueue = [];
   const autoPdfQueued = (typeof WeakSet === 'function') ? new WeakSet() : null;
   let autoPdfRunning = false;
+  /* 【2.0.14.7 · 用户 m13895 B 档】同标签页跳转（location.href / 表单提交）抓到的地址存在后台，
+   * 页面被拨回来后内容脚本是重新注入的 —— 这里按控件令牌把地址认领回来，
+   * 否则这一格会一直显示「正在抓取」，然后重新点一次、再跳一次。 */
+  function applyPdfStash() {
+    const MSG = KH.MSG || {};
+    const rt = (typeof chrome !== 'undefined' && chrome.runtime) ? chrome.runtime : null;
+    if (!rt || !rt.sendMessage || !MSG.PDF_STASH_QUERY || typeof document === 'undefined') return;
+    const pageUrl = String(location.href || '').split('#')[0];
+    try {
+      rt.sendMessage({ type: MSG.PDF_STASH_QUERY, pageUrl: pageUrl }, (res) => {
+        if (rt.lastError || !res || !res.items || !res.items.length) return;
+        const want = {};
+        for (const it of res.items) if (it && it.key && it.url) want[it.key] = it.url;
+        let got = 0;
+        for (const el of document.querySelectorAll(AUTO_PDF_SEL)) {
+          const ctl = autoPdfControlOf(el);
+          if (!ctl || autoPdfOf(ctl)) continue;
+          const u = want[autoPdfTokenKey(ctl)];
+          if (!u) continue;
+          rememberAutoPdf(ctl, u);
+          got++;
+        }
+        if (got) scheduleAutoPdfRefresh();
+      });
+    } catch (e) {}
+  }
   function kickAutoPdf(el) {
     const host = autoPdfHostOf(el);
     if (!host || autoPdfOf(host) || (autoPdfTried && autoPdfTried.has(host))) return;
@@ -2504,7 +2531,7 @@
      * 标记对不上号（一个按页面元素建条目、一个按渲染出来的 `data-khpdf` 挂状态）。 */
     pdfRefOf, pdfPlaceholder,
     /* 【2026-11-18 用户口径】没有地址的 PDF 控件：只读判据 + 单测注入口（点一次→抓新标签地址） */
-    AUTO_PDF_SEL, autoPdfHostOf, autoPdfControlOf, autoPdfOf, autoPdfKeyOf, rememberAutoPdf, absPdfUrl,
+    AUTO_PDF_SEL, autoPdfHostOf, autoPdfControlOf, autoPdfOf, autoPdfKeyOf, rememberAutoPdf, absPdfUrl, applyPdfStash,
     rowsToTableHtml, blockFor, triggerOk, fakeRightValue, nearestTable, isPlaceholderText,
     /* 图片选项（仅图片 / 前 N 张）：单测直接锁 */
     applyImgPolicy,

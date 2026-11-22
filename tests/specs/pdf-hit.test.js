@@ -106,6 +106,52 @@ module.exports = async function run() {
     truthy(fx.indexOf("removeAttribute('data-kh-pdf-arm')") >= 0, '★ 点完要摘标记（别误拦页面后续点击）');
   });
 
+  suite('2.0.14.7 需求 · B 档：同标签页跳转 / 子 frame 开窗的 PDF 也要拿到地址');
+
+  await test('★ 清单里有 webNavigation 权限，且只对「替用户点」的会话挂导航监听', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const root = path.join(__dirname, '..', '..');
+    const mf = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
+    truthy((mf.permissions || []).indexOf('webNavigation') >= 0, '★ 没有这个权限就收不到导航事件');
+    const sw = fs.readFileSync(path.join(root, 'background', 'service-worker.js'), 'utf8');
+    const fn = sw.slice(sw.indexOf('function openPdfGrab'), sw.indexOf('async function pdfGrab('));
+    truthy(fn.indexOf('if (st.click && chrome.webNavigation)') >= 0, '★ 用户自己点开的会话不许挂（别旁听他的浏览）');
+    truthy(fn.indexOf('chrome.webNavigation.onBeforeNavigate.addListener') >= 0, '★ 同标签页跳转靠 onBeforeNavigate');
+    truthy(fn.indexOf('chrome.webNavigation.onCreatedNavigationTarget.addListener') >= 0, '★ 子 frame 开窗靠 onCreatedNavigationTarget');
+    truthy(fn.indexOf('chrome.webNavigation.onBeforeNavigate.removeListener') >= 0, '★ 收工必须摘监听');
+  });
+
+  await test('★ 同标签页跳转：先确认是 PDF，再把页面拨回原处', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const sw = fs.readFileSync(path.join(__dirname, '..', '..', 'background', 'service-worker.js'), 'utf8');
+    truthy(/const PDF_GRAB_NAV_MS = 4000;/.test(sw), '★ 导航只认点击后 4 秒内（别把用户自己的跳转算进来）');
+    const fn = sw.slice(sw.indexOf('function openPdfGrab'), sw.indexOf('async function pdfGrab('));
+    truthy(/d\.frameId !== 0/.test(fn), '★ 只认顶层 frame 的导航');
+    truthy(/headIsPdf\(u\)\.then/.test(fn), '★ 地址必须真的是 PDF 才认领（普通跳转不许吃）');
+    truthy(fn.indexOf('chrome.tabs.update(tabId, { url: st.pageUrl })') >= 0, '★ 页面被带走了要拨回来');
+    truthy(/navPending/.test(fn), '★ 同一次导航只处理一次');
+  });
+
+  await test('★ 地址跨过一次重载仍能认领：后台存令牌、内容脚本启动时取回', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const root = path.join(__dirname, '..', '..');
+    const sw = fs.readFileSync(path.join(root, 'background', 'service-worker.js'), 'utf8');
+    truthy(/const PDF_STASH_KEY = 'khPdfStash';/.test(sw), '★ 暂存要有自己的键');
+    truthy(/stashPdf\(st\.pageUrl, st\.key, url\)/.test(sw), '★ 抓到地址时按页面+控件令牌暂存');
+    truthy(/\[MSG\.PDF_STASH_QUERY\]:/.test(sw), '★ 内容脚本要能来问');
+    const proto = fs.readFileSync(path.join(root, 'src', 'core', 'protocol.js'), 'utf8');
+    truthy(/PDF_STASH_QUERY: 'kh:pdf:stashQuery'/.test(proto), '★ 协议常量');
+    const fx = fs.readFileSync(path.join(root, 'src', 'features', 'fetch.js'), 'utf8');
+    truthy(/key: autoPdfTokenKey\(host\)/.test(fx), '★ 抓取请求必须带上控件令牌');
+    truthy(/function applyPdfStash\(\)/.test(fx), '★ 内容脚本侧要有认领入口');
+    truthy(/rememberAutoPdf\(ctl, u\)/.test(fx), '★ 认领后写回控件');
+    const ct = fs.readFileSync(path.join(root, 'content', 'content.js'), 'utf8');
+    truthy(/KH\.Fetch\.applyPdfStash/.test(ct), '★ 启动后要真的调一次');
+  });
+
   suite('2.0.6.5 需求②：PDF 占位 — 认引用与占位符');
 
   await test('★ 四种引用写法都认，`.pdf` 后面带查询串/锚点也认', () => {
@@ -373,6 +419,18 @@ module.exports = async function run() {
     eq(F.absPdfUrl('  assets/a.pdf  '), new URL('assets/a.pdf', location.href).href, '两侧空白要剪掉');
     eq(F.absPdfUrl('https://cdn.test/a.pdf'), 'https://cdn.test/a.pdf', '已经是绝对地址就原样留着');
     eq(F.absPdfUrl('javascript:void(0)'), '', '脚本伪地址不许当 PDF 地址');
+  });
+  await test('★ 一行里有多个标题格：值格归紧邻它的那个标题，不被行首格抢走', () => {
+    const fs2 = require('fs');
+    const p2 = require('path');
+    const s2 = fs2.readFileSync(p2.join(__dirname, '..', '..', 'src', 'features', 'img-ocr.js'), 'utf8');
+    truthy(/function rowLabelTexts\(cell\)/.test(s2), '要能取到这一格左边这一行里的所有标题格文本');
+    truthy(/const rls = rowLabelTexts\(cell\);/.test(s2), '先收集本行所有标题格');
+    truthy(/const near = rls\[rls.length - 1\];/.test(s2), '紧邻本值的标题格 = 本行最后一个标题格');
+    truthy(/if \(conf\.indexOf\(near\) >= 0\) return false;/.test(s2), '值格归紧邻标题 ⇒ 别的字段不许认领');
+    truthy(/function twoLabelRowCells\(fields\)/.test(s2), '紧邻标题的字段要单独补上它的值格');
+    truthy(/const extra = twoLabelRowCells\(fields\);/.test(s2), 'cellsForHit 要调用这个补格逻辑');
+    truthy(/\(f\.cells \|\| \[\]\)\.concat\(extra\.get\(f\) \|\| \[\]\)/.test(s2), '字段自己的格 + 补的格都要抓');
   });
   /* 等一拍：抓取回填的重算定时器还挂着，别让它落到后面的用例里（会污染调度器断言） */
   await new Promise((r) => setTimeout(r, 250));

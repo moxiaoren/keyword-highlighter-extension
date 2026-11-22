@@ -94,6 +94,12 @@
     console.error('[KH] boot 失败', err);
   });
 
+  /* 【2.0.14.7 · B 档】页面被「同标签页跳转抓取」带走又拨回来时，地址存在后台：
+   * 重新注入后按控件令牌认领（见 fetch.js 的 applyPdfStash）。 */
+  setTimeout(() => {
+    try { if (KH.Fetch && KH.Fetch.applyPdfStash) KH.Fetch.applyPdfStash(); } catch (e) {}
+  }, 1200);
+
   /* ---------------- ② 配置热更新 ---------------- */
 
   try {
