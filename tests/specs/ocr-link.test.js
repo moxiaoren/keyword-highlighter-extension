@@ -369,13 +369,16 @@ module.exports = async function run() {
       eq(O._debug().inflight, 4, '幂等：同一条结果再来一次不许把额度还成负的/多还，也不许重复补发');
       eq(sent.length, 5, '幂等：不许因为重复结果又多发一张');
 
-      /* 兜底收口：background 被 MV3 杀掉时不会有任何回执，内容脚本必须自己判死 */
-      const n = O._sweep(Date.now() + 200000);
-      eq(n, 4, '★ 超过 JOB_STALE_MS（150s）的在途请求必须被内容脚本自己收口（此时在途＝4）');
+      /* 兜底收口：background 被 MV3 杀掉时不会有任何回执，内容脚本必须自己判死。
+       * 阈值 330s：首次使用要现下 6.27MB 模型（2.0.14.8 用户 m14946），旧值 150s 会在下载中途误杀。 */
+      const staleSrc = require('fs').readFileSync(require('path').join(__dirname, '..', '..', 'src', 'features', 'img-ocr.js'), 'utf8');
+      truthy(/const JOB_STALE_MS = 330000;/.test(staleSrc), '★ 兜底阈值必须 ≥300s（首次下载模型要 105–160s，后台靠心跳续命）');
+      const n = O._sweep(Date.now() + 400000);
+      eq(n, 4, '★ 超过 JOB_STALE_MS（330s）的在途请求必须被内容脚本自己收口（此时在途＝4）');
       eq(O._debug().inflight, 0, '收口后额度归零，下一个标签页/下一次重建还能继续用');
       const timedOut = O.items().filter((it) => it.state === 'fail' && it.errorCode === 'timeout');
       eq(timedOut.length, 4, '收口的条目必须落到终态 fail + errorCode=timeout（面板于是能说人话）');
-      eq(O._sweep(Date.now() + 400000), 0, '幂等：收口过的请求不许再收一次');
+      eq(O._sweep(Date.now() + 800000), 0, '幂等：收口过的请求不许再收一次');
     });
   });
 

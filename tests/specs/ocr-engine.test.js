@@ -27,6 +27,8 @@ const path = require('path');
 
 const ROOT = path.join(__dirname, '..', '..');
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+/** 大写十六进制 sha256（与 offscreen/ocr.js 的 sha256Hex 同口径，用于流式模型的元数据） */
+const sha256Upper = (buf) => require('crypto').createHash('sha256').update(buf).digest('hex').toUpperCase();
 
 /** 兼容引擎的语言包清单（快档两包即可，S2 起没有档位维度） */
 const LANG_MANIFEST = {
@@ -111,6 +113,19 @@ function loadOffscreen(opts) {
   };
   if (o.models) for (const k of MODEL_KEYS) store[k] = new Uint8Array([1, 2, 3]);
 
+  /* 【2.0.14.8】模型首次下载的替身：给了 modelBytes 就让 fetchStub 返回可流式读的响应，
+   * 用来验下载期间必须持续发心跳 —— 真机上 4.46MB 的识别模型在 60KB/s 下要 74 秒，
+   * 后台看门狗只给 60 秒静默，整块 arrayBuffer 会被误杀（证书图 OCR 失败的真因）。 */
+  const modelStream = o.modelBytes ? new Uint8Array(o.modelBytes) : null;
+  const manifestForFetch = modelStream
+    ? Object.assign({}, MODEL_MANIFEST, {
+      files: Object.keys(MODEL_MANIFEST.files).reduce((acc, k) => {
+        acc[k] = Object.assign({}, MODEL_MANIFEST.files[k], { bytes: modelStream.length, sha256: sha256Upper(modelStream) });
+        return acc;
+      }, {})
+    })
+    : MODEL_MANIFEST;
+
   const self = {};
   self.KH = { MSG: MSG };
   const chrome = {
@@ -124,7 +139,21 @@ function loadOffscreen(opts) {
   const fetchStub = async (u) => {
     const s = String(u);
     if (s.indexOf('lang-manifest.json') >= 0) return { ok: true, status: 200, json: async () => LANG_MANIFEST };
-    if (s.indexOf('models-manifest.json') >= 0) return { ok: true, status: 200, json: async () => MODEL_MANIFEST };
+    if (s.indexOf('models-manifest.json') >= 0) return { ok: true, status: 200, json: async () => manifestForFetch };
+    if (modelStream && s.indexOf('/models/') >= 0) {
+      const bytes = modelStream;
+      let sent = 0;
+      const step = Math.max(1, Math.ceil(bytes.length / 4));
+      const headers = { get: (k) => (String(k).toLowerCase() === 'content-length' ? String(bytes.length) : null) };
+      const body = new ReadableStream({
+        pull(c) {
+          if (sent >= bytes.length) { c.close(); return; }
+          c.enqueue(bytes.slice(sent, sent + step));
+          sent += step;
+        }
+      });
+      return { ok: true, status: 200, headers: headers, body: body };
+    }
     if (s.indexOf('data:') === 0) {
       const m = /W=(\d+);H=(\d+)/.exec(s) || [0, 320, 60];
       return { ok: true, status: 200, blob: async () => ({ __w: Number(m[1]), __h: Number(m[2]) }) };
@@ -353,6 +382,31 @@ module.exports = async function run() {
       });
       eq(hits.length, 0, rel + ' 里还有档位管道（S2 起只认 `imgOcr.engine`）：\n      ' + hits.join('\n      '));
     }
+  });
+
+  await test('★ 模型首次下载：按块读 + 持续心跳（不许整块 arrayBuffer 静默几十秒）', async () => {
+    /* 真机实测：6.27MB 三个文件在 60KB/s 下要 105 秒，其中单个 4.46MB 就要 74 秒。
+     * 旧实现只在「开始下载」「校验」两个点发进度 ⇒ 中间 74 秒静默超过后台 NO_PROGRESS_MS(60s)，
+     * job 被判 timeout —— 用户看到的是「识别引擎长时间没有回应」，证书图 OCR 因此永远失败。 */
+    const bytes = new Uint8Array(400000);
+    const env = loadOffscreen({ ppocr: 'ok', modelBytes: bytes });
+    const r = await env.run('ppocr', 'r-model');
+    eq(r.ok, true, '模型下完必须能真的识别（不是下完还报错）');
+    eq(r.engine, 'ppocr', '用的是主引擎');
+    const isDl = (x) => x.type === KH.MSG.OCR_PROGRESS && x.job === 'model' && x.phase === 'download';
+    const dl = env.posts.filter(isDl);
+    truthy(dl.length >= 2, '下载阶段至少两次进度（开始时 got=0 + 第一块之后）；只有一次 = 回退成整块读，首次使用又会被误杀');
+    eq(dl[0].got, 0, '第一条进度是「开始下载」');
+    truthy(dl[dl.length - 1].got > 0, '后面必须带已经下到的字节数（心跳要能证明还在动）');
+    eq(dl[dl.length - 1].total, bytes.length, '心跳里要带 total，设置页才能画进度条');
+    truthy(env.posts.some((x) => x.type === KH.MSG.OCR_PROGRESS && x.job === 'model' && x.phase === 'verify'), '每件下完仍要报校验');
+    const src = read('offscreen/ocr.js');
+    const at = src.indexOf('async function ensureModels(');
+    truthy(at > 0, 'ensureModels 还在');
+    const seg = src.slice(at, at + 2600);
+    truthy(seg.indexOf('fetchModelBytes(') >= 0, 'ensureModels 必须走流式下载');
+    falsy(seg.indexOf('await res.arrayBuffer()') >= 0, 'ensureModels 里不许再整块读（下载期间会没有任何进度）');
+    truthy(src.indexOf('got: got, total: total') >= 0, '心跳 payload 要带 got/total');
   });
 
   await test('★ 配置迁移：存量 quality → engine=auto + migrated.ocrEngine，且废弃键被删掉', () => {

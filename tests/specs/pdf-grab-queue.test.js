@@ -97,4 +97,85 @@ module.exports = async function run() {
       eq((String(t2).match(/%23pend%3A/g) || []).length, 2, '★ 只剩两张等待牌');
     } finally { document.body.removeChild(r.tr); }
   });
+
+  /* ===== 2.0.14.8 · 认领准确性补测（用户 m14946）=====
+   * 上一组只证明「三张牌都在、有一张换成了真地址」，没证明「换的是对的那张」。
+   * 这一组钉住两件事：①三份 PDF 各有各的牌（token 不同），地址只落到被点的那张；
+   * ②两个抓取字段之间绝不串用（A 的地址不许出现在 B 的格子里）。 */
+  const tableOf = (rows) => {
+    const table = H.el('table'); const tbody = H.el('tbody');
+    for (const r of rows) tbody.appendChild(r.tr);
+    table.appendChild(tbody); document.body.appendChild(table);
+    return table;
+  };
+
+  await test('★ 一个字段三份 PDF：三张牌各有各的 token，地址只换被点的那一张', () => {
+    const c1 = H.el('span', { class: 'content-pdf' });
+    const c2 = H.el('span', { class: 'content-pdf' });
+    const c3 = H.el('span', { class: 'content-pdf' });
+    const r = rowOf('APP电子版权证书', [c1, c2, c3]);
+    const table = tableOf([r]);
+    try {
+      const F = KH.Fetch;
+      const tokens = [c1, c2, c3].map((el) => F.autoPdfTokenKey(el));
+      eq(new Set(tokens).size, 3, '★ 三份 PDF 的等待牌 token 必须互不相同（同 token = 三张牌一起变）');
+      truthy(tokens.every((t) => !!t), '★ token 不许为空');
+      F.rememberAutoPdf(c2, 'https://x.test/mid.pdf');
+      eq(F.autoPdfOf(c1), '', '★ 第一份没被抓过，不许沾别人的地址');
+      eq(F.autoPdfOf(c2), 'https://x.test/mid.pdf', '★ 只有被点的那一份拿到地址');
+      eq(F.autoPdfOf(c3), '', '★ 第三份同样不许沾');
+      const chips = String(F.cellText(r.valueCell, false)).split('\u0001KHPDF\u0001').slice(1)
+        .map((c) => { try { return decodeURIComponent(c); } catch (e) { return c; } });
+      eq(chips.filter((c) => c.indexOf('mid.pdf') >= 0).length, 1, '★ 真地址只出现一次');
+      eq(chips.filter((c) => c.indexOf('#pend:') >= 0).length, 2, '★ 另外两张仍是等待牌');
+    } finally { document.body.removeChild(table); }
+  });
+
+  await test('★ 两个抓取字段各一份 PDF：地址只落到自己字段的格子（不串用）', () => {
+    const ca = H.el('span', { class: 'content-pdf' });
+    const cb = H.el('span', { class: 'content-pdf' });
+    const ra = rowOf('计算机软件著作权登记证书', [ca]);
+    const rb = rowOf('APP电子版权认证证书', [cb]);
+    const table = tableOf([ra, rb]);
+    try {
+      const F = KH.Fetch;
+      /* 地址没回来时 `collectPdfs` 不出条目（条目只认已拿到的地址），所以先只给 A 一个地址，
+       * 再看 B 会不会被顺手套上 A 的地址 —— 这正是「跨字段串用」的形态。 */
+      F.rememberAutoPdf(ca, 'https://x.test/a.pdf');
+      const got = KH.ImgOcr.collectPdfs({ ruleId: 'k9', meta: {} }, [
+        { label: '计算机软件著作权登记证书', cells: [ra.valueCell] },
+        { label: 'APP电子版权认证证书', cells: [rb.valueCell] }
+      ]);
+      eq(got.length, 1, '★ 只有 A 拿到地址 ⇒ 只许出一个条目（B 不许借 A 的地址凑一个）');
+      eq(got[0].label, '计算机软件著作权登记证书', '★ 条目的字段名必须是 A');
+      eq(got[0].src, 'https://x.test/a.pdf', '★ 地址是 A 自己的');
+      eq(F.autoPdfOf(cb), '', '★ B 字段不许领到 A 的地址');
+      truthy(String(F.cellText(ra.valueCell, false)).indexOf('a.pdf') >= 0, '★ A 自己拿到');
+      eq((String(F.cellText(rb.valueCell, false)).match(/%23pend%3A/g) || []).length, 1, '★ B 仍是等待牌');
+      /* 两边各自抓到之后：各出一条，地址各是各的（不合并、不串名） */
+      F.rememberAutoPdf(cb, 'https://x.test/b.pdf');
+      const both = KH.ImgOcr.collectPdfs({ ruleId: 'k9', meta: {} }, [
+        { label: '计算机软件著作权登记证书', cells: [ra.valueCell] },
+        { label: 'APP电子版权认证证书', cells: [rb.valueCell] }
+      ]);
+      eq(both.length, 2, '★ 两个字段各出自己那条');
+      eq(both.map((g) => g.label + '=' + g.src).join('|'), '计算机软件著作权登记证书=https://x.test/a.pdf|APP电子版权认证证书=https://x.test/b.pdf', '★ 字段名与地址一一对应');
+    } finally { document.body.removeChild(table); }
+  });
+
+  await test('★ 同一份地址挂在两个字段：两边各出一张牌，名字各认各的', () => {
+    const same = 'https://x.test/same.pdf';
+    const ra = rowOf('软著授权书（勾选）', [H.el('a', { href: same }, [])]);
+    const rb = rowOf('APP电子版权授权书（勾选）', [H.el('a', { href: same }, [])]);
+    const table = tableOf([ra, rb]);
+    try {
+      const got = KH.ImgOcr.collectPdfs({ ruleId: 'k10', meta: {} }, [
+        { label: '软著授权书（勾选）', cells: [ra.valueCell] },
+        { label: 'APP电子版权授权书（勾选）', cells: [rb.valueCell] }
+      ]);
+      eq(got.length, 2, '★ 同一地址挂在两个字段也是两张牌（用户 m11077：确实一样才合并，不能先扫到谁就吞掉）');
+      eq(got.map((g) => g.label).join('|'), '软著授权书（勾选）|APP电子版权授权书（勾选）', '★ 两张牌各带自己的字段名');
+      truthy(got.every((g) => g.src === same), '★ 地址都指向同一份');
+    } finally { document.body.removeChild(table); }
+  });
 };

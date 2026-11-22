@@ -384,6 +384,46 @@
    * 让三件模型"引擎读得到"：缓存优先；缺件才从站点下载，并**过双闸**（sha256 + 字节数）再落盘。
    * 校验不过一律不落盘 —— 宁可报错，也不把坏模型喂给 ONNX Runtime（那边的报错信息毫无可读性）。
    */
+  /* 单个模型文件读一次卡多久算卡死（心跳之外的兜底：站点半死不活时不能永远等） */
+  const MODEL_READ_STALL_MS = 30000;
+
+  /**
+   * 流式下载一个模型文件，**边读边报进度**。
+   * 为什么不能用 `res.arrayBuffer()`：4.46MB 的识别模型在 60KB/s 的链路上要 74 秒，而后台看门狗
+   * 对「收到过进度之后又静默」只给 60 秒（`background/ocr.js` 的 `NO_PROGRESS_MS`）—— 首次使用
+   * （模型还没缓存）会被判成「识别引擎长时间没有回应」：2.0.14.7 真机验收里两张证书图约 75 秒
+   * 失败就是这个原因，不是证书图有问题。按块读 + 每秒一条带 `got/total` 的心跳即可续命，
+   * 顺手让设置页能看到真实下载进度。
+   */
+  async function fetchModelBytes(url, meta) {
+    const res = await timeout(fetch(url, { cache: 'no-store' }), MODEL_READ_STALL_MS, '模型下载（' + meta.file + '）');
+    if (!res.ok) throw Object.assign(new Error('模型下载失败（HTTP ' + res.status + '）：' + meta.file), { code: 'asset-missing', file: meta.file });
+    const total = Number((res.headers && res.headers.get && res.headers.get('content-length')) || 0) || Number(meta.bytes) || 0;
+    /* 拿不到可读流（老内核/被 polyfill 掉）就退回整块读，行为与旧实现一致 */
+    if (!res.body || typeof res.body.getReader !== 'function') return new Uint8Array(await res.arrayBuffer());
+    const reader = res.body.getReader();
+    const chunks = [];
+    let got = 0;
+    let lastAt = 0;
+    for (;;) {
+      const step = await timeout(reader.read(), MODEL_READ_STALL_MS, '模型下载（' + meta.file + '）');
+      if (step.done) break;
+      if (step.value && step.value.length) {
+        chunks.push(step.value);
+        got += step.value.length;
+        const now = Date.now();
+        if (!lastAt || now - lastAt >= 1000) {
+          lastAt = now;
+          emitProgress({ job: 'model', file: meta.file, phase: 'download', bytes: meta.bytes, got: got, total: total });
+        }
+      }
+    }
+    const out = new Uint8Array(got);
+    let off = 0;
+    for (const c of chunks) { out.set(c, off); off += c.length; }
+    return out;
+  }
+
   async function ensureModels() {
     const m = await getModelManifest();
     const cacheKey = String(m.cacheKey || MODEL_CACHE_KEY);
@@ -396,10 +436,8 @@
       let bytes = await idbGet(key);
       if (!bytes || !bytes.length) {
         if (!base) throw Object.assign(new Error('模型清单没有 _base，取不到：' + e.meta.file), { code: 'asset-missing', file: e.meta.file });
-        emitProgress({ job: 'model', file: e.meta.file, phase: 'download', bytes: e.meta.bytes });
-        const res = await fetch(base + '/' + e.meta.file, { cache: 'no-store' });
-        if (!res.ok) throw Object.assign(new Error('模型下载失败（HTTP ' + res.status + '）：' + e.meta.file), { code: 'asset-missing', file: e.meta.file });
-        bytes = new Uint8Array(await res.arrayBuffer());
+        emitProgress({ job: 'model', file: e.meta.file, phase: 'download', bytes: e.meta.bytes, got: 0, total: Number(e.meta.bytes) || 0 });
+        bytes = await fetchModelBytes(base + '/' + e.meta.file, e.meta);
         emitProgress({ job: 'model', file: e.meta.file, phase: 'verify', bytes: bytes.length });
         const sha = await sha256Hex(bytes);
         if (e.meta.sha256 && sha !== String(e.meta.sha256).toUpperCase()) {

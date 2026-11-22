@@ -2531,7 +2531,7 @@
      * 标记对不上号（一个按页面元素建条目、一个按渲染出来的 `data-khpdf` 挂状态）。 */
     pdfRefOf, pdfPlaceholder,
     /* 【2026-11-18 用户口径】没有地址的 PDF 控件：只读判据 + 单测注入口（点一次→抓新标签地址） */
-    AUTO_PDF_SEL, autoPdfHostOf, autoPdfControlOf, autoPdfOf, autoPdfKeyOf, rememberAutoPdf, absPdfUrl, applyPdfStash,
+    AUTO_PDF_SEL, autoPdfHostOf, autoPdfControlOf, autoPdfOf, autoPdfKeyOf, autoPdfTokenKey, rememberAutoPdf, absPdfUrl, applyPdfStash,
     rowsToTableHtml, blockFor, triggerOk, fakeRightValue, nearestTable, isPlaceholderText,
     /* 图片选项（仅图片 / 前 N 张）：单测直接锁 */
     applyImgPolicy,
