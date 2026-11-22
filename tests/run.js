@@ -245,7 +245,10 @@ const specs = [
   /* 2.0.14 案例页（后台详情页整份快照的行结构）下的 PDF 归属三条 + 证书/勾选行。见 specs/platform-replica.test.js 头部 */
   './specs/platform-replica.test.js',
   /* 2.0.14.5（用户 m13119）：PDF 抓取串行（一次只点一份）、一格多份都出牌、比对一致时原文仍高亮 */
-  './specs/pdf-grab-queue.test.js'
+  './specs/pdf-grab-queue.test.js',
+  /* 2.0.15.2 审核后台模板页（fixture 结构）：3 张 1280×360 截图 / 64×64 图标 / 左右格跨 span /
+   * 上下格嵌表 / 三份资质 PDF（?v=3 在两标题一格那行）。改模板走 _tools/build-audit-page.js */
+  './specs/audit-template.test.js'
 ];
 
 (async () => {

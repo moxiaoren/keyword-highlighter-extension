@@ -4510,6 +4510,135 @@ module.exports = async function runContent(ctx) {
     }
   });
 
+  /* ==================== 2.0.15.2 审核后台模板页（真机回归用例落到真实页面） ====================
+   * 用户口径（m16568）：真机回归要按「审核后台模板」改造 —— 图片 OCR 落在**图标 / 截图 / 资质**这些
+   * 真实位置，左右格 / 上下格组合词也在真实行列里，PDF 抓取字段以「值格里就是控件」的形式放着。
+   * 模板页：`e2e/fixtures/audit-detail.html`（由 `_tools/build-audit-page.js` 从
+   * `_cases/2.0.14/index.html` 生成，资源在 fixtures/audit-assets/）。
+   * 这一组只验「模板页本身的结构与命中口径」——页面被谁改坏、格子错位、组合词方向配错，都在这里红。
+   */
+  await group('2.0.15.2 审核后台模板页：图标 / 截图 / 左右格 / 上下格 都在真实行列里', { aspects: ['hit', 'interact'] });
+
+  const tplKw = (over) => Object.assign({
+    id: 'tpl-' + Math.random().toString(36).slice(2, 8), text: '', note: '', groupId: null, enabled: true,
+    caseSensitive: false, wholeWord: false, useRegex: false, bgColor: '', textColor: '',
+    important: false, importantNote: '', impNoteUseHlColor: false, imgSize: '',
+    cellVerifyEnabled: true, cellVerify: '', comboAxis: 'lr',
+    cellVerifyMatchMode: 'include', cellVerifyCaseSensitive: false, cellVerifyUseRegex: false
+  }, over);
+
+  await test('★ 模板页结构：3 张真实截图（1280×360）、1 个 64×64 图标、3 个 PDF 控件各就各位', async () => {
+    await api.setConfig(Object.assign({}, CONFIG, { keywords: [] }));
+    await fresh('audit-detail.html');
+    const s = await page.evaluate(() => {
+      const shots = Array.from(document.querySelectorAll('img[alt^="应用截图"]')).map((i) => [i.naturalWidth, i.naturalHeight]);
+      const icon = document.getElementById('audit-icon');
+      return {
+        shots: shots,
+        icon: icon ? [icon.naturalWidth, icon.naturalHeight] : null,
+        pdfs: Array.from(document.querySelectorAll('[data-pdf]')).map((e) => e.getAttribute('data-pdf')),
+        lr: !!document.getElementById('audit-lr-core'),
+        tb: !!document.getElementById('audit-tb-core')
+      };
+    });
+    eq(s.shots.length, 3, '「应用截图」那一格应是 3 张真实截图（不是占位 gif）');
+    eq(s.shots[0][0], 1280, '截图宽度应是真实尺寸 1280，实际 ' + s.shots[0][0]);
+    eq(s.shots[0][1], 360, '截图高度应是真实尺寸 360，实际 ' + s.shots[0][1]);
+    truthy(s.icon, '模板页必须有「应用图标」行（id=audit-icon）');
+    eq(s.icon[0], 64, '图标宽度应是 64，实际 ' + s.icon[0]);
+    eq(s.icon[1], 64, '图标高度应是 64，实际 ' + s.icon[1]);
+    truthy(s.pdfs.length >= 3, 'PDF 控件至少 3 个，实际 ' + s.pdfs.length + '：' + JSON.stringify(s.pdfs));
+    includes(JSON.stringify(s.pdfs), 'attachment.pdf', 'PDF 控件地址要指向 fixtures/audit-assets/attachment.pdf');
+    truthy(s.lr, '左右格装置格（id=audit-lr-core）必须在');
+    truthy(s.tb, '上下格装置格（id=audit-tb-core）必须在');
+    console.log('        PDF 控件: ' + JSON.stringify(s.pdfs));
+  });
+
+  await test('★ 左右格组合词：标题格「软件介绍」+ 核心「来遇见你」整词命中（核心被 span 拆开）', async () => {
+    const kw = tplKw({ text: '来遇见你', cellVerify: '软件介绍', comboAxis: 'lr' });
+    await api.setConfig(Object.assign({}, CONFIG, { keywords: [kw] }));
+    await fresh('audit-detail.html');
+    /* 跨节点的命中，Range 的 startContainer 只覆盖前半段 ⇒ 必须用 range.toString() 取整词，
+     * 不能只看 mark.t（那是「起始文本节点里那一段」）。 */
+    const hit = await page.evaluate(() => {
+      const el = document.querySelector('#audit-lr-core');
+      const out = [];
+      if (el && typeof CSS !== 'undefined' && CSS.highlights) {
+        CSS.highlights.forEach((hl) => { try { for (const r of hl) { if (r.intersectsNode(el)) out.push(r.toString()); } } catch (e) {} });
+      }
+      return out;
+    });
+    eq(hit.length, 1, '左右格应只产生一条命中（不得重复计数），实际 ' + JSON.stringify(hit));
+    includes(hit[0], '来遇见你', '命中的应是整词（核心词被 <span> 拆成两段也要整词命中），实际 ' + JSON.stringify(hit[0]));
+  });
+
+  await test('★ 上下格组合词：表头「是否重点关注」+ 数据格「是的哦」整词命中', async () => {
+    const kw = tplKw({ text: '是的哦', cellVerify: '是否重点关注', comboAxis: 'tb' });
+    await api.setConfig(Object.assign({}, CONFIG, { keywords: [kw] }));
+    await fresh('audit-detail.html');
+    const r = await page.evaluate(HITS_OF, '#audit-tb-core');
+    truthy(r.found, '上下格装置格要存在');
+    truthy(r.marks.length > 0, '上下格组合词应命中（表头在上、数据在下），实际命中 ' + r.marks.length);
+    const joined = r.marks.map((m) => m.t).join('');
+    includes(joined, '是的哦', '命中的应是整词，实际 ' + JSON.stringify(joined));
+  });
+
+  /* 截图 OCR：模板里三张真截图的文字分别是「编号一/二 南京石诚星桥科技有限公司」「编号三 杭州矩远科技有限公司」
+   * ⇒ 恰好两张套红框、第三张（别家公司）不套。这条同时钉住「图来自真实行」与「负例不误报」——
+   * 只验命中不验负例，等于允许「一律标命中」。 */
+  await test('⓪ 模型准备（截图 OCR 用：三件本地播种）', () => primeOcrModelsTest(() => api.extensionPage('options/options.html')));
+
+  await test('★ 应用截图 OCR：公司名只在 shot-1/2 里 ⇒ 恰好两张套红框，shot-3 不套', async () => {
+    const kw = tplKw({
+      /* 条目成立的三个条件（都踩过）：important、抓取字段要真的启用（fetchEnabled/fetchScope），
+       * 以及 cellVerifyEnabled 开着却给了空 cellVerify —— 那会把所有命中判成「校验不通过」，整条消失。
+       * 截图仍从「应用截图」那一格取（#图 = 仅图片、右邻格）。 */
+      text: '出行车主版', important: true, fetchEnabled: true, fetchScope: 'self', cellVerifyEnabled: false,
+      fetchLabels: '应用名称|应用截图#图',
+      imgOcr: true, imgOcrMax: '', imgOcrKeyword: '南京石诚星桥'
+    });
+    await api.setConfig(Object.assign({}, CONFIG, { keywords: [kw] }));
+    try {
+      await fresh('audit-detail.html');
+      await openFloat();
+      const settled = await OCR_SETTLED(180000, 0);
+      truthy(settled, '180s 内识别没跑完（在飞表没归零）—— 截图 OCR 没落地，后面断言不成立');
+      const marked = await page.evaluate(OCR_MARKED);
+      if (marked.length !== 2) {
+        /* 现场取证：面板里有没有 item / 抓取表 / 图片条目，以及内容脚本侧的 OCR 队列状态 */
+        const dump = await page.evaluate(() => {
+          const host = document.getElementById('kh-important-note-host');
+          const sr = host && host.shadowRoot;
+          return {
+            host: !!host,
+            items: sr ? sr.querySelectorAll('.khin-item').length : -1,
+            imgs: sr ? Array.from(sr.querySelectorAll('img')).map((i) => ({ cls: i.className, nat: [i.naturalWidth, i.naturalHeight] })) : [],
+            fetchTable: !!(sr && sr.querySelector('table.kh-table-fetch')),
+            imgsInCell: (function () {
+              const td = document.querySelector('#audit-icon') && document.querySelector('#audit-icon').closest('tr');
+              const rows = Array.from(document.querySelectorAll('tr')).filter((tr) => (tr.cells[0] || {}).textContent === '应用截图');
+              return rows.map((tr) => Array.from(tr.querySelectorAll('img')).length);
+            })()
+          };
+        }).catch((e) => 'dump failed: ' + (e && e.message));
+        const iso = await api.sw.evaluate(() => chrome.tabs.query({}).then((ts) => {
+          const t = ts.find((x) => String(x.url || '').indexOf('audit-detail') >= 0);
+          if (!t) return 'no tab';
+          return chrome.scripting.executeScript({ target: { tabId: t.id }, world: 'ISOLATED', func: () => ({
+            items: (window.KH && KH.ImgOcr && KH.ImgOcr.items) ? KH.ImgOcr.items().map((i) => ({ state: i.state, reason: i.reason || '', text: String(i.text || '').slice(0, 40) })) : 'no ImgOcr'
+          }) }).then((r) => r && r[0] && r[0].result);
+        })).catch((e) => String(e && e.message));
+        throw new Error('★ 截图 OCR 没出两张红框。面板：' + JSON.stringify(dump) + ' 内容脚本：' + JSON.stringify(iso));
+      }
+      eq(marked.length, 2, '★ 三张截图里只有两张写着南京石诚星桥 ⇒ 恰好两张红框；实际：' + JSON.stringify(marked.map((m) => m.title)));
+      for (const m of marked) includes(m.title, '南京石诚星桥', '红框悬停说明要带出图片命中关键词，实际 ' + JSON.stringify(m.title));
+    } finally {
+      await api.setConfig(CONFIG).catch(() => {});
+    }
+  });
+
+  await api.setConfig(CONFIG).catch(() => {});
+
   await page.close();
   return report('内容层真浏览器测试');
 };
