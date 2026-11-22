@@ -17,12 +17,12 @@
 git clone -b gh-pages https://github.com/moxiaoren/keyword-highlighter-extension.git gh-pages
 cp release/latest.json release/update.xml gh-pages/
 cp release/keyword-highlighter.crx gh-pages/
-cd gh-pages && git add -A && git commit -m "release v2.0.15" && git push
+cd gh-pages && git add -A && git commit -m "release v2.0.16" && git push
 ```
 
 ### B. 无 git：在 GitHub 网页上把这 3 个文件替换掉即可
 
 ## 上传后自检（30 秒）
-1. 浏览器打开 https://moxiaoren.github.io/keyword-highlighter-extension/update.xml → 应看到 version="2.0.15" 与 codebase 指向 keyword-highlighter.crx
+1. 浏览器打开 https://moxiaoren.github.io/keyword-highlighter-extension/update.xml → 应看到 version="2.0.16" 与 codebase 指向 keyword-highlighter.crx
 2. 打开 https://moxiaoren.github.io/keyword-highlighter-extension/latest.json → 它的 crx 字段应与上一步的 codebase 一致（本次没发 zip，zip / sha256 字段为空是预期的）
-3. 装了扩展的机器：等浏览器自动更新（或完全退出浏览器再启动）后，扩展详情页的版本号应变成 2.0.15
+3. 装了扩展的机器：等浏览器自动更新（或完全退出浏览器再启动）后，扩展详情页的版本号应变成 2.0.16

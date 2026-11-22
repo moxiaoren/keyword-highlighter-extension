@@ -39,6 +39,11 @@
   /* 【2026-11-22】被拦 / 没登录 / 超时是**暂时性**失败，只记 2 分钟：以前一律记 6 小时，
    * 一次验证码就把这家公司锁半天，用户按提示重试也只能看到同一个「无法核实」。 */
   const SOFT_MISS_TTL_MS = 2 * 60 * 1000;
+  /* AI 兜底这一次请求的上限：和本地三家并发，超时就当它没答。 */
+  const AI_FALLBACK_MS = 8000;
+  /* 【2.0.16】太极AI 兜底给出的法人只是「模型推断」，不该和站点抓来的同样信任一天；
+   * 单独压到 6 小时，过期后重新问一次。 */
+  const AI_TTL_MS = 6 * 3600 * 1000;
   const SOFT_MISS_RE = /验证|没登录|被拦|拦截|超时/;
   const MAX_ENTRIES = 200;
   const TIMEOUT_MS = 12000;
@@ -549,6 +554,20 @@ const SO360_HEADSTART_MS = 1200;
       : '360 搜索结果里没有这家公司的法定代表人');
   }
 
+  /**
+   * 【2.0.16】第四条通道：太极AI 补法人。只在前三条（搜狗/爱企查/360）都没结论时才有意义。
+   * 模型会「猜」，所以结果必须过 personOk 再交出去，source 标成 'ai' —— 面板上一眼能看出这是推断值。
+   */
+  async function fromAi(name) {
+    const T = self.KhTaiji;
+    if (!T || typeof T.repOf !== 'function') throw new Error('太极AI 通道没加载');
+    const res = await T.repOf(name, AI_FALLBACK_MS);
+    if (!res || !res.ok || !res.rep) throw new Error((res && res.error) || 'AI 没给出人名');
+    const rep = String(res.rep).trim();
+    if (!personOk(rep, '')) throw new Error('AI 给的不是人名');
+    return { rep: rep, source: 'ai' };
+  }
+
   /* ---------------- 缓存 ---------------- */
 
   /* 【2.0.15 · P6】读的时候就清过期条目：原来只在命中判定里看 TTL，
@@ -562,7 +581,7 @@ const SO360_HEADSTART_MS = 1200;
       let dirty = false;
       for (const k of Object.keys(map)) {
         const v = map[k];
-        const ttl = v && v.miss ? (v.soft ? SOFT_MISS_TTL_MS : MISS_TTL_MS) : TTL_MS;
+        const ttl = v && v.miss ? (v.soft ? SOFT_MISS_TTL_MS : MISS_TTL_MS) : (v.ai ? AI_TTL_MS : TTL_MS);
         const live = v && (now - (v.at || 0)) < ttl;
         if (!live) { delete map[k]; dirty = true; }
       }
@@ -595,7 +614,7 @@ const SO360_HEADSTART_MS = 1200;
     const key = normName(name);
     const cache = await readCache();
     const hit = cache[key];
-    if (hit && hit.rep && (Date.now() - (hit.at || 0)) < TTL_MS) {
+    if (hit && hit.rep && (Date.now() - (hit.at || 0)) < (hit.ai ? AI_TTL_MS : TTL_MS)) {
       return { ok: true, rep: hit.rep, source: hit.source || 'cache', cached: true, name: name };
     }
     /* 【2026-11-16】查不到也缓存：同一张卡反复重建、同一家公司在很多卡片里出现，
@@ -626,8 +645,10 @@ const SO360_HEADSTART_MS = 1200;
         done = true;
         resolve(out || null);
       };
+      /* AI 兜底结果先存着：本地任何一家先给结论就以本地为准（站点值 > 模型推断）。 */
+      let aiOut = null;
       const maybeDone = function () {
-        if (!done && pending === 0 && opened >= 3) finish(null);
+        if (!done && pending === 0 && opened >= 4) finish(aiOut);
       };
       const run = function (ch, direct) {
         const p = direct ? Promise.resolve().then(function () { return ch(name); })
@@ -647,10 +668,22 @@ const SO360_HEADSTART_MS = 1200;
         if (done) return;
         pending += 1; opened += 1; run(fromAiqicha, true);
         pending += 1; opened += 1; run(fromSo360, false);
+        /* 第四条：太极AI（用户口径「这个也能辅助法人检索」）。和本地三家并发起跑，
+         * 只有三家都空手才用它；它慢也不拖主路径 —— 本地上任何一家先出来就 finish 收工。 */
+        pending += 1; opened += 1;
+        Promise.resolve().then(function () { return fromAi(name); }).then(function (out) {
+          if (out && out.rep) aiOut = out;
+          pending -= 1;
+          maybeDone();
+        }).catch(function (err) {
+          errors.push('太极AI：' + String((err && err.message) || err));
+          pending -= 1;
+          maybeDone();
+        });
       }, headstartMs);
     });
     if (r && r.rep) {
-      cache[key] = { rep: r.rep, source: r.source, at: Date.now(), name: name };
+      cache[key] = { rep: r.rep, source: r.source, at: Date.now(), name: name, ai: r.source === 'ai' };
       await writeCache(cache);
       return { ok: true, rep: r.rep, source: r.source, name: name };
     }
@@ -664,6 +697,8 @@ const SO360_HEADSTART_MS = 1200;
   Entity.fromAiqicha = fromAiqicha;
   /* 新通道也单独暴露：真机排障要看「搜狗这一步到底有没有打开/被拦」。 */
   Entity.fromSogouM = fromSogouM;
+  /* AI 兜底同样单测要直接打（不必真连站点）。 */
+  Entity.fromAi = fromAi;
 
   self.KH = self.KH || {};
   self.KH.Entity = Entity;

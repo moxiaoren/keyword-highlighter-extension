@@ -248,7 +248,9 @@ const specs = [
   './specs/pdf-grab-queue.test.js',
   /* 2.0.15.2 审核后台模板页（fixture 结构）：3 张 1280×360 截图 / 64×64 图标 / 左右格跨 span /
    * 上下格嵌表 / 三份资质 PDF（?v=3 在两标题一格那行）。改模板走 _tools/build-audit-page.js */
-  './specs/audit-template.test.js'
+  './specs/audit-template.test.js',
+  /* 2.0.16：AI 助手改走太极AI 网页通路（站点协议 / 法人兜底 / 设置页接线）。见 specs/taiji.test.js 头部 */
+  './specs/taiji.test.js'
 ];
 
 (async () => {

@@ -276,6 +276,45 @@
         </div>
       </div>
       <p class="kh-muted" id="ai-mode-tip">网页模式下，扩展会在后台保留一个 <code>chat.deepseek.com</code> 标签页（可以最小化）替你发消息；第一次用请先在那个页面登录一次，之后一直有效。</p>
+      <!-- ============================================================ 【2.0.16】太极AI 网页通路
+           三条口径（用户 2026-11-23 拍板）：设置页里登录、模型自选、**不开标签页**。
+           密码输入框只是「这一次登录用」，保存动作里没有 password 这个键（不落盘、不进导出）。 -->
+      <div id="ai-taiji-fields">
+        <div class="kh-form-row">
+          <div class="kh-form-fld">
+            <label class="kh-fld-label" for="ai-taiji-account">太极AI 账号</label>
+            <input class="kh-input" id="ai-taiji-account" type="text" autocomplete="username" spellcheck="false" placeholder="手机号 / 账号">
+          </div>
+          <div class="kh-form-fld">
+            <label class="kh-fld-label" for="ai-taiji-password">密码（只用于这次登录，不保存）</label>
+            <input class="kh-input" id="ai-taiji-password" type="password" autocomplete="current-password" placeholder="登录一次，会话由浏览器记住">
+          </div>
+          <div class="kh-form-fld">
+            <label class="kh-fld-label">登录</label>
+            <div class="kh-ai-actions">
+              <button class="kh-btn" id="ai-taiji-login" type="button">登录</button>
+              <button class="kh-btn" id="ai-taiji-test" type="button">测试连接</button>
+            </div>
+          </div>
+        </div>
+        <div class="kh-form-row">
+          <div class="kh-form-fld">
+            <label class="kh-fld-label" for="ai-taiji-model">模型（站点清单）</label>
+            <select class="kh-input" id="ai-taiji-model"></select>
+          </div>
+          <div class="kh-form-fld">
+            <label class="kh-fld-label">模型清单</label>
+            <div class="kh-ai-actions">
+              <button class="kh-btn" id="ai-taiji-refresh" type="button">刷新</button>
+            </div>
+          </div>
+          <div class="kh-form-fld kh-form-fld-wide">
+            <label class="kh-fld-label" for="ai-taiji-base">站点地址（留空自动取）</label>
+            <input class="kh-input" id="ai-taiji-base" type="text" spellcheck="false" placeholder="https://…">
+          </div>
+        </div>
+        <p class="kh-muted" id="ai-taiji-state"></p>
+      </div>
       <div id="ai-api-fields">
         <div class="kh-form-row">
           <div class="kh-form-fld">

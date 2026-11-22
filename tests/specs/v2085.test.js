@@ -26,16 +26,21 @@ module.exports = async function run() {
   const { KH } = require('../bootstrap');
   const C = KH.Config;
 
-  /* ==================== ① 默认网页对话（免 Key） ==================== */
-  suite('v2.0.8.5 · AI 助手默认走 DeepSeek 网页对话（免 Key）');
+  /* ==================== ① 默认太极AI 网页通路（免 Key） ==================== */
+  /* 【2.0.16】默认通路换过一次，两处口径都写在这：
+   *   2.0.8.5 用户原话：「不是要 API」⇒ 默认 web（DeepSeek 网页对话）；
+   *   2.0.16 用户原话：「ai助手改成太极ai网页通路」⇒ 默认 taiji。
+   * 网页对话没被删，降为第二档；API 仍是最后一档。 */
+  suite('v2.0.8.5 · AI 助手默认走网页通路（免 Key）');
 
-  await test('★ 配置层：模式默认 web，且两种模式都有名字（设置页拿同一份清单）', () => {
-    eq(C.AI_MODE_DEFAULT, 'web', '默认必须是网页对话（用户原话：不是要 API）');
-    eq(C.normalizeAi({}).mode, 'web', '没填模式时按 web 归一，不能退化成 api');
+  await test('★ 配置层：模式默认 taiji，三条通路都有名字（设置页拿同一份清单）', () => {
+    eq(C.AI_MODE_DEFAULT, 'taiji', '默认必须是太极AI 网页通路（用户原话：ai助手改成太极ai网页通路）');
+    eq(C.normalizeAi({}).mode, 'taiji', '没填模式时按 taiji 归一，不能退化成 api');
     eq(C.normalizeAi({ mode: 'api' }).mode, 'api', '显式选了 api 就保留');
-    eq(C.normalizeAi({ mode: '乱写' }).mode, 'web', '坏值回默认（与其它数值项一个口径）');
+    eq(C.normalizeAi({ mode: 'web' }).mode, 'web', '显式选网页对话也保留（老用户配置不许被改写）');
+    eq(C.normalizeAi({ mode: '乱写' }).mode, 'taiji', '坏值回默认（与其它数值项一个口径）');
     const ids = (C.AI_MODES || []).map((m) => m.id).join(',');
-    eq(ids, 'web,api', '两种模式各一条，顺序固定（web 在前 = 默认）');
+    eq(ids, 'taiji,web,api', '三条通路各一条，顺序固定（taiji 在前 = 默认）');
     truthy(/chat\.deepseek\.com/.test(C.AI_WEB_ORIGIN || ''), '网页对话的站点只认这一处真源');
   });
 

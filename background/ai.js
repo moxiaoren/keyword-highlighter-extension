@@ -82,6 +82,12 @@
       : Object.assign({}, stored, override || {});
 
     if (ai.enabled === false) return { ok: false, error: 'AI 助手已在设置里关闭' };
+    /* 【2.0.16】太极AI 网页通路：请求形态完全不同（站点自己的登录/会话/SSE），
+     * 所以在归一之后立刻分流；下面这段 OpenAI 兼容逻辑一行不动（api 模式仍走它）。 */
+    if (ai.mode === 'taiji') {
+      if (!self.KhTaiji) return { ok: false, error: '太极AI 通道没加载（扩展需要更新）' };
+      return self.KhTaiji.chat(payload);
+    }
     const url = endpointOf(ai.baseUrl);
     if (!url) return { ok: false, error: '还没填接口地址（设置 → AI 助手）' };
     if (!/^https?:\/\//i.test(url)) return { ok: false, error: '接口地址必须以 http:// 或 https:// 开头' };
@@ -315,6 +321,16 @@
   };
 
   /** 设置页「测试连接」：网页模式就发一句最短的。 */
+  /* 【2.0.16】太极AI：设置页的「登录 / 刷新模型」也收在这里，保持 AI 只有这一个出口。 */
+  AI.taijiLogin = function (msg) {
+    return (self.KhTaiji && self.KhTaiji.login) ? self.KhTaiji.login(msg || {})
+      : Promise.resolve({ ok: false, error: '太极AI 通道没加载（扩展需要更新）' });
+  };
+  AI.taijiModels = function () {
+    return (self.KhTaiji && self.KhTaiji.models) ? self.KhTaiji.models()
+      : Promise.resolve({ ok: false, error: '太极AI 通道没加载（扩展需要更新）' });
+  };
+
   AI.test = function (override) {
     return AI.chat({ messages: [{ role: 'user', content: '你好' }], override: override || null });
   };

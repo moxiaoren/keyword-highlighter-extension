@@ -320,11 +320,16 @@
   /* 两条通路（用户 2026-11-03 拍板：默认走**网页版对话**，界面还是我们自己的 AI 分页）：
    *   web —— 复用 chat.deepseek.com 的登录态，免 Key；扩展开一个后台标签页替用户发消息、读回复
    *   api —— OpenAI 兼容 HTTP 接口，需要 Key（旧口径，保留给要自接模型的用户）*/
+  /* 【2.0.16】三条通路，默认换成太极AI（用户 2026-11-23 拍板：设置页登录、自选模型、不开标签页）。
+   *   taiji —— 太极AI 站点接口（后台 fetch，会话靠浏览器 cookie；见 background/taiji.js）
+   *   web   —— DeepSeek 网页对话（免 Key，但要在后台开一个标签页替用户打字）
+   *   api   —— OpenAI 兼容 HTTP 接口，需要 Key（旧口径，保留给要自接模型的用户）*/
   const AI_MODES = [
+    { id: 'taiji', label: '太极AI 网页通路（免 Key，默认）' },
     { id: 'web', label: 'DeepSeek 网页对话（免 Key）' },
     { id: 'api', label: 'API Key（OpenAI 兼容）' }
   ];
-  const AI_MODE_DEFAULT = 'web';
+  const AI_MODE_DEFAULT = 'taiji';
   const AI_WEB_ORIGIN = 'https://chat.deepseek.com/';
   const AI_PROVIDERS = AI_PRESET_LIST.map((p) => p.id);
   const AI_MAX_MIN = 128;
@@ -337,6 +342,16 @@
     return AI_PRESET_LIST[0];
   }
 
+  /* 太极AI 那一段：账号存本机（可留空）、站点地址可手动覆盖、模型是站点自己的 id。
+   * **密码不在这里** —— 它只在设置页登录那一次请求里出现，不落 storage、不进导出。 */
+  function normalizeAiTaiji(raw) {
+    const src = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
+    const account = (typeof src.account === 'string') ? src.account.trim().slice(0, 80) : '';
+    const base = (typeof src.base === 'string') ? src.base.trim().replace(/\/+$/, '').slice(0, 200) : '';
+    const model = (typeof src.model === 'string') ? src.model.trim().slice(0, 120) : '';
+    return { account: account, base: base, model: model };
+  }
+
   function normalizeAi(raw) {
     const src = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
     const preset = aiPreset(src.provider);
@@ -346,13 +361,14 @@
     const n = intOrNaN(src.maxTokens);
     return {
       enabled: src.enabled !== false,
-      mode: (src.mode === 'api') ? 'api' : AI_MODE_DEFAULT,
+      mode: (src.mode === 'api' || src.mode === 'web' || src.mode === 'taiji') ? src.mode : AI_MODE_DEFAULT,
       provider: preset.id,
       baseUrl: url || preset.baseUrl,
       model: model || preset.model,
       apiKey: key,
       system: (typeof src.system === 'string') ? src.system.trim() : '',
-      maxTokens: (isFinite(n) && n > 0) ? Math.min(AI_MAX_MAX, Math.max(AI_MAX_MIN, Math.round(n))) : AI_MAX_DEFAULT
+      maxTokens: (isFinite(n) && n > 0) ? Math.min(AI_MAX_MAX, Math.max(AI_MAX_MIN, Math.round(n))) : AI_MAX_DEFAULT,
+      taiji: normalizeAiTaiji(src.taiji)
     };
   }
 
@@ -558,6 +574,7 @@
 
     /** 【2.0.8.4 需求④ / 2.0.8.5 网页对话】AI 助手的接口配置归一    /** 【2.0.8.4 需求④ / 2.0.8.5 网页对话】AI 助手的接口配置归一 + 预设清单（设置页 / 后台请求共用一份） */
     normalizeAi,
+    normalizeAiTaiji,
     aiPreset,
     AI_PRESET_LIST,
     /* 【2.0.8.7 需求②】审核通道的配置归一与预设模型（设置页 / 后台共用一份） */

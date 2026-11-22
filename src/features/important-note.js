@@ -3143,10 +3143,10 @@
       devTr.setAttribute('data-kh-ent-sig', sig);
       /* 兼容两种回法：字符串（老写法 / 单测打的桩）与 { rep, timedOut }（lookupEntity 现在给这个）。 */
       const asSide = (v) => (v && typeof v === 'object')
-        ? { rep: String(v.rep || ''), timedOut: !!v.timedOut, error: String(v.error || '') }
-        : { rep: String(v || ''), timedOut: false, error: '' };
+        ? { rep: String(v.rep || ''), timedOut: !!v.timedOut, error: String(v.error || ''), source: String(v.source || '') }
+        : { rep: String(v || ''), timedOut: false, error: '', source: '' };
       const repOfSide = (name) => {
-        if (KH.Compare.isPersonName(name)) return Promise.resolve({ rep: String(name), timedOut: false, error: '' });
+        if (KH.Compare.isPersonName(name)) return Promise.resolve({ rep: String(name), timedOut: false, error: '', source: '' });
         return this.lookupEntity(name).then((got) => asSide(got));
       };
       Promise.all([repOfSide(dev), repOfSide(ent)]).then((sides0) => {
@@ -3158,8 +3158,11 @@
         const verdict = KH.Compare.legalRep({ name: dev, rep: reps[0] }, { name: ent, rep: reps[1] }).state;
         /* 查不到法人时把失败原因跟在后面（爱企查要登录 / 超时 / 站点改版），面板不再只有一个「未查明」。 */
         const why = (s) => (s.rep ? '' : (s.error ? '（' + s.error + '）' : ''));
-        const sides = '开发者「' + dev + '」→ ' + (reps[0] || '未查到法人') + why(sides0[0])
-          + '；核准主体「' + ent + '」→ ' + (reps[1] || '未查到法人') + why(sides0[1]);
+        /* 【2.0.16】太极AI 兜底给出的人名必须标出来：官方三站没查到、模型按常识答的，
+         * 不能让用户误当成工商登记的结果。 */
+        const aiMark = (s) => (s.source === 'ai' ? '（AI 推断）' : '');
+        const sides = '开发者「' + dev + '」→ ' + (reps[0] || '未查到法人') + aiMark(sides0[0]) + why(sides0[0])
+          + '；核准主体「' + ent + '」→ ' + (reps[1] || '未查到法人') + aiMark(sides0[1]) + why(sides0[1]);
         if (verdict === 'unknown') {
           /* 不改底色，但原因要说得清：【台账 #8】等满 20 秒没回执 = 超时（可以等会儿再看），
            * 其余才是「未查明」。两种情况以前都只写「未查明」，用户分不出该重试还是该放弃。 */
@@ -3202,9 +3205,15 @@
       const key = String(name || '').trim();
       /* 【台账 #8】超时是独立结局：一律 resolve { rep, timedOut }，调用方靠 timedOut 把它和
        * 「查不到法人」分开（以前两种都回空串，界面上长得一模一样）。 */
-      if (!key) return Promise.resolve({ rep: '', timedOut: false });
+      if (!key) return Promise.resolve({ rep: '', timedOut: false, source: '' });
       this._entCache = this._entCache || new Map();
-      if (this._entCache.has(key)) return Promise.resolve({ rep: String(this._entCache.get(key) || ''), timedOut: false });
+      if (this._entCache.has(key)) {
+        /* 【2.0.16】缓存里放 { rep, source }（老数据可能还是字符串，兼容读出）：
+         * 面板要能区分「官方站点查到的」和「太极AI 推断的」。 */
+        const hit = this._entCache.get(key);
+        const obj = (hit && typeof hit === 'object') ? hit : { rep: String(hit || '') };
+        return Promise.resolve({ rep: String(obj.rep || ''), timedOut: false, source: String(obj.source || '') });
+      }
       return new Promise((resolve) => {
         /* 【2.0.9 体检·稳定性】后台被回收时回调可能永远不来：20s 后按「未查明」收口，
          * 否则这层 Promise 和 paintEntity 的 .then 会一直挂着。 */
@@ -3212,11 +3221,11 @@
         let timer = 0;
         /* 【2.0.14 · 问题②】把失败原因也带回面板：以前只回空串，界面永远写「未查明」，
          * 用户分不出是没登录爱企查、被拦、还是链路根本没通。 */
-        const finish = (v, timedOut, error) => {
+        const finish = (v, timedOut, error, source) => {
           if (settled) return;
           settled = true;
           if (timer) { clearTimeout(timer); timer = 0; }
-          resolve({ rep: String(v || ''), timedOut: !!timedOut, error: String(error || '') });
+          resolve({ rep: String(v || ''), timedOut: !!timedOut, error: String(error || ''), source: String(source || '') });
         };
         /* 等待上限默认 20 秒（判据口径）；单测把 this._entTimeoutMs 调小即可不等真 20 秒。 */
         const waitMs = Number(this._entTimeoutMs) > 0 ? Number(this._entTimeoutMs) : 20000;
@@ -3233,13 +3242,13 @@
             if (rep) {
               /*【2.0.8.12 性能】缓存原来无上限：一天里翻几十张网页面，公司名会一条条攒着不释放。
                 留最近 200 条足够（同一张卡内的重复查询都落在最近几十条里），超了就把最早的删掉。*/
-              this._entCache.set(key, rep);
+              this._entCache.set(key, { rep: rep, source: String((res && res.source) || '') });
               if (this._entCache.size > 200) {
                 const first = this._entCache.keys().next();
                 if (!first.done) this._entCache.delete(first.value);
               }
             }
-            finish(rep, false, why);
+            finish(rep, false, why, (res && res.source) || '');
           });
         } catch (e) { finish(''); }
       });
@@ -3681,17 +3690,20 @@
       if (!aiOn) { this.aiEl = null; this.aiListEl = null; }
     },
 
-    /** 走哪条通路：`web`（网页对话，免 Key，默认）/ `api`（OpenAI 兼容接口，要 Key）。 */
+    /** 走哪条通路：`taiji`（太极AI 站点，默认，免 Key）/ `web`（网页对话）/ `api`（OpenAI 兼容接口，要 Key）。 */
     aiMode() {
       const ai = (this.cfg && this.cfg.ai) || {};
-      return ai.mode === 'api' ? 'api' : 'web';
+      if (ai.mode === 'api') return 'api';
+      /* 认不出的值一律回太极AI（与 config.js 的 normalizeAi 同口径），别让老配置掉回网页对话去开标签页。 */
+      if (ai.mode === 'taiji' || !ai.mode) return 'taiji';
+      return 'web';
     },
 
-    /** 能不能发：web 模式只要没关闭就行（登录态由对话页保证）；api 模式仍要地址 + Key。 */
+    /** 能不能发：taiji / web 只要没关闭就行（登录态由站点保证，没登录会在首问时如实报错）；api 模式仍要地址 + Key。 */
     aiReady() {
       const ai = (this.cfg && this.cfg.ai) || {};
       if (ai.enabled === false) return false;
-      if (this.aiMode() === 'web') return true;
+      if (this.aiMode() !== 'api') return true;
       if (!ai.baseUrl) return false;
       return !!ai.apiKey || ai.provider === 'custom';
     },
@@ -3994,9 +4006,12 @@
       const dot = box.querySelector('.khin-chat-dot');
       const ready = this.aiReady();
       if (modeEl) {
-        const web = this.aiMode() === 'web';
-        modeEl.textContent = (web ? V.aiModeWeb : V.aiModeApi) + (ready ? '' : (web ? '' : ' · ' + V.aiNotReady));
-        modeEl.title = web ? V.aiModeWebTip : V.aiModeApiTip;
+        const mode = this.aiMode();
+        const label = mode === 'taiji' ? V.aiModeTaiji : (mode === 'web' ? V.aiModeWeb : V.aiModeApi);
+        /* 太极AI / 网页对话的"配置"就是站点登录，客户端无从判断 ⇒ 不在状态带上写"未配置"，交给首问的报错说清楚。 */
+        const soft = mode !== 'api';
+        modeEl.textContent = label + (ready || soft ? '' : ' · ' + V.aiNotReady);
+        modeEl.title = mode === 'taiji' ? V.aiModeTaijiTip : (mode === 'web' ? V.aiModeWebTip : V.aiModeApiTip);
       }
       if (dot) {
         dot.classList.toggle('is-busy', !!this.aiBusy);
@@ -4050,8 +4065,10 @@
         const go = doc.createElement('button');
         go.className = 'khin-chat-link';
         go.type = 'button';
-        go.textContent = V.aiGoLogin;
-        go.addEventListener('click', (e) => { e.stopPropagation(); this.openAiWeb(); });
+        /* 太极AI 的登录在设置页（密码只在登录时用一次、不落盘）；网页对话才需要把对话页切到前台。 */
+        const taiji = this.aiMode() === 'taiji';
+        go.textContent = taiji ? V.aiOpenOptions : V.aiGoLogin;
+        go.addEventListener('click', (e) => { e.stopPropagation(); if (taiji) this.openAiOptions(); else this.openAiWeb(); });
         tools.appendChild(go);
         wrap.appendChild(tools);
       }

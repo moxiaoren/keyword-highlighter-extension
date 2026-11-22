@@ -15,7 +15,7 @@
  */
 'use strict';
 
-importScripts('../src/core/protocol.js', '../src/core/config.js', 'tab-disabled.js', 'ocr.js', 'entity.js', 'policy.js', 'ai.js');
+importScripts('../src/core/protocol.js', '../src/core/config.js', 'tab-disabled.js', 'ocr.js', 'entity.js', 'policy.js', 'taiji.js', 'ai.js');
 
 const MSG = self.KH.MSG;
 /* 【2.0.7.2 需求⑤】标签页级临时禁用的状态机（storage.session 读写 + 关标签页清键）在旁边的模块里，
@@ -669,6 +669,9 @@ const HANDLERS = {
   [MSG.AI_WEB_OPEN]: () => self.KhAi.openWeb(),
   [MSG.AI_WEB_PROBE]: () => self.KhAi.probeWeb(),
   [MSG.AI_WEB_NEW]: () => self.KhAi.newWebChat(),
+  /* 【2.0.16】太极AI：设置页登录与模型清单（后台 fetch，会话靠浏览器 cookie，不开标签页）。 */
+  [MSG.AI_TAIJI_LOGIN]: (msg) => self.KhAi.taijiLogin(msg || {}),
+  [MSG.AI_TAIJI_MODELS]: () => self.KhAi.taijiModels(),
 
   /* 网页侧推回来的增量：按 requestId 交给 KhAi，它会转给发起这次提问的那条长连接。 */
   [MSG.WEB_CHUNK || 'kh:web:chunk']: (msg) => { self.KhAi.onWebChunk(msg); return { ok: true }; },
@@ -751,8 +754,9 @@ chrome.runtime.onConnect.addListener((port) => {
     if (busy) { try { port.postMessage({ type: 'error', error: '上一条还在回，等它说完' }); } catch (e) {} return; }
     busy = true;
     const post = (obj) => { try { port.postMessage(obj); } catch (e) { /* 页面关了 */ } };
-    const mode = (m.mode === 'api') ? 'api' : 'web';
-    const run = (mode === 'api')
+    /* 三条通路：web 要走网页对话驱动（要标签页）；taiji 与 api 都由 AI.chat 出站（taiji 在 ai.js 里分流给 KhTaiji，不开标签页）。 */
+    const mode = (m.mode === 'taiji') ? 'taiji' : ((m.mode === 'api') ? 'api' : 'web');
+    const run = (mode !== 'web')
       ? Promise.resolve().then(() => self.KhAi.chat({ messages: m.messages }))
         .then((r) => (r && r.ok ? { ok: true, text: r.text } : { ok: false, error: (r && r.error) || '请求失败' }))
       : self.KhAi.askWeb({ messages: m.messages, onChunk: (text) => post({ type: 'chunk', text: text }) });

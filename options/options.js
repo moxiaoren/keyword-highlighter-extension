@@ -1091,9 +1091,10 @@
         opt.textContent = modes[i].label;
         modeSel.appendChild(opt);
       }
-      modeSel.value = ai.mode || C.AI_MODE_DEFAULT || 'web';
+      modeSel.value = ai.mode || C.AI_MODE_DEFAULT || 'taiji';
     }
-    applyAiMode(ai.mode || C.AI_MODE_DEFAULT || 'web');
+    applyAiMode(ai.mode || C.AI_MODE_DEFAULT || 'taiji');
+    renderTaijiForm();
     const sel = $('ai-provider');
     if (sel) {
       sel.innerHTML = '';
@@ -1118,25 +1119,97 @@
     if (st) st.textContent = '';
   }
 
-  /** 按模式切显隐（web：藏掉 API 那几行；api：藏掉网页那两个按钮的说明）。 */
+  /** 按模式切显隐（三条通路互斥，选了哪种只显示哪种的字段 —— 省空间第一）。 */
   function applyAiMode(mode) {
-    const web = (mode !== 'api');
+    const m = (mode === 'api' || mode === 'web' || mode === 'taiji') ? mode : 'taiji';
     const box = $('ai-api-fields');
-    if (box) box.hidden = web;
+    if (box) box.hidden = (m !== 'api');
+    const tjBox = $('ai-taiji-fields');
+    if (tjBox) tjBox.hidden = (m !== 'taiji');
     const open = $('ai-web-open');
     const probeBtn = $('ai-web-probe');
-    if (open) open.hidden = !web;
-    if (probeBtn) probeBtn.hidden = !web;
+    if (open) open.hidden = (m !== 'web');
+    if (probeBtn) probeBtn.hidden = (m !== 'web');
     const tip = $('ai-mode-tip');
     if (tip) {
-      tip.textContent = web
-        ? '网页模式下，扩展会在后台保留一个 chat.deepseek.com 标签页（可以最小化）替你发消息；第一次用请先在那个页面登录一次，之后一直有效。'
-        : 'API 模式走设置里填的 OpenAI 兼容接口：请求由扩展后台发出，需要填 Key（只有填了才会带 Authorization 头）。';
+      tip.textContent = (m === 'taiji')
+        ? '太极AI 全走后台请求（不开标签页）：这里登录一次，之后靠浏览器记住的会话；模型从站点清单里选。'
+        : (m === 'web')
+          ? '网页模式下，扩展会在后台保留一个 chat.deepseek.com 标签页（可以最小化）替你发消息；第一次用请先在那个页面登录一次，之后一直有效。'
+          : 'API 模式走设置里填的 OpenAI 兼容接口：请求由扩展后台发出，需要填 Key（只有填了才会带 Authorization 头）。';
     }
     const label = $('ai-web-label');
-    if (label) label.textContent = web ? '网页对话的连通性' : '连通性';
+    if (label) label.textContent = (m === 'web') ? '网页对话的连通性' : '连通性';
     const testBtn = $('ai-test');
-    if (testBtn) testBtn.hidden = web;
+    if (testBtn) testBtn.hidden = (m !== 'api');
+  }
+
+  /* 【2.0.16】太极AI 网页通路：账号/站点地址存本机，密码只用于"这一次登录"。
+   * 模型清单来自站点 /api/chat/tmpl —— 只有登录后拿得到，所以这里首次回显时顺手拉一次。 */
+  function renderTaijiForm() {
+    const tj = KH.Config.normalizeAiTaiji(cfg && cfg.ai && cfg.ai.taiji);
+    const acc = $('ai-taiji-account');
+    if (acc) acc.value = tj.account || '';
+    const base = $('ai-taiji-base');
+    if (base) base.value = tj.base || '';
+    const pwd = $('ai-taiji-password');
+    if (pwd) pwd.value = '';
+    fillTaijiModels([], tj.model);
+    const state = $('ai-taiji-state');
+    if (state) {
+      state.textContent = tj.account
+        ? ('已保存账号：' + tj.account + (tj.model ? '；模型：' + tj.model : '') + '（密码不保存，换密码时重新登录即可）')
+        : '填账号密码点「登录」；登录一次之后会话由浏览器记住，不用再填。';
+    }
+  }
+
+  /** 模型下拉：清单来自站点；已选值不在清单里也保留一行（否则一切换就丢配置）。 */
+  function fillTaijiModels(list, selected) {
+    const sel = $('ai-taiji-model');
+    if (!sel) return;
+    sel.innerHTML = '';
+    const cur = String(selected || '').trim();
+    let has = false;
+    for (let i = 0; i < (list || []).length; i++) {
+      const opt = document.createElement('option');
+      opt.value = list[i].id;
+      opt.textContent = list[i].name || list[i].id;
+      if (list[i].id === cur) has = true;
+      sel.appendChild(opt);
+    }
+    if (cur && !has) {
+      const opt = document.createElement('option');
+      opt.value = cur;
+      opt.textContent = cur;
+      sel.appendChild(opt);
+    }
+    sel.value = cur || (list && list[0] ? list[0].id : '');
+  }
+
+  async function refreshTaijiModels() {
+    const state = $('ai-taiji-state');
+    const btn = $('ai-taiji-refresh');
+    if (btn) btn.disabled = true;
+    if (state) state.textContent = '正在取模型清单…';
+    try {
+      const res = await chrome.runtime.sendMessage({ type: KH.MSG.AI_TAIJI_MODELS });
+      const list = (res && res.ok && res.models) || [];
+      const cur = (cfg && cfg.ai && cfg.ai.taiji && cfg.ai.taiji.model) || '';
+      fillTaijiModels(list, cur);
+      if (state) {
+        if (!res || !res.ok) {
+          state.textContent = (res && res.needLogin ? '还没登录（或会话过期）：' : '取模型清单失败：') + ((res && res.error) || '未知原因');
+        } else {
+          state.textContent = list.length ? ('模型清单已更新（' + list.length + ' 个）') : '站点没有回可用模型';
+        }
+      }
+      return list;
+    } catch (err) {
+      if (state) state.textContent = '取模型清单失败：' + String((err && err.message) || err);
+      return [];
+    } finally {
+      if (btn) btn.disabled = false;
+    }
   }
 
   function renderHighlightStyle() {
@@ -1935,10 +2008,84 @@
   /* 换"对话来源"：网页对话（免 Key，默认）/ API。两个都只是偏好，切换不动 key。 */
   $('ai-mode').addEventListener('change', async () => {
     aiChanged();
-    const mode = ($('ai-mode').value === 'api') ? 'api' : 'web';
+    const raw = $('ai-mode').value;
+    const mode = (raw === 'api' || raw === 'web') ? raw : 'taiji';
     applyAiMode(mode);
     await saveNested({ ai: { mode: mode } });
-    D.toast(mode === 'web' ? '已切到「网页对话」（免 Key）' : '已切到「API 模式」', 'ok');
+    D.toast(mode === 'taiji' ? '已切到「太极AI 网页通路」'
+      : (mode === 'web' ? '已切到「网页对话」（免 Key）' : '已切到「API 模式」'), 'ok');
+    if (mode === 'taiji') refreshTaijiModels();
+  });
+
+  /* ---- 【2.0.16】太极AI：登录 / 刷新模型 / 测试连接 / 选模型 ---- */
+  $('ai-taiji-login').addEventListener('click', async () => {
+    const btns = [$('ai-taiji-login'), $('ai-taiji-refresh'), $('ai-taiji-test')];
+    const state = $('ai-taiji-state');
+    const account = String($('ai-taiji-account').value || '').trim();
+    const password = String($('ai-taiji-password').value || '');
+    if (!account) { if (state) state.textContent = '请先填账号'; return; }
+    if (!password) { if (state) state.textContent = '请填密码（只用于这次登录，不保存）'; return; }
+    btns.forEach((b) => { if (b) b.disabled = true; });
+    if (state) state.textContent = '正在登录…';
+    try {
+      /* 账号存本机（下次不用重填）；密码只在这一次消息里传，保存动作里没有 password 这个键。 */
+      await saveNested({ ai: { taiji: { account: account } } });
+      const res = await chrome.runtime.sendMessage({ type: KH.MSG.AI_TAIJI_LOGIN, account: account, password: password });
+      const pwd = $('ai-taiji-password');
+      if (pwd) pwd.value = '';
+      if (!res || !res.ok) {
+        if (state) state.textContent = '登录失败：' + ((res && res.error) || '未知原因');
+        D.toast('登录失败', 'warn');
+      } else {
+        fillTaijiModels(res.models || [], (cfg && cfg.ai && cfg.ai.taiji && cfg.ai.taiji.model) || '');
+        const first = (res.models && res.models[0]) ? res.models[0].id : '';
+        if (state) state.textContent = '已登录；模型 ' + ((res.models || []).length) + ' 个' + (first ? '（默认选第一个，可自行更换）' : '');
+        D.toast('登录成功', 'ok');
+      }
+    } catch (err) {
+      if (state) state.textContent = '登录失败：' + String((err && err.message) || err);
+    } finally {
+      btns.forEach((b) => { if (b) b.disabled = false; });
+    }
+  });
+
+  $('ai-taiji-refresh').addEventListener('click', () => { aiChanged(); refreshTaijiModels(); });
+
+  $('ai-taiji-test').addEventListener('click', async () => {
+    const btn = $('ai-taiji-test');
+    const state = $('ai-taiji-state');
+    if (btn) btn.disabled = true;
+    if (state) state.textContent = '正在测试（发一句最短的话）…';
+    try {
+      const model = String($('ai-taiji-model').value || '').trim();
+      const res = await chrome.runtime.sendMessage({ type: KH.MSG.AI_CHAT, messages: [{ role: 'user', content: '你好' }], override: model ? { model: model } : null });
+      if (state) state.textContent = (res && res.ok) ? ('连接正常；示例回复：' + String(res.text || '').slice(0, 60)) : ('测试失败：' + ((res && res.error) || '未知原因'));
+    } catch (err) {
+      if (state) state.textContent = '测试失败：' + String((err && err.message) || err);
+    }
+    if (btn) btn.disabled = false;
+  });
+
+  $('ai-taiji-model').addEventListener('change', async () => {
+    aiChanged();
+    const model = String($('ai-taiji-model').value || '').trim();
+    await saveNested({ ai: { taiji: { model: model } } });
+    D.toast(model ? ('模型已选：' + model) : '模型已清空', 'ok');
+  });
+
+  $('ai-taiji-account').addEventListener('change', async () => {
+    aiChanged();
+    const account = String($('ai-taiji-account').value || '').trim();
+    $('ai-taiji-account').value = account;
+    await saveNested({ ai: { taiji: { account: account } } });
+  });
+
+  $('ai-taiji-base').addEventListener('change', async () => {
+    aiChanged();
+    const base = String($('ai-taiji-base').value || '').trim().replace(/\/+$/, '');
+    $('ai-taiji-base').value = base;
+    await saveNested({ ai: { taiji: { base: base } } });
+    if (base) refreshTaijiModels();
   });
 
   /* 网页模式：把对话页切到前台（第一次登录 / 想亲眼看看它回了什么）。 */

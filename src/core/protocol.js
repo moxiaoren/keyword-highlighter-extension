@@ -118,6 +118,10 @@
     AI_WEB_OPEN: 'kh:ai:webOpen',
     AI_WEB_PROBE: 'kh:ai:webProbe',
     AI_WEB_NEW: 'kh:ai:webNew',
+    /* 【2.0.16】太极AI 网页通路：设置页登录 / 拉模型清单。对话本身走 AI_CHAT（后台按 ai.mode 分流），
+     * 这两条只服务设置页，不开标签页。 */
+    AI_TAIJI_LOGIN: 'kh:ai:taijiLogin',
+    AI_TAIJI_MODELS: 'kh:ai:taijiModels',
     /* 流式回包走长连接：面板 `chrome.runtime.connect({name:'kh:ai'})`，后台按 requestId 推 chunk/done。 */
     AI_PORT: 'kh:ai',
     /* 后台 → 网页对话内容脚本（chat.deepseek.com 上的 content/web-chat.js）。 */

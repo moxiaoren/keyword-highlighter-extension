@@ -104,7 +104,7 @@
     aiSendTip: '发送（Enter 发送，Shift+Enter 换行）',
     aiPlaceholder: '问点什么…（纯自由对话，不会带上页面内容）',
     aiThinking: '正在回复…',
-    aiNeedKey: '当前是 API 模式但还没配好：去设置页「样式 → AI 助手」填接口地址和 Key；想免 Key 就在那里把模式切回「网页对话」。',
+    aiNeedKey: '当前是 API 模式但还没配好：去设置页「样式 → AI 助手」填接口地址和 Key；想免 Key 就在那里切到「太极AI 网页通路」或「DeepSeek 网页对话」。',
     aiOpenOptions: '去设置',
     aiClear: '清空',
     aiClearTip: '清空对话（网页模式会同时在对话页开一个新对话）',
@@ -123,7 +123,10 @@
     aiAuditFail: '云端审核失败',
     aiAuditEmptyName: '（未填名称）',
     aiEmpty: '还没有对话',
-    /* ----【2.0.8.5】网页对话（默认免 Key）：状态带 / 头像 / 开场白 / 去登录 ---- */
+    /* ----【2.0.16】三条通路：太极AI（默认免 Key，后台直连站点）/ 网页对话 / API ---- */
+    aiModeTaiji: '太极AI 网页通路',
+    aiModeTaijiTip: '走太极AI 站点，后台直接请求，不开标签页；在设置页登录一次、可选模型',
+    /* ----【2.0.8.5】网页对话（免 Key）：状态带 / 头像 / 开场白 / 去登录 ---- */
     aiModeWeb: 'DeepSeek 网页对话',
     aiModeWebTip: '走 chat.deepseek.com 的登录态，免 Key；会有一个对话页标签页在后台替你发消息',
     aiModeApi: 'API 模式',
