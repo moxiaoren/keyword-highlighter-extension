@@ -148,8 +148,26 @@ async function api(method, url, body) {
     const uv = (ux.match(/<updatecheck[^>]*version=['"]([^'"]+)['"]/) || [])[1];
     if (uv && !BETA_ONLY) { stableVersion = String(uv); currentVersions.push(stableVersion); }
   } catch (e) { /* 没稳定版清单就算了 */ }
+  /* 清单里**点名引用**的包必须上传，哪怕文件名里没有版本号。
+   * 2026-11-22 实测事故：稳定版 crx 的线上约定名是 `keyword-highlighter.crx`（无版本号，
+   * update.xml 的 codebase 就指它），而下面那条「只传含当前版本号的包」把它整条滤掉 ⇒
+   * 自检报「清单引用的文件不在本次上传列表里」，用户端自动更新会 404。 */
+  const pkgBasenames = new Set();
+  const addPkg = (u) => { if (u) pkgBasenames.add(String(u).split('/').pop()); };
+  try {
+    const sj = JSON.parse(fs.readFileSync(path.join(REL, 'latest.json'), 'utf8'));
+    addPkg(sj && sj.crx); addPkg(sj && sj.zip);
+  } catch (e) { /* 没稳定清单就算了 */ }
+  try {
+    const bj2 = JSON.parse(fs.readFileSync(path.join(REL, 'latest-beta.json'), 'utf8'));
+    addPkg(bj2 && bj2.crx); addPkg(bj2 && bj2.zip);
+  } catch (e) { /* 没测试版清单就算了 */ }
+  try {
+    const ux2 = fs.readFileSync(path.join(REL, 'update.xml'), 'utf8');
+    for (const m of (ux2.match(/codebase=['"]([^'"]+)['"]/g) || [])) addPkg(m.replace(/^codebase=['"]/, '').replace(/['"]$/, ''));
+  } catch (e) { /* 没稳定版清单就算了 */ }
   const isPkg = (f) => /\.(zip|crx)$/i.test(f);
-  const isCurrentPkg = (f) => !isPkg(f) || currentVersions.some((v) => f.indexOf(v) >= 0);
+  const isCurrentPkg = (f) => !isPkg(f) || currentVersions.some((v) => f.indexOf(v) >= 0) || pkgBasenames.has(f);
 
   /* 历史包白名单：**默认不外发旧包**（省流量，也免得不小心让人装到旧版）。
    * 机制保留（需要时把文件名填回来即可）：排查"某个旧版本能行、现在不行"这类 A/B 时，
