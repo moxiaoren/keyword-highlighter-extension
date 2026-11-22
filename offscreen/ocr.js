@@ -929,6 +929,14 @@
    * 小图放大的像素成本极低（395×700 ⇒ 790×1400），而缩略图正是这个功能最常见的一类输入。
    */
   const SMALL_EDGE = MAX_EDGE / 2;
+  /**
+   * 【2.0.16 分级 · 极小图】最长边 ≤ 这个值就当"不可能是有文字方向的页面"处理：图标、角标、
+   * 表头小标这类输入。真机实测（`_tmp/ocr-bench`，64×64 图标）：首遍 1 遍 + 3 次试转 + 整帧
+   * 3× 重采 + 倾斜估计 ≈ **921 ms、7 次解码、0 行**——这些重活全是为了"倒置/歪斜的文档"准备的，
+   * 而 64px 的图里既放不下一页纸，也不可能有横排与竖排之分 ⇒ 整段跳过，省掉 ~2/3 的时间。
+   * 有字的极小图（值格 320×60 那种）仍走完整分级：它们 > 160。
+   */
+  const TINY_EDGE = 160;
   function scaleFor(w, h) {
     const W = Math.max(1, Math.round(w || 0));
     const Hh = Math.max(1, Math.round(h || 0));
@@ -2027,6 +2035,8 @@
       const decBefore = decodeCount;
       const orig = await openSized(got.blob);
       baseBmp = orig.bitmap;
+      /* 【2.0.16 分级】极小图（图标/角标）不走试转、整帧重采、倾斜估计：见 `TINY_EDGE` 头注。 */
+      const tiny = Math.max(orig.w || 0, orig.h || 0) <= TINY_EDGE;
       const t1 = performance.now();
       /* PSM 只有 Tesseract 有（PP-OCR 是"检测给框 + 逐框识别"，没有这个旋钮） */
       const setPsm = async (psm) => {
@@ -2349,7 +2359,7 @@
        *   ② `denseBanded`   = 密排切带 —— 触发条件是"**当前关键词**零命中"，是给这个词挑的档 ⇒ 不给别的词放行。 */
       let denseRescaled = false;
       let denseBanded = false;
-      if (base.stat.lines === 0) {
+      if (base.stat.lines === 0 && !tiny) {
         throwIfAborted();                   // 整帧放大重采 = 再扫一遍整张图，先看还要不要
         denseRescaled = true;
         try {
@@ -2393,7 +2403,7 @@
       {
         const scans = { 0: base };
         const cands = orientation.candidates;
-        if (baseNeeds) {
+        if (baseNeeds && !tiny) {
           throwIfAborted();                             // 试转是最贵的一档：取消后一遍都不跑
           const tries = rotationsFor(base.stat);          // 首遍全空 ⇒ 3 遍，否则 2 遍
           for (let i = 0; i < tries; i++) {
@@ -2411,19 +2421,25 @@
          * 估出倾斜角，按 ±角 各转一帧去识别（符号约定不靠推导、靠实测 —— 两个都试），
          * 采用与否仍由 `judgeOrientation`（保留行更多者胜、同数 conf 高 ≥1 分者胜）决定
          * ⇒ **对本来正常的图零副作用**。只在 `needsRotation` 已成立时才走这段，正常图不花这个钱。 */
+        /* 【2.0.16 分级】倾斜那两遍整帧重扫只在"真需要"时才跑（每遍在 700×900 上约 3 s）：
+         *   · 极小图 ⇒ 不跑（同上）；
+         *   · 首遍已经命中关键词 ⇒ 不跑：结果里已经有要的词，再花 6 s 换几行旁文不值；
+         *   · 其余（试转档成立 / 一字未命中）⇒ 照跑。
+         * 倾斜**估计**本身只要十几毫秒，照估不误，`orientation.tilt` 仍如实上报（观测值，不影响采用）。 */
+        const tiltWorth = !tiny && (baseNeeds || hitsOf(base.lines) === 0);
         let tiltDeg = 0;
         try {
           /* 【T51】借 `baseBmp`（已解的整图）来估斜 —— 这里原本又解了一次**同一张图**：
            * 长图一趟变成"量尺寸 1 次 + 逐块 7 次 + 估斜 1 次"共 9 次解码。借来的位图由
            * `runJob` 统一 close，`estimateTilt` 不碰它的生命周期。 */
           const est = await estimateTilt(baseBmp);
-          if (est) {
+          tiltDeg = est;
+          if (est && tiltWorth) {
             for (const d2 of [est, -est]) {
               const s2 = await scanFrame(d2, false);
               orientation.tried += 1;
               if (s2) { scans[d2] = s2; cands.push({ deg: d2, lines: s2.stat.lines, conf: s2.stat.conf }); }
             }
-            tiltDeg = est;
           }
         } catch (e) { /* 估不出来就算了，不许拖垮首遍结果 */ }
         const verdict = judgeOrientation(cands);

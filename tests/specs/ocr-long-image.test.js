@@ -1214,6 +1214,17 @@ module.exports = async function run() {
     truthy(envSparse.calls.recognize > 1, '行少 ⇒ 切带必须照跑，把关键词捞回来');
     truthy(String(rs.text || '').indexOf('供应商') >= 0, '关键词必须回来');
   });
+
+  /* ------------- 2.0.16 分级：极小图不跑重活（口径来自 `_tmp/ocr-bench4.js` 的真机数据） ------------- */
+  await test('★ 2.0.16 分级：极小图（图标/角标）不跑试转、整帧重采、±倾斜重扫', () => {
+    const src = read('offscreen/ocr.js');
+    truthy(/const TINY_EDGE = 160;/.test(src), 'TINY_EDGE 必须存在且 = 160：真机 64×64 图标实测 921 ms / 7 次解码 / 0 行，全花在「倒置/歪斜文档」的重活上');
+    truthy(/const tiny = Math\.max\(orig\.w \|\| 0, orig\.h \|\| 0\) <= TINY_EDGE;/.test(src), 'tiny 必须按**原图**最长边判定（被 scaleFor 放大 2× 的小图仍算小图）');
+    truthy(/if \(base\.stat\.lines === 0 && !tiny\) \{/.test(src), '整帧 3× 重采对极小图是白扫（64px 放大到 192px 仍然糊）');
+    truthy(/if \(baseNeeds && !tiny\) \{/.test(src), '试转对极小图是白扫（3 次整帧识别）');
+    truthy(/const tiltWorth = !tiny && \(baseNeeds \|\| hitsOf\(base\.lines\) === 0\);/.test(src), '±倾斜两遍重扫只在「需要」时跑：极小图 / 首遍已命中关键词 都不跑');
+    truthy(/if \(est && tiltWorth\) \{/.test(src), '估出来的角度照报（orientation.tilt 是观测值），但只有 tiltWorth 时才真去转+重扫');
+  });
 };
 
 /** 小工具：数一下数组里等于某值的元素（读起来比 filter().length 顺） */
