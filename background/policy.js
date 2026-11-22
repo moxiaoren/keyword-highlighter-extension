@@ -153,6 +153,30 @@
     } catch (e) { /* 缓存写失败不影响本次结果 */ }
   }
 
+  /**
+   * 【2.0.14.6 · A 档】机会式缓存：用户自己已经打开过这个政策页，正文就在眼前。
+   * 内容脚本抄一份送过来，存进读正文用的同一份缓存（via='open'）—— 下次面板判定命中缓存，
+   * 既不用开标签页，也不必再发网络请求，读到的就是用户刚才看到的那份正文。
+   * 拒绝太短的正文（多半是壳页/登录墙），不让它把好缓存冲掉。
+   * @returns {Promise<{ok:boolean, len?:number, reason?:string}>}
+   */
+  Policy.rememberText = async function (url, text) {
+    const u = String(url || '').trim();
+    if (!/^https?:\/\//i.test(u)) return { ok: false, reason: '不是 http(s) 链接' };
+    const body = String(text == null ? '' : text).replace(/\r\n?/g, '\n').trim();
+    if (flatLite(body).length < MIN_TEXT) return { ok: false, reason: '正文太短，不像政策页' };
+    const map = await loadCache();
+    const prev = map[u];
+    /* 已有更新鲜的网络抓取结果就别让「用户浏览过的正文」把它盖掉：抓取可能拿到页面没渲染的部分。 */
+    if (prev && prev.ok && prev.via !== 'open' && prev.at && (Date.now() - prev.at) < TTL_MS) {
+      return { ok: false, reason: '已有更新的缓存' };
+    }
+    const cut = body.slice(0, MAX_TEXT);
+    map[u] = { ok: true, text: cut, len: flatLite(cut).length, via: 'open', at: Date.now() };
+    saveCache(map);
+    return { ok: true, len: cut.length };
+  };
+
   /* ---------------- 编码：GBK 站按 UTF-8 解会整片乱码 ---------------- */
 
   /** 从 Content-Type 或 `<meta charset>` 认字符集（只读前 4KB 的 ASCII 线索）。 */
@@ -502,11 +526,58 @@
     return parts.join('\n');
   }
 
+  /** 页面里外链的 JS（同源、.js 结尾、最多 n 个）：打包文件名常带 hash，只能从 HTML 里现读。 */
+  function scriptSources(html, pageUrl, n) {
+    const src = String(html || '');
+    const re = /<script\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/gi;
+    const origin = originOf(pageUrl);
+    const out = [];
+    let m;
+    let guard = 0;
+    while ((m = re.exec(src)) !== null && guard++ < 80) {
+      let abs = '';
+      try { abs = new URL(m[1], pageUrl).toString(); } catch (e) { abs = ''; }
+      if (!/^https?:\/\//i.test(abs) || !/\.js(\?|#|$)/i.test(abs)) continue;
+      if (originOf(abs) !== origin) continue;   // 只读同源脚本：接口候选最后也只会打同源
+      if (out.indexOf(abs) >= 0) continue;
+      out.push(abs);
+      if (out.length >= (n || 3)) break;
+    }
+    return out;
+  }
+
+  /**
+   * 【2.0.14.6 · B 档】正文由 JS 渲染、HTML 里一个 /api/ 都看不出来时，从同源打包脚本里再捞一轮接口路径。
+   * 只读同源脚本、只产出候选；真正的请求仍由 probeApi 统一发（同源 GET、最多 4 条）。
+   */
+  async function bundleApiCandidates(pageUrl, html, params) {
+    const list = scriptSources(html, pageUrl, 3);
+    const out = [];
+    for (let i = 0; i < list.length; i++) {
+      try {
+        const page = await getPage(list[i]);
+        let js = String(page.html || '');
+        if (!js) continue;
+        if (js.length > 900000) js = js.slice(0, 900000);   // 超大 bundle 只看前 900KB：接口串基本在头部
+        const cands = apiCandidates(js, params);
+        for (let k = 0; k < cands.length; k++) if (out.indexOf(cands[k]) < 0) out.push(cands[k]);
+        if (out.length >= 4) break;
+      } catch (e) { /* 单个脚本拉不到不影响其余 */ }
+    }
+    return out.slice(0, 4);
+  }
+
   async function probeApi(pageUrl, html, hints) {
     const origin = originOf(pageUrl);
     if (!origin) return '';
     const params = paramsOf(pageUrl);
-    const cands = apiCandidates(html, params).slice(0, 4);
+    let cands = apiCandidates(html, params).slice(0, 4);
+    /* HTML 里候选太少（典型：SPA 壳，正文和接口都在打包脚本里）时补一轮 bundle 候选。 */
+    if (cands.length < 2) {
+      const more = await bundleApiCandidates(pageUrl, html, params);
+      for (let k = 0; k < more.length; k++) if (cands.indexOf(more[k]) < 0) cands.push(more[k]);
+      cands = cands.slice(0, 4);
+    }
     if (!cands.length) return '';
     const parts = [];
     for (let i = 0; i < cands.length; i++) {

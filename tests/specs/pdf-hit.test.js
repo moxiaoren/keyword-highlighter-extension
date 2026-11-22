@@ -92,6 +92,20 @@ module.exports = async function run() {
     truthy(/chrome\.tabs\.update\(tabId, \{ active: true \}\)/.test(fn), '★ 前台要还给原标签页');
   });
 
+  await test('★ 替用户点的控件打了标记：主世界钩子不再只认 .pdf 后缀', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const root = path.join(__dirname, '..', '..');
+    const sw = fs.readFileSync(path.join(root, 'background', 'service-worker.js'), 'utf8');
+    const hook = sw.slice(sw.indexOf('function mainWorldPdfHook'), sw.indexOf('function mainWorldPdfHookStop'));
+    truthy(hook.indexOf("closest('[data-kh-pdf-arm]')") >= 0, '★ 钩子要认插件打下的标记');
+    truthy(hook.indexOf('if (armed && href && /^https?:/i.test(href)) { send(href); ev.preventDefault(); return; }') >= 0,
+      '★ 标记内的一切 http(s) 锚点都要截地址 + 拦跳转（不再看 .pdf 后缀）');
+    const fx = fs.readFileSync(path.join(root, 'src', 'features', 'fetch.js'), 'utf8');
+    truthy(fx.indexOf("setAttribute('data-kh-pdf-arm', String(requestId))") >= 0, '★ 点之前打标记');
+    truthy(fx.indexOf("removeAttribute('data-kh-pdf-arm')") >= 0, '★ 点完要摘标记（别误拦页面后续点击）');
+  });
+
   suite('2.0.6.5 需求②：PDF 占位 — 认引用与占位符');
 
   await test('★ 四种引用写法都认，`.pdf` 后面带查询串/锚点也认', () => {

@@ -94,6 +94,10 @@
      * payload: { url } → { ok:true, text, len, cached?, url } | { ok:false, reason, url }
      * 只读：抓不到就如实失败，面板退回卡片抓取值并在悬停里写明原因。 */
     POLICY_TEXT: 'kh:policy:text',
+    /* 【2.0.14.6 · A 档】机会式缓存：用户自己打开过的政策/协议页，内容脚本把正文抄一份送回后台
+     * （payload {url, text}）存进读正文用的同一份缓存。下次面板判定这条链接直接命中缓存 ——
+     * 既不开新标签页，也不必再发网络请求，读到的就是用户刚才看到的那份正文。只读、只写缓存。 */
+    POLICY_CACHE: 'kh:policy:cache',
     /* 【2026-11-18 用户口径】没有地址的 PDF 控件（`<span class="content-pdf">PDF</span>` 这类）：
      * 内容脚本先开一个 9 秒窗口 → 点一下页面控件 → 后台盯住新标签把 `.pdf` 地址抓回来 →
      * 用 PDF_GRAB_RESULT 把地址回推给原标签页。只认 .pdf，抓到即关掉新标签。 */

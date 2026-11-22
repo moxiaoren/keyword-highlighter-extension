@@ -284,6 +284,14 @@ function mainWorldPdfHook(rid, KEY, clickMode) {
       if (!t || !t.closest) return;
       var a = t.closest('a[href], area[href]');
       var href = a ? (a.href || a.getAttribute('href') || '') : '';
+      /* 【2.0.14.6 · 用户 m13895】内容脚本替用户点之前会给控件打 `data-kh-pdf-arm`。
+       * 标记内的一切 http(s) 锚点都截下 href 并拦掉跳转 —— 不再看 .pdf 后缀。
+       * 服务端返回 PDF 的 `/download?id=1` 这类地址旧实现认不出，只能让页面真开一个标签、
+       * 后台再压到后台并关掉（页签栏会闪）。现在地址在点击当场就拿到了。
+       * 注意：页面若用 location.href / form 导航，没有可拦的锚点，仍走「开标签→关标签」兜底。 */
+      var armed = null;
+      try { armed = t.closest('[data-kh-pdf-arm]'); } catch (e2) { armed = null; }
+      if (armed && href && /^https?:/i.test(href)) { send(href); ev.preventDefault(); return; }
       var known = href && /^https?:/i.test(href) && /\.pdf(?=$|[?#&/])/i.test(href.split('#')[0]);
       if (!known) return;
       send(href);
@@ -552,6 +560,8 @@ const HANDLERS = {
    * 内容脚本里的 fetch 按页面来源走 CORS，政策站点不会放行；这里用扩展来源抓 + 7 天缓存，
    * 只回 HTML 正文文字，抓不到就 `{ok:false, reason}`，面板退回卡片抓取值并写明原因。 */
   [MSG.POLICY_TEXT]: (msg) => self.KH.Policy.fetchText((msg && msg.url) || '', { hints: (msg && msg.hints) || [] }),
+  /* 【2.0.14.6 · A 档】机会式缓存：用户自己打开过的政策页，内容脚本把正文送回后台存缓存。只读、无网络。 */
+  [MSG.POLICY_CACHE]: (msg) => self.KH.Policy.rememberText((msg && msg.url) || '', (msg && msg.text) || ''),
 
   /* ---- 【2.0.8.5】网页对话（免 Key）：面板 → 后台 → chat.deepseek.com 上的 content/web-chat.js ----
    * 这三条都是"开标签页 / 自检 / 开新对话"，真正的提问走长连接（见文件末尾的 onConnect）。 */

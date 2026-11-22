@@ -331,7 +331,18 @@
         if (rt.lastError) { cleanup(true); settle(); return; }
         /* 后台把钩子装好才回话：armed=true 就去点（点下去不会被开成新标签）；
          * armed=false 说明钩子装不上，仍点一次，靠后台把新标签压到后台再关掉。 */
-        if (doClick) setTimeout(() => { try { if (!finished) host.click(); } catch (e) {} }, res && res.armed ? 20 : 60);
+        if (doClick) setTimeout(() => {
+          try {
+            if (finished) return;
+            /* 【2.0.14.6 · 用户 m13895】主世界钩子靠这个标记认出「这次点击是插件发起的」。
+             * 标记内的锚点不论有没有 .pdf 后缀，钩子都截下 href 并拦掉跳转 —— 服务端返回 PDF 的
+             * `/download?id=1` 这类地址旧实现认不出来，只能真开一个标签再由后台关掉（页签栏就闪了）。 */
+            try { host.setAttribute('data-kh-pdf-arm', String(requestId)); } catch (e) {}
+            host.click();
+          } catch (e) {}
+          /* 只活到这次点击派发完：200ms 后摘掉，别让页面后续点击被误拦。 */
+          setTimeout(() => { try { host.removeAttribute('data-kh-pdf-arm'); } catch (e) {} }, 200);
+        }, res && res.armed ? 20 : 60);
       });
       /* 替用户点的那次只用等一个抓取窗口：钩子命中是即时的，钩子没装上时后台也会在
        * 开标签后一两秒内认出 PDF。等太久会让串行队列在坏页面上一步一步拖满 9 秒。 */

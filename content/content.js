@@ -62,6 +62,28 @@
     catch (err) { /* documentElement 不可写时忽略 */ }
   }
 
+  /* ---------------- ①b 机会式缓存：用户已经打开过的政策页 ----------------
+   * 【2.0.14.6 · A 档】面板读隐私政策时不再开新标签页（C 档），可这类页多半要 JS 渲染，
+   * 静态抓取读不到正文。那就别抓：用户自己打开它的时候，正文已经在 DOM 里了，抄一份送后台存缓存。
+   * 于是「用户点开过一次」之后，面板判定的就是同一份正文。只读本页、只写缓存，不发任何网络请求。
+   * 只做顶层 frame（子 frame 的正文属于别的页面），且要求地址像政策页、正文够长，避免把正常页面塞进缓存。 */
+  const POLICY_URL_RE = /(privacy|policy|agreement|terms|protocol|ysxy|pact|statement|zhengce|guize)/i;
+  function cachePolicyText() {
+    try {
+      if (window.top !== window) return;
+      const u = String(location.href || '').split('#')[0];
+      if (!/^https?:\/\//i.test(u) || !POLICY_URL_RE.test(u)) return;
+      /* innerText 不含 shadow DOM：扩展自己画的卡片/面板不会混进正文（它们都在 shadowRoot 里）。 */
+      const body = document.body ? String(document.body.innerText || '') : '';
+      if (body.replace(/\s+/g, '').length < 400) return;
+      chrome.runtime.sendMessage({ type: MSG.POLICY_CACHE, url: u, text: body.slice(0, 120000) }, () => {
+        void chrome.runtime.lastError;   // 后台没醒/上下文失效：静默放弃，下次浏览再补
+      });
+    } catch (e) { /* 读不到就下次再说：缓存是加分项，不许影响高亮 */ }
+  }
+  if (document.readyState === 'complete') setTimeout(cachePolicyText, 2000);
+  else window.addEventListener('load', () => setTimeout(cachePolicyText, 2000), { once: true });
+
   bootWithTabState().then((ok) => {
     markState(ok);
     console.debug('[KH] boot', ok ? '高亮态' : '未启用',

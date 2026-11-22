@@ -476,4 +476,41 @@ module.exports = async function run() {
     eq(created.length, 0, '不许开页签');
     truthy(/手动打开/.test(String(r.reason)), '要提示手动打开：' + r.reason);
   });
+
+  /* ---------------- 【2.0.14.6 · A/B 档】不再开新页签之后的两条补强 ---------------- */
+
+  await test('★ A 档：用户自己打开过的政策页正文进缓存，面板再读命中缓存、不发请求', async () => {
+    let calls = 0;
+    const { Policy } = loadPolicy(async () => { calls++; throw new Error('不该发请求'); });
+    const url = 'https://a.test/privacy-policy';
+    const body = '本政策说明我们如何收集与使用个人信息：收集设备信息、日志信息与账号信息，并说明你享有的查询、更正与删除权利。';
+    const w = await Policy.rememberText(url, body);
+    truthy(w.ok, '写入缓存：' + JSON.stringify(w));
+    const r = await Policy.fetchText(url, { hints: [] });
+    truthy(r.ok, '应命中缓存：' + JSON.stringify(r).slice(0, 200));
+    eq(r.cached, true, '要标成缓存命中');
+    eq(r.via, 'open', '来源写「用户浏览过的正文」');
+    eq(calls, 0, '命中缓存不许再发网络请求');
+    const w2 = await Policy.rememberText('https://a.test/privacy2', '登录后可见');
+    falsy(w2.ok, '太短的正文（壳页/登录墙）不许占坑');
+  });
+
+  await test('★ B 档：HTML 里没有 /api/ 时，从同源打包脚本里捞接口候选再请求', async () => {
+    const seen = [];
+    const shell = '<html><body><div id="app">加载中…</div><script src="/js/app.8f3a.js"></script></body></html>';
+    const bundle = 'var cfg={url:"/api/privacy/detail?appId=${appId}"};';
+    const apiJson = JSON.stringify({ data: { content: '本政策说明我们收集的信息范围与使用目的，包括设备信息、日志信息和账号信息。' } });
+    const impl = async (u) => {
+      const s = String(u);
+      seen.push(s);
+      if (/\/js\/app\.8f3a\.js/.test(s)) return { ok: true, status: 200, headers: { get: () => 'application/javascript; charset=utf-8' }, text: async () => bundle };
+      if (/\/api\/privacy\/detail/.test(s)) return { ok: true, status: 200, headers: { get: () => 'application/json; charset=utf-8' }, text: async () => apiJson };
+      return { ok: true, status: 200, headers: { get: () => 'text/html; charset=utf-8' }, text: async () => shell };
+    };
+    const { Policy } = loadPolicy(impl);
+    const r = await Policy.fetchText('https://b.test/privacy?appId=42', { hints: ['设备信息'] });
+    truthy(r.ok, JSON.stringify(r).slice(0, 300));
+    truthy(String(r.via).indexOf('api') >= 0, 'via 要带 api：' + r.via);
+    truthy(seen.some((x) => /\/api\/privacy\/detail\?appId=42/.test(x)), '候选要填参并请求：' + seen.join(' | '));
+  });
 };
