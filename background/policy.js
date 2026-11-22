@@ -331,6 +331,17 @@
     return { ok: false };
   }
 
+  /** 失败缓存不能盖住「用户已经照着提示打开了那一页」：有匹配的页就放行，重走一遍读取。 */
+  async function hasOpenPage(url) {
+    const tabs = (typeof chrome !== 'undefined' && chrome.tabs) || null;
+    if (!tabs || !tabs.query) return false;
+    let list = null;
+    try { list = await tabs.query({}); } catch (e) { return false; }
+    if (!Array.isArray(list)) return false;
+    for (let i = 0; i < list.length; i++) if (list[i] && samePage(list[i].url, url)) return true;
+    return false;
+  }
+
   /* 【2.0.14.6 · m13678 C 档】彻底不开新标签页：只读用户已经打开的那一张页。
    * 用户口径：宁可提示「请手动打开一次」，也不要页签乱跳打断手头的事。
    * 为什么不再开后台标签：MV3 里要拿 JS 渲染后的正文只能真导航一张页；后台标签虽不抢前台，
@@ -615,7 +626,12 @@
         return { ok: true, text: hit.text || '', len: hit.len || 0, reason: '', cached: true, url: u, via: hit.via || 'fetch' };
       }
     } else if (hit && hit.at && !hit.ok && (now - hit.at) < TTL_FAIL_MS) {
-      return { ok: false, text: '', len: 0, reason: hit.reason || '', cached: true, url: u, via: hit.via || 'fetch' };
+      /* 【2.0.14.6 · 真机验收发现】失败缓存不许盖住「用户已经按提示打开了那一页」：
+       * 卡片让人点开链接再重试，若重试还回 10 分钟前的失败，提示就成了死循环。 */
+      const opened = (await hasOpenPage(u)) || (otherScheme(u) ? await hasOpenPage(otherScheme(u)) : false);
+      if (!opened) {
+        return { ok: false, text: '', len: 0, reason: hit.reason || '', cached: true, url: u, via: hit.via || 'fetch' };
+      }
     }
 
     let html = '';

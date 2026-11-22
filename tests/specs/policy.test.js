@@ -354,6 +354,27 @@ module.exports = async function run() {
     eq(created.length, 0, '失败时也不许偷偷开标签页');
   });
 
+  /* 2026-11-22 真机验收发现：第一遍失败被缓存 10 分钟，用户按卡片提示把页面打开、回来点重试，
+   * 仍然吃同一份失败缓存 —— 提示就成了死循环。已开页必须优先于失败缓存。 */
+  await test('★ 失败被缓存过：用户按提示打开该页再重试，不许再回旧失败', async () => {
+    const body = '某某清理大师隐私政策\n开发者：北京某某科技有限公司\n我们重视您的隐私，完整正文就在这里，请仔细阅读以下全部条款内容。';
+    let opened = false;
+    const tabs = {
+      query: () => Promise.resolve(opened ? [{ id: 7, url: 'https://late.test/privacy' }] : []),
+      create: () => Promise.resolve({ id: 9 })
+    };
+    const scripting = { executeScript: () => Promise.resolve([{ result: body }]) };
+    const { Policy } = loadPolicy(async () => { throw new TypeError('failed to fetch'); }, { tabs: tabs, scripting: scripting });
+    const first = await Policy.fetchText('https://late.test/privacy');
+    falsy(first.ok, '第一遍：用户还没打开页面，应当失败');
+    const second = await Policy.fetchText('https://late.test/privacy');
+    truthy(second.cached, '前提：第二遍确实命中失败缓存（否则这条用例测不到点子上）');
+    opened = true;   /* 用户照着提示把页面打开 */
+    const third = await Policy.fetchText('https://late.test/privacy');
+    truthy(third.ok, '已开页之后重试要能读到正文：' + JSON.stringify(third));
+    eq(third.via, 'tab', '应走「读已开页」这条路');
+  });
+
   /** 【2.0.14.6 · m13678 C 档】源码级 + 行为级双保险：整个 policy.js 不许再出现新建标签页。 */
   await test('★ C 档：没有已打开的页时，tabs.create 一次都不许调', async () => {
     const created = [];
