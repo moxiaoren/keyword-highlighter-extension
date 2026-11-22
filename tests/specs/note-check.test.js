@@ -21,7 +21,7 @@ const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 
 /** 后台模块不是 content_scripts，单测里用独立沙盒加载（不污染内核的 window.KH）。 */
 function loadEntity(extra) {
-  const mem = {};
+  const mem = (extra && extra.mem) || {};
   const chrome = {
     storage: {
       local: {
@@ -40,6 +40,8 @@ function loadEntity(extra) {
     AbortController: AbortController,
     fetch: async () => { throw new Error('单测不联网'); }
   };
+  /* 新通道（搜狗）走 fetch：用例可以塞自己的桩来模拟「被验证码拦住 / 正常出卡」。 */
+  if (extra && typeof extra.fetch === 'function') sandbox.fetch = extra.fetch;
   sandbox.self = sandbox;
   sandbox.KH = {};
   vm.createContext(sandbox);
@@ -388,6 +390,8 @@ module.exports = async function run() {
         executeScript: async () => [{ result: { url: 'https://aiqicha.baidu.com/cbae/tr', links: [], gate: true, needLogin: false } }]
       }
     } });
+    /* 【2026-11-22】现在会耐心等挑战页自己过；单测把耐心压到 80ms，仍要「等不到就失败」。 */
+    E._aiqGateMs = 80;
     let err = '';
     try { await E.fromAiqicha('杭州矩远科技有限公司'); } catch (e) { err = String(e && e.message || e); }
     truthy(/验证/.test(err), '要说清是人机验证：' + err);
@@ -461,6 +465,66 @@ module.exports = async function run() {
     const r = await Entity.lookup({ name: '北京某某科技有限公司' });
     falsy(r.ok);
     truthy(r.error);
+  });
+
+  /* ---- 2026-11-22 搜狗移动版企业卡（用户报「开发者≠核准主体就一直无法核实」的新主力通道） ----
+   * 夹具 tests/fixtures/sogou-m-card.html 是当天真机抓的原文切片（m.sogou.com/web/searchList.jsp）。
+   * 口径就一条：名字到「法定代表人」之间**允许**卡片标签，**不许**出现别家公司全名。 */
+
+  suite('entity · 搜狗移动版企业卡（parseCard）');
+
+  await test('真实切片：搜狗移动版企业卡里读出「梁娟」', () => {
+    const html = read('tests/fixtures/sogou-m-card.html');
+    eq(Entity.parseCard(html, '南京石诚星桥科技有限公司'), '梁娟');
+    truthy(html.indexOf('企查查 - 企业信息') >= 0, '夹具要保留卡片标签，否则这条用例证明不了「标签可以跨过」');
+  });
+
+  await test('卡片标签可以跨过（- 企查查 - 企业信息），但别家公司全名不许跨', () => {
+    eq(Entity.parseCard('<div>甲科技有限公司 - 企查查 - 企业信息 法定代表人： 张三 成立时间： 2020</div>', '甲科技有限公司'), '张三');
+    /* 搜索结果页顶部是「相关搜索」公司名列表：名字紧挨着下一家公司的卡片时，绝不能把别家法人安过来。 */
+    const html = '<div>相关搜索 甲科技有限公司 乙科技有限公司</div>'
+      + '<div>乙科技有限公司 - 企查查 - 企业信息 法定代表人： 王五 成立时间： 2019</div>';
+    eq(Entity.parseCard(html, '甲科技有限公司'), '', '甲只剩名字，法人是乙的，必须返回空');
+    eq(Entity.parseCard(html, '乙科技有限公司'), '王五');
+  });
+
+  await test('名字与「法定代表人」相距超过 200 字 ⇒ 不认（防串页）', () => {
+    /* 用汉字而不是空白填充：textOf 会把连续空白压成一个空格，用空格测不出距离。 */
+    const pad = '文'.repeat(210);
+    eq(Entity.parseCard('<div>甲科技有限公司' + pad + '法定代表人： 李四</div>', '甲科技有限公司'), '');
+    eq(Entity.parseCard('<div>甲科技有限公司 基本信息 法定代表人： 李四</div>', '甲科技有限公司'), '李四');
+  });
+
+  await test('粘连的卡片字段要从人名处截断；标签词本身不算人名', () => {
+    eq(Entity.parseCard('<div>甲公司 - 企查查 - 企业信息 法定代表人： 李广朝他投资的 1 家公司</div>', '甲公司'), '李广朝');
+    eq(Entity.parseCard('<div>甲公司 - 企业信息 法定代表人： 信息 成立时间： 2020</div>', '甲公司'), '');
+    eq(Entity.parseCard('<div>甲公司 - 企业信息 法定代表人： 企业</div>', '甲公司'), '');
+    eq(Entity.parseCard('', '甲公司'), '');
+    eq(Entity.parseCard('<div>甲公司 法定代表人：张三</div>', ''), '', '没有查询名就不猜');
+  });
+
+  await test('搜狗返回拦截页（5 KB / 200）⇒ 报「拦截页」，不当成「这家公司查不到」', async () => {
+    const E = loadEntity({ fetch: async () => ({ ok: true, text: async () => '<html><body>IP：1.2.3.4 访问时间：2026.11.23</body></html>' }) });
+    let err = '';
+    try { await E.fromSogouM('南京石诚星桥科技有限公司'); } catch (e) { err = String(e && e.message || e); }
+    truthy(/拦截页/.test(err), '短页要报拦截页：' + err);
+  });
+
+  await test('★ 负缓存分级：被拦/验证码只锁 2 分钟，硬失败仍记 6 小时', async () => {
+    /* 用户报的「一直无法核实」有一半是 6 小时硬负缓存：一次验证码把公司锁半天，
+     * 点了重试还是同一个结论。现在「被拦/没登录/超时」只锁 2 分钟。 */
+    const key = '西安软锁测试科技有限公司';
+    const now = Date.now();
+    const mem = { khEntityCache: {} };
+    const E = loadEntity({ mem: mem, fetch: async () => { throw new Error('需要人机验证'); } });
+    E._sogouHeadstartMs = 10;
+    mem.khEntityCache[key] = { rep: '', miss: true, soft: true, error: '被人机验证拦住', at: now - 3 * 60 * 1000, name: key };
+    const soft = await E.lookup({ name: key });
+    falsy(soft.cached, '3 分钟前的「被拦」不许命中：用户点重试要真的重查');
+    falsy(soft.ok);
+    mem.khEntityCache[key] = { rep: '', miss: true, soft: false, error: '搜狗结果里没有这家公司的法定代表人', at: now - 3 * 60 * 1000, name: key };
+    const hard = await E.lookup({ name: key });
+    truthy(hard.cached, '3 分钟前的硬失败仍要在 6 小时窗口内命中');
   });
 
   /* ------------------------------------------------------------------
