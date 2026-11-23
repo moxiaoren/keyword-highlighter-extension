@@ -181,6 +181,23 @@ module.exports = async function run() {
     eq(T.normModels(null).length, 0, '不是数组就回空');
   });
 
+  await test('★ 2.0.16.2：站点真实形状 {label,value,attr} —— value 才是模型 id，非 chat 项剔掉', () => {
+    const { T } = loadTaiji();
+    /* 取自 2026-11-23 真实 /api/chat/tmpl 的前三条 + 一条生图模型（用户现场 167 条全部被丢空） */
+    const real = [
+      { label: 'GPT-6.2-sol', value: 'openai::gpt-6.2-sol', attr: { modelType: 'chat' } },
+      { label: 'GPT-6.2-Astra', value: 'openai::gpt-6.2-astra', attr: { modelType: 'chat' } },
+      { label: '雀绘', value: 'ts::image-1', attr: { modelType: 'image' } },
+      { label: '无 attr 的', value: 'x::no-attr' }
+    ];
+    const got = T.normModels(real);
+    eq(got.length, 3, '生图项被剔掉，没有 attr 的保留');
+    eq(got[0].id, 'openai::gpt-6.2-sol', 'id 取 value（不是空）');
+    eq(got[0].name, 'GPT-6.2-sol', '名字取 label');
+    eq(got[2].id, 'x::no-attr', '缺 attr.modelType 时不剔');
+    eq(T.normModels([{ label: '只有名字' }]).length, 0, '没有 value/model/id 就拿不到 id，不能塞空串进下拉');
+  });
+
   await test('对话压平：system 提到最前、assistant 加「（上文回答）」前缀、空内容跳过', () => {
     const { T } = loadTaiji();
     eq(T.flatten([

@@ -117,8 +117,8 @@ module.exports = async function run() {
     truthy(tip.indexOf('没识别出文字') < 0, '有字就不许说「没识别出文字」');
   });
 
-  /* 【2.0.6.1 需求⑧】蓝=识别中、红=命中、绿=无命中（失败也绿，悬停说失败） */
-  await test('★ 边框三态：识别中蓝、命中红、无命中绿；失败算无命中但悬停说失败', () => {
+  /* 【2.0.6.1 需求⑧】蓝=识别中、红=命中、绿=无命中；【2.0.16.2 · m18606】失败单列灰虚线 */
+  await test('★ 边框四态：识别中蓝、命中红、无命中绿、识别失败灰虚线（不借绿框）', () => {
     const p = shadowPanel();
     p.bodyEl = bodyWithImgs(['https://ex.com/p.png', 'https://ex.com/f.png', 'https://ex.com/h.png']);
     p.imgItems = [
@@ -130,7 +130,8 @@ module.exports = async function run() {
     const ims = p.bodyEl.querySelectorAll('img');
     eq(ims[0].classList.contains('khin-imgbusy'), true, '识别中 = 蓝框');
     eq(ims[0].classList.contains('khin-imgmiss'), false, '识别中不许提前判绿');
-    eq(ims[1].classList.contains('khin-imgmiss'), true, '失败归绿框（不能装成还在跑）');
+    eq(ims[1].classList.contains('khin-imgfail'), true, '失败归灰虚线框（用户口径：失败不许标绿）');
+    eq(ims[1].classList.contains('khin-imgmiss'), false, '失败不能借绿框（绿框=读完了词不在图上）');
     truthy(String(ims[1].title).indexOf('失败') >= 0, '失败原因挂 title：' + ims[1].title);
     eq(ims[2].classList.contains('khin-imghit'), true, '命中 = 红框');
 

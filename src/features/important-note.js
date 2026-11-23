@@ -459,6 +459,10 @@
      * 失败原因走 title，不另占一态）。 */
     .khin-item-note img.khin-imgbusy { outline: 2px solid #3b82f6; outline-offset: 1px; }
     .khin-item-note img.khin-imgmiss { outline: 2px solid #22c55e; outline-offset: 1px; }
+    /* 【2.0.16.2 · 用户 m18606】识别**失败**不能借用绿框（用户原话：「ocr检测失败，不应该标绿框。
+     * 会造成理解错误」）。绿框=「读完了、词不在图上」，失败=「根本没读出字」——两者混在一起会让人
+     * 以为词确实不存在。失败单列一态：灰色虚线，既不像红框那样暗示命中，也不像绿框那样暗示查过了。 */
+    .khin-item-note img.khin-imgfail { outline: 2px dashed #9ca3af; outline-offset: 1px; }
     /* 【2.0.6.5 需求②】PDF 占位：不展示源文件，只留一枚可点开的痕迹。
      * 三态与图片一致（蓝=正在读 / 红=命中 / 绿=读完没命中），配色也沿用同一组
      * （用户口径：「识别时蓝色框，无命中绿色框，命中时增加红框」）。 */
@@ -475,6 +479,8 @@
     .khin-pdf.khin-pdfbusy { box-shadow: inset 0 0 0 2px #3b82f6; color: #1d4ed8; }
     .khin-pdf.khin-pdfmiss { box-shadow: inset 0 0 0 2px #22c55e; color: #15803d; }
     .khin-pdf.khin-pdfhit { box-shadow: inset 0 0 0 2px #ef4444; color: #b91c1c; }
+    /* 【2.0.16.2 · 用户 m18606】PDF 的「读失败」同样不许借用绿框，单列灰虚线一态。 */
+    .khin-pdf.khin-pdffail { box-shadow: inset 0 0 0 2px #9ca3af; color: #4b5563; border: 1px dashed #9ca3af; }
     /* 抓取后续字段渲染的多行表格：**所有**单元格保留换行（v1.8.3）
      * 宽度（v1.99.99.11 用户实测要求）：**按内容收缩**，不再无条件 width:100%。
      *   用户原话："表格总宽度总是等于重要笔记宽度…避免明明就一列，结果宽度上还是填满了重要笔记"。
@@ -708,9 +714,14 @@
        * 的「不变量 10」就按 `VIEW.xxx` 这个名字做源码契约检查，免得哪天有人又在这儿写死中文。 */
       return { cls: 'khin-imghit', tip: KH.OcrCopy.render(KH.OcrCopy.VIEW.imgHitTip, { matched: words.join('、') }) };
     }
-    if (st === 'done' || st === 'fail') {
+    /* 【2.0.16.2 · 用户 m18606】失败与「已识别未命中」必须分开：绿框只表示「读到了字、词不在图上」。 */
+    if (st === 'fail') {
+      const why = String(it.error || it.why || '').trim();
+      return { cls: 'khin-imgfail', tip: (V.imgFailTip || '') + (why ? '（' + why + '）' : '') };
+    }
+    if (st === 'done') {
       if (cmpSame) return { cls: 'khin-imgmiss', tip: cmpTipOf(it) || (V.imgMissTip || '') };
-      const why = st === 'fail' ? (V.imgFailTip || '') : missReason(it);
+      const why = missReason(it);
       return { cls: 'khin-imgmiss', tip: (V.imgMissTip || '') + (why ? '（' + why + '）' : '') };
     }
     return { cls: 'khin-imgbusy', tip: V.imgBusyTip || '' };
@@ -728,16 +739,18 @@
       const empty = String(it.text || '').trim() ? '' : '（' + (V.pdfEmptyTip || '') + '）';
       return { cls: 'khin-pdfmiss', tip: (V.pdfMissTip || '') + empty };
     }
+    /* 【2.0.16.2 · 用户 m18606】PDF 读失败/取不到字节也不许借用绿框（绿框=读完了没命中）。 */
     if (st === 'fail' || st === 'blocked') {
-      return { cls: 'khin-pdfmiss', tip: (V.pdfFailTip || '') + (it.error ? '（' + it.error + '）' : '') };
+      const why = String(it.error || it.why || '').trim();
+      return { cls: 'khin-pdffail', tip: (V.pdfFailTip || '') + (why ? '（' + why + '）' : '') };
     }
     return { cls: 'khin-pdfbusy', tip: V.pdfBusyTip || '' };
   }
 
   /* 落点 → 三态类名表。加新落点（比如将来的音频/表格截图）只需要在这里补一行 + 一个 `stateOf`。 */
   const MARK_KINDS = {
-    img: { cls: ['khin-imghit', 'khin-imgbusy', 'khin-imgmiss'], of: stateOfImg },
-    pdf: { cls: ['khin-pdfhit', 'khin-pdfbusy', 'khin-pdfmiss'], of: stateOfPdf }
+    img: { cls: ['khin-imghit', 'khin-imgbusy', 'khin-imgmiss', 'khin-imgfail'], of: stateOfImg },
+    pdf: { cls: ['khin-pdfhit', 'khin-pdfbusy', 'khin-pdfmiss', 'khin-pdffail'], of: stateOfPdf }
   };
 
   /**

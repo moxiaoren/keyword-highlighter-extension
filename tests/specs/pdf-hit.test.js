@@ -386,7 +386,7 @@ module.exports = async function run() {
     const el = span();
     N.markPdf(el, { kind: 'pdf', src: 'https://x.test/p.pdf', state: 'done', text: '登记号：1', matched: [{ text: '登记号' }] });
     truthy(has(el, 'khin-pdfhit'), '命中挂红框');
-    falsy(has(el, 'khin-pdfmiss') || has(el, 'khin-pdfbusy'), '三态互斥');
+    falsy(has(el, 'khin-pdfmiss') || has(el, 'khin-pdfbusy') || has(el, 'khin-pdffail'), '四态互斥');
     truthy(String(el.getAttribute('title') || '').indexOf('登记号') >= 0, '悬停要说出命中的是哪个词');
   });
 
@@ -401,13 +401,14 @@ module.exports = async function run() {
     truthy(String(empty.getAttribute('title') || '').indexOf('扫描件') >= 0, '要把"可能是扫描件"说出来，用户才知道为什么');
   });
 
-  await test('★ 排队/在读 ⇒ 蓝框；失败 ⇒ 绿框 + 失败原因', () => {
+  await test('★ 排队/在读 ⇒ 蓝框；失败 ⇒ 灰虚线框（不借绿框）+ 失败原因', () => {
     const busy = span();
     N.markPdf(busy, { kind: 'pdf', src: 'https://x.test/p.pdf', state: 'pending' });
     truthy(has(busy, 'khin-pdfbusy'), '在途挂蓝框');
     const bad = span();
     N.markPdf(bad, { kind: 'pdf', src: 'https://x.test/p.pdf', state: 'fail', error: '取不回来' });
-    truthy(has(bad, 'khin-pdfmiss'), '失败不许挂蓝（像还在跑）也不许挂红');
+    truthy(has(bad, 'khin-pdffail'), '失败挂灰虚线（2.0.16.2：绿框=读完了没命中，不能被失败借用）');
+    falsy(has(bad, 'khin-pdfmiss') || has(bad, 'khin-pdfbusy') || has(bad, 'khin-pdfhit'), '失败不许挂其他三态');
     truthy(String(bad.getAttribute('title') || '').indexOf('取不回来') >= 0, '失败原因要如实说出来');
     N.markPdf(busy, null);
     falsy(has(busy, 'khin-pdfbusy'), '`it` 为空 ⇒ 三个状态框全清（换帧/无条目时不许留残影）');

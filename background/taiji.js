@@ -208,7 +208,12 @@
     return json || {};
   }
 
-  /** 模型清单归一：站点可能回字符串，也可能回 {model|id, name}；统一成 {id, name}。 */
+  /**
+   * 模型清单归一：站点可能回字符串，也可能回对象；统一成 {id, name}。
+   * 【2.0.16.2 · 用户实测】站点 `/api/chat/tmpl` 的真实形状是 `{label:'GPT-6.2-sol', value:'openai::gpt-6.2-sol', attr:{modelType:'chat'}}`
+   * —— 旧实现只认 `model|id|name`，`value` 读不到 ⇒ 167 个模型全被丢掉，设置页显示「没有可用模型」。
+   * 顺带按 `attr.modelType` 剔掉生图/嵌入类：它们进对话列表只会在发消息时失败。
+   */
   function normModels(list) {
     const out = [];
     if (!Array.isArray(list)) return out;
@@ -218,8 +223,11 @@
       let name = '';
       if (typeof m === 'string') { id = m; name = m; }
       else if (m && typeof m === 'object') {
-        id = String(m.model || m.id || m.name || '').trim();
-        name = String(m.name || m.title || m.label || id).trim();
+        /* `value` 是站点真实模型 id（openai::gpt-6.2-sol），`label` 是给人看的名字 */
+        id = String(m.value || m.model || m.id || m.name || '').trim();
+        name = String(m.label || m.name || m.title || id).trim();
+        const kind = String((m.attr && m.attr.modelType) || m.modelType || '').toLowerCase();
+        if (kind && kind !== 'chat') continue;
       }
       if (!id) continue;
       out.push({ id: id, name: name || id });
