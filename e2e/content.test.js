@@ -4570,6 +4570,10 @@ module.exports = async function runContent(ctx) {
     });
     eq(hit.length, 1, '左右格应只产生一条命中（不得重复计数），实际 ' + JSON.stringify(hit));
     includes(hit[0], '来遇见你', '命中的应是整词（核心词被 <span> 拆成两段也要整词命中），实际 ' + JSON.stringify(hit[0]));
+    /* 【2.0.16.3】整行底色只给上下格（combo-tb）——左右格必须保持原样：一格都不许着色。
+     * 不钉这条的话，判据一旦放宽成「组合词都着色」，左右格会被静默改掉而没人发现。 */
+    const rows = await page.evaluate(() => document.querySelectorAll('tr.kh-row-hit').length);
+    eq(rows, 0, '左右格组合词不该整行着色，实际 ' + rows + ' 行');
   });
 
   await test('★ 上下格组合词：表头「是否重点关注」+ 数据格「是的哦」整词命中', async () => {
@@ -4581,6 +4585,41 @@ module.exports = async function runContent(ctx) {
     truthy(r.marks.length > 0, '上下格组合词应命中（表头在上、数据在下），实际命中 ' + r.marks.length);
     const joined = r.marks.map((m) => m.t).join('');
     includes(joined, '是的哦', '命中的应是整词，实际 ' + JSON.stringify(joined));
+  });
+
+  /* 2.0.16.3（用户 m18847）：上下格组合词命中 ⇒ 命中格所在行整行铺淡底。
+   * 只认 combo-tb —— 普通词 / 左右格都着色的话，一页全是黄条，标记就失去意义。
+   * 这里同时验正例（模板嵌表那行）与负例（同页普通词命中 ⇒ 0 行），只验正例等于允许「一律标黄」。 */
+  await test('★ 上下格命中 ⇒ 那行整行铺底；普通词命中 ⇒ 一行都不着色', async () => {
+    await api.setConfig(Object.assign({}, CONFIG, {
+      keywords: [tplKw({ text: '是的哦', cellVerify: '是否重点关注', comboAxis: 'tb' })]
+    }));
+    await fresh('audit-detail.html');
+    const r = await page.evaluate(() => {
+      const core = document.getElementById('audit-tb-core');
+      if (!core) return { missing: true };
+      const tr = core.closest('tr');
+      const td = tr && tr.querySelector('td');
+      return {
+        hasClass: !!(tr && tr.classList.contains('kh-row-hit')),
+        tint: tr ? tr.style.getPropertyValue('--kh-row-tint') : '',
+        bg: td ? getComputedStyle(td).backgroundColor : '',
+        rows: document.querySelectorAll('tr.kh-row-hit').length
+      };
+    });
+    truthy(!r.missing, '模板里的上下格数据格（#audit-tb-core）要存在');
+    truthy(r.hasClass, '命中行要带 kh-row-hit，实际没加上（整行底色没生效）');
+    truthy(/^rgba?\(/.test(r.tint || ''), '行上要写 --kh-row-tint，实际 ' + JSON.stringify(r.tint));
+    truthy(r.bg && r.bg !== 'transparent' && r.bg !== 'rgba(0, 0, 0, 0)',
+      '单元格要被真的染色（computed backgroundColor），实际 ' + r.bg);
+    eq(r.rows, 1, '同页只该有一颗命中行，实际 ' + r.rows);
+
+    await api.setConfig(Object.assign({}, CONFIG, {
+      keywords: [tplKw({ text: '出行车主版', cellVerifyEnabled: false })]
+    }));
+    await fresh('audit-detail.html');
+    const n = await page.evaluate(() => document.querySelectorAll('tr.kh-row-hit').length);
+    eq(n, 0, '普通词命中不该整行着色，实际 ' + n + ' 行（换页/删词后旧底色也必须撤掉）');
   });
 
   /* 截图 OCR：模板里三张真截图的文字分别是「编号一/二 南京石诚星桥科技有限公司」「编号三 杭州矩远科技有限公司」

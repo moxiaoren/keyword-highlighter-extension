@@ -56,7 +56,10 @@ function unescape(text) {
 
 function parseEntries(src) {
   const entries = [];
-  const head = /\{\s*version:\s*(['"])([^'"]+)\1\s*,\s*items:\s*\[/g;
+  /* 【2.0.16.3 修】条目里 version 和 items 之间还夹着 `date:`（2.0.16.2 起都写日期），
+   * 旧正则只允许「version, items」直连 ⇒ 带 date 的条目被静默跳过，CHANGELOG.md 一直停在 2.0.16.1。
+   * 现在允许中间任意个 `键: 标量,` 字段。 */
+  const head = /\{\s*version:\s*(['"])([^'"]+)\1\s*,\s*(?:[A-Za-z_$][\w$]*\s*:\s*(?:'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"|[^,{}]+?)\s*,\s*)*items:\s*\[/g;
   let m;
   while ((m = head.exec(src)) !== null) {
     const openIdx = head.lastIndex - 1;           // 指向 `[`

@@ -250,7 +250,9 @@ const specs = [
    * 上下格嵌表 / 三份资质 PDF（?v=3 在两标题一格那行）。改模板走 _tools/build-audit-page.js */
   './specs/audit-template.test.js',
   /* 2.0.16：AI 助手改走太极AI 网页通路（站点协议 / 法人兜底 / 设置页接线）。见 specs/taiji.test.js 头部 */
-  './specs/taiji.test.js'
+  './specs/taiji.test.js',
+  /* 2.0.16.3：上下格组合词命中 ⇒ 命中行整行底色（只认 combo-tb；类名/变量/撤色记账） */
+  './specs/renderer-row-tint.test.js'
 ];
 
 (async () => {

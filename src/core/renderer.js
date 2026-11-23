@@ -23,6 +23,13 @@
   /** highlight 名称前缀；同一色值归一个组，重建时按组批量 add（方案 §9 性能要求） */
   const HL_PREFIX = 'kh-hl-';
   const STYLE_NODE_ATTR = 'data-kh-hl-style';   // DOM 上允许的第二类插件属性
+  /* 【2.0.16.3】**上下格组合词**命中 ⇒ 命中格所在整行换底色（用户口径：
+   * 「上下格组合关键词命中时，把命中单元格所在行的单元格底色都改成高亮的颜色」）。
+   * 只认 kind === 'combo-tb'：普通词、左右格、罕见字都不整行着色（否则页面到处是色块）。
+   * 行上只加一个类 + 一个 CSS 变量，撤销时原样移除，仍然不碰文档结构。 */
+  const ROW_CLASS = 'kh-row-hit';
+  const ROW_STYLE_MARK = 'row-tint';
+  const ROW_TINT_ALPHA = 0.18;
 
   const supportsHighlights = (typeof CSS !== 'undefined' && CSS && CSS.highlights &&
     typeof Highlight !== 'undefined');
@@ -129,13 +136,50 @@
     return relLuminance(b) > 0.45 ? '#000000' : '#ffffff';
   }
 
+  /** 是不是「上下格组合词」的命中（kind 由 Scanner/Arbiter 写进数据契约）。 */
+  function isTbCombo(h) {
+    if (!h) return false;
+    if (h.kind === 'combo-tb') return true;
+    const c = h.meta && h.meta.combo;
+    return c === 'tb' || c === 'combo-tb' || c === 'vertical';
+  }
+
+  /** 命中起点所在的表格单元格（td/th）；不在表格里返回 null。
+   *  分开写单个选择器：单测垫片只支持简单标签选择器，逗号写法会静默返回 null。 */
+  function cellOfRange(range) {
+    const node = range && range.startContainer;
+    if (!node) return null;
+    const el = (node.nodeType === 1) ? node : node.parentElement;
+    if (!el || !el.closest) return null;
+    return el.closest('td') || el.closest('th') || null;
+  }
+
+  /** 单元格所在的表格行；假表格（div 行 / grid）没有 tr，返回 null。 */
+  function rowOfCell(cell) {
+    if (!cell) return null;
+    const tr = cell.closest ? cell.closest('tr') : null;
+    if (tr) return tr;
+    const p = cell.parentElement;
+    return (p && String(p.tagName || '').toUpperCase() === 'TR') ? p : null;
+  }
+
+  /** 高亮底色 → 整行底色（同色系、低透明度；解析不了就不着色，不猜默认值）。 */
+  function rowTintOf(bgColor) {
+    const c = parseColor(bgColor);
+    if (!c) return '';
+    return 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + ROW_TINT_ALPHA + ')';
+  }
+
   const Renderer = {
     HL_PREFIX,
+    ROW_CLASS,
     STYLE_NODE_ATTR,
     supportsHighlights,
     plugins,
     /* 颜色判据对外暴露，便于测试与后续调阈值（真浏览器用例会直接验这两条边界） */
     _percept: { parseColor, lumContrast, deltaE, readableOn, fallbackColor, MIN_DELTA_E },
+    /* 【2.0.16.3】整行底色的纯函数与行判定，对外暴露供单测直接验（不依赖真浏览器） */
+    _row: { isTbCombo, rowTintOf, cellOfRange, rowOfCell, ROW_CLASS, ROW_TINT_ALPHA },
 
     /** 已注入的 ::highlight 样式节点（按 名称->节点 记账，便于精确撤销） */
     _styleNodes: new Map(),
@@ -146,6 +190,10 @@
      *  注意它必须与 `_groups` 同生共死（setGroup/removeGroup/clear 都要同步），
      *  否则会出现"以为自己写过了、其实组早被删了"的假幂等。 */
     _groupSigs: new Map(),
+    /** 已上底色的表格行（tr -> true）；上一轮有、这一轮没有的行必须自己撤掉 */
+    _rows: new Set(),
+    /** 整行底色用的一条 <style>（与 ::highlight 的样式节点分开记账，便于精确撤销） */
+    _rowStyle: null,
 
     /**
      * 颜色标准化 → 组名。同色必须同组，否则 ::highlight 规则会互相打架。
@@ -348,6 +396,8 @@
 
       // 分组
       const groups = new Map(); // name -> { style, variant, forced, ranges: Range[] }
+      /* 上下格命中的行（tr -> 底色）；本轮没出现的行由 _paintRows 撤掉 */
+      const tbRows = new Map();
       for (const h of hits || []) {
         let range = h._range || null;
         if (!range) { range = this.rangeOf(h); if (range) h._range = range; }
@@ -366,6 +416,14 @@
         const name = this.groupNameFor(style, variant);
         if (!groups.has(name)) groups.set(name, { style, variant, forced, ranges: [] });
         groups.get(name).ranges.push(range);
+
+        /* 【整行底色】只给上下格组合词铺：命中格所在的数据行整行着色。
+         * 表头行不着色 —— 标题词在表头、核心词在下面那格，用户要看的是数据这一行。 */
+        if (isTbCombo(h)) {
+          const tr = rowOfCell(cellOfRange(range));
+          const tint = rowTintOf(style && style.bgColor);
+          if (tr && tint && !tbRows.has(tr)) tbRows.set(tr, tint);
+        }
 
         rendered++;
       }
@@ -387,6 +445,10 @@
         this.prune(keep);
       }
 
+      /* 【2.0.16.3 整行底色】上下格组合词命中 ⇒ 该行整行铺一层同色系浅底。
+       * 与 ::highlight 独立：不支持 Highlight 的浏览器里整行底色照样生效。 */
+      this._paintRows(tbRows);
+
       // 扩展点③：交给 RendererPlugin 做 ::highlight 之外的视觉
       if (plugins) {
         for (const [label, plugin] of plugins.entries()) {
@@ -401,6 +463,49 @@
       return { rendered, skipped };
     },
 
+    /** 确保整行底色的规则已注入（幂等）。类名 + 行级变量，撤销时整节点删掉。 */
+    _ensureRowStyle() {
+      if (this._rowStyle && this._rowStyle.isConnected) return this._rowStyle;
+      const el = document.createElement('style');
+      el.setAttribute(STYLE_NODE_ATTR, ROW_STYLE_MARK);
+      el.textContent = 'tr.' + ROW_CLASS + ' > td,tr.' + ROW_CLASS + ' > th{background-color:var(--kh-row-tint) !important;}';
+      (document.head || document.documentElement).appendChild(el);
+      this._rowStyle = el;
+      return el;
+    },
+
+    /** 撤掉一行的底色（类 + 变量都移除，不留下任何痕迹） */
+    _untintRow(tr) {
+      if (!tr) return;
+      try {
+        if (tr.classList) tr.classList.remove(ROW_CLASS);
+        if (tr.style && tr.style.removeProperty) tr.style.removeProperty('--kh-row-tint');
+      } catch (err) { /* 行已卸载 / 只读，忽略 */ }
+      this._rows.delete(tr);
+    },
+
+    /**
+     * 给「这一轮仍有命中」的表格行上底色。
+     * 【为什么不是只加上色】render 不再先清后建，视觉差异靠 diff；上一轮有、这一轮没有的行
+     * （删词 / 换页 / 面板关掉）必须在这里被显式撤掉，否则旧底色会永远留着。
+     * @param {Map<Element,string>} rows 行 -> 该行的底色（来自命中的关键词样式）
+     */
+    _paintRows(rows) {
+      for (const tr of Array.from(this._rows)) {
+        if (!rows.has(tr) || !tr.isConnected) this._untintRow(tr);
+      }
+      if (!rows.size) return;
+      this._ensureRowStyle();
+      for (const [tr, color] of rows) {
+        if (!tr || !color || !tr.classList) continue;
+        try {
+          if (tr.style && tr.style.setProperty) tr.style.setProperty('--kh-row-tint', color);
+          if (!tr.classList.contains(ROW_CLASS)) tr.classList.add(ROW_CLASS);
+          this._rows.add(tr);
+        } catch (err) { /* 行已卸载 / 只读，忽略 */ }
+      }
+    },
+
     /** 清空视觉（不碰 Registry，也不碰文档结构） */
     clear() {
       if (supportsHighlights) {
@@ -410,6 +515,10 @@
         if (el && el.parentNode) el.parentNode.removeChild(el);
       }
       this._styleNodes.clear();
+      /* 整行底色与上面两套账一起清：行上先撤类/变量，再删那条规则节点 */
+      for (const tr of Array.from(this._rows)) this._untintRow(tr);
+      if (this._rowStyle && this._rowStyle.parentNode) this._rowStyle.parentNode.removeChild(this._rowStyle);
+      this._rowStyle = null;
       // 签名必须跟着组一起清：留着就会在下次 render 时误判"这组已经写过"，实际注册表里早没了
       this._groupSigs.clear();
 
