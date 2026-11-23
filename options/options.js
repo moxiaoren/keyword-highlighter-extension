@@ -1158,8 +1158,8 @@
     const state = $('ai-taiji-state');
     if (state) {
       state.textContent = tj.account
-        ? ('已保存账号：' + tj.account + (tj.model ? '；模型：' + tj.model : '') + '（密码不保存，换密码时重新登录即可）')
-        : '填账号密码点「登录」；登录一次之后会话由浏览器记住，不用再填。';
+        ? ('已保存账号：' + tj.account + (tj.model ? '；模型：' + tj.model : '') + '（密码不保存，换密码时重新登录即可；这条通路后台直连站点，不开标签页）')
+        : '填账号密码点「登录」；登录一次之后会话由浏览器记住，不用再填（后台直连站点，不开标签页）。';
     }
   }
 
@@ -1200,7 +1200,11 @@
         if (!res || !res.ok) {
           state.textContent = (res && res.needLogin ? '还没登录（或会话过期）：' : '取模型清单失败：') + ((res && res.error) || '未知原因');
         } else {
-          state.textContent = list.length ? ('模型清单已更新（' + list.length + ' 个）') : '站点没有回可用模型';
+          /* 【2.0.16.1】把实际连上的域名说出来：品牌域名会跳到真实宿主，用户才知道消息发去了哪。 */
+          const where = String((res && res.base) || '').replace(/^https:\/\//i, '').replace(/\/+$/, '');
+          state.textContent = list.length
+            ? ('模型清单已更新（' + list.length + ' 个）' + (where ? '；站点：' + where : ''))
+            : '站点没有回可用模型';
         }
       }
       return list;

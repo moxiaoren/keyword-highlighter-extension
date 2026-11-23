@@ -744,6 +744,10 @@ chrome.runtime.onConnect.addListener((port) => {
   port.onMessage.addListener((msg) => {
     const m = msg || {};
     if (m.action === 'new') {
+      /* 【2.0.16.1 · 用户 m18091】只有网页对话模式才需要「同步开新对话」；
+       * 太极AI / API 模式清空对话只是本地面板的事，**不许**因此开 DeepSeek 标签页。
+       * 面板可能拿着切模式前的旧配置来发，所以这里按 m.mode 再判一次。 */
+      if (m.mode !== 'web') { try { port.postMessage({ type: 'newChat', ok: true }); } catch (e) { /* 面板已关 */ } return; }
       Promise.resolve()
         .then(() => self.KhAi.newWebChat())
         .then((r) => { try { port.postMessage({ type: 'newChat', ok: !!(r && r.ok) }); } catch (e) { /* 面板已关 */ } })

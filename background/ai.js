@@ -42,6 +42,30 @@
       .catch(() => ({}));
   }
 
+  /**
+   * 【2.0.16.1 · 用户 m18091】「太极AI 模式点了却开 DeepSeek 标签页」的闸门。
+   * 面板/设置页可能拿着切模式**之前**那份配置（`cfg.ai.mode === 'web'`）来请求，
+   * 后台若照做，就会在太极AI 模式下凭空多出一个 chat.deepseek.com 标签页 ——
+   * 用户原话：「我不希望出现新标签页」。
+   * 口径：**只有当前配置真是网页对话模式，才允许碰对话页**；其它模式一律拒绝并说清原因。
+   * @param {object} ai 已归一化的 `ai` 段
+   * @returns {string} 空串 = 允许；非空 = 直接回给用户看的中文原因
+   */
+  function webBlockReason(ai) {
+    const mode = String((ai && ai.mode) || 'taiji');
+    if (mode === 'web') return '';
+    const name = (mode === 'taiji') ? '太极AI 网页通路' : 'API 接口';
+    return '当前是「' + name + '」，不会打开对话页（要用 DeepSeek 网页对话，请到设置页把模式改成「DeepSeek 网页对话」）';
+  }
+
+  /** 同上，但自己读一次最新配置（给没有 `ai` 参数的入口用）。 */
+  async function webBlockNow() {
+    const stored = await readConfig();
+    const C = (self.KH && self.KH.Config) || {};
+    const ai = (typeof C.normalizeAi === 'function') ? C.normalizeAi(stored) : stored;
+    return webBlockReason(ai);
+  }
+
   /** `{baseUrl}` → 完整的 chat/completions 地址（用户已经填到端点就不重复拼）。 */
   function endpointOf(baseUrl) {
     const base = String(baseUrl || '').trim().replace(/\/+$/, '');
@@ -216,6 +240,8 @@
 
   /** 面板点「打开对话页」/「去登录」：把标签页切到前台（这一刻就是为了让人看见，故意抢焦点）。 */
   AI.openWeb = async function () {
+    const no = await webBlockNow();
+    if (no) return { ok: false, error: no };
     const id = await ensureWebTab();
     try { await chrome.tabs.update(id, { active: true }); } catch (e) { /* 关掉了就当无事发生 */ }
     try { const t = await chrome.tabs.get(id); if (t && t.windowId) await chrome.windows.update(t.windowId, { focused: true }); } catch (e) { /* ignore */ }
@@ -224,6 +250,8 @@
 
   /** 设置页「自检」：把页面侧认到的选择器原样带回来（认不出时用户能一键发回诊断）。 */
   AI.probeWeb = async function () {
+    const no = await webBlockNow();
+    if (no) return { ok: false, error: no };
     try {
       const id = await ensureWebTab();
       const res = await waitReady(id);
@@ -263,6 +291,9 @@
     const C = (self.KH && self.KH.Config) || {};
     const ai = (typeof C.normalizeAi === 'function') ? C.normalizeAi(stored) : stored;
     if (ai.enabled === false) return { ok: false, error: 'AI 助手已在设置里关闭' };
+    /* 【2.0.16.1】非网页模式**绝不开标签页**：按最新配置再判一次（老页面/老面板发来的 mode 不作数）。 */
+    const noWeb = webBlockReason(ai);
+    if (noWeb) return { ok: false, error: noWeb };
 
     const messages = cleanMessages(payload.messages);
     if (!messages.length) return { ok: false, error: '没有要发送的内容' };
@@ -312,6 +343,8 @@
 
   /** 面板点「清空」时同步网页开新对话，免得下一次问题还带着上一轮的上下文。 */
   AI.newWebChat = async function () {
+    const no = await webBlockNow();
+    if (no) return { ok: false, error: no };
     try {
       const id = await ensureWebTab();
       const T = msgOf();

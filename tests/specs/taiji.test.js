@@ -74,6 +74,10 @@ function loadTaiji(opts) {
       body: init && init.body ? JSON.parse(init.body) : null
     });
     if (u === 'http://api.taijiai666.com/app-url.txt') return textRes(o.appUrl == null ? 'https://ai.zhuangxiuyunying.xyz\n' : o.appUrl);
+    /* 【2.0.16.1】品牌域名 301 → 真实宿主：假 fetch 只回得到跳转后的 `url`（真浏览器由 redirect:follow 完成）。 */
+    if (/^https:\/\/www\.taijiai666\.com\/?$/.test(u)) {
+      return { ok: true, status: 200, url: 'https://ai.zhuangxiuyunying.xyz/', headers: { get: () => 'text/html' }, text: async () => '' };
+    }
     if (u.indexOf('/api/user/login') >= 0) return jsonRes(o.login === undefined ? { code: 0, data: {} } : o.login);
     if (u.indexOf('/api/chat/tmpl') >= 0) return jsonRes(o.tmpl === undefined ? TM_OK : o.tmpl);
     if (u.indexOf('/api/chat/session') >= 0) return jsonRes(o.session === undefined ? { code: 0, data: { id: 'sess-1' } } : o.session);
@@ -378,6 +382,60 @@ module.exports = async function run() {
     truthy(p.indexOf('太极AI 网页通路（默认）') >= 0, '隐私声明要写默认通路');
     truthy(p.indexOf('**不落盘**') >= 0, '密码不落盘要写明');
     truthy(p.indexOf('同法人校验') >= 0 && p.indexOf('核准主体名称那一串公司名') >= 0, '法人兜底会把公司名发出去，必须披露');
+  });
+
+  /* ==================== ⑤ 2.0.16.1：绝不开标签页 + 品牌域名 ==================== */
+  suite('2.0.16.1 · 太极AI 模式绝不开标签页；品牌域名自动跟随到真实宿主');
+
+  await test('★ 后台闸门：只有 web 模式才允许碰对话页（看代码里没有第二条开标签页的路）', () => {
+    const ai = read('background/ai.js');
+    truthy(ai.indexOf('function webBlockReason(ai)') >= 0, '缺少 webBlockReason：非网页模式必须能被一句话拒绝');
+    truthy(ai.indexOf("if (mode === 'web') return '';") >= 0, '只有 web 放行');
+    /* 四个入口各判一次：设置页/面板可能拿着切模式前的旧配置来发 */
+    eq((ai.match(/const no = await webBlockNow\(\);/g) || []).length, 3, 'openWeb / probeWeb / newWebChat 三个入口都要先判');
+    truthy(ai.indexOf('const noWeb = webBlockReason(ai);') >= 0, 'askWeb 用已归一的配置再判一次');
+    truthy(ai.indexOf('if (noWeb) return { ok: false, error: noWeb };') >= 0, 'askWeb 拒绝时要说原因');
+    /* 开标签页只许有一个地方（ensureWebTab），且它在三道闸门之后 */
+    eq((ai.match(/chrome\.tabs\.create\(/g) || []).length, 1, '开标签页只许 ensureWebTab 一处');
+    truthy(ai.indexOf('不会打开对话页') >= 0, '拒绝的话要给用户看得懂的中文原因');
+  });
+
+  await test('★ 后台长连接：旧面板发 new 也不再开对话页', () => {
+    const sw = read('background/service-worker.js');
+    truthy(sw.indexOf("if (m.mode !== 'web')") >= 0, '清空对话要先看模式');
+    truthy(sw.indexOf("try { port.postMessage({ type: 'newChat', ok: true }); } catch (e)") >= 0, '非 web 直接回 ok，不做任何事');
+    const at = sw.indexOf("if (m.action === 'new')");
+    const gate = sw.indexOf("if (m.mode !== 'web')");
+    /* newWebChat 在别处还有一处路由（AI_WEB_NEW），所以只能从闸门之后找，不能整文件找第一个 */
+    const call = sw.indexOf('self.KhAi.newWebChat()', gate);
+    truthy(at >= 0 && gate > at && call > gate, '闸门必须在调用 newWebChat 之前');
+  });
+
+  await test('★ 站点白名单含品牌域名；已经是真实宿主就不再跟一次重定向', async () => {
+    const { T, calls } = loadTaiji();
+    truthy(T.allowedBase('https://www.taijiai666.com'), '品牌域名要能进白名单（用户看到的就是它）');
+    truthy(T.allowedBase('https://ai.zhuangxiuyunying.xyz'), '真实宿主当然也在');
+    falsy(T.allowedBase('https://taijiai666.com.evil.com'), '后缀冒充仍要拒');
+    eq(typeof T.resolveRedirect, 'function', '缺 resolveRedirect');
+    const same = await T.resolveRedirect('https://ai.zhuangxiuyunying.xyz');
+    eq(same, 'https://ai.zhuangxiuyunying.xyz', '已经是真实宿主就原样返回');
+    eq(calls.length, 0, '这种情况下不该发任何请求（省一次往返）');
+    const real = await T.resolveRedirect('https://www.taijiai666.com');
+    eq(real, 'https://ai.zhuangxiuyunying.xyz', '品牌域名要跟到 301 之后的真实 origin');
+    truthy(calls.length === 1 && calls[0].method === 'GET', '必须用 GET 去跟（POST 跟 301 会退化成 GET）');
+  });
+
+  await test('★ 登录/模型清单回执带上「实际连上的站点」', () => {
+    const t = read('background/taiji.js');
+    truthy(t.indexOf('async function baseNow()') >= 0, '缺 baseNow（拿不到站点不该让登录失败）');
+    eq((t.match(/base: await baseNow\(\)/g) || []).length, 2, '登录与模型清单两条回执都要带 base');
+    truthy(t.indexOf("const CANON_HOST = 'ai.zhuangxiuyunying.xyz';") >= 0, '真实宿主常量要在');
+    truthy(t.indexOf('站点跳转到了白名单之外') >= 0, '跟到白名单之外必须拒绝');
+    const js = read('options/options.js');
+    truthy(js.indexOf('；站点：') >= 0, '设置页要把实际站点写出来');
+    const html = read('options/options.html');
+    truthy(html.indexOf('品牌域名会自动跟随跳转') >= 0, '站点地址的 label 要说明品牌域名可用');
+    truthy(html.indexOf('placeholder="https://www.taijiai666.com"') >= 0, 'placeholder 用用户认得的品牌域名');
   });
 };
 

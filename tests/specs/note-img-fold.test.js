@@ -98,6 +98,25 @@ module.exports = async function run() {
     eq(ims[0].classList.contains('khin-imgmiss'), true, '⇒ 换成绿框');
   });
 
+  /* 【2.0.16.1 · 用户 m18157】现场：「图片命中词指向配了全部字段（不限定），为什么 OCR 结果有，却显示未命中」。
+   * 判定层实测是好的（同配置喂证书文本 ⇒ matched 两条），所以真相只可能是「认出了字，但这条规则的命中词不在里面」。
+   * 旧提示只有「已识别，未命中」四个字，用户只能猜；这里锁住：必须把**在找哪个词**和**识别到多少字**说出来。 */
+  await test('★ 有字但没命中词：悬停必须说出「在找哪个词」和「识别到多少字」', () => {
+    const p = shadowPanel();
+    p.bodyEl = bodyWithImgs(['https://ex.com/cert.png']);
+    const text = '计算机软件著作权登记证书\n著作权人：南京石诚星桥科技有限公司\n登记号：2024SR0242674';
+    p.imgItems = [{ key: 'r|cert', src: 'https://ex.com/cert.png', state: 'done', text: text, matched: [],
+      keyword: '登记号#表|著作权人#表' }];
+    p.applyImgMarks();
+    const im = p.bodyEl.querySelectorAll('img')[0];
+    eq(im.classList.contains('khin-imgmiss'), true, '没命中仍是绿框');
+    const tip = String(im.title);
+    truthy(tip.indexOf('未命中') >= 0, '先说要「未命中」：' + tip);
+    truthy(tip.indexOf('登记号#表|著作权人#表') >= 0, '★ 必须说出这条规则的命中词（用户配了什么就说什么）：' + tip);
+    truthy(tip.indexOf('识别到 ' + text.length + ' 字') >= 0, '★ 必须说出识别到多少字：' + tip);
+    truthy(tip.indexOf('没识别出文字') < 0, '有字就不许说「没识别出文字」');
+  });
+
   /* 【2.0.6.1 需求⑧】蓝=识别中、红=命中、绿=无命中（失败也绿，悬停说失败） */
   await test('★ 边框三态：识别中蓝、命中红、无命中绿；失败算无命中但悬停说失败', () => {
     const p = shadowPanel();

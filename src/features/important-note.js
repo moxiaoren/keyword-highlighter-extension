@@ -650,6 +650,10 @@
     if (miss.length) return (V.imgMissField || '') + '：' + miss.join('、');
     if (gone.length) return (V.imgMissValue || '') + '：' + gone.join('、');
     if (!String((it && it.text) || '').trim()) return V.imgMissEmpty || '';
+    /* 【2.0.16.1 · 用户 m18157】字认出来了、也没配动态判据，那唯一能解释「未命中」的就是
+     * 「这条规则的命中词不在图上的文字里」。把词和字数摊开说，别让用户以为是 OCR 坏了。 */
+    const kw = String((it && it.keyword) || '').trim();
+    if (kw) return R(V.imgMissNoWord, { words: kw, n: String(it.text).length });
     return '';
   }
 

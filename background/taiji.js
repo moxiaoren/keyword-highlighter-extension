@@ -25,8 +25,13 @@
   const APP_URL = 'http://api.taijiai666.com/app-url.txt';
   /** 站点只认这个 UA（桥里同一串）；换 UA 会被当成别的客户端。 */
   const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) TaijiBridge/1.1';
-  /** 允许的站点域名（与桥的 allowlist 一致；域名换了只要还在这个后缀下就不用改代码）。 */
-  const ALLOW = ['ai.zhuangxiuyunying.xyz'];
+  /** 允许的站点域名（与桥的 allowlist 一致；域名换了只要还在这个后缀下就不用改代码）。
+   * 【2.0.16.1 · 用户 m18091】补上**品牌域名** taijiai666.com：
+   * 用户看到的是 https://www.taijiai666.com/，而它 301 到真实宿主 ai.zhuangxiuyunying.xyz，
+   * 于是「用户照着品牌名手填的站点地址」必须能进白名单，再由 resolveRedirect 跟到真实 origin。 */
+  const ALLOW = ['ai.zhuangxiuyunying.xyz', 'taijiai666.com'];
+  /** 真实宿主（app-url.txt 回的那个）。已经是它就不用再跟重定向，省一次请求。 */
+  const CANON_HOST = 'ai.zhuangxiuyunying.xyz';
   const APP_URL_TIMEOUT = 6000;
   /** 等站点数据的最长时间；SSE 期间按"多久没新数据"算（空闲超时，不是总时长）。 */
   const IDLE_MS = 90000;
@@ -104,11 +109,43 @@
   }
   T.allowedBase = allowedBase;
 
+  /**
+   * 【2.0.16.1 · 用户 m18091】品牌域名 → 真实宿主。
+   * 为什么必须用 GET 去跟：站点是 301，而 **POST 跟随 301 会被浏览器改成 GET**、
+   * 请求体和 cookie 语义都会变 —— 所以先在站点的任意 GET 上问出最终 origin，再拿它发真请求。
+   * 跟到的 origin 仍要过白名单（重定向到别处就作废，绝不把用户消息送到白名单之外）。
+   * @param {string} base 已过白名单的站点地址
+   * @returns {Promise<string>} 真实 origin（不带尾斜杠）
+   */
+  async function resolveRedirect(base) {
+    try { if (new URL(base).hostname === CANON_HOST) return base; } catch (e) { return base; }
+    let res;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => { try { ctrl.abort(); } catch (e) { /* ignore */ } }, APP_URL_TIMEOUT);
+    try {
+      res = await fetch(base + '/', { method: 'GET', redirect: 'follow', credentials: 'include', cache: 'no-store', signal: ctrl.signal });
+    } catch (e) {
+      clearTimeout(timer);
+      return base;                       /* 跟不动就按原地址试，不让跟随失败挡住登录 */
+    }
+    clearTimeout(timer);
+    let origin = '';
+    try { origin = new URL(res && res.url ? res.url : base).origin; } catch (e) { origin = ''; }
+    if (!origin || origin === base) return base;
+    if (!allowedBase(origin)) throw new Error('站点跳转到了白名单之外（' + origin + '）');
+    return origin;
+  }
+  T.resolveRedirect = resolveRedirect;
+
   async function resolveBase(force) {
     const ai = await readAi();
     const manual = String((ai.taiji && ai.taiji.base) || '').trim();
     if (!force && baseCache.base && (Date.now() - baseCache.at) < 10 * 60 * 1000) return baseCache.base;
-    if (manual && allowedBase(manual)) { baseCache = { at: Date.now(), base: manual }; return manual; }
+    if (manual && allowedBase(manual)) {
+      const real = await resolveRedirect(manual);
+      baseCache = { at: Date.now(), base: real };
+      return real;
+    }
     let txt = '';
     try {
       const ctrl = new AbortController();
@@ -202,6 +239,11 @@
     return normModels(json.data && json.data.models);
   }
 
+  /** 【2.0.16.1】当前真实站点（品牌域名已跟到真实 origin）；拿不到就给空串，绝不因此让登录失败。 */
+  async function baseNow() {
+    try { return await resolveBase(); } catch (e) { return ''; }
+  }
+
   /* ---------------- 对外：登录 / 模型 / 对话 ---------------- */
 
   /** 设置页「登录」：账号密码只用这一次，成功后会话留在浏览器 cookie 里。 */
@@ -217,7 +259,7 @@
         return { ok: false, error: '登录失败：' + String(json.msg || json.message || ('code=' + json.code)).slice(0, ERR_MAX) };
       }
       const models = await tmplRaw();
-      return { ok: true, models: models };
+      return { ok: true, models: models, base: await baseNow() };
     } catch (err) {
       return { ok: false, error: '登录失败：' + errText(err) };
     }
@@ -227,7 +269,7 @@
   T.models = async function () {
     try {
       const models = await tmplRaw();
-      return { ok: true, models: models };
+      return { ok: true, models: models, base: await baseNow() };
     } catch (err) {
       return { ok: false, needLogin: !!err.needLogin, error: errText(err) };
     }
