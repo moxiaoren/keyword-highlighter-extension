@@ -29,7 +29,7 @@ const KH_ABILITIES = {
   anchors: {
     kwManage: { label: '设置页 › 关键词管理', probe: { file: 'options/options.html', needle: '<h2>关键词管理' } },
     groups: { label: '设置页 › 分组管理', probe: { file: 'options/options.html', needle: '<h2>分组管理' } },
-    style: { label: '设置页 › 样式配置', probe: { file: 'options/options.html', needle: '<h2>样式配置' } },
+    style: { label: '设置页 › 样式配置', probe: { file: 'options/options.html', needle: '<h2>样式' } },
     imgOcr: { label: '设置页 › 图片识别', probe: { file: 'options/options.html', needle: '<h2>图片识别' } },
     io: { label: '设置页 › 导入导出', probe: { file: 'options/options.html', needle: '<h2>导入导出' } },
     privacy: { label: '设置页 › 帮助与隐私', probe: { file: 'options/options.html', needle: '<h2>帮助与隐私' } },

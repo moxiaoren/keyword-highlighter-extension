@@ -18,25 +18,27 @@
       <span class="kh-sidebar-name">高亮助手</span>
     </div>
     <nav class="kh-tabs" id="tabs" aria-label="设置分区">
-      <!-- 2.0.8.12：七个分区按「内容 / 外观 / 站点与数据 / 帮助」分组，组标题只是视觉分层，
-           不参与切换（data-tab 仍只挂在 .kh-tab 上，脚本与测试的口径不变）。 -->
+      <!-- 2.0.16.7 · 用户 m20966/m20977：导航按「做什么」分 4 组 9 页。
+           重要笔记、AI 助手从「样式」拆出独立成页（它们不是颜色）；组标题不参与切换，data-tab 仍只挂在 .kh-tab 上。 -->
       <div class="kh-nav-group" role="presentation">
-        <span class="kh-nav-group-title">内容</span>
+        <span class="kh-nav-group-title">关键词</span>
         <a class="kh-tab" href="#sec-keywords" data-tab="keywords"><span class="kh-nav-icon">📝</span>关键词管理</a>
         <a class="kh-tab" href="#sec-groups" data-tab="groups"><span class="kh-nav-icon">📁</span>分组管理</a>
       </div>
       <div class="kh-nav-group" role="presentation">
-        <span class="kh-nav-group-title">外观</span>
+        <span class="kh-nav-group-title">外观与面板</span>
         <a class="kh-tab" href="#sec-style" data-tab="style"><span class="kh-nav-icon">🎨</span>样式</a>
+        <a class="kh-tab" href="#sec-note" data-tab="note"><span class="kh-nav-icon">📌</span>重要笔记</a>
+        <a class="kh-tab" href="#sec-ai" data-tab="ai"><span class="kh-nav-icon">🤖</span>AI 助手</a>
+      </div>
+      <div class="kh-nav-group" role="presentation">
+        <span class="kh-nav-group-title">识别与站点</span>
         <a class="kh-tab" href="#sec-ocr" data-tab="ocr"><span class="kh-nav-icon">🖼</span>图片识别</a>
-      </div>
-      <div class="kh-nav-group" role="presentation">
-        <span class="kh-nav-group-title">站点与数据</span>
         <a class="kh-tab" href="#sec-sites" data-tab="sites"><span class="kh-nav-icon">🌐</span>站点规则</a>
-        <a class="kh-tab" href="#sec-data" data-tab="data"><span class="kh-nav-icon">📦</span>导入导出</a>
       </div>
       <div class="kh-nav-group" role="presentation">
-        <span class="kh-nav-group-title">帮助</span>
+        <span class="kh-nav-group-title">数据与帮助</span>
+        <a class="kh-tab" href="#sec-data" data-tab="data"><span class="kh-nav-icon">📦</span>导入导出</a>
         <a class="kh-tab" href="#sec-help" data-tab="help"><span class="kh-nav-icon">❓</span>帮助与隐私</a>
       </div>
     </nav>
@@ -66,6 +68,7 @@
     <section class="kh-card" id="sec-keywords">
       <div class="kh-card-head">
         <h2>关键词管理 <span class="kh-count" id="kw-count"></span></h2>
+      <p class="kh-sec-lead">这里是所有关键词的总表：新增、编辑、启停、批量操作都在这。只想先试一下，加一个词、打开网页就能看到高亮。</p>
       </div>
       <p class="kh-sec-lead">这里列出的词，会在你打开任意网页时被标出来。匹配方式、颜色、备注、重要笔记都是<strong>逐条</strong>配的 —— 点表格里的词就能改。</p>
 
@@ -151,6 +154,7 @@
     <section class="kh-card" id="sec-groups" hidden>
       <div class="kh-card-head">
         <h2>分组管理</h2>
+      <p class="kh-sec-lead">分组只是给关键词加一层归类，也方便整组换色、整组标重要。没有分组需求的话，这页可以一直不打开。</p>
         <div class="kh-card-head-ops">
           <button class="kh-btn kh-btn-primary" id="btn-group-add" type="button">＋ 新建分组</button>
         </div>
@@ -161,7 +165,7 @@
 
     <!-- ============================================================ 样式（高亮 + 备注卡片合并） -->
     <section class="kh-card" id="sec-style" hidden>
-      <h2>样式配置</h2>
+      <h2>样式</h2>
       <p class="kh-sec-lead">这里配的都是<strong>全局默认值</strong>：单个关键词或分组没设时才会用到。
         优先级固定为「分组色 &gt; 关键词色 &gt; 全局默认色」，在关键词编辑弹窗里留空即表示「继承」。</p>
 
@@ -212,58 +216,26 @@
         </div>
       </div>
 
-      <h3 class="kh-sub">重要笔记</h3>
-      <p class="kh-sec-lead">页面左上角「<strong>重要笔记</strong>」悬浮面板的默认外观：上方是右键识别进来的「<strong>截图</strong>」表，下方是笔记正文，两边各自带滚动条，收起笔记就把空间全让给截图。<br>
-        下面四项都只是<strong>默认值</strong>：单个关键词或分组<strong>留空即继承</strong>这里。「图片尺寸」管抓取字段值格里的缩略图/识别图；「字号」管面板里的<strong>笔记正文与表格</strong>；「面板宽度」是长期值，拖面板右下角只算当前这一次 —— 两条口径的完整解释见「帮助与隐私 → ❓ 常见」Q12 / Q13。</p>
-      <div class="kh-form-row">
-        <div class="kh-form-fld">
-          <label class="kh-fld-label" for="pf-imgSize">重要笔记图片「尺寸」默认值</label>
-          <input class="kh-input" id="pf-imgSize" type="number" step="10">
-        </div>
-        <div class="kh-form-fld">
-          <label class="kh-fld-label" for="pf-noteFontSize">正文字号默认值 (px)</label>
-          <input class="kh-input" id="pf-noteFontSize" type="number" step="1">
-        </div>
-        <!-- 三个数字输入框的 min/max 都由 options.js 从 KH.Config 的边界常量注入（不在这里抄一份） -->
-        <div class="kh-form-fld">
-          <label class="kh-fld-label" for="pf-notePanelWidth">面板默认宽度 (px)</label>
-          <input class="kh-input" id="pf-notePanelWidth" type="number" step="10">
-        </div>
-      </div>
-      <!-- 置顶排序（2.0.2.6 需求② → 2.0.2.7 需求④ 改成"下拉框内部展示胶囊"）：胶囊与下拉框
-           装在**同一个框**里 —— 常态就是"一行胶囊 + 末尾那个下拉"，比原来"下拉框一行、胶囊另起
-           一行"两截更省地方，点下拉直接接着加。落盘的是**关键词 id**（面板按 `meta.pinId` 匹配），
-           上限 / 去重由 options.js 调 KH.Config.normalizePinOrder 一处判。 -->
-      <div class="kh-form-row">
-        <div class="kh-form-fld kh-pin-fld">
-          <label class="kh-fld-label" for="pf-notePinOrder">置顶排序（最多 <span id="pin-max">3</span> 个）</label>
-          <div class="kh-pin-box">
-            <div class="kh-lbl-preview" id="pin-caps"></div>
-            <select class="kh-input" id="pf-notePinOrder"></select>
-          </div>
-        </div>
-      </div>
-      <p class="kh-muted">命中的卡片按上面胶囊里的先后固定排在面板最前，其余卡片保持原顺序；同一个词只能置顶一次，按选择的先后排序（要换位置先取消、再重选）。</p>
-      <!-- 【2.0.14 需求二】重要笔记分页：默认关 = 与旧版逐字节一致（一条长列表）。
-           开着时面板顶部多一排页签：置顶 → 各分组（按配置里分组的先后）→ 未分组；
-           置顶卡只出现在置顶页，不重复。 -->
-      <label class="kh-check"><input type="checkbox" id="pf-notePaged"> 重要笔记按页收录（置顶一页、分组各一页）</label>
-      <p class="kh-muted">开着时面板顶部多一排页签：<strong>置顶</strong> → <strong>各分组</strong>（按分组的先后）→ <strong>未分组</strong>。置顶卡只出现在置顶页；停在某页时该页被删空会落到相邻页，只有一页时整条页签隐藏。</p>
-      <!-- 【2.0.15 · 问题②】同法人校验：爱企查链路常跑不通，改成可选打开、默认关闭。 -->
-      <label class="kh-check"><input type="checkbox" id="pf-noteEntityCheck"> 同法人校验（开发者与核准主体的法定代表人是否一致）</label>
-      <p class="kh-muted">关闭时<strong>不联网查询</strong>（爱企查 / 360 常常查不到，或要登录、要验证），面板也不显示「未查明」；打开后才去找两边的法定代表人并标注「同法人 / 不同法人 / 未查明」。</p>
-      <!-- 【2.0.16.4 · m19385】隐私政策正文：链接靠脚本渲染时，静默开一张后台标签页读完正文再关。
-           默认开（用户 2026-11-23 选 P4-A）；关掉退回「只读你已经打开的那张页」。 -->
-      <label class="kh-check"><input type="checkbox" id="pf-policyRenderTab" checked> 隐私政策链接读不到正文时，自动开一张后台标签页（读完立刻关）</label>
-      <p class="kh-muted">靠脚本渲染的政策页（Vue / React 壳页）静态抓不到正文，扩展会开一张<strong>后台</strong>标签页（不抢前台、不换你当前的页），读完立刻关掉；同一时刻最多一张，每个链接只会尝试一次。关掉后只读你已经打开的那张页，读不到就提示你手动打开。</p>
 
+    </section>
+    <!-- ============================================================ AI 助手（2.0.16.7 从「样式」拆出，独立成页）
+         只保留太极AI 一条通路（用户 m19483）；面板里的「AI 助手」页签由这里控制。
+         密码只用于这一次登录，不落盘、不进导出。 -->
+    <section class="kh-card" id="sec-ai" hidden>
+      <h2>AI 助手</h2>
+      <p class="kh-sec-lead">重要笔记面板里的「<strong>AI 助手</strong>」页签：只走 <strong>太极AI</strong>，请求由扩展后台直连站点，
+        <strong>不会开任何标签页</strong>。在这里登录一次即可，会话由浏览器记住；密码不保存，也不进导出。</p>
+      <label class="kh-check"><input type="checkbox" id="ai-enabled"> 在面板里显示「AI 助手」页签</label>
+
+      <h3 class="kh-sub">AI 对话助手</h3>
+      <p class="kh-sec-lead">页面「重要笔记」面板里多一个「<strong>AI 助手</strong>」页签（悬窗里），只走 <strong>太极AI</strong>：请求由扩展后台直接发到站点，<strong>不会开任何标签页</strong>；在这里登录一次，会话由浏览器记住，模型从站点清单里自选。对话是<strong>纯自由对话</strong>：只发你自己打的那几句，不携带页面标题、网址或笔记内容。</p>
       <!-- ============================================================ AI 助手（2.0.16.4 · 用户 m19483）
            只保留太极AI 一条通路：「其余 AI 接口和调用路径全部移除」。DeepSeek 网页对话与 API 模式
            （chat.deepseek.com 内容脚本、AI_WEB_* 消息、apiKey 输入框）已整条删除。
            三条口径：设置页里登录、模型自选、**永不开标签页**（后台 fetch，会话回写浏览器 cookie）。
            密码输入框只是「这一次登录用」，保存动作里没有 password 这个键（不落盘、不进导出）。 -->
-      <h3 class="kh-sub">AI 对话助手</h3>
-      <p class="kh-sec-lead">页面「重要笔记」面板里多一个「<strong>AI 助手</strong>」页签（悬窗里），只走 <strong>太极AI</strong>：请求由扩展后台直接发到站点，<strong>不会开任何标签页</strong>；在这里登录一次，会话由浏览器记住，模型从站点清单里自选。对话是<strong>纯自由对话</strong>：只发你自己打的那几句，不携带页面标题、网址或笔记内容。</p>
+      <div class="kh-sub-card">
+        <h3 class="kh-sub">登录与模型</h3>
       <div id="ai-taiji-fields">
         <div class="kh-form-row">
           <div class="kh-form-fld">
@@ -300,6 +272,10 @@
         </div>
         <p class="kh-muted" id="ai-taiji-state"></p>
       </div>
+      </div>
+
+      <div class="kh-sub-card">
+        <h3 class="kh-sub">会话</h3>
       <div class="kh-form-row">
         <div class="kh-form-fld">
           <label class="kh-fld-label">会话</label>
@@ -311,13 +287,122 @@
           <p class="kh-muted">退出只清掉本机浏览器里的太极AI 会话 cookie，账号仍保留（下次登录不用重填账号）。</p>
         </div>
       </div>
-      <label class="kh-check"><input type="checkbox" id="ai-enabled"> 在面板里显示「AI 助手」页签</label>
-
+      </div>
     </section>
+
+    <!-- ============================================================ 重要笔记（2.0.16.7 从「样式」拆出）
+         用户 m20966/m20977：设置页要「好好设计、便于普通用户理解」——面板外观与自动化不再和颜色混在一起。
+         字段 id 一个不变（options.js 与门禁全按 id 取），只搬位置、加小节标题。 -->
+    <section class="kh-card" id="sec-note" hidden>
+      <h2>重要笔记</h2>
+      <p class="kh-sec-lead">页面左上角那块「<strong>重要笔记</strong>」面板长什么样、里面固定排哪些词，都在这一页。
+        改这里只影响面板，<strong>不会改你正在看的网页</strong>。</p>
+
+      <div class="kh-sub-card">
+        <h3 class="kh-sub">面板大小与字号</h3>
+      <p class="kh-sec-lead">页面左上角「<strong>重要笔记</strong>」悬浮面板的默认外观：上方是右键识别进来的「<strong>截图</strong>」表，下方是笔记正文，两边各自带滚动条，收起笔记就把空间全让给截图。<br>
+        下面四项都只是<strong>默认值</strong>：单个关键词或分组<strong>留空即继承</strong>这里。「图片尺寸」管抓取字段值格里的缩略图/识别图；「字号」管面板里的<strong>笔记正文与表格</strong>；「面板宽度」是长期值，拖面板右下角只算当前这一次 —— 两条口径的完整解释见「帮助与隐私 → ❓ 常见」Q12 / Q13。</p>
+      <div class="kh-form-row">
+        <div class="kh-form-fld">
+          <label class="kh-fld-label" for="pf-imgSize">重要笔记图片「尺寸」默认值</label>
+          <input class="kh-input" id="pf-imgSize" type="number" step="10">
+        </div>
+        <div class="kh-form-fld">
+          <label class="kh-fld-label" for="pf-noteFontSize">正文字号默认值 (px)</label>
+          <input class="kh-input" id="pf-noteFontSize" type="number" step="1">
+        </div>
+        <!-- 三个数字输入框的 min/max 都由 options.js 从 KH.Config 的边界常量注入（不在这里抄一份） -->
+        <div class="kh-form-fld">
+          <label class="kh-fld-label" for="pf-notePanelWidth">面板默认宽度 (px)</label>
+          <input class="kh-input" id="pf-notePanelWidth" type="number" step="10">
+        </div>
+      </div>
+      </div>
+
+      <div class="kh-sub-card">
+        <h3 class="kh-sub">置顶与分页</h3>
+      <!-- 置顶排序（2.0.2.6 需求② → 2.0.2.7 需求④ 改成"下拉框内部展示胶囊"）：胶囊与下拉框
+           装在**同一个框**里 —— 常态就是"一行胶囊 + 末尾那个下拉"，比原来"下拉框一行、胶囊另起
+           一行"两截更省地方，点下拉直接接着加。落盘的是**关键词 id**（面板按 `meta.pinId` 匹配），
+           上限 / 去重由 options.js 调 KH.Config.normalizePinOrder 一处判。 -->
+      <div class="kh-form-row">
+        <div class="kh-form-fld kh-pin-fld">
+          <label class="kh-fld-label" for="pf-notePinOrder">置顶排序（最多 <span id="pin-max">3</span> 个）</label>
+          <div class="kh-pin-box">
+            <div class="kh-lbl-preview" id="pin-caps"></div>
+            <select class="kh-input" id="pf-notePinOrder"></select>
+          </div>
+        </div>
+      </div>
+      <p class="kh-muted">命中的卡片按上面胶囊里的先后固定排在面板最前，其余卡片保持原顺序；同一个词只能置顶一次，按选择的先后排序（要换位置先取消、再重选）。</p>
+      <!-- 【2.0.14 需求二】重要笔记分页：默认关 = 与旧版逐字节一致（一条长列表）。
+           开着时面板顶部多一排页签：置顶 → 各分组（按配置里分组的先后）→ 未分组；
+           置顶卡只出现在置顶页，不重复。 -->
+      <label class="kh-check"><input type="checkbox" id="pf-notePaged"> 重要笔记按页收录（置顶一页、分组各一页）</label>
+      <p class="kh-muted">开着时面板顶部多一排页签：<strong>置顶</strong> → <strong>各分组</strong>（按分组的先后）→ <strong>未分组</strong>。置顶卡只出现在置顶页；停在某页时该页被删空会落到相邻页，只有一页时整条页签隐藏。</p>
+      </div>
+
+      <div class="kh-sub-card">
+        <h3 class="kh-sub">自动核对（可选，涉及联网）</h3>
+        <label class="kh-check"><input type="checkbox" id="pf-noteEntityCheck"> 同法人校验（开发者与核准主体的法定代表人是否一致）</label>
+        <p class="kh-muted">这是<strong>总闸</strong>：关着时下面四条渠道都不跑，也不联网；打开后才去查两边的法定代表人，并在面板标「同法人 / 不同法人 / 未查明」。</p>
+
+        <div class="kh-ent-head">
+          <h4 class="kh-ent-title">查询渠道 <span class="kh-ent-sum" id="ent-ch-summary">—</span></h4>
+          <div class="kh-ent-bulk">
+            <button class="kh-mini-btn" id="btn-ent-all-on" type="button">全部打开</button>
+            <button class="kh-mini-btn" id="btn-ent-all-off" type="button">全部关闭</button>
+          </div>
+        </div>
+        <p class="kh-muted">搜狗先跑；爱企查与 360 紧接着<strong>同时</strong>查，谁先给出结果就用谁；三家都空手时才用太极AI 推断。关掉的渠道<strong>不发请求</strong>，也不计入等待。</p>
+        <!-- 2.0.16.7 · 用户 m20998：不要四个裸复选框，要能看懂「谁快、谁准、谁兜底、要付什么代价」。
+             行内顺序与 background/entity.js 的竞速一致：搜狗立即 → 爱企查/360 并行 → 太极AI 兜底。 -->
+        <ul class="kh-ent-list" id="pf-entity-channels">
+          <li class="kh-ent-row">
+            <label class="kh-check"><input type="checkbox" id="pf-ent-sogou" checked> 搜狗企业卡</label>
+            <span class="kh-ent-tag">最快</span>
+            <span class="kh-ent-desc">读公开搜索页上的企业卡，通常 1 秒内就出结果。</span>
+            <span class="kh-ent-cost">联网</span>
+          </li>
+          <li class="kh-ent-row">
+            <label class="kh-check"><input type="checkbox" id="pf-ent-aiqicha" checked> 爱企查</label>
+            <span class="kh-ent-tag">较准</span>
+            <span class="kh-ent-desc">百度的官方企业信息；需要你在浏览器里登录过爱企查。</span>
+            <span class="kh-ent-cost">开后台标签页</span>
+          </li>
+          <li class="kh-ent-row">
+            <label class="kh-check"><input type="checkbox" id="pf-ent-so360" checked> 360 搜索</label>
+            <span class="kh-ent-tag">并行</span>
+            <span class="kh-ent-desc">三问法搜公开页，偶尔会遇到人机验证。</span>
+            <span class="kh-ent-cost">联网</span>
+          </li>
+          <li class="kh-ent-row">
+            <label class="kh-check"><input type="checkbox" id="pf-ent-ai" checked> 太极AI 推断</label>
+            <span class="kh-ent-tag">兜底</span>
+            <span class="kh-ent-desc">前三条都查不到时才用；面板里会标「太极AI 推断」，仅供参考。</span>
+            <span class="kh-ent-cost">公司名发到站点</span>
+          </li>
+        </ul>
+        <p class="kh-muted">四条全关时面板只会说一句「所有法人通道都已关闭」，不会联网。</p>
+      </div>
+
+      <div class="kh-sub-card">
+        <h3 class="kh-sub">隐私政策正文</h3>
+        <label class="kh-check"><input type="checkbox" id="pf-policyRenderTab" checked> 隐私政策链接读不到正文时，自动开一张后台标签页（读完立刻关）</label>
+        <p class="kh-muted">靠脚本渲染的政策页（Vue / React 壳页）静态抓不到正文，扩展会开一张<strong>后台</strong>标签页（不抢前台、不换你当前的页），读完立刻关掉；同一时刻最多一张，每个链接只会尝试一次。关掉后只读你已经打开的那张页，读不到就提示你手动打开。</p>
+      </div>
+    </section>
+
+
 
     <!-- ============================================================ 图片识别（OCR） -->
     <section class="kh-card" id="sec-ocr" hidden>
       <h2>图片识别</h2>
+      <div class="kh-steps">
+        <div class="kh-step"><span class="kh-step-n">1</span><div><strong>右键任意图片</strong> → 「识别这张图」</div></div>
+        <div class="kh-step"><span class="kh-step-n">2</span><div>等几秒，识别在<strong>本机</strong>跑，图片不上传</div></div>
+        <div class="kh-step"><span class="kh-step-n">3</span><div>结果出现在页面左上角面板的「<strong>截图</strong>」表</div></div>
+      </div>
       <p class="kh-sec-lead">图里的字也算命中 —— <strong>识别完全在本机</strong>：图片不上传，唯一的联网动作是下面这次语言包下载（也可手动导入，做到完全离线）。结果一律进页面左上角「重要笔记」面板最上面那张「<strong>截图</strong>」表，不产生文字高亮。</p>
 
       <div class="kh-fn-grid">
@@ -346,7 +431,7 @@
       </div>
 
       <p class="kh-muted" id="ocr-style-hint">
-        显示相关设置（缩略图尺寸、笔记字号）在侧栏的<strong>「样式 → 重要笔记」</strong>。
+        显示相关设置（缩略图尺寸、笔记字号）在侧栏的<strong>「重要笔记」</strong>页。
       </p>
 
       <!-- 折叠子卡（L2-b）：本页原本 1071px，首屏看不到「引擎」；按归属拆成三张，默认只展开「识别引擎」。
@@ -479,6 +564,7 @@
     <!-- ============================================================ 站点规则 -->
     <section class="kh-card" id="sec-sites" hidden>
       <h2>站点规则</h2>
+      <p class="kh-sec-lead">默认所有网站都生效。只想在特定网站开或关，就在这页加白名单 / 黑名单；临时开关在扩展弹窗里点一下即可。</p>
       <p class="kh-sec-lead">
         ✅ <strong>白名单</strong>＝只有这些站点高亮；🚫 <strong>黑名单</strong>＝这些站点不高亮，其余照常。<br>
         只要存在白名单，白名单以外的站点一律不高亮；没有白名单则默认全部高亮。生效与否由<strong>每条规则自身类型</strong>决定。
@@ -495,6 +581,7 @@
     <!-- ============================================================ 导入导出 -->
     <section class="kh-card" id="sec-data" hidden>
       <h2>导入导出</h2>
+      <p class="kh-sec-lead">换电脑、备份、清空数据都在这。平时不用动这里；要完整备份（含分组、站点规则、样式）请用「导出 JSON」。</p>
       <p class="kh-sec-lead">所有数据仅保存在浏览器本地（<code>chrome.storage</code>），不上传任何服务器。建议导入前先导出备份。</p>
 
       <h3 class="kh-sub">导出数据</h3>
@@ -547,7 +634,7 @@
     <!-- ============================================================ 帮助 -->
     <section class="kh-card" id="sec-help" hidden>
       <h2>帮助与隐私</h2>
-      <p class="kh-sec-lead">先看下面这一句就够：<strong>所有数据只在你本机</strong>，不上传、不埋点；其余是分主题的详细说明，按需点标签页查。</p>
+      <p class="kh-sec-lead">刚装好先看「<strong>📖 功能</strong>」；遇到问题看「<strong>❓ 常见</strong>」；隐私与权限在「<strong>🔒 隐私</strong>」。一句话：<strong>所有数据只在你本机</strong>，不上传、不埋点。</p>
 
       <div class="kh-htabs" id="help-tabs">
         <button type="button" class="kh-htab active" data-hpan="pri">🔒 隐私</button>

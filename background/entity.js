@@ -601,6 +601,19 @@ const SO360_HEADSTART_MS = 1200;
     } catch (e) { /* 写缓存失败不影响本次结果 */ }
   }
 
+  /* 【2.0.16.7 · m20763】四条法人通道的开关：只有明确的 false 算关，缺键/坏值一律按开（老配置照旧全开）。 */
+  async function readChannels() {
+    const DEF = { sogou: true, aiqicha: true, so360: true, ai: true };
+    try {
+      const C = (typeof self !== 'undefined' && self.KH && self.KH.Config) || null;
+      if (!C || typeof C.load !== 'function') return DEF;
+      const got = await C.load();
+      const ch = (got && got.config && got.config.importantNote && got.config.importantNote.entityChannels) || {};
+      return { sogou: ch.sogou !== false, aiqicha: ch.aiqicha !== false, so360: ch.so360 !== false, ai: ch.ai !== false };
+    } catch (e) { return DEF; }
+  }
+  Entity.readChannels = readChannels;
+
   /**
    * 查一家公司的法定代表人。
    * @param {{name:string}} msg
@@ -636,10 +649,15 @@ const SO360_HEADSTART_MS = 1200;
      *   ③ 360 三问法兜底。
      * 搜狗先跑 SOGOU_HEADSTART_MS；还没结论就把②③一起放出去（不白等），谁先给出人名用谁。
      * 搜狗失败**不提前收工**：等三家都放出去且都没有结论才返回失败，否则主通道一被拦就白瞎。 */
+    /* 【2.0.16.7 · m20763】关掉的通道既不跑、也不计入「等齐」，所以全关要在起跑前就说清楚。 */
+    const chans = await readChannels();
+    const enabled = [chans.sogou, chans.aiqicha, chans.so360, chans.ai].filter(Boolean);
+    if (!enabled.length) return { ok: false, error: '所有法人通道都已关闭（在设置页「同法人校验」里打开）', name: name };
     const r = await new Promise(function (resolve) {
       let done = false;
-      let pending = 1;   /* 在途通道数（搜狗已放出） */
-      let opened = 1;    /* 已放出的通道数 */
+      let pending = 0;   /* 在途通道数 */
+      let opened = 0;    /* 已放出的通道数 */
+      const total = enabled.length;
       const finish = function (out) {
         if (done) return;
         done = true;
@@ -648,7 +666,7 @@ const SO360_HEADSTART_MS = 1200;
       /* AI 兜底结果先存着：本地任何一家先给结论就以本地为准（站点值 > 模型推断）。 */
       let aiOut = null;
       const maybeDone = function () {
-        if (!done && pending === 0 && opened >= 4) finish(aiOut);
+        if (!done && pending === 0 && opened >= total) finish(aiOut);
       };
       const run = function (ch, direct) {
         const p = direct ? Promise.resolve().then(function () { return ch(name); })
@@ -663,24 +681,29 @@ const SO360_HEADSTART_MS = 1200;
           maybeDone();
         });
       };
-      run(fromSogouM, true);
-      setTimeout(function () {
+      if (chans.sogou) { pending += 1; opened += 1; run(fromSogouM, true); }
+      /* 其余三条等搜狗先手（搜狗关掉就没必要白等）；关掉的直接跳过。 */
+      const startLater = function () {
         if (done) return;
-        pending += 1; opened += 1; run(fromAiqicha, true);
-        pending += 1; opened += 1; run(fromSo360, false);
-        /* 第四条：太极AI（用户口径「这个也能辅助法人检索」）。和本地三家并发起跑，
-         * 只有三家都空手才用它；它慢也不拖主路径 —— 本地上任何一家先出来就 finish 收工。 */
-        pending += 1; opened += 1;
-        Promise.resolve().then(function () { return fromAi(name); }).then(function (out) {
-          if (out && out.rep) aiOut = out;
-          pending -= 1;
-          maybeDone();
-        }).catch(function (err) {
-          errors.push('太极AI：' + String((err && err.message) || err));
-          pending -= 1;
-          maybeDone();
-        });
-      }, headstartMs);
+        if (chans.aiqicha) { pending += 1; opened += 1; run(fromAiqicha, true); }
+        if (chans.so360) { pending += 1; opened += 1; run(fromSo360, false); }
+        /* 第四条：太极AI（用户口径「这个也能辅助法人检索」）。和本地通道并发起跑，
+         * 只有本地都空手才用它；它慢也不拖主路径 —— 本地上任何一家先出来就 finish 收工。 */
+        if (chans.ai) {
+          pending += 1; opened += 1;
+          Promise.resolve().then(function () { return fromAi(name); }).then(function (out) {
+            if (out && out.rep) aiOut = out;
+            pending -= 1;
+            maybeDone();
+          }).catch(function (err) {
+            errors.push('太极AI：' + String((err && err.message) || err));
+            pending -= 1;
+            maybeDone();
+          });
+        }
+      };
+      if (chans.sogou && headstartMs > 0) setTimeout(startLater, headstartMs);
+      else startLater();
     });
     if (r && r.rep) {
       cache[key] = { rep: r.rep, source: r.source, at: Date.now(), name: name, ai: r.source === 'ai' };

@@ -200,6 +200,22 @@
   /** 置顶排序的**唯一归一函数**（设置页回显/落盘 + 面板消费共用）：归一成 `'甲, 乙'` 这种落盘串。 */
   function normalizePinOrder(value) { return pinOrderKeys(value).join(', '); }
 
+  /* ---- 法人查询的联网通道开关（2.0.16.7 · 用户 m20763：「这种链路可以选择打开和关闭」）----
+   * 四条通道各自能关：搜狗移动版企业卡 / 爱企查 / 360 搜索 / 太极AI 兜底。
+   * 口径：**只有明确的 false 算关**，缺键与坏值一律按开 —— 关通道是用户主动的动作，
+   * 不该被一个脏值静默打开或静默关掉；全关也是合法配置（面板会如实写「所有通道都已关闭」）。 */
+  const ENTITY_CHANNEL_KEYS = ['sogou', 'aiqicha', 'so360', 'ai'];
+  const ENTITY_CHANNEL_DEFAULT = { sogou: true, aiqicha: true, so360: true, ai: true };
+  function normalizeEntityChannels(raw) {
+    const src = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
+    const out = {};
+    for (let i = 0; i < ENTITY_CHANNEL_KEYS.length; i++) {
+      const k = ENTITY_CHANNEL_KEYS[i];
+      out[k] = src[k] !== false;
+    }
+    return out;
+  }
+
   /* ---- 重要笔记的两个外观数字的边界（2.0.2.6 需求③）----
    * 与 PANEL_WIDTH_* 同一口径：设置页数字输入的 min/max、保存时的校验、面板侧的夹紧**都从这里取**，
    * HTML 里一律不写死。整理前的实况是三份各自为政：`imgSize` 的 40/600 只写在 options.html 的属性里
@@ -417,7 +433,10 @@
         /* 【2.0.15 · 问题②】同法人校验（开发者 / 核准主体两边查法定代表人）。
          * 默认关：爱企查这条链路经常查不到（未登录 / 验证 / 改版），用户要求改成可选打开；
          * 关着时面板不发起任何查询，也不写「未查明」标记。 */
-        entityCheck: false
+        entityCheck: false,
+        /* 【2.0.16.7 · 用户 m20763】四条联网通道各自能关（默认全开＝与旧版行为一致）：
+         * 关掉的通道一个请求都不发；全关时面板写「法人通道都已关闭」。 */
+        entityChannels: { sogou: true, aiqicha: true, so360: true, ai: true }
       },
 
       /** 重要笔记面板的**默认宽度**（px；T26 / 用户 2026-10-12：200 → 250）。
@@ -533,6 +552,11 @@
     normalizePinOrder,
     pinOrderKeys,
     NOTE_PIN_MAX,
+
+    /** 【2.0.16.7 · m20763】法人查询四条通道的开关归一与常量（设置页 / 后台竞速 / 面板共用一份） */
+    normalizeEntityChannels,
+    ENTITY_CHANNEL_KEYS,
+    ENTITY_CHANNEL_DEFAULT,
 
     /** 重要笔记两个外观数字的唯一归一 + 边界常量（设置页 / 面板 / 读路径共用一份；见文件上部） */
     normalizeImgSize,
@@ -658,6 +682,17 @@
         if (!cfg.policy || cfg.policy.renderTab !== want) {
           cfg.policy = Object.assign({}, p, { renderTab: want });
           if (raw && raw.policy && raw.policy.renderTab !== undefined) changed.invalid.push('policy.renderTab');
+        }
+      }
+
+      /* ②e2b 【2.0.16.7 · m20763】法人通道开关：缺键按开、只有明确的 false 才关；
+       * 全关合法（用户主动选「不联网」）。脏值只登记，语义一律以 normalizeEntityChannels 为准。 */
+      if (cfg.importantNote) {
+        const wantCh = normalizeEntityChannels(cfg.importantNote.entityChannels);
+        const nowCh = cfg.importantNote.entityChannels;
+        if (!nowCh || typeof nowCh !== 'object' || ENTITY_CHANNEL_KEYS.some((k) => nowCh[k] !== wantCh[k])) {
+          cfg.importantNote.entityChannels = wantCh;
+          if (nowCh !== undefined) changed.invalid.push('importantNote.entityChannels');
         }
       }
 

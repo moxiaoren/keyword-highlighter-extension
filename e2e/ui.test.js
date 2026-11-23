@@ -30,12 +30,13 @@ module.exports = async function runUi(ctx) {
     truthy(nav.height > 400, '侧边栏应满高，实际 ' + nav.height);
     console.log('        侧边栏项: ' + JSON.stringify(nav.links));
     // 用户 2026-09 拍板：原「高亮样式」+「备注卡片样式」合并为一个「样式」分区（策划案的 7 分区已作废）
-    const expect = ['关键词管理', '分组管理', '样式', '图片识别', '站点规则', '导入导出', '帮助与隐私'];
+    // 【2.0.16.7 · m20966/m20977】「重要笔记」与「AI 助手」从「样式」里独立成页 ⇒ 7 分区变 9 分区。
+    const expect = ['关键词管理', '分组管理', '样式', '重要笔记', 'AI 助手', '图片识别', '站点规则', '导入导出', '帮助与隐私'];
     for (const e of expect) {
       truthy(nav.links.some(l => l.indexOf(e) >= 0), '侧边栏应含「' + e + '」，实际 ' + JSON.stringify(nav.links));
     }
-    // K72 B8-11：分区是 **7** 项（旧的人工检查清单写"6 项"，与 UI 不符）
-    eq(nav.tabs.length, 7, '侧边栏应有恰好 7 个分区（`.kh-tab`），实际 ' + JSON.stringify(nav.tabs));
+    // K72 B8-11：分区是 **9** 项（2.0.16.7 起；此前 7 项，再早的人工清单写"6 项"均作废）
+    eq(nav.tabs.length, 9, '侧边栏应有恰好 9 个分区（`.kh-tab`），实际 ' + JSON.stringify(nav.tabs));
     falsy(nav.links.some(l => /高亮样式|备注卡片样式/.test(l)), '合并后不该再有「高亮样式」「备注卡片样式」两条，实际 ' + JSON.stringify(nav.links));
     // 合并后两个板块都要在同一个分区里
     const merged = await opt.evaluate(() => {
@@ -45,11 +46,11 @@ module.exports = async function runUi(ctx) {
     truthy(merged && merged.hl && merged.nc, '「样式」分区里必须同时含高亮颜色与备注卡片两块，实际 ' + JSON.stringify(merged));
   });
 
-  await test('★ 重要笔记「图片尺寸 / 正文字号」在「样式」分区，不在折叠的高级设置里（用户 2026-10-11 现场）', async () => {
+  await test('★ 重要笔记「图片尺寸 / 正文字号」在「重要笔记」分区，不在折叠的高级设置里（用户 2026-10-11 现场；2.0.16.7 起该分区独立成页）', async () => {
     /* 动因：两个输入框原本埋在「帮助与隐私 → ⚙️ 性能 → 折叠的 <details>高级设置」里，
      * 同排还有 4 个性能调参；而「样式」分区（都是"全局默认外观"）空着 569px。 */
     const r = await opt.evaluate(() => {
-      const sec = document.getElementById('sec-style');
+      const sec = document.getElementById('sec-note');
       const out = {};
       for (const id of ['pf-imgSize', 'pf-noteFontSize']) {
         const el = document.getElementById(id);
@@ -63,7 +64,7 @@ module.exports = async function runUi(ctx) {
     });
     for (const id of ['pf-imgSize', 'pf-noteFontSize']) {
       truthy(r[id], '设置页要有 #' + id + '（没有它用户没法配）');
-      truthy(r[id].inStyle, '★ #' + id + ' 必须落在「样式」分区 —— 埋在「帮助与隐私 → 性能 → 高级设置」折叠块里就没人找得到');
+      truthy(r[id].inStyle, '★ #' + id + ' 必须落在「重要笔记」分区 —— 埋在「帮助与隐私 → 性能 → 高级设置」折叠块里就没人找得到');
       falsy(r[id].inDetails, '★ #' + id + ' 不许再包在折叠的 <details> 里，实际 ' + JSON.stringify(r[id]));
     }
     includes(r['pf-imgSize'].label, '尺寸', '#pf-imgSize 的字段标签要带「尺寸」');
@@ -183,7 +184,7 @@ module.exports = async function runUi(ctx) {
      * 【2.0.10.15】预算 1200 → 1300：2.0.10.15 又加了「校验中心」折叠卡（默认折叠，展开前 44px 摘要），
      * 同样是真功能；同一先例，仍由 `engTop < 视口` 守本意。 */
     truthy(r.height < 1300, '★ 本页高度要有上限（原 1071px；2.0.7.2 软著核对卡、2.0.10.15 校验中心后仍有上限），实际 ' + r.height + 'px');
-    includes(r.secHeadText, '样式', '顶部要有一行指路「相关设置在 样式 → 重要笔记」（两个外观默认值已搬到那里）');
+    includes(r.secHeadText, '重要笔记', '顶部要有一行指路「相关设置在 重要笔记」（2.0.16.7 起它已独立成页，不再挂在「样式」下）');
   });
 
   await test('★ 校验中心：图怎么取 / 谁和谁比 两项都在（T5）', async () => {
@@ -317,6 +318,60 @@ module.exports = async function runUi(ctx) {
 
     await setFS(11);                              // 收尾：写回默认值，别把 10/14 留给后面的用例
     eq(await waitFS(11), 11, '收尾写回 11');
+  });
+
+  await test('★ 2.0.16.7 法人通道开关：四条各自可关、落进 importantNote.entityChannels，校验关着时置灰', async () => {
+    const ids = ['pf-ent-sogou', 'pf-ent-aiqicha', 'pf-ent-so360', 'pf-ent-ai'];
+    const shape = await opt.evaluate((list) => list.map((id) => {
+      const el = document.getElementById(id);
+      return el ? { id: id, checked: el.checked, disabled: el.disabled, type: el.type } : null;
+    }), ids);
+    ids.forEach((id, i) => truthy(shape[i], '设置页要有通道开关 #' + id));
+    eq(shape.map((s) => s.type).join(','), 'checkbox,checkbox,checkbox,checkbox', '四个都要是复选框');
+    eq(shape.map((s) => s.checked).join(','), 'true,true,true,true', '默认全开（老行为不变）');
+    const checkOn = await opt.evaluate(() => document.getElementById('pf-noteEntityCheck').checked);
+    eq(shape.map((s) => s.disabled).join(','), checkOn ? 'false,false,false,false' : 'true,true,true,true',
+      '同法人校验关着时通道开关要置灰（实际 enabled=' + checkOn + '）');
+
+    const readCh = () => opt.evaluate(() => new Promise((res) => chrome.storage.local.get(['importantNote'], (r) => res((r.importantNote || {}).entityChannels || null))));
+    const waitCh = async (want) => {
+      for (let i = 0; i < 15; i++) {
+        const v = await readCh();
+        if (v && v.ai === want.ai && v.sogou === want.sogou && v.aiqicha === want.aiqicha && v.so360 === want.so360) return v;
+        await opt.waitForTimeout(100);
+      }
+      return await readCh();
+    };
+    /* 先把校验打开（关着时开关是灰的，点不动），这时四个通道应可用。 */
+    await opt.evaluate(() => {
+      const el = document.getElementById('pf-noteEntityCheck');
+      if (!el.checked) { el.checked = true; el.dispatchEvent(new Event('change', { bubbles: true })); }
+    });
+    await opt.waitForTimeout(200);
+    const nowDisabled = await opt.evaluate((list) => list.map((id) => document.getElementById(id).disabled), ids);
+    eq(nowDisabled.join(','), 'false,false,false,false', '打开同法人校验后四条通道要可点');
+
+    /* 关掉太极AI 这条：要整份写进 entityChannels（storage 侧一层合并，写半截会丢兄弟键）。 */
+    await opt.evaluate(() => {
+      const el = document.getElementById('pf-ent-ai');
+      el.checked = false;
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    const saved = await waitCh({ sogou: true, aiqicha: true, so360: true, ai: false });
+    truthy(saved, '四个通道要落进 importantNote.entityChannels');
+    eq(saved && saved.ai, false, '★ 关掉太极AI 要存成 false');
+    eq([saved.sogou, saved.aiqicha, saved.so360].join(','), 'true,true,true', '其余三条不许被顺手关掉（整份写入）');
+
+    /* 收尾：四条恢复全开、校验恢复关闭，别把设置留给后面的用例。 */
+    await opt.evaluate(() => {
+      ['pf-ent-sogou', 'pf-ent-aiqicha', 'pf-ent-so360', 'pf-ent-ai'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (!el.checked) { el.checked = true; el.dispatchEvent(new Event('change', { bubbles: true })); }
+      });
+      const c = document.getElementById('pf-noteEntityCheck');
+      if (c.checked) { c.checked = false; c.dispatchEvent(new Event('change', { bubbles: true })); }
+    });
+    await waitCh({ sogou: true, aiqicha: true, so360: true, ai: true });
   });
 
   await test('★ 2.0.2.6 置顶排序：下拉框选词 → 胶囊展示 → 落盘是关键词 id', async () => {

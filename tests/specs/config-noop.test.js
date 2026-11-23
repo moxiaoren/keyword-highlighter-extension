@@ -28,7 +28,9 @@ const path = require('path');
 const STUBS = ['Config', 'Compiler', 'SiteRules', 'Scheduler', 'Rebuilder', 'Scanner', 'Arbiter', 'Renderer', 'registry', 'features'];
 
 /* 扫到的"配置键"里混进来的**非配置**成员：`.js` 是注释里的文件名（`config.js`），不是键。 */
-const NOT_A_CONFIG_KEY = new Set(['js']);
+/* `normalizeEntityChannels` 只在注释里以 `config.normalizeEntityChannels` 出现（说明口径一致），
+ * 它是导出的函数、不是配置键，别让守卫把它当成漏键。 */
+const NOT_A_CONFIG_KEY = new Set(['js', 'normalizeEntityChannels']);
 
 /** 递归列出扩展源码目录下的所有 .js（这些才是"读配置"的地方；tests/ 与 _e2e/ 不算） */
 function sourceFiles(root) {
@@ -354,8 +356,10 @@ module.exports = async function run() {
       /* T52：`imgOcr` 已从 UI_ONLY_KEYS 摘掉（回归 F1，见上面它的反向守卫），故不在本表；
        * 它的分类由那条动态守卫钉着，不是靠这里的静态读点清单。 */
       const re = /(?:cfg|config|normalized|state\.config)\.(?:importantNote|notePanelWidth|noteCardStyle)\b/;
+      /* 【2.0.16.7】background/entity.js 读的是 importantNote.entityChannels（四条法人通道开关）：
+       * 它是后台真实消费的行为开关，不是页面渲染输入，改它本来就不需要整页重建。 */
       const allowed = ['src/core/config.js', 'src/features/important-note.js', 'src/features/note-card.js',
-        'options/options.js'];
+        'options/options.js', 'background/entity.js'];
       const seen = [];
       const bad = [];
       for (const f of sourceFiles(root)) {

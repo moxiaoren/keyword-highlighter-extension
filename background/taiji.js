@@ -390,7 +390,8 @@
       e.needLogin = (json.code === 2 || json.code === 401 || json.code === 403);
       throw e;
     }
-    return String(id);
+    /* 【2.0.16.7 · m20800】原样回数字：调用方直接把它当 sessionId 发，转成字符串会让站点报 int64 解析失败。 */
+    return id;
   }
 
   /** 把对话数组压成站点要的一整段 text（站点只收 text，不收 messages）。 */
@@ -491,9 +492,12 @@
       const text = flatten(Array.isArray(payload.messages) ? payload.messages : []);
       if (!text) return { ok: false, error: '没有要发送的内容' };
       const sid = await createSession(useModel);
+      /* 【2.0.16.7 · m20800】站点字段是 int64：sessionId 必须以整数发，发字符串会被判「参数解析失败」code=3。 */
+      const sidNum = typeof sid === 'number' ? sid : Number(String(sid).trim());
+      if (!isFinite(sidNum)) return { ok: false, error: '站点给的会话 id 不是数字（' + sid + '），没法继续' };
       const out = await api('/api/chat/completions', {
         method: 'POST',
-        body: { text: text, sessionId: sid, model: useModel },
+        body: { text: text, sessionId: sidNum, model: useModel },
         idleMs: Number(payload.timeoutMs) > 0 ? Number(payload.timeoutMs) : IDLE_MS
       });
       const got = await readStream(out);

@@ -1720,6 +1720,13 @@
     $('pf-notePaged').checked = !!(cfg.importantNote || {}).pagedTabs;
     /* 【2.0.15 · 问题②】同法人校验回显（默认关）。 */
     $('pf-noteEntityCheck').checked = !!(cfg.importantNote || {}).entityCheck;
+    /* 【2.0.16.7 · m20763】四条通道开关回显：只有明确的 false 算关，缺键按开。 */
+    const ech = (cfg.importantNote || {}).entityChannels || {};
+    [['sogou', 'pf-ent-sogou'], ['aiqicha', 'pf-ent-aiqicha'], ['so360', 'pf-ent-so360'], ['ai', 'pf-ent-ai']].forEach((pair) => {
+      const box = $(pair[1]);
+      if (box) box.checked = ech[pair[0]] !== false;
+    });
+    syncEntityChannelBoxes();
   /* 【2.0.16.4 · m19385】默认开：读不到正文时允许开后台标签页（用户选 P4-A）。 */
   $('pf-policyRenderTab').checked = ((cfg.policy || {}).renderTab !== false);
     /* 【2.0.8.4 需求④】AI 助手的接口配置（与上面那块"重要笔记"同属样式/配置页）。 */
@@ -1943,8 +1950,65 @@
   });
   $('pf-noteEntityCheck').addEventListener('change', async () => {
     await saveNested({ importantNote: { entityCheck: $('pf-noteEntityCheck').checked === true } });
+    syncEntityChannelBoxes();
   });
 
+  /* 【2.0.16.7 · m20763 / m20998】四条法人通道单独开关：关掉的通道后台不发请求、也不计入「等齐」。
+   * 存储侧只做一层合并 ⇒ entityChannels 必须整份写（四把开关一起带上）。
+   * 界面口径：总闸关着时整张清单置灰（还能改，只是不生效），标题旁一直显示「已开 n/4」。 */
+  const ENT_CHANNEL_BOXES = [['sogou', 'pf-ent-sogou', '搜狗企业卡'], ['aiqicha', 'pf-ent-aiqicha', '爱企查'], ['so360', 'pf-ent-so360', '360 搜索'], ['ai', 'pf-ent-ai', '太极AI 推断']];
+  const ENT_CHANNEL_ALL_ON = { sogou: true, aiqicha: true, so360: true, ai: true };
+
+  /** 读当前界面上的四把开关（缺键按开，与 config.normalizeEntityChannels 同口径）。 */
+  function entChannelsNow() {
+    const cur = Object.assign({}, ENT_CHANNEL_ALL_ON, (cfg.importantNote || {}).entityChannels || {});
+    ENT_CHANNEL_BOXES.forEach((pair) => { const box = $(pair[1]); if (box) cur[pair[0]] = box.checked === true; });
+    return cur;
+  }
+
+  /** 总闸 → 清单可编辑性 + 批量按钮可用性 + 「已开 n/4」摘要。回显与每次改动后都调它。 */
+  function syncEntityChannelBoxes() {
+    const on = $('pf-noteEntityCheck') && $('pf-noteEntityCheck').checked === true;
+    let n = 0;
+    ENT_CHANNEL_BOXES.forEach((pair) => {
+      const box = $(pair[1]);
+      if (!box) return;
+      box.disabled = !on;
+      if (box.checked) n += 1;
+    });
+    const list = $('pf-entity-channels');
+    if (list) list.classList.toggle('is-disabled', !on);
+    ['btn-ent-all-on', 'btn-ent-all-off'].forEach((id) => { const b = $(id); if (b) b.disabled = !on; });
+    const sum = $('ent-ch-summary');
+    if (sum) sum.textContent = on ? '已开 ' + n + ' / 4' : '总闸关着（已开 ' + n + ' / 4，暂不查询）';
+  }
+
+  /** 整份写回（storage 一层合并：少一个键就会把兄弟开关打回默认）。 */
+  async function saveEntityChannels(next, note) {
+    await saveNested({ importantNote: { entityChannels: next } });
+    cfg.importantNote = Object.assign({}, cfg.importantNote || {}, { entityChannels: next });
+    syncEntityChannelBoxes();
+    if (note) D.toast(note, 'ok');
+  }
+
+  ENT_CHANNEL_BOXES.forEach((pair) => {
+    const box = $(pair[1]);
+    if (!box) return;
+    box.addEventListener('change', async () => {
+      const next = entChannelsNow();
+      await saveEntityChannels(next, '已保存：' + (box.checked ? '打开' : '关闭') + '「' + pair[2] + '」通道');
+    });
+  });
+
+  /* 批量：全部打开 / 全部关闭（一眼能改完，不用逐个点四次）。 */
+  $('btn-ent-all-on').addEventListener('click', async () => {
+    ENT_CHANNEL_BOXES.forEach((pair) => { const b = $(pair[1]); if (b) b.checked = true; });
+    await saveEntityChannels(Object.assign({}, ENT_CHANNEL_ALL_ON), '已保存：四条渠道全部打开');
+  });
+  $('btn-ent-all-off').addEventListener('click', async () => {
+    ENT_CHANNEL_BOXES.forEach((pair) => { const b = $(pair[1]); if (b) b.checked = false; });
+    await saveEntityChannels({ sogou: false, aiqicha: false, so360: false, ai: false }, '已保存：四条渠道全部关闭');
+  });
 
   /* ---- 【2.0.16.4 · m19483】只剩太极AI：改了任一项都清掉上一次的结论，免得"刚才通了"被当成本次结果。 ---- */
   function aiChanged() {
@@ -2137,11 +2201,12 @@
    * 变更记录：
    *   · 原「匹配与性能」不再单独成区 —— 控件已并入「帮助与隐私」；
    *   · 原「高亮样式」+「备注卡片样式」两个分区**合并为「样式」**（用户 2026-09 要求：
-   *     "两个菜单合并成样式，里面内容也合并起来"）—— 它们都是"全局默认外观"，分开只是多一次点击。
-   *     ⚠️ 原写「策划案 7 分区被覆盖为 6 分区」是笔误：实际就是 7 个（见下面的 SECTIONS，
+   *     ⚠️ 2.0.16.7（用户 m20966/m20977）把设置页从 7 分区拆成 9 分区：重要笔记（note）与 AI 助手（ai）
+   *     从「样式」里独立成页 —— 它们本来就不是外观配置。
+   *     与导航里 9 个「.kh-tab」、e2e 的"侧边栏分区"断言一致）。改导航前先看那条断言。
    *     与导航里 7 个 `.kh-tab`、e2e 的"侧边栏分区"断言一致）。改导航前先看那条断言。
    */
-  const SECTIONS = ['keywords', 'groups', 'style', 'ocr', 'sites', 'data', 'help'];
+  const SECTIONS = ['keywords', 'groups', 'style', 'note', 'ai', 'ocr', 'sites', 'data', 'help'];
 
   function showSection(id) {
     const target = SECTIONS.indexOf(id) >= 0 ? id : 'keywords';

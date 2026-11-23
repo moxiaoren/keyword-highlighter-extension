@@ -113,6 +113,12 @@
     /* ----【2.0.16.4 · m19483】只剩太极AI 一条通路（网页对话 / API 两条已整条删除） ---- */
     aiModeTaiji: '太极AI 网页通路',
     aiModeTaijiTip: '走太极AI 站点，后台直接请求，不开标签页；在设置页登录一次、可选模型',
+    /* 【2.0.16.7 · m20763】同法人校验的每条通道都可以单独关；结果要写清是哪条给的。 */
+    entSrcSogou: '搜狗企业卡',
+    entSrcAiqicha: '爱企查',
+    entSrcSo360: '360 搜索',
+    entSrcAi: '太极AI 推断',
+    entSrcCache: '本机缓存',
     aiNotReady: '未配置',
     aiAvMe: '我',
     aiCopy: '复制',

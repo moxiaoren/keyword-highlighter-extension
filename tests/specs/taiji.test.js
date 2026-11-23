@@ -85,7 +85,7 @@ function loadTaiji(opts) {
         o.loginCookie === undefined ? ['ai-session=tok-1; Path=/; Max-Age=2592000'] : o.loginCookie);
     }
     if (u.indexOf('/api/chat/tmpl') >= 0) return jsonRes(o.tmpl === undefined ? TM_OK : o.tmpl);
-    if (u.indexOf('/api/chat/session') >= 0) return jsonRes(o.session === undefined ? { code: 0, data: { id: 'sess-1' } } : o.session);
+    if (u.indexOf('/api/chat/session') >= 0) return jsonRes(o.session === undefined ? { code: 0, data: { id: 1001 } } : o.session);
     if (u.indexOf('/api/chat/completions') >= 0) {
       return o.chat || sseRes([
         'data: {"type":"string","data":"\u003cthink\u003e我先想一想"}\n\n',
@@ -269,7 +269,23 @@ module.exports = async function run() {
     const sess = calls.filter((c) => c.url.indexOf('/api/chat/session') >= 0)[0];
     deepEq(sess.body, { model: 'openai::gpt-6.1-sol' }, '没选模型时用清单第一个建会话');
     const chat = calls.filter((c) => c.url.indexOf('/api/chat/completions') >= 0)[0];
-    deepEq(chat.body, { text: '你好', sessionId: 'sess-1', model: 'openai::gpt-6.1-sol' }, '站点只收 text + sessionId + model');
+    deepEq(chat.body, { text: '你好', sessionId: 1001, model: 'openai::gpt-6.1-sol' }, '站点只收 text + sessionId + model');
+    /* 【2.0.16.7 · m20800】站点 sessionId 是 int64：必须是 JSON 数字，不能是字符串。 */
+    eq(typeof chat.body.sessionId, 'number', 'sessionId 必须是数字（发字符串会让站点报 int64 解析失败）');
+  });
+
+  await test('★ 2.0.16.7 · 站点回字符串数字 id 也要转成整数发；非数字直接报错不发请求', async () => {
+    const a = loadTaiji({ session: { code: 0, data: { id: '2002' } } });
+    const r = await a.T.chat({ messages: [{ role: 'user', content: '你好' }] });
+    truthy(r.ok, '字符串数字 id 应能转成整数：' + (r.error || ''));
+    const c1 = a.calls.filter((c) => c.url.indexOf('/api/chat/completions') >= 0)[0];
+    eq(c1.body.sessionId, 2002, '发出去的是整数 2002');
+    eq(typeof c1.body.sessionId, 'number', '类型也必须是数字');
+    const b = loadTaiji({ session: { code: 0, data: { id: 'sess-x' } } });
+    const r2 = await b.T.chat({ messages: [{ role: 'user', content: '你好' }] });
+    falsy(r2.ok, '非数字 id 不能硬发');
+    truthy(r2.error.indexOf('不是数字') >= 0, '要直接说清会话 id 不对：' + r2.error);
+    eq(b.calls.filter((c) => c.url.indexOf('/api/chat/completions') >= 0).length, 0, '这种情况一个 completions 请求都不该发');
   });
 
   await test('对话：显式选的模型优先；非流式回包也能读（data.aiText）', async () => {
@@ -328,7 +344,8 @@ module.exports = async function run() {
   await test('★ 通道竞速：AI 不能抢本地通道的结论（本地先回就用本地）', () => {
     const src = read('background/entity.js');
     truthy(src.indexOf('let aiOut = null;') >= 0, 'AI 结果要先存着');
-    truthy(src.indexOf('opened >= 4') >= 0, '四家都放出去才收口（少一家就会过早判失败）');
+    /* 【2.0.16.7】改成按「已启用的通道数」收口：关掉的通道不发也不等。 */
+    truthy(src.indexOf('opened >= total') >= 0, '已启用的通道都放出去才收口（少一家就会过早判失败）');
     truthy(src.indexOf("finish(aiOut)") >= 0, '只有本地全空手才退到 AI');
     truthy(src.indexOf("source: 'ai'") >= 0, 'AI 结果带来源标记');
     truthy(src.indexOf('AI_TTL_MS') >= 0 && src.indexOf('6 * 3600 * 1000') >= 0, '模型推断只信 6 小时，不该和站点值一样存一天');

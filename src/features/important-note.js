@@ -3108,6 +3108,14 @@
       } catch (e) { done({ ok: false, reason: String((e && e.message) || e) }); }
     },
 
+    /* 【2.0.16.7 · m20763】把后台回的评价渠道翻成用户看得懂的名字；认不出就返回空串（宁可不标，也不编）。 */
+    entSourceLabel(src) {
+      const V = (KH && KH.OcrCopy && KH.OcrCopy.VIEW) || {};
+      const map = { sogou: V.entSrcSogou, aiqicha: V.entSrcAiqicha, so360: V.entSrcSo360, ai: V.entSrcAi, cache: V.entSrcCache };
+      const hit = map[String(src || '')];
+      return hit ? String(hit) : '';
+    },
+
     /** 需求③：开发者 / 核准主体 两边查法定代表人，再判断是否同一人。 */
     paintEntity(el, table, fields, NC) {
       /* 【2.0.15 · 问题②】同法人校验改成可选打开、**默认关闭**：爱企查这条链路经常
@@ -3161,11 +3169,14 @@
         const verdict = KH.Compare.legalRep({ name: dev, rep: reps[0] }, { name: ent, rep: reps[1] }).state;
         /* 查不到法人时把失败原因跟在后面（爱企查要登录 / 超时 / 站点改版），面板不再只有一个「未查明」。 */
         const why = (s) => (s.rep ? '' : (s.error ? '（' + s.error + '）' : ''));
-        /* 【2.0.16】太极AI 兜底给出的人名必须标出来：官方三站没查到、模型按常识答的，
-         * 不能让用户误当成工商登记的结果。 */
-        const aiMark = (s) => (s.source === 'ai' ? '（AI 推断）' : '');
-        const sides = '开发者「' + dev + '」→ ' + (reps[0] || '未查到法人') + aiMark(sides0[0]) + why(sides0[0])
-          + '；核准主体「' + ent + '」→ ' + (reps[1] || '未查到法人') + aiMark(sides0[1]) + why(sides0[1]);
+        /* 【2.0.16.7 · m20763】四条通道各自出结果，界面必须写清是哪一条给的：
+         * 「AI 推断」仍然要标（不能误当成工商登记），只是统一进「来源：…」。 */
+        const srcMark = (s) => {
+          const label = this.entSourceLabel(s.source);
+          return label ? '（来源：' + label + '）' : '';
+        };
+        const sides = '开发者「' + dev + '」→ ' + (reps[0] || '未查到法人') + srcMark(sides0[0]) + why(sides0[0])
+          + '；核准主体「' + ent + '」→ ' + (reps[1] || '未查到法人') + srcMark(sides0[1]) + why(sides0[1]);
         if (verdict === 'unknown') {
           /* 不改底色，但原因要说得清：【台账 #8】等满 20 秒没回执 = 超时（可以等会儿再看），
            * 其余才是「未查明」。两种情况以前都只写「未查明」，用户分不出该重试还是该放弃。 */

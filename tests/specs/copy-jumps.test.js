@@ -46,7 +46,7 @@ module.exports = async function run() {
       if (h) tabHrefs.push(h[1]);
       if (d) tabDatas.push(d[1]);
     }
-    eq(tabHrefs.length, 7, '导航应有 7 个分区（SECTIONS 也是 7 个），实际 ' + tabHrefs.length);
+    eq(tabHrefs.length, 9, '导航应有 9 个分区（SECTIONS 也是 9 个，2.0.16.7 拆出「重要笔记」「AI 助手」），实际 ' + tabHrefs.length);
     eq(tabHrefs.join(','), tabDatas.join(','), '每个 .kh-tab 的 href 与 data-tab 必须一一对应');
     for (const id of tabHrefs) {
       truthy(secIds.indexOf(id) >= 0, '导航指向的分区 `sec-' + id + '` 必须真的存在于页面里');

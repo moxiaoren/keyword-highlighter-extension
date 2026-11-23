@@ -99,13 +99,13 @@ module.exports = async function run() {
       '★ `.kh-textarea` / `.kh-rte` 必须 `min-width: 100%`（挡住把框拖窄，拉宽照旧），实际 ' + JSON.stringify(floor));
   });
 
-  suite('设置页「置顶排序」：胶囊与下拉框同一个框（2.0.2.7 需求④）');
+  suite('设置页「置顶排序」：胶囊与下拉框同一个框（2.0.2.7 需求④；2.0.16.7 起在「重要笔记」页）');
 
   const html = read('options/options.html');
-  const sec = (html.match(/<section[^>]*id="sec-style"[\s\S]*?<\/section>/) || [''])[0];
+  const sec = (html.match(/<section[^>]*id="sec-note"[\s\S]*?<\/section>/) || [''])[0];
 
   await test('★ `#pin-caps` 与 `#pf-notePinOrder` 装在同一个 `.kh-pin-box` 里（不再一上一下两截）', () => {
-    truthy(sec.length > 0, '要能定位「样式」分区');
+    truthy(sec.length > 0, '要能定位「重要笔记」分区（2.0.16.7 把置顶/分页从样式页搬了过来）');
     const m = /<div class="kh-pin-box">\s*<div class="kh-lbl-preview" id="pin-caps"><\/div>\s*<select class="kh-input" id="pf-notePinOrder"><\/select>\s*<\/div>/.exec(sec);
     const at = sec.indexOf('kh-pin-fld');
     truthy(m, '★ 两个元素必须包在同一个 `.kh-pin-box` 里（胶囊在前、下拉在后），实际片段：' + JSON.stringify(sec.slice(at, at + 560)));
