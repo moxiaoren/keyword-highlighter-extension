@@ -367,33 +367,6 @@
     };
   }
 
-  /* ---- 【2.0.8.7 需求②】AI 审核的免登录通道（Cloudflare Workers AI）----
-   * 为什么要单开一段配置，而不是复用 `ai`：两者的请求形态不一样 —— `ai` 是纯文本对话
-   * （后台 `cleanMessages` 会把 content 压成字符串），审核要带**图片**，走的是多模态
-   * `content:[{type:'text'},{type:'image_url'}]`，所以另有一条通道与另一份配置。
-   * 免费额度口径（2026-11 核实）：10,000 neurons/天，一张 512px 图标约 5~9 neurons。
-   * `accountId` 在官方控制台的 URL 里（`dash.cloudflare.com/<accountId>/...`），token 只存本机。 */
-  const AI_AUDIT_MODEL_DEFAULT = '@cf/meta/llama-3.2-11b-vision-instruct';
-  const AI_AUDIT_MODEL_LIST = [
-    '@cf/meta/llama-3.2-11b-vision-instruct',
-    '@cf/meta/llama-4-scout-17b-16e-instruct'
-  ];
-  const AI_AUDIT_NAME_MAX = 120;
-
-  function normalizeAiAudit(raw) {
-    const src = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
-    const accountId = (typeof src.accountId === 'string') ? src.accountId.trim() : '';
-    const token = (typeof src.token === 'string') ? src.token.trim() : '';
-    const model = (typeof src.model === 'string') ? src.model.trim() : '';
-    return {
-      enabled: src.enabled !== false,
-      accountId: accountId,
-      token: token,
-      model: model || AI_AUDIT_MODEL_DEFAULT,
-      /* 只跑本地词库：不花额度、也不把图标发出去（公司内网/不想外传时用） */
-      localOnly: src.localOnly === true
-    };
-  }
 
   const Config = {
     /** 默认值 —— 唯一真源（方案 §7.1 定稿形态） */
@@ -463,10 +436,6 @@
        * OpenAI 兼容格式，设置页可换成任意兼容服务（含中转）。归一只有 `normalizeAi` 一份。
        * ⚠️ `apiKey` 只存本机 storage，不随导出分享（见 storage 的导出白名单）。 */
       ai: normalizeAi({ provider: 'deepseek' }),
-
-      /* 【2.0.8.7 需求②】AI 审核（名称/图标是否蹭品牌、是否涉敏感内容）。
-       * 默认开：本地词库初筛零成本、不发任何请求；云端那一步要 token，没配就只出本地结论。 */
-      aiAudit: normalizeAiAudit({}),
 
       /* ---- 图片文字识别（OCR）----
        * `defaultMax`：每个锚点最多识别几张图（关键词上可单独覆盖，留空即用这个默认）
@@ -580,11 +549,6 @@
     normalizeAiTaiji,
     aiPreset,
     AI_PRESET_LIST,
-    /* 【2.0.8.7 需求②】审核通道的配置归一与预设模型（设置页 / 后台共用一份） */
-    normalizeAiAudit,
-    AI_AUDIT_MODEL_LIST,
-    AI_AUDIT_MODEL_DEFAULT,
-    AI_AUDIT_NAME_MAX,
     AI_MODES,
     AI_MODE_DEFAULT,
     /* 【2.0.16.4】AI_WEB_ORIGIN 已随网页对话通路一起删除（导出列表也必须一起删，否则加载即 ReferenceError）。 */
@@ -703,15 +667,6 @@
         if (JSON.stringify(mg) !== JSON.stringify(cfg.imgMerge || null)) {
           cfg.imgMerge = mg;
           changed.invalid.push('imgMerge');
-        }
-      }
-
-      /* ②e2b 【2.0.8.7 需求②】AI 审核配置的读路径归一。 */
-      {
-        const aa = normalizeAiAudit(cfg.aiAudit);
-        if (JSON.stringify(aa) !== JSON.stringify(cfg.aiAudit || null)) {
-          cfg.aiAudit = aa;
-          changed.invalid.push('aiAudit');
         }
       }
 

@@ -68,8 +68,8 @@ module.exports = async function run() {
     /* 【2.0.16.4】用户原话「只保留太极 AI，其余 AI 接口和调用路径全部移除」⇒ 这里不再拼
      * OpenAI 兼容端点、不再带 Bearer；ai.js 只做「读配置 → 交给 KhTaiji」这一件事。 */
     truthy(/self\.KhTaiji\.chat\(payload\)/.test(src), '唯一出站口是太极AI 通道');
-    /* 【2.0.16.4】AI 审核（Cloudflare Workers AI）仍在 ai.js 里拼自己的端点，所以不能整文件禁
-     * /chat/completions；要禁的是原 OpenAI 助手那套「拼 endpointOf + Bearer + max_tokens」。 */
+    /* 【2.0.16.5】AI 审核通道（Cloudflare Workers AI）已整条删除，ai.js 只剩太极AI 门面；
+     * 这些断言继续盯着「不许把 OpenAI 兼容那套拼装重新加回来」。 */
     falsy(/endpointOf\s*\(/.test(src), 'OpenAI 兼容端点拼装必须已删除');
     falsy(/Bearer ' \+ ai\.apiKey/.test(src), 'Bearer 拼装（API 通路特征）必须已删除');
     falsy(/Authorization = 'Bearer ' \+ ai\.apiKey/.test(src), 'Bearer 拼装必须已删除（没有 apiKey 了）');

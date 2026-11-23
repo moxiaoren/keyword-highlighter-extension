@@ -187,28 +187,6 @@
       line-height: 15px; padding: 2px 7px; border-radius: 6px; cursor: pointer;
     }
     .khin-chat-btn:hover { border-color: #b9cff0; }
-    /* ----【2.0.8.7 需求②】审核条（收在聊天头下方，展开才占位）---- */
-    .khin-audit {
-      flex: 0 0 auto; display: flex; flex-direction: column; gap: 5px;
-      padding: 7px 8px; border: 1px solid #e6ecf5; border-radius: 9px; background: #f8fbff;
-    }
-    .khin-audit[hidden] { display: none; }
-    .khin-audit-line { display: flex; align-items: center; gap: 5px; min-width: 0; }
-    .khin-audit-name {
-      flex: 1 1 auto; min-width: 0; box-sizing: border-box;
-      height: 24px; padding: 0 7px; border: 1px solid #dbe2ec; border-radius: 7px;
-      font: inherit; font-size: 11px; color: #1f2937; background: #fff;
-    }
-    .khin-audit-name:focus-visible { outline: none; border-color: #9dbcf0; box-shadow: 0 0 0 2px rgba(99,140,220,.18); }
-    .khin-audit-note {
-      flex: 1 1 auto; min-width: 0; font-size: 10px; color: #64748b;
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    }
-    .khin-audit-prev {
-      max-width: 48px; max-height: 48px; border-radius: 7px; border: 1px solid #e6ecf5;
-      background: #fff; align-self: flex-start;
-    }
-    .khin-audit-prev[hidden] { display: none; }
     @keyframes khin-pulse { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
     @keyframes khin-caret { 0%,49% { opacity: 1 } 50%,100% { opacity: 0 } }
     .khin-chat-btn.is-primary { background: #2f6fb5; border-color: #2f6fb5; color: #fff; }
@@ -2490,9 +2468,6 @@
     tab: 'note',
     aiMsgs: [],
     aiBusy: false,
-    /* 【2.0.8.7 需求②】审核条的状态：选中的图标（dataURL）与"正在跑云端"的忙位。 */
-    auditImage: '',
-    auditBusy: false,
     aiEl: null,
     aiListEl: null,
     aiPort: null,
@@ -3790,22 +3765,7 @@
             '<div class="khin-chat-head">' +
               '<span class="khin-chat-dot"></span>' +
               '<span class="khin-chat-mode"></span>' +
-              '<button class="khin-chat-btn" type="button" data-act="ai-audit"></button>' +
               '<button class="khin-chat-btn" type="button" data-act="ai-clear"></button>' +
-            '</div>' +
-            /* 【2.0.8.7 需求②】审核条：查名称 / 图标是否蹭品牌或涉敏感内容。
-             * 默认收着；点顶栏「审核」展开，结论直接落进对话流（不新开一块面板）。 */
-            '<div class="khin-audit" hidden>' +
-              '<div class="khin-audit-line">' +
-                '<input class="khin-audit-name" type="text" />' +
-                '<button class="khin-chat-btn" type="button" data-act="ai-audit-pick"></button>' +
-                '<input class="khin-audit-file" type="file" accept="image/*" hidden />' +
-              '</div>' +
-              '<div class="khin-audit-line">' +
-                '<button class="khin-chat-btn khin-audit-run" type="button" data-act="ai-audit-run"></button>' +
-                '<span class="khin-audit-note"></span>' +
-              '</div>' +
-              '<img class="khin-audit-prev" alt="" hidden />' +
             '</div>' +
             '<div class="khin-chat-list" role="log" aria-live="polite"></div>' +
             '<div class="khin-chat-form">' +
@@ -3835,179 +3795,8 @@
           e.stopPropagation();
           if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); this.sendAi(); }
         });
-        /* 【2.0.8.7 需求②】审核条的接线：展开 / 选图标 / 跑审核。 */
-        const auditBtn = box.querySelector('[data-act="ai-audit"]');
-        auditBtn.textContent = V.aiAudit;
-        auditBtn.title = V.aiAuditTip || '';
-        auditBtn.addEventListener('click', (e) => { e.stopPropagation(); this.toggleAudit(); });
-        const pickBtn = box.querySelector('[data-act="ai-audit-pick"]');
-        const fileIn = box.querySelector('.khin-audit-file');
-        pickBtn.addEventListener('click', (e) => { e.stopPropagation(); if (fileIn) fileIn.click(); });
-        if (fileIn) {
-          fileIn.addEventListener('change', () => {
-            const f = fileIn.files && fileIn.files[0];
-            if (f) this.readAuditIcon(f);
-            fileIn.value = '';
-          });
-        }
-        box.querySelector('[data-act="ai-audit-run"]').addEventListener('click', (e) => { e.stopPropagation(); this.runAudit(); });
-        this.syncAuditBar();
       }
       this.syncAiHead();
-      this.renderAiList();
-    },
-
-    /* ===== 【2.0.8.7 需求②】审核：本地词库先筛，配了 Cloudflare 再云端复核 =====
-     * 为什么放在面板：用户的原话是「分析应用名称和 icon 是否涉及蹭品牌 / 敏感内容」，
-     * 这是看页面时顺手做的事，不该再去开设置页。结论直接落进对话流，和 AI 问答一条线。 */
-
-    /** 展开 / 收起审核条（默认收着，不占对话空间）。 */
-    toggleAudit() {
-      const box = this.aiEl;
-      if (!box) return;
-      const bar = box.querySelector('.khin-audit');
-      if (!bar) return;
-      bar.hidden = !bar.hidden;
-      this.syncAuditBar();
-      if (!bar.hidden) {
-        const name = bar.querySelector('.khin-audit-name');
-        const V = KH.OcrCopy.VIEW;
-        if (name) { name.placeholder = V.aiAuditName || ''; name.focus(); }
-      }
-    },
-
-    /** 审核条的状态：按钮文案 / 本地还是云端 / 图标预览。 */
-    syncAuditBar() {
-      const box = this.aiEl;
-      if (!box) return;
-      const V = KH.OcrCopy.VIEW;
-      const aa = (this.cfg && this.cfg.aiAudit) || {};
-      const pick = box.querySelector('[data-act="ai-audit-pick"]');
-      if (pick) pick.textContent = this.auditImage ? (V.aiAuditPickDone || '') : (V.aiAuditPick || '');
-      const run = box.querySelector('[data-act="ai-audit-run"]');
-      if (run) {
-        run.textContent = this.auditBusy ? (V.aiAuditRunning || '') : (V.aiAuditRun || '');
-        run.disabled = !!this.auditBusy;
-      }
-      const prev = box.querySelector('.khin-audit-prev');
-      if (prev) {
-        prev.hidden = !this.auditImage;
-        if (this.auditImage) prev.src = this.auditImage;
-      }
-      const note = box.querySelector('.khin-audit-note');
-      if (note) {
-        /* 说实话：没 token 就写"只跑本地"，别让用户以为云端也查了。 */
-        const cloud = !!(aa.accountId && aa.token) && !aa.localOnly;
-        note.textContent = cloud ? String(aa.model || '') : (V.aiAuditLocalOnly || '');
-      }
-    },
-
-    /** 图标读进来缩到 512px 内（免费额度按 token 算，原图直接传是浪费）。 */
-    readAuditIcon(file) {
-      if (!file || !/^image\//.test(file.type || '')) return;
-      const me = this;
-      const url = URL.createObjectURL(file);
-      const img = new Image();
-      img.onload = function () {
-        try {
-          const max = 512;
-          const w = img.naturalWidth || img.width || max;
-          const h = img.naturalHeight || img.height || max;
-          const scale = Math.min(1, max / Math.max(w, h));
-          const cw = Math.max(1, Math.round(w * scale));
-          const ch = Math.max(1, Math.round(h * scale));
-          const c = document.createElement('canvas');
-          c.width = cw;
-          c.height = ch;
-          const g = c.getContext('2d');
-          if (!g) throw new Error('canvas');
-          g.drawImage(img, 0, 0, cw, ch);
-          me.auditImage = c.toDataURL('image/png');
-        } catch (err) {
-          me.auditImage = '';
-        }
-        URL.revokeObjectURL(url);
-        me.syncAuditBar();
-      };
-      img.onerror = function () {
-        URL.revokeObjectURL(url);
-        me.auditImage = '';
-        me.syncAuditBar();
-      };
-      img.src = url;
-    },
-
-    /** 跑一次审核：本地出结论 → 有图标且有免 Key 通道时再让云上看图。 */
-    runAudit() {
-      const box = this.aiEl;
-      const V = KH.OcrCopy.VIEW;
-      if (!box || this.auditBusy) return;
-      const bar = box.querySelector('.khin-audit');
-      const nameEl = bar && bar.querySelector('.khin-audit-name');
-      const name = String((nameEl && nameEl.value) || '').trim();
-      const image = String(this.auditImage || '');
-      if (!name && !image) { this.pushAuditMsg('error', V.aiAuditNeed || ''); return; }
-      const API = KH.AiAudit;
-      const local = (API && typeof API.screen === 'function') ? API.screen(name) : { level: 0, hits: [] };
-      this.pushAuditMsg('user', (name || (V.aiAuditEmptyName || '')) + (image ? ' ［含图标］' : ''));
-      this.pushAuditMsg('assistant', (API && typeof API.describe === 'function') ? API.describe(local, null) : '');
-      const aa = (this.cfg && this.cfg.aiAudit) || {};
-      const cloudOk = !!image && !!aa.accountId && !!aa.token && !aa.localOnly;
-      if (!cloudOk) {
-        this.pushAuditMsg('assistant', image ? (V.aiAuditNoKey || '') : (V.aiAuditLocalOnly || ''));
-        return;
-      }
-      const me = this;
-      this.auditBusy = true;
-      this.syncAuditBar();
-      this.pushAuditMsg('assistant', V.aiAuditRunning || '');
-      const msg = { type: (KH.MSG && KH.MSG.AI_AUDIT) || 'kh:ai:audit', name: name, image: image };
-      try {
-        chrome.runtime.sendMessage(msg, (resp) => {
-          void (chrome.runtime && chrome.runtime.lastError);
-          me.auditBusy = false;
-          me.syncAuditBar();
-          /* "审核中…" 那条刚推的气泡只用来占位，回包到了就换成真结论。 */
-          const last = me.aiMsgs[me.aiMsgs.length - 1];
-          if (last && last.role === 'assistant' && last.text === (V.aiAuditRunning || '')) me.aiMsgs.pop();
-          if (!resp || !resp.ok) {
-            me.pushAuditMsg('error', String((resp && (resp.error || resp.needSetup)) || (V.aiAuditFail || '')));
-            return;
-          }
-          me.pushAuditMsg('assistant', me.formatAudit(local, resp.audit || null));
-        });
-      } catch (err) {
-        this.auditBusy = false;
-        this.syncAuditBar();
-        this.pushAuditMsg('error', String((err && err.message) || err));
-      }
-    },
-
-    /** 把本地 + 云端两份结论拼成一段人话（云端只补"品牌/敏感项 + 一句话"）。 */
-    formatAudit(local, cloud) {
-      const API = KH.AiAudit;
-      const lines = [];
-      if (API && typeof API.describe === 'function') lines.push(API.describe(local, cloud));
-      const brands = (cloud && Array.isArray(cloud.brands)) ? cloud.brands : [];
-      for (let i = 0; i < brands.length; i++) {
-        const b = brands[i] || {};
-        if (!b.name) continue;
-        lines.push('· 品牌：' + String(b.name) + (b.why ? ' — ' + String(b.why) : ''));
-      }
-      const sens = (cloud && Array.isArray(cloud.sensitive)) ? cloud.sensitive : [];
-      for (let i = 0; i < sens.length; i++) {
-        const s = sens[i] || {};
-        if (!s.tag) continue;
-        lines.push('· 敏感：' + String(s.tag) + (s.why ? ' — ' + String(s.why) : ''));
-      }
-      if (cloud && cloud.summary) lines.push(String(cloud.summary));
-      return lines.filter(Boolean).join('\n');
-    },
-
-    /** 结论写进对话流（复用消息列表，不新开一块面板）。 */
-    pushAuditMsg(role, text) {
-      this.aiMsgs.push({ role: role, text: String(text == null ? '' : text) });
-      if (this.aiMsgs.length > 60) this.aiMsgs.splice(0, this.aiMsgs.length - 60);
       this.renderAiList();
     },
 

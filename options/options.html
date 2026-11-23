@@ -313,54 +313,6 @@
       </div>
       <label class="kh-check"><input type="checkbox" id="ai-enabled"> 在面板里显示「AI 助手」页签</label>
 
-      <!-- ============================================ AI 审核（2.0.8.7 需求②）
-           免登录、免费额度：Cloudflare Workers AI（10,000 neurons/天，按图标约 1000~2000 次）。
-           先跑本地品牌词/敏感词初筛（不发请求），再按需点「云端复核」看图。 -->
-      <h4 class="kh-sub">AI 审核（名称 / 图标）</h4>
-      <p class="kh-muted">判断应用名称与图标是否<b>蹭知名应用或品牌</b>、是否涉<b>赌博 / 色情 / 资金盘 / 诈骗 / 违规贷款</b>。默认走 <b>Cloudflare Workers AI</b> 的免费额度：不用登录、不用绑卡，免费额度用完当天自动停（UTC 0 点重置）。<b>本地词库那一步不联网</b>，云端那一步才会把名称和图标发出去。</p>
-      <div class="kh-form-row">
-        <div class="kh-form-fld kh-form-fld-wide">
-          <label class="kh-fld-label" for="aa-accountId">Cloudflare 账号 ID</label>
-          <input class="kh-input" id="aa-accountId" type="text" spellcheck="false" placeholder="在 Cloudflare 控制台地址里：dash.cloudflare.com/&lt;这一串&gt;/…">
-        </div>
-        <div class="kh-form-fld kh-form-fld-wide">
-          <label class="kh-fld-label" for="aa-token">API Token</label>
-          <input class="kh-input" id="aa-token" type="password" autocomplete="off" spellcheck="false" placeholder="Workers AI 的 Read 权限即可（只存本机）">
-        </div>
-      </div>
-      <div class="kh-form-row">
-        <div class="kh-form-fld">
-          <label class="kh-fld-label" for="aa-model">模型</label>
-          <select class="kh-input" id="aa-model"></select>
-        </div>
-        <div class="kh-form-fld">
-          <label class="kh-fld-label">范围</label>
-          <label class="kh-check"><input type="checkbox" id="aa-localOnly"> 只跑本地词库（不联网、不花额度）</label>
-        </div>
-      </div>
-      <div class="kh-form-row">
-        <div class="kh-form-fld">
-          <label class="kh-fld-label" for="aa-name">应用名称</label>
-          <input class="kh-input" id="aa-name" type="text" maxlength="120" placeholder="例如：省钱快报">
-        </div>
-        <div class="kh-form-fld">
-          <label class="kh-fld-label" for="aa-icon">图标（可选）</label>
-          <input class="kh-input" id="aa-icon" type="file" accept="image/*">
-        </div>
-        <div class="kh-form-fld">
-          <label class="kh-fld-label">操作</label>
-          <div class="kh-ai-actions">
-            <button class="kh-btn" id="aa-run" type="button">本地初筛</button>
-            <button class="kh-btn kh-btn-primary" id="aa-cloud" type="button">云端复核</button>
-          </div>
-        </div>
-      </div>
-      <div class="kh-aa-out" id="aa-out" hidden>
-        <div class="kh-aa-verdict" id="aa-verdict"></div>
-        <ul class="kh-aa-hits" id="aa-hits"></ul>
-        <div class="kh-aa-preview" id="aa-preview" hidden><img id="aa-icon-img" alt="图标预览"></div>
-        <p class="kh-muted" id="aa-note"></p>
-      </div>
     </section>
 
     <!-- ============================================================ 图片识别（OCR） -->
@@ -947,7 +899,6 @@
   <script src="../src/ui/changelog.js"></script>
   <!-- 版本说明的唯一渲染入口（台账 #10）：与 welcome 共用同一套条目/版本块结构 -->
   <script src="../src/ui/changelog-render.js"></script>
-  <script src="../src/features/ai-audit.js"></script>
   <script src="options.js"></script>
 </body>
 </html>

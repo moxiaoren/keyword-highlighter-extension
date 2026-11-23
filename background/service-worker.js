@@ -635,8 +635,6 @@ const HANDLERS = {
   /* ---- 【2.0.8.4 需求④】AI 对话助手：内容脚本 / 设置页 → background（请求在这里发） ----
    * 只做转发，不在这里拼提示词（"纯自由对话，不带页面内容"的口径由面板那边只发用户输入保证）。 */
   [MSG.AI_CHAT]: (msg) => self.KhAi.chat(msg || {}),
-  /* 【2.0.8.7 需求②】AI 审核（名称/图标）：多模态一条独立通道，见 background/ai.js 的 AI.audit。 */
-  [MSG.AI_AUDIT]: (msg) => self.KhAi.audit(msg || {}),
 
   /* ---- 【2.0.8.8 需求③】查法定代表人（免费免登陆：爱企查 → 必应，见 background/entity.js）----
    * 只读查询：失败一律回 `{ok:false,error}`，面板据此保持原底色（用户口径：未查明不改色）。 */

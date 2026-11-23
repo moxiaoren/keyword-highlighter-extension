@@ -378,7 +378,7 @@ module.exports = async function run() {
     const ai = read('background/ai.js');
     /* 【2.0.16.4】AI.chat 不再分流：只剩一条路，直接交给 KhTaiji。 */
     truthy(ai.indexOf('self.KhTaiji.chat(payload)') >= 0, 'AI.chat 直接交给 KhTaiji（不再走 OpenAI 兼容请求）');
-    falsy(/endpointOf\s*\(/.test(ai), 'OpenAI 兼容端点必须随 API 通路一起删掉（AI 审核自己的端点另算）');
+    falsy(/endpointOf\s*\(/.test(ai), 'OpenAI 兼容端点必须随 API 通路一起删掉');
     truthy(ai.indexOf('chrome.tabs.create(') < 0, 'ai.js 里不许再有任何开标签页的代码');
     truthy(ai.indexOf('AI.taijiLogin') >= 0 && ai.indexOf('AI.taijiModels') >= 0 && ai.indexOf('AI.taijiLogout') >= 0, '后台门面方法要在');
     const manifest = JSON.parse(read('manifest.json'));

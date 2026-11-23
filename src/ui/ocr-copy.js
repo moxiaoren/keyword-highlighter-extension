@@ -109,20 +109,6 @@
     aiOpenOptions: '去设置',
     aiClear: '清空',
     aiClearTip: '清空对话（只清面板；太极AI 每问都新建会话）',
-    /* ----【2.0.8.7 需求②】审核入口：查应用名称 / 图标是否蹭知名品牌、是否涉敏感内容。
-     * 口径：本地词库先筛（免费、不上传），云端只复核"看图"这件事，走 Cloudflare 免费额度。 */
-    aiAudit: '审核',
-    aiAuditTip: '查应用名称 / 图标：有没有蹭知名品牌、有没有涉赌博色情资金盘诈骗（本地词库免费，云端走 Cloudflare 免费额度）',
-    aiAuditName: '应用名称（可留空）',
-    aiAuditPick: '选图标',
-    aiAuditPickDone: '换一张',
-    aiAuditRun: '开始审核',
-    aiAuditRunning: '审核中…',
-    aiAuditNeed: '先填一个应用名称，或选一张图标。',
-    aiAuditLocalOnly: '只跑了本地词库（不上传任何东西）。',
-    aiAuditNoKey: '还没填 Cloudflare 账号 ID / Token，云端那步跳过了；要复核去设置页「AI 审核」填一下。',
-    aiAuditFail: '云端审核失败',
-    aiAuditEmptyName: '（未填名称）',
     aiEmpty: '还没有对话',
     /* ----【2.0.16.4 · m19483】只剩太极AI 一条通路（网页对话 / API 两条已整条删除） ---- */
     aiModeTaiji: '太极AI 网页通路',

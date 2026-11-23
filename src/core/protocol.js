@@ -74,10 +74,6 @@
      * 回执:   { ok:true, text } | { ok:false, error }
      * AI_OPEN_OPTIONS：面板没配置时的一键入口（内容脚本自己不能稳定地开设置页）。 */
     AI_CHAT: 'kh:ai:chat',
-    /* 【2.0.8.7 需求②】AI 审核（应用名称 / 图标）。与 AI_CHAT 分开的原因：这条要带图片，
-     * 走多模态 content 数组（AI_CHAT 只发纯文本），且默认通道是 Cloudflare 免费额度。
-     * payload: { name, image?:dataURL, override? } → { ok:true, audit:{...} } | { ok:false, error } */
-    AI_AUDIT: 'kh:ai:audit',
     AI_OPEN_OPTIONS: 'kh:ai:openOptions',
     /* ---- entity（【2.0.8.8 需求③】查「开发者 / 核准主体」的法定代表人）----
      * payload: { name } → { ok:true, rep, source } | { ok:false, error }

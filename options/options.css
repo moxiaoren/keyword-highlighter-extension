@@ -524,29 +524,6 @@ body {
 .kh-foot a:hover { text-decoration: underline; }
 .kh-foot-sep { color: var(--text-5); }
 
-/* ---------------------------------------------------------------- AI 审核（2.0.8.7 需求②）
-   结论区：一条结论 + 命中依据列表 + 图标预览。三档配色用语义色，不新增主题变量。 */
-.kh-aa-out {
-  margin-top: 10px;
-  padding: 10px 12px;
-  border: 1px solid var(--border-2);
-  border-radius: var(--r-md);
-  background: var(--card-2);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.kh-aa-verdict { font-size: var(--fs-md); font-weight: 600; line-height: 1.5; }
-.kh-aa-verdict.is-ok { color: var(--success-strong); }
-.kh-aa-verdict.is-warn { color: var(--warning); }
-.kh-aa-verdict.is-bad { color: var(--danger); }
-.kh-aa-hits { margin: 0 0 0 18px; color: var(--text-2); font-size: var(--fs-sm); line-height: 1.7; }
-.kh-aa-preview { display: flex; align-items: center; gap: 10px; }
-.kh-aa-preview img {
-  width: 72px; height: 72px; object-fit: contain;
-  border: 1px solid var(--border-2); border-radius: var(--r-sm); background: var(--bg);
-}
-
 /* ============================================================================
  * 2.0.8.11 美化 · P1 设置页（只追加覆盖：不改 DOM、不改类名、不重排既有规则）
  * 观测依据：docs/ui-v3/audit/2026-11-08/MEASURE.md

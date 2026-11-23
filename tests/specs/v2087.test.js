@@ -1,9 +1,7 @@
-/* tests/specs/v2087.test.js — 2.0.8.7 的三条新口径
+/* tests/specs/v2087.test.js — 2.0.8.7 的两条新口径
  * ----------------------------------------------------------------------------
  * ① 图文合并的**命中闸门**：只有「这个字段的图这次真的 OCR 命中」才出合并行
  *    （2.0.8.6 的旧口径只看配置里写没写这个字段名 ⇒ 图没认出来也照样出行，用户实测不符）；
- * ② AI 审核的本地词库初筛（免登录/免额度那一步）：品牌、敏感六大类、变体写法归一；
- * ③ 审核通道的配置归一（`aiAudit`）：凭据去空白、模型兜底、`localOnly` 只认真 true。
  * ========================================================================= */
 'use strict';
 
@@ -11,10 +9,9 @@ const H = require('../harness');
 const { suite, test, eq, truthy, falsy, loadKernel } = H;
 
 module.exports = async function run() {
-  const KH = loadKernel(['src/features/ai-audit.js']);
+  const KH = loadKernel([]);
   const C = KH.Config;
   const N = KH.ImportantNote;
-  const A = KH.AiAudit;
 
   /* ================= ① 合并闸门 ================= */
 
@@ -77,136 +74,6 @@ module.exports = async function run() {
     eq(N.mergeRowsFor({ imgOcrNeed: '登记号' }, {}).length, 0);
     eq(N.mergeRowsFor({ imgOcrNeed: '' }, { imgMerge: { on: true, rows: [{ field: '登记号' }] } }).length, 0);
     eq(N.mergeRowsFor({ imgOcrNeed: '别的' }, { imgMerge: { on: true, rows: [{ field: '登记号' }] } }).length, 0);
-  });
-
-  /* ================= ② 本地初筛 ================= */
-
-  suite('2.0.8.7 需求②：AI 审核的本地词库初筛（不联网、不花额度）');
-
-  await test('★ 名称直接写敏感词 ⇒ risky（level 2）', () => {
-    const r = A.screen('天天博彩');
-    eq(r.level, 2);
-    eq(r.verdict, 'risky');
-    truthy(r.hits.some((h) => h.kind === 'sensitive' && h.tag === '赌博'), '应命中「赌博」类');
-  });
-
-  await test('★ 与知名品牌完全同名 ⇒ risky；只含品牌词 ⇒ suspect', () => {
-    eq(A.screen('微信').level, 2);
-    eq(A.screen('微信清理大师').level, 1);
-    eq(A.screen('微信清理大师').verdict, 'suspect');
-  });
-
-  await test('★ 变体写法（空格/大小写/间隔号）也能认出来', () => {
-    eq(A.screen('微 信').level, 2, '空格插字是常见规避手法');
-    eq(A.screen('WeChat').level, 2);
-    eq(A.screen('抖音·极速版').level, 1);
-  });
-
-  await test('★ 干净的名字 ⇒ safe（本地看不到问题，图标仍建议云端）', () => {
-    const r = A.screen('省钱快报');
-    eq(r.level, 0);
-    eq(r.verdict, 'safe');
-    eq(r.hits.length, 0);
-  });
-
-  await test('空名字不报错', () => {
-    eq(A.screen('').level, 0);
-    eq(A.screen(null).level, 0);
-  });
-
-  await test('★ 结论措辞：云端 risky 压过本地 safe；云端 suspect 说「需要人工复核」', () => {
-    truthy(A.describe(A.screen('省钱快报'), { risk: 'risky', summary: '图标仿微信' }).indexOf('建议拒绝') === 0);
-    truthy(A.describe(A.screen('省钱快报'), { risk: 'suspect', summary: '像某品牌' }).indexOf('需要人工复核') === 0);
-    truthy(A.describe(A.screen('省钱快报'), { risk: 'safe', summary: '没发现' }).indexOf('通过') === 0);
-    truthy(A.describe(A.screen('省钱快报'), null).indexOf('本地没发现问题') === 0);
-  });
-
-  /* ================= ③ 配置归一 ================= */
-
-  suite('2.0.8.7 需求②：审核通道的配置归一（aiAudit）');
-
-  await test('★ 默认：开、空凭据、模型兜底、不是只跑本地', () => {
-    const a = C.normalizeAiAudit({});
-    eq(a.enabled, true);
-    eq(a.accountId, '');
-    eq(a.token, '');
-    eq(a.model, C.AI_AUDIT_MODEL_DEFAULT);
-    eq(a.localOnly, false);
-  });
-
-  await test('★ 凭据去空白；localOnly 只认 true（"true" 字符串不算）', () => {
-    const a = C.normalizeAiAudit({ accountId: '  abc123  ', token: ' t0k ', localOnly: 'true' });
-    eq(a.accountId, 'abc123');
-    eq(a.token, 't0k');
-    eq(a.localOnly, false);
-  });
-
-  await test('★ 默认值表里带着它（否则读路径归一 / 导出清单检查都看不到这个键）', () => {
-    truthy(Object.prototype.hasOwnProperty.call(C.defaults, 'aiAudit'));
-    eq(C.defaults.aiAudit.model, C.AI_AUDIT_MODEL_DEFAULT);
-  });
-
-  await test('★ 预设模型清单里有默认模型（下拉框才不会选空）', () => {
-    truthy(C.AI_AUDIT_MODEL_LIST.indexOf(C.AI_AUDIT_MODEL_DEFAULT) >= 0);
-  });
-
-  await test('归一幂等（再归一一次不产生变化）', () => {
-    const a = C.normalizeAiAudit({ accountId: 'x', model: '@cf/meta/llama-4-scout-17b-16e-instruct' });
-    eq(JSON.stringify(C.normalizeAiAudit(a)), JSON.stringify(a));
-  });
-
-  /* ================= ④ 审核入口搬进面板（2.0.8.7 追加项） ================= */
-
-  suite('2.0.8.7：审核入口在面板 AI 页签（不再只藏在设置页）');
-
-  await test('★ 协议里定义了 AI_AUDIT 消息名（面板与后台才是同一个入口）', () => {
-    eq(KH.MSG.AI_AUDIT, 'kh:ai:audit');
-  });
-
-  await test('★ 面板上真的挂着审核那套方法（少一个就是死按钮）', () => {
-    const P = N.panel;
-    const need = ['toggleAudit', 'syncAuditBar', 'readAuditIcon', 'runAudit', 'formatAudit', 'pushAuditMsg'];
-    for (let i = 0; i < need.length; i++) eq(typeof P[need[i]], 'function', 'panel.' + need[i]);
-  });
-
-  await test('★ 状态位有初始化（否则第一次展开读到 undefined）', () => {
-    eq(N.panel.auditImage, '');
-    eq(N.panel.auditBusy, false);
-  });
-
-  await test('★ formatAudit：云端品牌 / 敏感项拼进同一段，云端的风险等级压过本地', () => {
-    const out = N.panel.formatAudit(A.screen('省钱快报'), {
-      risk: 'risky',
-      brands: [{ name: '微信', why: '图标高度相似' }],
-      sensitive: [{ tag: '赌博', why: '文案出现下注' }],
-      summary: '综合判断：建议拒绝',
-    });
-    truthy(out.indexOf('建议拒绝') === 0, '结论在最前：' + out);
-    truthy(out.indexOf('· 品牌：微信') > 0, '品牌要带理由：' + out);
-    truthy(out.indexOf('· 敏感：赌博') > 0, '敏感项要带理由：' + out);
-    truthy(out.indexOf('综合判断：建议拒绝') > 0);
-  });
-
-  await test('★ formatAudit：云端为空不编造（不出现 undefined / 空的品牌行）', () => {
-    const out = N.panel.formatAudit(A.screen('清爽计算器'), null);
-    truthy(out.indexOf('undefined') < 0, '不能拼出 undefined：' + out);
-    truthy(out.indexOf('· 品牌') < 0, '没品牌就不许出品牌行：' + out);
-  });
-
-  await test('★ manifest：内容脚本加载了 ai-audit.js，且排在 important-note.js 之前', () => {
-    const m = require('../../manifest.json');
-    const js = m.content_scripts[0].js;
-    const iA = js.indexOf('src/features/ai-audit.js');
-    const iN = js.indexOf('src/features/important-note.js');
-    truthy(iA >= 0, '内容脚本缺 ai-audit.js ⇒ 面板里 KH.AiAudit 是 undefined');
-    truthy(iA < iN, 'ai-audit.js 必须排在 important-note.js 之前');
-  });
-
-  await test('★ 面板文案全部来自 ocr-copy（不在这里手写中文）', () => {
-    const V = KH.OcrCopy.VIEW;
-    const keys = ['aiAudit', 'aiAuditTip', 'aiAuditName', 'aiAuditPick', 'aiAuditPickDone',
-      'aiAuditRun', 'aiAuditRunning', 'aiAuditNeed', 'aiAuditLocalOnly', 'aiAuditNoKey', 'aiAuditFail'];
-    for (let i = 0; i < keys.length; i++) truthy(!!V[keys[i]], 'VIEW 缺 ' + keys[i]);
   });
 
   /* ================= ⑤ 合并展示口径（A1 并表 + B2 有值进表才算） ================= */
