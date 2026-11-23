@@ -560,6 +560,14 @@
     /* 【2.0.8.12 需求①】抓取字段做成链接时的样式：跟正文同字号，只加下划线暗示可点。 */
     .kh-table .kh-val-link { color: #1a73e8; text-decoration: underline; text-underline-offset: 2px; }
     .kh-table .kh-val-link:hover { color: #0b57d0; }
+    /* 【2.0.16.6】可疑值徽标（⚠）：跟着值一起排在格子里，不改原文、不改判定；
+     * 悬停 title 说明为什么值得人工看一眼（文案来自 ocr-copy.js 的 imgSuspectTip）。 */
+    .kh-table .kh-val-suspect {
+      display: inline-block; margin-left: 4px; padding: 0 3px; border-radius: 3px;
+      font-size: 10px; line-height: 14px; font-weight: 600; vertical-align: 1px;
+      background: #fef3c7; color: #92400e; cursor: help;
+    }
+    :host([data-kh-theme="dark"]) .kh-table .kh-val-suspect { background: #4a3a12; color: #f2d28a; }
     /* 【2.0.6.1 需求⑥】同值字段合并后的抬头：只写最短那个名字，后面跟一个「共 N 个」的小标，
      * 点开（原生 details 元素，无需 JS）列出全部字段名。老笔记里没有它，就照旧只显示 .kh-lbt。 */
     .kh-table .kh-table-more { position: relative; display: inline-block; margin-left: 3px; vertical-align: bottom; }
@@ -4757,6 +4765,25 @@
     return '';
   }
 
+  /* 【2.0.16.6 · 用户 m19162 问题② / m19982】「像是一串噪声」的值：只做**怀疑**，
+   * 不改写、不改判定（用户 m19385 选 A：只提示，比对仍按字面做）。
+   * 现场样本（真值「上海利多星证券咨询有限公司」）：
+   *   「上海利多星证券咨城化 L派千夕日江光次沟古阳八司证券咨询有限公司」
+   * 能从字面判的客观特征只有两条，且都是"OCR 抄花了"的形状：
+   *   ① 两个汉字之间夹着**孤立的 1–2 个拉丁字母**（`化 L派`）—— 简称/代号不会这么写；
+   *   ② 汉字之间夹着空格，且整段够长（正常单位名里没有这种空格）。
+   * 判据取「① 且（② 或 汉字数 ≥ 24）」。以下都不误报：带括号别称、`3M中国`、`北京 ABC 科技`、
+   * `华为 Mate 60`（字母≥3 或没有两侧汉字）。 */
+  const KV_GARBLED_LONE = /[\u4e00-\u9fff][ \u3000]*[A-Za-z]{1,2}[ \u3000]*(?=[\u4e00-\u9fff])/;
+  const KV_GARBLED_SPACE = /[\u4e00-\u9fff][ \u3000]+[A-Za-z\u4e00-\u9fff]/;
+  function kvLooksGarbled(v) {
+    const s = String(v == null ? '' : v);
+    if (!s) return false;
+    if (!KV_GARBLED_LONE.test(s)) return false;
+    const cjk = (s.match(/[\u4e00-\u9fff]/g) || []).length;
+    return KV_GARBLED_SPACE.test(s) || cjk >= 24;
+  }
+
   /* 逐字沿用 2.0.11 之前组织类字段的裁剪顺序：噪音标签 → 前半段 → 最后一个单位后缀。 */
   function kvOrgHead(s) {
     /* OCR 归行把下一段信息用空格接在后面（「上海某某有限公司 授权人 合肥分公司」）：
@@ -4909,6 +4936,15 @@
        * 用**不可枚举**属性：行的对外形状仍是 `{label, value}`（既有断言/深比较按这个形状写死，
        * 加一个可枚举字段会把它们全变红，而它们守的是"进表规则"，不是"行有几个字段"）。 */
       const row = { label: label, value: v };
+      /* 【2.0.16.6】看着像 OCR 噪声的值仍照常进表（值不改、判定不变），只在行上打标记，
+       * 渲染层据此标「识别可能有误」+ 悬停说明。不可枚举：行的对外形状仍是 `{label, value}`。 */
+      if (kvLooksGarbled(v)) {
+        const VIEW_S = (KH.OcrCopy && KH.OcrCopy.VIEW) || {};
+        Object.defineProperty(row, 'suspect', { value: true, enumerable: false });
+        Object.defineProperty(row, 'suspectTip', {
+          value: String(VIEW_S.imgSuspectTip || ''), enumerable: false
+        });
+      }
       Object.defineProperty(row, 'from', {
         value: { src: String(src == null ? '' : src), label: label, kind: kind || 'static' },
         enumerable: false
@@ -5111,6 +5147,8 @@
     mergeRowsFor, ocrFieldHit, rowBgOf, catOf,
     /* 【2.0.11 · T2】值裁剪是纯函数、没有别的入口 —— 导出给单测钉住五类既有裁剪与三条强形状。 */
     _trimValue: kvTrimValue,
+    /* 【2.0.16.6】噪声嫌疑判据（纯函数）：单测钉住"只提示不改值"这条口径。 */
+    _looksGarbled: kvLooksGarbled,
 
   };
 })();

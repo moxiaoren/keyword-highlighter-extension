@@ -967,6 +967,28 @@
     return wordish / chars.length >= 0.5;
   }
 
+  /* 【2.0.16.6 · 用户 m19162 问题② / m19982】行文本卫生：OCR 偶尔在**长行**里插进孤立的
+   * 1–2 个拉丁字母（现场：「上海利多星证券咨城化 L派千夕日江光次沟古阳八司…」）。
+   * 只清「两侧都是汉字」的孤立字母，且**只清长行**（汉字 ≥ CLEAN_MIN_CJK）：
+   *   · 短行里的字母是内容（「上海A股」「3M中国」），删了就是改数据；
+   *   · 长行里的孤立字母不是任何真实的公司名/编号形态，属识别噪声。
+   * 纯函数：`self.__khOcrPure.cleanLineText` 可直接钉住，无需跑像素。 */
+  const LONE_LATIN_RUN = /([\u4e00-\u9fff])[ \u3000]*([A-Za-z]{1,2})[ \u3000]*(?=[\u4e00-\u9fff])/g;
+  const CLEAN_MIN_CJK = 20;
+  function cleanLineText(t) {
+    const s = String(t == null ? '' : t);
+    if (!s) return s;
+    const cjk = (s.match(/[\u4e00-\u9fff]/g) || []).length;
+    if (cjk < CLEAN_MIN_CJK) return s;
+    let out = s;
+    for (let i = 0; i < 4; i++) {
+      const next = out.replace(LONE_LATIN_RUN, '$1');
+      if (next === out) break;
+      out = next;
+    }
+    return out;
+  }
+
   /**
    * 【2.0.6 需求①：OCR 把一行拆成两行】同一个物理行的多段要拼回一行（纯函数）。
    *
@@ -1686,6 +1708,8 @@
     isFrameBox: isFrameBox, joinParts: joinParts,
     /* 【2.0.6.5 需求③】并排多张纸：装饰高框 / 拆 run 两条纯判据（真机读数见本节头注） */
     medianOf: medianOf, isTallNoise: isTallNoise, splitLinesRuns: splitLinesRuns,
+    /* 【2.0.16.6】行文本卫生（纯函数）：单测直接钉住"长行孤立字母才清、短行不动"。 */
+    cleanLineText: cleanLineText,
     TALL_BOX_RATIO: TALL_BOX_RATIO, TALL_BOX_EXTRA: TALL_BOX_EXTRA, RUN_GAP_LINES: RUN_GAP_LINES,
     FRAME_AREA_RATIO: FRAME_AREA_RATIO, FRAME_PAGE_EDGE: FRAME_PAGE_EDGE, FRAME_FULL_RATIO: FRAME_FULL_RATIO, TIGHT_GAP_RATIO: TIGHT_GAP_RATIO,
     OVERLAP_MATCH_X: OVERLAP_MATCH_X,
@@ -2132,7 +2156,13 @@
         }
         /* 【2.0.6.5 需求③】跨块拼行做完了才按横向空隙拆 run —— 并排多张纸各读各的。
          * 表格排版靠首段的 `cellsAll`，口径不变。 */
-        return splitLinesRuns(out);
+        /* 【2.0.16.6】行文本卫生放在**唯一出口**：`runJob` 的 text / lineList 全部来自这里，
+         * 清洗一次，取值层（`ocrExtraRows`）与展示层拿到的就是同一份干净文本。 */
+        return splitLinesRuns(out).map((l) => {
+          if (!l || typeof l.t !== 'string') return l;
+          const nt = cleanLineText(l.t);
+          return nt === l.t ? l : Object.assign({}, l, { t: nt });
+        });
       };
       /* ---- 帧（方向）与块：**全都按需惰性构造** —— 不试转，就一次多余的活都不干 ---- */
       const frames = new Map();        // deg -> {deg, blob, w, h, plan}

@@ -2285,12 +2285,17 @@
       const url = tpl ? tpl.split('{v}').join(encodeURIComponent(v)) : v;
       return /^https?:\/\//i.test(url) ? url : '';
     };
+    /* 【2.0.16.6】可疑值徽标：只加标记，不动原文。`⚠` 与文案都由调用方（`ocrExtraRows`）带进来，
+     * 本文件不写中文 —— 文案唯一真源在 `src/ui/ocr-copy.js`。 */
+    const suspectTag = (it) => (it && it.suspect)
+      ? '<span class="kh-val-suspect" title="' + escHtml(it.suspectTip || '') + '">⚠</span>'
+      : '';
     const valInner = (it, raw) => {
       const html = escHtml(raw);
       const href = hrefOf(it, raw);
-      const body = href
+      const body = (href
         ? '<a class="kh-val-link" href="' + escHtml(href) + '" target="_blank" rel="noopener noreferrer">' + html + '</a>'
-        : html;
+        : html) + suspectTag(it);
       if (!clipOn(it)) return body;
       const full = stripImgPlaceholders(raw).replace(/\s+/g, ' ').trim();
       return '<div class="kh-val-box" title="' + escHtml(full) + '">' + body + '</div>';
@@ -2422,8 +2427,11 @@
    */
   function computeBlock(textNode, rawLabels, scope, box, extras) {
     const fetched = extractCached(textNode, rawLabels, scope, box);
+    /* 【2.0.16.6】`suspect` / `suspectTip` 由 `ocrExtraRows` 挂在行上（非枚举，只在运行期）：
+     * 渲染层据此标「⚠」，值本身一个字不改。 */
     const extraItems = (extras || []).map((e) => ({
-      label: e && e.label, rows: [[{ t: e && e.value }]], opt: null, ocr: true
+      label: e && e.label, rows: [[{ t: e && e.value }]], opt: null, ocr: true,
+      suspect: !!(e && e.suspect), suspectTip: String((e && e.suspectTip) || '')
     }));
     if (!fetched.length && !extraItems.length) return null;
     const optOf = {};

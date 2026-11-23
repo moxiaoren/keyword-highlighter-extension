@@ -252,7 +252,9 @@ const specs = [
   /* 2.0.16：AI 助手改走太极AI 网页通路（站点协议 / 法人兜底 / 设置页接线）。见 specs/taiji.test.js 头部 */
   './specs/taiji.test.js',
   /* 2.0.16.3：上下格组合词命中 ⇒ 命中行整行底色（只认 combo-tb；类名/变量/撤色记账） */
-  './specs/renderer-row-tint.test.js'
+  './specs/renderer-row-tint.test.js',
+  /* 2.0.16.6（用户 m19162 问题② / m19982）：长行孤立字母清洗 + 可疑值只标不改（suspect） */
+  './specs/ocr-noise.test.js'
 ];
 
 (async () => {
