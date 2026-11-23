@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "update_url": "https://moxiaoren.github.io/keyword-highlighter-extension/update.xml",
   "name": "__MSG_extName__",
-  "version": "2.0.16.3",
+  "version": "2.0.16.4",
   "description": "__MSG_extDesc__",
   "default_locale": "zh_CN",
   "minimum_chrome_version": "109",
@@ -81,17 +81,6 @@
       ],
       "run_at": "document_idle",
       "all_frames": true
-    },
-    {
-      "matches": [
-        "https://chat.deepseek.com/*"
-      ],
-      "js": [
-        "src/core/protocol.js",
-        "content/web-chat.js"
-      ],
-      "run_at": "document_idle",
-      "all_frames": false
     }
   ],
   "permissions": [
@@ -99,7 +88,8 @@
     "offscreen",
     "contextMenus",
     "scripting",
-    "webNavigation"
+    "webNavigation",
+    "cookies"
   ],
   "host_permissions": [
     "<all_urls>"

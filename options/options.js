@@ -1079,69 +1079,10 @@
   function renderAiForm() {
     const C = KH.Config;
     const ai = C.normalizeAi(cfg && cfg.ai);
-    /* 【2.0.8.5】先定"走哪条路"：网页对话（免 Key，默认）/ API。选了哪种就把另一种的字段藏起来 ——
-     * 省空间第一（设计偏好），也免得用户以为两个都要填。 */
-    const modeSel = $('ai-mode');
-    if (modeSel) {
-      modeSel.innerHTML = '';
-      const modes = C.AI_MODES || [];
-      for (let i = 0; i < modes.length; i++) {
-        const opt = document.createElement('option');
-        opt.value = modes[i].id;
-        opt.textContent = modes[i].label;
-        modeSel.appendChild(opt);
-      }
-      modeSel.value = ai.mode || C.AI_MODE_DEFAULT || 'taiji';
-    }
-    applyAiMode(ai.mode || C.AI_MODE_DEFAULT || 'taiji');
+    /* 【2.0.16.4 · 用户 m19483】只剩太极AI 一条通路：没有「对话来源」可选，也没有服务商 / Base URL /
+     * API Key / 单次上限 / 系统提示词这些东西（那些字段连 HTML 一起删了）。这里只回显太极AI 的账号与模型。 */
     renderTaijiForm();
-    const sel = $('ai-provider');
-    if (sel) {
-      sel.innerHTML = '';
-      const list = C.AI_PRESET_LIST || [];
-      for (let i = 0; i < list.length; i++) {
-        const opt = document.createElement('option');
-        opt.value = list[i].id;
-        opt.textContent = list[i].label;
-        sel.appendChild(opt);
-      }
-      sel.value = ai.provider;
-    }
-    $('ai-baseUrl').value = ai.baseUrl || '';
-    $('ai-model').value = ai.model || '';
-    $('ai-apiKey').value = ai.apiKey || '';
-    $('ai-system').value = ai.system || '';
-    $('ai-maxTokens').value = String(ai.maxTokens || C.AI_MAX_DEFAULT);
-    limitInput($('ai-maxTokens'), C.AI_MAX_MIN, C.AI_MAX_MAX);
-    $('ai-enabled').checked = ai.enabled !== false;
-    /* 每次回显都清掉上一次的测试结论：配置变了，"刚才测通了"就不再算数。 */
-    const st = $('ai-test-state');
-    if (st) st.textContent = '';
-  }
-
-  /** 按模式切显隐（三条通路互斥，选了哪种只显示哪种的字段 —— 省空间第一）。 */
-  function applyAiMode(mode) {
-    const m = (mode === 'api' || mode === 'web' || mode === 'taiji') ? mode : 'taiji';
-    const box = $('ai-api-fields');
-    if (box) box.hidden = (m !== 'api');
-    const tjBox = $('ai-taiji-fields');
-    if (tjBox) tjBox.hidden = (m !== 'taiji');
-    const open = $('ai-web-open');
-    const probeBtn = $('ai-web-probe');
-    if (open) open.hidden = (m !== 'web');
-    if (probeBtn) probeBtn.hidden = (m !== 'web');
-    const tip = $('ai-mode-tip');
-    if (tip) {
-      tip.textContent = (m === 'taiji')
-        ? '太极AI 全走后台请求（不开标签页）：这里登录一次，之后靠浏览器记住的会话；模型从站点清单里选。'
-        : (m === 'web')
-          ? '网页模式下，扩展会在后台保留一个 chat.deepseek.com 标签页（可以最小化）替你发消息；第一次用请先在那个页面登录一次，之后一直有效。'
-          : 'API 模式走设置里填的 OpenAI 兼容接口：请求由扩展后台发出，需要填 Key（只有填了才会带 Authorization 头）。';
-    }
-    const label = $('ai-web-label');
-    if (label) label.textContent = (m === 'web') ? '网页对话的连通性' : '连通性';
-    const testBtn = $('ai-test');
-    if (testBtn) testBtn.hidden = (m !== 'api');
+    $('ai-enabled').checked = ai !== null && ai.enabled !== false;
   }
 
   /* 【2.0.16】太极AI 网页通路：账号/站点地址存本机，密码只用于"这一次登录"。
@@ -1779,6 +1720,8 @@
     $('pf-notePaged').checked = !!(cfg.importantNote || {}).pagedTabs;
     /* 【2.0.15 · 问题②】同法人校验回显（默认关）。 */
     $('pf-noteEntityCheck').checked = !!(cfg.importantNote || {}).entityCheck;
+  /* 【2.0.16.4 · m19385】默认开：读不到正文时允许开后台标签页（用户选 P4-A）。 */
+  $('pf-policyRenderTab').checked = ((cfg.policy || {}).renderTab !== false);
     /* 【2.0.8.4 需求④】AI 助手的接口配置（与上面那块"重要笔记"同属样式/配置页）。 */
     renderAiForm();
     /* 【2.0.8.6 需求①】图文合并的标题表（字段 → 自定义标题 + 默认不展示）。 */
@@ -1996,30 +1939,20 @@
     await saveNested({ importantNote: { pagedTabs: $('pf-notePaged').checked === true } });
   });
   /* 【2.0.15 · 问题②】同法人校验开关（默认关）。落 importantNote.entityCheck。 */
+  $('pf-policyRenderTab').addEventListener('change', async () => {
+    await saveNested({ policy: { renderTab: $('pf-policyRenderTab').checked === true } });
+    D.toast('已保存：' + ($('pf-policyRenderTab').checked ? '读不到正文时会开后台标签页' : '只读已打开的页面'), 'ok');
+  });
   $('pf-noteEntityCheck').addEventListener('change', async () => {
     await saveNested({ importantNote: { entityCheck: $('pf-noteEntityCheck').checked === true } });
   });
 
 
-  /* ---- 【2.0.8.4 需求④】AI 助手：保存与「测试连接」 ----
-   * 全部走 `saveNested`（它按子键合并，写半截不会丢兄弟键 —— 尤其是 apiKey）。
-   * 改了任一项都清掉上一次的测试结论：配置变了，"刚才测通了"就不再算数。 */
+  /* ---- 【2.0.16.4 · m19483】只剩太极AI：改了任一项都清掉上一次的结论，免得"刚才通了"被当成本次结果。 ---- */
   function aiChanged() {
-    const st = $('ai-test-state');
+    const st = $('ai-taiji-state');
     if (st) st.textContent = '';
   }
-
-  /* 换"对话来源"：网页对话（免 Key，默认）/ API。两个都只是偏好，切换不动 key。 */
-  $('ai-mode').addEventListener('change', async () => {
-    aiChanged();
-    const raw = $('ai-mode').value;
-    const mode = (raw === 'api' || raw === 'web') ? raw : 'taiji';
-    applyAiMode(mode);
-    await saveNested({ ai: { mode: mode } });
-    D.toast(mode === 'taiji' ? '已切到「太极AI 网页通路」'
-      : (mode === 'web' ? '已切到「网页对话」（免 Key）' : '已切到「API 模式」'), 'ok');
-    if (mode === 'taiji') refreshTaijiModels();
-  });
 
   /* ---- 【2.0.16】太极AI：登录 / 刷新模型 / 测试连接 / 选模型 ---- */
   $('ai-taiji-login').addEventListener('click', async () => {
@@ -2092,88 +2025,19 @@
     if (base) refreshTaijiModels();
   });
 
-  /* 网页模式：把对话页切到前台（第一次登录 / 想亲眼看看它回了什么）。 */
-  $('ai-web-open').addEventListener('click', async () => {
-    const state = $('ai-test-state');
-    if (state) state.textContent = '打开对话页…';
-    try {
-      const res = await chrome.runtime.sendMessage({ type: KH.MSG.AI_WEB_OPEN });
-      if (state) state.textContent = (res && res.ok) ? '对话页已打开（登录后回来即可）' : ('打开失败：' + ((res && res.error) || '未知原因'));
-    } catch (err) {
-      if (state) state.textContent = '打开失败：' + String((err && err.message) || err);
-    }
-  });
-
-  /* 网页模式自检：把页面侧认到的输入框/回复块报回来 —— 改版时这一行就是诊断。 */
-  $('ai-web-probe').addEventListener('click', async () => {
-    const btn = $('ai-web-probe');
-    const state = $('ai-test-state');
+  /* 【2.0.16.4】退出登录：只清本机浏览器里的太极AI 会话 cookie，账号保留（下次不用重填）。 */
+  $('ai-taiji-logout').addEventListener('click', async () => {
+    const state = $('ai-taiji-state');
+    const btn = $('ai-taiji-logout');
     if (btn) btn.disabled = true;
-    if (state) state.textContent = '正在检查对话页…';
+    if (state) state.textContent = '正在退出…';
     try {
-      const res = await chrome.runtime.sendMessage({ type: KH.MSG.AI_WEB_PROBE });
-      if (state) {
-        if (!res || !res.ok) state.textContent = '自检失败：' + ((res && res.error) || '对话页没响应');
-        else {
-          const p = res.probe || {};
-          state.textContent = (res.loggedIn ? '已登录' : '未登录')
-            + '；输入框 ' + (p.composer || '没认出')
-            + '；回复块 ' + (p.blocks == null ? '?' : p.blocks) + ' 个';
-        }
-      }
+      const res = await chrome.runtime.sendMessage({ type: KH.MSG.AI_TAIJI_LOGOUT });
+      if (state) state.textContent = (res && res.ok) ? ('已退出登录（清掉 ' + ((res.cleared == null) ? 0 : res.cleared) + ' 个会话 cookie），重新登录即可继续用') : ('退出失败：' + ((res && res.error) || '未知原因'));
     } catch (err) {
-      if (state) state.textContent = '自检失败：' + String((err && err.message) || err);
+      if (state) state.textContent = '退出失败：' + String((err && err.message) || err);
     }
     if (btn) btn.disabled = false;
-  });
-
-  /* 换服务商 = 把该家的推荐地址/模型填上（用户仍可逐项改）；只选了自定义就保留用户已填的值。 */
-  $('ai-provider').addEventListener('change', async () => {
-    aiChanged();
-    const p = KH.Config.aiPreset($('ai-provider').value);
-    const patch = { provider: p.id };
-    if (p.baseUrl) { $('ai-baseUrl').value = p.baseUrl; patch.baseUrl = p.baseUrl; }
-    if (p.model) { $('ai-model').value = p.model; patch.model = p.model; }
-    await saveNested({ ai: patch });
-    D.toast('已切到「' + p.label + '」', 'ok');
-  });
-
-  $('ai-baseUrl').addEventListener('change', async () => {
-    aiChanged();
-    const v = KH.Config.normalizeAi({
-      provider: $('ai-provider').value,
-      baseUrl: $('ai-baseUrl').value,
-      model: $('ai-model').value
-    }).baseUrl;
-    $('ai-baseUrl').value = v;
-    await saveNested({ ai: { baseUrl: v } });
-  });
-
-  $('ai-model').addEventListener('change', async () => {
-    aiChanged();
-    await saveNested({ ai: { model: String($('ai-model').value || '').trim() } });
-  });
-
-  /* Key 是凭据：输入框用 password，保存后只回显原值（本机 storage），不写日志、不进导出。 */
-  $('ai-apiKey').addEventListener('change', async () => {
-    aiChanged();
-    const v = String($('ai-apiKey').value || '').trim();
-    $('ai-apiKey').value = v;
-    await saveNested({ ai: { apiKey: v } });
-    D.toast(v ? 'Key 已保存（只在本机）' : 'Key 已清空', 'ok');
-  });
-
-  $('ai-system').addEventListener('change', async () => {
-    aiChanged();
-    await saveNested({ ai: { system: String($('ai-system').value || '').trim() } });
-  });
-
-  $('ai-maxTokens').addEventListener('change', async () => {
-    aiChanged();
-    const n = parseInt($('ai-maxTokens').value, 10);
-    const v = KH.Config.normalizeAi({ maxTokens: isFinite(n) ? n : NaN }).maxTokens;
-    $('ai-maxTokens').value = String(v);
-    await saveNested({ ai: { maxTokens: v } });
   });
 
   $('ai-enabled').addEventListener('change', async (e) => {
@@ -2181,43 +2045,6 @@
     await saveNested({ ai: { enabled: !!e.target.checked } });
   });
 
-  /* 「测试连接」用**页面上还没保存**的值去试：先存再测会把坏配置留在 storage 里，
-   * 用户还得改回去。请求走的是与面板完全相同的那条后台通路（`KH.MSG.AI_CHAT`）。 */
-  $('ai-test').addEventListener('click', async () => {
-    const btn = $('ai-test');
-    const state = $('ai-test-state');
-    const n = parseInt($('ai-maxTokens').value, 10);
-    const override = {
-      provider: $('ai-provider').value,
-      baseUrl: String($('ai-baseUrl').value || '').trim(),
-      model: String($('ai-model').value || '').trim(),
-      apiKey: String($('ai-apiKey').value || '').trim(),
-      system: String($('ai-system').value || '').trim(),
-      maxTokens: isFinite(n) ? n : KH.Config.AI_MAX_DEFAULT,
-      enabled: true
-    };
-    btn.disabled = true;
-    state.textContent = '正在试…';
-    try {
-      const res = await new Promise((resolve) => {
-        chrome.runtime.sendMessage({
-          type: KH.MSG.AI_CHAT,
-          messages: [{ role: 'user', content: '你好' }],
-          override: override
-        }, (r) => {
-          void chrome.runtime.lastError;
-          resolve(r || { ok: false, error: '后台没有响应' });
-        });
-      });
-      state.textContent = (res && res.ok)
-        ? ('通了：' + String(res.text || '').replace(/\s+/g, ' ').slice(0, 40))
-        : ('失败：' + String((res && res.error) || '未知错误'));
-    } catch (err) {
-      state.textContent = '失败：' + String((err && err.message) || err);
-    } finally {
-      btn.disabled = false;
-    }
-  });
   /* ==========================================================================
    * 【2.0.8.7 需求②】AI 审核（名称 / 图标）
    * --------------------------------------------------------------------------

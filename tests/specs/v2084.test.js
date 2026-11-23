@@ -63,10 +63,16 @@ module.exports = async function run() {
 
 
 
-  await test('★ 后台是唯一请求出口：OpenAI 兼容 /chat/completions + Bearer + 挂 self', () => {
+  await test('★ 后台是唯一请求出口：交给太极AI 通道（OpenAI 兼容那套已随 API 通路删除）', () => {
     const src = read('background/ai.js');
-    truthy(/\/chat\/completions/.test(src), '要拼 OpenAI 兼容端点');
-    truthy(/Authorization = 'Bearer ' \+ ai\.apiKey/.test(src), '有 Key 才带 Bearer');
+    /* 【2.0.16.4】用户原话「只保留太极 AI，其余 AI 接口和调用路径全部移除」⇒ 这里不再拼
+     * OpenAI 兼容端点、不再带 Bearer；ai.js 只做「读配置 → 交给 KhTaiji」这一件事。 */
+    truthy(/self\.KhTaiji\.chat\(payload\)/.test(src), '唯一出站口是太极AI 通道');
+    /* 【2.0.16.4】AI 审核（Cloudflare Workers AI）仍在 ai.js 里拼自己的端点，所以不能整文件禁
+     * /chat/completions；要禁的是原 OpenAI 助手那套「拼 endpointOf + Bearer + max_tokens」。 */
+    falsy(/endpointOf\s*\(/.test(src), 'OpenAI 兼容端点拼装必须已删除');
+    falsy(/Bearer ' \+ ai\.apiKey/.test(src), 'Bearer 拼装（API 通路特征）必须已删除');
+    falsy(/Authorization = 'Bearer ' \+ ai\.apiKey/.test(src), 'Bearer 拼装必须已删除（没有 apiKey 了）');
     truthy(/self\.KhAi = AI;/.test(src), '后台模块必须挂到 self（service worker 可用）');
     falsy(/console\.(log|warn|error)[^\n]*apiKey/.test(src), '不许把 Key 打进日志');
     const sw = read('background/service-worker.js');

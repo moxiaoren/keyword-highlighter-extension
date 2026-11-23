@@ -104,10 +104,11 @@
     aiSendTip: '发送（Enter 发送，Shift+Enter 换行）',
     aiPlaceholder: '问点什么…（纯自由对话，不会带上页面内容）',
     aiThinking: '正在回复…',
-    aiNeedKey: '当前是 API 模式但还没配好：去设置页「样式 → AI 助手」填接口地址和 Key；想免 Key 就在那里切到「太极AI 网页通路」或「DeepSeek 网页对话」。',
+    /* 【2.0.16.4 · 用户 m19483】只剩太极AI：这里不再是「API 没配好」，而是助手被关掉了 / 通道没起来。 */
+    aiNeedKey: 'AI 助手现在不可用：去设置页「AI 助手」里打开「在面板里显示 AI 助手」，并确认已经登录太极AI。',
     aiOpenOptions: '去设置',
     aiClear: '清空',
-    aiClearTip: '清空对话（网页模式会同时在对话页开一个新对话）',
+    aiClearTip: '清空对话（只清面板；太极AI 每问都新建会话）',
     /* ----【2.0.8.7 需求②】审核入口：查应用名称 / 图标是否蹭知名品牌、是否涉敏感内容。
      * 口径：本地词库先筛（免费、不上传），云端只复核"看图"这件事，走 Cloudflare 免费额度。 */
     aiAudit: '审核',
@@ -123,14 +124,9 @@
     aiAuditFail: '云端审核失败',
     aiAuditEmptyName: '（未填名称）',
     aiEmpty: '还没有对话',
-    /* ----【2.0.16】三条通路：太极AI（默认免 Key，后台直连站点）/ 网页对话 / API ---- */
+    /* ----【2.0.16.4 · m19483】只剩太极AI 一条通路（网页对话 / API 两条已整条删除） ---- */
     aiModeTaiji: '太极AI 网页通路',
     aiModeTaijiTip: '走太极AI 站点，后台直接请求，不开标签页；在设置页登录一次、可选模型',
-    /* ----【2.0.8.5】网页对话（免 Key）：状态带 / 头像 / 开场白 / 去登录 ---- */
-    aiModeWeb: 'DeepSeek 网页对话',
-    aiModeWebTip: '走 chat.deepseek.com 的登录态，免 Key；会有一个对话页标签页在后台替你发消息',
-    aiModeApi: 'API 模式',
-    aiModeApiTip: '走设置页里填的 OpenAI 兼容接口',
     aiNotReady: '未配置',
     aiAvMe: '我',
     aiCopy: '复制',

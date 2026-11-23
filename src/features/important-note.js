@@ -2967,8 +2967,11 @@
         const viaText = {
           'fetch': '隐私政策链接抓回的正文',
           'tab': '你已打开的页面读到的正文',
+          /* 【2.0.16.4 · m19385】读不到才开的那张后台标签页：如实写出来，并说明已经关了。 */
+          'tab-new': '后台标签页读到的正文（读完已关）',
           'fetch+api': '隐私政策链接抓回的正文 + 同源接口数据',
-          'tab+api': '你已打开的页面读到的正文 + 同源接口数据'
+          'tab+api': '你已打开的页面读到的正文 + 同源接口数据',
+          'tab-new+api': '后台标签页读到的正文（读完已关）+ 同源接口数据'
         };
         sourceLine = '正文来源：' + (viaText[got.via] || '隐私政策链接抓回的正文')
           + '（' + flatLen(body) + ' 字' + (got.cached ? '，缓存' : '') + '）';
@@ -3707,22 +3710,16 @@
       if (!aiOn) { this.aiEl = null; this.aiListEl = null; }
     },
 
-    /** 走哪条通路：`taiji`（太极AI 站点，默认，免 Key）/ `web`（网页对话）/ `api`（OpenAI 兼容接口，要 Key）。 */
+    /** 【2.0.16.4 · 用户 m19483】只剩一条通路：太极AI（后台直连站点，不开标签页）。
+     * 老的两条（web = DeepSeek 网页对话、api = OpenAI 兼容接口）已整条删除，这里恒回 'taiji'。 */
     aiMode() {
-      const ai = (this.cfg && this.cfg.ai) || {};
-      if (ai.mode === 'api') return 'api';
-      /* 认不出的值一律回太极AI（与 config.js 的 normalizeAi 同口径），别让老配置掉回网页对话去开标签页。 */
-      if (ai.mode === 'taiji' || !ai.mode) return 'taiji';
-      return 'web';
+      return 'taiji';
     },
 
-    /** 能不能发：taiji / web 只要没关闭就行（登录态由站点保证，没登录会在首问时如实报错）；api 模式仍要地址 + Key。 */
+    /** 能不能发：只看有没有在设置里关掉 AI 助手（登录态由站点保证，没登录会在首问时如实报错）。 */
     aiReady() {
       const ai = (this.cfg && this.cfg.ai) || {};
-      if (ai.enabled === false) return false;
-      if (this.aiMode() !== 'api') return true;
-      if (!ai.baseUrl) return false;
-      return !!ai.apiKey || ai.provider === 'custom';
+      return ai.enabled !== false;
     },
 
     /**
@@ -3831,8 +3828,8 @@
           e.stopPropagation();
           this.aiMsgs = [];
           this.renderAiList();
-          /* 网页版自己记着上文：清空时让它也开新对话，否则下次提问会串到上一轮。 */
-          if (this.aiMode() === 'web') { const p = this.ensureAiPort(); if (p) { try { p.postMessage({ action: 'new' }); } catch (err) { /* 后台没起 */ } } }
+          /* 【2.0.16.4】只剩太极AI：对话在后台每问都新建会话，清空面板**不用**通知后台
+           * （老的网页对话要让它同步开新对话，那条通路已删）。 */
         });
         input.addEventListener('keydown', (e) => {
           e.stopPropagation();
@@ -4023,12 +4020,10 @@
       const dot = box.querySelector('.khin-chat-dot');
       const ready = this.aiReady();
       if (modeEl) {
-        const mode = this.aiMode();
-        const label = mode === 'taiji' ? V.aiModeTaiji : (mode === 'web' ? V.aiModeWeb : V.aiModeApi);
-        /* 太极AI / 网页对话的"配置"就是站点登录，客户端无从判断 ⇒ 不在状态带上写"未配置"，交给首问的报错说清楚。 */
-        const soft = mode !== 'api';
-        modeEl.textContent = label + (ready || soft ? '' : ' · ' + V.aiNotReady);
-        modeEl.title = mode === 'taiji' ? V.aiModeTaijiTip : (mode === 'web' ? V.aiModeWebTip : V.aiModeApiTip);
+        /* 【2.0.16.4】只有太极AI：状态带就一行字 + 一句说明。登录态客户端无从判断，
+         * 所以不写「未配置」，交给首问的报错说清楚。 */
+        modeEl.textContent = ready ? V.aiModeTaiji : (V.aiModeTaiji + ' · ' + V.aiNotReady);
+        modeEl.title = V.aiModeTaijiTip;
       }
       if (dot) {
         dot.classList.toggle('is-busy', !!this.aiBusy);
@@ -4082,10 +4077,9 @@
         const go = doc.createElement('button');
         go.className = 'khin-chat-link';
         go.type = 'button';
-        /* 太极AI 的登录在设置页（密码只在登录时用一次、不落盘）；网页对话才需要把对话页切到前台。 */
-        const taiji = this.aiMode() === 'taiji';
-        go.textContent = taiji ? V.aiOpenOptions : V.aiGoLogin;
-        go.addEventListener('click', (e) => { e.stopPropagation(); if (taiji) this.openAiOptions(); else this.openAiWeb(); });
+        /* 【2.0.16.4】只剩太极AI：登录在设置页（密码只在登录时用一次、不落盘），这里只给一个按钮指过去。 */
+        go.textContent = V.aiOpenOptions;
+        go.addEventListener('click', (e) => { e.stopPropagation(); this.openAiOptions(); });
         tools.appendChild(go);
         wrap.appendChild(tools);
       }
@@ -4182,16 +4176,7 @@
       } catch (e) { /* 老内核 / 扩展上下文已失效：静默 */ }
     },
 
-    /** 网页模式：把对话页切到前台（登录 / 看一眼它到底回了什么）。 */
-    openAiWeb() {
-      try {
-        const type = (KH.MSG && KH.MSG.AI_WEB_OPEN) || '';
-        if (!type || !chrome || !chrome.runtime || !chrome.runtime.sendMessage) return;
-        chrome.runtime.sendMessage({ type: type }, () => { void (chrome.runtime && chrome.runtime.lastError); });
-      } catch (e) { /* 静默 */ }
-    },
-
-    /** 发一条：请求交给后台（CORS / 标签页 / 长连接都在那边）。 */
+    /** 发一条：请求交给后台（长连接 → KhAi.chat → 太极AI 站点）。 */
     sendAi() {
       const box = this.aiEl;
       if (!box || this.aiBusy) return;
@@ -4225,7 +4210,7 @@
         return;
       }
       try {
-        port.postMessage({ action: 'ask', mode: this.aiMode(), messages: messages });
+        port.postMessage({ action: 'ask', messages: messages });
       } catch (err) {
         this.aiBusy = false;
         this.aiMsgs.pop();
@@ -5004,7 +4989,22 @@
     let m;
     KV_ORG_TAIL_G.lastIndex = 0;
     while ((m = KV_ORG_TAIL_G.exec(head))) end = m.index + m[0].length;
-    if (end > 0) head = head.slice(0, end);
+    /* 【2.0.16.4 · m19162】单位后缀后面紧跟括号别称时，别称属于同一家单位，不能切掉。
+     * 用户现场：「著作权人：精河县融媒体中心（精河县广播电视台）」进表只剩「精河县融媒体中心」——
+     * 因为 KV_ORG_TAIL_G 只在「中心」收口，而「电视台」不在表里。括号配平到右括号为止
+     * （最多 3 组，防病态输入；找不到右括号就不动，宁可多留也不切半截）。 */
+    if (end > 0) {
+      let tail = end;
+      for (let k = 0; k < 3; k++) {
+        const open = head.charAt(tail);
+        if (open !== '（' && open !== '(') break;
+        const closeAt = head.indexOf(open === '（' ? '）' : ')', tail + 1);
+        if (closeAt < 0) break;
+        tail = closeAt + 1;
+      }
+      end = tail;
+      head = head.slice(0, end);
+    }
     return head.trim() || s;
   }
 

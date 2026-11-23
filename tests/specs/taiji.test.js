@@ -18,12 +18,13 @@ const { suite, test, eq, deepEq, truthy, falsy } = H;
 const ROOT = path.join(__dirname, '..', '..');
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 
-/** 假响应：JSON。 */
-function jsonRes(obj, status) {
+/** 假响应：JSON。第三参是 Set-Cookie 行（2.0.16.4：登录只靠 Set-Cookie 下发会话）。 */
+function jsonRes(obj, status, cookies) {
+  const list = Array.isArray(cookies) ? cookies : [];
   return {
     ok: (status || 200) < 400,
     status: status || 200,
-    headers: { get: () => 'application/json' },
+    headers: { get: () => 'application/json', getSetCookie: () => list },
     text: async () => JSON.stringify(obj)
   };
 }
@@ -78,7 +79,11 @@ function loadTaiji(opts) {
     if (/^https:\/\/www\.taijiai666\.com\/?$/.test(u)) {
       return { ok: true, status: 200, url: 'https://ai.zhuangxiuyunying.xyz/', headers: { get: () => 'text/html' }, text: async () => '' };
     }
-    if (u.indexOf('/api/user/login') >= 0) return jsonRes(o.login === undefined ? { code: 0, data: {} } : o.login);
+    /* 【2.0.16.4】登录成功只回 Set-Cookie（站点 body 是 {code:0,data:null}）；默认给一行合法的会话 cookie。 */
+    if (u.indexOf('/api/user/login') >= 0) {
+      return jsonRes(o.login === undefined ? { code: 0, data: null } : o.login, 200,
+        o.loginCookie === undefined ? ['ai-session=tok-1; Path=/; Max-Age=2592000'] : o.loginCookie);
+    }
     if (u.indexOf('/api/chat/tmpl') >= 0) return jsonRes(o.tmpl === undefined ? TM_OK : o.tmpl);
     if (u.indexOf('/api/chat/session') >= 0) return jsonRes(o.session === undefined ? { code: 0, data: { id: 'sess-1' } } : o.session);
     if (u.indexOf('/api/chat/completions') >= 0) {
@@ -90,12 +95,20 @@ function loadTaiji(opts) {
     }
     return jsonRes({ code: 404, msg: 'not found' }, 404);
   };
+  /* 【2.0.16.4】假 cookie 罐：SW 里 fetch 的 Set-Cookie 不会自己落盘，登录要靠 chrome.cookies.set 显式写入。 */
+  const jar = {};
   const chrome = {
     storage: {
       local: {
         get: async (k) => (typeof k === 'string' ? { [k]: mem[k] } : Object.assign({}, mem)),
         set: async (x) => { Object.assign(mem, x); }
       }
+    },
+    cookies: o.noCookies ? undefined : {
+      set: (opt, cb) => { jar[opt.name] = Object.assign({}, opt); if (cb) cb(opt); },
+      get: (q, cb) => { if (cb) cb(jar[q.name] || null); },
+      getAll: (q, cb) => { if (cb) cb(Object.keys(jar).map((k) => jar[k])); },
+      remove: (q, cb) => { delete jar[q.name]; if (cb) cb(); }
     }
   };
   const sandbox = {
@@ -112,7 +125,7 @@ function loadTaiji(opts) {
   sandbox.KH = { Config: KH_CONFIG };
   vm.createContext(sandbox);
   vm.runInContext(read('background/taiji.js'), sandbox, { filename: 'background/taiji.js' });
-  return { T: sandbox.KhTaiji, calls: calls, mem: mem, sandbox: sandbox };
+  return { T: sandbox.KhTaiji, calls: calls, mem: mem, sandbox: sandbox, jar: jar };
 }
 
 /** 在独立沙盒里加载 background/entity.js，并塞一个假的太极AI。 */
@@ -324,11 +337,14 @@ module.exports = async function run() {
   /* ==================== ③ 接线 ==================== */
   suite('2.0.16 · 接线：默认通路 / 密码不落盘 / 设置页与消息常量');
 
-  await test('★ 配置层：默认 taiji；三条通路（taiji/web/api）都保留；taiji 段没有 password 键', () => {
+  await test('★ 配置层：只剩太极AI 一条通路；taiji 段没有 password 键', () => {
     eq(C.AI_MODE_DEFAULT, 'taiji', '默认 = 太极AI 网页通路（用户 2026-11-23 口径）');
-    eq(C.AI_MODES.map((m) => m.id).join(','), 'taiji,web,api', '三条通路各一条，taiji 在第一位');
+    /* 【2.0.16.4】用户原话「只保留太极 AI，其余 AI 接口和调用路径全部移除」。 */
+    eq(C.AI_MODES.map((m) => m.id).join(','), 'taiji', '设置页只该有太极AI 一项');
     eq(C.normalizeAi({}).mode, 'taiji', '老配置没写 mode ⇒ taiji');
-    eq(C.normalizeAi({ mode: 'web' }).mode, 'web', '显式选网页对话要保留（不许改写老用户配置）');
+    /* 【2.0.16.4】只剩一条通路：老配置里的 api / web 也要归到 taiji，否则会去走已删除的路由。 */
+    eq(C.normalizeAi({ mode: 'web' }).mode, 'taiji', '老配置的 web 也要归到 taiji');
+    eq(C.normalizeAi({ mode: 'api' }).mode, 'taiji', '老配置的 api 也要归到 taiji');
     const t = C.normalizeAiTaiji({ account: 'u1', base: 'https://ai.zhuangxiuyunying.xyz/', model: 'openai::x', password: 'pwd' });
     deepEq(Object.keys(t).sort(), ['account', 'base', 'model'], '只留账号/站点/模型（密码不在这套结构里）');
     eq(t.base, 'https://ai.zhuangxiuyunying.xyz', '站点地址去尾斜杠');
@@ -360,43 +376,48 @@ module.exports = async function run() {
     truthy(sw.indexOf('[MSG.AI_TAIJI_LOGIN]') >= 0, '要挂登录路由');
     truthy(sw.indexOf('[MSG.AI_TAIJI_MODELS]') >= 0, '要挂模型清单路由');
     const ai = read('background/ai.js');
-    truthy(ai.indexOf("ai.mode === 'taiji'") >= 0, 'AI.chat 要按 mode 分流到太极通道');
-    truthy(ai.indexOf('self.KhTaiji.chat(payload)') >= 0, '分流后直接交给 KhTaiji（不再走 OpenAI 兼容请求）');
-    truthy(ai.indexOf('AI.taijiLogin') >= 0 && ai.indexOf('AI.taijiModels') >= 0, '后台两个门面方法要在');
+    /* 【2.0.16.4】AI.chat 不再分流：只剩一条路，直接交给 KhTaiji。 */
+    truthy(ai.indexOf('self.KhTaiji.chat(payload)') >= 0, 'AI.chat 直接交给 KhTaiji（不再走 OpenAI 兼容请求）');
+    falsy(/endpointOf\s*\(/.test(ai), 'OpenAI 兼容端点必须随 API 通路一起删掉（AI 审核自己的端点另算）');
+    truthy(ai.indexOf('chrome.tabs.create(') < 0, 'ai.js 里不许再有任何开标签页的代码');
+    truthy(ai.indexOf('AI.taijiLogin') >= 0 && ai.indexOf('AI.taijiModels') >= 0 && ai.indexOf('AI.taijiLogout') >= 0, '后台门面方法要在');
     const manifest = JSON.parse(read('manifest.json'));
-    falsy((manifest.permissions || []).indexOf('cookies') >= 0, '不申请 cookies 权限（会话靠 credentials:include 复用浏览器 jar）');
+    /* 【2.0.16.4】必须申请 cookies：MV3 SW 的 fetch 不落 Set-Cookie，会话只能靠 chrome.cookies 显式写。 */
+    truthy((manifest.permissions || []).indexOf('cookies') >= 0, 'cookies 权限要在（写登录会话 / 退出时删）');
   });
 
   /* ==================== ④ 面板三态 + 后台长连接 ==================== */
-  suite('2.0.16 · 面板三态：taiji 不开标签页、没登录指去设置页');
+  suite('2.0.16.4 · 面板只剩太极AI：不开标签页、没登录指去设置页');
 
-  await test('★ 面板认三条通路：taiji 免 Key 可发、状态带写太极AI、needLogin 打开设置页而不是对话页', () => {
+  await test('★ 面板只剩一条路：状态写太极AI、没登录指去设置页、网页对话入口已消失', () => {
     const note = read('src/features/important-note.js');
-    truthy(note.indexOf("if (ai.mode === 'api') return 'api';") >= 0, 'aiMode 先认 api');
-    truthy(note.indexOf("if (ai.mode === 'taiji' || !ai.mode) return 'taiji';") >= 0, '老配置 / 认不出的值回 taiji，别掉回网页对话');
-    truthy(note.indexOf("if (this.aiMode() !== 'api') return true;") >= 0, 'taiji / web 只要没关闭就算可发');
+    truthy(note.indexOf('return \'taiji\';') >= 0, 'aiMode 恒回 taiji（其余通路已删）');
+    truthy(note.indexOf('return ai.enabled !== false;') >= 0, '只要没在设置里关掉就算可发');
     truthy(note.indexOf('V.aiModeTaiji') >= 0, '状态带要用太极AI 的名字');
-    truthy(note.indexOf('taiji ? V.aiOpenOptions : V.aiGoLogin') >= 0, 'taiji 的兜底按钮是「去设置」');
-    truthy(note.indexOf('if (taiji) this.openAiOptions(); else this.openAiWeb();') >= 0, 'taiji 不许去开对话页');
-    truthy(note.indexOf("p.postMessage({ action: 'new' });") >= 0, '清空对话仍只在网页模式发 new（taiji 没有会话可清）');
+    truthy(note.indexOf('V.aiOpenOptions') >= 0, '没登录时的按钮是「去设置」');
+    truthy(note.indexOf('openAiWeb') < 0, 'openAiWeb（开对话页）必须随通路一起删掉');
+    truthy(note.indexOf("action: 'new'") < 0, '清空对话不再发 new（太极AI 每问都新建会话）');
+    truthy(note.indexOf("port.postMessage({ action: 'ask', messages: messages })") >= 0, '发消息不再带 mode');
   });
 
-  await test('★ 后台长连接：taiji 走 AI.chat（后台直连），只有 web 才走网页对话驱动', () => {
+  await test('★ 后台长连接：一律 AI.chat（内部转太极AI），不再看 mode、不再有网页对话驱动', () => {
     const sw = read('background/service-worker.js');
-    truthy(sw.indexOf("const mode = (m.mode === 'taiji') ? 'taiji' : ((m.mode === 'api') ? 'api' : 'web');") >= 0, '三态归一');
-    truthy(sw.indexOf("const run = (mode !== 'web')") >= 0, 'taiji 与 api 同一支（都由 AI.chat 出站）');
-    truthy(sw.indexOf('self.KhAi.askWeb({ messages: m.messages, onChunk:') >= 0, '网页对话仍是流式');
+    truthy(sw.indexOf('self.KhAi.chat({ messages: m.messages })') >= 0, 'ask 只能走 AI.chat');
+    truthy(sw.indexOf('askWeb') < 0, '网页对话驱动（askWeb）必须删干净');
+    truthy(sw.indexOf("m.mode === 'taiji'") < 0, '不再按 mode 分支');
   });
 
   await test('★ 文案与隐私：默认通路的说明、needLogin 提示、隐私声明都要跟代码一致', () => {
     const V = read('src/ui/ocr-copy.js');
     truthy(V.indexOf("aiModeTaiji: '太极AI 网页通路'") >= 0, '缺少 aiModeTaiji 文案');
     truthy(V.indexOf('后台直接请求，不开标签页') >= 0, '太极AI 的提示要说清不开标签页');
-    truthy(V.indexOf('切到「太极AI 网页通路」或「DeepSeek 网页对话」') >= 0, 'API 没配好时要指出两条免 Key 通路');
+    truthy(V.indexOf('aiNeedKey') >= 0 && V.indexOf('太极AI') >= 0, 'AI 不可用的提示要指向太极AI');
+    truthy(V.indexOf('aiModeWeb') < 0 && V.indexOf('aiModeApi') < 0, '网页对话 / API 的文案要随通路一起删');
     const t = read('background/taiji.js');
     truthy(t.indexOf('needLogin: needLogin') >= 0, '会话失效要带 needLogin 回面板');
     const p = read('PRIVACY.md');
-    truthy(p.indexOf('太极AI 网页通路（默认）') >= 0, '隐私声明要写默认通路');
+    truthy(p.indexOf('太极AI') >= 0, '隐私声明要写唯一的通路');
+    truthy(p.indexOf('cookies') >= 0, '会话 cookie 要在本机、权限用途要披露');
     truthy(p.indexOf('**不落盘**') >= 0, '密码不落盘要写明');
     truthy(p.indexOf('同法人校验') >= 0 && p.indexOf('核准主体名称那一串公司名') >= 0, '法人兜底会把公司名发出去，必须披露');
   });
@@ -404,28 +425,15 @@ module.exports = async function run() {
   /* ==================== ⑤ 2.0.16.1：绝不开标签页 + 品牌域名 ==================== */
   suite('2.0.16.1 · 太极AI 模式绝不开标签页；品牌域名自动跟随到真实宿主');
 
-  await test('★ 后台闸门：只有 web 模式才允许碰对话页（看代码里没有第二条开标签页的路）', () => {
+  await test('★ 开标签页的代码在后台已经彻底不存在（用户要求永不出现新标签页）', () => {
     const ai = read('background/ai.js');
-    truthy(ai.indexOf('function webBlockReason(ai)') >= 0, '缺少 webBlockReason：非网页模式必须能被一句话拒绝');
-    truthy(ai.indexOf("if (mode === 'web') return '';") >= 0, '只有 web 放行');
-    /* 四个入口各判一次：设置页/面板可能拿着切模式前的旧配置来发 */
-    eq((ai.match(/const no = await webBlockNow\(\);/g) || []).length, 3, 'openWeb / probeWeb / newWebChat 三个入口都要先判');
-    truthy(ai.indexOf('const noWeb = webBlockReason(ai);') >= 0, 'askWeb 用已归一的配置再判一次');
-    truthy(ai.indexOf('if (noWeb) return { ok: false, error: noWeb };') >= 0, 'askWeb 拒绝时要说原因');
-    /* 开标签页只许有一个地方（ensureWebTab），且它在三道闸门之后 */
-    eq((ai.match(/chrome\.tabs\.create\(/g) || []).length, 1, '开标签页只许 ensureWebTab 一处');
-    truthy(ai.indexOf('不会打开对话页') >= 0, '拒绝的话要给用户看得懂的中文原因');
-  });
-
-  await test('★ 后台长连接：旧面板发 new 也不再开对话页', () => {
+    truthy(ai.indexOf('chrome.tabs.create(') < 0, 'ai.js 里不许再有开标签页');
+    truthy(ai.indexOf('ensureWebTab') < 0 && ai.indexOf('askWeb') < 0 && ai.indexOf('newWebChat') < 0, '网页对话那套函数要删干净');
     const sw = read('background/service-worker.js');
-    truthy(sw.indexOf("if (m.mode !== 'web')") >= 0, '清空对话要先看模式');
-    truthy(sw.indexOf("try { port.postMessage({ type: 'newChat', ok: true }); } catch (e)") >= 0, '非 web 直接回 ok，不做任何事');
     const at = sw.indexOf("if (m.action === 'new')");
-    const gate = sw.indexOf("if (m.mode !== 'web')");
-    /* newWebChat 在别处还有一处路由（AI_WEB_NEW），所以只能从闸门之后找，不能整文件找第一个 */
-    const call = sw.indexOf('self.KhAi.newWebChat()', gate);
-    truthy(at >= 0 && gate > at && call > gate, '闸门必须在调用 newWebChat 之前');
+    truthy(at >= 0, '长连接仍要认 new（面板清空对话会发）');
+    truthy(sw.indexOf('newWebChat') < 0, 'SW 里不许再调用 newWebChat');
+    truthy(sw.indexOf("try { port.postMessage({ type: 'newChat', ok: true }); } catch (e)") >= 0, 'new 只回 ok，不做任何事');
   });
 
   await test('★ 站点白名单含品牌域名；已经是真实宿主就不再跟一次重定向', async () => {
@@ -445,7 +453,7 @@ module.exports = async function run() {
   await test('★ 登录/模型清单回执带上「实际连上的站点」', () => {
     const t = read('background/taiji.js');
     truthy(t.indexOf('async function baseNow()') >= 0, '缺 baseNow（拿不到站点不该让登录失败）');
-    eq((t.match(/base: await baseNow\(\)/g) || []).length, 2, '登录与模型清单两条回执都要带 base');
+    eq((t.match(/base: (await baseNow\(\)|base)/g) || []).length, 2, '登录与模型清单两条回执都要带 base');
     truthy(t.indexOf("const CANON_HOST = 'ai.zhuangxiuyunying.xyz';") >= 0, '真实宿主常量要在');
     truthy(t.indexOf('站点跳转到了白名单之外') >= 0, '跟到白名单之外必须拒绝');
     const js = read('options/options.js');
@@ -453,6 +461,52 @@ module.exports = async function run() {
     const html = read('options/options.html');
     truthy(html.indexOf('品牌域名会自动跟随跳转') >= 0, '站点地址的 label 要说明品牌域名可用');
     truthy(html.indexOf('placeholder="https://www.taijiai666.com"') >= 0, 'placeholder 用用户认得的品牌域名');
+  });
+
+  /* ==================== ⑥ 2.0.16.4：会话 cookie 是本机唯一凭据 ==================== */
+  suite('2.0.16.4 · 登录会话：Set-Cookie 要落到本机 cookie 罐，退出要清干净');
+
+  await test('★ 登录成功把 ai-session 写进 cookie 罐，模型清单看得出已登录', async () => {
+    const h = loadTaiji();
+    const res = await h.T.login({ account: 'u1', password: 'p1' });
+    truthy(res.ok, '登录要成功：' + (res.error || ''));
+    truthy(h.jar['ai-session'], 'Set-Cookie 必须显式写进 cookie 罐（SW 的 fetch 不会自动落盘）');
+    eq(h.jar['ai-session'].value, 'tok-1', '值要照抄站点给的');
+    const m = await h.T.models();
+    truthy(m.ok && m.logged === true, '登录后模型清单要显示已登录');
+  });
+
+  await test('★ 浏览器不给 cookies API ⇒ 登录必须失败并说清原因（不许假装成功）', async () => {
+    const h = loadTaiji({ noCookies: true });
+    const res = await h.T.login({ account: 'u1', password: 'p1' });
+    falsy(res.ok, '存不住会话就不算登录成功');
+    truthy(String(res.error).indexOf('没存住会话 cookie') >= 0, '要如实说「浏览器没存住会话 cookie」：' + res.error);
+  });
+
+  await test('★ 会话过期（站点 code=2）⇒ needLogin，面板据此指去设置页', async () => {
+    const h = loadTaiji({ tmpl: { code: 2, msg: '您的登录已过期，请重新登录' } });
+    const m = await h.T.models();
+    falsy(m.ok, '过期就不算拿到清单');
+    truthy(m.needLogin === true, 'code=2 必须判成 needLogin');
+    truthy(String(m.error).indexOf('过期') >= 0, '站点的原话要透出来：' + m.error);
+  });
+
+  await test('★ 退出登录把会话 cookie 删掉，模型清单回到未登录', async () => {
+    const h = loadTaiji();
+    await h.T.login({ account: 'u1', password: 'p1' });
+    truthy(h.jar['ai-session'], '先确认登录写进去了');
+    const out = await h.T.logout();
+    truthy(out.ok && out.cleared >= 1, '退出要删掉会话 cookie');
+    falsy(h.jar['ai-session'], 'cookie 罐里不许再留着会话');
+    const m = await h.T.models();
+    truthy(m.logged === false, '退出后模型清单要显示未登录');
+  });
+
+  await test('★ 站点报错要带原话：只回 code=3 时看不出是「内容为空」', async () => {
+    const h = loadTaiji({ chat: jsonRes({ code: 3, data: null, msg: '用户内容 是必填项' }, 400) });
+    const res = await h.T.chat({ messages: [{ role: 'user', content: '你好' }] });
+    falsy(res.ok, '400 不算成功');
+    truthy(String(res.error).indexOf('用户内容 是必填项') >= 0, '必须透出站点原话，否则用户只看到 code=3：' + res.error);
   });
 };
 

@@ -317,20 +317,14 @@
     { id: 'openai', label: 'OpenAI', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
     { id: 'custom', label: '自定义（OpenAI 兼容）', baseUrl: '', model: '' }
   ];
-  /* 两条通路（用户 2026-11-03 拍板：默认走**网页版对话**，界面还是我们自己的 AI 分页）：
-   *   web —— 复用 chat.deepseek.com 的登录态，免 Key；扩展开一个后台标签页替用户发消息、读回复
-   *   api —— OpenAI 兼容 HTTP 接口，需要 Key（旧口径，保留给要自接模型的用户）*/
-  /* 【2.0.16】三条通路，默认换成太极AI（用户 2026-11-23 拍板：设置页登录、自选模型、不开标签页）。
-   *   taiji —— 太极AI 站点接口（后台 fetch，会话靠浏览器 cookie；见 background/taiji.js）
-   *   web   —— DeepSeek 网页对话（免 Key，但要在后台开一个标签页替用户打字）
-   *   api   —— OpenAI 兼容 HTTP 接口，需要 Key（旧口径，保留给要自接模型的用户）*/
+  /* 【2.0.16.4 · 用户 m19483】只保留太极AI 一条通路：
+   * 用户原话「只保留太极 AI，其余 AI 接口和调用路径全部移除」。
+   *   taiji —— 太极AI 站点接口（后台 fetch，会话回写浏览器 cookie；见 background/taiji.js）
+   * 老的两条（web = DeepSeek 网页对话、api = OpenAI 兼容接口）连同 UI、消息、后台函数已整条删除。 */
   const AI_MODES = [
-    { id: 'taiji', label: '太极AI 网页通路（免 Key，默认）' },
-    { id: 'web', label: 'DeepSeek 网页对话（免 Key）' },
-    { id: 'api', label: 'API Key（OpenAI 兼容）' }
+    { id: 'taiji', label: '太极AI 网页通路（免 Key）' }
   ];
   const AI_MODE_DEFAULT = 'taiji';
-  const AI_WEB_ORIGIN = 'https://chat.deepseek.com/';
   const AI_PROVIDERS = AI_PRESET_LIST.map((p) => p.id);
   const AI_MAX_MIN = 128;
   const AI_MAX_MAX = 4000;
@@ -361,7 +355,8 @@
     const n = intOrNaN(src.maxTokens);
     return {
       enabled: src.enabled !== false,
-      mode: (src.mode === 'api' || src.mode === 'web' || src.mode === 'taiji') ? src.mode : AI_MODE_DEFAULT,
+      /* 【2.0.16.4】只剩一条通路：老配置里的 api / web 一律归到 taiji，别让历史值把请求发到已删除的路由。 */
+      mode: AI_MODE_DEFAULT,
       provider: preset.id,
       baseUrl: url || preset.baseUrl,
       model: model || preset.model,
@@ -477,6 +472,14 @@
        * `defaultMax`：每个锚点最多识别几张图（关键词上可单独覆盖，留空即用这个默认）
        * `crossOriginSites`：{'example.com': true} 允许扩展代为读取该站点的跨域图片。
        *   默认**不开**：跨域读图等于替页面再发一次请求，必须按站点显式授权（决策留档见 changelog）。 */
+      /* 【2.0.16.4 · m19385】隐私政策链接正文：读不到时允许开一张**后台标签页**
+       * （active:false、读完立刻关、同一时刻最多一张、每轮最多一张）。
+       * 默认开：用户 2026-11-23 明确选择「P4-A 自动开后台标签页」；
+       * 关掉后退回 2.0.14.6 的 C 档口径（只读你已经打开的那张页，没有就提示手动打开）。 */
+      policy: {
+        renderTab: true
+      },
+
       imgOcr: {
         defaultMax: 4,
         crossOriginSites: {},
@@ -584,7 +587,7 @@
     AI_AUDIT_NAME_MAX,
     AI_MODES,
     AI_MODE_DEFAULT,
-    AI_WEB_ORIGIN,
+    /* 【2.0.16.4】AI_WEB_ORIGIN 已随网页对话通路一起删除（导出列表也必须一起删，否则加载即 ReferenceError）。 */
     AI_MAX_MIN,
     AI_MAX_MAX,
     AI_MAX_DEFAULT,
@@ -680,6 +683,18 @@
       if (!ENUMS['uiTheme'].includes(cfg.uiTheme)) {
         cfg.uiTheme = this.defaults.uiTheme;
         changed.invalid.push('uiTheme');
+      }
+
+      /* ②e2a 【2.0.16.4 · m19385】隐私正文是否允许开后台标签页：只认严格的 false/true，
+       * 其它值（''、0、'false' 字符串）一律回默认开 —— 这个开关只影响「读不到时多一种兜底」，
+       * 坏值把它静默关掉才是更坏的结果。 */
+      {
+        const p = (cfg.policy && typeof cfg.policy === 'object' && !Array.isArray(cfg.policy)) ? cfg.policy : {};
+        const want = (p.renderTab === false) ? false : (p.renderTab === true ? true : this.defaults.policy.renderTab);
+        if (!cfg.policy || cfg.policy.renderTab !== want) {
+          cfg.policy = Object.assign({}, p, { renderTab: want });
+          if (raw && raw.policy && raw.policy.renderTab !== undefined) changed.invalid.push('policy.renderTab');
+        }
       }
 
       /* ②e2 【2.0.8.6 需求①】图文合并的读路径归一：坏值回默认、字段去重、标题截断。 */

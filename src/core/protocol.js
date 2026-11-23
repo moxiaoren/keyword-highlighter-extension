@@ -114,22 +114,14 @@
     /* 【2026-11-18 用户口径①】点 PDF 小标要打开**正文**：内容脚本开新标签不稳（站点可能拦），
      * 统一走后台 chrome.tabs.create（payload { url }）。 */
     PDF_OPEN: 'kh:pdf:open',
-    /* 【2.0.8.5】网页对话：面板要求打开/聚焦对话页、以及对对话页做一次自检（选择器是否还认得出）。 */
-    AI_WEB_OPEN: 'kh:ai:webOpen',
-    AI_WEB_PROBE: 'kh:ai:webProbe',
-    AI_WEB_NEW: 'kh:ai:webNew',
-    /* 【2.0.16】太极AI 网页通路：设置页登录 / 拉模型清单。对话本身走 AI_CHAT（后台按 ai.mode 分流），
-     * 这两条只服务设置页，不开标签页。 */
+    /* 【2.0.16.4 · 用户 m19483】只留太极AI：网页对话那三条（AI_WEB_OPEN/PROBE/NEW）已删除。
+     * 这三条只服务设置页（登录 / 模型清单 / 退出），对话本身走 AI_CHAT，一律不开标签页。 */
     AI_TAIJI_LOGIN: 'kh:ai:taijiLogin',
     AI_TAIJI_MODELS: 'kh:ai:taijiModels',
+    AI_TAIJI_LOGOUT: 'kh:ai:taijiLogout',
     /* 流式回包走长连接：面板 `chrome.runtime.connect({name:'kh:ai'})`，后台按 requestId 推 chunk/done。 */
     AI_PORT: 'kh:ai',
-    /* 后台 → 网页对话内容脚本（chat.deepseek.com 上的 content/web-chat.js）。 */
-    WEB_PING: 'kh:web:ping',
-    WEB_ASK: 'kh:web:ask',
-    WEB_NEW: 'kh:web:new',
-    WEB_STOP: 'kh:web:stop',
-    WEB_CHUNK: 'kh:web:chunk',
+    /* 【2.0.16.4】网页对话内容脚本（content/web-chat.js）已随通路一起删除，WEB_* 常量不再存在。 */
 
     /* ---- ocr（图片文字识别；内容脚本 ↔ background ↔ offscreen 文档三段中转） ----
      * 【为什么必须有 offscreen 这一层】MV3 的内容脚本不能建扩展本地 worker（要跨源 + 页面 CSP

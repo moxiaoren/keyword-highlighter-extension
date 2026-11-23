@@ -38,6 +38,8 @@
   /** 单次回复最多留多少字符（面板放不下更多；也防站点抽风灌满内存）。 */
   const MAX_REPLY = 20000;
   const ERR_MAX = 300;
+  /** 会话 cookie 名（站点登录时下发；2.0.16.4 实测就叫这个）。 */
+  const SESSION_COOKIE = 'ai-session';
 
   /* 站点把推理过程内联在正文里：可能成对出现，也可能只给结束符。两种都处理（口径同桥）。 */
   const OPENERS = ['<think>', ' thinking'];
@@ -208,6 +210,82 @@
     return json || {};
   }
 
+  /* ---------------- 会话 cookie（2.0.16.4 修「太极AI 跑不通」） ----------------
+   * 为什么必须自己做：MV3 service worker 里 fetch 的 Set-Cookie 不会写进浏览器 cookie 罐，
+   * 而 Cookie 请求头是 forbid 头、脚本设了会被剥掉。所以登录成功后要靠 chrome.cookies
+   * 把站点下发的会话 cookie 显式写进去，后续 fetch 的 credentials:'include' 才带得上。
+   * 属性一律写成 Secure + SameSite=None：扩展发出的请求按跨站算，Lax 的 cookie 不会被带上。 */
+  function cookieApi() {
+    try { return (typeof chrome !== 'undefined' && chrome.cookies) ? chrome.cookies : null; } catch (e) { return null; }
+  }
+
+  function originOf(url) {
+    try { return new URL(String(url || '')).origin; } catch (e) { return ''; }
+  }
+
+  async function saveSetCookies(out, url) {
+    const api = cookieApi();
+    const base = originOf(url);
+    if (!base) return { saved: 0, names: [], reason: '站点地址解析不出来' };
+    let lines = [];
+    try {
+      if (out && out.res && out.res.headers && typeof out.res.headers.getSetCookie === 'function') {
+        lines = out.res.headers.getSetCookie() || [];
+      }
+    } catch (e) { lines = []; }
+    if (!lines.length) return { saved: 0, names: [], reason: '站点没有下发会话 cookie' };
+    if (!api) return { saved: 0, names: [], reason: '扩展没有 cookies 权限（更新到 2.0.16.4 后请允许一次）' };
+    const names = [];
+    for (let i = 0; i < lines.length; i++) {
+      const parts = String(lines[i] || '').split(';');
+      const head = (parts.shift() || '').trim();
+      const eq = head.indexOf('=');
+      if (eq <= 0) continue;
+      const name = head.slice(0, eq).trim();
+      const value = head.slice(eq + 1).trim();
+      const opt = { url: base + '/', name: name, value: value, path: '/', secure: true, sameSite: 'no_restriction' };
+      for (let k = 0; k < parts.length; k++) {
+        const p = parts[k].trim();
+        if (!p) continue;
+        const at = p.indexOf('=');
+        const key = (at < 0 ? p : p.slice(0, at)).toLowerCase();
+        const val = at < 0 ? '' : p.slice(at + 1).trim();
+        if (key === 'path' && val) opt.path = val;
+        else if (key === 'max-age') { const n = Number(val); if (n > 0) opt.expirationDate = Math.floor(Date.now() / 1000) + n; }
+        else if (key === 'expires') { const t = Date.parse(val); if (!isNaN(t)) opt.expirationDate = Math.floor(t / 1000); }
+      }
+      try {
+        await new Promise(function (resolve) { api.set(opt, function () { resolve(); }); });
+        names.push(name);
+      } catch (e) { /* 单个 cookie 失败不阻断其它 */ }
+    }
+    return { saved: names.length, names: names, reason: names.length ? '' : '浏览器拒绝了会话 cookie（可能是同站策略）' };
+  }
+
+  /** 登录态判断：cookie 罐里有没有会话 cookie。拿不到 API 时回 null（未知，不误报未登录）。 */
+  async function hasSession(base) {
+    const api = cookieApi();
+    if (!api || !base) return null;
+    try {
+      const got = await new Promise(function (resolve) { api.get({ url: base + '/', name: SESSION_COOKIE }, function (c) { resolve(c || null); }); });
+      return !!got;
+    } catch (e) { return null; }
+  }
+
+  async function clearSession(base) {
+    const api = cookieApi();
+    if (!api || !base) return 0;
+    const all = await new Promise(function (resolve) { api.getAll({ url: base + '/' }, function (list) { resolve(list || []); }); });
+    let n = 0;
+    for (let i = 0; i < all.length; i++) {
+      const c = all[i] || {};
+      if (c.name !== SESSION_COOKIE) continue;
+      await new Promise(function (resolve) { api.remove({ url: base + '/', name: c.name }, function () { resolve(); }); });
+      n++;
+    }
+    return n;
+  }
+
   /**
    * 模型清单归一：站点可能回字符串，也可能回对象；统一成 {id, name}。
    * 【2.0.16.2 · 用户实测】站点 `/api/chat/tmpl` 的真实形状是 `{label:'GPT-6.2-sol', value:'openai::gpt-6.2-sol', attr:{modelType:'chat'}}`
@@ -241,7 +319,8 @@
     const json = await readJson(out);
     if (json.code !== 0) {
       const err = new Error(json.msg || json.message || ('站点返回 code=' + json.code));
-      err.needLogin = (json.code === 401 || json.code === 403 || /登录|未授权|token/i.test(String(err.message)));
+      /* code 2 = 站点口径「您的登录已过期，请重新登录」（2.0.16.4 实测），与其它登录态错误一起归为 needLogin。 */
+      err.needLogin = (json.code === 2 || json.code === 401 || json.code === 403 || /登录|未授权|token|过期/i.test(String(err.message)));
       throw err;
     }
     return normModels(json.data && json.data.models);
@@ -266,8 +345,14 @@
       if (json.code !== 0) {
         return { ok: false, error: '登录失败：' + String(json.msg || json.message || ('code=' + json.code)).slice(0, ERR_MAX) };
       }
+      /* 【2.0.16.4】关键：后台 fetch 的响应 Set-Cookie 不会自动进浏览器 cookie 罐
+       * （MV3 已知行为），Cookie 头又是禁止脚本设置的 forbid 头 ⇒ 必须自己写进去。 */
+      const saved = await saveSetCookies(out, out.url);
+      if (!saved.saved) {
+        return { ok: false, error: '登录请求通了，但浏览器没存住会话 cookie（' + saved.reason + '）' };
+      }
       const models = await tmplRaw();
-      return { ok: true, models: models, base: await baseNow() };
+      return { ok: true, models: models, base: await baseNow(), cookies: saved.names };
     } catch (err) {
       return { ok: false, error: '登录失败：' + errText(err) };
     }
@@ -277,17 +362,34 @@
   T.models = async function () {
     try {
       const models = await tmplRaw();
-      return { ok: true, models: models, base: await baseNow() };
+      const base = await baseNow();
+      const logged = await hasSession(base);
+      return { ok: true, models: models, base: base, logged: logged };
     } catch (err) {
       return { ok: false, needLogin: !!err.needLogin, error: errText(err) };
     }
   };
 
+  /** 设置页「退出登录」：把会话 cookie 从浏览器里删掉（同时断开站点登录态）。 */
+  T.logout = async function () {
+    try {
+      const base = await baseNow();
+      const n = await clearSession(base);
+      return { ok: true, cleared: n };
+    } catch (err) { return { ok: false, error: errText(err) }; }
+  };
+
   async function createSession(model, forceBase) {
     const out = await api('/api/chat/session', { method: 'POST', body: { model: model }, forceBase: forceBase });
     const json = await readJson(out);
-    const id = json && json.data && json.data.id;
-    if (json.code !== 0 || !id) throw new Error('站点建会话失败（code=' + (json.code == null ? '?' : json.code) + '）');
+    /* 站点对 sessionId 的类型很挑（字符串会被判「参数解析失败」code=3），统一收成整数。 */
+    const rawId = json && json.data && json.data.id;
+    const id = (typeof rawId === 'string' && /^\d+$/.test(rawId)) ? Number(rawId) : rawId;
+    if (json.code !== 0 || !id) {
+      const e = new Error('站点建会话失败（code=' + (json.code == null ? '?' : json.code) + (json.msg ? '：' + json.msg : '') + '）');
+      e.needLogin = (json.code === 2 || json.code === 401 || json.code === 403);
+      throw e;
+    }
     return String(id);
   }
 
@@ -312,7 +414,8 @@
     const ctype = String((out.res.headers && out.res.headers.get('content-type')) || '');
     if (!ctype.includes('event-stream')) {
       const json = await readJson(out);
-      if (json.code !== 0 && json.code !== undefined) throw new Error('站点返回错误 code=' + json.code);
+      /* 【2.0.16.4】必须带站点原话：只回 code 时看不出是「text 空」「sessionId 类型不对」还是参数解析失败。 */
+      if (json.code !== 0 && json.code !== undefined) throw new Error('站点返回错误 code=' + json.code + (json.msg ? '：' + json.msg : ''));
       const txt = stripThink(String((json.data && json.data.aiText) || ''));
       return { text: txt, usage: null };
     }
@@ -343,7 +446,7 @@
             if (j.code !== undefined && j.code !== 0) {
               const e = new Error('站点流错误 code=' + j.code);
               /* 401/403 = 会话过期：上层据此提示「到设置页重新登录」，别只说「站点流错误」。 */
-              e.needLogin = (j.code === 401 || j.code === 403);
+              e.needLogin = (j.code === 2 || j.code === 401 || j.code === 403);
               throw e;
             }
             if (j.type === 'string' && typeof j.data === 'string') {

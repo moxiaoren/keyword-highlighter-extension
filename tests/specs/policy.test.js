@@ -19,7 +19,7 @@ const ROOT = path.join(__dirname, '..', '..');
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 
 /** 后台模块用独立沙盒加载；fetch 由每条用例替换。 */
-function loadPolicy(fetchImpl, extraChrome) {
+function loadPolicy(fetchImpl, extraChrome, kh) {
   const mem = {};
   const chrome = Object.assign({
     storage: {
@@ -55,7 +55,9 @@ function loadPolicy(fetchImpl, extraChrome) {
     fetch: fetchImpl
   };
   sandbox.self = sandbox;
-  sandbox.KH = {};
+  /* 【2.0.16.4】policy 的「读不到时自动开后台标签页」开关要通过 KH.Config.load() 读，
+   * 这里允许调用方注入自己的 KH 桩（例如关掉开关的那个用例）。 */
+  sandbox.KH = kh || {};
   vm.createContext(sandbox);
   vm.runInContext(read('background/policy.js'), sandbox, { filename: 'background/policy.js' });
   return { Policy: sandbox.KH.Policy, mem: mem };
@@ -337,6 +339,40 @@ module.exports = async function run() {
     return { tabs, scripting, calls };
   }
 
+  /** 【2.0.16.4 · m19385 A 档】桩：模拟「扩展自己开一张后台标签页」——create 回 id，
+   * 下一拍通过 onUpdated 报 complete，注入能读到 text，finish 时 remove 掉。 */
+  function renderTabStub(text, pageUrl) {
+    const calls = { created: [], injected: [], removed: [] };
+    const listeners = [];
+    const tabs = {
+      query: () => Promise.resolve([]),
+      create: (arg) => {
+        calls.created.push(arg);
+        setTimeout(() => {
+          listeners.slice().forEach((fn) => {
+            try { fn(8, { status: 'complete', url: arg && arg.url }); } catch (e) { /* ignore */ }
+          });
+        }, 0);
+        return Promise.resolve({ id: 8, url: pageUrl });
+      },
+      remove: (id) => { calls.removed.push(id); return Promise.resolve(); },
+      onUpdated: {
+        addListener: (fn) => listeners.push(fn),
+        removeListener: (fn) => {
+          const i = listeners.indexOf(fn);
+          if (i >= 0) listeners.splice(i, 1);
+        }
+      }
+    };
+    const scripting = {
+      executeScript: (arg) => {
+        calls.injected.push(arg);
+        return Promise.resolve([{ result: text }]);
+      }
+    };
+    return { tabs, scripting, calls };
+  }
+
   await test('直接抓失败、但用户已经开着这个页面：读那张页，via=tab，且一张新标签都不开', async () => {
     const stub = openTabStub('某某清理大师隐私政策\n开发者：北京某某科技有限公司\n我们重视您的隐私，完整正文就在这里，请仔细阅读以下全部条款内容。', 'https://blocked.test/privacy');
     const { Policy } = loadPolicy(async () => { throw new TypeError('failed to fetch'); }, { tabs: stub.tabs, scripting: stub.scripting });
@@ -347,17 +383,29 @@ module.exports = async function run() {
     eq(stub.calls.created.length, 0, 'C 档绝不许新建标签页');
   });
 
-  await test('既抓不到、用户也没打开：两边原因都写出来，并说清怎么自救', async () => {
-    const created = [];
-    const tabs = { query: () => Promise.resolve([]), create: (a) => { created.push(a); return Promise.resolve({ id: 9 }); } };
-    const scripting = { executeScript: () => Promise.resolve([{ result: '' }]) };
-    const { Policy } = loadPolicy(async () => { throw new TypeError('failed to fetch'); }, { tabs: tabs, scripting: scripting });
+  await test('★ 直接抓不到、用户也没打开：自动开一张后台标签页读完关掉（A 档）', async () => {
+    /* 【2.0.16.4 · m19385】用户口径「P4 选 A」：允许自动开后台标签页渲染后读正文。
+     * 与 2.0.14.6 的 C 档相反，这条用例就是新口径的锁定。 */
+    const body = '某某清理大师隐私政策\n开发者：北京某某科技有限公司\n我们重视您的隐私，完整正文就在这里，请仔细阅读以下全部条款内容。';
+    const stub = renderTabStub(body, 'https://blocked.test/short');
+    const { Policy } = loadPolicy(async () => { throw new TypeError('failed to fetch'); }, { tabs: stub.tabs, scripting: stub.scripting });
     const r = await Policy.fetchText('https://blocked.test/short');
-    falsy(r.ok, '空壳页不许判成功');
-    truthy(String(r.reason).indexOf('failed to fetch') >= 0, '直接抓取的原因要保留：' + r.reason);
-    truthy(String(r.reason).indexOf('没读到正文') >= 0, '要写清没读到：' + r.reason);
-    truthy(String(r.reason).indexOf('手动打开') >= 0, '要给自救方式：' + r.reason);
-    eq(created.length, 0, '失败时也不许偷偷开标签页');
+    truthy(r.ok, '后台标签页读到正文就该成功：' + JSON.stringify(r));
+    eq(r.via, 'tab-new', '要标出这是新建的后台标签页读到的');
+    truthy(String(r.text).indexOf('北京某某科技有限公司') >= 0, '正文要回来');
+    eq(stub.calls.created.length, 1, '同一轮只许开一张');
+    eq(stub.calls.created[0].active, false, '必须是后台（不抢前台）');
+    truthy(stub.calls.removed.indexOf(8) >= 0, '读完要关掉');
+  });
+
+  await test('★ 设置里关掉「读不到时自动开后台标签页」：一张都不开，并说清去哪里打开', async () => {
+    const stub = renderTabStub('不该来这里', 'https://off.test/p1');
+    const kh = { Config: { load: async () => ({ config: { policy: { renderTab: false } } }) } };
+    const { Policy } = loadPolicy(async () => { throw new TypeError('failed to fetch'); }, { tabs: stub.tabs, scripting: stub.scripting }, kh);
+    const r = await Policy.fetchText('https://off.test/p1', { hints: ['开发者'] });
+    falsy(r.ok, '关掉开关之后读不到就是读不到');
+    eq(stub.calls.created.length, 0, '关掉了就一张都不许开');
+    truthy(String(r.reason).indexOf('关掉了') >= 0, '要说清是设置里关的：' + r.reason);
   });
 
   /* 2026-11-22 真机验收发现：第一遍失败被缓存 10 分钟，用户按卡片提示把页面打开、回来点重试，
@@ -381,19 +429,17 @@ module.exports = async function run() {
     eq(third.via, 'tab', '应走「读已开页」这条路');
   });
 
-  /** 【2.0.14.6 · m13678 C 档】源码级 + 行为级双保险：整个 policy.js 不许再出现新建标签页。 */
-  await test('★ C 档：没有已打开的页时，tabs.create 一次都不许调', async () => {
-    const created = [];
-    const tabs = { query: () => Promise.resolve([]), create: (a) => { created.push(a); return Promise.resolve({ id: 9 }); } };
-    const scripting = { executeScript: () => Promise.resolve([{ result: '' }]) };
-    const { Policy } = loadPolicy(async () => { throw new TypeError('failed to fetch'); }, { tabs: tabs, scripting: scripting });
-    const r = await Policy.fetchText('https://a.test/p1', { hints: ['开发者'] });
-    falsy(r.ok);
-    eq(created.length, 0, 'C 档绝不许新建标签页');
-    truthy(/手动打开|不再自动开新页签/.test(String(r.reason)), '要说清怎么办：' + r.reason);
+  /** 【2.0.16.4 · m19385 A 档】开页签这条路回来了，但仍要受三条约束：
+   * ①只在读不到的时候用；②同一轮最多一张（readViaTab 的 allowNew）；③设置能关。 */
+  await test('★ A 档的三条约束都还在源码里（allowNew / 只开一次 / 开关）', async () => {
     const src = read('background/policy.js');
-    truthy(!/tabs\.create\s*\(/.test(src), 'policy.js 里不许再有 tabs.create');
-    truthy(!/readViaTabOnce/.test(src), '后台标签页轮询实现应当移除');
+    truthy(/function readNewTabOnce/.test(src), '后台标签页轮询实现要在');
+    truthy(/function readNewTab\(/.test(src), '同一个时刻只跑一张（tabQueue 串行）');
+    truthy(/allowNew === false/.test(src), '调用方要能把这条路关掉');
+    truthy(/function tabRenderAllowed/.test(src), '设置开关要能读到');
+    truthy(/renderTab !== false/.test(src), '默认开、只有显式 false 才关');
+    truthy(/openedNew/.test(src), '同一轮已经开过就不再开第二张');
+    truthy(/tabs\.create\(\{ url: url, active: false \}\)/.test(src), '必须是后台标签页（active:false）');
   });
 
   /* ------------------------------------------------------------------

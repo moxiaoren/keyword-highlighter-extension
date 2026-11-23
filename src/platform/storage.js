@@ -683,7 +683,9 @@
     ],
 
     /** 只有完整备份才携带的全局开关 */
-    GLOBAL_KEYS: ['globalEnabled', 'shadowDOMEnabled', 'suspendInactiveTab'],
+    /* 【2.0.16.4】policy 是全局开关（读不到正文时自动开后台标签页），不属于某个站点/样式，
+   * 必须跟着 JSON 导出与跨设备同步走；漏登记会让「导出再导入」把用户的选择弄丢。 */
+  GLOBAL_KEYS: ['globalEnabled', 'shadowDOMEnabled', 'suspendInactiveTab', 'policy'],
 
     /** 导出文件格式版本（A2，2026-11-01）。
      *  语义：**结构性**变化的递增号，不是插件版本号——插件可以从 2.0.8 跳到 2.1.0，

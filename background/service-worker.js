@@ -664,17 +664,11 @@ const HANDLERS = {
   [MSG.POLICY_CACHE]: (msg) => self.KH.Policy.rememberText((msg && msg.url) || '', (msg && msg.text) || ''),
   [MSG.POLICY_CACHE_CLEAR]: () => self.KH.Policy.clearCache(),
 
-  /* ---- 【2.0.8.5】网页对话（免 Key）：面板 → 后台 → chat.deepseek.com 上的 content/web-chat.js ----
-   * 这三条都是"开标签页 / 自检 / 开新对话"，真正的提问走长连接（见文件末尾的 onConnect）。 */
-  [MSG.AI_WEB_OPEN]: () => self.KhAi.openWeb(),
-  [MSG.AI_WEB_PROBE]: () => self.KhAi.probeWeb(),
-  [MSG.AI_WEB_NEW]: () => self.KhAi.newWebChat(),
-  /* 【2.0.16】太极AI：设置页登录与模型清单（后台 fetch，会话靠浏览器 cookie，不开标签页）。 */
+  /* 【2.0.16.4 · 用户 m19483】只留太极AI：网页对话（content/web-chat.js + 那三条路由）与 API 通路的
+   * 后台函数都已在 2.0.16.4 删除，这里只剩「登录 / 模型清单 / 退出」，全都不开标签页。 */
   [MSG.AI_TAIJI_LOGIN]: (msg) => self.KhAi.taijiLogin(msg || {}),
   [MSG.AI_TAIJI_MODELS]: () => self.KhAi.taijiModels(),
-
-  /* 网页侧推回来的增量：按 requestId 交给 KhAi，它会转给发起这次提问的那条长连接。 */
-  [MSG.WEB_CHUNK || 'kh:web:chunk']: (msg) => { self.KhAi.onWebChunk(msg); return { ok: true }; },
+  [MSG.AI_TAIJI_LOGOUT]: () => self.KhAi.taijiLogout(),
 
   /* 面板在"还没配置"时给的一键入口：内容脚本调 chrome.runtime.openOptionsPage 不可靠（老内核没有）。 */
   [MSG.AI_OPEN_OPTIONS]: async () => {
@@ -744,26 +738,19 @@ chrome.runtime.onConnect.addListener((port) => {
   port.onMessage.addListener((msg) => {
     const m = msg || {};
     if (m.action === 'new') {
-      /* 【2.0.16.1 · 用户 m18091】只有网页对话模式才需要「同步开新对话」；
-       * 太极AI / API 模式清空对话只是本地面板的事，**不许**因此开 DeepSeek 标签页。
-       * 面板可能拿着切模式前的旧配置来发，所以这里按 m.mode 再判一次。 */
-      if (m.mode !== 'web') { try { port.postMessage({ type: 'newChat', ok: true }); } catch (e) { /* 面板已关 */ } return; }
-      Promise.resolve()
-        .then(() => self.KhAi.newWebChat())
-        .then((r) => { try { port.postMessage({ type: 'newChat', ok: !!(r && r.ok) }); } catch (e) { /* 面板已关 */ } })
-        .catch(() => {});
+      /* 【2.0.16.4】只剩太极AI：清空对话是面板本地的事，后台不需要做任何事
+       * （老实现在这里会去开 chat.deepseek.com 标签页 —— 用户明确要求永不出现）。 */
+      try { port.postMessage({ type: 'newChat', ok: true }); } catch (e) { /* 面板已关 */ }
       return;
     }
     if (m.action !== 'ask') return;
     if (busy) { try { port.postMessage({ type: 'error', error: '上一条还在回，等它说完' }); } catch (e) {} return; }
     busy = true;
     const post = (obj) => { try { port.postMessage(obj); } catch (e) { /* 页面关了 */ } };
-    /* 三条通路：web 要走网页对话驱动（要标签页）；taiji 与 api 都由 AI.chat 出站（taiji 在 ai.js 里分流给 KhTaiji，不开标签页）。 */
-    const mode = (m.mode === 'taiji') ? 'taiji' : ((m.mode === 'api') ? 'api' : 'web');
-    const run = (mode !== 'web')
-      ? Promise.resolve().then(() => self.KhAi.chat({ messages: m.messages }))
-        .then((r) => (r && r.ok ? { ok: true, text: r.text } : { ok: false, error: (r && r.error) || '请求失败' }))
-      : self.KhAi.askWeb({ messages: m.messages, onChunk: (text) => post({ type: 'chunk', text: text }) });
+    /* 【2.0.16.4】只剩太极AI：一律走 AI.chat（内部转 KhTaiji），不开任何标签页。 */
+    const run = Promise.resolve()
+      .then(() => self.KhAi.chat({ messages: m.messages }))
+      .then((r) => (r && r.ok ? { ok: true, text: r.text } : { ok: false, error: (r && r.error) || '请求失败', needLogin: !!(r && r.needLogin) }));
     Promise.resolve(run)
       .then((r) => {
         busy = false;

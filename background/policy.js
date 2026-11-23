@@ -409,18 +409,159 @@
     return false;
   }
 
-  /* 【2.0.14.6 · m13678 C 档】彻底不开新标签页：只读用户已经打开的那一张页。
-   * 用户口径：宁可提示「请手动打开一次」，也不要页签乱跳打断手头的事。
-   * 为什么不再开后台标签：MV3 里要拿 JS 渲染后的正文只能真导航一张页；后台标签虽不抢前台，
-   * 但页签栏会闪，连着触发几次就被判成「打扰」。 */
-  async function readViaTab(url, hints) {
+  /* 【2.0.16.4 · m19385】恢复「自动开一张后台标签页」的兜底（用户选 P4-A）。
+   * 为什么改回来：2.0.14.6 按「免打扰」口径彻底不开页签，结果靠脚本渲染的政策页
+   * （Vue/React 壳页、必须真导航才出正文的站）一律只剩「请手动打开一次」。
+   * 用户 2026-11-23 明确选择：允许自动开后台标签页读渲染后的正文。
+   * 约束（一条都不放松）：
+   *   · active:false —— 不抢前台、不改用户当前那张页；
+   *   · 读完（成功 / 失败 / 超时）立刻关；
+   *   · 同一时刻最多一张（tabQueue 串行），每轮最多一张（调用方传 allowNew）；
+   *   · 设置页把「隐私政策正文」开关关掉后，退回只读已打开页的旧口径。 */
+  let tabQueue = Promise.resolve();
+
+  function isErrUrl(u) { return ERR_PAGE_RE.test(String(u || '')); }
+
+  function readNewTab(url, hints) {
+    const run = () => readNewTabOnce(url, hints);
+    const next = tabQueue.then(run, run);
+    tabQueue = next.then(() => null, () => null);
+    /* opened=true 让调用方知道「这一轮已经开过页签了」，后面不许再开第二张。 */
+    return next.then((r) => Object.assign({ opened: true }, r || {}));
+  }
+
+  function readNewTabOnce(url, hints) {
+    return new Promise((resolve) => {
+      const tabs = (typeof chrome !== 'undefined' && chrome.tabs) || null;
+      const scripting = (typeof chrome !== 'undefined' && chrome.scripting) || null;
+      if (!tabs || !tabs.create || !scripting || !scripting.executeScript) {
+        resolve({ ok: false, reason: '这个浏览器不支持后台标签页读取（缺 tabs/scripting 能力）' });
+        return;
+      }
+      let tabId = 0;
+      let done = false;
+      let timer = 0;
+      let attempts = 0;
+      let best = '';
+      const MAX_EMPTY = 9;      // complete 之后正文还是空的：脚本可能还在跑，多等几拍
+      const MAX_PARTIAL = 3;    // 有字但缺目标词：只再补几拍
+      const INTERVAL = 700;
+      const deadline = Date.now() + 12000;
+      const finish = (out) => {
+        if (done) return;
+        done = true;
+        if (timer) clearTimeout(timer);
+        try { tabs.onUpdated.removeListener(onUpdated); } catch (e) { /* ignore */ }
+        if (tabId) {
+          try {
+            const r = tabs.remove(tabId);
+            if (r && typeof r.catch === 'function') r.catch(() => {});
+          } catch (e) { /* 已经关了 */ }
+        }
+        resolve(out);
+      };
+      const enough = () => flatLite(best).length >= MIN_TEXT && covers(best, hints);
+      const settle = () => {
+        if (done) return;
+        if (flatLite(best).length >= MIN_TEXT) {
+          finish({ ok: true, text: best.slice(0, MAX_TEXT), len: best.length });
+          return;
+        }
+        finish({ ok: false, reason: '后台标签页打开后也没读到正文（可能需要登录，或正文是图片/PDF）' });
+      };
+      const grab = () => {
+        if (done) return;
+        let p;
+        try {
+          p = scripting.executeScript({
+            target: { tabId: tabId },
+            func: function () { return (document.body && document.body.innerText) || ''; }
+          });
+        } catch (e) {
+          finish({ ok: false, reason: '后台标签页读取失败：' + String((e && e.message) || e) });
+          return;
+        }
+        Promise.resolve(p).then((res) => {
+          const text = (res && res[0] && typeof res[0].result === 'string') ? res[0].result : '';
+          /* 只留最长的：SPA 首帧可能只有导航壳，后续帧才是正文。 */
+          if (flatLite(text).length > flatLite(best).length) best = text;
+          if (enough()) { finish({ ok: true, text: best.slice(0, MAX_TEXT), len: best.length }); return; }
+          schedule();
+        }, (e) => {
+          const msg = String((e && e.message) || e);
+          finish({
+            ok: false,
+            errorPage: /error page/i.test(msg),
+            reason: '后台标签页读不到正文（' + msg + '）'
+          });
+        });
+      };
+      const schedule = () => {
+        if (done) return;
+        const limit = (flatLite(best).length === 0) ? MAX_EMPTY : MAX_PARTIAL;
+        if (attempts >= limit || Date.now() > deadline) { settle(); return; }
+        attempts++;
+        timer = setTimeout(() => { if (!done) grab(); }, INTERVAL);
+      };
+      const onUpdated = (id, info) => {
+        if (id !== tabId || !info) return;
+        /* 协议被升级时标签页停在 chrome-error://：先于注入判定，让调用方立刻换协议重试。 */
+        if (info.url && isErrUrl(info.url)) {
+          finish({ ok: false, errorPage: true, reason: '浏览器把链接换成了另一个协议，打开的是错误页' });
+          return;
+        }
+        if (info.status === 'complete') grab();
+      };
+      try { tabs.onUpdated.addListener(onUpdated); } catch (e) {
+        finish({ ok: false, reason: '监听标签页失败：' + String((e && e.message) || e) });
+        return;
+      }
+      timer = setTimeout(() => finish({ ok: false, reason: '后台标签页 12 秒没加载完' }), 12000);
+      try {
+        const created = tabs.create({ url: url, active: false });
+        Promise.resolve(created).then((tab) => {
+          if (!tab || typeof tab.id !== 'number') { finish({ ok: false, reason: '后台标签页没建起来' }); return; }
+          tabId = tab.id;
+          if (tab.url && isErrUrl(tab.url)) {
+            finish({ ok: false, errorPage: true, reason: '浏览器把链接换成了另一个协议，打开的是错误页' });
+          }
+        }, (e) => finish({ ok: false, reason: '后台标签页没建起来：' + String((e && e.message) || e) }));
+      } catch (e) {
+        finish({ ok: false, reason: '后台标签页没建起来：' + String((e && e.message) || e) });
+      }
+    });
+  }
+
+  /* 设置读一次缓存 10 秒：一个页面里可能连着判定好几行政策，不必每行都读存储。 */
+  let tabCfgAt = 0;
+  let tabCfgOn = true;
+  async function tabRenderAllowed() {
+    if (tabCfgAt && Date.now() - tabCfgAt < 10000) return tabCfgOn;
+    let on = true;
+    try {
+      const C = (typeof self !== 'undefined' && self.KH && self.KH.Config) || null;
+      if (C && typeof C.load === 'function') {
+        const got = await C.load();
+        const p = (got && got.config && got.config.policy) || {};
+        on = p.renderTab !== false;
+      }
+    } catch (e) { on = true; }
+    tabCfgAt = Date.now();
+    tabCfgOn = on;
+    return on;
+  }
+
+  async function readViaTab(url, hints, allowNew) {
     const share = await readOpenTab(url, hints);
     if (share && share.ok) return share;
-    return {
-      ok: false,
-      noTab: true,
-      reason: '没有打开这个页面的标签页；2.0.14.6 起为免打扰不再自动开新页签'
-    };
+    if (allowNew === false) {
+      return {
+        ok: false,
+        noTab: true,
+        reason: '没有打开这个页面的标签页；设置里关掉了「读不到时自动开后台标签页」'
+      };
+    }
+    return readNewTab(url, hints);
   }
 
   /* ---------------- 兜底②：同源接口兜底 ----------------
@@ -709,6 +850,9 @@
     let directErr = '';
     let hardReason = '';
     let via = 'fetch';
+    /* 【2.0.16.4】设置里关掉「自动开后台标签页」时，要把这件事说出来，
+     * 否则用户只看到「请手动打开一次」，不知道开关在哪。 */
+    let tabNote = '';
 
     const alt = otherScheme(u);
     const order = [u];
@@ -789,19 +933,27 @@
       return { text: body.slice(0, MAX_TEXT), url: cand };
     };
 
-    /* 【2.0.14.6 · m13678 C 档】页面靠脚本渲染时，只读用户**已经打开**的那张页（换协议也各看一次），
-     * 不再替用户开后台标签；没有就明说「请手动打开一次」。
-     * https 证书/安全提示页仍可直接抓 http 版正文 —— 那条路不开页签。 */
+    /* 【2.0.16.4 · m19385】页面靠脚本渲染时：先读用户**已经打开**的那张页（换协议各看一次）；
+     * 都没有、且设置里允许时，**再**开一张后台标签页读渲染结果（active:false，读完立刻关）。
+     * 每轮最多开一张（openedNew），免得换协议时连开好几张把页签栏刷成一片。 */
     if (needDeep()) {
+      const allowNew = await tabRenderAllowed();
+      let openedNew = false;
       const openOrder = [pageUrl].concat(order.filter((x) => x !== pageUrl));
       for (let i = 0; i < openOrder.length; i++) {
         const cu = openOrder[i];
         if (tried.indexOf(cu) < 0) tried.push(cu);
-        const tab = await readViaTab(cu, hints);
+        const tab = await readViaTab(cu, hints, allowNew && !openedNew);
+        if (tab.opened) openedNew = true;
+        /* 只有「设置里关了」才是用户要处理的事；这一轮已经开过一张而不再开，不必打扰他。 */
+        if (tab.noTab && !allowNew && !tabNote) tabNote = tab.reason;
         if (tab.ok) {
           /* 渲染后的正文常常比静态模板「短」却才有真内容：命中目标词优先，长度只作次要判据。 */
           const tabCovers = hints.length > 0 && covers(tab.text, hints);
-          if (tabCovers || flatLite(tab.text).length > flatLen()) { text = tab.text; via = 'tab'; }
+          if (tabCovers || flatLite(tab.text).length > flatLen()) {
+            text = tab.text;
+            via = tab.opened ? 'tab-new' : 'tab';
+          }
           break;
         }
       }
@@ -843,7 +995,7 @@
       const bits = [];
       if (directErr) bits.push(directErr);
       bits.push('页面里没读到正文（可能需要登录或脚本渲染）');
-      bits.push('要读脚本渲染后的正文，请手动打开这个链接一次再点重试：' + (tried[0] || u));
+      bits.push(tabNote || ('要读脚本渲染后的正文，请手动打开这个链接一次再点重试：' + (tried[0] || u)));
       if (tried.length > 1) bits.push('试过的地址：' + tried.join('、'));
       out = { ok: false, reason: bits.join('；') };
     } else {

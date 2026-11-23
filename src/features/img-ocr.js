@@ -826,8 +826,10 @@
   /** 同一规则里**证书图** OCR 出来的行（`OcrAuto.rowsFor`）= 比对基准。
    * 用户口径（m07238）：软著字段抓到的证书图自动进表「著作权人 a公司 / 登记号 X」，
    * 比对就拿这两个值去比授权书图上有没有 —— 不用授权书自己抽出来的值（那是假通过）。
-   * 只读 `rowsFor` 的结构化行：授权书按 `docOf` 归 auth，产量里没有这两个字段。 */
-  function certBaselineValues(meta, rawSpec) {
+   * 只读 `rowsFor` 的结构化行：授权书按 `docOf` 归 auth，产量里没有这两个字段。
+   * 【2.0.16.4 · m19162】结构行读不到时，改为在**除自身之外**的同规则 done 条目上按字段名取值；
+   * `selfText`（被判这张图的识别文本）用来把自身排除，避免「自己比自己」的假通过。 */
+  function certBaselineValues(meta, rawSpec, selfText) {
     const A = KH.OcrAuto;
     const IO = KH.ImgOcr;
     if (!A || typeof A.rowsFor !== 'function' || !IO || typeof IO.items !== 'function') return [];
@@ -874,10 +876,20 @@
         let hitName = false;
         for (let n = 0; n < names.length; n++) { if (keyOf(names[n]) === want) { hitName = true; break; } }
         if (!hitName) continue;
+        /* 【2.0.16.4 · m19162】图片条目也要放宽。现场把抓取字段名配成「资质证书」，
+         * `OcrAuto.docOf` 把这类图判成 license ⇒ `rowsFor` 恒空；而 著作权人/登记号 是走
+         * `#表` 关键词进表的，基准却一条都读不到 ⇒ 永远「没取到值」。
+         * 顺序上先找**别的条目**（证书图），找不到才允许读被判这张图自己 —— 这样授权书
+         * 不会拿自己那几个值假通过，同时「被判的本就是证书图」时仍能自证。 */
+        const ordered = [];
         for (const it of list) {
           if (!it || it.state !== 'done' || !it.text) continue;
-          /* 只对 PDF 条目放宽：图片条目仍只认证书结构化行，避免「拿授权书自己的值当基准」的假通过 */
-          if (String(it.kind || '') !== 'pdf') continue;
+          /* 图片条目被判时**永不**当自己的基准（用户 m07238：拿授权书自己的值去比是假通过）；
+           * PDF 条目沿用 2.0.14.4 口径 —— 扫描件本身就是文档，认不出标题时只它自己有这些字。 */
+          if (String(it.kind || '') !== 'pdf' && selfText && String(it.text) === selfText) continue;
+          ordered.push(it);
+        }
+        for (const it of ordered) {
           if (pinId && String(it.ruleId || '') !== pinId) continue;
           const v = labeledValueInText(it.text, names);
           if (!v) continue;
@@ -896,13 +908,13 @@
   /** 一个字段在**当前格**上的取值 ∪ **证书图进表的值**（用户 m07238 口径）。
    * 前一半沿用 `needInfo`（`Fetch.extractFor` + `!`/`^`/`%` 修饰 + 进表行）；
    * 后一半读同一份 `OcrAuto.rowsFor`，不依赖「面板这一轮是否已经算好」（避免时序空值）。 */
-  function cmpFieldValues(anchor, rawSpec, field, meta) {
+  function cmpFieldValues(anchor, rawSpec, field, meta, selfText) {
     /* 没有锚点 ≠ 没有值：授权书/PDF 这类没有格子的命中也应拿到基准值。 */
     const sub = { meta: Object.assign({}, meta || {}, { imgOcrNeed: String(rawSpec || '') }) };
     let vals = [];
     try { vals = needInfo(anchor, sub, field, { withCmp: true }).values || []; } catch (e) { vals = []; }
     let base = [];
-    try { base = certBaselineValues(meta, rawSpec); } catch (e) { base = []; }
+    try { base = certBaselineValues(meta, rawSpec, selfText); } catch (e) { base = []; }
     const TN = KH.TextNorm;
     const keyOf = (s) => (TN && typeof TN.keyOf === 'function'
       ? TN.keyOf(s) : String(s == null ? '' : s).replace(WHITE_ALL, '').toLowerCase());
@@ -927,7 +939,7 @@
    * @param {string} field 图所属抓取字段（`@字段名` 作用域）
    * @param {Element} anchor 命中所在格（动态字段要在这里取值；缺省＝不取动态项）
    */
-  function cmpReqs(rule, field, anchor) {
+  function cmpReqs(rule, field, anchor, selfText) {
     const meta = (rule && rule.meta) || {};
     const known = scopeKnown(rule);
     const key = String(field == null ? '' : field).trim();
@@ -951,7 +963,7 @@
       const fld = configuredField(p.word, known);
       if (fld) {
         if (!out.some((o) => o.kind === 'need' && o.name === fld)) {
-          out.push({ name: fld, kind: 'need', values: cmpFieldValues(anchor, fld, field, meta) });
+          out.push({ name: fld, kind: 'need', values: cmpFieldValues(anchor, fld, field, meta, selfText) });
         }
         continue;
       }
@@ -975,7 +987,7 @@
       }
       if (!name) continue;
       if (out.some((o) => o.kind === 'need' && o.name === name)) continue;
-      out.push({ name: name, kind: 'need', values: cmpFieldValues(anchor, raw, field, meta) });
+      out.push({ name: name, kind: 'need', values: cmpFieldValues(anchor, raw, field, meta, selfText) });
     }
     return out;
   }
@@ -2261,7 +2273,7 @@
       if (!it || it.state !== 'done' || !it.text) continue;
       if (ruleId && String(it.ruleId || '') !== ruleId) continue;
       try {
-        it.cmpReqs = cmpReqs(rule, it.label, it.anchorCell || null);
+        it.cmpReqs = cmpReqs(rule, it.label, it.anchorCell || null, it.text);
         it.cmp = cmpJudge(rule, it.text, it.label, it.cmpReqs);
       } catch (e) { /* 一条算不出来不影响别的图 */ }
     }

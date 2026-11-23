@@ -252,33 +252,18 @@
       <!-- 【2.0.15 · 问题②】同法人校验：爱企查链路常跑不通，改成可选打开、默认关闭。 -->
       <label class="kh-check"><input type="checkbox" id="pf-noteEntityCheck"> 同法人校验（开发者与核准主体的法定代表人是否一致）</label>
       <p class="kh-muted">关闭时<strong>不联网查询</strong>（爱企查 / 360 常常查不到，或要登录、要验证），面板也不显示「未查明」；打开后才去找两边的法定代表人并标注「同法人 / 不同法人 / 未查明」。</p>
+      <!-- 【2.0.16.4 · m19385】隐私政策正文：链接靠脚本渲染时，静默开一张后台标签页读完正文再关。
+           默认开（用户 2026-11-23 选 P4-A）；关掉退回「只读你已经打开的那张页」。 -->
+      <label class="kh-check"><input type="checkbox" id="pf-policyRenderTab" checked> 隐私政策链接读不到正文时，自动开一张后台标签页（读完立刻关）</label>
+      <p class="kh-muted">靠脚本渲染的政策页（Vue / React 壳页）静态抓不到正文，扩展会开一张<strong>后台</strong>标签页（不抢前台、不换你当前的页），读完立刻关掉；同一时刻最多一张，每个链接只会尝试一次。关掉后只读你已经打开的那张页，读不到就提示你手动打开。</p>
 
-      <!-- ============================================================ AI 助手（2.0.8.4 需求④）
-           面板里的第二个页签「AI 助手」；悬窗展开与收起共用同一份会话。
-           口径：默认接 DeepSeek 官方；协议是通用的 OpenAI 兼容格式，任何兼容服务/中转都能填；
-           **纯自由对话**（只发用户自己打的话，不带页面标题/网址/笔记内容）；
-           Key 只存本机、不进导出（storage 的"不导出"清单里有登记，单测钉着）。 -->
-      <h3 class="kh-sub">AI 对话助手</h3>
-      <p class="kh-sec-lead">页面「重要笔记」面板里多一个「<strong>AI 助手</strong>」页签（悬窗里）。默认走 <strong>DeepSeek 网页对话</strong>：复用你在 <code>chat.deepseek.com</code> 的登录态，<strong>免 Key</strong>；想换成自己的模型就切到 <strong>API</strong> 模式，填任何 OpenAI 兼容接口。两种模式都是<strong>纯自由对话</strong>：只发你自己打的那几句，不携带页面标题、网址或笔记内容。</p>
-      <div class="kh-form-row">
-        <div class="kh-form-fld">
-          <label class="kh-fld-label" for="ai-mode">对话来源</label>
-          <!-- 选项由 options.js 从 KH.Config.AI_MODES 注入（不在这里抄一份） -->
-          <select class="kh-input" id="ai-mode"></select>
-        </div>
-        <div class="kh-form-fld kh-form-fld-wide">
-          <label class="kh-fld-label" id="ai-web-label">网页对话的连通性</label>
-          <div class="kh-ai-actions">
-            <button class="kh-btn" id="ai-web-open" type="button">打开对话页</button>
-            <button class="kh-btn" id="ai-web-probe" type="button">自检</button>
-            <span class="kh-muted" id="ai-test-state"></span>
-          </div>
-        </div>
-      </div>
-      <p class="kh-muted" id="ai-mode-tip">网页模式下，扩展会在后台保留一个 <code>chat.deepseek.com</code> 标签页（可以最小化）替你发消息；第一次用请先在那个页面登录一次，之后一直有效。</p>
-      <!-- ============================================================ 【2.0.16】太极AI 网页通路
-           三条口径（用户 2026-11-23 拍板）：设置页里登录、模型自选、**不开标签页**。
+      <!-- ============================================================ AI 助手（2.0.16.4 · 用户 m19483）
+           只保留太极AI 一条通路：「其余 AI 接口和调用路径全部移除」。DeepSeek 网页对话与 API 模式
+           （chat.deepseek.com 内容脚本、AI_WEB_* 消息、apiKey 输入框）已整条删除。
+           三条口径：设置页里登录、模型自选、**永不开标签页**（后台 fetch，会话回写浏览器 cookie）。
            密码输入框只是「这一次登录用」，保存动作里没有 password 这个键（不落盘、不进导出）。 -->
+      <h3 class="kh-sub">AI 对话助手</h3>
+      <p class="kh-sec-lead">页面「重要笔记」面板里多一个「<strong>AI 助手</strong>」页签（悬窗里），只走 <strong>太极AI</strong>：请求由扩展后台直接发到站点，<strong>不会开任何标签页</strong>；在这里登录一次，会话由浏览器记住，模型从站点清单里自选。对话是<strong>纯自由对话</strong>：只发你自己打的那几句，不携带页面标题、网址或笔记内容。</p>
       <div id="ai-taiji-fields">
         <div class="kh-form-row">
           <div class="kh-form-fld">
@@ -315,43 +300,15 @@
         </div>
         <p class="kh-muted" id="ai-taiji-state"></p>
       </div>
-      <div id="ai-api-fields">
-        <div class="kh-form-row">
-          <div class="kh-form-fld">
-            <label class="kh-fld-label" for="ai-provider">服务商</label>
-            <select class="kh-input" id="ai-provider"></select>
-          </div>
-          <div class="kh-form-fld kh-form-fld-wide">
-            <label class="kh-fld-label" for="ai-baseUrl">接口地址（Base URL）</label>
-            <input class="kh-input" id="ai-baseUrl" type="text" spellcheck="false" placeholder="https://api.deepseek.com/v1">
+      <div class="kh-form-row">
+        <div class="kh-form-fld">
+          <label class="kh-fld-label">会话</label>
+          <div class="kh-ai-actions">
+            <button class="kh-btn" id="ai-taiji-logout" type="button">退出登录</button>
           </div>
         </div>
-        <div class="kh-form-row">
-          <div class="kh-form-fld">
-            <label class="kh-fld-label" for="ai-model">模型</label>
-            <input class="kh-input" id="ai-model" type="text" spellcheck="false" placeholder="deepseek-chat">
-          </div>
-          <div class="kh-form-fld">
-            <label class="kh-fld-label" for="ai-apiKey">API Key</label>
-            <input class="kh-input" id="ai-apiKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk-…（只存本机）">
-          </div>
-          <div class="kh-form-fld">
-            <label class="kh-fld-label" for="ai-maxTokens">单次回复上限 (tokens)</label>
-            <!-- min/max 由 options.js 从 KH.Config.AI_MAX_MIN / AI_MAX_MAX 注入（不在这里抄一份） -->
-            <input class="kh-input" id="ai-maxTokens" type="number" step="100">
-          </div>
-        </div>
-        <div class="kh-form-row">
-          <div class="kh-form-fld kh-form-fld-wide">
-            <label class="kh-fld-label" for="ai-system">系统提示词（可留空）</label>
-            <input class="kh-input" id="ai-system" type="text" placeholder="例如：用简洁的中文回答">
-          </div>
-          <div class="kh-form-fld">
-            <label class="kh-fld-label">连通性</label>
-            <div class="kh-ai-actions">
-              <button class="kh-btn" id="ai-test" type="button">测试连接</button>
-            </div>
-          </div>
+        <div class="kh-form-fld kh-form-fld-wide">
+          <p class="kh-muted">退出只清掉本机浏览器里的太极AI 会话 cookie，账号仍保留（下次登录不用重填账号）。</p>
         </div>
       </div>
       <label class="kh-check"><input type="checkbox" id="ai-enabled"> 在面板里显示「AI 助手」页签</label>

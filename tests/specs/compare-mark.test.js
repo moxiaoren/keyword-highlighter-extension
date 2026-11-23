@@ -207,11 +207,51 @@ module.exports = async function run() {
     const r = certRule();
     const list = [ocrItem(AUTH_LABEL, AUTH_TEXT, 'http://x/auth.png')];
     const j = withItems(list, () => {
-      const reqs = O.cmpReqs(r, AUTH_LABEL, null);
+      /* 【2.0.16.4】真实调用会把被判这张图的文本传进来（第 4 参），自身条目据此排除 */
+      const reqs = O.cmpReqs(r, AUTH_LABEL, null, AUTH_TEXT);
       return { reqs: reqs, judge: O.cmpJudge(r, AUTH_TEXT, AUTH_LABEL, reqs) };
     });
     eq(j.reqs[0].values.length, 0, '授权书自己抽的登记号不许当基准');
     eq(j.judge.state, 'diff');
+    eq(j.judge.items[0].values, 0);
+  });
+
+  /* 【2.0.16.4 · 用户 m19162】现场：抓取字段名配成「资质证书」，著作权人/登记号 走 `#表` 进表；
+   * `OcrAuto.docOf` 把这类图判成 license ⇒ `rowsFor` 恒空 ⇒ 比对基准一条都读不到 ⇒
+   * 永远报「没取到值：登记号、著作权人在页面上没有内容」。修好后基准要能从同规则的证书图里取到。 */
+  const LIC_TEXT = '计算机软件著作权登记证书\n著作权人：湖南恒硕科技有限公司\n登记号：2018SR959779';
+  const LIC_AUTH = '软著授权书\n授权人：湖南恒硕科技有限公司\n被授权人：长沙艾高信息科技有限公司\n登记号：2018SR959779';
+  const licRule = () => ({
+    meta: {
+      pinId: 'r1', imgOcr: true, imgOcrKeyword: '',
+      imgOcrNeed: '著作权人@资质证书#比|登记号@资质证书#比',
+      fetchLabels: '资质证书#图'
+    }
+  });
+
+  await test('★ 2.0.16.4 字段名是「资质证书」时，基准改为读同规则其它条目的「字段名：值」（m19162）', () => {
+    const r = licRule();
+    const list = [ocrItem('资质证书', LIC_TEXT, 'http://x/lic.png'), ocrItem('资质证书', LIC_AUTH, 'http://x/lic-auth.png')];
+    const j = withItems(list, () => {
+      const reqs = O.cmpReqs(r, '资质证书', null, LIC_AUTH);
+      return { reqs: reqs, judge: O.cmpJudge(r, LIC_AUTH, '资质证书', reqs) };
+    });
+    const byName = {};
+    for (const q of j.reqs) byName[q.name] = q;
+    eq(j.reqs.length, 2, '两个比对项都要在');
+    eq(byName['著作权人'].values.join('|'), '湖南恒硕科技有限公司', '著作权人基准来自证书图，授权书里的「授权人」不算');
+    eq(byName['登记号'].values.join('|'), '2018sr959779');
+    eq(j.judge.state, 'same', JSON.stringify(j.judge));
+  });
+
+  await test('★ 2.0.16.4 同规则只有授权书自己 ⇒ 仍然报「没取到值」，不许自己比自己', () => {
+    const r = licRule();
+    const list = [ocrItem('资质证书', LIC_AUTH, 'http://x/lic-auth.png')];
+    const j = withItems(list, () => {
+      const reqs = O.cmpReqs(r, '资质证书', null, LIC_AUTH);
+      return { reqs: reqs, judge: O.cmpJudge(r, LIC_AUTH, '资质证书', reqs) };
+    });
+    eq(j.reqs[0].values.length, 0, '授权书自己抽的著作权人不许当基准（它写的是「授权人」）');
     eq(j.judge.items[0].values, 0);
   });
 

@@ -30,35 +30,28 @@ module.exports = async function run() {
   /* 【2.0.16】默认通路换过一次，两处口径都写在这：
    *   2.0.8.5 用户原话：「不是要 API」⇒ 默认 web（DeepSeek 网页对话）；
    *   2.0.16 用户原话：「ai助手改成太极ai网页通路」⇒ 默认 taiji。
-   * 网页对话没被删，降为第二档；API 仍是最后一档。 */
+   * 2.0.16.4 用户又要求「只保留太极 AI」⇒ 网页对话与 API 两条整条删除，只剩 taiji 一条。 */
   suite('v2.0.8.5 · AI 助手默认走网页通路（免 Key）');
 
-  await test('★ 配置层：模式默认 taiji，三条通路都有名字（设置页拿同一份清单）', () => {
-    eq(C.AI_MODE_DEFAULT, 'taiji', '默认必须是太极AI 网页通路（用户原话：ai助手改成太极ai网页通路）');
-    eq(C.normalizeAi({}).mode, 'taiji', '没填模式时按 taiji 归一，不能退化成 api');
-    eq(C.normalizeAi({ mode: 'api' }).mode, 'api', '显式选了 api 就保留');
-    eq(C.normalizeAi({ mode: 'web' }).mode, 'web', '显式选网页对话也保留（老用户配置不许被改写）');
-    eq(C.normalizeAi({ mode: '乱写' }).mode, 'taiji', '坏值回默认（与其它数值项一个口径）');
+  await test('★ 配置层：只剩太极AI 一条通路，老配置 api/web 一律归到 taiji', () => {
+    eq(C.AI_MODE_DEFAULT, 'taiji', '唯一通路就是太极AI');
+    eq(C.normalizeAi({}).mode, 'taiji', '没填模式时按 taiji 归一');
+    eq(C.normalizeAi({ mode: 'api' }).mode, 'taiji', '老的 api 配置要归到 taiji（否则面板没有出站口）');
+    eq(C.normalizeAi({ mode: 'web' }).mode, 'taiji', '老的网页对话配置同样归到 taiji');
+    eq(C.normalizeAi({ mode: '乱写' }).mode, 'taiji', '坏值回默认（与其它项一个口径）');
     const ids = (C.AI_MODES || []).map((m) => m.id).join(',');
-    eq(ids, 'taiji,web,api', '三条通路各一条，顺序固定（taiji 在前 = 默认）');
-    truthy(/chat\.deepseek\.com/.test(C.AI_WEB_ORIGIN || ''), '网页对话的站点只认这一处真源');
+    eq(ids, 'taiji', '设置页的下拉只该剩一条');
+    truthy(C.AI_WEB_ORIGIN === undefined, '网页对话的站点常量要随通路删掉');
   });
 
-  await test('★ 驱动脚本注入 chat.deepseek.com，且只注入那一组（不污染别站的性能预算）', () => {
+  await test('★ 网页对话驱动整条删除：清单里不再注入对话页，脚本文件也不在', () => {
     const manifest = JSON.parse(read('manifest.json'));
     const groups = manifest.content_scripts || [];
     const web = groups.filter((g) => (g.matches || []).some((m) => m.indexOf('chat.deepseek.com') >= 0));
-    eq(web.length, 1, '必须恰好一组专门服务对话页');
-    truthy((web[0].js || []).indexOf('content/web-chat.js') >= 0, '驱动脚本要在这一组里');
-    eq(web[0].all_frames, false, '只注入主框架（对话在顶层）');
-    const src = read('content/web-chat.js');
-    truthy(/textarea#chat-input/.test(src), '输入框首选官方 id');
-    truthy(/contenteditable="true"/.test(src), '改版后要能退到可编辑框');
-    truthy(/execCommand\('insertText'/.test(src), '受控组件必须走原生 insertText + input 事件（直接赋 value 会被 React 忽略）');
-    truthy(/KeyboardEvent\('keydown'/.test(src), '回车发送要发真实键盘事件');
-    truthy(/\.ds-markdown/.test(src), '回复块按网页版的渲染类名取');
-    truthy(/SETTLE_MS/.test(src), '文本稳定一段时间才算说完（否则会把半句话当答案）');
-    truthy(/probe\(\)/.test(src), '要给设置页一个自检入口（改版时靠它诊断）');
+    eq(web.length, 0, '清单里不许再有 chat.deepseek.com 的注入组');
+    const fs = require('fs');
+    const p = require('path').join(__dirname, '..', '..', 'content', 'web-chat.js');
+    falsy(fs.existsSync(p), 'content/web-chat.js 必须删掉（不用的代码不许留在包里）');
   });
 
 
