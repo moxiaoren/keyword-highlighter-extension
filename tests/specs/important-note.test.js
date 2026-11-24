@@ -743,6 +743,12 @@ module.exports = async function run() {
     truthy(/URL\.createObjectURL\(new Blob\(\[u8\], \{ type: 'application\/pdf' \}\)\)/.test(src),
       '★ 字节要在页面侧转 blob: 再喂 iframe（站点 URL 直接塞 iframe 会被 X-Frame-Options 挡）');
     truthy(/URL\.revokeObjectURL\(it\.url\)/.test(src), '★ 关灯箱要回收 blob（不然每次开关都漏一份 PDF 内存）');
+    /* 【2.0.16.17 · 体检】关灯箱时还在路上的取字节请求必须作废：否则回调回来照样建 blob、
+     * 写缓存、给隐藏 iframe 设 src，那份 PDF 就常驻内存到下次「同相册打开再关闭」。 */
+    truthy(src.indexOf('host._lbSeq = (host._lbSeq || 0) + 1;') >= 0, '★ 关闭时作废在途请求（序号 +1）');
+    truthy(/const seq = host\._lbSeq \|\| 0;/.test(src), '★ 发请求时记下序号');
+    truthy(/const stale = \(host\._lbSeq \|\| 0\) !== seq;/.test(src), '★ 回调先判过期');
+    truthy(/if \(made\) \{ try \{ URL\.revokeObjectURL\(made\); \}/.test(src), '★ 过期回调新建的 blob 要就地回收');
     /* 【2.0.16.9 · m22479】漂移的根治：默认位固定在视口右侧，不再量任何舞台矩形。 */
     truthy(src.indexOf('const stageEl = (!img.hidden') < 0,
       '★ 不许再按 img/pdf 的矩形摆全文栏（PDF 时矩形全 0 就是漂到左上角的根因）');

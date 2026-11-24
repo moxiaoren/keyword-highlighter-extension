@@ -1553,6 +1553,9 @@
        * 存进扩展的持久化存储更会跨会话 —— 那都不是"临时收起全文"该有的生命周期。 */
       let sideHidden = false;
       const close = () => {
+        /* 【2.0.16.17 · 体检】作废还在路上的 PDF 取字节回调：关灯箱后它若照常建 blob、写缓存、
+         * 给隐藏的 iframe 设 src，那份 PDF 就白白常驻到下次「同相册打开再关闭」。 */
+        host._lbSeq = (host._lbSeq || 0) + 1;
         box.hidden = true;
         img.removeAttribute('src');
         img.removeAttribute('alt');
@@ -1622,19 +1625,32 @@
           pdfCache[src] = { error: KH.OcrCopy.VIEW.lbPdfFail };
           return;
         }
+        /* 【2.0.16.17 · 体检】记下这次打开的身份，close() 会 +1：回调回来时对不上就是过期请求
+         * （用户在「正在打开原件…」期间就关了灯箱），此时既不建缓存也不重画。 */
+        const seq = host._lbSeq || 0;
         runtime.sendMessage({ type: MSG.PDF_BYTES, url: src }, (res) => {
+          const stale = (host._lbSeq || 0) !== seq;
+          let made = '';
+          let next = null;
           if (runtime.lastError || !res || !res.ok || !res.b64) {
-            pdfCache[src] = { error: (res && res.error) || KH.OcrCopy.VIEW.lbPdfFail };
+            next = { error: (res && res.error) || KH.OcrCopy.VIEW.lbPdfFail };
           } else {
             try {
               const bin = atob(res.b64);
               const u8 = new Uint8Array(bin.length);
               for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
-              pdfCache[src] = { url: URL.createObjectURL(new Blob([u8], { type: 'application/pdf' })) };
+              made = URL.createObjectURL(new Blob([u8], { type: 'application/pdf' }));
+              next = { url: made };
             } catch (e) {
-              pdfCache[src] = { error: KH.OcrCopy.VIEW.lbPdfFail };
+              next = { error: KH.OcrCopy.VIEW.lbPdfFail };
             }
           }
+          if (stale) {
+            /* 过期：刚建的 blob 就地回收；缓存那份已在 close() 里清掉，不要补回来。 */
+            if (made) { try { URL.revokeObjectURL(made); } catch (e) { /* ignore */ } }
+            return;
+          }
+          pdfCache[src] = next;
           /* 回到当前帧重画：用户可能已经翻页、关掉再开，状态以缓存为准。 */
           if (host._apply) host._apply();
         });

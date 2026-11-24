@@ -449,6 +449,22 @@ module.exports = async function run() {
     truthy(e3 && /不是本插件/.test(e3.message), '实际：' + (e3 && e3.message));
   });
 
+  await test('★ 分享码里的 imgOcr 档位导入时不能被静默丢掉（2.0.16.17 体检）', async () => {
+    const res = await S.exportShare({ keywords: [{ id: 'k1', text: '交友' }], groups: [], siteRules: [], siteDisabledMap: {},
+      imgOcr: { defaultMax: 7, engine: 'tesseract' } });
+    truthy(res.ok, res.error);
+    let patched = null;
+    const cfg = { keywords: [], groups: [], siteRules: [], siteDisabledMap: {},
+      imgOcr: { defaultMax: 1, engine: 'ppocr', crossOriginSites: { 'keep.com': true } } };
+    /* 只截 patch（真正写盘那一步），其余照用真实现；importJSON 里 this.patch 才拿得到这个桩。 */
+    const S2 = Object.assign({}, S, { patch: async (o) => { patched = o; } });
+    await S2.importShare(res.code, { mode: 'merge' }, cfg);
+    const ic = (patched || {}).imgOcr || {};
+    eq(ic.defaultMax, 7, '分享码带的默认识别张数要落盘');
+    eq(ic.engine, 'tesseract', '分享码带的引擎要落盘');
+    eq(JSON.stringify(ic.crossOriginSites), JSON.stringify({ 'keep.com': true }), '接收方自己的跨域授权必须留着');
+  });
+
   await test('★ importShare 与导入 JSON 走同一条写盘路径（避免两套白名单）', () => {
     const path = require('path');
     const src = require('fs').readFileSync(path.join(__dirname, '..', '..', 'src', 'platform', 'storage.js'), 'utf8');

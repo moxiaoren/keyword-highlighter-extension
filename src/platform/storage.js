@@ -993,6 +993,18 @@
             setObj[k] = v;
           }
         }
+        /* 【2.0.16.17 · 体检】分享码里的 imgOcr 档位（默认识别张数 / 引擎）：
+         * imgOcr **不在** STYLE_KEYS（crossOriginSites 是逐站点本机授权），stylesFrom 带不出来，
+         * 所以这里单独接一次 —— 否则 sharePayload 明明装了它，导入后却被静默丢掉。
+         * 只覆盖分享码明确带了的两个键，接收方自己的 crossOriginSites 原样保留。 */
+        const shIc = data.styles && data.styles.imgOcr;
+        if (shIc && typeof shIc === 'object' && !Array.isArray(shIc)) {
+          const curIc = (cfg.imgOcr && typeof cfg.imgOcr === 'object') ? cfg.imgOcr : {};
+          const nextIc = Object.assign({}, curIc);
+          if (shIc.defaultMax !== undefined) nextIc.defaultMax = shIc.defaultMax;
+          if (shIc.engine !== undefined) nextIc.engine = shIc.engine;
+          setObj.imgOcr = nextIc;
+        }
         // 全局开关：仅"覆盖"模式且文件确实带它时才恢复（旧版行为）
         if (mode === 'overwrite' && data.globalEnabled !== undefined) setObj.globalEnabled = data.globalEnabled !== false;
       }
