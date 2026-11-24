@@ -1155,7 +1155,10 @@
    * 回程出口只有复位按钮与双击复位两处，都早已存在 —— 不需要新增恢复入口。 */
   const LIGHTBOX_PAN_KEEP = 120;
   const LIGHTBOX_STYLE = `
-    .kh-lb { position: fixed; inset: 0; z-index: 2147483647; background: rgba(0,0,0,.78);
+    /* 2.0.16.8（用户 m21072）：打开大图不再压暗整页 —— 用户要一边看大图一边对面板里的重要笔记。
+     * 遮罩仍铺满视口（点空白关闭的判定靠它），但改成透明；层级必须降到面板（2147483646）之下，
+     * 否则透明遮罩照样吃掉面板的点击。浮层感由 .kh-lb-stage 的实心底色 + 描边 + 外发光环承担。 */
+    .kh-lb { position: fixed; inset: 0; z-index: 2147483400; background: transparent;
       display: flex; align-items: center; justify-content: center; cursor: default; }
     .kh-lb[hidden] { display: none !important; }
     /* 容器：有界的一块（图片 + 左右按钮 + 下方工具条）。**容器内点击一律不关** —— 关闭只认容器外的遮罩。
@@ -1165,9 +1168,10 @@
       display: flex; flex-direction: column; align-items: center; gap: 10px;
       padding: 12px; max-width: 96vw; max-height: 96vh;
       position: relative;              /* T41：全文栏的定位祖先 —— 坐标按容器算，不再按整个视口算 */
-      border: 1px solid rgba(255,255,255,.18); border-radius: 12px;
-      background: rgba(22,26,34,.94);                      /* 实心底色：一眼看出"这是插件的容器" */
-      box-shadow: 0 18px 60px rgba(0,0,0,.55), 0 0 0 1px rgba(0,0,0,.35);
+      border: 1px solid rgba(255,255,255,.3); border-radius: 12px;
+      background: rgba(22,26,34,.96);                      /* 实心底色：一眼看出"这是插件的容器" */
+      /* 2.0.16.8：没有暗色遮罩之后，浮层边界全靠自带描边与品牌色外环在白页上也说得清。 */
+      box-shadow: 0 18px 60px rgba(0,0,0,.38), 0 0 0 1px rgba(0,0,0,.28), 0 0 0 4px rgba(47,111,181,.22);
       cursor: default;
     }
     .kh-lb-row { position: relative; display: flex; align-items: center; gap: 12px; }
@@ -1451,6 +1455,9 @@
         '<button class="kh-lb-btn kh-lb-rot" type="button" title="旋转 90°（R）">⟳</button>' +
         '<button class="kh-lb-btn kh-lb-reset" type="button" title="复位（也可双击图片）">复位</button>' +
         '<button class="kh-lb-btn kh-lb-sidebtn" type="button" hidden></button>' +
+        /* 2.0.16.8（用户 m21072）：显式关闭。以前只有 Esc 与点容器外两条隐性通路，
+         * 去掉暗色遮罩后「点外面」不再一眼看得出来，必须有一个看得见的出口。 */
+        '<button class="kh-lb-btn kh-lb-close" type="button"></button>' +
         '<span class="kh-lb-sep">|</span>' +
         '<button class="kh-lb-open" type="button">在新标签页打开</button>' +
         '<span class="kh-lb-hint">滚轮缩放；拖动图片可平移；拖动全文栏标题可移动，双击复位；点图片外区域或按 Esc 关闭</span>' +
@@ -1502,8 +1509,38 @@
           y: Math.min(limY, Math.max(-limY, ty))
         };
       };
+      /* 【2.0.16.8 · m21072】打开大图时**让开面板**：用户要一边看大图、一边对面板里的重要笔记，
+       * 容器盖在面板上就等于把参照物挡掉了。做法：量面板实测矩形，把舞台挪到面板另一侧的空档里
+       * （宽屏才并排；窄屏直接居中覆盖 —— 硬挤会把图压成一条）。面板可能在左也可能在右（可拖），
+       * 所以两侧都要算，选空间大的一侧。量不到面板（收起成 FAB/宽度为 0）就不动，保持居中。 */
+      const avoidPanel = () => {
+        const stageEl = box.querySelector('.kh-lb-stage');
+        box.style.paddingLeft = '';
+        box.style.paddingRight = '';
+        box.style.justifyContent = '';
+        if (stageEl) stageEl.style.maxWidth = '';
+        const hostEl = document.getElementById(HOST_ID);
+        const wrap = hostEl && hostEl.shadowRoot && hostEl.shadowRoot.querySelector('.khin-wrap');
+        if (!stageEl || !wrap) return;
+        const pr = wrap.getBoundingClientRect();
+        const vw = window.innerWidth;
+        if (!pr.width || !pr.height || vw < 1100) return;    // 窄屏：并排放不下，退回居中覆盖
+        const pad = 24;
+        const roomRight = vw - pr.right - pad * 2;
+        const roomLeft = pr.left - pad * 2;
+        if (pr.left < vw / 2 && roomRight >= 420) {
+          box.style.justifyContent = 'flex-start';
+          box.style.paddingLeft = Math.round(pr.right + pad) + 'px';
+          stageEl.style.maxWidth = Math.round(roomRight) + 'px';
+        } else if (pr.left >= vw / 2 && roomLeft >= 420) {
+          box.style.justifyContent = 'flex-end';
+          box.style.paddingRight = Math.round(vw - pr.left + pad) + 'px';
+          stageEl.style.maxWidth = Math.round(roomLeft) + 'px';
+        }
+      };
       /* 状态 → 视图：图片地址/alt、张数、左右按钮显隐、缩放/旋转/平移 */
       const apply = () => {
+        avoidPanel();
         const g = host._gallery || [];
         const i = host._idx || 0;
         const cur = g[i];
@@ -1803,6 +1840,11 @@
         if (bar && t && bar.contains(t)) return;
         close();
       });
+      const lbClose = sr.querySelector('.kh-lb-close');
+      lbClose.textContent = KH.OcrCopy.VIEW.lbClose;
+      lbClose.title = KH.OcrCopy.VIEW.lbClose;
+      lbClose.setAttribute('aria-label', KH.OcrCopy.VIEW.lbClose);
+      lbClose.addEventListener('click', (e) => { e.stopPropagation(); close(); });
       sr.querySelector('.kh-lb-open').addEventListener('click', (e) => {
         e.stopPropagation();                                // 别顺带把灯箱关了
         const s = img.getAttribute('src');
@@ -2530,13 +2572,17 @@
           e.preventDefault();
           const ps = absSrc(pdfEl.getAttribute('data-khpdf'));
           if (!ps) return;
-          const MSG = KH.MSG || {};
-          const rt = (typeof chrome !== 'undefined' && chrome.runtime) ? chrome.runtime : null;
-          if (rt && rt.sendMessage && MSG.PDF_OPEN) {
-            try { rt.sendMessage({ type: MSG.PDF_OPEN, url: ps }, () => { void rt.lastError; }); } catch (er) {}
-          } else {
-            try { window.open(ps, '_blank', 'noopener'); } catch (er) {}
-          }
+          /* 【2.0.16.8 · m21072】用户口径改成「先当页看」：新标签页里没有面板，一开就没了比对参照物。
+           * 原件仍可从灯箱工具条「在新标签页打开」这一出口去看（工具条已按 cur.pdf 取地址）。
+           * 识别全文/命中词走灯箱右侧那一栏 —— 与图片共用同一套容器，不新增阅读器。 */
+          const pText = (KH.ImgOcr && typeof KH.ImgOcr.textOf === 'function')
+            ? String(KH.ImgOcr.textOf(ps) || '') : '';
+          const pAlt = String(pdfEl.textContent || '').trim() || 'PDF';
+          const entry = {
+            pdf: true, src: ps, alt: pAlt, text: pText,
+            hint: pText ? '' : KH.OcrCopy.VIEW.lbPdfNoText
+          };
+          openLightbox(ps, pAlt, [entry], 0);
           return;
         }
         if (!t || t.tagName !== 'IMG' || !t.src) return;

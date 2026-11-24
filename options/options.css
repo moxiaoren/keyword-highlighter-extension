@@ -752,6 +752,17 @@ body {
 .kh-mini-btn:hover:not(:disabled) { border-color: var(--brand); color: var(--brand-deep); }
 .kh-mini-btn:disabled { opacity: .5; cursor: not-allowed; }
 
+/* 分享码文本框（2.0.16.8 · m21072）：长 base64 必须能整段看见、可全选复制 */
+.kh-share-code {
+  width: 100%; box-sizing: border-box; margin-top: 8px; min-height: 64px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-2); border-radius: var(--r-sm);
+  background: var(--card); color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: var(--fs-xs); line-height: 1.5;
+  word-break: break-all; resize: vertical;
+}
+
 /* 窄屏：标签与开关同行，说明和代价各占一整行 */
 @media (max-width: 760px) {
   .kh-ent-row { grid-template-columns: minmax(0, 1fr) auto; }

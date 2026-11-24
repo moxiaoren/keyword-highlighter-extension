@@ -181,4 +181,63 @@ module.exports = async function run() {
     clean.querySelector('.kh-modal-x').dispatchEvent({ type: 'click' });
     eq(KH.ui.Modal.depth(), 0, '没改过就直接关，不啰嗦');
   });
+
+  /* 【2.0.16.8 · m21101】用户原话：「指向字段太长的话现在会挤压，导致词看不清看不见」。
+   * 压人的是「指向」按钮上的字段名：以前固定 180px 且不换行，长名字直接吃掉词输入框。
+   * 这里锁三件事：按钮文字只留短摘要（完整清单进 title）、行允许换行、上限改成 em。 */
+  await test('★ 2.0.16.8 长字段名不再把词挤没：指向收成短摘要，完整清单在悬停里（m21101）', () => {
+    const longName = 'APP电子版权认证证书页内信息';
+    /* `@字段` 只在**已配的抓取字段**里才算作用域（`knownFields` 从框面 data-raw 读），
+     * 所以先摆一个只带 data-raw 的框面当基线，否则这条词会被当成「全部字段」。 */
+    /* 复用**第一个**框面：`knownFields` 用 querySelector 取第一处，另加一个反而读不到（踩过）。 */
+    const face = document.body.querySelector('[data-for="fld-fetchLabels"]') || document.createElement('div');
+    if (!face.parentNode) document.body.appendChild(face);
+    face.setAttribute('data-for', 'fld-fetchLabels');
+    face.setAttribute('data-raw', longName);
+    const modal = openList(KH.ui.Fields.create(FM.byKey('imgOcrKeyword'), '核心词@' + longName, {}));
+    const btn = modal.querySelector('.kh-lrow-scope');
+    truthy(btn, '图片命中词的行里要有「指向」按钮');
+    const txt = String(btn.textContent);
+    truthy(txt.length <= 9, '按钮文字必须是短摘要（≤8 字 + 省略号），实际：' + txt);
+    truthy(txt.indexOf('…') >= 0, '截断要有可见省略号：' + txt);
+    truthy(String(btn.title || '').indexOf(longName) >= 0, '完整字段名要在 title 里能读回：' + btn.title);
+    const css = read('src/ui/components/components.css');
+    truthy(/\.kh-lrow-main \{[^}]*flex-wrap: wrap/.test(css), '这一行要允许换行，否则按钮只能挤词');
+    truthy(/\.kh-lrow-scope \{\s*flex: 0 1 auto; min-width: 0; max-width: min\(10em, 44%\)/.test(css),
+      '指向按钮的上限要跟字号走、且不超过行宽 44%');
+    truthy(/\.kh-scope-opt > span \{ min-width: 0; overflow-wrap: anywhere; \}/.test(css), '指向面板里的长字段名要能折行');
+    truthy(/const SCOPE_NAME_MAX = 8;/.test(read('src/ui/components/fields.js')), '截断长度写成常量，便于以后调');
+    KH.ui.Modal.closeAll();
+  });
+
+  /* 【2.0.16.8 · m21072】用户原话：「图片关键词、动态词的指向设置，只应该指向有图片的抓取字段，
+   * 现在全都列出来了，选文本字段没有意义」。判据只用值规格里显式的 `#0`（明确不要图片）：
+   * 这类字段默认不出现在候选里；勾掉「只列会出图的字段」能看见全部（不静默删字段）。 */
+  await test('★ 2.0.16.8 指向候选默认只列会出图的字段，写了 #0 的要收起来（m21072）', () => {
+    const face = document.body.querySelector('[data-for="fld-fetchLabels"]') || document.createElement('div');
+    if (!face.parentNode) document.body.appendChild(face);
+    face.setAttribute('data-for', 'fld-fetchLabels');
+    face.setAttribute('data-raw', '文本字段#0|截图#图');
+    const modal = openList(KH.ui.Fields.create(FM.byKey('imgOcrKeyword'), '核心词@截图', {}));
+    const btn = modal.querySelector('.kh-lrow-scope');
+    truthy(btn, '要有「指向」按钮');
+    btn.dispatchEvent({ type: 'click' });
+    const panel = modal.querySelector('.kh-scope-panel');
+    truthy(panel && panel.hidden === false, '点「指向」要打开面板');
+    const opts = Array.prototype.slice.call(panel.querySelectorAll('.kh-scope-opt'));
+    const byText = (name) => opts.filter((l) => String(l.textContent).trim().indexOf(name) === 0)[0];
+    const dead = byText('文本字段');
+    const lit = byText('截图');
+    truthy(dead && lit, '两个字段都该建成候选行（只是隐藏，不是删掉）');
+    eq(dead.hidden, true, '写了 #0 的字段默认不出现在候选里');
+    eq(lit.hidden, false, '写了 #图 的字段必须在候选里');
+    const note = panel.querySelector('.kh-scope-filter-note');
+    truthy(note && /已隐藏 1 个/.test(String(note.textContent)), '要说明隐藏了几个，别让用户以为字段没了：' + (note && note.textContent));
+    const only = panel.querySelector('.kh-scope-onlyimg');
+    truthy(only && only.checked === true, '默认勾上「只列会出图的字段」');
+    only.checked = false;
+    only.dispatchEvent({ type: 'change' });
+    eq(dead.hidden, false, '勾掉之后要能看见全部字段（含 #0）');
+    KH.ui.Modal.closeAll();
+  });
 };

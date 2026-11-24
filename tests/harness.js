@@ -166,12 +166,25 @@ class ShimElement {
     return true;
   }
   _matchesSimple(el, p) {
+    /* 【2.0.16.8】补 `[data-for="fld-x"]` / `tag[attr="v"]`：`fields.js` 的 knownFields（@指向的
+     * 已知字段表）用属性选择器读框面 data-raw。垫片不支持时，单测里「@长字段」永远落成「全部字段」，
+     * 长名截断这条根本没法验。属性匹配是加法，不影响原有 tag/.class 选择器。 */
+    let attr = null;
+    const am = /\[([a-zA-Z0-9_-]+)(?:="([^"]*)")?\]/.exec(p);
+    if (am) {
+      attr = { name: am[1].toLowerCase(), val: am[2] };
+      p = p.replace(am[0], '');
+    }
     const m = /^([a-zA-Z0-9*-]*)(?:\.([a-zA-Z0-9_-]+))?$/.exec(p);
     if (!m) return false;
     const tag = m[1] ? m[1].toUpperCase() : '';
     const cls = m[2] || '';
     if (tag && tag !== '*' && el.tagName !== tag) return false;
     if (cls && !el.classList.contains(cls)) return false;
+    if (attr) {
+      const v = (typeof el.getAttribute === 'function') ? el.getAttribute(attr.name) : null;
+      if (attr.val == null ? v == null : String(v) !== attr.val) return false;
+    }
     return true;
   }
   /** 最近的自匹配祖先（含自身）。垫片早期没有它 → `Cells.cellOf()` 的真实表格分支恒为 null，

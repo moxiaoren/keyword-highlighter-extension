@@ -666,6 +666,58 @@ module.exports = async function runUi(ctx) {
     truthy(r.search, '应有搜索框');
   });
 
+  await test('★ 2.0.16.8 批量改指向：只换 @ 字段名、后缀不动，还能撤销（m21072）', async () => {
+    const backup = await opt.evaluate(() => new Promise((res) => chrome.storage.local.get(['keywords', 'groups'], (r) => res({ keywords: r.keywords || [], groups: r.groups || [] }))));
+    const seed = [
+      { id: 'bs1', text: '甲词', fetchLabels: '应用截图@应用截图#图' },
+      { id: 'bs2', text: '乙词', imgOcrKeyword: '一对一@应用截图' },
+      { id: 'bs3', text: '丙词', imgOcrKeyword: '无关@2024' }
+    ];
+    try {
+      /* 写 storage 会触发 options 页自己的 onChanged → reload，不必手动 reload（手动 reload 会丢上下文） */
+      await opt.evaluate((list) => new Promise((res) => chrome.storage.local.set({ keywords: list, groups: [] }, res)), seed);
+      await opt.waitForTimeout(1200);
+      await opt.check('#batch-select-page');
+      await opt.waitForTimeout(400);
+      await opt.click('#batch-scope');
+      await opt.waitForTimeout(450);
+      truthy(await opt.evaluate(() => !!document.getElementById('batch-scope-from')), '应打开批量改指向弹窗');
+      await opt.fill('#batch-scope-from', '应用截图');
+      await opt.fill('#batch-scope-to', '软件著作权证书');
+      await opt.waitForTimeout(250);
+      const prev = await opt.evaluate(() => {
+        const ps = Array.from(document.querySelectorAll('.kh-modal .kh-editor-sec-body p.kh-muted'));
+        return ps.map((p) => p.textContent || '').join(' ');
+      });
+      truthy(prev.indexOf('2 条关键词') >= 0, '保存前应算清会动到几条词，实际：' + prev);
+      await opt.evaluate(() => {
+        const b = Array.from(document.querySelectorAll('.kh-modal .kh-btn')).find((x) => /保存/.test(x.textContent));
+        if (b) b.click();
+      });
+      await opt.waitForTimeout(700);
+      const after = await opt.evaluate(() => new Promise((res) => chrome.storage.local.get(['keywords'], (r) => res(r.keywords || []))));
+      const get = (id) => after.filter((k) => k.id === id)[0] || {};
+      eq(get('bs1').fetchLabels, '应用截图@软件著作权证书#图', '指向换了，进表后缀 #图 必须原样保留');
+      eq(get('bs2').imgOcrKeyword, '一对一@软件著作权证书');
+      eq(get('bs3').imgOcrKeyword, '无关@2024', '没这个指向的词不该被碰');
+      truthy(await opt.evaluate(() => { const b = document.getElementById('batch-scope-undo'); return !!b && !b.hidden; }), '改完要出现「撤销改指向」');
+      await opt.click('#batch-scope-undo');
+      await opt.waitForTimeout(450);
+      await opt.evaluate(() => {
+        const b = Array.from(document.querySelectorAll('.kh-modal .kh-btn')).find((x) => /撤销/.test(x.textContent));
+        if (b) b.click();
+      });
+      await opt.waitForTimeout(700);
+      const back = await opt.evaluate(() => new Promise((res) => chrome.storage.local.get(['keywords'], (r) => res(r.keywords || []))));
+      const g2 = (id) => back.filter((k) => k.id === id)[0] || {};
+      eq(g2('bs1').fetchLabels, '应用截图@应用截图#图', '撤销要逐字还原');
+      eq(g2('bs2').imgOcrKeyword, '一对一@应用截图');
+    } finally {
+      await opt.evaluate((b) => new Promise((res) => chrome.storage.local.set({ keywords: b.keywords, groups: b.groups }, res)), backup);
+      await opt.waitForTimeout(1000);
+    }
+  });
+
   await test('批量栏是独立常驻一行，未勾选时按钮禁用', async () => {
     const r = await opt.evaluate(() => {
       const bar = document.getElementById('batch-bar');
@@ -2563,6 +2615,7 @@ module.exports = async function runUi(ctx) {
     await opt.waitForTimeout(200);
     await closeEditor();
   });
+
 
   await test('★ 列表弹窗批2：拖拽把手能换顺序，保存后重开顺序还在', async () => {
     await openFreshEditor();

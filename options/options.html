@@ -142,6 +142,8 @@
         <button class="kh-mini-btn" id="batch-group" type="button" title="移动选中的关键词到分组">📁 移动</button>
         <button class="kh-mini-btn" id="batch-color" type="button" title="批量设置高亮颜色">🎨 颜色</button>
         <button class="kh-mini-btn" id="batch-match" type="button" title="批量设置匹配方式（核心词 3 项 + 标题词 3 项）">⚙️ 匹配</button>
+        <button class="kh-mini-btn" id="batch-scope" type="button" title="批量改指向：把「@抓取字段名」从旧名换成新名">🎯 改指向</button>
+        <button class="kh-mini-btn" id="batch-scope-undo" type="button" title="撤销上一次批量改指向（保留 10 分钟）" hidden>↩️ 撤销改指向</button>
         <button class="kh-mini-btn" id="batch-note" type="button" title="批量设置备注 / 重要笔记">📝 备注·笔记</button>
         <button class="kh-mini-btn" id="batch-delete" type="button" title="删除选中的关键词">🗑️ 删除</button>
         <button class="kh-mini-btn" id="batch-clear" type="button" title="取消选择">取消</button>
@@ -596,6 +598,15 @@
         <button class="kh-btn" id="btn-export-csv" type="button">导出 CSV（关键词 18 列）</button>
         <button class="kh-btn" id="btn-export-xls" type="button" title="一份 HTML 单表，Excel 可直接打开：带边框、冻结首行、底色/文字色按真实颜色上色">导出 Excel 表格（.xls）</button>
       </div>
+
+      <h3 class="kh-sub">分享给别人（分享码）</h3>
+      <p class="kh-sec-lead">把关键词连同<strong>图片识别、进表后缀、指向</strong>这些细配置一起打包成一段文本，发给别人粘贴即可。不含站点禁用状态与任何账号。</p>
+      <div class="kh-btn-row">
+        <button class="kh-btn" id="btn-share-copy" type="button">复制我的分享码</button>
+        <button class="kh-btn" id="btn-share-import" type="button">导入分享码</button>
+        <span class="kh-dim" id="share-code-hint"></span>
+      </div>
+      <textarea class="kh-share-code" id="share-code-text" rows="3" spellcheck="false" placeholder="在这里粘贴别人给你的分享码（以 KH1: 开头），再点上面的「导入分享码」"></textarea>
 
       <h3 class="kh-sub">导入数据</h3>
       <div class="kh-checks">

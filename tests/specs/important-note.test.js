@@ -715,6 +715,19 @@ module.exports = async function run() {
       '灯箱里那张图必须就是被点的那张 —— 打开态的硬证据（只在 apply() 里写）');
   });
 
+  /* 【2.0.16.8 · m21072】用户要一边看大图、一边对面板里的重要笔记 ⇒ 三件事缺一不可：
+   * 遮罩不再压暗（背景透明）、灯箱层级低于面板（否则透明遮罩照样吃点击）、有一个看得见的关闭入口。 */
+  await test('★ 2.0.16.8 大图容器不压暗整页，且层级让位给面板、带显式关闭（用户 m21072）', () => {
+    const src = read('src/features/important-note.js');
+    truthy(/\.kh-lb \{ position: fixed; inset: 0; z-index: 2147483400; background: transparent;/.test(src),
+      '★ 遮罩必须透明（压暗之后面板里的参照物就看不见了）且层级写死在这个值上');
+    const m = /\.kh-lb \{ position: fixed; inset: 0; z-index: (\d+)/.exec(src);
+    truthy(m && Number(m[1]) < 2147483646,
+      '★ 灯箱层级必须低于面板（面板 z-index: 2147483646）—— 否则透明遮罩依旧挡住面板的点击');
+    truthy(src.indexOf("kh-lb-close") >= 0, '工具条里要有显式关闭按钮（不能只靠 Esc 与点空白）');
+    truthy(src.indexOf('VIEW.lbClose') >= 0, '关闭按钮的文案必须走 ocr-copy 单源（门禁：面板文案不许硬编码）');
+  });
+
   await test('★ T38-3 反向：点非 IMG、或 IMG 没有 src ⇒ 不许开灯箱（同时证明上面那条不是空断言）', () => {
     const p = shadowPanel();
     p.ensure(document);

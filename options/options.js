@@ -484,9 +484,12 @@
     const n = selection.size;
     // 文案与策划案 §5.2.1 对齐：常驻显示「已选 N 项」
     $('batch-info').textContent = '已选 ' + n + ' 项';
-    for (const id of ['batch-enable', 'batch-disable', 'batch-group', 'batch-color', 'batch-match', 'batch-note', 'batch-delete', 'batch-clear']) {
+    for (const id of ['batch-enable', 'batch-disable', 'batch-group', 'batch-color', 'batch-match', 'batch-scope', 'batch-note', 'batch-delete', 'batch-clear']) {
       $(id).disabled = n === 0;
     }
+    /* 「撤销改指向」只在有快照时出现；隐藏时也置灰，批量栏的口径保持「没得点就禁用」 */
+    const ub = $('batch-scope-undo');
+    if (ub) ub.disabled = ub.hidden;
     syncPageSelectAll();
   }
 
@@ -948,6 +951,152 @@
     });
   });
 
+
+  /* ── 批量改指向（2.0.16.8 · m21072）────────────────────────────────
+   * 只改「指向的抓取字段名」：把 `@旧字段` 换成 `@新字段`，进表后缀 / 取值表达式一个字不动。
+   * 为什么按字段名 remap 而不是按行号批改：不同关键词的字段集合不同，行号会错位；
+   * 字段名替换是幂等的，能先给条数、能整体撤销。 */
+  const SCOPE_UNDO_KEY = 'kh.batchScopeUndo';
+  const SCOPE_FIELDS = ['fetchLabels', 'imgOcrKeyword', 'imgOcrNeed'];
+  const SCOPE_NAME_RE = /@([^@#|｜\s]+)/g;
+
+  function scopeNamesOf(list) {
+    const out = new Set();
+    for (const kw of list || []) {
+      for (const f of SCOPE_FIELDS) {
+        const v = String((kw && kw[f]) || '');
+        SCOPE_NAME_RE.lastIndex = 0;
+        let m;
+        while ((m = SCOPE_NAME_RE.exec(v))) out.add(m[1]);
+      }
+    }
+    return Array.from(out).sort();
+  }
+
+  /** 先算一遍：会动到几条词、几处 @ 指向。预览与真正写入共用这一份判据。 */
+  function batchScopePlan(from, to, list) {
+    const ids = [];
+    const patches = new Map();
+    let hits = 0;
+    for (const kw of list || []) {
+      if (!kw || !kw.id) continue;
+      const patch = {};
+      for (const f of SCOPE_FIELDS) {
+        const before = String(kw[f] || '');
+        const after = KH.Store.remapScopeName(before, from, to);
+        if (after !== before) { patch[f] = after; hits += 1; }
+      }
+      if (Object.keys(patch).length) { ids.push(kw.id); patches.set(kw.id, patch); }
+    }
+    return { ids: ids, hits: hits, patches: patches };
+  }
+
+  async function putScopeUndo(snap) {
+    const area = sessionArea();
+    if (!area) return false;
+    try { await area.set({ [SCOPE_UNDO_KEY]: snap }); return true; } catch (e) { return false; }
+  }
+
+  async function getScopeUndo() {
+    const area = sessionArea();
+    if (!area) return null;
+    try {
+      const got = await area.get(SCOPE_UNDO_KEY);
+      const snap = got && got[SCOPE_UNDO_KEY];
+      if (!snap || !Array.isArray(snap.rows) || !snap.rows.length) return null;
+      if (Date.now() - Number(snap.at || 0) > UNDO_TTL_MS) { await area.remove(SCOPE_UNDO_KEY); return null; }
+      return snap;
+    } catch (e) { return null; }
+  }
+
+  async function clearScopeUndo() {
+    const area = sessionArea();
+    if (!area) return;
+    try { await area.remove(SCOPE_UNDO_KEY); } catch (e) { /* 清不掉不影响主流程 */ }
+  }
+
+  async function refreshScopeUndo() {
+    const btn = $('batch-scope-undo');
+    if (!btn) return;
+    btn.hidden = !(await getScopeUndo());
+    btn.disabled = btn.hidden;   // 与 syncBatchBar 同一口径：没快照就隐藏且禁用
+  }
+
+  $('batch-scope').addEventListener('click', () => {
+    const picked = (cfg.keywords || []).filter(k => k && selection.has(k.id));
+    if (!picked.length) { D.toast('先勾选要改的关键词', 'info'); return; }
+    const names = scopeNamesOf(picked);
+    const list = h('datalist', { id: 'batch-scope-names' });
+    for (const n of names) list.appendChild(h('option', { value: n }));
+    const fromIn = h('input', { class: 'kh-input', id: 'batch-scope-from', list: 'batch-scope-names', placeholder: names[0] || '例如 应用截图', 'aria-label': '旧字段名' });
+    const toIn = h('input', { class: 'kh-input', id: 'batch-scope-to', placeholder: '例如 软件著作权证书', 'aria-label': '新字段名' });
+    const prev = h('p', { class: 'kh-muted', text: '' });
+    const sync = () => {
+      const from = fromIn.value.trim();
+      const to = toIn.value.trim();
+      if (!from) { prev.textContent = names.length ? ('这些词现在指向 ' + names.length + ' 个字段：' + names.join('、')) : '选中的词还没有「@字段」指向。'; return; }
+      if (!to) { prev.textContent = '再填新字段名，就能看到会改到几条词。'; return; }
+      if (from === to) { prev.textContent = '新旧字段名一样，不用改。'; return; }
+      if (/^\d+$/.test(from) || /^\d+$/.test(to)) { prev.textContent = '@ 后面的纯数字是取值偏移（例如「应用截图@2」），不是字段名。'; return; }
+      const plan = batchScopePlan(from, to, picked);
+      prev.textContent = plan.ids.length
+        ? ('会把 ' + plan.ids.length + ' 条关键词里的 ' + plan.hits + ' 处「@' + from + '」改成「@' + to + '」。')
+        : ('选中的词里没有「@' + from + '」这个指向，不会有任何改动。');
+    };
+    fromIn.addEventListener('input', sync);
+    toIn.addEventListener('input', sync);
+    sync();
+    ui.Modal.open({
+      title: '批量改指向（选中 ' + picked.length + ' 条）', size: 'sm',
+      body: h('div', { class: 'kh-editor-sec-body' }, [
+        h('p', { class: 'kh-muted', text: '只改「@ 指向的抓取字段名」，进表后缀（#图 / #比 …）和取值偏移（@2）都不动。改完 10 分钟内可撤销。' }),
+        h('div', { class: 'kh-form-row' }, [
+          h('label', { class: 'kh-form-fld' }, [h('span', { text: '旧字段名' }), fromIn]),
+          h('label', { class: 'kh-form-fld' }, [h('span', { text: '新字段名' }), toIn])
+        ]),
+        prev,
+        list
+      ]),
+      onSave: async () => {
+        const from = fromIn.value.trim();
+        const to = toIn.value.trim();
+        if (!from || !to) { D.toast('两个字段名都要填', 'info'); return false; }
+        if (from === to) { D.toast('新旧字段名一样，不用改', 'info'); return false; }
+        if (/^\d+$/.test(from) || /^\d+$/.test(to)) { D.toast('@ 后面的纯数字是取值偏移，不是字段名', 'error'); return false; }
+        const plan = batchScopePlan(from, to, picked);
+        if (!plan.ids.length) { D.toast('选中的词里没有「@' + from + '」这个指向', 'info'); return false; }
+        const snapRows = plan.ids.map((id) => {
+          const old = picked.filter(k => k.id === id)[0] || {};
+          const row = { id: id };
+          for (const f of SCOPE_FIELDS) row[f] = String(old[f] || '');
+          return row;
+        });
+        if (!await mutate(() => KH.Store.patchKeywords(plan.ids, (k) => plan.patches.get(k.id) || {}))) return false;
+        await putScopeUndo({ at: Date.now(), rows: snapRows });
+        await refreshScopeUndo();
+        D.toast('已把 ' + plan.ids.length + ' 条词的 @' + from + ' 改成 @' + to, 'ok');
+      }
+    });
+  });
+
+  $('batch-scope-undo').addEventListener('click', async () => {
+    const snap = await getScopeUndo();
+    if (!snap) { D.toast('撤销窗口已过期（只保留 10 分钟）', 'error'); await refreshScopeUndo(); return; }
+    const ok = await D.confirmBox('把 ' + snap.rows.length + ' 条关键词的指向改回上一次？', { title: '撤销改指向', saveLabel: '撤销' });
+    if (!ok) return;
+    const map = new Map(snap.rows.map(r => [r.id, r]));
+    const done = await mutate(() => KH.Store.patchKeywords(snap.rows.map(r => r.id), (k) => {
+      const r = map.get(k.id) || {};
+      const patch = {};
+      for (const f of SCOPE_FIELDS) if (r[f] !== undefined) patch[f] = r[f];
+      return patch;
+    }));
+    if (!done) return;
+    await clearScopeUndo();
+    await refreshScopeUndo();
+    D.toast('已撤销', 'ok');
+  });
+
   $('batch-delete').addEventListener('click', () => removeKeywords(batchIds(), '选中的 ' + selection.size + ' 条关键词'));
 
   /* ==================================================================== ② 分组 */
@@ -1356,6 +1505,48 @@
 
   $('btn-import-json').addEventListener('click', () => { $('file-json').value = ''; $('file-json').click(); });
   $('btn-import-csv').addEventListener('click', () => { $('file-csv').value = ''; $('file-csv').click(); });
+
+  /* ---------------- 分享码（2.0.16.8 · m21072） ----------------
+   * 把「关键词 + 图片识别 + 进表后缀 + 指向」打包成一段文本，粘给别人就能收到。
+   * 与导出 JSON 同源（KH.Store.exportShare → sharePayload → exportJSON），所以不会出现
+   * 「分享码里有、导出文件里没有」这种两套白名单的漂移。导入复用 importJSON 的合并口径。 */
+  $('btn-share-copy').addEventListener('click', async () => {
+    const res = await KH.Store.exportShare(cfg);
+    if (!res.ok) { D.toast('生成分享码失败：' + res.error, 'error'); return; }
+    const ta = $('share-code-text');
+    if (ta) ta.value = res.code;
+    let copied = false;
+    try { await navigator.clipboard.writeText(res.code); copied = true; } catch (e) { /* 没有剪贴板权限就退化成手抄 */ }
+    const hint = $('share-code-hint');
+    if (hint) {
+      hint.textContent = res.code.length + ' 个字符（' + Math.max(1, Math.round(res.jsonBytes / 1024)) + ' KB 配置压到 '
+        + Math.max(1, Math.round(res.bytes / 1024)) + ' KB）' + (copied ? '，已复制到剪贴板' : '；下面文本框里已填好，可手动复制');
+    }
+    D.toast(copied ? '分享码已复制' : '分享码已生成，请从下面的文本框复制', copied ? 'ok' : 'error');
+  });
+
+  $('btn-share-import').addEventListener('click', async () => {
+    const ta = $('share-code-text');
+    const code = String((ta && ta.value) || '').trim();
+    if (!code) { D.toast('先把别人给你的分享码粘贴到下面的文本框', 'error'); if (ta) ta.focus(); return; }
+    let dec = null;
+    try { dec = await KH.Store.decodeShare(code); }
+    catch (err) { D.toast('分享码读不出来：' + ((err && err.message) || err), 'error'); return; }
+    const data = dec.data || {};
+    const lines = [
+      '这份分享码里有：关键词 ' + (Array.isArray(data.keywords) ? data.keywords.length : 0) + ' 条 / 分组 '
+        + (Array.isArray(data.groups) ? data.groups.length : 0) + ' 个 / 站点规则 '
+        + (Array.isArray(data.siteRules) ? data.siteRules.length : 0) + ' 条 / 样式与图片识别配置',
+      '',
+      '导入方式：合并（追加去重，不删除现有数据）'
+    ];
+    const ok = await D.confirmBox(lines.join('\n'), { title: '导入分享码', saveLabel: '合并导入' });
+    if (!ok) return;
+    let stats = null;
+    const wrote = await mutate(async () => { stats = await KH.Store.importShare(code, { mode: 'merge' }, cfg); });
+    if (!wrote) return;
+    D.toast('分享码导入完成：新增关键词 ' + stats.keywords + ' 条 / 分组 ' + stats.groups + ' 个 / 站点规则 ' + stats.siteRules + ' 条', 'ok');
+  });
 
   /**
    * JSON 导入 —— **唯一实现**。
@@ -2867,7 +3058,7 @@
   }
 
   if (KH.ui && KH.ui.theme && KH.ui.theme.boot) KH.ui.theme.boot();
-  reload().then(() => { renderChangelog(); renderTabs(); renderShortcuts(); refreshUndoRow(); }).catch(err => {
+  reload().then(() => { renderChangelog(); renderTabs(); renderShortcuts(); refreshUndoRow(); refreshScopeUndo(); }).catch(err => {
     console.error('[KH] 设置页初始化失败', err);
     D.toast('初始化失败：' + (err && err.message), 'error');
   });

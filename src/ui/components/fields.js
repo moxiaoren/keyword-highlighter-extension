@@ -699,11 +699,31 @@
 
           const alive = () => rows.filter((r) => !r.gone);
           const pickedRows = () => alive().filter((r) => r.picked);
+          /* 【2.0.16.8 · m21101】「@指向」按钮的文字必须是**短摘要**。用户现场有十几个字的抓取字段名，
+           * 这一行里同时挤着 词输入框 + 指向 + 进表 + 比对 + 取值，按钮一长，词就被压到看不清（原话：
+           * 「指向字段太长的话现在会挤压，导致词看不清看不见」）。这里每个名字最多 8 个字，完整清单
+           * 挂到 title（悬停可读回）；宽度上限另由 CSS 用 em 控制。 */
+          const SCOPE_NAME_MAX = 8;
+          const scopeCut = (s) => {
+            const t = String(s == null ? '' : s);
+            return t.length > SCOPE_NAME_MAX ? (t.slice(0, SCOPE_NAME_MAX) + '…') : t;
+          };
+          const scopeTitleOf = (row) => {
+            const list = (row.scopes || []).join('、');
+            return '这个词对哪些抓取字段的图生效（可多选）：' + (list || '全部字段');
+          };
           const scopeLabel = (row) => {
             const n = (row.scopes || []).length;
             if (!n) return '全部字段';
-            if (n <= 2) return row.scopes.join('、');
-            return row.scopes[0] + ' 等 ' + n + ' 个';
+            if (n === 1) return scopeCut(row.scopes[0]);
+            if (n === 2) return scopeCut(row.scopes[0]) + '、' + scopeCut(row.scopes[1]);
+            return scopeCut(row.scopes[0]) + ' 等 ' + n + ' 个';
+          };
+          /* 改完指向必须同时刷新文字与 title —— 只刷文字会让悬停永远停在旧字段上。 */
+          const paintScopeBtn = (row) => {
+            if (!row._scopeBtn) return;
+            row._scopeBtn.textContent = scopeLabel(row);
+            row._scopeBtn.title = scopeTitleOf(row);
           };
           const hiddenPicked = () => pickedRows().filter((r) => r.el && r.el.hidden);
           /* 【2026-11-14 批1】批量删除必须写明「有 N 条被筛选隐藏」。
@@ -830,11 +850,39 @@
           const scopeAll = h('input', { type: 'checkbox' });
           const scopeListEl = h('div', { class: 'kh-scope-list' });
           const scopeHint = h('span', { class: 'kh-scope-hint', text: '勾选即时生效' });
+          const scopeOnlyImg = h('input', { class: 'kh-scope-onlyimg', type: 'checkbox' });
+          scopeOnlyImg.checked = true;
+          const scopeFilterNote = h('span', { class: 'kh-scope-hint kh-scope-filter-note', text: '' });
           const bulkReplace = h('button', { class: 'kh-btn kh-btn-primary kh-scope-op', type: 'button', text: '替换选中' });
           const bulkAppend = h('button', { class: 'kh-btn kh-scope-op', type: 'button', text: '追加到选中' });
           let scopeMode = 'single';        // single = 改某一行；bulk = 改勾选的所有行
           let scopeTarget = null;
           const scopeBoxes = [];
+          /* 【2.0.16.8 · m21072】指向候选只列**会出图**的抓取字段。
+           * 用户原话：「图片关键词、动态词的指向设置，只应该指向有图片的抓取字段，现在全都列出来了，
+           * 选文本字段没有意义」。判据只看「抓取后续字段」里的值规格：显式写了 `#0`（不要图片）的
+           * 字段一定不出图，默认折起来；**已勾选的字段永远显示**（否则用户看不见自己选了什么、
+           * 也取消不掉）。没写图片后缀的字段仍可能留图（`parseFetchLabel()` 没写后缀时默认保留），所以不当成不出图。 */
+          const imgDeadNames = () => {
+            const dead = [];
+            for (const sp of fetchSpecsSeen) if (sp.noImg && dead.indexOf(sp.name) < 0) dead.push(sp.name);
+            return dead;
+          };
+          const paintScopeList = () => {
+            const q = String(scopeSearch.value == null ? '' : scopeSearch.value).trim().toLowerCase();
+            const dead = imgDeadNames();
+            const onlyImg = !!scopeOnlyImg.checked;
+            let hidden = 0;
+            for (const b of scopeBoxes) {
+              const hitQ = !q || b.name.toLowerCase().indexOf(q) >= 0;
+              const deadHide = onlyImg && !b.cb.checked && dead.indexOf(b.name) >= 0;
+              if (deadHide && hitQ) hidden += 1;
+              b.el.hidden = !hitQ || deadHide;
+            }
+            if (scopeFilterNote) {
+              scopeFilterNote.textContent = hidden ? ('已隐藏 ' + hidden + ' 个写了「#0 不要图片」的字段') : '';
+            }
+          };
           const scopeChecked = () => scopeBoxes.filter((b) => b.cb.checked).map((b) => b.name);
           const scopeApply = (targets, mode2) => {
             let n = 0;
@@ -848,7 +896,7 @@
                 row.scopes = next.slice();
               }
               row.dirty = true;
-              if (row._scopeBtn) row._scopeBtn.textContent = scopeLabel(row);
+              paintScopeBtn(row);
               n += 1;
             }
             if (n) dirty = true;
@@ -867,7 +915,10 @@
               : ('指向 · ' + (target.name || '（未命名）'));
             refreshScopeBoxes(scopeMode === 'bulk' ? [] : (target.scopes || []));
             scopeSearch.value = '';
+            /* 每次打开都重读一遍「抓取后续字段」：用户可能刚改过后缀（#0 / #图），候选要跟着变 */
+            knownFields();
             for (const b of scopeBoxes) b.el.hidden = false;
+            paintScopeList();
             scopeHint.hidden = scopeMode === 'bulk';
             bulkReplace.hidden = scopeMode !== 'bulk';
             bulkAppend.hidden = scopeMode !== 'bulk';
@@ -875,9 +926,10 @@
           };
           scopePanel.appendChild(h('div', { class: 'kh-scope-head' }, [scopeTitle, scopeClose]));
           scopePanel.appendChild(h('div', { class: 'kh-scope-tools' }, [scopeSearch,
-            h('label', { class: 'kh-scope-opt kh-scope-all' }, [scopeAll, h('span', { text: '全部字段（不限定）' })])]));
+            h('label', { class: 'kh-scope-opt kh-scope-all' }, [scopeAll, h('span', { text: '全部字段（不限定）' })]),
+            h('label', { class: 'kh-scope-opt kh-scope-onlyimg-lab', title: '勾掉可以看见全部字段（含写了 #0「不要图片」的）' }, [scopeOnlyImg, h('span', { text: '只列会出图的字段' })])]));
           scopePanel.appendChild(scopeListEl);
-          scopePanel.appendChild(h('div', { class: 'kh-scope-foot' }, [scopeHint, bulkReplace, bulkAppend]));
+          scopePanel.appendChild(h('div', { class: 'kh-scope-foot' }, [scopeHint, scopeFilterNote, bulkReplace, bulkAppend]));
           for (const k of known) {
             const cb = h('input', { type: 'checkbox' });
             const lab = h('label', { class: 'kh-scope-opt' }, [cb, h('span', { text: k })]);
@@ -903,10 +955,8 @@
             for (const b of scopeBoxes) b.cb.checked = false;
             if (scopeMode === 'single' && scopeTarget) scopeApply([scopeTarget], 'replace');
           });
-          scopeSearch.addEventListener('input', () => {
-            const q = String(scopeSearch.value == null ? '' : scopeSearch.value).trim().toLowerCase();
-            for (const b of scopeBoxes) b.el.hidden = !!q && b.name.toLowerCase().indexOf(q) < 0;
-          });
+          scopeSearch.addEventListener('input', paintScopeList);
+          scopeOnlyImg.addEventListener('change', paintScopeList);
           scopeClose.addEventListener('click', () => { scopePanel.hidden = true; });
           bulkReplace.addEventListener('click', () => {
             const list = pickedRows();
@@ -1152,7 +1202,7 @@
             row._why = why;
             if (isKv) {
               const scopeBtn = h('button', { class: 'kh-mini-btn kh-lrow-scope', type: 'button', text: scopeLabel(row) });
-              scopeBtn.title = '这个词对哪些抓取字段的图生效（可多选）';
+              scopeBtn.title = scopeTitleOf(row);
               scopeBtn.addEventListener('click', () => openScope(row));
               row._scopeBtn = scopeBtn;
               /* 【2.0.8.7 需求②】「进表」不再是一颗只在弹窗里的小 `#表` 按钮，改成明面上的勾选列：
@@ -1498,7 +1548,7 @@
             ops.push(mkBtn('设为全部字段', () => {
               forPicked((row) => {
                 row.scopes = [];
-                if (row._scopeBtn) row._scopeBtn.textContent = scopeLabel(row);
+                paintScopeBtn(row);
               });
             }, '去掉 @指向：这些词对抓到的所有图都算命中'));
             ops.push(mkBtn('取消进表', () => {
@@ -1715,6 +1765,9 @@
          * **之前**、且在 `control` 作用域里：写进 `openList` 会造成 TDZ / 隐式全局，
          * 赋值抛错被 `catch` 吞掉 ⇒ `known` 恒空 ⇒ 所有 `@字段` 都被报成"没配过"。 */
         let fetchRawSeen = '';
+        /* 【2.0.16.8 · m21072】每个抓取字段的值规格（只为了判断「这个字段会不会出图」）：
+         * 与 `fetchRawSeen` 同一次解析得出，避免指向面板再解析一遍字串、两处口径分叉。 */
+        let fetchSpecsSeen = [];
         const knownFields = () => {
           try {
             let root = document;
@@ -1739,11 +1792,13 @@
             /* 【2.0.8.21 缺陷③】把原文留给诊断条去解析值规格（`#图` / `@0` 这类取不到文字的配置）。 */
             fetchRawSeen = raw;
             const F = KH.Fetch;
+            fetchSpecsSeen = [];
             if (!raw || !F || typeof F.parseLabels !== 'function') return [];
             const out = [];
             for (const it of (F.parseLabels(raw) || [])) {
               const n = String((it && it.label) || '').trim();
               if (n && out.indexOf(n) < 0) out.push(n);
+              if (n) fetchSpecsSeen.push({ name: n, noImg: !!it.noImg, imgOnly: !!it.imgOnly, imgLimit: it.imgLimit || '', imgPick: it.imgPick || null });
             }
             return out;
           } catch (e) { return []; }

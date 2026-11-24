@@ -390,6 +390,98 @@ module.exports = async function run() {
     truthy(!Number.isNaN(Date.parse(out.meta.exportedAt)), 'exportedAt 必须能被 Date.parse 解析');
   });
 
+  suite('storage · 分享码（2.0.16.8 · m21072）');
+
+  await test('★ 往返一致：图片识别、进表后缀、指向、组合方向都跟着分享码走', async () => {
+    const cfg = {
+      keywords: [
+        { id: 'k1', text: '交友', groupId: 'g1', fetchLabels: '应用截图@2#图|开发者#比', fetchEnabled: true,
+          imgOcr: true, imgOcrKeyword: '一对一#表', imgOcrNeed: '著作权人@应用截图',
+          cellVerifyEnabled: true, cellVerify: '开发者', cellOffset: '2', comboAxis: 'tb' },
+        { id: 'k2', text: '贷款', fetchLabels: '截图' }
+      ],
+      groups: [{ id: 'g1', name: '金融' }],
+      siteRules: [{ id: 's1', pattern: 'a.com' }],
+      siteDisabledMap: { 'b.com': true },
+      imgOcr: { defaultMax: 6, engine: 'tesseract', crossOriginSites: { 'x.com': true } }
+    };
+    const res = await S.exportShare(cfg);
+    truthy(res.ok, '生成失败：' + res.error);
+    eq(res.code.indexOf(S.SHARE_PREFIX), 0, '分享码要以 KH1: 开头');
+    const dec = await S.decodeShare(res.code);
+    const k1 = (dec.data.keywords || []).find((k) => k.id === 'k1') || {};
+    eq(k1.imgOcrKeyword, '一对一#表', '图片命中词（含 #表 进表标记）要跟着分享');
+    eq(k1.imgOcrNeed, '著作权人@应用截图', '指向要跟着分享');
+    eq(k1.fetchLabels, '应用截图@2#图|开发者#比', '进表后缀（#图/#比）写在抓取字段里，必须原样跟着分享');
+    eq(k1.cellVerify, '开发者');
+    eq(k1.cellOffset, '2');
+    eq(k1.comboAxis, 'tb');
+    eq((dec.data.groups || [])[0].name, '金融');
+    eq((dec.data.siteRules || [])[0].pattern, 'a.com');
+    eq(dec.data.siteDisabledMap, undefined, '站点禁用是本机即时状态，不进分享码');
+    const ic = (dec.data.styles || {}).imgOcr || {};
+    eq(ic.defaultMax, 6, '图片默认识别张数要跟着分享');
+    eq(ic.engine, 'tesseract');
+    eq(ic.crossOriginSites, undefined, '跨域站点是本机授权，不替别人开');
+    eq((dec.data.meta || {}).share, true);
+    eq((dec.data.meta || {}).exportedAt, undefined, '去掉时间戳，同一份配置的分享码才稳定');
+    eq((dec.data.meta || {}).version, undefined);
+  });
+
+  await test('★ 分享码明显比 JSON 短，且同一份配置两次生成逐字相同', async () => {
+    const cfg = { keywords: Array.from({ length: 20 }, (_, i) => ({ id: 'k' + i, text: '关键词' + i, fetchLabels: '应用截图' })), groups: [], siteRules: [], siteDisabledMap: {} };
+    const a = await S.exportShare(cfg);
+    const b = await S.exportShare(cfg);
+    truthy(a.ok, a.error);
+    eq(a.code, b.code, '去掉时间戳后应逐字相同');
+    truthy(a.code.length < a.jsonBytes, '压过之后应更短：实际 ' + a.code.length + ' 字符 vs JSON ' + a.jsonBytes + ' 字符');
+  });
+
+  await test('★ 不是分享码 / 缺字符 / 不是本插件，都要报人话', async () => {
+    const grab = async (s) => { try { await S.decodeShare(s); return null; } catch (e) { return e; } };
+    const e1 = await grab('{"keywords":[]}');
+    truthy(e1 && /分享码/.test(e1.message), 'JSON 文件不该被当成分享码：' + (e1 && e1.message));
+    const e2 = await grab(S.SHARE_PREFIX + 'AAAA');
+    truthy(e2 && /分享码/.test(e2.message), '坏内容要说人话，实际：' + (e2 && e2.message));
+    falsy(e2 && /invalid|unexpected|incorrect|TypeError/i.test(e2.message), '不许把英文异常直接抛给用户：' + (e2 && e2.message));
+    const gz = await S._gzip(JSON.stringify({ hello: 1 }));
+    const e3 = await grab(S.SHARE_PREFIX + S._b64u(gz));
+    truthy(e3 && /不是本插件/.test(e3.message), '实际：' + (e3 && e3.message));
+  });
+
+  await test('★ importShare 与导入 JSON 走同一条写盘路径（避免两套白名单）', () => {
+    const path = require('path');
+    const src = require('fs').readFileSync(path.join(__dirname, '..', '..', 'src', 'platform', 'storage.js'), 'utf8');
+    truthy(/async importShare\(code, opts, config\) \{\s*const dec = await this\.decodeShare\(code\);\s*return this\.importJSON\(dec\.text, opts, config\);/.test(src), 'importShare 必须 decodeShare 后交给 importJSON');
+  });
+
+  suite('storage · 批量改指向 remapScopeName（2.0.16.8 · m21072）');
+
+  await test('★ 只换 @ 后面的字段名，进表后缀与取值偏移都不动', async () => {
+    const r = (v, f, t) => S.remapScopeName(v, f, t);
+    eq(r('应用截图@应用截图#图', '应用截图', '软件著作权证书'), '应用截图@软件著作权证书#图');
+    eq(r('开发者@应用截图#比|应用截图@2#图', '应用截图', '证书'), '开发者@证书#比|应用截图@2#图', '取值偏移 @2 不是字段名');
+    eq(r('著作权人@应用截图 备注@应用截图', '应用截图', '证书'), '著作权人@证书 备注@证书', '空格与结尾也要能换');
+    eq(r('A@应用截图｜B@应用截图', '应用截图', '证书'), 'A@证书｜B@证书', '全角竖线是分段符');
+  });
+
+  await test('★ 不做前缀匹配：@应用截图2 不等于 @应用截图', async () => {
+    eq(S.remapScopeName('x@应用截图2#图', '应用截图', '证书'), 'x@应用截图2#图');
+    eq(S.remapScopeName('x@应用截图#图', '应用', '证书'), 'x@应用截图#图');
+  });
+
+  await test('★ 空名 / 同名 / 空值都原样返回，不制造空 @', async () => {
+    eq(S.remapScopeName('a@b#图', '', '证书'), 'a@b#图');
+    eq(S.remapScopeName('a@b#图', 'b', ''), 'a@b#图');
+    eq(S.remapScopeName('a@b#图', 'b', 'b'), 'a@b#图');
+    eq(S.remapScopeName(null, 'b', 'c'), '');
+  });
+
+  await test('★ 字段名里的正则元字符按字面匹配，不当通配符', async () => {
+    eq(S.remapScopeName('a@字段(1)#图', '字段(1)', '证书'), 'a@证书#图');
+    eq(S.remapScopeName('a@字段X#图', '字段(1)', '证书'), 'a@字段X#图');
+  });
+
   suite('storage · 兼容读取（存量旧格式）');
 
   await test('旧版平铺的 highlightStyle 能被 stylesFrom 读到', () => {

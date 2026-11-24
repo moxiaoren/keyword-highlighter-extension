@@ -361,6 +361,20 @@
       return list;
     },
 
+    /** 批量改指向用的纯函数（2.0.16.8 · m21072）：把值规格里的 `@旧字段` 换成 `@新字段`。
+     *  只认 `@` 后面紧跟的那个字段名，遇到 `#`（进表后缀）/ `|`（下一段）/ 空白/结尾就停，
+     *  所以 `应用截图@2`（偏移量）和 `#图` 这类后缀都不会被误改。字段名不做前缀匹配：
+     *  `@应用截图2` 不是 `@应用截图`，换不到 —— 宁可漏改，不可错改。 */
+    remapScopeName(value, from, to) {
+      const f = String(from == null ? '' : from).trim();
+      const t = String(to == null ? '' : to).trim();
+      const src = String(value == null ? '' : value);
+      if (!f || !t || f === t) return src;
+      const esc = f.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const re = new RegExp('@' + esc + '(?=[#|｜\\s]|$)', 'g');
+      return src.replace(re, '@' + t);
+    },
+
     async upsertGroup(group) {
       const config = await this.load();
       const list = (config.groups || []).slice();
@@ -745,6 +759,128 @@
           styles: !!(data.styles || data.highlightStyle || data.noteCardStyle || data.matchSettings)
         }
       };
+    },
+
+    /* ---------------- 分享码（2.0.16.8 · m21072） ----------------
+     * 用户原话：「关键词多选导出分享……现在的关键词导出很陈旧了，很多东西配置导出不了，
+     * 比如图片关键词，进表后缀等」，拍板「完整 JSON + 再要一个「分享码」文本」。
+     * 口径：分享码 = 完整 JSON（关键词/分组/站点规则/样式，含 imgOcr* 与进表后缀）→ gzip →
+     * base64url，前面加 `KH1:`。**不带**站点禁用状态（本机即时状态，换台机器没有意义）与任何
+     * 账号/密码（`ai` 块本来就不在导出里）。零依赖：CompressionStream 是浏览器内建的。 */
+    SHARE_PREFIX: 'KH1:',
+    SHARE_DROP: ['siteDisabledMap'],
+
+    /** 分享码里装的那份 JSON（与导出文件同源，只删本机即时状态） */
+    sharePayload(config) {
+      const full = { keywords: true, siteRules: true, siteDisabled: true, styles: true };
+      const data = JSON.parse(this.exportJSON(full, config));
+      for (const k of this.SHARE_DROP) delete data[k];
+      /* 图片识别的**默认档位**（默认识别张数 + 引擎）跟着分享走：用户台账原话
+       * 「图片关键词、进表后缀等配置导不出」。但 `crossOriginSites` 是逐站点的本机授权
+       * （见 `src/core/config.js` 里 imgOcr 属本机性质的注释），沿用「imgOcr 不进导出」的老口径 —— 接收方需要就自己在
+       * 设置页开，不替别人授权。 */
+      const ic = (config && config.imgOcr) || {};
+      data.styles = data.styles || {};
+      data.styles.imgOcr = { defaultMax: ic.defaultMax, engine: ic.engine };
+      if (data.meta) {
+        delete data.meta.exportedAt;   // 时间戳每次不同，删掉后同一份配置的分享码逐字相同
+        delete data.meta.version;      // 插件版本号与本机相关，别让接收方误以为要同版本
+        data.meta.share = true;
+      }
+      return JSON.stringify(data);
+    },
+
+    _b64u(bytes) {
+      const CH = 0x8000;
+      let s = '';
+      for (let i = 0; i < bytes.length; i += CH) {
+        s += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
+      }
+      return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    },
+
+    _unb64u(str) {
+      const s = String(str || '').replace(/-/g, '+').replace(/_/g, '/');
+      const pad = s.length % 4 ? '='.repeat(4 - (s.length % 4)) : '';
+      const bin = atob(s + pad);
+      const out = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+      return out;
+    },
+
+    /* Streams 的坑：`w.write()` / `w.close()` 返回的 promise 在流报错时会 **reject**。
+     * 只 await 读取端（Response）而不管写入端，坏输入就会变成 unhandled rejection，
+     * 在 Node 里直接把进程打死、在页面上变成控制台红字（2.0.16.8 单测踩到：Z_DATA_ERROR）。
+     * 所以两端都接住，统一成一句人话。 */
+    async _gzip(text) {
+      if (typeof CompressionStream !== 'function') throw new Error('这个浏览器不支持压缩（CompressionStream），生成不了分享码');
+      const cs = new CompressionStream('gzip');
+      const w = cs.writable.getWriter();
+      let buf = null;
+      let bad = null;
+      const sink = new Response(cs.readable).arrayBuffer().then((b) => { buf = b; }, (e) => { bad = bad || e; });
+      try {
+        await w.write(new TextEncoder().encode(text));
+        await w.close();
+      } catch (e) {
+        bad = bad || e;
+      }
+      await sink;
+      if (bad) throw new Error('压缩失败：' + ((bad && bad.message) || bad));
+      return new Uint8Array(buf);
+    },
+
+    async _gunzip(bytes) {
+      if (typeof DecompressionStream !== 'function') throw new Error('这个浏览器不支持解压（DecompressionStream），导入不了分享码');
+      const ds = new DecompressionStream('gzip');
+      const w = ds.writable.getWriter();
+      let text = '';
+      let bad = null;
+      const sink = new Response(ds.readable).text().then((t) => { text = t; }, (e) => { bad = bad || e; });
+      try {
+        await w.write(bytes);
+        await w.close();
+      } catch (e) {
+        bad = bad || e;
+      }
+      await sink;
+      if (bad) throw new Error('分享码内容坏了（解压失败）；确认整段都复制过来了，没有缺字符');
+      return text;
+    },
+
+    /** 生成分享码（永远回执对象，UI 不用 try/catch） */
+    async exportShare(config) {
+      try {
+        const text = this.sharePayload(config);
+        const bytes = await this._gzip(text);
+        return { ok: true, code: this.SHARE_PREFIX + this._b64u(bytes), bytes: bytes.length, jsonBytes: text.length };
+      } catch (e) {
+        return { ok: false, error: String((e && e.message) || e) };
+      }
+    },
+
+    /** 解分享码 → { text, data }；不是分享码/内容坏了都抛人话错误 */
+    async decodeShare(code) {
+      const s = String(code == null ? '' : code).trim().replace(/\s+/g, '');
+      if (s.indexOf(this.SHARE_PREFIX) !== 0) throw new Error('这不是分享码（应以 ' + this.SHARE_PREFIX + ' 开头）');
+      let text = '';
+      try {
+        text = await this._gunzip(this._unb64u(s.slice(this.SHARE_PREFIX.length)));
+      } catch (e) {
+        throw new Error('分享码内容坏了（解压失败）；确认整段都复制过来了，没有缺字符');
+      }
+      let data = null;
+      try { data = JSON.parse(text); } catch (e) { throw new Error('分享码内容坏了：' + ((e && e.message) || e)); }
+      if (!data || typeof data !== 'object' || !data.meta || data.meta.app !== 'keyword-highlighter') {
+        throw new Error('这段文本不是本插件的分享码');
+      }
+      return { text: text, data: data };
+    },
+
+    /** 导入分享码（与 importJSON 同一条写盘路径，合并/覆盖口径完全一致） */
+    async importShare(code, opts, config) {
+      const dec = await this.decodeShare(code);
+      return this.importJSON(dec.text, opts, config);
     },
 
     /**

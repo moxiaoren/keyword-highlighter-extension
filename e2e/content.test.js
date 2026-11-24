@@ -1953,6 +1953,43 @@ module.exports = async function runContent(ctx) {
     truthy(lb.hasOpenBtn, '应保留「在新标签页打开」兜底入口');
     eq(api.context.pages().length, before, '点图片**不该**新开标签页');
 
+    /* 【2.0.16.8 · m21072】用户要一边看大图一边对面板里的重要笔记 ⇒ 遮罩不压暗、面板可点、有显式关闭。
+     * 这三条一起才算数：只透明但层级仍压着面板，透明遮罩照样吃掉面板的点击。 */
+    const lbNoDim = await page.evaluate(() => {
+      const sr = document.getElementById('kh-note-lightbox').shadowRoot;
+      const cs = getComputedStyle(sr.querySelector('.kh-lb'));
+      const m = /rgba?\(([^)]+)\)/.exec(cs.backgroundColor);
+      const p = m ? m[1].split(',').map((x) => parseFloat(x)) : [0, 0, 0, 1];
+      const x = sr.querySelector('.kh-lb-close');
+      const host = document.getElementById('kh-important-note-host');
+      const wrap = host && host.shadowRoot && host.shadowRoot.querySelector('.khin-wrap');
+      let inPanel = false;
+      let panelTop = '';
+      if (wrap) {
+        const r = wrap.getBoundingClientRect();
+        const top = document.elementFromPoint(Math.round(r.left + Math.min(40, r.width / 2)), Math.round(r.top + 14));
+        panelTop = top ? (top.id || top.className || top.tagName) : 'null';
+        inPanel = top === host;   // 影子根里的元素会被 retarget 成宿主
+      }
+      return {
+        bg: cs.backgroundColor, alpha: p.length === 4 ? p[3] : 1,
+        hasX: !!x, xText: x ? String(x.textContent || '').trim() : '',
+        hasWrap: !!wrap, panelTop: panelTop, inPanel: inPanel
+      };
+    });
+    console.log('        不压暗/面板层级: ' + JSON.stringify(lbNoDim));
+    eq(lbNoDim.alpha, 0, '遮罩背景必须完全透明（压暗之后面板里的对照信息就看不见了），实际 ' + lbNoDim.bg);
+    truthy(lbNoDim.hasX && lbNoDim.xText, '工具条里要有显式关闭按钮（不能只靠 Esc 与点空白）');
+    truthy(lbNoDim.hasWrap, '装置页的面板应是打开态，否则下面那条「面板可点」就是空断言');
+    truthy(lbNoDim.inPanel, '灯箱打开时面板中心的最顶层元素必须是面板宿主（否则点不到面板），实际 ' + lbNoDim.panelTop);
+    const lbHidden = () => page.evaluate(() => document.getElementById('kh-note-lightbox').shadowRoot.querySelector('.kh-lb').hidden);
+    await page.evaluate(() => document.getElementById('kh-note-lightbox').shadowRoot.querySelector('.kh-lb-close').click());
+    await page.waitForTimeout(250);
+    truthy(await lbHidden(), '点「关闭」应关掉灯箱');
+    await page.mouse.click(img.x, img.y);
+    await page.waitForTimeout(300);
+    falsy(await lbHidden(), '关闭后应能再次点图打开（下面还要继续测拖动/翻页/遮罩关闭）');
+
     /* v1.99.99.11 用户口径："放大图点击图片就退出大图模式，这不符合预期，点击图片要支持拖动，
      * 点击范围外区域才退出。" → 点图片=拖动/查看（不退出），点遮罩才算关闭。 */
     const lbImg = await page.evaluate(() => {
