@@ -1604,7 +1604,7 @@
     pumping = true;
     let n = 0;
     try {
-      for (const it of items.values()) {
+      for (const it of orderedForOcr()) {
         if (quotaUsed() >= MAX_INFLIGHT) break;
         if (it.state !== 'idle') continue;
         if (submit(it)) n += 1;             // 失败的会在 submit 内部落到 fail/blocked，不会在这里打转
@@ -1820,7 +1820,7 @@
         /* 【2.0.11】比对结论与命中一次算完：同一张图上 `#比` 的项全在＝一致 */
         /* 【用户 m07238】比对值可能是**同一规则里另一张图**（证书）刚进表的：这轮结果到达后
          * 重算整条规则的 `cmpReqs`+`cmp`，别沿用建条目时那份（那时证书还没识别完 ⇒ 「没取到值」）。 */
-        recordCmpForRule(it.rule);
+        refreshCmp(it);
         it.lineList = (it.kind === 'pdf') ? pdfLineList : (msg.lineList || []);
         it.ocrMs = msg.ocrMs || msg.ms;
         if (it.kind === 'pdf') {
@@ -2048,6 +2048,34 @@
     return el;
   }
 
+  /* 【2.0.16.11 · 用户 m23287】只把两类证书提到识别队首：「计算机软件著作权登记证书」和
+   * 「APP 电子版权证书」（含站点叫法「APP 电子版权认证证书」）。著作权人/登记号是从这两类图里
+   * 抓进表的，授权书又要拿它们当比对基准 —— 授权书先出结果时基准还没进表，只能先报「没取到值」，
+   * 再等结果到达后重算。让证书先跑，授权书主动排最后，多数页面上一次就能算对。
+   * ★ 只认这两类：别的「证书 / 证明」一律不动（用户 m23304 明确「不是所有证书类」）。 */
+  const CERT_FIRST_RX = /计算机软件著作权登记证书|软件著作权登记证书|APP\s*电子版权|电子版权认证证书|电子版权证书/i;
+  const CERT_LAST_RX = /授权书/;
+  /** 排队时能拿到的「这是哪份文档」线索：图片字段名 / 规则名 / 图片命中词 / 地址（解码后） */
+  function docHintOf(it) {
+    const meta = (it && it.rule && it.rule.meta) || {};
+    let src = String((it && it.src) || '');
+    try { src = decodeURIComponent(src); } catch (e) { /* 原样用 */ }
+    return [it && it.label, meta.display, meta.imgOcrKeyword, it && it.keyword, src].join(' ');
+  }
+  /** 0 = 两类证书（最先）／1 = 普通图／2 = 授权书（最后） */
+  function certRank(it) {
+    const hint = docHintOf(it);
+    if (CERT_LAST_RX.test(hint)) return 2;
+    if (CERT_FIRST_RX.test(hint)) return 0;
+    return 1;
+  }
+  /** 提交顺序：证书 → 普通 → 授权书；同档保持建表顺序（Array.sort 在 V8 是稳定的） */
+  function orderedForOcr() {
+    const list = Array.from(items.values());
+    list.sort((a, b) => certRank(a) - certRank(b));
+    return list;
+  }
+
   function build(cfg, ctx, hits) {
     const next = new Map();
     for (const anchor of anchorsFor(ctx, hits)) {
@@ -2225,7 +2253,8 @@
     }
     items = next;
     /* 采集完再统一排队（先建表再提交，避免结果回来时条目还没建） */
-    for (const it of items.values()) {
+    /* 【2.0.16.11 · 用户 m23287】证书图先提交：授权书出结果时基准已进表，不必事后整体重算 */
+    for (const it of orderedForOcr()) {
       if (it.state === 'idle') submit(it, cfg);
     }
   }
@@ -2321,15 +2350,24 @@
     return out;
   }
 
-  /** 【用户 m07238】每张图的结果都会影响别的图的比对结论（证书进表 → 授权书比对），
-   * 所以一笔结果到达就重算**所有已 done 条目**的取值（`cmpReqs`）与判决（`cmp`）。
-   * 【2.0.16.10 · 用户 m22896】不再只看「同一条规则」：证书图与授权书常常分属两条抓取字段规则
-   * （证书在「著作权人」字段、授权书在「资质证书」字段），按规则过滤时授权书永远等不到基准，
-   * 表现就是「明明都抓到了，却说没取到值」。每条用自己的 `it.rule` 快照算，互不串味。 */
-  function recordCmpForRule(rule) {
+  /** 还没拿到基准值的比对项（只有这类会因为「新证书进表」改变结论） */
+  function cmpUnsettled(it) {
+    const cmp = it && it.cmp;
+    if (!cmp || !Array.isArray(cmp.items)) return false;
+    for (const x of cmp.items) if (x && x.kind === 'need' && !x.values) return true;
+    return false;
+  }
+
+  /** 【用户 m07238】一张图的结果会影响别的图的比对（证书进表 → 授权书比对）。
+   * 【2.0.16.10 · 用户 m22896】跨规则也要看：证书图与授权书常常分属两条抓取字段规则。
+   * 【2.0.16.11 · 用户 m23287】不再「每笔结果都重算全部 done 条目」：证书已排到队首，
+   * 授权书自己的结果到达时基准基本就绪；兜底只补两种 —— 刚出来的这一条，以及还没通过的
+   * （`cmp.items` 里有 need 且 values === 0）。已通过的条目不再重新抽行解析文本，省掉重复开销。 */
+  function refreshCmp(afterIt) {
     for (const it of allItems()) {
       if (!it || it.state !== 'done' || !it.text) continue;
-      const r = it.rule || rule;
+      if (it !== afterIt && !cmpUnsettled(it)) continue;
+      const r = it.rule || (afterIt && afterIt.rule);
       if (!r) continue;
       try {
         it.cmpReqs = cmpReqs(r, it.label, it.anchorCell || null, it.text);
@@ -2376,6 +2414,8 @@
         states: Array.from(items.values()).map((i) => i.key + ':' + i.state)
       };
     },
+    /** 【2.0.16.11 · 用户 m23287】排队优先级：诊断/回归用（0=两类证书最先，2=授权书最后） */
+    certRank: certRank,
     classify: classify,
     /** 大图灯箱用：认一张图 / 取这张图已认出的文字（2.0.2.15 需求①）
      *  `linesOf` = 同一份结果的**结构化行**（含单元格坐标，2.0.2.19 需求②⑤ 排版用） */

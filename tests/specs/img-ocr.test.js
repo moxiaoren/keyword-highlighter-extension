@@ -839,4 +839,35 @@ module.exports = async function run() {
     truthy((global.__OCR_SENT__ || []).length > afterCancel, '★ 取消不冻 10 分钟：重建后必须重新提交（否则后退回来这张图永远不识别）');
     KH.features.get('img-ocr').clear(null, { reason: 'destroy' });
   });
+
+  /* 【2.0.16.11 · 用户 m23287】两类证书先识别：授权书要拿证书图进表的「著作权人/登记号」当基准，
+   * 授权书先出结果只能先报「没取到值」，再靠结果到达后的重算去补 —— 让证书先跑就从源头避免。
+   * ★ 只认这两类（用户 m23304「不是所有证书类」）：别的证书（这里拿「商标注册证」验）不提前。 */
+  await test('★ 2.0.16.11 两类证书排到 OCR 队首、授权书排最后（只认软著证书与 APP 电子版权）', () => {
+    KH.features.get('img-ocr').clear(null, { reason: 'destroy' });
+    eq(O.certRank({ label: '计算机软件著作权登记证书' }), 0, '软著证书最先');
+    eq(O.certRank({ label: 'APP电子版权认证证书' }), 0, 'APP 电子版权（认证）证书最先');
+    eq(O.certRank({ label: '计算机软件著作权登记证书授权书' }), 2, '授权书即便带证书名也排最后');
+    eq(O.certRank({ label: '商标注册证' }), 1, '★ 只认这两类：别的证书不提前');
+    const before = (global.__OCR_SENT__ || []).length;
+    /* 锚点的标签格文字必须等于字段名：cellsForHit 就是按「字段名 == 行内标签文字」找值格的，
+     * 四个锚点都写「应用截图」只会认出默认字段那一个（第一版测试装置就栽在这）。 */
+    const mk = (tag, field, kw) => {
+      const a = anchorWith([srcImg('data:image/png;base64,iVBORw0KGgo' + tag)], { fetchLabels: field, imgOcrKeyword: kw });
+      a.labelCell.textContent = field;
+      return a;
+    };
+    const auth = mk('PRIOauth', '计算机软件著作权登记证书授权书', '登记号');
+    const cert = mk('PRIOcert', '计算机软件著作权登记证书', '登记号');
+    const app = mk('PRIOapp', 'APP电子版权认证证书', '认证号');
+    const normal = mk('PRIOnormal', '应用截图', '华为');
+    /* 故意按「授权书 → 普通 → 应用证书 → 软著证书」的顺序建表：修好后实际发出去的顺序必须反过来 */
+    O.build({}, {}, [hitOf(auth), hitOf(normal), hitOf(app), hitOf(cert)]);
+    eq(O.items().length, 4, '4 张图都建了条目（并发 4，全部一次发出）');
+    const order = (global.__OCR_SENT__ || []).slice(before).map((m) => String(m.src || ''));
+    eq(order.length, 4, '四张都发出了');
+    truthy(order[0].indexOf('PRIOcert') >= 0 || order[0].indexOf('PRIOapp') >= 0, '★ 第一张必须是两类证书之一');
+    truthy(order[order.length - 1].indexOf('PRIOauth') >= 0, '★ 授权书必须排在最后');
+    KH.features.get('img-ocr').clear(null, { reason: 'destroy' });
+  });
 };

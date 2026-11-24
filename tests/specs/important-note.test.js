@@ -776,7 +776,11 @@ module.exports = async function run() {
     /* 【2.0.16.10 · 用户 m22896】证书图与授权书分属两条规则时，重算与基准都要跨规则：
      * 只认本规则 ⇒ 授权书永远「没取到值」。 */
     const ocrSrc = read('src/features/img-ocr.js');
-    truthy(ocrSrc.indexOf('const r = it.rule || rule;') >= 0, '★ 结果到达后按各自规则重算全部条目');
+    /* 【2.0.16.11 · 用户 m23287】定点补算取代全量重算；队列按证书优先 */
+    truthy(ocrSrc.indexOf('function refreshCmp(afterIt)') >= 0, '★ 结果到达后只做定点补算（不再全量重算）');
+    truthy(ocrSrc.indexOf('cmpUnsettled(it)') >= 0, '★ 只重算还没拿到基准的条目');
+    truthy(ocrSrc.indexOf('function recordCmpForRule') < 0, '★ 全量重算入口应当已经删除');
+    truthy(ocrSrc.indexOf('orderedForOcr()') >= 0, '★ 提交队列走优先级顺序');
     truthy(ocrSrc.indexOf('alt.length === 1') >= 0, '★ 跨规则找基准只接受唯一值（两个不同值不猜）');
   });
   await test('★ T38-3 反向：点非 IMG、或 IMG 没有 src ⇒ 不许开灯箱（同时证明上面那条不是空断言）', () => {
