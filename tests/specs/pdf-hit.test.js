@@ -152,6 +152,25 @@ module.exports = async function run() {
     truthy(/KH\.Fetch\.applyPdfStash/.test(ct), '★ 启动后要真的调一次');
   });
 
+  /* 【2.0.16.8 · 用户 m22343】容器里要显示 PDF 本体，不再只是占位牌 ⇒ 后台必须能把字节交给页面侧。
+   * 页面脚本拿不到跨域字节（CORS/登录态都在后台），所以走一条专线：内容脚本发地址 → 后台带 cookie 取 → base64 回。 */
+  await test('★ 2.0.16.8 容器里放 PDF 本体：后台带 cookie 取字节、限大小、走专线回页面', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const root = path.join(__dirname, '..', '..');
+    const proto = fs.readFileSync(path.join(root, 'src', 'core', 'protocol.js'), 'utf8');
+    truthy(/PDF_BYTES: 'kh:pdf:bytes'/.test(proto), '★ 协议常量（内容脚本与后台各写一个字面量就会对不上）');
+    const sw = fs.readFileSync(path.join(root, 'background', 'service-worker.js'), 'utf8');
+    truthy(/\[MSG\.PDF_BYTES\]:/.test(sw), '★ HANDLERS 里要挂上这条消息，否则页面侧永远等不到字节');
+    const at = sw.indexOf('async function pdfBytes(');
+    truthy(at >= 0, '要有 pdfBytes 本体（没匹配到说明它被重写了）');
+    const fn = sw.slice(at, sw.indexOf('\n}\n', at));
+    truthy(/credentials: 'include'/.test(fn), '★ 必须带 cookie 取：授权书/合同常要登录态，页面侧 fetch 拿不到');
+    truthy(/PDF_INLINE_MAX/.test(fn) && /PDF_INLINE_MS/.test(fn), '★ 大小上限与超时都要有（大文件不许卡死消息通道）');
+    truthy(/b64: b64OfBytes\(new Uint8Array\(buf\)\)/.test(fn), '★ 回的是 base64 文本（runtime 消息不能直接把 ArrayBuffer 交给内容脚本）');
+    truthy(/function b64OfBytes\(u8\) \{[\s\S]{0,200}?btoa\(/.test(sw), '★ base64 转换要有本体（分块拼接，别一行 apply 大数组炸栈）');
+    truthy(/取不到这份 PDF/.test(fn) && /太大/.test(fn), '取不到时要回人话原因（页面侧原样显示在占位牌上）');
+  });
   suite('2.0.6.5 需求②：PDF 占位 — 认引用与占位符');
 
   await test('★ 四种引用写法都认，`.pdf` 后面带查询串/锚点也认', () => {

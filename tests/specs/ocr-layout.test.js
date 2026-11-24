@@ -462,4 +462,16 @@ module.exports = async function run() {
         '不写后缀就照抓取字段口径取整格（只剔空白、不分大小写）');
     });
 
+    /* 【2.0.16.9 · 用户 m22485】「ocr结果里面没有 a公司（开发者抓到的内容）」——
+     * 缺值必须能说清**哪段值**、以及它**来自哪个字段**，否则面板只能报「没有开发者」。 */
+    await test('★ 2.0.16.9 动态判据要带出「值 → 抓取字段名」的映射（用户 m22485）', () => {
+      const anchor = row1('开发者', 'a公司');
+      const rule = { meta: { imgOcr: true, imgOcrKeyword: '', imgOcrNeed: '开发者', fetchLabels: '开发者' } };
+      const ni = IO.needInfo(anchor, rule);
+      eq(JSON.stringify(ni.values), JSON.stringify(['a公司']), '（前提）值取到了');
+      eq(ni.valueFrom['a公司'], '开发者', '★ 值 a公司 要说得出是「开发者」抓到的');
+      eq(JSON.stringify(IO.judgeInfo(rule, '开发者：别的公司', ni.values).missingValues), JSON.stringify(['a公司']),
+        '★ 缺的仍是值本身（面板据此拼出「图上没有 a公司（开发者抓到的内容）」）');
+    });
+
 };

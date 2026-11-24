@@ -110,6 +110,10 @@
     /* 【2026-11-18 用户口径①】点 PDF 小标要打开**正文**：内容脚本开新标签不稳（站点可能拦），
      * 统一走后台 chrome.tabs.create（payload { url }）。 */
     PDF_OPEN: 'kh:pdf:open',
+    /* 【2.0.16.8 · 用户 m22343】PDF 本体也在当页容器里看：内容脚本要不到跨域字节（页面 CORS），
+     * 由后台带 cookie 取回后以 base64 回传（payload { url } → { ok, b64, bytes }）。
+     * 只读、不落盘；调用方用它建 blob: 交给浏览器内建 PDF 阅读器。 */
+    PDF_BYTES: 'kh:pdf:bytes',
     /* 【2.0.16.4 · 用户 m19483】只留太极AI：网页对话那三条（AI_WEB_OPEN/PROBE/NEW）已删除。
      * 这三条只服务设置页（登录 / 模型清单 / 退出），对话本身走 AI_CHAT，一律不开标签页。 */
     AI_TAIJI_LOGIN: 'kh:ai:taijiLogin',

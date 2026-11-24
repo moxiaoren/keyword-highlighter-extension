@@ -132,6 +132,9 @@ module.exports = async function run() {
       const r2 = O.cmpJudge(rule(''), '开发者：b公司', '截图', q2);
       eq(r2.items[0].values, 1, '★ 取到值只是文字不同 ⇒ 面板说「图上没有」');
       eq(r2.state, 'diff');
+      /* 【2.0.16.9 · 用户 m22485】只报字段名（「没有开发者」）用户不知道该拿什么去核，
+       * 必须把**试过的值**带出去 ⇒ 面板说「图上没有 a公司（开发者抓到的内容）」。 */
+      eq(JSON.stringify(r2.items[0].tried), JSON.stringify(['a公司']), '★ 失败的比对项要带出试过的值');
     });
 
     await test('动态项一个字都没取到 ⇒ 不算一致（缺的就是它，不许当成「没配」）', () => {

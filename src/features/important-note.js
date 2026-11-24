@@ -640,11 +640,21 @@
     const miss = (it && Array.isArray(it.needMissing)) ? it.needMissing : [];
     const gone = (it && Array.isArray(it.needMissingValues)) ? it.needMissingValues : [];
     if (miss.length) return (V.imgMissField || '') + '：' + miss.join('、');
-    if (gone.length) return (V.imgMissValue || '') + '：' + gone.join('、');
+    if (gone.length) {
+      /* 【2.0.16.9 · 用户 m22485】缺值要说「哪个值」+「谁抓到的」：只写「开发者」用户不知道该拿什么去核。 */
+      const from = (it && it.needValueFrom) || {};
+      const has = gone.filter((v) => from[v]);
+      const rest = gone.filter((v) => !from[v]);
+      const parts = [];
+      if (has.length) parts.push(has.map((v) => R(V.imgMissValueFrom, { value: v, field: from[v] })).join('；'));
+      if (rest.length) parts.push((V.imgMissValue || '') + '：' + rest.join('、'));
+      if (parts.length) return parts.join('；');
+    }
     if (!String((it && it.text) || '').trim()) return V.imgMissEmpty || '';
     /* 【2.0.16.1 · 用户 m18157】字认出来了、也没配动态判据，那唯一能解释「未命中」的就是
      * 「这条规则的命中词不在图上的文字里」。把词和字数摊开说，别让用户以为是 OCR 坏了。 */
-    const kw = String((it && it.keyword) || '').trim();
+    /* 【2.0.16.9 · 用户 m22485】回显命中词要**裸词**：`keyword` 带着 `#表`/`@字段` 等后缀，用户会以为词就那么写。 */
+    const kw = String((it && (it.keywordBare || it.keyword)) || '').trim();
     if (kw) return R(V.imgMissNoWord, { words: kw, n: String(it.text).length });
     return '';
   }
@@ -675,8 +685,22 @@
         .filter((x) => x && x.kind === 'need' && !x.ok && !(x.values > 0))
         .map((x) => (x && x.name) || '').filter(Boolean);
       const gone = miss.filter((n) => empty.indexOf(n) < 0);
+      /* 【2.0.16.9 · 用户 m22485】「有值但图上没有」要说出**试过哪些值**（`tried`）＋来源字段：
+       * 旧文案「图上没有开发者」把字段名当值，用户看不懂缺的到底是哪段字。 */
+      const triedLines = [];
+      const goneNames = [];
+      for (const x of (cmp.items || [])) {
+        if (!x || x.kind !== 'need' || x.ok) continue;
+        const nm = String(x.name || '');
+        if (!nm || empty.indexOf(nm) >= 0) continue;
+        const ts = (x.tried || []).filter(Boolean);
+        if (!ts.length) { goneNames.push(nm); continue; }
+        for (const v of ts.slice(0, 2)) triedLines.push(KH.OcrCopy.render(V.imgCmpDiffFrom, { value: v, field: nm }));
+      }
       const lines = [];
-      if (gone.length) lines.push(KH.OcrCopy.render(V.imgCmpDiffTip, { missing: gone.join('、') }));
+      if (triedLines.length) lines.push(triedLines.join('；'));
+      if (goneNames.length) lines.push(KH.OcrCopy.render(V.imgCmpDiffTip, { missing: goneNames.join('、') }));
+      if (!triedLines.length && !goneNames.length && gone.length) lines.push(KH.OcrCopy.render(V.imgCmpDiffTip, { missing: gone.join('、') }));
       if (empty.length) lines.push(KH.OcrCopy.render(V.imgCmpEmptyTip, { names: empty.join('、') }));
       if (lines.length) return lines.join('\n');
       return KH.OcrCopy.render(V.imgCmpDiffTip, { missing: (miss.length ? miss : names).join('、') });
@@ -1224,7 +1248,7 @@
      *   · 外壳只管分栏与圆角：标题栏（也是**拖动抓手**）与两个按钮固定，**滚动只在正文区**（.kh-lb-side-t）。 */
     .kh-lb-side {
       position: fixed; left: 0; top: 0; z-index: 3;
-      width: 340px; max-width: min(342px, calc(100vw - 16px));
+      width: 340px; max-width: calc(100vw - 16px); min-width: 220px; min-height: 140px;
       display: flex; flex-direction: column; overflow: hidden;
       border-radius: 12px; background: rgba(22,26,34,.97);
       border: 1px solid rgba(255,255,255,.22);
@@ -1232,6 +1256,12 @@
       color: #e8eef7; font-size: 12px; line-height: 1.5;
     }
     .kh-lb-side[hidden] { display: none !important; }
+    /* 【2.0.16.9 · 用户 m22479】右下角抓手：宽高都由用户自己拖，默认位固定不再跟着图走。 */
+    .kh-lb-side-rs { position: absolute; right: 0; bottom: 0; z-index: 4; width: 16px; height: 16px;
+      cursor: nwse-resize; touch-action: none; }
+    .kh-lb-side-rs::after { content: ''; position: absolute; right: 4px; bottom: 4px;
+      width: 7px; height: 7px; border-right: 2px solid rgba(255,255,255,.5);
+      border-bottom: 2px solid rgba(255,255,255,.5); }
     .kh-lb-side-hd {
       display: flex; align-items: center; gap: 8px;
       padding: 7px 8px 7px 10px; border-bottom: 1px solid rgba(255,255,255,.13);
@@ -1302,6 +1332,19 @@
     .kh-lb-pdfname {
       font-size: 12px; color: rgba(255,255,255,.72); max-width: 88%; text-align: center;
       word-break: break-all;
+    }
+    /* 【2.0.16.8 · 用户 m22343】PDF 本体进容器：字节由后台取回（带 cookie），这里用 blob: 交给
+     * 浏览器内建 PDF 阅读器渲染 —— 不引 pdf.js、零新增体积；取不到时退回上面的占位牌并写原因。 */
+    .kh-lb-pdfframe {
+      width: min(84vw, 900px); height: min(78vh, 860px);
+      border: 0; border-radius: 6px; background: #fff;
+      box-shadow: 0 12px 40px rgba(0,0,0,.45);
+      position: relative; z-index: 1;
+    }
+    .kh-lb-pdfframe[hidden] { display: none; }
+    .kh-lb-pdfstate {
+      font-size: 12px; line-height: 1.5; color: rgba(255,255,255,.72); max-width: 88%;
+      text-align: center; word-break: break-all;
     }
     /* 【已删】原来这里有一条 has-side 后代选择器（"全文栏出现就把图片收窄"）：
      *   · 它本来就是**死规则** —— 类挂在 .kh-lb 自身、不在它的祖先链上，选择器要求的后代关系
@@ -1430,7 +1473,8 @@
         '<button class="kh-lb-nav kh-lb-prev" type="button" title="上一张（←）" aria-label="上一张">‹</button>' +
         /* 【2.0.6.5 需求②】PDF 条目在灯箱里不渲染源文件（用户口径：无需展示 pdf 源文件），
          * 只摆一块占位牌，右侧全文栏照常给抽出来的全文与命中词。 */
-        '<div class="kh-lb-pdfbox" hidden><span class="kh-lb-pdfmark">PDF</span><span class="kh-lb-pdfname"></span></div>' +
+        '<div class="kh-lb-pdfbox" hidden><span class="kh-lb-pdfmark">PDF</span><span class="kh-lb-pdfname"></span><span class="kh-lb-pdfstate"></span></div>' +
+        '<iframe class="kh-lb-pdfframe" hidden title="PDF"></iframe>' +
         '<img class="kh-lb-img" alt="">' +
         '<button class="kh-lb-nav kh-lb-next" type="button" title="下一张（→）" aria-label="下一张">›</button>' +
         /* 全文栏（T46）：DOM 顺序 = 图 → 导航（‹/›）→ 浮层。浮层排在行内最后，与两个导航键共用
@@ -1445,6 +1489,7 @@
         '<button class="kh-lb-side-abtn kh-lb-side-x kh-lb-sidehide" type="button">×</button>' +
         '</div>' +
         '<div class="kh-lb-side-t" data-kh-lb-text="1"></div>' +
+        '<span class="kh-lb-side-rs"></span>' +
         '</div>' +
         '</div>' +
         '<div class="kh-lb-bar">' +
@@ -1466,6 +1511,12 @@
       const img = sr.querySelector('.kh-lb-img');
       const pdfBox = sr.querySelector('.kh-lb-pdfbox');
       const pdfName = sr.querySelector('.kh-lb-pdfname');
+      const pdfFrame = sr.querySelector('.kh-lb-pdfframe');
+      const pdfState = sr.querySelector('.kh-lb-pdfstate');
+      const MSG = (KH && KH.MSG) || {};
+      /* 【2.0.16.8 · m22343】每份 PDF 的字节缓存（src → { loading } / { url } / { error }）：
+       * 同一份反复开关不必重复下载；blob: 地址只在这次打开期间有效，close() 统一回收。 */
+      const pdfCache = (host._pdfCache = host._pdfCache || {});
       const prev = sr.querySelector('.kh-lb-prev');
       const next = sr.querySelector('.kh-lb-next');
       const idxEl = sr.querySelector('.kh-lb-idx');
@@ -1476,12 +1527,15 @@
       const sideLines = sr.querySelector('.kh-lb-side-n');
       const sideCopy = sr.querySelector('.kh-lb-copy');
       const sideClose = sr.querySelector('.kh-lb-sidehide');
+      const sideGrip = sr.querySelector('.kh-lb-side-rs');
       const sideBtn = sr.querySelector('.kh-lb-sidebtn');
       sr.querySelector('.kh-lb-side-h').textContent = KH.OcrCopy.VIEW.textPane;
       /* 「×」与工具条上的眼睛按钮是**同一个状态**（sideHidden），只是入口不同：
        * 悬停说明也取自同一对 VIEW 键，不另写一套中文。 */
       sideClose.title = KH.OcrCopy.VIEW.paneHide;
       sideClose.setAttribute('aria-label', KH.OcrCopy.VIEW.paneHide);
+      sideGrip.title = KH.OcrCopy.VIEW.paneResize;
+      sideGrip.setAttribute('aria-label', KH.OcrCopy.VIEW.paneResize);
       sideCopy.textContent = KH.OcrCopy.VIEW.paneCopy;
       sideCopy.title = KH.OcrCopy.VIEW.paneCopy;
       /* 当前这张图的 **OCR 原文**（条目上的 text，即服务端识别结果）—— 一键复制只认它。
@@ -1492,7 +1546,20 @@
        * 刻意做成闭包变量：挂 host 上会跨次开灯箱存活（host 是缓存的 DOM 宿主），
        * 存进扩展的持久化存储更会跨会话 —— 那都不是"临时收起全文"该有的生命周期。 */
       let sideHidden = false;
-      const close = () => { box.hidden = true; img.removeAttribute('src'); sideHidden = false; };
+      const close = () => {
+        box.hidden = true;
+        img.removeAttribute('src');
+        img.removeAttribute('alt');
+        if (pdfFrame) { pdfFrame.hidden = true; pdfFrame.removeAttribute('src'); }
+        /* 【2.0.16.8 · m22343】PDF 的 blob: 地址是这次打开才建的，关掉就地回收，别攒在内存里。 */
+        const cache = host._pdfCache || {};
+        for (const k in cache) {
+          const it = cache[k];
+          if (it && it.url) { try { URL.revokeObjectURL(it.url); } catch (e) { /* ignore */ } }
+          delete cache[k];
+        }
+        sideHidden = false;
+      };
       /** 平移夹紧：图可以摆到**整屏任意位置**，只保证「至少 LIGHTBOX_PAN_KEEP 像素仍在视口内」，
        * 所以怎么拖都不会把图丢掉（缩放变化后也要重夹，继续走它）。
        * 推导：图中心在原点、宽 w，平移 tx 后跨度是 [tx − w/2, tx + w/2]；要求至少 KEEP 像素仍落在
@@ -1538,6 +1605,34 @@
           stageEl.style.maxWidth = Math.round(roomLeft) + 'px';
         }
       };
+      /* 【2.0.16.8 · 用户 m22343】PDF 本体：后台带 cookie 取字节 → 页面侧建 blob: → 内建阅读器渲染。
+       * 取不到不抛（跨域/登录/过期都很常见）：把原因写进缓存，占位牌显示出来，右侧识别文字照常可读。 */
+      const loadPdf = (cur) => {
+        const src = String((cur && cur.src) || '');
+        if (!src || pdfCache[src]) return;
+        pdfCache[src] = { loading: true };
+        const runtime = (typeof chrome !== 'undefined' && chrome.runtime) ? chrome.runtime : null;
+        if (!runtime || typeof runtime.sendMessage !== 'function') {
+          pdfCache[src] = { error: KH.OcrCopy.VIEW.lbPdfFail };
+          return;
+        }
+        runtime.sendMessage({ type: MSG.PDF_BYTES, url: src }, (res) => {
+          if (runtime.lastError || !res || !res.ok || !res.b64) {
+            pdfCache[src] = { error: (res && res.error) || KH.OcrCopy.VIEW.lbPdfFail };
+          } else {
+            try {
+              const bin = atob(res.b64);
+              const u8 = new Uint8Array(bin.length);
+              for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+              pdfCache[src] = { url: URL.createObjectURL(new Blob([u8], { type: 'application/pdf' })) };
+            } catch (e) {
+              pdfCache[src] = { error: KH.OcrCopy.VIEW.lbPdfFail };
+            }
+          }
+          /* 回到当前帧重画：用户可能已经翻页、关掉再开，状态以缓存为准。 */
+          if (host._apply) host._apply();
+        });
+      };
       /* 状态 → 视图：图片地址/alt、张数、左右按钮显隐、缩放/旋转/平移 */
       const apply = () => {
         avoidPanel();
@@ -1547,13 +1642,39 @@
         /* 【2.0.6.5 需求②】PDF 条目没有可显示的页面（用户口径：无需展示 pdf 源文件），
          * 舞台换成占位牌，全文与命中仍然走右侧那一栏 —— 与图片共用同一套灯箱。 */
         const isPdf = !!(cur && cur.pdf);
-        pdfBox.hidden = !isPdf;
+        const pdfSt = (isPdf && cur && pdfCache[cur.src]) ? pdfCache[cur.src] : null;
+        const pdfReady = !!(pdfSt && pdfSt.url);
+        /* 【2.0.16.8 · m22343】有本体就摆本体（内建阅读器），没有才退回占位牌 + 状态句。 */
+        pdfBox.hidden = !isPdf || pdfReady;
+        pdfFrame.hidden = !pdfReady;
         img.hidden = isPdf;
         if (isPdf) {
           pdfName.textContent = String((cur && (cur.alt || cur.src)) || '');
+          pdfState.textContent = pdfSt
+            ? (pdfSt.url ? '' : (pdfSt.error || KH.OcrCopy.VIEW.lbPdfLoading))
+            : KH.OcrCopy.VIEW.lbPdfLoading;
+          if (pdfReady) {
+            if (pdfFrame.getAttribute('src') !== pdfSt.url) pdfFrame.setAttribute('src', pdfSt.url);
+          } else {
+            pdfFrame.removeAttribute('src');
+            loadPdf(cur);
+          }
           img.removeAttribute('src');
           img.removeAttribute('alt');
-        } else if (cur) {
+        } else if (pdfFrame && !pdfFrame.hidden) {
+          pdfFrame.hidden = true;
+          pdfFrame.removeAttribute('src');
+        }
+        if (!isPdf) {
+          /* 非 PDF：把上一份 PDF 的 blob 也放掉，别让内存跟着相册翻页越攒越多。 */
+          const c0 = host._pdfCache || {};
+          for (const k0 in c0) {
+            const i0 = c0[k0];
+            if (i0 && i0.url) { try { URL.revokeObjectURL(i0.url); } catch (e) { /* ignore */ } }
+            delete c0[k0];
+          }
+        }
+        if (!isPdf && cur) {
           img.setAttribute('src', cur.src);
           if (cur.alt) img.setAttribute('alt', cur.alt); else img.removeAttribute('alt');
         }
@@ -1643,18 +1764,17 @@
        *   · 纵向与图上下齐平、高度取图高（浮层自己滚，不撑破视口）；
        *   · 图还没解码完（rect 全 0，正是开灯箱那一刻的常态）⇒ 先按一个中庸高度摆上，
        *     解码后由 img 的 load 回调重摆一次（否则会拿 0 高摆出一条 120px 的窄条）。 */
+      /* 【2.0.16.9 · 用户 m22479】全文栏不再依托图片矩形：默认位固定在**视口右侧**，
+       * 宽/高/位置都由用户自己拖（右下角抓手 resize、标题栏拖动、双击标题栏回默认位）。
+       * 旧实现按 `.kh-lb-img` 矩形算，PDF 没有 <img> 时矩形全 0 ⇒ 栏被摆到 (72,12)，即 m22343 的「漂移」。 */
       const dockSide = () => {
-        const r = img.getBoundingClientRect();
-        const gap = 12;
-        const w = side.offsetWidth || 340;
         const vw = window.innerWidth, vh = window.innerHeight;
-        let x = r.right + gap + 48 + gap;
-        if (x + w > vw - gap) x = r.right - w;
-        x = Math.max(gap, Math.min(x, Math.max(gap, vw - w - gap)));
-        const y = Math.max(gap, Math.min(r.top, Math.max(gap, vh - 120)));
-        const h = Math.min(Math.max(120, r.height || 320), Math.max(120, vh - y - gap));
-        side.style.left = Math.round(x) + 'px';
-        side.style.top = Math.round(y) + 'px';
+        const custom = host._sideSize || null;
+        const w = Math.min(Math.max(220, custom ? custom.w : (side.offsetWidth || 340)), Math.max(220, vw - 24));
+        const h = Math.min(Math.max(140, custom ? custom.h : Math.min(560, vh - 128)), Math.max(140, vh - 24));
+        side.style.width = Math.round(w) + 'px';
+        side.style.left = Math.round(Math.max(12, vw - w - 24)) + 'px';
+        side.style.top = '88px';
         side.style.height = Math.round(h) + 'px';
       };
 
@@ -1689,8 +1809,35 @@
       paneHd.addEventListener('dblclick', (e) => {
         e.preventDefault();
         host._sideMoved = false;
+        host._sideSize = null;                  /* 双击也把尺寸一起回默认（用户 m22479） */
         dockSide();
       });
+
+      /* 【2.0.16.9 · 用户 m22479】右下角抓手：只改宽高，结果记进 `host._sideSize`，
+       * 之后翻页/apply() 不会把用户调好的尺寸推回默认。 */
+      let paneSize = null;
+      sideGrip.addEventListener('pointerdown', (e) => {
+        if (e.button != null && e.button !== 0) return;
+        const pr = side.getBoundingClientRect();
+        paneSize = { x: e.clientX, y: e.clientY, w: pr.width, h: pr.height };
+        e.preventDefault(); e.stopPropagation();
+        try { sideGrip.setPointerCapture(e.pointerId); } catch (err) { /* 拿不到捕获也不影响 move */ }
+      });
+      sideGrip.addEventListener('pointermove', (e) => {
+        if (!paneSize) return;
+        e.preventDefault(); e.stopPropagation();
+        const vw = window.innerWidth, vh = window.innerHeight;
+        const rl = side.getBoundingClientRect();
+        const w = Math.min(Math.max(220, paneSize.w + (e.clientX - paneSize.x)), Math.max(220, vw - rl.left - 8));
+        const h = Math.min(Math.max(140, paneSize.h + (e.clientY - paneSize.y)), Math.max(140, vh - rl.top - 8));
+        side.style.width = Math.round(w) + 'px';
+        side.style.height = Math.round(h) + 'px';
+        host._sideSize = { w: Math.round(w), h: Math.round(h) };
+      });
+      const endPaneSize = () => { paneSize = null; };
+      sideGrip.addEventListener('pointerup', endPaneSize);
+      sideGrip.addEventListener('pointercancel', endPaneSize);
+      sideGrip.addEventListener('lostpointercapture', endPaneSize);
       /* 图解码完才拿得到真实矩形 ⇒ 默认停靠要在 load 后再摆一次（首次打开那一刻 rect 还是 0）。 */
       img.addEventListener('load', () => {
         if (!box.hidden && !side.hidden && !host._sideMoved) dockSide();
@@ -1847,7 +1994,9 @@
       lbClose.addEventListener('click', (e) => { e.stopPropagation(); close(); });
       sr.querySelector('.kh-lb-open').addEventListener('click', (e) => {
         e.stopPropagation();                                // 别顺带把灯箱关了
-        const s = img.getAttribute('src');
+        /* 【2.0.16.8 · m22343】PDF 没有 img.src，逃生口必须按相册条目取地址，否则点了没反应。 */
+        const cur0 = (host._gallery || [])[host._idx || 0];
+        const s = (cur0 && cur0.pdf) ? String(cur0.src || '') : img.getAttribute('src');
         if (s) window.open(s, '_blank', 'noopener');
       });
       /* 键盘：只在灯箱真的开着时拦，避免影响页面自身行为 */
@@ -1877,6 +2026,7 @@
     host._tx = 0;
     host._ty = 0;
     host._sideMoved = false;                                // 全文栏每次打开都回到默认停靠位（需求 4）
+    host._sideSize = null;                                  // 用户调过的宽高也是本次打开期间的临时态（m22479）
     host._apply();
     host.shadowRoot.querySelector('.kh-lb').hidden = false;
     return true;

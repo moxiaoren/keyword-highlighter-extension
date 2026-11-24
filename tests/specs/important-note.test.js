@@ -728,6 +728,45 @@ module.exports = async function run() {
     truthy(src.indexOf('VIEW.lbClose') >= 0, '关闭按钮的文案必须走 ocr-copy 单源（门禁：面板文案不许硬编码）');
   });
 
+
+  /* 【2.0.16.8 · 用户 m22343】反馈两点：①容器里是占位牌不是 PDF 本体；②PDF 的识别文字栏漂到左上角。
+   * 本体：iframe + 后台取字节建 blob:；
+   * 【2.0.16.9 · 用户 m22479】全文栏最终改成**固定默认位**（视口右侧）——不量任何图片/PDF 矩形，
+   * 宽高由用户拖右下角抓手自己定 ⇒ 上面那条「漂移」从根上消失。 */
+  await test('★ 2.0.16.8/2.0.16.9 容器里放 PDF 本体，全文栏默认位固定、不跟图矩形走（m22343 / m22479）', () => {
+    const src = read('src/features/important-note.js');
+    truthy(/\.kh-lb-pdfframe \{[\s\S]{0,80}?width: min\(84vw, 900px\); height: min\(78vh, 860px\);/.test(src),
+      '★ 本体用一个有明确尺寸的 iframe（尺寸不定时内建阅读器会塌成一条）');
+    truthy(src.indexOf('class="kh-lb-pdfframe" hidden') >= 0, '★ 默认 hidden：没有字节时不摆空白 iframe');
+    truthy(src.indexOf('kh-lb-pdfstate') >= 0, '占位牌里要有状态句（正在打开/为什么打不开）');
+    truthy(/type: MSG\.PDF_BYTES, url: src/.test(src), '★ 走专线拿字节（页面侧自己 fetch 跨域拿不到）');
+    truthy(/URL\.createObjectURL\(new Blob\(\[u8\], \{ type: 'application\/pdf' \}\)\)/.test(src),
+      '★ 字节要在页面侧转 blob: 再喂 iframe（站点 URL 直接塞 iframe 会被 X-Frame-Options 挡）');
+    truthy(/URL\.revokeObjectURL\(it\.url\)/.test(src), '★ 关灯箱要回收 blob（不然每次开关都漏一份 PDF 内存）');
+    /* 【2.0.16.9 · m22479】漂移的根治：默认位固定在视口右侧，不再量任何舞台矩形。 */
+    truthy(src.indexOf('const stageEl = (!img.hidden') < 0,
+      '★ 不许再按 img/pdf 的矩形摆全文栏（PDF 时矩形全 0 就是漂到左上角的根因）');
+    truthy(/const custom = host\._sideSize \|\| null;/.test(src),
+      '★ 宽高优先用用户自己拖出来的 `_sideSize`');
+    truthy(/side\.style\.top = '88px';/.test(src), '★ 默认位固定（视口右侧 top:88），与图片矩形无关');
+    truthy(src.indexOf('kh-lb-side-rs') >= 0, '★ 右下角要有调整宽高的抓手');
+    truthy(src.indexOf('VIEW.paneResize') >= 0, '★ 抓手文案走 ocr-copy 单源');
+    /* 【2.0.16.9 · 用户 m22485】没有命中/比对失败时，文案要说「哪个值、谁抓到的」，
+     * 命中词回显**裸词**（`a公司`，不是 `a公司#表`）。 */
+    truthy(src.indexOf('it.needValueFrom') >= 0, '★ 动态缺值要用「值 → 字段名」映射');
+    truthy(src.indexOf('V.imgMissValueFrom') >= 0, '★ 缺值文案走单源模板');
+    truthy(src.indexOf('x.tried') >= 0, '★ 比对缺项要读试过的值');
+    truthy(src.indexOf('V.imgCmpDiffFrom') >= 0, '★ 比对缺值文案走单源模板');
+    truthy(src.indexOf('it.keywordBare || it.keyword') >= 0, '★ 命中词回显裸词，不带 #表 等后缀');
+    const copy = read('src/ui/ocr-copy.js');
+    truthy(copy.indexOf('imgMissValueFrom:') >= 0, '文案单源要有 imgMissValueFrom');
+    truthy(copy.indexOf('imgCmpDiffFrom:') >= 0, '文案单源要有 imgCmpDiffFrom');
+    truthy(copy.indexOf('paneResize:') >= 0, '文案单源要有 paneResize');
+    /* 「在新标签页打开」原先只读 img.src，PDF 条目上点了没反应。 */
+    truthy(/const cur0 = \(host\._gallery \|\| \[\]\)\[host\._idx \|\| 0\];/.test(src),
+      '★ 逃生口要从相册条目取地址（img 在 PDF 条目上没有 src）');
+    truthy(/cur0 && cur0\.pdf\) \? String\(cur0\.src/.test(src), '★ PDF 条目要用自己的 src');
+  });
   await test('★ T38-3 反向：点非 IMG、或 IMG 没有 src ⇒ 不许开灯箱（同时证明上面那条不是空断言）', () => {
     const p = shadowPanel();
     p.ensure(document);

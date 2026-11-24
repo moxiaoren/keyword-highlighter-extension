@@ -31,7 +31,10 @@ const PLACEHOLDERS = ['n', 'host', 'matched',
   /* 【2.0.11 · 比对】一张图上勾了「比对」的项指名道姓缺哪几个（`cmpBadgeDiff` / `imgCmpDiffTip`） */
   'missing',
   /* 【2.0.16.1 · 用户 m18157】有字却没命中时把「在找哪个词」说出来（`imgMissNoWord` 的 {words}） */
-  'words'];
+  'words',
+  /* 【2.0.16.9 · 用户 m22485】「图上没有 a公司（开发者抓到的内容）」：
+   * {value}=页面抓到的值，{field}=提供这个值的字段名（`imgMissValueFrom` / `imgCmpDiffFrom`）。 */
+  'value', 'field'];
 
 module.exports = async function run() {
   const { KH } = require('../bootstrap');

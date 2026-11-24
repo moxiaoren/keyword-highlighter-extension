@@ -785,6 +785,17 @@
     return '';
   }
 
+  /** 【2.0.16.9 · 用户 m22485】面板回显「图上没有命中词 X」时用的**裸词**：
+   * `imgOcrKeyword` 原串带着 `@字段` 作用域与 `#表`/`!` 等后缀，直接回显会让用户以为
+   * 词的写法就是「a公司#表」。按这张图所属字段取该字段的词，与命中判定同一份实现。
+   * @returns {string} 多个词用「、」连接；没有静态命中词时为空串
+   */
+  function bareHitWords(raw, field, rule) {
+    let s = '';
+    try { s = stripKvMarks(scopedHitRaw(raw, field, scopeKnown(rule))); } catch (e) { s = ''; }
+    return String(s || '').replace(/\|/g, '、').replace(/\s+/g, ' ').trim();
+  }
+
   /** 比对项的字段名（`登记号@字段#比` → `登记号`），与 `needSpecs` 同一套解析 */
   function cmpNameOf(rawSpec) {
     const raw = String(rawSpec || '').trim();
@@ -1020,7 +1031,9 @@
         }
       }
       /* `values` 带出去：面板要区分「图上有值但文字不同」与「这个字段根本没取到值」 */
-      items.push({ name: r.name, kind: r.kind, ok: ok, values: (r.kind === 'need' ? vals.length : 0) });
+      /* 【2.0.16.9 · 用户 m22485】`tried` 带出**试过的值**：只说「图上没有开发者」用户不知道该拿什么去核，
+       * 要说「图上没有 a公司（开发者抓到的内容）」。 */
+      items.push({ name: r.name, kind: r.kind, ok: ok, values: (r.kind === 'need' ? vals.length : 0), tried: (r.kind === 'need' ? vals.slice(0, 3) : []) });
     }
     const missing = items.filter((i) => !i.ok).map((i) => i.name);
     return { state: missing.length ? 'diff' : 'same', items: items, missing: missing };
@@ -1105,7 +1118,7 @@
     const known = scopeKnown(rule);
     const specs = needSpecs(meta.imgOcrNeed, field, known, !!(opts && opts.withCmp));
     const want = specs.map((s) => s.label);
-    const info = { values: [], want: want, missing: [], weak: [], fromExtra: [] };
+    const info = { values: [], want: want, missing: [], weak: [], fromExtra: [], valueFrom: {} };
     if (!want.length) return info;                    // 留空即旧行为：没有动态判据
     const Fetch = KH.Fetch || {};
     const TN = KH.TextNorm;
@@ -1187,7 +1200,7 @@
      * （面板看着像「连字段名都要图里有」，`#表` 又被这条误报整条拦掉）。这里把
      * 「整格就是一个已配置字段裸名」的格剔掉 —— 只比裸名，不比值。 */
     const labelSet = known.map((n) => (TN ? TN.keyOf(n) : String(n).replace(WHITE_ALL, '').toLowerCase())).filter(Boolean);
-    const pushValue = (rawVal) => {
+    const pushValue = (rawVal, fromLabel) => {
       const src = String(rawVal == null ? '' : rawVal);
       /* 【2.0.8.18】这里存的是**展示形**（去空白 + 小写，与笔记表显示的值同口径），不是折叠形：
        * 面板要拿它显示「图上应有：北京星河科技（」，若把全角括号折成半角，用户就与图对不上。
@@ -1199,6 +1212,9 @@
       if (outKeys.indexOf(k) >= 0) return false;         // 只按"是否同一个值"去重（全半角不算两个）
       outKeys.push(k);
       out.push(shown);
+      /* 【2.0.16.9 · 用户 m22485】记下「这个值是哪个字段抓到的」：面板要说
+       * 「图上没有 a公司（开发者抓到的内容）」，只报字段名等于没说。 */
+      if (fromLabel && !info.valueFrom[shown]) info.valueFrom[shown] = String(fromLabel);
       return true;
     };
     for (const en of entries) {
@@ -1220,7 +1236,7 @@
           const plain = (typeof Fetch.stripAllPlaceholders === 'function')
             ? Fetch.stripAllPlaceholders(raw)
             : ((typeof Fetch.stripImgPlaceholders === 'function') ? Fetch.stripImgPlaceholders(raw) : raw);
-          pushValue(plain);
+          pushValue(plain, bare);
         }
       }
     }
@@ -1242,7 +1258,7 @@
         if (!rl) continue;
         const rk = TN ? TN.keyOf(rl) : rl.toLowerCase();
         if (rk !== k) continue;
-        if (!pushValue(row.value)) continue;
+        if (!pushValue(row.value, n)) continue;
         added++;
       }
       if (!added) continue;
@@ -2020,7 +2036,7 @@
         const k = String(label || '');
         if (needCache.has(k)) return needCache.get(k);
         const one = needInfo(anchor.cell, rule, k);
-        const got = { values: one.values, want: one.want, missing: one.missing };
+        const got = { values: one.values, want: one.want, missing: one.missing, valueFrom: one.valueFrom || {} };
         needCache.set(k, got);
         return got;
       };
@@ -2053,8 +2069,10 @@
           key: key, ruleId: rule.ruleId, rule: rule,
           /* 面板行的关键词标签显示**图片命中关键词**（用户确认第 6 条）——它才是"在图里找什么" */
           keyword: String((rule.meta && rule.meta.imgOcrKeyword) || ''),
+          keywordBare: bareHitWords((rule.meta && rule.meta.imgOcrKeyword) || '', label, rule),
           label: label,
           src: src, cls: cls, host: cls.host || '',
+          needValueFrom: nf.valueFrom || {},
           state: 'idle', matched: [], text: '', conf: 0,
           need: nf.values, needWant: nf.want, needMissing: nf.missing,
           needWeak: nf.weak || [], needFrom: nf.fromExtra || [],
@@ -2110,7 +2128,9 @@
         const item = {
           key: key, ruleId: rule.ruleId, rule: rule, kind: 'pdf',
           keyword: String((rule.meta && rule.meta.imgOcrKeyword) || ''),
+          keywordBare: bareHitWords((rule.meta && rule.meta.imgOcrKeyword) || '', label, rule),
           label: label, src: src, cls: { ok: true, src: src }, host: hostOfSrc(src) || '',
+          needValueFrom: nf.valueFrom || {},
           state: 'idle', matched: [], text: '', conf: 0,
           need: nf.values, needWant: nf.want, needMissing: nf.missing,
           needWeak: nf.weak || [], needFrom: nf.fromExtra || [],

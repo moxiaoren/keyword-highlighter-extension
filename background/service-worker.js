@@ -578,6 +578,40 @@ function pdfOpen(msg) {
     return { ok: true, url: url };
   } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
 }
+/* 【2.0.16.8 · 用户 m22343】把 PDF 字节取回来给内容脚本当页渲染。
+ * 为什么在后台取：内容脚本在页面世界里 fetch 跨域会被 CORS 与站点 CSP 拦；后台有 host_permissions，
+ * 且 `credentials: 'include'` 能带上登录态（很多授权书是登录后才给的直链）。
+ * 回传用 base64 是因为 sendMessage 只走结构化克隆的 JSON 子集，ArrayBuffer 不做转换会丢。 */
+const PDF_INLINE_MAX = 24 * 1024 * 1024;   // 再大就别塞进消息通道：转 base64 会膨胀 1/3，接近 IPC 上限
+const PDF_INLINE_MS = 30000;               // 取不回来也别让用户干等
+function b64OfBytes(u8) {
+  let out = '';
+  const CH = 0x8000;
+  for (let i = 0; i < u8.length; i += CH) {
+    out += String.fromCharCode.apply(null, u8.subarray(i, i + CH));
+  }
+  return btoa(out);
+}
+async function pdfBytes(msg) {
+  const url = String((msg && msg.url) || '');
+  if (!/^https?:/i.test(url)) return { ok: false, error: '地址不可用' };
+  const ctl = (typeof AbortController === 'function') ? new AbortController() : null;
+  const timer = ctl ? setTimeout(() => { try { ctl.abort(); } catch (e) { /* ignore */ } }, PDF_INLINE_MS) : null;
+  try {
+    const r = await fetch(url, ctl ? { signal: ctl.signal, credentials: 'include' } : { credentials: 'include' });
+    if (!r || !r.ok) return { ok: false, error: '取不到这份 PDF（HTTP ' + String(r && r.status) + '）' };
+    const buf = await r.arrayBuffer();
+    if (!buf || !buf.byteLength) return { ok: false, error: '这份 PDF 是空的' };
+    if (buf.byteLength > PDF_INLINE_MAX) {
+      return { ok: false, error: '这份 PDF 太大（' + Math.round(buf.byteLength / 1048576) + 'MB），不在当页打开' };
+    }
+    return { ok: true, b64: b64OfBytes(new Uint8Array(buf)), bytes: buf.byteLength };
+  } catch (e) {
+    return { ok: false, error: '取不到这份 PDF：' + String((e && e.message) || e) };
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 const HANDLERS = {
   [MSG.STATE_QUERY]: async () => {
     const { globalEnabled = true } = await chrome.storage.local.get('globalEnabled');
@@ -679,6 +713,7 @@ const HANDLERS = {
   [MSG.PDF_GRAB_DONE]: (msg) => pdfGrabDone(msg),
   [MSG.PDF_STASH_QUERY]: (msg) => pdfStashQuery(msg),
   [MSG.PDF_OPEN]: (msg) => pdfOpen(msg),
+  [MSG.PDF_BYTES]: (msg) => pdfBytes(msg),
 
   /* ---- ocr：内容脚本/设置页 → background → offscreen 文档（引擎在那里跑） ---- */
   [MSG.OCR_IMAGE]: (msg, sender) => self.OcrHost.submitImage(msg, sender),
