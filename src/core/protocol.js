@@ -121,6 +121,9 @@
     AI_TAIJI_LOGOUT: 'kh:ai:taijiLogout',
     /* 流式回包走长连接：面板 `chrome.runtime.connect({name:'kh:ai'})`，后台按 requestId 推 chunk/done。 */
     AI_PORT: 'kh:ai',
+    /* 【2.0.17.3 · 用户 m25410】自动深查：面板一次问一张卡（{title, icon} → {ok, data}），
+     * 由后台带 cookie 取图标字节、走太极AI 联网核验并回结构化结论；不用长连接，面板可随时关。 */
+    RISK_SCAN: 'kh:ai:riskScan',
     /* 【2.0.16.4】网页对话内容脚本（content/web-chat.js）已随通路一起删除，WEB_* 常量不再存在。 */
 
     /* ---- ocr（图片文字识别；内容脚本 ↔ background ↔ offscreen 文档三段中转） ----

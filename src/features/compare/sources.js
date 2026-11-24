@@ -108,11 +108,15 @@
     return out;
   };
 
-  /** 取单元格里的值：剥掉 append 进去的证据行（从右端逆序），返回原文。 */
+  /** 取单元格里的值：剥掉 append 进去的附属块（证据行 / 判定小标 / 政策徽标 / 更多链接），从右端逆序。
+   * 【2.0.17.3】判定小标搬进内容格后必须在这里剥掉 —— 否则值里混进「!」「✓」，
+   * 二次判定会把同一家公司读成不一致（自动化比对整片翻红）。 */
   Sources.cellValue = function (td) {
     if (!td) return '';
     let v = String(td.textContent || '').trim();
-    const boxes = td.querySelectorAll ? td.querySelectorAll('.kh-evidence') : [];
+    const boxes = td.querySelectorAll
+      ? td.querySelectorAll('.kh-evidence, .kh-verdict, .kh-policy-flag, .kh-table-more')
+      : [];
     for (let i = boxes.length - 1; i >= 0; i -= 1) {
       const t = String(boxes[i].textContent || '');
       if (t && v.slice(-t.length) === t) v = v.slice(0, -t.length).trim();

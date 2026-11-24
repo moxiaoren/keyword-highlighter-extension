@@ -232,5 +232,56 @@
     };
   };
 
+  /* ---------- 自动深查：缓存键 / 结果态（2.0.17.3 · 用户 m25410） ----------
+   *
+   * 「固定做、不用点」意味着每张卡都会发一次带图请求，所以两点必须自己兜住：
+   *   ① **同一张卡不重复查**：键 = 归一化名称 + 图标指纹；命中缓存（30 天）直接回填。
+   *   ② **结果可回填**：后端只回答结构化结论，面板按 key 写 chrome.storage.local，重开面板即刻有结论。
+   * 图标地址常带时间戳/尺寸参数（同一张图不同 URL），所以指纹去掉 query，只认 origin+pathname。 */
+  Risk.AI_TTL = 30 * 24 * 60 * 60 * 1000;
+
+  function hash32(s) {
+    let h = 5381;
+    for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+    return (h >>> 0).toString(36);
+  }
+
+  /** 图标指纹：dataURL 只取前缀与长度（整串几十万字符不必进内存哈希）；http(s) 去掉 query/hash。 */
+  Risk.iconKey = function (icon) {
+    const s = String(icon || '');
+    if (!s) return '';
+    if (/^data:/i.test(s)) return 'd' + s.length + '-' + hash32(s.slice(0, 4096));
+    try {
+      const u = new URL(s);
+      return 'u' + hash32(u.origin + u.pathname);
+    } catch (e) { return 'u' + hash32(s); }
+  };
+
+  /** 缓存键；没有主标题就没有键（裸图标判不出「蹭哪个名字」，不查）。 */
+  Risk.cacheKey = function (title, icon) {
+    const n = Risk.normalizeName(title);
+    if (!n) return '';
+    return n + '#' + Risk.iconKey(icon);
+  };
+
+  /**
+   * 把后端结论翻成两格的展示态（ok / warn / bad / unknown）。
+   * 过期的缓存不当结论用：宁可用「— 未查明」再查一次，也不拿 30 天前的判断冒充现在。
+   * @returns {{title:string, icon:string, verdict:string, ai:Object|null, stale:boolean}}
+   */
+  Risk.aiState = function (ai) {
+    const out = { title: 'unknown', icon: 'unknown', verdict: '', ai: ai || null, stale: false };
+    if (!ai) return out;
+    out.stale = !!(ai.at && (Date.now() - ai.at > Risk.AI_TTL));
+    out.verdict = String(ai.verdict || '');
+    const base = out.stale ? 'unknown'
+      : (out.verdict === 'risky' ? 'bad' : (out.verdict === 'suspect' ? 'warn' : (out.verdict === 'safe' ? 'ok' : 'unknown')));
+    const ir = String(ai.iconRisk || '');
+    out.title = base;
+    out.icon = (out.stale || !ir || ir === 'unknown') ? 'unknown'
+      : (ir === 'risky' ? 'bad' : (ir === 'similar' ? 'warn' : (ir === 'none' ? 'ok' : 'unknown')));
+    return out;
+  };
+
   KH.RiskAudit = Risk;
 })();

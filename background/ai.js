@@ -81,9 +81,67 @@
     } catch (e) { return ''; }
   }
 
+  /** 允许的枚举：模型偶尔会自由发挥（「高风险」/「risky」/「是」），统一收敛到这三档。 */
+  const RISK_VERDICT = { safe: 'safe', suspect: 'suspect', risky: 'risky' };
+  const RISK_ICON = { none: 'none', similar: 'similar', risky: 'risky' };
+
+  function pickVerdict(v) {
+    const s = String(v || '').trim().toLowerCase();
+    if (/risky|high|非常高|高风险/.test(s)) return 'risky';
+    if (/suspect|medium|存疑|可疑|待核/.test(s)) return 'suspect';
+    if (/safe|low|安全|无风险/.test(s)) return 'safe';
+    return '';
+  }
+
+  function pickIconRisk(v) {
+    const s = String(v || '').trim().toLowerCase();
+    if (/risky|高风险/.test(s)) return 'risky';
+    if (/similar|模仿|相似|像/.test(s)) return 'similar';
+    if (/none|no|未发现|不像|无关/.test(s)) return 'none';
+    return 'unknown';
+  }
+
   /**
-   * 卡内「AI 深查」：主标题（+ 抓到的图标）交给太极AI **联网**核验。
-   * @returns {Promise<{ok:boolean, text?:string, error?:string, needLogin?:boolean}>}
+   * 从回复里抠出那一行 JSON。模型可能包代码块、加解释、甚至只回半截 ——
+   * 依次尝试：整段 → 第一个 { 到最后一个 } → 正则逐字段兜底。都失败就返回 null，
+   * 调用方把原文当「未查明」，绝不用猜测冒充结论。
+   */
+  function parseRisk(text) {
+    const s = String(text || '');
+    const tryOne = (raw) => {
+      try {
+        const o = JSON.parse(raw);
+        if (o && typeof o === 'object') return o;
+      } catch (e) { /* 下一手 */ }
+      return null;
+    };
+    let o = tryOne(s.trim());
+    if (!o) {
+      const a = s.indexOf('{');
+      const b = s.lastIndexOf('}');
+      if (a >= 0 && b > a) o = tryOne(s.slice(a, b + 1));
+    }
+    if (!o) return null;
+    const cats = [];
+    const rawCats = o.cats;
+    if (rawCats instanceof Array) {
+      for (let i = 0; i < rawCats.length && i < 6; i++) if (rawCats[i]) cats.push(String(rawCats[i]).slice(0, 12));
+    } else if (rawCats) cats.push(String(rawCats).slice(0, 12));
+    return {
+      verdict: pickVerdict(o.verdict) || '',
+      brand: String(o.brand || '').slice(0, 40),
+      cats: cats,
+      iconRisk: pickIconRisk(o.iconRisk),
+      why: String(o.why || o.reason || '').slice(0, 160)
+    };
+  }
+
+  /**
+   * 主标题 / 图标的风险核验：交给太极AI **联网**做，返回结构化结论供卡片回填。
+   * 【2.0.17.3 · 用户 m25410】从「点一下看一段话」改成「自动跑 + 可回填」：
+   * 结论必须是一行 JSON（verdict / brand / cats / iconRisk / why），面板按 key 落缓存，
+   * 重开面板直接渲染 —— 所以这里**不容忍自由文本**：解析失败就 ok:false，卡片显示「— 未查明」。
+   * @returns {Promise<{ok:boolean, data?:Object, text?:string, error?:string, needLogin?:boolean}>}
    */
   AI.riskCheck = async function (msg) {
     const p = msg || {};
@@ -93,12 +151,10 @@
     if (ai.enabled === false) return { ok: false, error: 'AI 助手已在设置里关闭' };
     if (!self.KhTaiji) return { ok: false, error: '太极AI 通道没加载（扩展需要更新）' };
     const prompt = [
-      '请联网核验这个应用的风险，只回答三行：',
-      '1. 结论：安全 / 存疑 / 高风险',
-      '2. 依据：蹭了哪个知名品牌，或涉及资金盘、色情低俗、诈骗、赌博中的哪一类（没有就写「未发现」）',
-      '3. 建议：能不能继续合作，要不要人工复核',
-      '应用名称：' + title,
-      '若有附图，那是它的图标，请一并判断图标是否模仿知名应用的图标。'
+      '联网核验这个应用：①名称是否蹭知名应用/品牌；②图标是否模仿知名应用的图标；③是否涉及资金盘、色情低俗、赌博、诈骗、违规贷款。',
+      '只输出一行 JSON，不要代码块，不要任何解释：',
+      '{"verdict":"safe|suspect|risky","brand":"蹭到的品牌或空串","cats":["资金盘"],"iconRisk":"none|similar|risky","why":"30 字以内依据"}',
+      '没有附图时 iconRisk 写 unknown。应用名称：' + title
     ].join('\n');
     const files = [];
     const icon = String(p.icon || '').trim();
@@ -106,7 +162,13 @@
       const data = await iconDataUrl(icon);
       if (data) files.push({ name: 'icon.png', data: data });
     }
-    return self.KhTaiji.chat({ messages: [{ role: 'user', content: prompt }], webSearch: true, files: files });
+    const r = await self.KhTaiji.chat({ messages: [{ role: 'user', content: prompt }], webSearch: true, files: files });
+    if (!r || !r.ok) return r || { ok: false, error: '没有回执' };
+    const got = parseRisk(r.text);
+    if (!got || !got.verdict) {
+      return { ok: false, error: '模型没有按约定回结构化结论（已跳过，不猜）', text: String(r.text || '').slice(0, 400) };
+    }
+    return { ok: true, data: got, text: String(r.text || '').slice(0, 400) };
   };
 
   /* ---------------- 太极AI：设置页的登录 / 模型清单 / 退出 ---------------- */

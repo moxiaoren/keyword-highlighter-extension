@@ -262,12 +262,16 @@
 
   /* ---------- ⑤ 非颜色标记（唯一文案真源） ---------- */
 
+  /* 【2.0.17.3 · 用户 m25344 / m25305】行内只出**纯符号**，不再拼中文：
+   *   ✓ 一致/通过 · ! 不一致/明显问题 · ? 待确认 · — 未查明/缺项 · ⏱ 超时 · ⚙ 待配置
+   * 不用 ✕ / ✗：10px 下与卡片右上角的关闭按钮撞车，且两字形近；中文含义只留在 text 与悬停里。
+   * diff 是「对不上」（红），warn 才是「待确认」（琥珀）—— 旧表把两者都写成「待确认」，灰度下一次误读。 */
   const MARKS = {
-    same: { icon: '✔', text: '一致' },
-    ok: { icon: '✔', text: '一致' },
-    diff: { icon: '⚠', text: '待确认' },
-    warn: { icon: '⚠', text: '待确认' },
-    unknown: { icon: '？', text: '未查明' },
+    same: { icon: '✓', text: '一致' },
+    ok: { icon: '✓', text: '通过' },
+    diff: { icon: '!', text: '不一致' },
+    warn: { icon: '?', text: '待确认' },
+    unknown: { icon: '—', text: '未查明' },
     timeout: { icon: '⏱', text: '超时' },
     unset: { icon: '⚙', text: '待配置' }
   };
@@ -277,7 +281,7 @@
     const s = raw(state);
     const m = MARKS[s];
     if (!m) return null;
-    return { state: s, icon: m.icon, text: m.text, label: m.icon + ' ' + m.text };
+    return { state: s, icon: m.icon, text: m.text, label: m.icon };
   }
 
   /** 底色：只有一个来源。weak/none/unknown/unset/timeout 都不涂色。 */

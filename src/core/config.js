@@ -436,7 +436,11 @@
         entityCheck: false,
         /* 【2.0.16.7 · 用户 m20763】四条联网通道各自能关（默认全开＝与旧版行为一致）：
          * 关掉的通道一个请求都不发；全关时面板写「法人通道都已关闭」。 */
-        entityChannels: { sogou: true, aiqicha: true, so360: true, ai: true }
+        entityChannels: { sogou: true, aiqicha: true, so360: true, ai: true },
+        /* 【2.0.17.3 · 用户 m25410】主标题 / 图标的 AI 深查**固定自动做**，不用手动点。
+         * 默认开；每条卡只查一次、结果按「名称 + 图标指纹」缓存 30 天（`Risk.cacheKey`）。
+         * 关掉后不自动发请求，卡上只保留本地词库的结论。 */
+        riskAuto: true
       },
 
       /** 重要笔记面板的**默认宽度**（px；T26 / 用户 2026-10-12：200 → 250）。

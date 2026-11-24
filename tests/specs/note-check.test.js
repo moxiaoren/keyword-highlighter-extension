@@ -663,12 +663,12 @@ module.exports = async function run() {
     const warn = NC.verdictMark('warn');
     const unk = NC.verdictMark('unknown');
     eq(ok.label, same.label, 'ok 与 same 是同一种「一致」');
-    eq(warn.label, diff.label, 'warn 与 diff 是同一种「待确认」');
+    truthy(warn.label !== diff.label, '【2.0.17.3】diff 是「!」、warn 是「?」，不再共用一个符号');
     truthy(same.icon && diff.icon && unk.icon, '三态都要有图标');
     truthy(same.icon !== diff.icon && diff.icon !== unk.icon && same.icon !== unk.icon,
       '★ 三个图标必须互不相同 —— 灰度/色觉障碍/打印时靠形状分');
     truthy(same.text !== diff.text && diff.text !== unk.text, '三态文案也要不一样');
-    eq(same.label, same.icon + ' ' + same.text, 'label 就是图标 + 空格 + 文案（面板直接显示它）');
+    eq(same.label, same.icon, '【2.0.17.3】label 是纯符号；中文只留在 text 与悬停里');
     truthy(String(unk.text).indexOf('未查明') >= 0, '未查明的文案要说明白');
     eq(NC.verdictMark(''), null, '空态没有标记');
     eq(NC.verdictMark(null), null, 'null 没有标记');
@@ -683,7 +683,7 @@ module.exports = async function run() {
     eq(to.text, '超时');
     truthy(to.icon !== unk.icon, '★ 超时与未查明的图标必须不同 —— 灰度/打印时靠形状分');
     truthy(to.text !== unk.text, '★ 文案也必须不同（判据：界面与数据上可区分）');
-    eq(to.label, to.icon + ' ' + to.text, 'label 仍是图标 + 空格 + 文案');
+    eq(to.label, to.icon, 'label 仍是纯符号');
     eq(NC.verdictMark('timedout'), null, '只认 timeout 这个态名，别自己拆字');
   });
 

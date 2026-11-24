@@ -25,7 +25,8 @@ module.exports = async function run() {
   const trOf = (div, i) => div.querySelectorAll('tr')[i];
   const cellOf = (div, i) => trOf(div, i).querySelectorAll('td')[0];
   const valOf = (div, i) => trOf(div, i).querySelectorAll('td')[1];
-  const markOf = (div, i) => { const c = cellOf(div, i); return c.querySelector ? c.querySelector('.kh-verdict') : null; };
+  /* 【2.0.17.3】小标已移到内容格右侧，所以按整行找，不按左侧标题格。 */
+  const markOf = (div, i) => { const tr = trOf(div, i); return tr.querySelector ? tr.querySelector('.kh-verdict') : null; };
   /* 【2026-11-16】比对只认关键词里标的 `#比=对象`（item.pairs）；全局表与开关都已退场。 */
   const itemOf = (spec) => ({ pairs: KH.Compare.Rules.pairsOfLabels(spec) });
 
@@ -40,8 +41,8 @@ module.exports = async function run() {
   });
 
   await test('⚙ 待配置 是第四态，与 ？ 未查明 分开', () => {
-    eq(NC.verdictMark('unset').label, '⚙ 待配置');
-    eq(NC.verdictMark('unknown').label, '？ 未查明');
+    eq(NC.verdictMark('unset').label, '⚙');
+    eq(NC.verdictMark('unknown').label, '—');
     eq(NC.verdictMark('unset').icon, '⚙');
   });
 
@@ -61,7 +62,7 @@ module.exports = async function run() {
     p.decorateChecks(div, itemOf('企业名称#比=开发者'));
     const m = markOf(div, 0);
     eq(m.getAttribute('data-state'), 'unknown');
-    truthy(String(m.textContent).indexOf('未查明') >= 0);
+    eq(String(m.textContent), '—', '纯符号：未查明只剩一个破折号');
   });
 
   await test('★ 用户配的比对关系参与自动行上色：一致 ⇒ 绿 + 不再画逐字段证据行', () => {
@@ -72,7 +73,7 @@ module.exports = async function run() {
     const m = markOf(div, 1);
     truthy(m, '著作权人这一行要出标记（以前是假灰）');
     eq(m.getAttribute('data-state'), 'same');
-    eq(String(m.textContent), '✔ 一致');
+    eq(String(m.textContent), '✓');
     truthy(cellOf(div, 1).style.background, '一致要铺底色');
     eq(valOf(div, 1).querySelector('.kh-evidence'), null, '【2.0.11】证据行已删：结论只在徽标与悬停里');
   });
@@ -83,7 +84,7 @@ module.exports = async function run() {
     p.decorateChecks(div, itemOf('开发者#比=著作权人'));
     const m = markOf(div, 1);
     eq(m.getAttribute('data-state'), 'diff');
-    eq(String(m.textContent), '⚠ 待确认');
+    eq(String(m.textContent), '!');
     const tip = String(cellOf(div, 1).getAttribute('title') || '');
     truthy(tip.indexOf('上海乙科技有限公司') >= 0 && tip.indexOf('北京甲科技有限公司') >= 0, tip);
   });

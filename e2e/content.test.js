@@ -4494,7 +4494,8 @@ module.exports = async function runContent(ctx) {
         + '  await new Promise(function (r) { setTimeout(r, 400); });'
         + '  var tds = el.querySelectorAll("td.kh-table-label");'
         + '  for (var i = 0; i < tds.length; i++) {'
-        + '    var m = tds[i].querySelector(".kh-verdict");'
+        /* 【2.0.17.3】小标已搬进内容格（行的最后一格）⇒ 按整行找。 */
+        + '    var m = tds[i].parentNode.querySelector(".kh-verdict");'
         + '    var vcell = tds[i].parentNode.querySelectorAll("td")[1];'
         + '    var ev = vcell ? !!vcell.querySelector(".kh-evidence") : false;'
         + '    out.push({ box: boxes[b], label: window.KH.Compare.Sources.labelText(tds[i]),'
@@ -4511,12 +4512,12 @@ module.exports = async function runContent(ctx) {
       const warn = pick('e2e-verdict-diff', '核准主体名称');
       const unknown = pick('e2e-verdict-unknown', '核准主体名称');
       truthy(same && warn && unknown, '三行都要画出来，实际 ' + JSON.stringify(rowsOut.map((x) => x.box + ':' + x.label)));
-      eq(same.mark, '✔ 一致', '同法人链路：名字相同 ⇒ 一致态要挂「✔ 一致」');
+      eq(same.mark, '✓', '同法人链路：名字相同 ⇒ 一致态要挂「✓」');
       eq(same.state, 'same');
-      eq(warn.mark, '⚠ 待确认', '名字与法人都不同 ⇒ 待确认态要挂「⚠ 待确认」');
+      eq(warn.mark, '!', '名字与法人都不同 ⇒ 不一致态要挂「!」');
       eq(warn.state, 'diff');
-      truthy(same.mark !== warn.mark, '两态文案必须不同（只靠底色不够）');
-      eq(unknown.mark, '？ 未查明', '未查明要挂独立的第三态标记');
+      truthy(same.mark !== warn.mark, '两态符号必须不同（只靠底色不够）');
+      eq(unknown.mark, '—', '未查明要挂独立的第三态标记');
       eq(unknown.bg, '', '未查明不涂色');
       truthy(String(unknown.tip).indexOf('无法核实') >= 0, '未查明的悬停说明必须非空且写明原因，实际 = ' + JSON.stringify(unknown.tip));
       eq(unknown.label, '核准主体名称', '标记是后缀，字段名照旧认得出来');
@@ -4524,7 +4525,7 @@ module.exports = async function runContent(ctx) {
        * 和「？未查明」分得开（一个该等会儿再看，一个就是查不到）。 */
       const timeout = pick('e2e-verdict-timeout', '核准主体');
       truthy(timeout, '超时那张表要画出来，实际 ' + JSON.stringify(rowsOut.map((x) => x.label)));
-      eq(timeout.mark, '⏱ 超时', '查询超时要挂「⏱ 超时」而不是「？ 未查明」');
+      eq(timeout.mark, '⏱', '查询超时要挂「⏱」而不是「—」');
       eq(timeout.state, 'timeout');
       truthy(timeout.mark !== unknown.mark, '超时与未查明的文案必须不同');
       eq(timeout.bg, '', '超时同样不改底色');

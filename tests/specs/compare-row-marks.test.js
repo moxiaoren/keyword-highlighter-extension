@@ -41,9 +41,11 @@ function item(src, cmp, matched) {
 }
 
 const labelCell = (body) => body.querySelectorAll('td.kh-table-label')[0];
+/* 【2.0.17.3】小标已从标题格搬进内容格（行的最后一格）⇒ 整行找，别再只看第 0 格。 */
 const markOf = (body) => {
   const cell = labelCell(body);
-  return cell ? cell.querySelectorAll('.kh-verdict')[0] : null;
+  const tr = cell && cell.parentNode ? cell.parentNode : null;
+  return tr ? tr.querySelector('.kh-verdict') : null;
 };
 
 module.exports = async function run() {

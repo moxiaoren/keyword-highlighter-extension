@@ -100,28 +100,48 @@ module.exports = async function run() {
     eq(res2.level, 0);
   });
 
-  await test('★ 接线契约：模块进 manifest、卡片出徽标、深查走 AI 端口', () => {
+  await test('★ 接线契约：模块进 manifest、卡片出体检条、深查自动排队且回填', () => {
     const mf = read('manifest.json');
     truthy(mf.indexOf('"src/features/risk-audit.js"') >= 0, '新增模块必须进 manifest（单测也按它加载）');
     truthy(mf.indexOf('src/features/risk-audit.js') < mf.indexOf('src/features/important-note.js'), '要先于面板加载');
 
     const panel = read('src/features/important-note.js');
-    truthy(panel.indexOf('decorateRisk(el)') >= 0, '卡片要能出风险徽标');
-    truthy(panel.indexOf("'data-kh-risk-sig'") >= 0, '同一张卡重复渲染不能叠徽标');
-    truthy(panel.indexOf('.khin-risk-flag') >= 0);
-    truthy(panel.indexOf('this.riskAi(res.title, res.icon)') >= 0, '深查要带上图标');
-    truthy(panel.indexOf("action: 'risk', title: String(title || ''), icon: String(icon || '')") >= 0, '深查走 AI 端口');
-    truthy(panel.indexOf('khin-chat-bar') >= 0, '模型下拉要单独一行（名字长不挤 head）');
+    truthy(panel.indexOf('decorateRisk(el, item)') >= 0, '卡片要能出体检条');
+    truthy(panel.indexOf("'data-kh-verdicts-sig'") >= 0, '同一张卡重复渲染不能重画');
+    truthy(panel.indexOf('.khin-verdicts') >= 0, '体检条要按一类一格渲染');
+    truthy(panel.indexOf('.khin-ai-line') >= 0, '深查结论要固定占一行');
+    truthy(panel.indexOf('this.riskEnqueue(key, res.title, res.icon)') >= 0, '深查不用点，进卡即排队');
+    truthy(panel.indexOf('khRiskAuditV1') >= 0, '结论要落本地缓存，重开面板能回填');
+    truthy(panel.indexOf('MSG.RISK_SCAN') >= 0, '深查走一次性消息，不复用对话端口');
 
     const ai = read('background/ai.js');
     truthy(ai.indexOf('AI.riskCheck = async function') >= 0);
     truthy(ai.indexOf("credentials: 'include'") >= 0, '图标在后台按站点身份取');
     truthy(ai.indexOf('webSearch: true') >= 0, '深查要联网');
     truthy(ai.indexOf('files: files') >= 0, '有图标才带图');
+    truthy(ai.indexOf('parseRisk') >= 0, '只认结构化结论，解析不出来宁可报未查明');
 
     const sw = read('background/service-worker.js');
-    truthy(sw.indexOf("m.action === 'risk'") >= 0);
-    truthy(sw.indexOf('self.KhAi.riskCheck({ title: m.title, icon: m.icon })') >= 0);
-    truthy(sw.indexOf('riskBusy') >= 0, '深查要防并发');
+    truthy(sw.indexOf('[MSG.RISK_SCAN]') >= 0);
+    truthy(sw.indexOf('self.KhAi.riskCheck') >= 0);
+  });
+
+  await test('★ 缓存键与状态换算：名称归一 + 图标指纹，过期一律当未查明', () => {
+    eq(R.cacheKey('微信', ''), R.cacheKey('微 信·', ''), '名称先归一');
+    eq(R.cacheKey('', 'data:image/png;base64,AA'), '', '没有名称就没有键（裸图标判不出蹭谁）');
+    truthy(R.cacheKey('记账本', 'data:image/png;base64,AA') !== R.cacheKey('记账本', 'data:image/png;base64,BB'),
+      '图标变了要换键，否则回填别人的结论');
+    eq(R.iconKey('https://cdn.test/a.png?v=1'), R.iconKey('https://cdn.test/a.png?v=2'), '同一张图不同查询串算同一张');
+    truthy(R.iconKey('https://a.test/x.png') !== R.iconKey('https://b.test/x.png'), '不同站点不算同一张');
+
+    const now = R.aiState({ at: Date.now(), verdict: 'risky', iconRisk: 'similar' });
+    eq(now.title, 'bad');
+    eq(now.icon, 'warn');
+    falsy(now.stale);
+    const old = R.aiState({ at: Date.now() - R.AI_TTL - 1000, verdict: 'safe', iconRisk: 'none' });
+    eq(old.title, 'unknown', '过期不许当成「通过」');
+    eq(old.icon, 'unknown');
+    truthy(old.stale);
+    eq(R.aiState(null).title, 'unknown', '没查过 = 未查明');
   });
 };

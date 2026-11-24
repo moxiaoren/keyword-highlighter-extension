@@ -701,6 +701,9 @@ const HANDLERS = {
   [MSG.AI_TAIJI_LOGIN]: (msg) => self.KhAi.taijiLogin(msg || {}),
   [MSG.AI_TAIJI_MODELS]: () => self.KhAi.taijiModels(),
   [MSG.AI_TAIJI_LOGOUT]: () => self.KhAi.taijiLogout(),
+  /* 【2.0.17.3 · 用户 m25410】自动深查：一次问一张卡（不用长连接，面板随时关都不影响已发出的那条）。
+   * 面板侧串行排队、结果落 chrome.storage.local；这里只负责取图标字节 + 走太极AI 联网核验。 */
+  [MSG.RISK_SCAN]: (msg) => self.KhAi.riskCheck({ title: (msg && msg.title) || '', icon: (msg && msg.icon) || '' }),
 
   /* 面板在"还没配置"时给的一键入口：内容脚本调 chrome.runtime.openOptionsPage 不可靠（老内核没有）。 */
   [MSG.AI_OPEN_OPTIONS]: async () => {

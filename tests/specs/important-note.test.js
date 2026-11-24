@@ -1368,19 +1368,23 @@ module.exports = async function run() {
     const item = { pairs: KH.Compare.Rules.pairsOfLabels('企业名称#比=主办单位') };
     const divSame = mk('北京知行灵动科技有限公司');
     panel.decorateChecks(divSame, item);
-    const sameCell = divSame.querySelectorAll('tr')[0].querySelectorAll('td')[0];
+    /* 【2.0.17.3 · 用户 m25305】小标搬到内容格右侧，且只出纯符号；中文含义进 title。 */
+    const sameTr = divSame.querySelectorAll('tr')[0];
+    const sameCell = sameTr.querySelectorAll('td')[1];
     const sameMark = sameCell.querySelector('.kh-verdict');
     truthy(sameMark, '★ 一致行必须有非颜色标记（只涂浅绿不够）');
-    eq(String(sameMark.textContent), '✔ 一致');
+    eq(String(sameMark.textContent), '✓');
+    truthy(String(sameMark.getAttribute('title') || '').indexOf('一致') >= 0, '中文含义留在悬停里');
     eq(sameMark.getAttribute('data-state'), 'same', '状态挂在 data-state 上，样式只认它');
     const divDiff = mk('上海乙信息技术有限公司');
     panel.decorateChecks(divDiff, item);
-    const warnCell = divDiff.querySelectorAll('tr')[0].querySelectorAll('td')[0];
+    const warnTr = divDiff.querySelectorAll('tr')[0];
+    const warnCell = warnTr.querySelectorAll('td')[1];
     const warnMark = warnCell.querySelector('.kh-verdict');
     truthy(warnMark, '★ 不一致行必须有非颜色标记');
-    eq(String(warnMark.textContent), '⚠ 待确认');
-    truthy(String(warnMark.textContent) !== String(sameMark.textContent), '两态文案必须不同');
-    truthy(String(sameCell.getAttribute('title') || '').length > 0, '悬停说明还在');
+    eq(String(warnMark.textContent), '!');
+    truthy(String(warnMark.textContent) !== String(sameMark.textContent), '两态符号必须不同');
+    truthy(String(warnMark.getAttribute('title') || '').length > 0, '悬停说明还在');
     if (divSame.parentNode) divSame.parentNode.removeChild(divSame);
     if (divDiff.parentNode) divDiff.parentNode.removeChild(divDiff);
   });
@@ -1392,13 +1396,14 @@ module.exports = async function run() {
       '<tr><td class="kh-table-label">开发者</td><td></td></tr></tbody></table>';
     const panel = shadowPanel();
     panel.decorateChecks(div, { pairs: KH.Compare.Rules.pairsOfLabels('企业名称#比=开发者') });
-    const td = div.querySelectorAll('tr')[0].querySelectorAll('td')[0];
+    const tr0 = div.querySelectorAll('tr')[0];
+    const td = tr0.querySelectorAll('td')[0];
     falsy(td.style.background, '未查明不许涂色');
-    const mark = td.querySelector('.kh-verdict');
+    const mark = tr0.querySelector('.kh-verdict');
     truthy(mark, '★ 未查明也要有标记 —— 否则和「这张卡没配校验」长得一模一样');
-    eq(String(mark.textContent), '？ 未查明');
+    eq(String(mark.textContent), '—');
     eq(mark.getAttribute('data-state'), 'unknown');
-    truthy(String(td.getAttribute('title') || '').indexOf('无法核实') >= 0, '★ 悬停要写明无法核实（T6 统一结论词；以前是空串）');
+    truthy(String(mark.getAttribute('title') || '').indexOf('无法核实') >= 0, '★ 悬停要写明无法核实（T6 统一结论词；以前是空串）');
     if (div.parentNode) div.parentNode.removeChild(div);
   });
 
@@ -1413,17 +1418,24 @@ module.exports = async function run() {
      * 这类主体名要走去查法人的那条链路（paintEntity），本用例验的是纯字面比对的标记。 */
     const item = { pairs: KH.Compare.Rules.pairsOfLabels('著作权人#比=开发者') };
     panel.decorateChecks(div, item);
-    const cell = div.querySelectorAll('tr')[1].querySelectorAll('td')[0];
-    const first = cell.querySelector('.kh-verdict');
+    const tr1 = div.querySelectorAll('tr')[1];
+    const cell = tr1.querySelectorAll('td')[0];
+    const first = tr1.querySelector('.kh-verdict');
     truthy(first, '前提：这一格真的挂了标记');
     eq(String(KH.Compare.Sources.labelText(cell)), '著作权人', 'labelText 要从右端把徽标剥掉');
     eq(KH.Compare.Sources.labelsOf(cell).join('|'), '著作权人', 'labelsOf 也照旧只认字段名');
     /* 值改成与开发者同名 ⇒ 判定从「待确认」翻成「一致」：文案要更新，节点要复用（每轮换新会闪） */
-    cell.parentNode.querySelectorAll('td')[1].textContent = '北京知行灵动科技有限公司';
+    /* 【2.0.17.3】小标搬进内容格后，写 td.textContent（或 .kh-val-box，纯文本值格根本没有这个盒子）
+     * 会把小标一起抹掉 ⇒ 这里只改值文本节点的 nodeValue，才是在模拟「值变了、节点复用」的真实路径。 */
+    const valCell = cell.parentNode.querySelectorAll('td')[1];
+    const vNodes = valCell.childNodes || [];
+    for (let vi = 0; vi < vNodes.length; vi += 1) {
+      if (vNodes[vi] && vNodes[vi].nodeType === 3) { vNodes[vi].nodeValue = '北京知行灵动科技有限公司'; break; }
+    }
     panel.decorateChecks(div, item);
-    const second = cell.querySelector('.kh-verdict');
+    const second = tr1.querySelector('.kh-verdict');
     truthy(second === first, '同一张卡重画要复用标记节点');
-    eq(String(second.textContent), '✔ 一致', '判定变了，标记要跟着变');
+    eq(String(second.textContent), '✓', '判定变了，标记要跟着变');
     if (div.parentNode) div.parentNode.removeChild(div);
   });
   /* 【2.0.11 · 用户 m00001】逐字段证据行（值 / 来源 / 读取时间 / 原页入口）已删。
@@ -1438,7 +1450,7 @@ module.exports = async function run() {
     panel.decorateChecks(div, { pairs: KH.Compare.Rules.pairsOfLabels('企业名称#比=开发者') });
     const tr = div.querySelectorAll('tr')[1];
     eq(tr.querySelectorAll('td')[1].querySelector('.kh-evidence'), null, '★ 值格里不许再出现证据行');
-    const mark = tr.querySelectorAll('td')[0].querySelector('.kh-verdict');
+    const mark = tr.querySelector('.kh-verdict');
     truthy(mark, '判定本身要留着');
     truthy(String(mark.getAttribute('title') || '').length > 0, '结论改在悬停里说');
     if (div.parentNode) div.parentNode.removeChild(div);
@@ -1453,7 +1465,7 @@ module.exports = async function run() {
     panel.decorateChecks(div, { pairs: KH.Compare.Rules.pairsOfLabels('企业名称#比=开发者') });
     const tr = div.querySelectorAll('tr')[0];
     eq(tr.querySelectorAll('td')[1].querySelector('.kh-evidence'), null, '未查明也不画证据行');
-    eq(tr.querySelectorAll('td')[0].querySelector('.kh-verdict').getAttribute('data-state'), 'unknown');
+    eq(tr.querySelector('.kh-verdict').getAttribute('data-state'), 'unknown');
     if (div.parentNode) div.parentNode.removeChild(div);
   });
 
@@ -1476,9 +1488,9 @@ module.exports = async function run() {
     const trs = div.querySelectorAll('tr');
     eq(trs.length, 2, '前提：开发者与核准主体各一行');
     const cell = trs[1].querySelectorAll('td')[0];
-    const mark = cell.querySelector('.kh-verdict');
+    const mark = trs[1].querySelector('.kh-verdict');
     truthy(mark, '★ 超时行必须有标记 —— 否则和「没配校验」长得一样');
-    eq(String(mark.textContent), '⏱ 超时');
+    eq(String(mark.textContent), '⏱');
     eq(mark.getAttribute('data-state'), 'timeout');
     falsy(cell.style.background, '超时同样不改底色');
     truthy(String(cell.getAttribute('title') || '').indexOf('超时') >= 0, '★ 悬停要写明超时，而不是只写未查明');
@@ -1535,7 +1547,7 @@ module.exports = async function run() {
     panel.decorateChecks(div, {});
     await new Promise((r) => setTimeout(r, 20));
     const cell = div.querySelectorAll('tr')[1].querySelectorAll('td')[0];
-    const mark = cell.querySelector('.kh-verdict');
+    const mark = div.querySelectorAll('tr')[1].querySelector('.kh-verdict');
     eq(String(mark.getAttribute('data-state')), 'unknown', '前提：仍然收在「未查明」态');
     truthy(String(cell.getAttribute('title') || '').indexOf('爱企查没登录') >= 0, '★ 悬停必须写出后台给的原因');
     if (div.parentNode) div.parentNode.removeChild(div);
@@ -1578,17 +1590,19 @@ module.exports = async function run() {
     const panel = shadowPanel();
     const dA = make();
     panel.decorateChecks(dA, { pairs: KH.Compare.Rules.pairsOfLabels('企业名称#比=主办单位') });
-    const aCell = dA.querySelectorAll('tr')[0].querySelectorAll('td')[0];
+    const aTr = dA.querySelectorAll('tr')[0];
+    const aCell = aTr.querySelectorAll('td')[0];
     eq(aCell.style.background, KH.Compare.COLOR_BAD, '两家不一致 ⇒ 浅黄');
-    eq(String(aCell.querySelector('.kh-verdict').textContent), '⚠ 待确认');
+    eq(String(aTr.querySelector('.kh-verdict').textContent), '!');
     const dB = make();
     panel.decorateChecks(dB, { pairs: KH.Compare.Rules.pairsOfLabels('企业名称#比=开发者') });
-    const bCell = dB.querySelectorAll('tr')[0].querySelectorAll('td')[0];
+    const bTr = dB.querySelectorAll('tr')[0];
+    const bCell = bTr.querySelectorAll('td')[0];
     eq(bCell.style.background, KH.Compare.COLOR_OK, '★ 换成同值的一对 ⇒ 浅绿');
-    eq(String(bCell.querySelector('.kh-verdict').textContent), '✔ 一致');
+    eq(String(bTr.querySelector('.kh-verdict').textContent), '✓');
     /* 同一张卡：对子删掉后重画 ⇒ 标记与底色必须撤回（否则屏幕上留着上一轮的结论） */
     panel.decorateChecks(dB, { pairs: [] });
-    eq(bCell.querySelector('.kh-verdict'), null, '★ 删掉对子后标记要撤掉');
+    eq(bTr.querySelector('.kh-verdict'), null, '★ 删掉对子后标记要撤掉');
     falsy(bCell.style.background, '底色也要还原');
     if (dA.parentNode) dA.parentNode.removeChild(dA);
     if (dB.parentNode) dB.parentNode.removeChild(dB);

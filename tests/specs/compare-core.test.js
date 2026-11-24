@@ -135,12 +135,16 @@ module.exports = async function run() {
 
   suite('比对核心 · 标记与底色（R1）');
     test('七态文案唯一真源；未知态返回 null', () => {
-      eq(C.markOf('same').label, '✔ 一致');
-      eq(C.markOf('ok').label, '✔ 一致');
-      eq(C.markOf('diff').label, '⚠ 待确认');
-      eq(C.markOf('unknown').label, '？ 未查明');
-      eq(C.markOf('timeout').label, '⏱ 超时');
-      eq(C.markOf('unset').label, '⚙ 待配置');
+      /* 【2.0.17.3 · 用户 m25344】行内只出纯符号，中文含义只留在 text 与悬停里。 */
+      eq(C.markOf('same').label, '✓');
+      eq(C.markOf('ok').label, '✓');
+      eq(C.markOf('diff').label, '!');
+      eq(C.markOf('warn').label, '?');
+      eq(C.markOf('unknown').label, '—');
+      eq(C.markOf('timeout').label, '⏱');
+      eq(C.markOf('unset').label, '⚙');
+      eq(C.markOf('diff').text, '不一致');
+      eq(C.markOf('warn').text, '待确认', 'diff 与 warn 不再共用一个「待确认」');
       eq(C.markOf('weak'), null);
       eq(C.markOf(''), null);
     });

@@ -372,24 +372,60 @@
     /* 【2.0.18 · 用户 m24795】抬头风险徽标 + 卡尾一行详情：本地词库先筛，
      * 结论只写「哪一类、哪个词」；图标是像不像知名应用这种像素级判断本地做不了，
      * 留给卡内「AI 深查」（名称与图标一起交给太极AI 联网核验）。 */
+    /* ===== 卡片结论分层（2.0.17.3 · 用户 m25243 / m25305 / m25344 / m25410）=====
+     * 一条自上而下的阅读路径：身份行（这是哪张卡）→ 体检条（一类一格）→ 表格行（哪一项）→
+     * 深查块（AI 的结论）。结论符号只用 ✓ ! ? — ⏱ ⚙，颜色只做冗余编码。 */
+    /* 抬头只留一个聚合徽标：数字 = 全卡要处理的处数（比对不一致每行算一处）。 */
     .khin-risk-flag {
-      flex: 0 0 auto; font-size: 10px; font-weight: 600; line-height: 15px;
+      flex: 0 0 auto; font-size: 10px; font-weight: 700; line-height: 15px;
       padding: 0 5px; border-radius: 8px; cursor: default; white-space: nowrap;
     }
-    .khin-risk-flag.is-ok { color: #2e7d32; background: #e8f5e9; border: 1px solid rgba(46,125,50,.28); }
-    .khin-risk-flag.is-warn { color: #b45309; background: #fef5e7; border: 1px solid rgba(180,83,9,.3); }
-    .khin-risk-flag.is-bad { color: #c62828; background: #ffe9e9; border: 1px solid rgba(198,40,40,.3); }
-    .khin-risk-line {
-      display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap;
-      margin: 3px 0 0; font-size: 10px; line-height: 15px; color: #64748b;
+    .khin-risk-flag.is-ok { color: #2e7d32; background: #e8f5e9; }
+    .khin-risk-flag.is-warn { color: #b45309; background: #fef5e7; }
+    .khin-risk-flag.is-bad { color: #c62828; background: #ffe9e9; }
+    /* 体检条：标题 / 法人 / 隐私 三格固定顺序；通过的静音，出问题才上色，绝不被截断词。 */
+    .khin-verdicts { display: flex; flex-wrap: wrap; gap: 4px; margin: 2px 0 3px; }
+    .khin-vd {
+      display: inline-flex; align-items: center; gap: 3px; font-size: 10px; line-height: 15px;
+      padding: 0 5px; border-radius: 8px; border: 1px solid transparent;
+      background: #f1f5f9; color: #64748b; white-space: nowrap; cursor: pointer;
     }
-    .khin-risk-ai {
-      border: 1px solid rgba(53,121,194,.45); background: #eaf1fb; color: #2f6fb5;
-      font: inherit; font-size: 10px; line-height: 14px; padding: 0 5px; border-radius: 8px;
-      cursor: pointer; flex: 0 0 auto;
+    .khin-vd b { font-weight: 700; font-size: 10px; }
+    .khin-vd.is-ok { background: #eef7f1; color: #3f7a56; }
+    .khin-vd.is-warn { background: #fef5e7; color: #b45309; }
+    .khin-vd.is-bad { background: #ffe9e9; color: #c62828; }
+    .khin-vd.is-unknown { background: #fff; border-color: #e3e8f0; border-style: dashed; color: #94a3b8; }
+    /* 深查块：左侧竖线区分状态（蓝=进行中、红=有风险、绿=干净），横铺卡宽。 */
+    .khin-ai-line {
+      display: flex; align-items: flex-start; gap: 6px; margin: 4px 0 0; padding: 3px 6px;
+      font-size: 10px; line-height: 15px; color: #64748b;
+      border-left: 2px solid #2f6fb5; border-radius: 0 6px 6px 0;
+      background: linear-gradient(90deg, rgba(47,111,181,.07), rgba(47,111,181,0));
     }
-    .khin-risk-ai:hover { background: #d8e7fa; }
-    .khin-item.khin-folded .khin-risk-line { display: none; }
+    .khin-ai-line.is-ok {
+      border-left-color: #2e7d32;
+      background: linear-gradient(90deg, rgba(46,125,50,.07), rgba(46,125,50,0));
+    }
+    .khin-ai-line.is-bad {
+      border-left-color: #c62828;
+      background: linear-gradient(90deg, rgba(198,40,40,.08), rgba(198,40,40,0));
+    }
+    .khin-ai-line.is-unknown { border-left-color: #cbd5e1; background: transparent; }
+    .khin-ai-dot { flex: 0 0 auto; width: 5px; height: 5px; margin-top: 5px; border-radius: 50%; background: #2f6fb5; }
+    .khin-ai-line.is-ok .khin-ai-dot { background: #2e7d32; }
+    .khin-ai-line.is-bad .khin-ai-dot { background: #c62828; }
+    .khin-ai-line.is-unknown .khin-ai-dot { background: #cbd5e1; }
+    .khin-ai-txt { flex: 1 1 auto; min-width: 0; }
+    .khin-ai-line b { font-weight: 600; color: #334155; }
+    .khin-ai-more {
+      border: 0; background: none; color: #2f6fb5; font: inherit; font-size: 10px;
+      cursor: pointer; padding: 0 2px; flex: 0 0 auto;
+    }
+    .khin-ai-why { display: block; margin: 1px 0 0; color: #94a3b8; }
+    .khin-item.khin-folded .khin-ai-line { display: none; }
+    /* 点体检格的定位闪光：滚到对应行后闪一下，帮眼睛落点。 */
+    @keyframes kh-flash { 0%, 100% { background: transparent; } 30% { background: rgba(47,111,181,.16); } }
+    .kh-flash { animation: kh-flash 1.1s ease-out 1; }
     /* 【2.0.8.4 需求③】浮窗单卡收起/展开（非贴边模式逐卡折叠，只留标签行）。
      * 按钮比 ✕ 弱一档：灰色、更小；收起后正文整块不占位（不是 max-height:0 的动画，
      * 免得面板高度跟着动一下）。 */
@@ -553,23 +589,26 @@
      * 撑大最小内容宽度 ⇒ 表格重算 ⇒ 裁一行的判定来回翻 ⇒ 悬窗像在闪（见上面那段警告）。
      * 宽度代价改由标题文字让位：判定行的 .kh-lbt 上限再收 1.1em，右侧留出一条给标记。
      * 未查明用虚线框 + 问号：不涂色，灰度下靠形状也能和实心的 ✔ / ⚠ 分开。 */
-    .kh-table .kh-table-label.kh-verdict-host { padding-right: 3.1em; }
-    .kh-table .kh-table-label.kh-verdict-host .kh-lbt { max-width: calc(var(--kh-lbt-maxw, 8em) - 1.1em); }
+    /* 【2.0.17.3 · 用户 m25305 / m25344】判定小标改到**内容格右侧**（原来在左侧标题格）：
+     * 标题格本来就窄，多一枚小标就把字段名压成两行；内容格右侧是天然空白，也离「对上的值」更近。
+     * 行内只出纯符号（✓ ! ? — ⏱ ⚙），中文含义只在悬停与图例里；颜色只做冗余编码，去掉颜色仍能读。 */
+    .kh-table td.kh-verdict-host { position: relative; padding-right: 18px; }
     .kh-verdict {
       position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
-      display: inline-flex; align-items: center; gap: 2px;
-      padding: 0 3px; border-radius: 3px; border: 1px solid transparent;
-      font-size: 10px; line-height: 14px; font-weight: 600; white-space: nowrap;
-      background: #e2e8f0; color: #334155; z-index: 3;
+      display: inline-flex; align-items: center; justify-content: center;
+      min-width: 13px; padding: 0 2px; border-radius: 4px; border: 1px solid transparent;
+      font-size: 11px; line-height: 14px; font-weight: 700; white-space: nowrap;
+      background: transparent; color: #334155; z-index: 3;
     }
-    .kh-verdict[data-state="same"], .kh-verdict[data-state="ok"] { background: #2e7d32; color: #fff; }
-    .kh-verdict[data-state="diff"], .kh-verdict[data-state="warn"] { background: #b45309; color: #fff; }
-    .kh-verdict[data-state="unknown"] { background: #fff; color: #475569; border-color: #94a3b8; border-style: dashed; }
+    .kh-verdict[data-state="same"], .kh-verdict[data-state="ok"] { color: #2e7d32; background: #e8f5e9; }
+    .kh-verdict[data-state="diff"] { color: #c62828; background: #ffe9e9; }
+    .kh-verdict[data-state="warn"] { color: #b45309; background: #fef5e7; }
+    .kh-verdict[data-state="unknown"] { color: #64748b; background: transparent; }
     /* 【台账 #8】超时是第四态：不涂行底色，但徽标要说「超时」而不是「未查明」——
      * 用户能据此决定「等会儿再看」还是「这条就是查不到」。虚线 + ⏱ 与未查明的 ？ 灰度下也分得开。 */
-    .kh-verdict[data-state="timeout"] { background: #fff7ed; color: #9a3412; border-color: #fdba74; border-style: dashed; }
+    .kh-verdict[data-state="timeout"] { background: #fff7ed; color: #9a3412; }
   /* 【2.0.13】⚙ 待配置：责任在配置，不在数据 —— 用中性的靛色虚线，别和「⚠ 待确认」混成一种黄。 */
-  .kh-verdict[data-state="unset"] { background: #eef2ff; color: #3730a3; border-color: #a5b4fc; border-style: dashed; }
+  .kh-verdict[data-state="unset"] { background: #eef2ff; color: #3730a3; }
     /* 字段标题格里的文本（= 设置「抓取字段」里填的那个名字）**不必整段展示**，省下的宽度留给内容。
      * 用户 2026-10-11 原话："抓取字段的标题内容可以不完整展示…实际抓取到的内容展示还是需要完整展示的，节省宽度"。
      * 做法：标题文本包一层 .kh-lbt（见下方 noteFragment 的补包裹），**宽度上限 + 单行裁切**，
@@ -2601,13 +2640,20 @@
   function setVerdictMark(tr, state, tip) {
     const C = (typeof KH !== 'undefined' && KH && KH.Compare) || null;
     const m = (C && typeof C.markOf === 'function') ? C.markOf(state) : null;
-    const cell = (tr && tr.querySelector) ? tr.querySelector('td.kh-table-label') : null;
+    if (!tr || !tr.querySelectorAll) return null;
+    /* 【2.0.17.3 · m25305】落点从标题格搬到**内容格（最后一格）右侧**：标题格太窄，
+     * 小标一撑就把字段名压成两行；内容格右侧本来就是空白，也离「对上的值」更近。
+     * 状态同时记到 `tr[data-kh-verdict]`：卡片的体检条 / 抬头徽标靠它汇总，不用把判定再算一遍。 */
+    const tds = tr.querySelectorAll('td');
+    const cell = tds.length ? tds[tds.length - 1] : null;
     if (!cell) return null;
-    let mark = cell.querySelector ? cell.querySelector('.kh-verdict') : null;
+    let mark = tr.querySelector('.kh-verdict');
     if (!m) {
       /* 判定撤销（比如值被清空）时标记也要跟着撤，否则会留下上一轮的结论。 */
       if (mark && mark.parentNode) mark.parentNode.removeChild(mark);
-      if (cell.classList) cell.classList.remove('kh-verdict-host');
+      const hosts = tr.querySelectorAll('.kh-verdict-host');
+      for (let hi = 0; hi < hosts.length; hi++) hosts[hi].classList.remove('kh-verdict-host');
+      if (tr.removeAttribute) tr.removeAttribute('data-kh-verdict');
       return null;
     }
     if (!mark) {
@@ -2615,9 +2661,10 @@
       if (!doc) return null;
       mark = doc.createElement('span');
       mark.className = 'kh-verdict';
-      cell.appendChild(mark);
     }
+    if (mark.parentNode !== cell) cell.appendChild(mark);
     if (cell.classList) cell.classList.add('kh-verdict-host');
+    if (tr.setAttribute) tr.setAttribute('data-kh-verdict', String(state));
     if (mark.getAttribute('data-state') !== state) mark.setAttribute('data-state', state);
     if (String(mark.textContent || '') !== m.label) mark.textContent = m.label;
     /* 图标本身对读屏无意义：补一句完整说明，颜色不参与任何一处传达。 */
@@ -3150,7 +3197,7 @@
      * 抬头一枚徽标：✓ 未发现 / ? 待核 / ⚠ 风险；不安全的再在卡尾补一行「命中哪一类、哪个词」与
      * 「AI 深查」按钮。按结论 + 命中词做签名，内容没变不重画（与 decorateChecks 同一手法）。
      */
-    decorateRisk(el) {
+    decorateRisk(el, item) {
       const RA = (typeof KH !== 'undefined' && KH && KH.RiskAudit) || null;
       if (!RA || !el || !el.querySelector) return;
       const V = KH.OcrCopy.VIEW;
@@ -3160,65 +3207,254 @@
       const table = el.querySelector('table.kh-table-fetch');
       let res = null;
       if (table) { try { res = RA.auditCard(table); } catch (e) { res = null; } }
-      let flag = head.querySelector('.khin-risk-flag');
-      let line = el.querySelector('.khin-risk-line');
-      if (!res || !res.ok) {
-        if (flag) flag.remove();
-        if (line) line.remove();
-        el.removeAttribute('data-kh-risk-sig');
-        return;
+      const key = (res && res.ok) ? RA.cacheKey(res.title, res.icon) : '';
+      if (!this._riskMap && key) this.loadRiskCache();
+      const cached = (key && this._riskMap && this._riskMap[key]) || null;
+      const aiSt = RA.aiState(cached);
+      const checking = !!(key && this._riskPending && this._riskPending[key]);
+      const auto = !(this.cfg && this.cfg.importantNote && this.cfg.importantNote.riskAuto === false);
+      /* 缓存过期 / 失败（1 小时后重试）都要重新排队；排队中不重复排。 */
+      const retry = !cached || aiSt.stale || (cached.error && (Date.now() - (cached.at || 0) > 3600 * 1000));
+      const waiting = !!(auto && key && retry);
+
+      /* 行状态：paintPolicy / paintEntity / paintAuto 已把结论记在 tr[data-kh-verdict]。 */
+      const vOf = (tr) => ((tr && tr.getAttribute && tr.getAttribute('data-kh-verdict')) || '');
+      const MAP = { same: 'ok', ok: 'ok', diff: 'bad', warn: 'warn', unknown: 'unknown', timeout: 'unknown', unset: 'unknown' };
+      const stOf = (tr) => MAP[vOf(tr)] || '';
+      const devRow = table ? rowOfField(table, 'dev') : null;
+      const entRow = table ? rowOfField(table, 'entity') : null;
+      const policyRow = table ? rowOfField(table, 'policy') : null;
+      const devState = stOf(devRow) || stOf(entRow);
+      const policyState = policyRow
+        ? (stOf(policyRow) || ((policyRow.querySelector && policyRow.querySelector('.kh-policy-flag')) ? 'bad' : 'unknown'))
+        : '';
+      const localState = (res && res.level >= 2) ? 'bad' : ((res && res.level === 1) ? 'warn' : '');
+      const titleState = localState || aiSt.title;
+      const iconState = (res && res.icon) ? aiSt.icon : '';
+      let cmpBad = 0;
+      if (table && table.querySelectorAll) {
+        const rows = table.querySelectorAll('tr');
+        for (let i = 0; i < rows.length; i++) {
+          const tr = rows[i];
+          if (!tr.getAttribute || !tr.hasAttribute('data-kh-auto-sig')) continue;
+          const st = vOf(tr);
+          if (st === 'diff' || st === 'warn') cmpBad += 1;
+        }
       }
-      const hits = res.hits || [];
-      const hitSig = hits.map((h) => h.tag + ':' + h.word).join(',');
-      const sig = res.level + '|' + res.title + '|' + hitSig + '|' + (res.icon ? 1 : 0);
-      if (el.getAttribute('data-kh-risk-sig') === sig) return;
-      el.setAttribute('data-kh-risk-sig', sig);
-      const cls = res.level >= 2 ? 'is-bad' : (res.level === 1 ? 'is-warn' : 'is-ok');
-      const label = res.level >= 2 ? V.riskBad : (res.level === 1 ? V.riskWarn : V.riskOk);
+      const badCount = ((titleState === 'bad' || titleState === 'warn') ? 1 : 0) + cmpBad
+        + ((devState === 'bad' || devState === 'warn') ? 1 : 0)
+        + ((policyState === 'bad' || policyState === 'warn') ? 1 : 0);
+      const sig = [res && res.ok ? 1 : 0, res && res.title, res && res.icon ? 1 : 0, titleState, iconState,
+        devState, policyState, cmpBad, badCount, cached && cached.at, cached && cached.verdict,
+        cached && cached.error, checking ? 1 : 0].join('|');
+      if (el.getAttribute('data-kh-verdicts-sig') === sig) return;
+      el.setAttribute('data-kh-verdicts-sig', sig);
+      const dropAll = () => {
+        const f0 = head.querySelector('.khin-risk-flag'); if (f0) f0.remove();
+        const s0 = el.querySelector('.khin-verdicts'); if (s0) s0.remove();
+        const a0 = el.querySelector('.khin-ai-line'); if (a0) a0.remove();
+      };
+      if (!res || !res.ok) { dropAll(); return; }
+
+      /* ① 抬头聚合徽标：数字 = 全卡要处理的处数（比对不一致每行算一处）。 */
+      let flag = head.querySelector('.khin-risk-flag');
       if (!flag) {
         flag = doc.createElement('span');
         flag.className = 'khin-risk-flag';
-        /* ✕ 是最后一格，徽标插在它左边，保持「标签…徽标 ✕」的读序 */
         head.insertBefore(flag, head.lastElementChild);
       }
-      flag.className = 'khin-risk-flag ' + cls;
-      flag.textContent = label;
-      flag.title = String(V.riskTipPrefix || '') + '「' + res.title + '」' +
-        (res.icon ? String(V.riskTipIcon || '') : '');
-      if (res.level <= 0) {
-        if (line) line.remove();
-        return;
+      const flagCls = badCount > 0 ? 'is-bad' : (waiting || checking ? 'is-warn' : (titleState === 'ok' ? 'is-ok' : 'is-warn'));
+      const flagTxt = badCount > 0 ? ('⚠' + badCount) : (waiting || checking ? '…' : (titleState === 'ok' ? '✓' : '?'));
+      if (flag.className !== 'khin-risk-flag ' + flagCls) flag.className = 'khin-risk-flag ' + flagCls;
+      if (String(flag.textContent || '') !== flagTxt) flag.textContent = flagTxt;
+      flag.title = String(V.riskTipPrefix || '') + '「' + res.title + '」'
+        + (badCount > 0 ? String(V.riskTipCount || '').replace('{n}', String(badCount)) : String(V.riskTipClean || ''));
+
+      /* ② 体检条：标题 / 法人 / 隐私，一类一格，顺序固定；缺类不占位。 */
+      const SYM = { ok: '✓', warn: '?', bad: '!', unknown: '—' };
+      const localWhy = (res.hits || []).slice(0, 3).map((h) => (h.kind === 'brand'
+        ? String(h.tag === '同名' ? V.riskSame : V.riskBrand || '').replace('{w}', h.word)
+        : String(V.riskSens || '{tag}：「{w}」').replace('{tag}', h.tag).replace('{w}', h.word))).join('；');
+      const aiWhy = cached && !cached.error
+        ? [String(cached.why || ''), cached.brand ? String(V.riskBrandShort || '蹭「{w}」').replace('{w}', cached.brand) : '',
+          (cached.cats || []).join('、')].filter(Boolean).join('；')
+        : '';
+      const chips = [];
+      chips.push({ name: V.vdTitle || '标题', state: titleState, row: table ? rowOfField(table, 'title') : null,
+        tip: [res.title, localWhy, aiWhy].filter(Boolean).join('\n') });
+      if (devState) chips.push({ name: V.vdDev || '法人', state: devState, row: devRow || entRow, tip: '' });
+      if (policyState) chips.push({ name: V.vdPolicy || '隐私', state: policyState, row: policyRow, tip: '' });
+      let box = el.querySelector('.khin-verdicts');
+      if (!box) {
+        box = doc.createElement('div');
+        box.className = 'khin-verdicts';
+        head.parentNode.insertBefore(box, head.nextSibling);
       }
+      box.innerHTML = '';
+      for (let i = 0; i < chips.length; i++) {
+        const c = chips[i];
+        const chip = doc.createElement('span');
+        chip.className = 'khin-vd is-' + (c.state || 'unknown');
+        chip.innerHTML = '<span></span><b>' + SYM[c.state || 'unknown'] + '</b>';
+        chip.firstChild.textContent = c.name;
+        chip.title = c.name + '：' + (c.state === 'ok' ? (V.stOk || '通过')
+          : c.state === 'bad' ? (V.stBad || '有问题')
+            : c.state === 'warn' ? (V.stWarn || '待确认') : (V.stUnknown || '未查明'))
+          + (c.tip ? '\n' + c.tip : '');
+        if (c.row && c.row.scrollIntoView) {
+          chip.addEventListener('click', (e) => {
+            e.stopPropagation();
+            try { c.row.scrollIntoView({ block: 'nearest' }); } catch (err) { /* 老内核没有参数 */ }
+            c.row.classList.add('kh-flash');
+            setTimeout(() => { c.row.classList.remove('kh-flash'); }, 1200);
+          });
+        }
+        box.appendChild(chip);
+      }
+
+      /* ③ 深查块：进行中 / 有风险 / 干净三种形态，横铺卡宽，左竖线区分状态。 */
+      let line = el.querySelector('.khin-ai-line');
       if (!line) {
         line = doc.createElement('div');
-        line.className = 'khin-risk-line';
+        line.className = 'khin-ai-line';
+        line.innerHTML = '<span class="khin-ai-dot"></span><span class="khin-ai-txt"></span>';
         el.appendChild(line);
       }
-      const parts = [];
-      for (let i = 0; i < hits.length && i < 3; i++) {
-        const h = hits[i];
-        if (h.kind === 'brand') {
-          parts.push(String(h.tag === '同名' ? V.riskSame : V.riskBrand || '').replace('{w}', h.word));
-        } else {
-          parts.push(String(V.riskSens || '{tag}：「{w}」').replace('{tag}', h.tag).replace('{w}', h.word));
-        }
+      const lineCls = (cached && !cached.error && cached.verdict)
+        ? (cached.verdict === 'risky' ? 'is-bad' : (cached.verdict === 'safe' ? 'is-ok' : ''))
+        : 'is-unknown';
+      if (line.className !== 'khin-ai-line ' + lineCls) line.className = 'khin-ai-line ' + lineCls;
+      const txt = line.querySelector('.khin-ai-txt');
+      let headTxt = '';
+      let bodyTxt = '';
+      if (checking || waiting) {
+        headTxt = V.riskScanningHead || 'AI 正在核对';
+        bodyTxt = V.riskScanning || '名称与图标是否仿冒知名应用，并查资金盘 / 博彩 / 诈骗等';
+      } else if (cached && cached.error) {
+        headTxt = V.riskUnknownHead || 'AI 未查明';
+        bodyTxt = String(cached.error || '');
+      } else if (cached && cached.verdict) {
+        headTxt = V.riskAiHead || 'AI 深查';
+        bodyTxt = (cached.verdict === 'risky' ? (V.riskAiBad || '发现风险')
+          : cached.verdict === 'suspect' ? (V.riskAiWarn || '存疑') : (V.riskAiOk || '未发现风险'))
+          + (aiWhy ? '：' + aiWhy : '');
+      } else if (localWhy) {
+        headTxt = V.riskLocal || '本地词库';
+        bodyTxt = localWhy;
+      } else {
+        headTxt = V.riskLocal || '本地词库';
+        bodyTxt = auto ? (V.riskQueued || '未发现命中词，AI 核验排队中') : (V.riskAutoOff || '未发现命中词（自动深查已关）');
       }
-      line.innerHTML = '';
-      const txt = doc.createElement('span');
-      txt.textContent = String(V.riskLocal || '本地词库') + '：' + parts.join('；');
-      line.appendChild(txt);
-      const btn = doc.createElement('button');
-      btn.type = 'button';
-      btn.className = 'khin-risk-ai';
-      btn.textContent = String(V.riskDeep || 'AI 深查');
-      btn.title = String(V.riskDeepTip || '');
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        this.riskAi(res.title, res.icon);
-      });
-      line.appendChild(btn);
+      txt.innerHTML = '<b></b> ';
+      txt.firstChild.textContent = headTxt;
+      txt.appendChild(doc.createTextNode(bodyTxt));
+      if (aiWhy) {
+        const more = doc.createElement('button');
+        more.type = 'button';
+        more.className = 'khin-ai-more';
+        more.textContent = V.riskWhy || '依据';
+        more.addEventListener('click', (e) => {
+          e.stopPropagation();
+          let why = line.querySelector('.khin-ai-why');
+          if (why) { why.remove(); return; }
+          why = doc.createElement('span');
+          why.className = 'khin-ai-why';
+          why.textContent = aiWhy;
+          txt.appendChild(why);
+        });
+        line.appendChild(more);
+      }
+
+      /* ④ 自动深查排队：本地结论已渲染，AI 结果后到再补 —— 不阻塞看清卡片。 */
+      if (auto && key && retry && !checking) this.riskEnqueue(key, res.title, res.icon);
     },
 
+    /* ---------- 自动深查：缓存 / 串行队列 / 回填（2.0.17.3 · 用户 m25410） ---------- */
+
+    /** 首次渲染时惰性读缓存；读完重画一遍卡（此时本地结论已在，AI 结论随后补）。 */
+    loadRiskCache() {
+      if (this._riskLoading || this._riskMap) return;
+      this._riskLoading = true;
+      const done = (obj) => {
+        this._riskMap = Object.assign({}, obj || {});
+        this._riskLoading = false;
+        try { this.refresh(); } catch (e) { /* 面板已关 */ }
+      };
+      try {
+        const api = (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) ? chrome.storage.local : null;
+        if (!api) return done(null);
+        api.get('khRiskAuditV1', (v) => done(v && v.khRiskAuditV1));
+      } catch (e) { done(null); }
+    },
+
+    saveRiskCache() {
+      try {
+        const api = (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) ? chrome.storage.local : null;
+        if (!api) return;
+        const o = {};
+        o.khRiskAuditV1 = this._riskMap || {};
+        api.set(o);
+      } catch (e) { /* 存不下就少回填一次，不影响本次会话 */ }
+    },
+
+    riskEnqueue(key, title, icon) {
+      if (!key) return;
+      if (this._riskPending && this._riskPending[key]) return;
+      if (!this._riskQueue) this._riskQueue = [];
+      if (!this._riskPending) this._riskPending = {};
+      this._riskPending[key] = true;
+      this._riskQueue.push({ key: key, title: String(title || ''), icon: String(icon || '') });
+      this.riskPump();
+    },
+
+    /** 单列串行：一次只发一张卡（站点有并发限制，也避免一次刷爆额度）。 */
+    async riskPump() {
+      if (this._riskRunning) return;
+      this._riskRunning = true;
+      try {
+        while (this._riskQueue && this._riskQueue.length) {
+          const job = this._riskQueue.shift();
+          let res = null;
+          try { res = await this.riskAsk(job); } catch (e) { res = { ok: false, error: String((e && e.message) || e) }; }
+          if (!this._riskMap) this._riskMap = {};
+          if (res && res.ok && res.data) {
+            this._riskMap[job.key] = Object.assign({ at: Date.now() }, res.data);
+          } else {
+            this._riskMap[job.key] = { at: Date.now(), verdict: '', iconRisk: 'unknown', error: String((res && res.error) || '没拿到结论') };
+          }
+          if (this._riskPending) delete this._riskPending[job.key];
+          this.saveRiskCache();
+          this.paintVerdictsAll();
+        }
+      } finally {
+        this._riskRunning = false;
+      }
+    },
+
+    riskAsk(job) {
+      return new Promise((resolve) => {
+        const api = (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) ? chrome.runtime : null;
+        if (!api) return resolve({ ok: false, error: '当前上下文没有后台通道' });
+        const type = (KH.MSG && KH.MSG.RISK_SCAN) || 'kh:ai:riskScan';
+        try {
+          api.sendMessage({ type: type, title: job.title, icon: job.icon }, (res) => {
+            void (chrome.runtime && chrome.runtime.lastError);
+            resolve(res || { ok: false, error: '后台没有回执' });
+          });
+        } catch (e) { resolve({ ok: false, error: String((e && e.message) || e) }); }
+      });
+    },
+
+    /** 结论回来后重画所有卡（按签名早退，没变的卡不会重排）。 */
+    paintVerdictsAll() {
+      if (!this.bodyEl) return;
+      const kids = this.bodyEl.children;
+      for (let i = 0; i < kids.length; i++) {
+        const el = kids[i];
+        if (!el || !el.classList || el.classList.contains('khin-item-ctx')) continue;
+        try { this.decorateRisk(el); } catch (e) { /* 单卡失败不影响其它卡 */ }
+      }
+    },
     /**
      * 卡内「AI 深查」：切到 AI 页签，把名称（有图标就带上图标）交给后台的太极AI 联网核验。
      * 结论按普通对话消息落地，用户能在对话流里接着追问。
@@ -5250,6 +5486,10 @@
       this.aiFiles = [];
       this.aiModels = [];
       this.aiWeb = true;
+      /* 【2.0.17.3 · 用户 m25410】自动深查的队列与在飞表：面板下线就作废（结论已落缓存，下次重排）。 */
+      this._riskQueue = [];
+      this._riskPending = {};
+      this._riskRunning = false;
       this.tab = 'note';
       /* 【2.0.8.5】长连接也要断：不断的话后台会在端口上继续推 chunk，面板对象却已经没了。 */
       if (this.aiPort) {
