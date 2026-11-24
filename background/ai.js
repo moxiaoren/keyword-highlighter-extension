@@ -51,6 +51,64 @@
     return AI.chat({ messages: [{ role: 'user', content: '你好' }], override: override || null });
   };
 
+  /* ---------------- 主标题 / 图标「AI 深查」（2.0.18 · m24795） ---------------- */
+
+  /** 图标字节上限：站点单文件 5MB（模板 mFileSize ?? 5），超过就不带图，只按名称核验。 */
+  const ICON_MAX = 5 * 1024 * 1024;
+
+  /** Uint8Array → base64（分块，避免 apply 参数爆炸）。 */
+  function b64Of(u8) {
+    let out = '';
+    const chunk = 0x8000;
+    for (let i = 0; i < u8.length; i += chunk) {
+      out += String.fromCharCode.apply(null, u8.subarray(i, i + chunk));
+    }
+    return btoa(out);
+  }
+
+  /** 图标 → dataURL。站外图标在内容脚本里按页面来源走 CORS 多半取不到，所以放后台取。 */
+  async function iconDataUrl(src) {
+    if (/^data:image\//i.test(src)) return src;
+    if (!/^https?:/i.test(src)) return '';
+    try {
+      const r = await fetch(src, { credentials: 'include' });
+      if (!r.ok) return '';
+      const buf = await r.arrayBuffer();
+      if (!buf.byteLength || buf.byteLength > ICON_MAX) return '';
+      const type = String(r.headers.get('content-type') || 'image/png').split(';')[0].trim();
+      if (type.indexOf('image/') !== 0) return '';
+      return 'data:' + type + ';base64,' + b64Of(new Uint8Array(buf));
+    } catch (e) { return ''; }
+  }
+
+  /**
+   * 卡内「AI 深查」：主标题（+ 抓到的图标）交给太极AI **联网**核验。
+   * @returns {Promise<{ok:boolean, text?:string, error?:string, needLogin?:boolean}>}
+   */
+  AI.riskCheck = async function (msg) {
+    const p = msg || {};
+    const title = String(p.title || '').trim();
+    if (!title) return { ok: false, error: '没有主标题，没法核验' };
+    const ai = await readConfig();
+    if (ai.enabled === false) return { ok: false, error: 'AI 助手已在设置里关闭' };
+    if (!self.KhTaiji) return { ok: false, error: '太极AI 通道没加载（扩展需要更新）' };
+    const prompt = [
+      '请联网核验这个应用的风险，只回答三行：',
+      '1. 结论：安全 / 存疑 / 高风险',
+      '2. 依据：蹭了哪个知名品牌，或涉及资金盘、色情低俗、诈骗、赌博中的哪一类（没有就写「未发现」）',
+      '3. 建议：能不能继续合作，要不要人工复核',
+      '应用名称：' + title,
+      '若有附图，那是它的图标，请一并判断图标是否模仿知名应用的图标。'
+    ].join('\n');
+    const files = [];
+    const icon = String(p.icon || '').trim();
+    if (icon) {
+      const data = await iconDataUrl(icon);
+      if (data) files.push({ name: 'icon.png', data: data });
+    }
+    return self.KhTaiji.chat({ messages: [{ role: 'user', content: prompt }], webSearch: true, files: files });
+  };
+
   /* ---------------- 太极AI：设置页的登录 / 模型清单 / 退出 ---------------- */
 
   AI.taijiLogin = function (msg) {

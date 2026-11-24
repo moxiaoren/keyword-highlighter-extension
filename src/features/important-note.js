@@ -130,6 +130,7 @@
       color: #94a3b8; font-size: 11px; line-height: 1.5;
     }
     .khin-chat-empty b { color: #64748b; font-weight: 600; }
+    .khin-chat-empty-h { color: #475569; font-size: 11px; font-weight: 600; }
     .khin-chat-quick { display: flex; flex-wrap: wrap; gap: 4px; }
     .khin-chat-quick button {
       border: 1px dashed #dbe2ec; background: #fbfcfe; color: #64748b; font: inherit; font-size: 10px;
@@ -187,10 +188,13 @@
       line-height: 1; padding: 0 3px; cursor: pointer; border-radius: 50%;
     }
     .khin-chat-chip-x:hover { background: #dbe7fb; }
-    /* 模型下拉：和 head 同一行，窄了就省略文字，不换行 */
+    /* 【2.0.18 · m24795】模型下拉独占一行：名字常带「· 可看图」，挤在 head 里只剩省略号；
+     * head 只留状态灯 + 状态 + 清空，层级更清楚。 */
+    .khin-chat-bar { display: flex; align-items: center; gap: 5px; flex: 0 0 auto; }
+    .khin-chat-barlbl { flex: 0 0 auto; font-size: 10px; color: #94a3b8; }
     .khin-chat-model {
-      flex: 0 1 auto; min-width: 0; max-width: 42%;
-      height: 20px; padding: 0 2px; border: 1px solid #dbe2ec; border-radius: 5px;
+      flex: 1 1 auto; min-width: 0;
+      height: 22px; padding: 0 3px; border: 1px solid #dbe2ec; border-radius: 5px;
       background: #fff; color: #475569; font: inherit; font-size: 10px; line-height: 1;
     }
     .khin-chat-model:focus-visible { outline: none; border-color: #9dbcf0; }
@@ -365,6 +369,27 @@
       font-size: 13px; padding: 2px 4px; border-radius: 4px; line-height: 1; flex-shrink: 0;
     }
     .khin-item-close:hover { color: #e53935; background: #ffe9e9; }
+    /* 【2.0.18 · 用户 m24795】抬头风险徽标 + 卡尾一行详情：本地词库先筛，
+     * 结论只写「哪一类、哪个词」；图标是像不像知名应用这种像素级判断本地做不了，
+     * 留给卡内「AI 深查」（名称与图标一起交给太极AI 联网核验）。 */
+    .khin-risk-flag {
+      flex: 0 0 auto; font-size: 10px; font-weight: 600; line-height: 15px;
+      padding: 0 5px; border-radius: 8px; cursor: default; white-space: nowrap;
+    }
+    .khin-risk-flag.is-ok { color: #2e7d32; background: #e8f5e9; border: 1px solid rgba(46,125,50,.28); }
+    .khin-risk-flag.is-warn { color: #b45309; background: #fef5e7; border: 1px solid rgba(180,83,9,.3); }
+    .khin-risk-flag.is-bad { color: #c62828; background: #ffe9e9; border: 1px solid rgba(198,40,40,.3); }
+    .khin-risk-line {
+      display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap;
+      margin: 3px 0 0; font-size: 10px; line-height: 15px; color: #64748b;
+    }
+    .khin-risk-ai {
+      border: 1px solid rgba(53,121,194,.45); background: #eaf1fb; color: #2f6fb5;
+      font: inherit; font-size: 10px; line-height: 14px; padding: 0 5px; border-radius: 8px;
+      cursor: pointer; flex: 0 0 auto;
+    }
+    .khin-risk-ai:hover { background: #d8e7fa; }
+    .khin-item.khin-folded .khin-risk-line { display: none; }
     /* 【2.0.8.4 需求③】浮窗单卡收起/展开（非贴边模式逐卡折叠，只留标签行）。
      * 按钮比 ✕ 弱一档：灰色、更小；收起后正文整块不占位（不是 max-height:0 的动画，
      * 免得面板高度跟着动一下）。 */
@@ -2721,7 +2746,9 @@
     aiPort: null,
     /* 【2.0.18】面板内换模型 / 联网搜索开关 / 待发图片（m24086 / m24077 / m24105） */
     aiModel: '',
-    aiWeb: false,
+    aiModels: [],
+    /* 【2.0.17.2 · m24684】联网搜索默认开（用户原话「联网可以默认开么」）。 */
+    aiWeb: true,
     aiFiles: [],
     /* 标签下拉的展开态 / 选中的命中序号（均按 note 文本挂**面板侧**）。
      * 不许挂 head：标签区每次重建（head.changed() 判脏 → renderContent() → renderItems()），
@@ -3092,6 +3119,7 @@
       el.style.background = /^#[0-9a-fA-F]{3,8}$/.test(item.bg || '') ? item.bg : '';
       this.decorateMerge(el, item);
       this.decorateChecks(el, item);
+      this.decorateRisk(el);
       return el;
     },
 
@@ -3115,6 +3143,116 @@
       this.paintEntity(el, table, fields);
       /* 【2026-11-16】比对对子只来自这个关键词里的 `#比=对象`，由 build() 汇总成 item.pairs 传下去。 */
       this.paintAuto(table, fields, item);
+    },
+
+    /**
+     * 【2.0.18 · 用户 m24795】主标题 / 图标的风险初筛（词库与判定都在 src/features/risk-audit.js）。
+     * 抬头一枚徽标：✓ 未发现 / ? 待核 / ⚠ 风险；不安全的再在卡尾补一行「命中哪一类、哪个词」与
+     * 「AI 深查」按钮。按结论 + 命中词做签名，内容没变不重画（与 decorateChecks 同一手法）。
+     */
+    decorateRisk(el) {
+      const RA = (typeof KH !== 'undefined' && KH && KH.RiskAudit) || null;
+      if (!RA || !el || !el.querySelector) return;
+      const V = KH.OcrCopy.VIEW;
+      const doc = el.ownerDocument || document;
+      const head = el.querySelector('.khin-item-head');
+      if (!head) return;
+      const table = el.querySelector('table.kh-table-fetch');
+      let res = null;
+      if (table) { try { res = RA.auditCard(table); } catch (e) { res = null; } }
+      let flag = head.querySelector('.khin-risk-flag');
+      let line = el.querySelector('.khin-risk-line');
+      if (!res || !res.ok) {
+        if (flag) flag.remove();
+        if (line) line.remove();
+        el.removeAttribute('data-kh-risk-sig');
+        return;
+      }
+      const hits = res.hits || [];
+      const hitSig = hits.map((h) => h.tag + ':' + h.word).join(',');
+      const sig = res.level + '|' + res.title + '|' + hitSig + '|' + (res.icon ? 1 : 0);
+      if (el.getAttribute('data-kh-risk-sig') === sig) return;
+      el.setAttribute('data-kh-risk-sig', sig);
+      const cls = res.level >= 2 ? 'is-bad' : (res.level === 1 ? 'is-warn' : 'is-ok');
+      const label = res.level >= 2 ? V.riskBad : (res.level === 1 ? V.riskWarn : V.riskOk);
+      if (!flag) {
+        flag = doc.createElement('span');
+        flag.className = 'khin-risk-flag';
+        /* ✕ 是最后一格，徽标插在它左边，保持「标签…徽标 ✕」的读序 */
+        head.insertBefore(flag, head.lastElementChild);
+      }
+      flag.className = 'khin-risk-flag ' + cls;
+      flag.textContent = label;
+      flag.title = String(V.riskTipPrefix || '') + '「' + res.title + '」' +
+        (res.icon ? String(V.riskTipIcon || '') : '');
+      if (res.level <= 0) {
+        if (line) line.remove();
+        return;
+      }
+      if (!line) {
+        line = doc.createElement('div');
+        line.className = 'khin-risk-line';
+        el.appendChild(line);
+      }
+      const parts = [];
+      for (let i = 0; i < hits.length && i < 3; i++) {
+        const h = hits[i];
+        if (h.kind === 'brand') {
+          parts.push(String(h.tag === '同名' ? V.riskSame : V.riskBrand || '').replace('{w}', h.word));
+        } else {
+          parts.push(String(V.riskSens || '{tag}：「{w}」').replace('{tag}', h.tag).replace('{w}', h.word));
+        }
+      }
+      line.innerHTML = '';
+      const txt = doc.createElement('span');
+      txt.textContent = String(V.riskLocal || '本地词库') + '：' + parts.join('；');
+      line.appendChild(txt);
+      const btn = doc.createElement('button');
+      btn.type = 'button';
+      btn.className = 'khin-risk-ai';
+      btn.textContent = String(V.riskDeep || 'AI 深查');
+      btn.title = String(V.riskDeepTip || '');
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.riskAi(res.title, res.icon);
+      });
+      line.appendChild(btn);
+    },
+
+    /**
+     * 卡内「AI 深查」：切到 AI 页签，把名称（有图标就带上图标）交给后台的太极AI 联网核验。
+     * 结论按普通对话消息落地，用户能在对话流里接着追问。
+     */
+    riskAi(title, icon) {
+      const V = KH.OcrCopy.VIEW;
+      this.setTab('ai');
+      if (this.aiBusy) {
+        this.aiMsgs.push({ role: 'error', text: String(V.riskBusy || '上一个问题还没答完，稍等再点。') });
+        this.renderAiList();
+        return;
+      }
+      const port = this.ensureAiPort();
+      if (!port) {
+        this.aiMsgs.push({ role: 'error', text: String(V.riskNoPort || '面板连不上后台，重开面板再试。') });
+        this.renderAiList();
+        return;
+      }
+      this.aiMsgs.push({ role: 'user', text: String(V.riskAsk || '').replace('{t}', String(title || '')) });
+      this.aiMsgs.push({ role: 'assistant', text: String(V.riskWorking || '正在联网核验…'), streaming: true });
+      this.aiBusy = true;
+      this.renderAiList();
+      try {
+        port.postMessage({ action: 'risk', title: String(title || ''), icon: String(icon || '') });
+      } catch (e) {
+        this.aiBusy = false;
+        const last = this.aiMsgs[this.aiMsgs.length - 1];
+        if (last && last.role === 'assistant') {
+          last.streaming = false;
+          last.role = 'error';
+          last.text = String(V.riskNoPort || '');
+        }
+        this.renderAiList();
+      }
     },
 
     /**
@@ -4053,8 +4191,11 @@
             '<div class="khin-chat-head">' +
               '<span class="khin-chat-dot"></span>' +
               '<span class="khin-chat-mode"></span>' +
-              '<select class="khin-chat-model" data-act="ai-model" aria-label="换模型"></select>' +
               '<button class="khin-chat-btn" type="button" data-act="ai-clear"></button>' +
+            '</div>' +
+            '<div class="khin-chat-bar">' +
+              '<span class="khin-chat-barlbl"></span>' +
+              '<select class="khin-chat-model" data-act="ai-model" aria-label="换模型"></select>' +
             '</div>' +
             '<div class="khin-chat-list" role="log" aria-live="polite"></div>' +
             '<div class="khin-chat-form">' +
@@ -4094,6 +4235,8 @@
         });
         /* 【2.0.18 · m24086】模型下拉：直接放在对话窗顶部（用户口径「不用每次去设置页」） */
         const sel = box.querySelector('[data-act="ai-model"]');
+        const barLbl = box.querySelector('.khin-chat-barlbl');
+        if (barLbl) barLbl.textContent = V.aiModelLabel || '模型';
         if (sel) {
           sel.title = V.aiModelTip || '';
           sel.addEventListener('change', (e) => {
@@ -4125,6 +4268,42 @@
             this.addAiFiles(files);
           });
         }
+        /* 【2.0.17.2 · m24684】粘贴/拖放直接收图：用户口径「从本地导入太麻烦了」。 */
+        const grabFiles = (dt) => {
+          const out = [];
+          if (!dt) return out;
+          const items = dt.items ? Array.prototype.slice.call(dt.items) : [];
+          for (let i = 0; i < items.length; i++) {
+            const it = items[i];
+            if (it && it.kind === 'file' && /^image\//i.test(it.type || '')) {
+              const f = it.getAsFile ? it.getAsFile() : null;
+              if (f) out.push(f);
+            }
+          }
+          if (!out.length && dt.files) out.push.apply(out, Array.prototype.slice.call(dt.files));
+          return out;
+        };
+        const onPaste = (e) => {
+          const files = grabFiles(e.clipboardData);
+          if (!files.length) return;
+          e.preventDefault();
+          e.stopPropagation();
+          this.addAiFiles(files);
+        };
+        input.addEventListener('paste', onPaste);
+        box.addEventListener('paste', onPaste);
+        box.addEventListener('dragover', (e) => {
+          if (!grabFiles(e.dataTransfer).length) return;
+          e.preventDefault();
+          e.stopPropagation();
+        });
+        box.addEventListener('drop', (e) => {
+          const files = grabFiles(e.dataTransfer);
+          if (!files.length) return;
+          e.preventDefault();
+          e.stopPropagation();
+          this.addAiFiles(files);
+        });
         this.loadAiModels();
         this.syncAiAtt();
       }
@@ -4177,11 +4356,13 @@
           sel.appendChild(o);
           return;
         }
+        this.aiModels = list;
         const cfgModel = String((((this.cfg || {}).ai || {}).taiji || {}).model || '');
         for (const m of list) {
           const o = document.createElement('option');
           o.value = String(m.id || '');
-          o.textContent = String(m.name || m.id || '');
+          /* 【2.0.17.2 · m24684】标出能看图的模型：站点只对这些模型开放发图，选错会被后端拒。 */
+          o.textContent = String(m.name || m.id || '') + (m.img ? ' · 可看图' : '');
           sel.appendChild(o);
         }
         const pick = cfgModel || this.aiModel || String(list[0].id || '');
@@ -4213,13 +4394,14 @@
     /** 把用户选的图片读成 dataURL 挂在待发列表里（站点收 dataURL，不是裸 base64）。 */
     addAiFiles(files) {
       const V = KH.OcrCopy.VIEW;
-      const limit = 4;
+      /* 站点上限 3 张（模板 mFileCount 默认 3），多发会被后端拒。 */
+      const limit = 3;
       const room = limit - this.aiFiles.length;
       if (room <= 0) return;
       const list = files.slice(0, room);
       for (const f of list) {
         if (!f || !/^image\//i.test(f.type || '')) continue;
-        if (f.size > 6 * 1024 * 1024) continue;
+        if (f.size > 5 * 1024 * 1024) continue;
         const item = { name: f.name || ('image-' + Date.now() + '.png'), data: '' };
         this.aiFiles.push(item);
         try {
@@ -4336,10 +4518,18 @@
       if (!this.aiMsgs.length && !this.aiBusy) {
         const empty = doc.createElement('div');
         empty.className = 'khin-chat-empty';
+        /* 【2.0.18 · m24795】空态分两层：一句邀请 + 一句说明；说明点名「联网已默认开」「图片能粘贴」，
+         * 省得用户去猜那两个按钮是干什么的。 */
+        const head = doc.createElement('div');
+        head.className = 'khin-chat-empty-h';
+        head.textContent = ready ? (V.aiEmptyHead || '问一句，或者发张图') : V.aiNeedKey;
+        empty.appendChild(head);
         const tip = doc.createElement('div');
         tip.innerHTML = '';
-        tip.textContent = ready ? V.aiEmpty : V.aiNeedKey;
-        empty.appendChild(tip);
+        if (ready) {
+          tip.textContent = V.aiEmptyHint || V.aiEmpty;
+          empty.appendChild(tip);
+        }
         if (ready) {
           const quick = doc.createElement('div');
           quick.className = 'khin-chat-quick';
@@ -4420,6 +4610,18 @@
       const ready = (this.aiFiles || []).filter(f => f && f.data);
       if (!text && !ready.length) return;
       const V = KH.OcrCopy.VIEW;
+      /* 【2.0.17.2 · m24684】站点只对带 imageInput/anyFile 的模型开放发图：选到纯文本模型时后端回
+       * code=1，这里先拦下并说清换哪个，别让用户对着一句看不懂的站点错误。 */
+      if (ready.length) {
+        const list = Array.isArray(this.aiModels) ? this.aiModels : [];
+        let pick = null;
+        for (let i = 0; i < list.length; i++) if (String(list[i].id || '') === String(this.aiModel || '')) { pick = list[i]; break; }
+        if (pick && !pick.img) {
+          this.aiMsgs.push({ role: 'error', text: V.aiModelNoImg });
+          this.renderAiList();
+          return;
+        }
+      }
       if (!this.aiReady()) {
         this.aiMsgs.push({ role: 'error', text: V.aiNeedKey });
         this.renderAiList();
@@ -4848,6 +5050,7 @@
          * 用户报的「只有贴边模式有这个小标」正是它：贴边展开每次都是新卡，浮窗是复用卡。
          * 内部按字段值签名早退，内容没变不会重画，也不会闪。 */
         this.decorateChecks(el, item);
+        this.decorateRisk(el);
         els.push(el);
         notes.push(note);
         /* 落位：同一位置已经是对的元素就跳过，避免无谓的 DOM 移动（移动即重排）。
@@ -5045,7 +5248,8 @@
       this.aiMsgs = [];
       this.aiBusy = false;
       this.aiFiles = [];
-      this.aiWeb = false;
+      this.aiModels = [];
+      this.aiWeb = true;
       this.tab = 'note';
       /* 【2.0.8.5】长连接也要断：不断的话后台会在端口上继续推 chunk，面板对象却已经没了。 */
       if (this.aiPort) {

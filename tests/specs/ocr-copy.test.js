@@ -33,6 +33,8 @@ const PLACEHOLDERS = ['n', 'host', 'matched',
   'missing',
   /* 【2.0.16.1 · 用户 m18157】有字却没命中时把「在找哪个词」说出来（`imgMissNoWord` 的 {words}） */
   'words',
+  /* 【2.0.18 · 用户 m24795】卡内风险初筛：{tag}=敏感类别、{w}=命中的词、{t}=要核验的应用名 */
+  'tag', 'w', 't',
   ];
 
 module.exports = async function run() {

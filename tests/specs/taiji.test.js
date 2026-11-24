@@ -55,7 +55,7 @@ function sseRes(chunks) {
   };
 }
 
-const TM_OK = { code: 0, data: { models: [{ model: 'openai::gpt-6.1-sol', name: 'GPT-6.1' }, 'google::gemini-3.1-pro-preview'] } };
+const TM_OK = { code: 0, data: { models: [{ model: 'openai::gpt-6.1-sol', name: 'GPT-6.1' }, 'google::gemini-3.1-pro-preview', { model: 'v::see', name: '看图模型', attr: { capabilities: { imageInput: true } } }] } };
 
 /* 【易错】vm 沙盒里跑出来的对象是**另一个 realm** 的实例：assert.deepStrictEqual 会因原型不同判不等。
  * 所以跨沙盒的结果一律逐字段比对，别用 deepEq。 */
@@ -211,6 +211,22 @@ module.exports = async function run() {
     eq(T.normModels([{ label: '只有名字' }]).length, 0, '没有 value/model/id 就拿不到 id，不能塞空串进下拉');
   });
 
+  await test('★ 2.0.17.2 · 模型清单带「可看图」能力位，站点错误原因带原文（用户 m24684）', () => {
+    const { T } = loadTaiji();
+    const got = T.normModels([
+      { label: '看图模型', value: 'v::see', attr: { modelType: 'chat', capabilities: { imageInput: true } } },
+      { label: '文件模型', value: 'v::file', attr: { capabilities: { anyFile: true } } },
+      { label: '纯文本', value: 'v::text', attr: { modelType: 'chat' } }
+    ]);
+    eq(got[0].img, true, 'imageInput 要标成可看图');
+    eq(got[1].img, true, 'anyFile 也要标成可看图');
+    eq(got[2].img, false, '没有能力位就是纯文本');
+    const t = read('background/taiji.js');
+    truthy(t.indexOf("const why = String(j.err || j.msg || '').trim()") >= 0, '站点错误原因在 err/msg 里，不能只报 code');
+    truthy(t.indexOf("'站点流错误 code=' + j.code + (why ? '：' + why : '')") >= 0, '错误串要把站点原话接上');
+    truthy(t.indexOf('.slice(0, 3)') >= 0, '图片最多 3 张（站点 mFileCount 默认 3）');
+  });
+
   await test('对话压平：system 提到最前、assistant 加「（上文回答）」前缀、空内容跳过', () => {
     const { T } = loadTaiji();
     eq(T.flatten([
@@ -226,7 +242,7 @@ module.exports = async function run() {
     const { T, calls, mem } = loadTaiji();
     const res = await T.login({ account: 'u1', password: 'pwd-secret' });
     truthy(res.ok, '登录应当成功');
-    eq(res.models.length, 2, '登录成功后顺手把模型清单带回来（少一次往返）');
+    eq(res.models.length, 3, '登录成功后顺手把模型清单带回来（少一次往返）');
     const loginCall = calls.filter((c) => c.url.indexOf('/api/user/login') >= 0)[0];
     truthy(loginCall, '必须真的发了登录请求');
     eq(loginCall.method, 'POST', '登录是 POST');
@@ -308,6 +324,12 @@ module.exports = async function run() {
     const rb = await b.T.chat({ messages: [], files: [] });
     falsy(rb.ok, '没字也没图不能发');
     truthy(rb.error.indexOf('没有要发送的内容') >= 0, '要有明确原因：' + rb.error);
+    /* 站点只对带 imageInput/anyFile 的模型开放发图：清单里没有这种模型时必须当场说清，不能把图发出去换回 code=1。 */
+    const c = loadTaiji({ tmpl: { code: 0, data: { models: ['m::text-only'] } } });
+    const rc = await c.T.chat({ messages: [{ role: 'user', content: '看看这个图标' }], files: [{ name: 'y.png', data: 'data:image/png;base64,QQ' }] });
+    falsy(rc.ok, '没有可看图模型时不能硬发');
+    truthy(rc.error.indexOf('没有支持看图') >= 0, '要直接说清换模型：' + rc.error);
+    eq(c.calls.filter((x) => x.url.indexOf('/api/chat/completions') >= 0).length, 0, '这种情况一个 completions 请求都不该发');
   });
 
   await test('★ 2.0.16.7 · 站点回字符串数字 id 也要转成整数发；非数字直接报错不发请求', async () => {
@@ -455,6 +477,12 @@ module.exports = async function run() {
     truthy(note.indexOf('webSearch: !!this.aiWeb') >= 0, '联网搜索开关要跟着消息发出去');
     truthy(note.indexOf('files: ready.map(f => ({ name: f.name, data: f.data }))') >= 0, '图片要按站点收的 {name,data} 形状发');
     truthy(note.indexOf("action: 'setModel'") >= 0, '面板内换模型走 setModel');
+    /* 【2.0.17.2 · m24684】图片上限对齐站点、不支持看图的模型先拦、粘贴/拖放收图、联网默认开 */
+    truthy(note.indexOf('aiModelNoImg') >= 0, '选到不支持看图的模型要给出人话提示');
+    truthy(note.indexOf("input.addEventListener('paste', onPaste)") >= 0, '支持直接粘贴图片');
+    truthy(note.indexOf('const limit = 3;') >= 0, '图片上限 3 张（站点 mFileCount 默认 3）');
+    truthy(note.indexOf('f.size > 5 * 1024 * 1024') >= 0, '单张上限 5MB（站点 mFileSize 默认 5）');
+    truthy(note.indexOf('aiWeb: true') >= 0, '联网搜索默认开');
   });
 
   await test('★ 后台长连接：一律 AI.chat（内部转太极AI），不再看 mode、不再有网页对话驱动', () => {

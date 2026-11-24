@@ -766,7 +766,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 chrome.runtime.onConnect.addListener((port) => {
   if (!port || port.name !== ((MSG && MSG.AI_PORT) || 'kh:ai')) return;
   let busy = false;
-  port.onDisconnect.addListener(() => { busy = false; });
+  /* 【2.0.18 · m24795】「AI 深查」单独占一条（和对话互不影响，但同一条连接上不许并发）。 */
+  let riskBusy = false;
+  port.onDisconnect.addListener(() => { busy = false; riskBusy = false; });
 
   port.onMessage.addListener((msg) => {
     const m = msg || {};
@@ -796,6 +798,25 @@ chrome.runtime.onConnect.addListener((port) => {
       })();
       return;
     }
+    /* 【2.0.18 · m24795】卡内「AI 深查」：名称 +（可选）图标，强制联网核验。 */
+    if (m.action === 'risk') {
+      if (riskBusy) { try { port.postMessage({ type: 'error', error: '上一次核验还在跑，稍等' }); } catch (e) {} return; }
+      riskBusy = true;
+      const postR = (obj) => { try { port.postMessage(obj); } catch (e) { /* 面板已关 */ } };
+      Promise.resolve()
+        .then(() => self.KhAi.riskCheck({ title: m.title, icon: m.icon }))
+        .then((r) => {
+          riskBusy = false;
+          if (r && r.ok) postR({ type: 'done', text: r.text });
+          else postR({ type: 'error', error: (r && r.error) || '核验失败', needLogin: !!(r && r.needLogin) });
+        })
+        .catch((err) => {
+          riskBusy = false;
+          postR({ type: 'error', error: String((err && err.message) || err) });
+        });
+      return;
+    }
+
     if (m.action !== 'ask') return;
     if (busy) { try { port.postMessage({ type: 'error', error: '上一条还在回，等它说完' }); } catch (e) {} return; }
     busy = true;

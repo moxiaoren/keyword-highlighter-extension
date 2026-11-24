@@ -254,7 +254,9 @@ const specs = [
   /* 2.0.16.3：上下格组合词命中 ⇒ 命中行整行底色（只认 combo-tb；类名/变量/撤色记账） */
   './specs/renderer-row-tint.test.js',
   /* 2.0.16.6（用户 m19162 问题② / m19982）：长行孤立字母清洗 + 可疑值只标不改（suspect） */
-  './specs/ocr-noise.test.js'
+  './specs/ocr-noise.test.js',
+  /* 主标题/图标本地风险初筛（词库命中 + 卡片徽标 + AI 深查契约）。见 specs/risk-audit.test.js 头部 */
+  './specs/risk-audit.test.js'
 ];
 
 (async () => {

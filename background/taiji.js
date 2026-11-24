@@ -292,6 +292,13 @@
    * —— 旧实现只认 `model|id|name`，`value` 读不到 ⇒ 167 个模型全被丢掉，设置页显示「没有可用模型」。
    * 顺带按 `attr.modelType` 剔掉生图/嵌入类：它们进对话列表只会在发消息时失败。
    */
+  /** 【2.0.17.2 · m24684】站点只对带 imageInput / anyFile 能力的模型开放发图（前端据此藏发图按钮），
+   * 后端对纯文本模型收到 files 会回 code=1。模型清单带上这一位，面板才好先拦住。 */
+  function imgCap(m) {
+    const cap = (m && typeof m === 'object' && m.attr && m.attr.capabilities) || {};
+    return !!(cap.imageInput || cap.anyFile);
+  }
+
   function normModels(list) {
     const out = [];
     if (!Array.isArray(list)) return out;
@@ -308,7 +315,7 @@
         if (kind && kind !== 'chat') continue;
       }
       if (!id) continue;
-      out.push({ id: id, name: name || id });
+      out.push({ id: id, name: name || id, img: imgCap(m) });
     }
     return out;
   }
@@ -460,7 +467,10 @@
             let j = null;
             try { j = JSON.parse(payload); } catch (e) { continue; }
             if (j.code !== undefined && j.code !== 0) {
-              const e = new Error('站点流错误 code=' + j.code);
+              /* 【2.0.17.2 · m24684】站点把真正的失败原因放在 err（其次 msg）里；只报 code 等于把原因
+               * 扔掉（用户只看到「站点流错误 code=1」根本无从判断）。站点前端也是这么显示的。 */
+              const why = String(j.err || j.msg || '').trim().slice(0, 200);
+              const e = new Error('站点流错误 code=' + j.code + (why ? '：' + why : ''));
               /* 401/403 = 会话过期：上层据此提示「到设置页重新登录」，别只说「站点流错误」。 */
               e.needLogin = (j.code === 2 || j.code === 401 || j.code === 403);
               throw e;
@@ -498,20 +508,37 @@
     const override = (payload.override && typeof payload.override === 'object') ? payload.override : {};
     const model = String(override.model || payload.model || tj.model || '').trim();
     try {
-      let useModel = model;
-      if (!useModel) {
-        const list = await tmplRaw();
-        if (!list.length) return { ok: false, error: '站点没有回可用模型（先在设置页点「刷新模型」）' };
-        useModel = list[0].id;
-      }
       const text = flatten(Array.isArray(payload.messages) ? payload.messages : []);
       /* 【2.0.18 · m24105】图片：站点收 files:[{name,data}]，data 是 **dataURL**（站点前端用
-       * FileReader.readAsDataURL 转，不是裸 base64）。只在真有图时才带这个字段。 */
+       * FileReader.readAsDataURL 转，不是裸 base64）。只在真有图时才带这个字段。
+       * 上限跟着站点走（mFileCount ?? 3 / mFileSize ?? 5），超了后端会拒。 */
       const files = (Array.isArray(payload.files) ? payload.files : [])
         .filter(f => f && f.data && String(f.data).indexOf('data:') === 0)
-        .slice(0, 4)
+        .slice(0, 3)
         .map(f => ({ name: String(f.name || 'image.png'), data: String(f.data) }));
       if (!text && !files.length) return { ok: false, error: '没有要发送的内容' };
+      let useModel = model;
+      if (!useModel || files.length) {
+        const list = await tmplRaw();
+        if (!useModel) {
+          if (!list.length) return { ok: false, error: '站点没有回可用模型（先在设置页点「刷新模型」）' };
+          useModel = list[0].id;
+        }
+        /* 【2.0.17.2 · m24684】发图必须用站点认的多模态模型：用户选的是纯文本模型时顺延到第一个
+         * 可看图的模型（否则后端会对 files 回 code=1，现象就是一句「站点流错误」）。 */
+        if (files.length) {
+          let cur = null;
+          let pick = null;
+          for (let i = 0; i < list.length; i++) {
+            if (list[i].id === useModel) cur = list[i];
+            if (!pick && list[i].img) pick = list[i];
+          }
+          if (cur && !cur.img) {
+            if (!pick) return { ok: false, error: '站点没有支持看图的模型，暂时发不了图片' };
+            useModel = pick.id;
+          }
+        }
+      }
       const webSearch = !!payload.webSearch;
       const nativeTools = Array.isArray(payload.nativeTools) ? payload.nativeTools.filter(x => typeof x === 'string').slice(0, 4) : [];
       const sid = await createSession(useModel, null, { webSearch: webSearch, nativeTools: nativeTools });
