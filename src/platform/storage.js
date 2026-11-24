@@ -883,6 +883,98 @@
       return this.importJSON(dec.text, opts, config);
     },
 
+    /* ---------------- 分享码逐条挑（2.0.18 · m24051） ----------------
+     * 用户原话：「分享码导入时候是不是不能列出有哪些词，自主选择添加哪个、哪些」，
+     * 拍板「关键词 + 分组 + 站点规则都能勾；重复项标出来、默认不勾，勾上就是覆盖本机那条」。
+     * planShare 只读不写：把分享码里的条目摊平 + 与现有配置比对（同 id 或同内容算重复）；
+     * importPicked 按勾选逐条落库，重复项按「覆盖」处理（不是跳过）。 */
+    async planShare(code, config) {
+      const dec = await this.decodeShare(code);
+      const cfg = config || await this.load();
+      const data = dec.data || {};
+      const kwCur = cfg.keywords || [];
+      const kwIds = new Set(kwCur.map(k => k && k.id));
+      const kwKeys = new Set(kwCur.map(keyOf));
+      const keywords = (Array.isArray(data.keywords) ? data.keywords : [])
+        .map(k => sanitizeKeyword(k, cfg))
+        .filter(k => k.text || (k.cellVerifyEnabled && k.cellVerify))
+        .map((k, i) => ({
+          idx: i,
+          item: k,
+          label: k.text || ('（仅抓取）' + (k.fetchLabels || '只抓字段')),
+          dup: kwIds.has(k.id) || kwKeys.has(keyOf(k))
+        }));
+      const gCur = cfg.groups || [];
+      const gIds = new Set(gCur.map(g => g && g.id));
+      const gNames = new Set(gCur.map(g => g && g.name));
+      const groups = (Array.isArray(data.groups) ? data.groups : [])
+        .map(g => newGroup(g))
+        .filter(g => g.name)
+        .map((g, i) => ({ idx: i, item: g, label: g.name, dup: gIds.has(g.id) || gNames.has(g.name) }));
+      const ruleKey = r => (r ? (r.type || '') + '|' + (r.pattern || '') + '|' + (r.matchType || '') : '');
+      const rCur = new Set((cfg.siteRules || []).map(ruleKey));
+      const siteRules = (Array.isArray(data.siteRules) ? data.siteRules : [])
+        .filter(r => r && typeof r.pattern === 'string' && r.pattern)
+        .map((r, i) => ({ idx: i, item: r, label: (r.type || '规则') + ' · ' + r.pattern, dup: rCur.has(ruleKey(r)) }));
+      return { data: data, keywords: keywords, groups: groups, siteRules: siteRules, hasStyles: !!(data.styles || data.highlightStyle || data.noteCardStyle || data.matchSettings) };
+    },
+
+    /** 按勾选导入分享码。pick = { keywords:[idx], groups:[idx], siteRules:[idx], styles:true } */
+    async importPicked(code, pick, config) {
+      const cfg = config || await this.load();
+      const plan = await this.planShare(code, cfg);
+      const data = plan.data || {};
+      const sel = pick || {};
+      const setOf = (k) => new Set((Array.isArray(sel[k]) ? sel[k] : []).map(n => Number(n)));
+      const wantKw = setOf('keywords');
+      const wantG = setOf('groups');
+      const wantS = setOf('siteRules');
+      const stats = { keywords: 0, groups: 0, siteRules: 0, replaced: 0 };
+      const setObj = {};
+
+      if (wantKw.size) {
+        const cur = (cfg.keywords || []).slice();
+        for (const row of plan.keywords) {
+          if (!wantKw.has(row.idx)) continue;
+          const item = sanitizeKeyword(row.item, cfg);
+          let at = cur.findIndex(k => k && k.id === item.id);
+          if (at < 0) at = cur.findIndex(k => keyOf(k) === keyOf(item));
+          if (at >= 0) { cur[at] = item; stats.replaced++; } else { cur.push(item); stats.keywords++; }
+        }
+        setObj.keywords = cur;
+      }
+      if (wantG.size) {
+        const cur = (cfg.groups || []).slice();
+        for (const row of plan.groups) {
+          if (!wantG.has(row.idx)) continue;
+          const g = newGroup(row.item);
+          let at = cur.findIndex(x => x && x.id === g.id);
+          if (at < 0) at = cur.findIndex(x => x && x.name === g.name);
+          if (at >= 0) { cur[at] = g; stats.replaced++; } else { cur.push(g); stats.groups++; }
+        }
+        setObj.groups = cur;
+      }
+      if (wantS.size) {
+        const keyOfRule = r => (r ? (r.type || '') + '|' + (r.pattern || '') + '|' + (r.matchType || '') : '');
+        const cur = (cfg.siteRules || []).slice();
+        for (const row of plan.siteRules) {
+          if (!wantS.has(row.idx)) continue;
+          const r = row.item;
+          const at = cur.findIndex(x => keyOfRule(x) === keyOfRule(r));
+          if (at >= 0) { cur[at] = r; stats.replaced++; } else { cur.push(r); stats.siteRules++; }
+        }
+        setObj.siteRules = cur;
+      }
+      if (Object.keys(setObj).length) await this.patch(setObj);
+
+      /* 样式 / 图片识别档位不是逐条数据，勾了「连带样式」就整块按合并口径导入（复用 importJSON 的同一段逻辑） */
+      if (sel.styles !== false && plan.hasStyles) {
+        const only = { keywords: false, siteRules: false, siteDisabled: false, styles: true };
+        await this.importJSON(JSON.stringify({ styles: data.styles, meta: data.meta }), { include: only, mode: 'merge' }, cfg);
+      }
+      return stats;
+    },
+
     /**
      * 兼容读取：v2 的 `styles` 块，以及**旧版**平铺的
      * `highlightStyle` / `noteCardStyle` / `matchSettings`（存量文件必须能直接导入）。

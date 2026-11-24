@@ -1525,27 +1525,116 @@
     D.toast(copied ? '分享码已复制' : '分享码已生成，请从下面的文本框复制', copied ? 'ok' : 'error');
   });
 
+  /**
+   * 分享码导入清单（2.0.18 · m24051）
+   * 用户口径：「导入时候要能列出有哪些词，自主选择添加哪个」；重复项标出来、默认不勾，
+   * **勾上重复项 = 覆盖本机那一条**（不是跳过）。三类数据各一组，组头是全选。
+   */
+  function sharePickBody(plan, state) {
+    const wrap = h('div', { class: 'kh-share-pick' });
+    const SECS = [
+      { key: 'keywords', title: '关键词', unit: '条', rows: plan.keywords || [] },
+      { key: 'groups', title: '分组', unit: '个', rows: plan.groups || [] },
+      { key: 'siteRules', title: '站点规则', unit: '条', rows: plan.siteRules || [] }
+    ];
+    for (const sec of SECS) {
+      if (!sec.rows.length) continue;
+      const dupN = sec.rows.filter(r => r.dup).length;
+      const all = h('input', { type: 'checkbox', class: 'kh-share-all' });
+      const cnt = h('span', { class: 'kh-share-cnt' });
+      const syncAll = () => {
+        const n = sec.rows.filter(r => state[sec.key].has(r.idx)).length;
+        all.checked = n === sec.rows.length;
+        all.indeterminate = n > 0 && n < sec.rows.length;
+        cnt.textContent = '已选 ' + n + ' / ' + sec.rows.length;
+      };
+      all.addEventListener('change', () => {
+        state[sec.key] = new Set(all.checked ? sec.rows.map(r => r.idx) : []);
+        for (const el of wrap.querySelectorAll('[data-sec="' + sec.key + '"]')) el.checked = all.checked;
+        syncAll();
+      });
+      const head = h('div', { class: 'kh-share-sec-hd' }, [
+        all,
+        h('b', { text: sec.title + ' ' + sec.rows.length + ' ' + sec.unit + (dupN ? '（本机已有 ' + dupN + ' 项）' : '') }),
+        cnt
+      ]);
+      const list = h('div', { class: 'kh-share-sec-body' });
+      for (const r of sec.rows) {
+        const cb = h('input', { type: 'checkbox' });
+        cb.checked = state[sec.key].has(r.idx);
+        cb.setAttribute('data-sec', sec.key);
+        cb.setAttribute('data-idx', String(r.idx));
+        cb.addEventListener('change', () => {
+          if (cb.checked) state[sec.key].add(r.idx); else state[sec.key].delete(r.idx);
+          syncAll();
+        });
+        list.appendChild(h('label', { class: 'kh-share-row' + (r.dup ? ' is-dup' : '') }, [
+          cb,
+          h('span', { class: 'kh-share-txt', text: r.label || '（空）' }),
+          r.dup ? h('span', { class: 'kh-share-tag', text: '已有，勾上覆盖' }) : null
+        ]));
+      }
+      const boxEl = h('section', { class: 'kh-share-sec' }, [head, list]);
+      boxEl.setAttribute('data-key', sec.key);
+      wrap.appendChild(boxEl);
+      syncAll();
+    }
+    /* 样式与图片识别档位是整块配置，没有逐条口径：给一个开关，默认勾 */
+    const scb = h('input', { type: 'checkbox' });
+    scb.checked = state.styles !== false;
+    scb.addEventListener('change', () => { state.styles = scb.checked; });
+    wrap.appendChild(h('label', { class: 'kh-share-row kh-share-style' }, [
+      scb, h('span', { class: 'kh-share-txt', text: '连带样式 / 比对设置 / 图片识别档位（整块按合并口径写入）' })
+    ]));
+    return wrap;
+  }
+
   $('btn-share-import').addEventListener('click', async () => {
     const ta = $('share-code-text');
     const code = String((ta && ta.value) || '').trim();
     if (!code) { D.toast('先把别人给你的分享码粘贴到下面的文本框', 'error'); if (ta) ta.focus(); return; }
-    let dec = null;
-    try { dec = await KH.Store.decodeShare(code); }
+    let plan = null;
+    try { plan = await KH.Store.planShare(code, cfg); }
     catch (err) { D.toast('分享码读不出来：' + ((err && err.message) || err), 'error'); return; }
-    const data = dec.data || {};
-    const lines = [
-      '这份分享码里有：关键词 ' + (Array.isArray(data.keywords) ? data.keywords.length : 0) + ' 条 / 分组 '
-        + (Array.isArray(data.groups) ? data.groups.length : 0) + ' 个 / 站点规则 '
-        + (Array.isArray(data.siteRules) ? data.siteRules.length : 0) + ' 条 / 样式与图片识别配置',
-      '',
-      '导入方式：合并（追加去重，不删除现有数据）'
-    ];
-    const ok = await D.confirmBox(lines.join('\n'), { title: '导入分享码', saveLabel: '合并导入' });
+    const empty = !plan.keywords.length && !plan.groups.length && !plan.siteRules.length;
+    if (empty && !plan.hasStyles) { D.toast('这份分享码里没有可导入的内容', 'error'); return; }
+    /* 默认只勾「本机没有的」：同名/同内容的默认不勾，用户手动勾上就是覆盖 */
+    const state = {
+      keywords: new Set(plan.keywords.filter(r => !r.dup).map(r => r.idx)),
+      groups: new Set(plan.groups.filter(r => !r.dup).map(r => r.idx)),
+      siteRules: new Set(plan.siteRules.filter(r => !r.dup).map(r => r.idx)),
+      styles: !!plan.hasStyles
+    };
+    const ok = await new Promise((resolve) => {
+      KH.ui.Modal.open({
+        title: '导入分享码（选择要添加的项）',
+        body: sharePickBody(plan, state),
+        size: 'md',
+        saveLabel: '导入所选',
+        onSave: () => {
+          if (!state.keywords.size && !state.groups.size && !state.siteRules.size && !state.styles) {
+            D.toast('一项都没选：勾上要导入的内容再点「导入所选」', 'error');
+            return false;
+          }
+          resolve(true);
+          return true;
+        },
+        onClose: () => resolve(false)
+      });
+    });
     if (!ok) return;
+    const pick = {
+      keywords: Array.from(state.keywords), groups: Array.from(state.groups),
+      siteRules: Array.from(state.siteRules), styles: state.styles !== false
+    };
     let stats = null;
-    const wrote = await mutate(async () => { stats = await KH.Store.importShare(code, { mode: 'merge' }, cfg); });
+    const wrote = await mutate(async () => { stats = await KH.Store.importPicked(code, pick, cfg); });
     if (!wrote) return;
-    D.toast('分享码导入完成：新增关键词 ' + stats.keywords + ' 条 / 分组 ' + stats.groups + ' 个 / 站点规则 ' + stats.siteRules + ' 条', 'ok');
+    const parts = ['新增关键词 ' + stats.keywords + ' 条'];
+    if (stats.groups) parts.push('分组 ' + stats.groups + ' 个');
+    if (stats.siteRules) parts.push('站点规则 ' + stats.siteRules + ' 条');
+    if (stats.replaced) parts.push('覆盖本机已有 ' + stats.replaced + ' 项');
+    D.toast('分享码导入完成：' + parts.join(' / '), 'ok');
   });
 
   /**

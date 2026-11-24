@@ -379,8 +379,23 @@
     } catch (err) { return { ok: false, error: errText(err) }; }
   };
 
-  async function createSession(model, forceBase) {
-    const out = await api('/api/chat/session', { method: 'POST', body: { model: model }, forceBase: forceBase });
+  /**
+   * 【2.0.18 · m24077/m24105】建会话也带能力开关：站点网页端建会话时会把
+   * webSearch / nativeTools 一起提交，只发 model 的话后端按默认（关闭）记这个会话，
+   * 之后 completions 再传 webSearch=true 也不生效。字段名取自站点前端 chat-CEpcBS7D.js。
+   */
+  async function createSession(model, forceBase, opts) {
+    const o = opts || {};
+    const body = {
+      model: model,
+      plugins: Array.isArray(o.plugins) ? o.plugins : [],
+      mcp: Array.isArray(o.mcp) ? o.mcp : [],
+      webSearch: !!o.webSearch,
+      nativeTools: Array.isArray(o.nativeTools) ? o.nativeTools : [],
+      nativeToolOptions: {},
+      reasoningEffort: o.reasoningEffort == null ? '' : o.reasoningEffort
+    };
+    const out = await api('/api/chat/session', { method: 'POST', body: body, forceBase: forceBase });
     const json = await readJson(out);
     /* 站点对 sessionId 的类型很挑（字符串会被判「参数解析失败」code=3），统一收成整数。 */
     const rawId = json && json.data && json.data.id;
@@ -490,14 +505,35 @@
         useModel = list[0].id;
       }
       const text = flatten(Array.isArray(payload.messages) ? payload.messages : []);
-      if (!text) return { ok: false, error: '没有要发送的内容' };
-      const sid = await createSession(useModel);
+      /* 【2.0.18 · m24105】图片：站点收 files:[{name,data}]，data 是 **dataURL**（站点前端用
+       * FileReader.readAsDataURL 转，不是裸 base64）。只在真有图时才带这个字段。 */
+      const files = (Array.isArray(payload.files) ? payload.files : [])
+        .filter(f => f && f.data && String(f.data).indexOf('data:') === 0)
+        .slice(0, 4)
+        .map(f => ({ name: String(f.name || 'image.png'), data: String(f.data) }));
+      if (!text && !files.length) return { ok: false, error: '没有要发送的内容' };
+      const webSearch = !!payload.webSearch;
+      const nativeTools = Array.isArray(payload.nativeTools) ? payload.nativeTools.filter(x => typeof x === 'string').slice(0, 4) : [];
+      const sid = await createSession(useModel, null, { webSearch: webSearch, nativeTools: nativeTools });
       /* 【2.0.16.7 · m20800】站点字段是 int64：sessionId 必须以整数发，发字符串会被判「参数解析失败」code=3。 */
       const sidNum = typeof sid === 'number' ? sid : Number(String(sid).trim());
       if (!isFinite(sidNum)) return { ok: false, error: '站点给的会话 id 不是数字（' + sid + '），没法继续' };
+      /* 【2.0.18 · m24077】请求体补齐站点真实字段：webSearch 是布尔，nativeTools 是数组；
+       * thinking / reasoningEffort 是站点必带项（不传后端会按旧默认值走）。 */
+      const body = {
+        text: text || '（见附图）',
+        sessionId: sidNum,
+        model: useModel,
+        thinking: false,
+        webSearch: webSearch,
+        nativeTools: nativeTools,
+        nativeToolOptions: {},
+        reasoningEffort: ''
+      };
+      if (files.length) body.files = files;
       const out = await api('/api/chat/completions', {
         method: 'POST',
-        body: { text: text, sessionId: sidNum, model: useModel },
+        body: body,
         idleMs: Number(payload.timeoutMs) > 0 ? Number(payload.timeoutMs) : IDLE_MS
       });
       const got = await readStream(out);

@@ -776,13 +776,41 @@ chrome.runtime.onConnect.addListener((port) => {
       try { port.postMessage({ type: 'newChat', ok: true }); } catch (e) { /* 面板已关 */ }
       return;
     }
+    /* 【2.0.18 · m24086】面板里直接换模型：写 ai.taiji.model（和设置页同一个键），
+     * 之后所有走 AI.chat 的请求读到的都是新模型，不必再去设置页。 */
+    if (m.action === 'setModel') {
+      const want = String(m.model || '').trim();
+      (async () => {
+        try {
+          const got = await self.KH.Config.load();
+          const cfg = (got && got.config) || got || {};
+          const ai = Object.assign({}, cfg.ai || {});
+          const tj = Object.assign({}, ai.taiji || {});
+          tj.model = want;
+          ai.taiji = tj;
+          await chrome.storage.local.set({ ai: ai });
+          post({ type: 'model', ok: true, model: want });
+        } catch (err) {
+          post({ type: 'model', ok: false, error: String((err && err.message) || err) });
+        }
+      })();
+      return;
+    }
     if (m.action !== 'ask') return;
     if (busy) { try { port.postMessage({ type: 'error', error: '上一条还在回，等它说完' }); } catch (e) {} return; }
     busy = true;
     const post = (obj) => { try { port.postMessage(obj); } catch (e) { /* 页面关了 */ } };
     /* 【2.0.16.4】只剩太极AI：一律走 AI.chat（内部转 KhTaiji），不开任何标签页。 */
     const run = Promise.resolve()
-      .then(() => self.KhAi.chat({ messages: m.messages }))
+      /* 【2.0.18 · m24077/m24086/m24105】把面板选的模型、联网搜索开关、图片一起透传给后台通路
+       * （原先只传 messages，所以面板上的开关根本到不了站点）。 */
+      .then(() => self.KhAi.chat({
+        messages: m.messages,
+        model: m.model || '',
+        webSearch: !!m.webSearch,
+        files: Array.isArray(m.files) ? m.files : [],
+        nativeTools: Array.isArray(m.nativeTools) ? m.nativeTools : []
+      }))
       .then((r) => (r && r.ok ? { ok: true, text: r.text } : { ok: false, error: (r && r.error) || '请求失败', needLogin: !!(r && r.needLogin) }));
     Promise.resolve(run)
       .then((r) => {

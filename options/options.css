@@ -763,6 +763,30 @@ body {
   word-break: break-all; resize: vertical;
 }
 
+/* 分享码导入清单（2.0.18 · m24051）：逐条勾选，重复项标「已有，勾上覆盖」 */
+.kh-share-pick { display: flex; flex-direction: column; gap: 10px; }
+.kh-share-sec { border: 1px solid var(--border-2); border-radius: var(--r-sm); overflow: hidden; }
+.kh-share-sec-hd {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px; background: var(--card);
+  border-bottom: 1px solid var(--border-2); font-size: var(--fs-xs);
+}
+.kh-share-sec-hd b { font-weight: 600; }
+.kh-share-cnt { margin-left: auto; color: var(--text-3); }
+.kh-share-sec-body { max-height: 190px; overflow-y: auto; padding: 4px 0; }
+.kh-share-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 3px 10px; font-size: var(--fs-xs); line-height: 1.5; cursor: pointer;
+}
+.kh-share-row:hover { background: var(--card-2); }
+.kh-share-txt { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kh-share-row.is-dup .kh-share-txt { color: var(--text-3); }
+.kh-share-tag {
+  flex: 0 0 auto; font-size: 10px; line-height: 15px; padding: 0 6px; border-radius: 999px;
+  color: var(--warn-ink); background: var(--warning-soft); border: 1px solid var(--border-2);
+}
+.kh-share-style { margin-top: 2px; padding-left: 2px; }
+
 /* 窄屏：标签与开关同行，说明和代价各占一整行 */
 @media (max-width: 760px) {
   .kh-ent-row { grid-template-columns: minmax(0, 1fr) auto; }

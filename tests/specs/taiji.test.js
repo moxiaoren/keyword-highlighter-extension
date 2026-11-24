@@ -267,11 +267,47 @@ module.exports = async function run() {
     eq(r.usage && r.usage.completion_tokens, 5, '用量：回复');
     eq(r.usage && r.usage.total_tokens, 8, '用量：合计（面板按 OpenAI 字段名读）');
     const sess = calls.filter((c) => c.url.indexOf('/api/chat/session') >= 0)[0];
-    deepEq(sess.body, { model: 'openai::gpt-6.1-sol' }, '没选模型时用清单第一个建会话');
+    /* 【2.0.18 · m24077】建会话也要带能力开关：只发 model 的话站点按默认（联网关）记这个会话。 */
+    deepEq(sess.body, {
+      model: 'openai::gpt-6.1-sol', plugins: [], mcp: [],
+      webSearch: false, nativeTools: [], nativeToolOptions: {}, reasoningEffort: ''
+    }, '没选模型时用清单第一个建会话，并带上站点要求的其它字段');
     const chat = calls.filter((c) => c.url.indexOf('/api/chat/completions') >= 0)[0];
-    deepEq(chat.body, { text: '你好', sessionId: 1001, model: 'openai::gpt-6.1-sol' }, '站点只收 text + sessionId + model');
+    deepEq(chat.body, {
+      text: '你好', sessionId: 1001, model: 'openai::gpt-6.1-sol',
+      thinking: false, webSearch: false, nativeTools: [], nativeToolOptions: {}, reasoningEffort: ''
+    }, '站点请求体：text + sessionId + model + 能力开关');
     /* 【2.0.16.7 · m20800】站点 sessionId 是 int64：必须是 JSON 数字，不能是字符串。 */
     eq(typeof chat.body.sessionId, 'number', 'sessionId 必须是数字（发字符串会让站点报 int64 解析失败）');
+  });
+
+  await test('★ 2.0.18 · 联网搜索与发图按站点真实字段发（webSearch 布尔 / files 收 dataURL）', async () => {
+    const { T, calls } = loadTaiji();
+    const r = await T.chat({
+      messages: [{ role: 'user', content: '这个图标是不是蹭星巴克' }],
+      webSearch: true,
+      files: [{ name: 'a.png', data: 'data:image/png;base64,AAA' }, { name: 'b.png', data: 'raw-base64-no-prefix' }]
+    });
+    truthy(r.ok, '应成功：' + (r.error || ''));
+    const chat = calls.filter((c) => c.url.indexOf('/api/chat/completions') >= 0)[0];
+    eq(chat.body.webSearch, true, '勾了联网搜索就要把 webSearch 发成 true');
+    truthy(Array.isArray(chat.body.files) && chat.body.files.length === 1, '只收 dataURL 的图，裸 base64 丢掉');
+    eq(chat.body.files[0].name, 'a.png', '带原始文件名');
+    eq(chat.body.thinking, false, 'thinking 显式关掉');
+    const sess = calls.filter((c) => c.url.indexOf('/api/chat/session') >= 0)[0];
+    eq(sess.body.webSearch, true, '建会话也要带同一个联网开关');
+  });
+
+  await test('★ 2.0.18 · 只有图没有字也能发（查图标场景），但两者都缺才拒绝', async () => {
+    const a = loadTaiji();
+    const ra = await a.T.chat({ messages: [], files: [{ name: 'x.png', data: 'data:image/png;base64,QQ' }] });
+    truthy(ra.ok, '只有图应能发：' + (ra.error || ''));
+    const chat = a.calls.filter((c) => c.url.indexOf('/api/chat/completions') >= 0)[0];
+    truthy(!!chat && chat.body.files.length === 1, '图要带上');
+    const b = loadTaiji();
+    const rb = await b.T.chat({ messages: [], files: [] });
+    falsy(rb.ok, '没字也没图不能发');
+    truthy(rb.error.indexOf('没有要发送的内容') >= 0, '要有明确原因：' + rb.error);
   });
 
   await test('★ 2.0.16.7 · 站点回字符串数字 id 也要转成整数发；非数字直接报错不发请求', async () => {
@@ -414,12 +450,21 @@ module.exports = async function run() {
     truthy(note.indexOf('V.aiOpenOptions') >= 0, '没登录时的按钮是「去设置」');
     truthy(note.indexOf('openAiWeb') < 0, 'openAiWeb（开对话页）必须随通路一起删掉');
     truthy(note.indexOf("action: 'new'") < 0, '清空对话不再发 new（太极AI 每问都新建会话）');
-    truthy(note.indexOf("port.postMessage({ action: 'ask', messages: messages })") >= 0, '发消息不再带 mode');
+    /* 【2.0.18 · m24086/m24077/m24105】发消息要带上模型、联网开关与图片（不再只有 messages） */
+    truthy(note.indexOf("action: 'ask', messages: messages,") >= 0, '发消息走 ask，并带上模型/联网/图片');
+    truthy(note.indexOf('webSearch: !!this.aiWeb') >= 0, '联网搜索开关要跟着消息发出去');
+    truthy(note.indexOf('files: ready.map(f => ({ name: f.name, data: f.data }))') >= 0, '图片要按站点收的 {name,data} 形状发');
+    truthy(note.indexOf("action: 'setModel'") >= 0, '面板内换模型走 setModel');
   });
 
   await test('★ 后台长连接：一律 AI.chat（内部转太极AI），不再看 mode、不再有网页对话驱动', () => {
     const sw = read('background/service-worker.js');
-    truthy(sw.indexOf('self.KhAi.chat({ messages: m.messages })') >= 0, 'ask 只能走 AI.chat');
+    truthy(sw.indexOf('self.KhAi.chat({') >= 0, 'ask 只能走 AI.chat');
+    truthy(sw.indexOf('messages: m.messages') >= 0, '对话内容要透传');
+    /* 【2.0.18】模型 / 联网 / 图片也要透传到后台通路，否则面板上的开关等于没接 */
+    truthy(sw.indexOf('webSearch: !!m.webSearch') >= 0, '联网开关要透传');
+    truthy(sw.indexOf('files: Array.isArray(m.files) ? m.files : []') >= 0, '图片要透传');
+    truthy(sw.indexOf("m.action === 'setModel'") >= 0, '换模型要写配置');
     truthy(sw.indexOf('askWeb') < 0, '网页对话驱动（askWeb）必须删干净');
     truthy(sw.indexOf("m.mode === 'taiji'") < 0, '不再按 mode 分支');
   });

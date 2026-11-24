@@ -164,10 +164,36 @@
       border: 0; background: transparent; color: #1d4ed8; font: inherit; font-size: 10px;
       padding: 0; cursor: pointer; text-decoration: underline;
     }
+    /* 【2.0.18】输入区改成上下两段：上面附件/联网条，下面输入框 + 发送 */
     .khin-chat-form {
-      display: flex; align-items: flex-end; gap: 5px; flex: 0 0 auto;
+      display: flex; flex-direction: column; align-items: stretch; gap: 4px; flex: 0 0 auto;
       padding-top: 6px; border-top: 1px solid #eef1f6;
     }
+    .khin-chat-line { display: flex; align-items: flex-end; gap: 5px; }
+    .khin-chat-att { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; min-height: 18px; }
+    .khin-chat-file { display: none; }
+    .khin-chat-web.is-on {
+      background: #1d4ed8; border-color: #1d4ed8; color: #fff;
+    }
+    .khin-chat-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+    .khin-chat-chip {
+      display: inline-flex; align-items: center; gap: 3px; max-width: 42%;
+      padding: 0 2px 0 6px; border-radius: 999px;
+      background: #eef4ff; border: 1px solid #dbe7fb; color: #1d4ed8; font-size: 10px; line-height: 16px;
+    }
+    .khin-chat-chip-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .khin-chat-chip-x {
+      border: 0; background: transparent; color: #1d4ed8; font: inherit; font-size: 11px;
+      line-height: 1; padding: 0 3px; cursor: pointer; border-radius: 50%;
+    }
+    .khin-chat-chip-x:hover { background: #dbe7fb; }
+    /* 模型下拉：和 head 同一行，窄了就省略文字，不换行 */
+    .khin-chat-model {
+      flex: 0 1 auto; min-width: 0; max-width: 42%;
+      height: 20px; padding: 0 2px; border: 1px solid #dbe2ec; border-radius: 5px;
+      background: #fff; color: #475569; font: inherit; font-size: 10px; line-height: 1;
+    }
+    .khin-chat-model:focus-visible { outline: none; border-color: #9dbcf0; }
     .khin-chat-in {
       flex: 1 1 auto; min-width: 0; box-sizing: border-box; resize: none;
       min-height: 34px; max-height: 96px; padding: 6px 8px;
@@ -2693,6 +2719,10 @@
     aiEl: null,
     aiListEl: null,
     aiPort: null,
+    /* 【2.0.18】面板内换模型 / 联网搜索开关 / 待发图片（m24086 / m24077 / m24105） */
+    aiModel: '',
+    aiWeb: false,
+    aiFiles: [],
     /* 标签下拉的展开态 / 选中的命中序号（均按 note 文本挂**面板侧**）。
      * 不许挂 head：标签区每次重建（head.changed() 判脏 → renderContent() → renderItems()），
      * 挂在 head 上会被重置，展开中的下拉会自己合上。 */
@@ -3992,6 +4022,16 @@
         this.renderAiList();
         return;
       }
+      /* 换模型成功回执：把下拉与本地状态对齐（别的标签页换过也能跟手） */
+      if (m.type === 'model') {
+        if (m.ok) {
+          this.aiModel = String(m.model || '');
+          const box = this.aiEl;
+          const sel = box && box.querySelector('[data-act="ai-model"]');
+          if (sel && this.aiModel && !sel.value) sel.value = this.aiModel;
+        }
+        return;
+      }
       if (m.type === 'error') {
         this.aiBusy = false;
         if (last && last.role === 'assistant' && last.streaming) this.aiMsgs.pop();
@@ -4013,12 +4053,21 @@
             '<div class="khin-chat-head">' +
               '<span class="khin-chat-dot"></span>' +
               '<span class="khin-chat-mode"></span>' +
+              '<select class="khin-chat-model" data-act="ai-model" aria-label="换模型"></select>' +
               '<button class="khin-chat-btn" type="button" data-act="ai-clear"></button>' +
             '</div>' +
             '<div class="khin-chat-list" role="log" aria-live="polite"></div>' +
             '<div class="khin-chat-form">' +
-              '<textarea class="khin-chat-in" rows="1"></textarea>' +
-              '<button class="khin-chat-send" type="button" data-act="ai-send" aria-label="发送">↑</button>' +
+              '<div class="khin-chat-att">' +
+                '<button class="khin-chat-btn khin-chat-web" type="button" data-act="ai-web"></button>' +
+                '<button class="khin-chat-btn" type="button" data-act="ai-img"></button>' +
+                '<input class="khin-chat-file" type="file" accept="image/*" multiple hidden>' +
+                '<span class="khin-chat-chips"></span>' +
+              '</div>' +
+              '<div class="khin-chat-line">' +
+                '<textarea class="khin-chat-in" rows="1"></textarea>' +
+                '<button class="khin-chat-send" type="button" data-act="ai-send" aria-label="发送">↑</button>' +
+              '</div>' +
             '</div>' +
           '</div>';
         const input = box.querySelector('.khin-chat-in');
@@ -4043,6 +4092,41 @@
           e.stopPropagation();
           if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); this.sendAi(); }
         });
+        /* 【2.0.18 · m24086】模型下拉：直接放在对话窗顶部（用户口径「不用每次去设置页」） */
+        const sel = box.querySelector('[data-act="ai-model"]');
+        if (sel) {
+          sel.title = V.aiModelTip || '';
+          sel.addEventListener('change', (e) => {
+            e.stopPropagation();
+            this.setAiModel(sel.value);
+          });
+        }
+        /* 【2.0.18 · m24077】联网搜索开关：交给站点自己的 webSearch（不是本地抓取） */
+        const web = box.querySelector('[data-act="ai-web"]');
+        if (web) {
+          web.textContent = V.aiWebSearch || '联网';
+          web.title = V.aiWebSearchTip || '';
+          web.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.aiWeb = !this.aiWeb;
+            this.syncAiAtt();
+          });
+        }
+        /* 【2.0.18 · m24105】发图：选中的图标/截图按 dataURL 随消息一起发（查「是不是蹭知名应用」） */
+        const imgBtn = box.querySelector('[data-act="ai-img"]');
+        const fileInput = box.querySelector('.khin-chat-file');
+        if (imgBtn && fileInput) {
+          imgBtn.textContent = V.aiAddImage || '+ 图片';
+          imgBtn.title = V.aiAddImageTip || '';
+          imgBtn.addEventListener('click', (e) => { e.stopPropagation(); fileInput.click(); });
+          fileInput.addEventListener('change', () => {
+            const files = Array.prototype.slice.call(fileInput.files || []);
+            fileInput.value = '';
+            this.addAiFiles(files);
+          });
+        }
+        this.loadAiModels();
+        this.syncAiAtt();
       }
       this.syncAiHead();
       this.renderAiList();
@@ -4068,6 +4152,119 @@
       }
       const send = box.querySelector('[data-act="ai-send"]');
       if (send) send.disabled = !ready;
+    },
+
+    /* ---------------- 面板内换模型 / 联网搜索 / 发图（2.0.18 · m24086/m24077/m24105） ---------------- */
+
+    /** 拉一次站点的模型清单填进对话窗顶部下拉；失败就留空并给提示，不挡发消息。 */
+    loadAiModels() {
+      const box = this.aiEl;
+      if (!box) return;
+      const sel = box.querySelector('[data-act="ai-model"]');
+      if (!sel) return;
+      const V = KH.OcrCopy.VIEW;
+      sel.innerHTML = '';
+      const opt0 = document.createElement('option');
+      opt0.value = '';
+      opt0.textContent = V.aiModelLoading || '模型…';
+      sel.appendChild(opt0);
+      const done = (list) => {
+        sel.innerHTML = '';
+        if (!Array.isArray(list) || !list.length) {
+          const o = document.createElement('option');
+          o.value = '';
+          o.textContent = V.aiModelNone || '没有模型';
+          sel.appendChild(o);
+          return;
+        }
+        const cfgModel = String((((this.cfg || {}).ai || {}).taiji || {}).model || '');
+        for (const m of list) {
+          const o = document.createElement('option');
+          o.value = String(m.id || '');
+          o.textContent = String(m.name || m.id || '');
+          sel.appendChild(o);
+        }
+        const pick = cfgModel || this.aiModel || String(list[0].id || '');
+        if (pick) sel.value = pick;
+        this.aiModel = sel.value;
+      };
+      try {
+        if (!chrome || !chrome.runtime || !chrome.runtime.sendMessage) throw new Error('no runtime');
+        const type = (KH.MSG && KH.MSG.AI_TAIJI_MODELS) || 'kh:ai:taijiModels';
+        chrome.runtime.sendMessage({ type: type }, (res) => {
+          void (chrome.runtime && chrome.runtime.lastError);
+          if (res && res.ok && Array.isArray(res.models)) done(res.models);
+          else done([]);
+        });
+      } catch (e) { done([]); }
+    },
+
+    /** 面板里选中模型：立刻写配置（后台），下次发消息就用它。 */
+    setAiModel(model) {
+      const want = String(model || '').trim();
+      this.aiModel = want;
+      const port = this.ensureAiPort();
+      if (!port) return;
+      try { port.postMessage({ action: 'setModel', model: want }); }
+      catch (e) { /* 后台不在就下次再说 */ }
+      /* 下拉本身就是反馈：不发 toast，面板里没有提示层（不引第二套提示 UI） */
+    },
+
+    /** 把用户选的图片读成 dataURL 挂在待发列表里（站点收 dataURL，不是裸 base64）。 */
+    addAiFiles(files) {
+      const V = KH.OcrCopy.VIEW;
+      const limit = 4;
+      const room = limit - this.aiFiles.length;
+      if (room <= 0) return;
+      const list = files.slice(0, room);
+      for (const f of list) {
+        if (!f || !/^image\//i.test(f.type || '')) continue;
+        if (f.size > 6 * 1024 * 1024) continue;
+        const item = { name: f.name || ('image-' + Date.now() + '.png'), data: '' };
+        this.aiFiles.push(item);
+        try {
+          const fr = new FileReader();
+          fr.onload = () => {
+            item.data = String(fr.result || '');
+            this.syncAiAtt();
+          };
+          fr.readAsDataURL(f);
+        } catch (e) { this.aiFiles = this.aiFiles.filter(x => x !== item); }
+      }
+      this.syncAiAtt();
+    },
+
+    /** 附件条 + 联网开关的视觉同步（图片还没读完时显示「读取中」）。 */
+    syncAiAtt() {
+      const box = this.aiEl;
+      if (!box) return;
+      const V = KH.OcrCopy.VIEW;
+      const web = box.querySelector('[data-act="ai-web"]');
+      if (web) {
+        web.classList.toggle('is-on', !!this.aiWeb);
+        web.setAttribute('aria-pressed', this.aiWeb ? 'true' : 'false');
+        web.textContent = (this.aiWeb ? (V.aiWebOn || '已联网') : (V.aiWebSearch || '联网'));
+      }
+      const chips = box.querySelector('.khin-chat-chips');
+      if (!chips) return;
+      chips.innerHTML = '';
+      /* 【2.0.18】用 HTML 字符串拼（高亮铁律禁止造 span 节点）；点 × 走 chips 上的委托 */
+      chips.innerHTML = this.aiFiles.map((f, i) =>
+        '<span class="khin-chat-chip">' +
+          '<span class="khin-chat-chip-t">' + escText((f.data ? '' : '…') + String(f.name || '图片')) + '</span>' +
+          '<button type="button" class="khin-chat-chip-x" data-ai-file="' + i + '" title="' +
+            escText(V.aiDropImage || '移除这张图') + '">×</button>' +
+        '</span>'
+      ).join('');
+      chips.onclick = (e) => {
+        const b = e.target && e.target.closest ? e.target.closest('.khin-chat-chip-x') : null;
+        if (!b) return;
+        e.stopPropagation();
+        const idx = parseInt(b.getAttribute('data-ai-file'), 10);
+        if (!(idx >= 0)) return;
+        this.aiFiles.splice(idx, 1);
+        this.syncAiAtt();
+      };
     },
 
     /** 一行消息（用户 / 助手 / 错误），气泡 + 小头像；助手行带复制。 */
@@ -4219,7 +4416,9 @@
       if (!box || this.aiBusy) return;
       const input = box.querySelector('.khin-chat-in');
       const text = String((input && input.value) || '').trim();
-      if (!text) return;
+      /* 【2.0.18 · m24105】允许「只有图、没有字」：查图标时用户常常只丢一张图 */
+      const ready = (this.aiFiles || []).filter(f => f && f.data);
+      if (!text && !ready.length) return;
       const V = KH.OcrCopy.VIEW;
       if (!this.aiReady()) {
         this.aiMsgs.push({ role: 'error', text: V.aiNeedKey });
@@ -4228,7 +4427,8 @@
       }
       input.value = '';
       input.style.height = '';
-      this.aiMsgs.push({ role: 'user', text: text });
+      const shotNames = ready.map(f => f.name).join('、');
+      this.aiMsgs.push({ role: 'user', text: text + (ready.length ? (text ? '\n' : '') + '［图片］' + shotNames : '') });
       this.aiMsgs.push({ role: 'assistant', text: '', streaming: true });
       this.aiBusy = true;
       this.renderAiList();
@@ -4247,7 +4447,15 @@
         return;
       }
       try {
-        port.postMessage({ action: 'ask', messages: messages });
+        port.postMessage({
+          action: 'ask', messages: messages,
+          model: this.aiModel || '',
+          webSearch: !!this.aiWeb,
+          files: ready.map(f => ({ name: f.name, data: f.data }))
+        });
+        /* 图片是「这一条」的附件：发出去就从待发区清掉，免得下一轮又带一遍 */
+        this.aiFiles = [];
+        this.syncAiAtt();
       } catch (err) {
         this.aiBusy = false;
         this.aiMsgs.pop();
@@ -4836,6 +5044,8 @@
       this.aiListEl = null;
       this.aiMsgs = [];
       this.aiBusy = false;
+      this.aiFiles = [];
+      this.aiWeb = false;
       this.tab = 'note';
       /* 【2.0.8.5】长连接也要断：不断的话后台会在端口上继续推 chunk，面板对象却已经没了。 */
       if (this.aiPort) {

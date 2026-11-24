@@ -465,6 +465,45 @@ module.exports = async function run() {
     eq(JSON.stringify(ic.crossOriginSites), JSON.stringify({ 'keep.com': true }), '接收方自己的跨域授权必须留着');
   });
 
+  await test('★ 2.0.18 · 分享码清单：重复项标 dup 且默认不勾，只导入勾中的条目', async () => {
+    const res = await S.exportShare({
+      keywords: [{ id: 'k1', text: '交友' }, { id: 'k2', text: '贷款' }],
+      groups: [{ id: 'g1', name: '金融' }],
+      siteRules: [{ id: 's1', pattern: 'a.com' }],
+      siteDisabledMap: {}
+    });
+    truthy(res.ok, res.error);
+    /* 分组也要预置一个同名 g1：勾上重复项才走「覆盖」分支（没有命中就是新增） */
+    const cfg = {
+      keywords: [{ id: 'k1', text: '交友' }], groups: [{ id: 'g1', name: '金融' }],
+      siteRules: [{ id: 's1', pattern: 'a.com' }], siteDisabledMap: {}
+    };
+    const plan = await S.planShare(res.code, cfg);
+    eq(plan.keywords.length, 2, '清单要列出分享码里的全部关键词');
+    eq(plan.keywords[0].dup, true, '本机已有同 id 的要标 dup');
+    eq(plan.keywords[1].dup, false, '本机没有的不标');
+    eq(plan.siteRules[0].dup, true, '站点规则按 type|pattern|matchType 判重');
+    eq(plan.groups[0].dup, true, '同名分组也算已有（勾上覆盖）');
+    /* 默认勾选口径：options 只勾 !dup 的（这里直接验 plan 提供判据，UI 层另有契约） */
+    eq(plan.keywords.filter((r) => !r.dup).length, 1, '默认只会勾 1 条新的');
+    let patched = null;
+    const S2 = Object.assign({}, S, { patch: async (o) => { patched = o; } });
+    const st1 = await S2.importPicked(res.code, { keywords: [1], groups: [], siteRules: [], styles: false }, cfg);
+    eq(st1.keywords, 1, '只导勾中的那条');
+    const kws = (patched || {}).keywords || [];
+    eq(kws.length, 2, '本机原有的 1 条 + 新增 1 条');
+    eq(kws.filter((k) => k.id === 'k2').length, 1, '新的那条进表');
+    eq(kws.find((k) => k.id === 'k1').text, '交友', '没勾的那条不能被改');
+    /* 勾上重复项 = 覆盖本机那条，而不是跳过 */
+    patched = null;
+    const st2 = await S2.importPicked(res.code, { keywords: [0], groups: [0], siteRules: [0], styles: false }, cfg);
+    eq(st2.replaced, 3, '三处命中都算覆盖：关键词/分组/站点规则');
+    const kws2 = (patched || {}).keywords || [];
+    eq(kws2.length, 1, '覆盖不新增条目');
+    eq(kws2[0].id, 'k1');
+    truthy(Array.isArray((patched || {}).groups) && (patched || {}).groups.length === 1, '分组覆盖后仍是 1 个');
+  });
+
   await test('★ importShare 与导入 JSON 走同一条写盘路径（避免两套白名单）', () => {
     const path = require('path');
     const src = require('fs').readFileSync(path.join(__dirname, '..', '..', 'src', 'platform', 'storage.js'), 'utf8');
