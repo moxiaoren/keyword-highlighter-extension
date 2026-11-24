@@ -28,13 +28,12 @@ const PLACEHOLDERS = ['n', 'host', 'matched',
   /* 【2.0.11 · T1】右键卡候选行：{name}=要固定的字段名（证书/备案/授权书…），
    * {spec}=完整字段串（证书#图），复制成功/失败都要把它原样说给用户。 */
   'name', 'spec',
-  /* 【2.0.11 · 比对】一张图上勾了「比对」的项指名道姓缺哪几个（`cmpBadgeDiff` / `imgCmpDiffTip`） */
+  /* 【2.0.11 · 比对】一张图上勾了「比对」的项指名道姓缺哪几个（`cmpBadgeDiff` / `imgCmpDiffTip`）；
+   * 【2.0.16.10 · m22896】现在填进去的是**值本身**，不再是字段名。 */
   'missing',
   /* 【2.0.16.1 · 用户 m18157】有字却没命中时把「在找哪个词」说出来（`imgMissNoWord` 的 {words}） */
   'words',
-  /* 【2.0.16.9 · 用户 m22485】「图上没有 a公司（开发者抓到的内容）」：
-   * {value}=页面抓到的值，{field}=提供这个值的字段名（`imgMissValueFrom` / `imgCmpDiffFrom`）。 */
-  'value', 'field'];
+  ];
 
 module.exports = async function run() {
   const { KH } = require('../bootstrap');

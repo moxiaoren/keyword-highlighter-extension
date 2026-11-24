@@ -641,14 +641,9 @@
     const gone = (it && Array.isArray(it.needMissingValues)) ? it.needMissingValues : [];
     if (miss.length) return (V.imgMissField || '') + '：' + miss.join('、');
     if (gone.length) {
-      /* 【2.0.16.9 · 用户 m22485】缺值要说「哪个值」+「谁抓到的」：只写「开发者」用户不知道该拿什么去核。 */
-      const from = (it && it.needValueFrom) || {};
-      const has = gone.filter((v) => from[v]);
-      const rest = gone.filter((v) => !from[v]);
-      const parts = [];
-      if (has.length) parts.push(has.map((v) => R(V.imgMissValueFrom, { value: v, field: from[v] })).join('；'));
-      if (rest.length) parts.push((V.imgMissValue || '') + '：' + rest.join('、'));
-      if (parts.length) return parts.join('；');
+      /* 【2.0.16.10 · 用户 m22896】只报**值本身**，不再挂「（「开发者」抓到的内容）」：
+       * 用户要核的是图上有没有这段字，来源字段是排查信息、不是判据，摆在提示里反而像要求。 */
+      return (V.imgMissValue || '') + '：' + gone.join('、');
     }
     if (!String((it && it.text) || '').trim()) return V.imgMissEmpty || '';
     /* 【2.0.16.1 · 用户 m18157】字认出来了、也没配动态判据，那唯一能解释「未命中」的就是
@@ -685,9 +680,10 @@
         .filter((x) => x && x.kind === 'need' && !x.ok && !(x.values > 0))
         .map((x) => (x && x.name) || '').filter(Boolean);
       const gone = miss.filter((n) => empty.indexOf(n) < 0);
-      /* 【2.0.16.9 · 用户 m22485】「有值但图上没有」要说出**试过哪些值**（`tried`）＋来源字段：
-       * 旧文案「图上没有开发者」把字段名当值，用户看不懂缺的到底是哪段字。 */
-      const triedLines = [];
+      /* 【2.0.16.10 · 用户 m22896】「有值但图上没有」直接给**试过的值**，不再挂字段名与来源说明；
+       * 一个值都还没读到的那几项单独说「还没读到值（等证书图识别完会自动重算）」——
+       * 旧文案「在页面上没有内容」会让用户以为字段没抓到，实际是比对时基准还没到。 */
+      const vals = [];
       const goneNames = [];
       for (const x of (cmp.items || [])) {
         if (!x || x.kind !== 'need' || x.ok) continue;
@@ -695,17 +691,27 @@
         if (!nm || empty.indexOf(nm) >= 0) continue;
         const ts = (x.tried || []).filter(Boolean);
         if (!ts.length) { goneNames.push(nm); continue; }
-        for (const v of ts.slice(0, 2)) triedLines.push(KH.OcrCopy.render(V.imgCmpDiffFrom, { value: v, field: nm }));
+        for (const v of ts.slice(0, 2)) if (vals.indexOf(v) < 0) vals.push(v);
       }
       const lines = [];
-      if (triedLines.length) lines.push(triedLines.join('；'));
+      if (vals.length) lines.push(KH.OcrCopy.render(V.imgCmpDiffTip, { missing: vals.join('、') }));
       if (goneNames.length) lines.push(KH.OcrCopy.render(V.imgCmpDiffTip, { missing: goneNames.join('、') }));
-      if (!triedLines.length && !goneNames.length && gone.length) lines.push(KH.OcrCopy.render(V.imgCmpDiffTip, { missing: gone.join('、') }));
-      if (empty.length) lines.push(KH.OcrCopy.render(V.imgCmpEmptyTip, { names: empty.join('、') }));
+      if (!vals.length && !goneNames.length && gone.length) lines.push(KH.OcrCopy.render(V.imgCmpDiffTip, { missing: gone.join('、') }));
+      if (empty.length) lines.push(KH.OcrCopy.render(V.imgCmpNoValue, { names: empty.join('、') }));
       if (lines.length) return lines.join('\n');
       return KH.OcrCopy.render(V.imgCmpDiffTip, { missing: (miss.length ? miss : names).join('、') });
     }
-    return KH.OcrCopy.render(V.imgCmpSameTip, { names: names.join('、') });
+    /* 【2.0.16.10 · 用户 m22896】「一致」也要显示**内容本身**：能取到值时用值，
+     * 取不到才退回字段名（否则用户只看到「著作权人、登记号」以为在比字段名）。 */
+    const okVals = [];
+    for (const x of (cmp.items || [])) {
+      if (!x || !x.ok) continue;
+      if (x.kind === 'word') { if (x.name) okVals.push(String(x.name)); continue; }
+      const ts = (x.tried || []).filter(Boolean);
+      if (ts.length) okVals.push(String(ts[0]));
+      else if (x.name) okVals.push(String(x.name));
+    }
+    return KH.OcrCopy.render(V.imgCmpSameTip, { names: (okVals.length ? okVals : names).join('、') });
   }
 
   /** 图片：三态该挂哪一个 / 悬停说什么（`it` 为空 ⇒ null = 只清状态） */
@@ -2728,8 +2734,19 @@
           const pText = (KH.ImgOcr && typeof KH.ImgOcr.textOf === 'function')
             ? String(KH.ImgOcr.textOf(ps) || '') : '';
           const pAlt = String(pdfEl.textContent || '').trim() || 'PDF';
+          /* 【2.0.16.10 · 用户 m22896】PDF 的文字栏也要标出图片关键词/动态词命中：
+           * 旧实现只把 text 交给灯箱、hits 留空 ⇒ 图片能标色、PDF 一片纯文本。
+           * 命中词与图片共用 `ocrHits`（静态命中 + 比对到上的值），按 src 匹配同一条条目。 */
+          const pHits = [];
+          try {
+            const all = (KH.ImgOcr && typeof KH.ImgOcr.items === 'function') ? KH.ImgOcr.items() : [];
+            for (const one of all) {
+              if (!one || absSrc(one.src) !== ps) continue;
+              for (const w of ocrHits(one)) if (pHits.indexOf(w) < 0) pHits.push(w);
+            }
+          } catch (e) { /* 取不到命中就只显示原文 */ }
           const entry = {
-            pdf: true, src: ps, alt: pAlt, text: pText,
+            pdf: true, src: ps, alt: pAlt, text: pText, hits: pHits,
             hint: pText ? '' : KH.OcrCopy.VIEW.lbPdfNoText
           };
           openLightbox(ps, pAlt, [entry], 0);

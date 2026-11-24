@@ -751,21 +751,33 @@ module.exports = async function run() {
     truthy(/side\.style\.top = '88px';/.test(src), '★ 默认位固定（视口右侧 top:88），与图片矩形无关');
     truthy(src.indexOf('kh-lb-side-rs') >= 0, '★ 右下角要有调整宽高的抓手');
     truthy(src.indexOf('VIEW.paneResize') >= 0, '★ 抓手文案走 ocr-copy 单源');
-    /* 【2.0.16.9 · 用户 m22485】没有命中/比对失败时，文案要说「哪个值、谁抓到的」，
-     * 命中词回显**裸词**（`a公司`，不是 `a公司#表`）。 */
-    truthy(src.indexOf('it.needValueFrom') >= 0, '★ 动态缺值要用「值 → 字段名」映射');
-    truthy(src.indexOf('V.imgMissValueFrom') >= 0, '★ 缺值文案走单源模板');
+    /* 【2.0.16.10 · 用户 m22896】缺值/比对只报**值本身**，不再挂「（某字段抓到的内容）」；
+     * 还没读到基准时说「还没读到…值」而不是「页面上没有内容」；命中词回显**裸词**。 */
+    truthy(src.indexOf('V.imgMissValueFrom') < 0 && src.indexOf('V.imgCmpDiffFrom') < 0,
+      '★ 不许再挂「（某字段抓到的内容）」这一类字段说明');
+    truthy(src.indexOf("return (V.imgMissValue || '') + '：' + gone.join('、')") >= 0,
+      '★ 缺值只报值本身');
     truthy(src.indexOf('x.tried') >= 0, '★ 比对缺项要读试过的值');
-    truthy(src.indexOf('V.imgCmpDiffFrom') >= 0, '★ 比对缺值文案走单源模板');
+    truthy(src.indexOf('V.imgCmpNoValue') >= 0, '★ 基准没到时要说明「还没读到值」');
+    truthy(src.indexOf('okVals') >= 0, '★ 比对一致时也要展示内容本身（值），不是只给字段名');
     truthy(src.indexOf('it.keywordBare || it.keyword') >= 0, '★ 命中词回显裸词，不带 #表 等后缀');
+    /* 【2.0.16.10 · 用户 m22896】PDF 文字栏也要标命中词（旧实现 hits 恒空 ⇒ 一片纯文本）。 */
+    truthy(src.indexOf('hits: pHits') >= 0, '★ PDF 条目要带命中词进灯箱');
+    truthy(src.indexOf('ocrHits(one)') >= 0, '★ PDF 命中词与图片共用同一份 ocrHits');
     const copy = read('src/ui/ocr-copy.js');
-    truthy(copy.indexOf('imgMissValueFrom:') >= 0, '文案单源要有 imgMissValueFrom');
-    truthy(copy.indexOf('imgCmpDiffFrom:') >= 0, '文案单源要有 imgCmpDiffFrom');
+    truthy(copy.indexOf('imgMissValueFrom:') < 0 && copy.indexOf('imgCmpDiffFrom:') < 0,
+      '文案单源里也要删掉字段说明模板');
+    truthy(copy.indexOf('imgCmpNoValue:') >= 0, '文案单源要有 imgCmpNoValue');
     truthy(copy.indexOf('paneResize:') >= 0, '文案单源要有 paneResize');
     /* 「在新标签页打开」原先只读 img.src，PDF 条目上点了没反应。 */
     truthy(/const cur0 = \(host\._gallery \|\| \[\]\)\[host\._idx \|\| 0\];/.test(src),
       '★ 逃生口要从相册条目取地址（img 在 PDF 条目上没有 src）');
     truthy(/cur0 && cur0\.pdf\) \? String\(cur0\.src/.test(src), '★ PDF 条目要用自己的 src');
+    /* 【2.0.16.10 · 用户 m22896】证书图与授权书分属两条规则时，重算与基准都要跨规则：
+     * 只认本规则 ⇒ 授权书永远「没取到值」。 */
+    const ocrSrc = read('src/features/img-ocr.js');
+    truthy(ocrSrc.indexOf('const r = it.rule || rule;') >= 0, '★ 结果到达后按各自规则重算全部条目');
+    truthy(ocrSrc.indexOf('alt.length === 1') >= 0, '★ 跨规则找基准只接受唯一值（两个不同值不猜）');
   });
   await test('★ T38-3 反向：点非 IMG、或 IMG 没有 src ⇒ 不许开灯箱（同时证明上面那条不是空断言）', () => {
     const p = shadowPanel();

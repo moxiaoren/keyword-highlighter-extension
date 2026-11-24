@@ -137,6 +137,44 @@ module.exports = async function run() {
       eq(JSON.stringify(r2.items[0].tried), JSON.stringify(['a公司']), '★ 失败的比对项要带出试过的值');
     });
 
+    /* 【2.0.16.10 · 用户 m22896】证书图与授权书常分属两条抓取字段规则；
+     * 只认「本规则」时授权书永远取不到基准，表现就是「都抓到了却说没取到值」。 */
+    await test('★ 跨规则找基准：授权书规则能读到证书图那一行（唯一值才采用，两个值不猜）', () => {
+      const items = KH.ImgOcr.items;
+      const A = KH.OcrAuto;
+      const rowsFor = A && A.rowsFor;
+      const certRule = { meta: { imgOcr: true, imgOcrNeed: '', fetchLabels: '证书', pinId: 'cert' } };
+      const licRule = { meta: { imgOcr: true, imgOcrKeyword: '', imgOcrNeed: '著作权人#比',
+        fetchLabels: '资质证书|著作权人', pinId: 'lic' } };
+      const tCert = '著作权人 a公司';
+      const tLic = '授权书 兹授权…';
+      const setItems = (certRows) => {
+        KH.ImgOcr.items = () => ([
+          { key: 'k1', ruleId: 'cert', rule: certRule, label: '证书', state: 'done', text: tCert },
+          { key: 'k2', ruleId: 'lic', rule: licRule, label: '资质证书', state: 'done', text: tLic }
+        ].concat(certRows || []));
+      };
+      setItems([]);
+      try {
+        if (A) A.rowsFor = (it) => (it && it.key === 'k1' ? [{ label: '著作权人', value: 'a公司' }] : []);
+        const q = O.cmpReqs(licRule, '资质证书', null, tLic);
+        eq(q.length, 1);
+        eq(q[0].values.join('|'), 'a公司', '★ 证书图的值要能跨规则当授权书的基准');
+        /* 两张别的证书图各给一个不同值 ⇒ 无法判断该拿哪个，宁可维持「没取到值」。 */
+        setItems([{ key: 'k3', ruleId: 'cert2', rule: certRule, label: '证书', state: 'done', text: '著作权人 b公司' }]);
+        if (A) A.rowsFor = (it) => {
+          if (it && it.key === 'k1') return [{ label: '著作权人', value: 'a公司' }];
+          if (it && it.key === 'k3') return [{ label: '著作权人', value: 'b公司' }];
+          return [];
+        };
+        const q2 = O.cmpReqs(licRule, '资质证书', null, tLic);
+        eq(q2[0].values.length, 0, '★ 出现两个不同值时不猜');
+      } finally {
+        KH.ImgOcr.items = items;
+        if (A) A.rowsFor = rowsFor;
+      }
+    });
+
     await test('动态项一个字都没取到 ⇒ 不算一致（缺的就是它，不许当成「没配」）', () => {
       const q = [{ name: '开发者', kind: 'need', values: [] }];
       const r = O.cmpJudge(rule(''), '开发者：随便', '截图', q);

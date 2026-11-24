@@ -878,6 +878,31 @@
      * 因为 `rowsFor` 只对认出文档类型的证书抽这两行（授权书式 PDF、没标题的扫描件都抽不出来）。
      * 仍然**不是**「拿被判这张图自己抽出来的行去比」：这里按字段名在文本行里找「字段名：值」，
      * 值本来就印在文档上；主路径（证书结构化行）拿到值时绝不走这条。 */
+    /* 【2.0.16.10 · 用户 m22896】放宽到「本页全部条目」：证书图与授权书分属两条规则时，
+     * 只认本规则的进表值 ⇒ 授权书永远「没取到值」（用户现场：登记号、著作权人都抓到了却报没取到）。
+     * 仍然不猜：同一字段出现**两个不同值**时无法判断该拿哪个，宁可维持原判。 */
+    if (!out.length && pinId) {
+      const alt = [];
+      const altSeen = [];
+      for (const it of list) {
+        if (!it || it.state !== 'done' || !it.text) continue;
+        if (String(it.ruleId || '') === pinId) continue;
+        let rows = [];
+        try { rows = A.rowsFor(it) || []; } catch (e) { rows = []; }
+        for (const r of rows) {
+          const lab = keyOf(r && r.label);
+          if (!lab) continue;
+          if (lab !== want && !(want.length >= 2 && lab.indexOf(want) === 0)) continue;
+          const v = String((r && r.value) || '').trim();
+          if (!v || v.length < NEED_MIN_LEN) continue;
+          const k = keyOf(v);
+          if (altSeen.indexOf(k) >= 0) continue;
+          altSeen.push(k);
+          alt.push(v.toLowerCase());
+        }
+      }
+      if (alt.length === 1) out.push(alt[0]);
+    }
     if (!out.length) {
       const defs = (A.DEFS || []);
       for (let d = 0; d < defs.length && !out.length; d++) {
@@ -900,16 +925,28 @@
           if (String(it.kind || '') !== 'pdf' && selfText && String(it.text) === selfText) continue;
           ordered.push(it);
         }
-        for (const it of ordered) {
-          if (pinId && String(it.ruleId || '') !== pinId) continue;
-          const v = labeledValueInText(it.text, names);
-          if (!v) continue;
-          if (typeof def.ok === 'function') { try { if (!def.ok(v)) continue; } catch (e) { continue; } }
-          const k = keyOf(v);
-          if (seen.indexOf(k) >= 0) continue;
-          seen.push(k);
-          out.push(v.toLowerCase());
-          break;
+        /* 【2.0.16.10 · 用户 m22896】结构化行之外这一层也要跨规则：先找本规则，再找别的规则；
+         * 别的规则只在**唯一值**时采用（两个不同值不猜，维持原判）。 */
+        const pickFromText = (onlySelf) => {
+          const got = [];
+          const gotSeen = [];
+          for (const it of ordered) {
+            if (pinId && (String(it.ruleId || '') === pinId) !== !!onlySelf) continue;
+            const v = labeledValueInText(it.text, names);
+            if (!v) continue;
+            if (typeof def.ok === 'function') { try { if (!def.ok(v)) continue; } catch (e) { continue; } }
+            const k = keyOf(v);
+            if (gotSeen.indexOf(k) >= 0) continue;
+            gotSeen.push(k);
+            got.push(v);
+          }
+          return got;
+        };
+        let got = pickFromText(true);
+        if (!got.length) { const alt = pickFromText(false); if (alt.length === 1) got = alt; }
+        if (got.length) {
+          const k = keyOf(got[0]);
+          if (seen.indexOf(k) < 0) { seen.push(k); out.push(got[0].toLowerCase()); }
         }
       }
     }
@@ -2284,17 +2321,19 @@
     return out;
   }
 
-  /** 【用户 m07238】同一规则下每张图的结果都会影响别的图的比对结论（证书进表 → 授权书比对），
-   * 所以一笔结果到达就重算整条规则的：取值（`cmpReqs`）与判决（`cmp`）。**只算已经 done 的**。 */
+  /** 【用户 m07238】每张图的结果都会影响别的图的比对结论（证书进表 → 授权书比对），
+   * 所以一笔结果到达就重算**所有已 done 条目**的取值（`cmpReqs`）与判决（`cmp`）。
+   * 【2.0.16.10 · 用户 m22896】不再只看「同一条规则」：证书图与授权书常常分属两条抓取字段规则
+   * （证书在「著作权人」字段、授权书在「资质证书」字段），按规则过滤时授权书永远等不到基准，
+   * 表现就是「明明都抓到了，却说没取到值」。每条用自己的 `it.rule` 快照算，互不串味。 */
   function recordCmpForRule(rule) {
-    if (!rule) return;
-    const ruleId = String(rule.ruleId || '');
     for (const it of allItems()) {
       if (!it || it.state !== 'done' || !it.text) continue;
-      if (ruleId && String(it.ruleId || '') !== ruleId) continue;
+      const r = it.rule || rule;
+      if (!r) continue;
       try {
-        it.cmpReqs = cmpReqs(rule, it.label, it.anchorCell || null, it.text);
-        it.cmp = cmpJudge(rule, it.text, it.label, it.cmpReqs);
+        it.cmpReqs = cmpReqs(r, it.label, it.anchorCell || null, it.text);
+        it.cmp = cmpJudge(r, it.text, it.label, it.cmpReqs);
       } catch (e) { /* 一条算不出来不影响别的图 */ }
     }
   }
