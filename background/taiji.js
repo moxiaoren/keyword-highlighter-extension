@@ -78,6 +78,20 @@
   }
   T.stripThink = stripThink;
 
+  /* 【2.0.17.4 · m26013】站点会把联网检索结果以 <web-search …>…</web-search> 这类标记混在
+   * 流式正文里推过来（站点前端会把它渲染成检索面板）。我们是纯文本聊天窗，原样显示只会让用户
+   * 看到一大段 JSON。这里把这类站点标记整块剥掉，只留模型的回答。 */
+  const SITE_BLOCKS = [/<web-search\b[^>]*>[\s\S]*?<\/web-search>/gi, /<web-search\b[^>]*>[\s\S]*$/gi];
+  function cleanMarkup(text) {
+    let out = String(text || '');
+    for (let i = 0; i < SITE_BLOCKS.length; i++) out = out.replace(SITE_BLOCKS[i], '');
+    return out.replace(/\n{3,}/g, '\n\n').replace(/^\s+/, '');
+  }
+  T.cleanMarkup = cleanMarkup;
+
+  /** 只发图、没有文字时的指令：站点按「空问题 + 联网」处理会搜回一堆图片托管页，必须自己给一句话。 */
+  const IMG_ONLY_ASK = '请看我发的这张图片：先描述它是什么；如果这是应用图标或 App 界面，判断它在模仿哪个知名应用或品牌，并指出是否有赌博、色情低俗、资金盘、诈骗、违规贷款等风险迹象。';
+
   function errText(e) {
     return String((e && e.message) || e || '').slice(0, ERR_MAX);
   }
@@ -439,7 +453,7 @@
       const json = await readJson(out);
       /* 【2.0.16.4】必须带站点原话：只回 code 时看不出是「text 空」「sessionId 类型不对」还是参数解析失败。 */
       if (json.code !== 0 && json.code !== undefined) throw new Error('站点返回错误 code=' + json.code + (json.msg ? '：' + json.msg : ''));
-      const txt = stripThink(String((json.data && json.data.aiText) || ''));
+      const txt = cleanMarkup(stripThink(String((json.data && json.data.aiText) || '')));
       return { text: txt, usage: null };
     }
     const reader = out.res.body.getReader();
@@ -492,7 +506,7 @@
     } finally {
       try { out.clear(); } catch (e) { /* ignore */ }
     }
-    return { text: stripThink(full), usage: usage };
+    return { text: cleanMarkup(stripThink(full)), usage: usage };
   }
 
   /**
@@ -517,6 +531,11 @@
         .slice(0, 3)
         .map(f => ({ name: String(f.name || 'image.png'), data: String(f.data) }));
       if (!text && !files.length) return { ok: false, error: '没有要发送的内容' };
+      /* 【2.0.17.4 · m26013】只发图没写字：原来发占位符「（见附图）」，模型等于收到一个空问题，
+       * 联网一开就按空问题去搜，回一堆图片托管页，于是回答先描述图再反问「你要我做什么」。
+       * 这里换成一句真正的指令，并关掉这一轮的联网搜索（没有问题可搜）。 */
+      const imgOnly = !text && files.length > 0;
+      const askText = text || (imgOnly ? IMG_ONLY_ASK : '');
       let useModel = model;
       if (!useModel || files.length) {
         const list = await tmplRaw();
@@ -539,7 +558,7 @@
           }
         }
       }
-      const webSearch = !!payload.webSearch;
+      const webSearch = !!payload.webSearch && !imgOnly;
       const nativeTools = Array.isArray(payload.nativeTools) ? payload.nativeTools.filter(x => typeof x === 'string').slice(0, 4) : [];
       const sid = await createSession(useModel, null, { webSearch: webSearch, nativeTools: nativeTools });
       /* 【2.0.16.7 · m20800】站点字段是 int64：sessionId 必须以整数发，发字符串会被判「参数解析失败」code=3。 */
@@ -548,7 +567,7 @@
       /* 【2.0.18 · m24077】请求体补齐站点真实字段：webSearch 是布尔，nativeTools 是数组；
        * thinking / reasoningEffort 是站点必带项（不传后端会按旧默认值走）。 */
       const body = {
-        text: text || '（见附图）',
+        text: askText,
         sessionId: sidNum,
         model: useModel,
         thinking: false,

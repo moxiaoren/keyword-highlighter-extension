@@ -4866,7 +4866,11 @@
       input.value = '';
       input.style.height = '';
       const shotNames = ready.map(f => f.name).join('、');
-      this.aiMsgs.push({ role: 'user', text: text + (ready.length ? (text ? '\n' : '') + '［图片］' + shotNames : '') });
+      /* 【2.0.17.4 · m26013】只发图时不能把「［图片］x.png」当成问题发给站点：那等于空问题，
+       * 联网一开就搜回一堆图片托管页，模型只能先描述图再反问「你要我做什么」。这里给模型
+       * 一句真正的指令；气泡仍只显示图片名，故用 send 字段单独存「发给模型的那句话」。 */
+      const askText = text || (ready.length ? V.aiImageAsk : '');
+      this.aiMsgs.push({ role: 'user', text: text + (ready.length ? (text ? '\n' : '') + '［图片］' + shotNames : ''), send: askText });
       this.aiMsgs.push({ role: 'assistant', text: '', streaming: true });
       this.aiBusy = true;
       this.renderAiList();
@@ -4874,7 +4878,7 @@
       const messages = [];
       for (let i = 0; i < this.aiMsgs.length; i++) {
         const m = this.aiMsgs[i];
-        if (m && (m.role === 'user' || (m.role === 'assistant' && !m.streaming))) messages.push({ role: m.role, content: m.text });
+        if (m && (m.role === 'user' || (m.role === 'assistant' && !m.streaming))) messages.push({ role: m.role, content: m.send || m.text });
       }
       const port = this.ensureAiPort();
       if (!port) {

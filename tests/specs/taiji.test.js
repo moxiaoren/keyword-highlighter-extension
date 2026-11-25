@@ -332,6 +332,17 @@ module.exports = async function run() {
     eq(c.calls.filter((x) => x.url.indexOf('/api/chat/completions') >= 0).length, 0, '这种情况一个 completions 请求都不该发');
   });
 
+  await test('★ 2.0.17.4 · 只发图时给模型真指令、这一轮不联网；站点检索标记不从流里漏出来', async () => {
+    const a = loadTaiji();
+    const ra = await a.T.chat({ messages: [], webSearch: true, files: [{ name: 'icon.png', data: 'data:image/png;base64,QQ' }] });
+    truthy(ra.ok, '只发图应能发：' + (ra.error || ''));
+    const chat = a.calls.filter((x) => x.url.indexOf('/api/chat/completions') >= 0)[0];
+    truthy(chat.body.text.indexOf('请看我发的这张图片') >= 0, '要给模型一句真问题，不能发「（见附图）」：' + chat.body.text);
+    eq(chat.body.webSearch, false, '只发图没有问题可搜，这一轮不该联网');
+    eq(a.T.cleanMarkup('答案<web-search status="done">[{"title":"x"}]</web-search>结尾'), '答案结尾', '检索标记要整块剥掉');
+    eq(a.T.cleanMarkup('半截<web-search status="run">[{"title"'), '半截', '没闭合的检索标记也要剥掉');
+  });
+
   await test('★ 2.0.16.7 · 站点回字符串数字 id 也要转成整数发；非数字直接报错不发请求', async () => {
     const a = loadTaiji({ session: { code: 0, data: { id: '2002' } } });
     const r = await a.T.chat({ messages: [{ role: 'user', content: '你好' }] });
@@ -483,6 +494,9 @@ module.exports = async function run() {
     truthy(note.indexOf('const limit = 3;') >= 0, '图片上限 3 张（站点 mFileCount 默认 3）');
     truthy(note.indexOf('f.size > 5 * 1024 * 1024') >= 0, '单张上限 5MB（站点 mFileSize 默认 5）');
     truthy(note.indexOf('aiWeb: true') >= 0, '联网搜索默认开');
+    /* 【2.0.17.4 · m26013】只发图时要把一句真问题发给模型，不能把「［图片］x.png」当问题 */
+    truthy(note.indexOf("const askText = text || (ready.length ? V.aiImageAsk : '');") >= 0, '只发图要换成一句真问题');
+    truthy(note.indexOf('content: m.send || m.text') >= 0, '发给模型的内容优先取 send');
   });
 
   await test('★ 后台长连接：一律 AI.chat（内部转太极AI），不再看 mode、不再有网页对话驱动', () => {
