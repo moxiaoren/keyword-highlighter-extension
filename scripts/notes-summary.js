@@ -64,7 +64,8 @@ function prevStable(changelog, stable) {
 }
 
 function splitItem(s) {
-  const m = /^【([^】]+)】(.*)$/.exec(String(s).trim());
+  /* changelog 两种括号都用过：【标签】与〔标签〕，都要能拆出标签。 */
+  const m = /^[【〔]([^】〕]+)[】〕](.*)$/.exec(String(s).trim());
   if (!m) return { tag: '', body: String(s).trim() };
   return { tag: m[1].trim(), body: m[2].trim() };
 }
@@ -184,8 +185,9 @@ function markdown(changelog, stable) {
   // 用户口径：说明页给普通用户看，不列测试版号、不留废弃与重复，
   // 只按「新功能 / 重要调整 / 问题修复」三类给要点，同一件事只留最终形态。
   const groups = [
-    { title: '### 新功能', re: /新增/, cap: 8, lines: [] },
-    { title: '### 重要调整', re: /优化|改动|性能|安全/, cap: 6, lines: [] },
+    /* 标签词表随版本演化（风险初筛 / AI·深查 / 卡片·层级 …），分组要按语义收，而不是只认两个词。 */
+    { title: '### 新功能', re: /新增|分享码|联网|换模型|图片|卡片|词库|初筛|深查|自动深查/, cap: 8, lines: [] },
+    { title: '### 重要调整', re: /优化|改动|性能|安全|修复|小标|界面|折叠/, cap: 6, lines: [] },
     { title: '### 问题修复', re: /修复/, cap: 10, lines: [] }
   ];
   const seen = Object.create(null);
