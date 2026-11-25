@@ -256,7 +256,9 @@ const specs = [
   /* 2.0.16.6（用户 m19162 问题② / m19982）：长行孤立字母清洗 + 可疑值只标不改（suspect） */
   './specs/ocr-noise.test.js',
   /* 主标题/图标本地风险初筛（词库命中 + 卡片徽标 + AI 深查契约）。见 specs/risk-audit.test.js 头部 */
-  './specs/risk-audit.test.js'
+  './specs/risk-audit.test.js',
+  /* 自定义网页 AI 通道（内网网页版 AI：不写死站点、由用户点选三个元素）。见 specs/webai.test.js 头部 */
+  './specs/webai.test.js'
 ];
 
 (async () => {

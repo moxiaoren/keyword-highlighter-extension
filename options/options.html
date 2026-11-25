@@ -290,6 +290,76 @@
         </div>
       </div>
       </div>
+
+      <!-- ============================================================ 自定义网页 AI（2.0.19 · 用户 m28030）
+           公司内网 AI 只有网页版、网址也不该进代码：这里四项全部由用户本机填。
+           「点选元素」靠注入一层遮罩取 CSS 路径，用户不必懂选择器。 -->
+      <div class="kh-sub-card">
+        <h3 class="kh-sub">通路口径</h3>
+        <div class="kh-form-row">
+          <div class="kh-form-fld">
+            <label class="kh-fld-label" for="ai-channel">面板里的 AI 助手走哪条通路</label>
+            <select class="kh-input" id="ai-channel">
+              <option value="taiji">太极AI（默认）</option>
+              <option value="custom">自定义网页 AI（公司内网等）</option>
+            </select>
+          </div>
+          <div class="kh-form-fld kh-form-fld-wide">
+            <p class="kh-muted">选「自定义网页 AI」后，扩展会开一个<strong>不抢前台</strong>的标签页加载下面那个网址，用你已登录的会话代入问题、读回回答。这条通路<strong>不经过太极AI，也不把内容发到外网</strong>；暂不支持发图。</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="kh-sub-card" id="ai-custom-card">
+        <h3 class="kh-sub">自定义网页 AI</h3>
+        <div class="kh-form-row">
+          <div class="kh-form-fld kh-form-fld-wide">
+            <label class="kh-fld-label" for="ai-web-url">网页地址</label>
+            <input class="kh-input" type="text" id="ai-web-url" placeholder="https://ai.example.com/chat" autocomplete="off">
+          </div>
+        </div>
+        <p class="kh-muted">下面三项用 CSS 选择器描述页面元素。不知道怎么写就点<strong>点选元素</strong>：会开一个该网页的标签页，鼠标划过哪里就框哪里，点一下自动填进来。</p>
+        <div class="kh-form-row">
+          <div class="kh-form-fld kh-form-fld-wide">
+            <label class="kh-fld-label" for="ai-web-input">输入框</label>
+            <div class="kh-ai-actions">
+              <input class="kh-input" type="text" id="ai-web-input" placeholder="#prompt-textarea 或 textarea" autocomplete="off">
+              <button class="kh-btn" type="button" id="ai-web-pick-input">点选元素</button>
+            </div>
+          </div>
+        </div>
+        <div class="kh-form-row">
+          <div class="kh-form-fld kh-form-fld-wide">
+            <label class="kh-fld-label" for="ai-web-send">发送按钮（留空则按 Enter 发送）</label>
+            <div class="kh-ai-actions">
+              <input class="kh-input" type="text" id="ai-web-send" placeholder="button[type=submit]" autocomplete="off">
+              <button class="kh-btn" type="button" id="ai-web-pick-send">点选元素</button>
+            </div>
+          </div>
+        </div>
+        <div class="kh-form-row">
+          <div class="kh-form-fld kh-form-fld-wide">
+            <label class="kh-fld-label" for="ai-web-answer">回答区</label>
+            <div class="kh-ai-actions">
+              <input class="kh-input" type="text" id="ai-web-answer" placeholder=".markdown-body" autocomplete="off">
+              <button class="kh-btn" type="button" id="ai-web-pick-answer">点选元素</button>
+            </div>
+          </div>
+        </div>
+        <div class="kh-form-row">
+          <div class="kh-form-fld">
+            <label class="kh-fld-label" for="ai-web-idle">回答安静多久算说完（毫秒）</label>
+            <input class="kh-input" type="number" id="ai-web-idle" min="400" max="10000" step="100">
+          </div>
+          <div class="kh-form-fld">
+            <label class="kh-check"><input type="checkbox" id="ai-web-keep"> 把通道标签页钉住（不自动回收）</label>
+          </div>
+        </div>
+        <div class="kh-ai-actions">
+          <button class="kh-btn" type="button" id="ai-web-test">测试这一页</button>
+          <span class="kh-muted" id="ai-web-test-out"></span>
+        </div>
+      </div>
     </section>
 
     <!-- ============================================================ 重要笔记（2.0.16.7 从「样式」拆出）

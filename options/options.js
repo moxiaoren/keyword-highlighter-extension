@@ -1231,6 +1231,7 @@
     /* 【2.0.16.4 · 用户 m19483】只剩太极AI 一条通路：没有「对话来源」可选，也没有服务商 / Base URL /
      * API Key / 单次上限 / 系统提示词这些东西（那些字段连 HTML 一起删了）。这里只回显太极AI 的账号与模型。 */
     renderTaijiForm();
+    renderAiCustomForm();
     $('ai-enabled').checked = ai !== null && ai.enabled !== false;
   }
 
@@ -2584,6 +2585,109 @@
     }
     if (btn) btn.disabled = false;
   });
+
+  /* ===================== 【2.0.19 · 用户 m28030】自定义网页 AI =====================
+   * 公司内网 AI 只有网页版，网址只该留在本机：四个值全部由用户填，代码里不出现任何站点。
+   * 流程：开一个不抢前台的标签页 → 写输入框 → 点发送（或回车）→ 轮询回答区，安静下来即答完。
+   * ============================================================================== */
+  function aiCustomOf() {
+    return KH.Config.normalizeAiCustom(cfg && cfg.ai && cfg.ai.custom);
+  }
+
+  async function saveAiCustom(patch) {
+    const next = Object.assign({}, aiCustomOf(), patch);
+    await saveNested({ ai: { custom: next } });
+  }
+
+  function renderAiCustomForm() {
+    const c = aiCustomOf();
+    const ai = KH.Config.normalizeAi(cfg && cfg.ai);
+    const ch = $('ai-channel');
+    if (ch) ch.value = (ai.channel === 'custom') ? 'custom' : 'taiji';
+    const set = (id, v) => { const el = $(id); if (el) el.value = v; };
+    set('ai-web-url', c.url);
+    set('ai-web-input', c.input);
+    set('ai-web-send', c.send);
+    set('ai-web-answer', c.answer);
+    set('ai-web-idle', String(c.idleMs));
+    const keep = $('ai-web-keep');
+    if (keep) keep.checked = c.keepTab !== false;
+    const out = $('ai-web-test-out');
+    if (out && !out.textContent) out.textContent = c.url ? '' : '先填网址，再点「测试这一页」。';
+  }
+
+  /* 点选元素：先开一张该网页的标签页（要真加载，选择器才有意义），再让后台注入遮罩。 */
+  async function pickWebAiElement(fieldId, key) {
+    const url = String((($('ai-web-url') || {}).value) || '').trim();
+    if (!/^https?:\/\//i.test(url)) { D.toast('先填网页地址（http:// 或 https://）', 'error'); return; }
+    await saveAiCustom({ url: url });
+    let tab = null;
+    try { tab = await chrome.tabs.create({ url: url, active: true }); }
+    catch (e) { D.toast('打不开这个网址', 'error'); return; }
+    /* 等页面把输入框渲染出来（单页应用常常是秒回，1.2 秒够用）。 */
+    await new Promise((r) => setTimeout(r, 1200));
+    try {
+      const res = await chrome.runtime.sendMessage({ type: KH.MSG.WEB_AI_PICK, tabId: tab.id });
+      if (!res || !res.ok) { D.toast((res && res.error) || '没取到元素', 'error'); return; }
+      const el = $(fieldId);
+      if (el) el.value = res.selector;
+      const patch = {};
+      patch[key] = res.selector;
+      await saveAiCustom(patch);
+      D.toast('已取到选择器', 'ok');
+    } catch (e) {
+      D.toast('点选失败：' + String((e && e.message) || e), 'error');
+    }
+  }
+
+  async function testWebAi() {
+    const out = $('ai-web-test-out');
+    if (out) out.textContent = '正在打开页面测试…';
+    try {
+      const r = await chrome.runtime.sendMessage({ type: KH.MSG.WEB_AI_PROBE });
+      if (!out) return;
+      if (!r || !r.ok) { out.textContent = '✗ ' + ((r && r.error) || '测试失败'); return; }
+      const marks = [
+        r.input ? '输入框 ✓' : '输入框 ✗',
+        r.send ? '发送按钮 ✓' : '发送按钮 ✗',
+        r.answer ? '回答区 ✓' : '回答区 ✗'
+      ];
+      out.textContent = '页面「' + (r.title || '') + '」：' + marks.join(' · ');
+    } catch (e) {
+      if (out) out.textContent = '✗ ' + String((e && e.message) || e);
+    }
+  }
+
+  if ($('ai-channel')) {
+    $('ai-channel').addEventListener('change', async (e) => {
+      const want = (e.target.value === 'custom') ? 'custom' : 'taiji';
+      await saveNested({ ai: { channel: want } });
+      renderAiCustomForm();
+    });
+  }
+  ['ai-web-url', 'ai-web-input', 'ai-web-send', 'ai-web-answer'].forEach((id) => {
+    const el = $(id);
+    if (!el) return;
+    el.addEventListener('change', () => {
+      const patch = {};
+      patch[id.slice('ai-web-'.length)] = String(el.value || '').trim();
+      saveAiCustom(patch);
+    });
+  });
+  if ($('ai-web-idle')) {
+    $('ai-web-idle').addEventListener('change', () => {
+      saveAiCustom({ idleMs: Number($('ai-web-idle').value) || 1200 });
+    });
+  }
+  if ($('ai-web-keep')) {
+    $('ai-web-keep').addEventListener('change', () => {
+      saveAiCustom({ keepTab: $('ai-web-keep').checked === true });
+    });
+  }
+  if ($('ai-web-pick-input')) $('ai-web-pick-input').addEventListener('click', () => pickWebAiElement('ai-web-input', 'input'));
+  if ($('ai-web-pick-send')) $('ai-web-pick-send').addEventListener('click', () => pickWebAiElement('ai-web-send', 'send'));
+  if ($('ai-web-pick-answer')) $('ai-web-pick-answer').addEventListener('click', () => pickWebAiElement('ai-web-answer', 'answer'));
+  if ($('ai-web-test')) $('ai-web-test').addEventListener('click', testWebAi);
 
   $('ai-enabled').addEventListener('change', async (e) => {
     aiChanged();

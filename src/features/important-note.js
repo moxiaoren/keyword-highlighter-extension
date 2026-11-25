@@ -3301,6 +3301,7 @@
       const aiWhy = cached && !cached.error
         ? [String(cached.why || ''), cached.ref ? String(V.riskLike || '与「{ref}」高度相似').replace('{ref}', cached.ref) : '',
           cached.brand ? String(V.riskBrandShort || '蹭「{w}」').replace('{w}', cached.brand) : '',
+          cached.iconSkip ? String(V.riskIconSkip || '') : '',
           (cached.cats || []).join('、')].filter(Boolean).join('；')
         : '';
       const chips = [];

@@ -124,6 +124,10 @@
     /* 【2.0.17.3 · 用户 m25410】自动深查：面板一次问一张卡（{title, icon} → {ok, data}），
      * 由后台带 cookie 取图标字节、走太极AI 联网核验并回结构化结论；不用长连接，面板可随时关。 */
     RISK_SCAN: 'kh:ai:riskScan',
+  /* 【2.0.19 · m28030】自定义网页 AI 的连通性测试（只读，不改配置） */
+  WEB_AI_PROBE: 'kh:ai:webProbe',
+  WEB_AI_PICK: 'kh:ai:webPick',
+  WEB_AI_PICKED: 'kh:ai:webPicked',
     /* 【2.0.16.4】网页对话内容脚本（content/web-chat.js）已随通路一起删除，WEB_* 常量不再存在。 */
 
     /* ---- ocr（图片文字识别；内容脚本 ↔ background ↔ offscreen 文档三段中转） ----

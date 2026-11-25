@@ -409,6 +409,24 @@
     return { account: account, base: base, model: model };
   }
 
+  /* 【2.0.19 · 用户 m28030】「自定义网页 AI」：公司内网 AI 往往只有网页版，网址也只该留在本机。
+   * 四个值全部由用户填（网址 + 输入框/发送按钮/回答区选择器），代码里不出现任何站点；
+   * `idleMs` 是「回答区安静多久算说完」的判定阈值，`keepTab` 决定通道页要不要钉住回收。 */
+  function normalizeAiCustom(raw) {
+    const src = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
+    const url = (typeof src.url === 'string') ? src.url.trim().slice(0, 400) : '';
+    const sel = (v) => ((typeof v === 'string') ? v.trim().slice(0, 300) : '');
+    const n = intOrNaN(src.idleMs);
+    return {
+      url: /^https?:\/\//i.test(url) ? url : '',
+      input: sel(src.input),
+      send: sel(src.send),
+      answer: sel(src.answer),
+      idleMs: (isFinite(n) && n > 0) ? Math.min(10000, Math.max(400, Math.round(n))) : 1200,
+      keepTab: src.keepTab !== false
+    };
+  }
+
   function normalizeAi(raw) {
     const src = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
     const preset = aiPreset(src.provider);
@@ -426,7 +444,10 @@
       apiKey: key,
       system: (typeof src.system === 'string') ? src.system.trim() : '',
       maxTokens: (isFinite(n) && n > 0) ? Math.min(AI_MAX_MAX, Math.max(AI_MAX_MIN, Math.round(n))) : AI_MAX_DEFAULT,
-      taiji: normalizeAiTaiji(src.taiji)
+      taiji: normalizeAiTaiji(src.taiji),
+      /* 【2.0.19 · m28030】通路口径：`taiji` 走太极AI 网页通路，`custom` 走用户自己填的网页。 */
+      channel: (src.channel === 'custom') ? 'custom' : 'taiji',
+      custom: normalizeAiCustom(src.custom)
     };
   }
 
@@ -512,7 +533,7 @@
        * 默认 DeepSeek 官方（用户口径："默认接入 deepseek 的官网 ai 对话"），但协议是通用的
        * OpenAI 兼容格式，设置页可换成任意兼容服务（含中转）。归一只有 `normalizeAi` 一份。
        * ⚠️ `apiKey` 只存本机 storage，不随导出分享（见 storage 的导出白名单）。 */
-      ai: normalizeAi({ provider: 'deepseek' }),
+      ai: normalizeAi({ provider: 'deepseek', channel: 'taiji', custom: { url: '', input: '', send: '', answer: '', idleMs: 1200, keepTab: true } }),
 
       /* ---- 图片文字识别（OCR）----
        * `defaultMax`：每个锚点最多识别几张图（关键词上可单独覆盖，留空即用这个默认）
@@ -634,6 +655,7 @@
     /** 【2.0.8.4 需求④ / 2.0.8.5 网页对话】AI 助手的接口配置归一    /** 【2.0.8.4 需求④ / 2.0.8.5 网页对话】AI 助手的接口配置归一 + 预设清单（设置页 / 后台请求共用一份） */
     normalizeAi,
     normalizeAiTaiji,
+    normalizeAiCustom,
     aiPreset,
     AI_PRESET_LIST,
     AI_MODES,

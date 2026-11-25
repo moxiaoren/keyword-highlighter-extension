@@ -70,12 +70,55 @@
     return btoa(out);
   }
 
+  /**
+   * 【2.0.18.2 · 用户 m27947】私有地址不外送 + 不带凭据。
+   *   用户原话：「私有地址不外送 + 去掉凭据」。理由两条：
+   *     ① 图标字节会被 base64 后随 files 发给太极AI 站点 —— 内网图片不该离开内网；
+   *     ② 原来 fetch 带 credentials:'include'，等于用用户的内网登录态去 GET 页面给的任意地址，
+   *        页面可控时就是「扩展当内网跳板」（盲 SSRF / 带副作用的 GET），必须去掉。
+   *   只认 https 公网地址：http、内网、回环、链路本地、单标签主机名（intranet 这类）一律跳过。
+   */
+  function hostOf(u) {
+    try { return String(new URL(u).hostname || '').replace(/^\[|\]$/g, '').toLowerCase(); } catch (e) { return ''; }
+  }
+
+  function isPrivateHost(h) {
+    if (!h) return true;
+    if (h === 'localhost' || /\.(localhost|local|internal|intranet|lan|corp|home)$/.test(h)) return true;
+    if (h.indexOf('.') < 0 && h.indexOf(':') < 0) return true;   /* 无点主机名：内网短名 */
+    const m = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+    if (m) {
+      const a = Number(m[1]); const b = Number(m[2]);
+      if (a === 0 || a === 10 || a === 127) return true;
+      if (a === 172 && b >= 16 && b <= 31) return true;
+      if (a === 192 && b === 168) return true;
+      if (a === 169 && b === 254) return true;
+      if (a === 100 && b >= 64 && b <= 127) return true;         /* CGNAT 100.64/10 */
+      return false;
+    }
+    if (h === '::1' || h === '::') return true;
+    if (/^::ffff:/.test(h)) return true;                        /* IPv4 映射 */
+    if (/^f[cd][0-9a-f]{2}:/.test(h)) return true;              /* fc00::/7 ULA */
+    if (/^fe[89ab][0-9a-f]:/.test(h)) return true;              /* fe80::/10 链路本地 */
+    return false;
+  }
+
+  /** 图标能不能取：'' 可以取；'empty' 没给；'scheme' 非 https；'private' 内网/回环。 */
+  AI.iconSkip = function (src) {
+    const s = String(src || '').trim();
+    if (!s) return 'empty';
+    if (/^data:image\//i.test(s)) return '';
+    if (!/^https:\/\//i.test(s)) return 'scheme';
+    if (isPrivateHost(hostOf(s))) return 'private';
+    return '';
+  };
+
   /** 图标 → dataURL。站外图标在内容脚本里按页面来源走 CORS 多半取不到，所以放后台取。 */
   async function iconDataUrl(src) {
     if (/^data:image\//i.test(src)) return src;
-    if (!/^https?:/i.test(src)) return '';
+    if (AI.iconSkip(src)) return '';
     try {
-      const r = await fetch(src, { credentials: 'include' });
+      const r = await fetch(src, { credentials: 'omit' });
       if (!r.ok) return '';
       const buf = await r.arrayBuffer();
       if (!buf.byteLength || buf.byteLength > ICON_MAX) return '';
@@ -171,7 +214,9 @@
     ].concat(dev ? ['开发者/主体：' + dev] : []).join('\n');
     const files = [];
     const icon = String(p.icon || '').trim();
-    if (icon) {
+    /* 内网 / 非 https 的图标不取也不发；卡片上要写明为什么没看图（用户 m27947）。 */
+    const iconSkip = icon ? AI.iconSkip(icon) : '';
+    if (icon && !iconSkip) {
       const data = await iconDataUrl(icon);
       if (data) files.push({ name: 'icon.png', data: data });
     }
@@ -181,7 +226,9 @@
     if (!got || !got.verdict) {
       return { ok: false, error: '模型没有按约定回结构化结论（已跳过，不猜）', text: String(r.text || '').slice(0, 400) };
     }
-    return { ok: true, data: got, text: String(r.text || '').slice(0, 400) };
+    const out = Object.assign({}, got);
+    if (iconSkip) out.iconSkip = iconSkip;
+    return { ok: true, data: out, text: String(r.text || '').slice(0, 400) };
   };
 
   /* ---------------- 太极AI：设置页的登录 / 模型清单 / 退出 ---------------- */

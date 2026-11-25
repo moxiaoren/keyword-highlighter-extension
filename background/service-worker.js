@@ -15,7 +15,7 @@
  */
 'use strict';
 
-importScripts('../src/core/protocol.js', '../src/core/config.js', 'tab-disabled.js', 'ocr.js', 'entity.js', 'policy.js', 'taiji.js', 'ai.js');
+importScripts('../src/core/protocol.js', '../src/core/config.js', 'tab-disabled.js', 'ocr.js', 'entity.js', 'policy.js', 'taiji.js', 'ai.js', 'webai.js');
 
 const MSG = self.KH.MSG;
 /* 【2.0.7.2 需求⑤】标签页级临时禁用的状态机（storage.session 读写 + 关标签页清键）在旁边的模块里，
@@ -704,6 +704,14 @@ const HANDLERS = {
   /* 【2.0.17.3 · 用户 m25410】自动深查：一次问一张卡（不用长连接，面板随时关都不影响已发出的那条）。
    * 面板侧串行排队、结果落 chrome.storage.local；这里只负责取图标字节 + 走太极AI 联网核验。 */
   [MSG.RISK_SCAN]: (msg) => self.KhAi.riskCheck({ title: (msg && msg.title) || '', icon: (msg && msg.icon) || '', dev: (msg && msg.dev) || '' }),
+  /* 【2.0.19 · 用户 m28030】自定义网页 AI：设置页的「测试」与「点选元素」都从这里走。
+   * 不带网址参数——一定是用户本机保存的那个，避免设置页被别的页面借去开任意标签页。 */
+  [MSG.WEB_AI_PICK]: (msg) => self.KhWebAi.pick({ tabId: (msg && msg.tabId) || 0 }),
+  [MSG.WEB_AI_PROBE]: async () => {
+    const got = await self.KH.Config.load();
+    const cfg = (got && got.config) || got || {};
+    return self.KhWebAi.probe((cfg.ai && cfg.ai.custom) || {});
+  },
 
   /* 面板在"还没配置"时给的一键入口：内容脚本调 chrome.runtime.openOptionsPage 不可靠（老内核没有）。 */
   [MSG.AI_OPEN_OPTIONS]: async () => {
@@ -747,6 +755,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
    * onMessage 是"所有扩展上下文都能收到"的，不在这里挡掉，背景自己就会把
    * `{to:'offscreen', type: ocr:image}` 当成"内容脚本的识别请求"再转发一次 → 无限自圈。 */
   if (msg && msg.to) return false;
+  /* 【2.0.19 · m28030】点选元素的结果由页面直接发回：交给正在等的那次 pick，不算普通请求。 */
+  if (msg && msg.type === MSG.WEB_AI_PICKED) { try { self.KhWebAi.picked(msg); } catch (e) { /* ignore */ } return false; }
   const handler = msg && HANDLERS[msg.type];
   if (!handler) return false;
   Promise.resolve()
@@ -824,17 +834,33 @@ chrome.runtime.onConnect.addListener((port) => {
     if (busy) { try { port.postMessage({ type: 'error', error: '上一条还在回，等它说完' }); } catch (e) {} return; }
     busy = true;
     const post = (obj) => { try { port.postMessage(obj); } catch (e) { /* 页面关了 */ } };
-    /* 【2.0.16.4】只剩太极AI：一律走 AI.chat（内部转 KhTaiji），不开任何标签页。 */
+    /* 【2.0.16.4】只剩太极AI：一律走 AI.chat（内部转 KhTaiji），不开任何标签页。
+     * 【2.0.19 · m28030】如果用户在设置页选了「自定义网页 AI」，改由 KhWebAi 驱动他自己填的那个页面；
+     * 这条通路不经过太极AI、也不外发任何内容，图片暂不支持（面板会给一句说明）。 */
     const run = Promise.resolve()
-      /* 【2.0.18 · m24077/m24086/m24105】把面板选的模型、联网搜索开关、图片一起透传给后台通路
-       * （原先只传 messages，所以面板上的开关根本到不了站点）。 */
-      .then(() => self.KhAi.chat({
-        messages: m.messages,
-        model: m.model || '',
-        webSearch: !!m.webSearch,
-        files: Array.isArray(m.files) ? m.files : [],
-        nativeTools: Array.isArray(m.nativeTools) ? m.nativeTools : []
-      }))
+      .then(async () => {
+        const got = await self.KH.Config.load();
+        const cfg = (got && got.config) || got || {};
+        const ai = cfg.ai || {};
+        if (ai.channel === 'custom') {
+          const r = await self.KhWebAi.ask({
+            custom: ai.custom || {},
+            text: self.KhWebAi.promptOf(m.messages)
+          });
+          if (r && r.ok) {
+            const hadFiles = Array.isArray(m.files) && m.files.length > 0;
+            return { ok: true, text: String(r.text || '') + (hadFiles ? '\n\n（自定义网页通道不转发图片，这轮只发了文字）' : '') };
+          }
+          return r || { ok: false, error: '自定义网页通道没有返回内容' };
+        }
+        return self.KhAi.chat({
+          messages: m.messages,
+          model: m.model || '',
+          webSearch: !!m.webSearch,
+          files: Array.isArray(m.files) ? m.files : [],
+          nativeTools: Array.isArray(m.nativeTools) ? m.nativeTools : []
+        });
+      })
       .then((r) => (r && r.ok ? { ok: true, text: r.text } : { ok: false, error: (r && r.error) || '请求失败', needLogin: !!(r && r.needLogin) }));
     Promise.resolve(run)
       .then((r) => {

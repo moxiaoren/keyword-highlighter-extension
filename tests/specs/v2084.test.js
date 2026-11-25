@@ -76,7 +76,7 @@ module.exports = async function run() {
     truthy(/self\.KhAi = AI;/.test(src), '后台模块必须挂到 self（service worker 可用）');
     falsy(/console\.(log|warn|error)[^\n]*apiKey/.test(src), '不许把 Key 打进日志');
     const sw = read('background/service-worker.js');
-    truthy(/importScripts\([^)]*'ai\.js'\)/.test(sw), 'service worker 要加载 ai.js');
+    truthy(/importScripts\([^)]*'ai\.js'/.test(sw), 'service worker 要加载 ai.js');
     truthy(/\[MSG\.AI_CHAT\]: \(msg\) => self\.KhAi\.chat/.test(sw), '消息要路由到 KhAi.chat');
     eq(KH.MSG.AI_CHAT, 'kh:ai:chat', '协议常量单源（业务代码不许硬编码消息名）');
   });

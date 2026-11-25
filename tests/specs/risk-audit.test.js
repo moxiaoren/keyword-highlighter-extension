@@ -162,7 +162,8 @@ module.exports = async function run() {
 
     const ai = read('background/ai.js');
     truthy(ai.indexOf('AI.riskCheck = async function') >= 0);
-    truthy(ai.indexOf("credentials: 'include'") >= 0, '图标在后台按站点身份取');
+    /* 【2.0.18.2 · m27947】改为不带凭据取图：页面可控时不能借用户登录态去碰内网。 */
+    truthy(ai.indexOf("credentials: 'omit'") >= 0, '图标在后台取图不带凭据');
     truthy(ai.indexOf('webSearch: true') >= 0, '深查要联网');
     truthy(ai.indexOf('files: files') >= 0, '有图标才带图');
     truthy(ai.indexOf('parseRisk') >= 0, '只认结构化结论，解析不出来宁可报未查明');
@@ -291,5 +292,40 @@ module.exports = async function run() {
     const ai = read('background/ai.js');
     truthy(ai.indexOf("const RISK_MODEL = 'deepseek::deepseek-v4.1-flash-1017';") >= 0, '深查模型固定为 deepseek v4.1 flash 1017');
     truthy(ai.indexOf('self.KhTaiji.chat({ model: RISK_MODEL') >= 0, '深查请求要带上这个模型');
+  });
+
+  await test('★ 2.0.18.2 内网 / 非 https 的图标不外送，fetch 也不带凭据（m27947）', () => {
+    const vm = require('vm');
+    const sandbox = {
+      console: console,
+      URL: URL,
+      Promise: Promise,
+      btoa: (s) => Buffer.from(s, 'binary').toString('base64'),
+      fetch: () => { throw new Error('不该发请求'); },
+      chrome: { storage: { local: { get: () => Promise.resolve({}) } } }
+    };
+    sandbox.self = sandbox;
+    sandbox.KH = { Config: { merge: (x) => x, normalize: (c) => ({ config: c }) } };
+    vm.createContext(sandbox);
+    vm.runInContext(read('background/ai.js'), sandbox, { filename: 'background/ai.js' });
+    const AI = sandbox.KhAi;
+    truthy(AI && typeof AI.iconSkip === 'function', 'ai.js 要导出 iconSkip');
+    eq(AI.iconSkip('https://cdn.example.com/a.png'), '', '公网 https 图标照常取');
+    eq(AI.iconSkip('https://8.8.8.8/a.png'), '', '公网 IPv4 不算内网');
+    eq(AI.iconSkip('https://172.32.0.1/a.png'), '', '172.32 不在 172.16/12 内');
+    /* 内网 / 回环 / 链路本地 / 单标签主机名：一律跳过，既不取也不外发 */
+    ['https://10.1.2.3/a.png', 'https://172.20.0.9/a.png', 'https://192.168.1.5/a.png',
+      'https://127.0.0.1/a.png', 'https://169.254.1.1/a.png', 'https://localhost/a.png',
+      'https://wiki/logo.png', 'https://a.corp/x.png', 'https://a.internal/x.png',
+      'https://[::1]/a.png'].forEach((u) => eq(AI.iconSkip(u), 'private', '应判为内网：' + u));
+    eq(AI.iconSkip('http://cdn.example.com/a.png'), 'scheme', '非 https 不取');
+    eq(AI.iconSkip(''), 'empty');
+    const ai = read('background/ai.js');
+    truthy(ai.indexOf("credentials: 'omit'") >= 0, '下载图标不许带凭据');
+    truthy(ai.indexOf("credentials: 'include'") < 0, '已删掉 credentials include');
+    const copy = read('src/ui/ocr-copy.js');
+    truthy(copy.indexOf('riskIconSkip') >= 0, '要有一句「图标未外发」的文案');
+    const panel = read('src/features/important-note.js');
+    truthy(panel.indexOf('cached.iconSkip') >= 0, '卡片要说明这轮没看图');
   });
 };
