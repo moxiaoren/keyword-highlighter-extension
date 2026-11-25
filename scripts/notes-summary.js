@@ -187,7 +187,7 @@ function markdown(changelog, stable) {
   const groups = [
     /* 标签词表随版本演化（风险初筛 / AI·深查 / 卡片·层级 …），分组要按语义收，而不是只认两个词。 */
     { title: '### 新功能', re: /新增|分享码|联网|换模型|图片|卡片|词库|初筛|深查|自动深查/, cap: 8, lines: [] },
-    { title: '### 重要调整', re: /优化|改动|性能|安全|修复|小标|界面|折叠/, cap: 6, lines: [] },
+    { title: '### 重要调整', re: /优化|改动|性能|安全|小标|界面|折叠/, cap: 6, lines: [] },
     { title: '### 问题修复', re: /修复/, cap: 10, lines: [] }
   ];
   const seen = Object.create(null);
