@@ -763,6 +763,9 @@ body {
 .kh-lex-words { display: flex; flex-wrap: wrap; gap: 4px 12px; }
 .kh-lex-w { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text); white-space: nowrap; }
 .kh-lex-w input { margin: 0; }
+/* 自定义词：词 + 备注输入一行，备注在 label 外面，点输入框不会切换勾选。 */
+.kh-lex-item { display: inline-flex; align-items: center; gap: 4px; }
+.kh-lex-note { width: 112px; height: 22px; font-size: 10px; padding: 0 6px; }
 .kh-lex-w.is-off { color: var(--text-3); text-decoration: line-through; }
 .kh-lex-del { border: none; background: none; color: var(--text-3); cursor: pointer; font-size: 11px; padding: 0 2px; line-height: 1; }
 .kh-lex-del:hover { color: var(--danger); }

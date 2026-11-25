@@ -82,6 +82,50 @@ module.exports = async function run() {
     falsy(none.found, '没有标题也没有图标 = 没找到');
   });
 
+  await test('★ 2.0.18 副标题也纳入判定：名称按主标题-副标题拼，副标题里的词一样会命中（m27217）', () => {
+    const d = H.el('div', {}, []);
+    d.innerHTML = '<table class="kh-table-fetch"><tbody>' +
+      '<tr><td class="kh-table-label">主标题</td><td>记账助手</td></tr>' +
+      '<tr><td class="kh-table-label">副标题</td><td>微信版</td></tr>' +
+      '</tbody></table>';
+    const got = R.readCard(d.querySelectorAll('table')[0]);
+    eq(got.subtitle, '微信版', '副标题要读出来');
+    eq(got.name, '记账助手-微信版', '名称 = 主标题-副标题');
+    /* 副标题里带品牌，没开发者 ⇒ 待核；开发者是官方主体 ⇒ 清零。 */
+    eq(R.auditCard(d.querySelectorAll('table')[0]).level, 1);
+    eq(R.screen('记账助手-微信版', {}, '深圳市腾讯计算机系统有限公司').level, 0);
+    /* 只有副标题没有主标题时不算找到：判定以主标题为准。 */
+    const d2 = H.el('div', {}, []);
+    d2.innerHTML = '<table class="kh-table-fetch"><tbody>' +
+      '<tr><td class="kh-table-label">副标题</td><td>微信版</td></tr>' +
+      '</tbody></table>';
+    falsy(R.readCard(d2.querySelectorAll('table')[0]).found, '没有主标题不给结论');
+  });
+
+  await test('★ 2.0.18 自定义词可带备注：命中时备注跟着出来，备注长度有上限（m27217）', () => {
+    const cfg = { riskLexicon: { custom: [{ w: '秒下款', cat: 'loan', note: '客户反馈的这类话术' }], disabled: [], remoteUrl: '' } };
+    const r = R.screen('秒下款钱包', cfg);
+    eq(r.level, 2, '自定义词照样判高风险');
+    const hit = r.hits.filter((h) => h.kind === 'sensitive')[0];
+    eq(hit.note, '客户反馈的这类话术', '备注要跟着命中带出来');
+    const lex = R.lexicon(cfg);
+    eq(lex.notes[R.normalizeName('秒下款')], '客户反馈的这类话术', '备注按归一后的词存');
+  });
+
+  await test('★ 2.0.18 接线契约：副标题别名、备注输入、深查提示词带上名称与色情相似（m27217）', () => {
+    const src = read('src/features/compare/sources.js');
+    truthy(src.indexOf("subtitle: ['副标题'") >= 0, '抓取字段要认副标题');
+    const html = read('options/options.html');
+    truthy(html.indexOf('id="risk-lex-note"') >= 0, '设置页要能填备注');
+    const opt = read('options/options.js');
+    truthy(opt.indexOf("'data-note'") >= 0, '备注按词回到 custom 里存');
+    const ai = read('background/ai.js');
+    truthy(ai.indexOf('色情软件') >= 0, '提示词要点明图标是否与色情软件相似');
+    truthy(ai.indexOf('主标题-副标题') >= 0, '提示词用拼好的名称');
+    const cfg = read('src/core/config.js');
+    truthy(cfg.indexOf('RISK_NOTE_MAX') >= 0, '备注长度要有上限');
+  });
+
   await test('★ auditCard：名称有风险时带出等级与命中；没标题不判', () => {
     const d = H.el('div', {}, []);
     d.innerHTML = '<table class="kh-table-fetch"><tbody>' +
@@ -111,7 +155,8 @@ module.exports = async function run() {
     truthy(panel.indexOf("'data-kh-verdicts-sig'") >= 0, '同一张卡重复渲染不能重画');
     truthy(panel.indexOf('.khin-verdicts') >= 0, '体检条要按一类一格渲染');
     truthy(panel.indexOf('.khin-ai-line') >= 0, '深查结论要固定占一行');
-    truthy(panel.indexOf('this.riskEnqueue(key, res.title, res.icon, res.dev)') >= 0, '深查不用点，进卡即排队（开发者一起带上）');
+    truthy(panel.indexOf('this.riskEnqueue(key, cardName, res.icon, res.dev)') >= 0, '深查不用点，进卡即排队（开发者一起带上）');
+    truthy(panel.indexOf('res.name || res.title') >= 0, '名称按主标题-副标题拼起来用');
     truthy(panel.indexOf('khRiskAuditV1') >= 0, '结论要落本地缓存，重开面板能回填');
     truthy(panel.indexOf('MSG.RISK_SCAN') >= 0, '深查走一次性消息，不复用对话端口');
 
@@ -154,7 +199,7 @@ module.exports = async function run() {
     eq(R.cacheKey('微信', '', ''), R.cacheKey('微 信·', '', ''), '没有开发者时键仍按名称归一');
 
     const panel = read('src/features/important-note.js');
-    truthy(panel.indexOf('RA.cacheKey(res.title, res.icon, res.dev)') >= 0, '面板的缓存键要带开发者');
+    truthy(panel.indexOf('RA.cacheKey(cardName, res.icon, res.dev)') >= 0, '面板的缓存键要带开发者，且用主标题-副标题拼的名称');
     truthy(panel.indexOf("dev: job.dev || ''") >= 0, '深查请求要把开发者一起发给后台');
     truthy(panel.indexOf('V.riskOfficial') >= 0, '官方主体要在卡里说明，不只是静默放行');
     const ai = read('background/ai.js');

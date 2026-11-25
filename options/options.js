@@ -2100,13 +2100,18 @@
         cb.checked = on;
         row.appendChild(cb);
         row.appendChild(document.createTextNode(w));
+        /* 备注放在 label 外面：label 里点输入框会顺手切换勾选。 */
+        const item = riskLexEl('span', 'kh-lex-item', {});
+        item.appendChild(row);
         if (isCustom) {
+          const c0 = customs.find((c) => norm(c.w) === norm(w)) || {};
           row.appendChild(riskLexEl('span', 'kh-lex-tag', { text: '自定义' }));
           const del = riskLexEl('button', 'kh-lex-del', { type: 'button', 'data-del': w, title: '删掉这个词' });
           del.textContent = '✕';
           row.appendChild(del);
+          item.appendChild(riskLexEl('input', 'kh-input kh-lex-note', { type: 'text', maxlength: '60', placeholder: '备注', 'data-note': w, value: String(c0.note || ''), title: '这个词的备注（只存本机，随导入导出走）' }));
         }
-        words.appendChild(row);
+        words.appendChild(item);
       });
       wrap.appendChild(words);
       box.appendChild(wrap);
@@ -2126,6 +2131,14 @@
     const box = $('risk-lex-list');
     if (box) {
       box.addEventListener('change', (e) => {
+        const nt = e.target;
+        if (nt && nt.getAttribute && nt.getAttribute('data-note')) {
+          const w = nt.getAttribute('data-note');
+          const cur = riskLexOf();
+          const next = cur.custom.map((c) => (c.w === w ? { w: c.w, cat: c.cat, note: String(nt.value || '').trim() } : c));
+          riskLexSave({ custom: next });
+          return;
+        }
         const cb = e.target;
         if (!cb || cb.type !== 'checkbox') return;
         const row = cb.parentNode;
@@ -2157,12 +2170,14 @@
       add.addEventListener('click', () => {
         const input = $('risk-lex-word');
         const sel = $('risk-lex-cat');
+        const noteEl = $('risk-lex-note');
         const w = String((input && input.value) || '').trim();
         if (!w) { D.toast('先填一个词'); return; }
         const cat = (sel && sel.value) || 'other';
+        const note = String((noteEl && noteEl.value) || '').trim();
         const cur = riskLexOf();
-        const next = cur.custom.filter((c) => c.w !== w).concat([{ w: w, cat: cat }]);
-        riskLexSave({ custom: next }).then(() => { if (input) input.value = ''; });
+        const next = cur.custom.filter((c) => c.w !== w).concat([{ w: w, cat: cat, note: note }]);
+        riskLexSave({ custom: next }).then(() => { if (input) input.value = ''; if (noteEl) noteEl.value = ''; });
       });
     }
     const exp = $('btn-risk-lex-export');

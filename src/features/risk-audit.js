@@ -178,7 +178,7 @@
       if (k) off[k] = true;
     }
     const keep = function (w) { return !off[Risk.normalizeName(w)]; };
-    const out = { brands: BRANDS.filter(keep), cats: [] };
+    const out = { brands: BRANDS.filter(keep), cats: [], notes: {} };
     for (let i = 0; i < SENSITIVE.length; i++) {
       out.cats.push({ tag: SENSITIVE[i].tag, cat: SENSITIVE[i].cat || '', words: SENSITIVE[i].words.filter(keep) });
     }
@@ -188,6 +188,8 @@
       const w = String(it.w == null ? '' : it.w).trim();
       if (!w || !keep(w)) continue;
       const cat = Risk.CATS.indexOf(String(it.cat || '')) >= 0 ? String(it.cat) : 'other';
+      const note = String(it.note == null ? '' : it.note).trim();
+      if (note) out.notes[Risk.normalizeName(w)] = note;
       if (cat === 'brand') { out.brands.push(w); continue; }
       const tag = Risk.CAT_LABEL[cat] || '其它';
       let g = null;
@@ -221,7 +223,7 @@
       for (let k = 0; k < cat.words.length; k++) {
         const w = Risk.normalizeName(cat.words[k]);
         if (w && n.indexOf(w) >= 0) {
-          hits.push({ kind: 'sensitive', tag: cat.tag, word: cat.words[k] });
+          hits.push({ kind: 'sensitive', tag: cat.tag, word: cat.words[k], note: lex.notes[w] || '' });
         }
       }
     }
@@ -233,9 +235,10 @@
       const mine = !!(who && Risk.normalizeName(who.brand) === b);
       if (n === b) {
         /* 同名：开发者是官方主体 → 正版；有开发者但不是官方 → 冒充；连开发者都没有 → 同名待核。 */
-        if (mine) hits.push({ kind: 'brand', tag: '官方', word: raw, exact: true, official: true });
-        else if (devText) hits.push({ kind: 'brand', tag: '冒充', word: raw, exact: true });
-        else hits.push({ kind: 'brand', tag: '同名', word: raw, exact: true });
+        const note0 = lex.notes[b] || '';
+        if (mine) hits.push({ kind: 'brand', tag: '官方', word: raw, exact: true, official: true, note: note0 });
+        else if (devText) hits.push({ kind: 'brand', tag: '冒充', word: raw, exact: true, note: note0 });
+        else hits.push({ kind: 'brand', tag: '同名', word: raw, exact: true, note: note0 });
       } else if (b.length >= 2 && n.indexOf(b) >= 0) {
         if (mine) hits.push({ kind: 'brand', tag: '官方', word: raw, exact: false, official: true });
         else hits.push({ kind: 'brand', tag: '蹭品牌', word: raw, exact: false });
@@ -314,6 +317,18 @@
     return false;
   }
 
+  /** 副标题行：与主标题用「-」连成一个名称参与判定（2.0.18 · 用户 m27217）。 */
+  function isSubLabel(label) {
+    const S = sources();
+    if (S && typeof S.fieldKey === 'function') {
+      try { if (S.fieldKey(label) === 'subtitle') return true; } catch (e) { /* 落到别名 */ }
+    }
+    const k = keyOf(label);
+    const aliases = ['副标题', '应用副标题', '子标题', '短标题', '一句话简介'];
+    for (let i = 0; i < aliases.length; i++) if (keyOf(aliases[i]) === k) return true;
+    return false;
+  }
+
   /** 开发者/主体行：先认 Sources 的 dev（开发者）与 entity（备案主办单位），再用别名兜底。 */
   function isDevLabel(label) {
     const S = sources();
@@ -345,7 +360,7 @@
    * @returns {{found:boolean,title:string,icon:string}}
    */
   Risk.readCard = function (tableEl) {
-    const out = { found: false, title: '', icon: '', dev: '' };
+    const out = { found: false, title: '', subtitle: '', name: '', icon: '', dev: '' };
     if (!tableEl || !tableEl.querySelectorAll) return out;
     const trs = tableEl.querySelectorAll('tr');
     for (let i = 0; i < trs.length; i++) {
@@ -361,6 +376,10 @@
           const v = cellText(tds.length > 1 ? tds[1] : null).trim();
           if (v) out.title = v;
         }
+        if (!out.subtitle && isSubLabel(label)) {
+          const v = cellText(tds.length > 1 ? tds[1] : null).trim();
+          if (v) out.subtitle = v;
+        }
         if (!out.icon && isIconLabel(label)) {
           const src = firstImgSrc(tds.length > 1 ? tds[1] : tds[0]);
           if (src) out.icon = src;
@@ -371,6 +390,8 @@
         }
       }
     }
+    /* 主标题与副标题用「-」连成一个名称：风险判定 / AI 核验 / 缓存键都认这一个。 */
+    out.name = out.title + (out.subtitle ? '-' + out.subtitle : '');
     out.found = !!(out.title || out.icon);
     return out;
   };
@@ -381,10 +402,12 @@
    */
   Risk.auditCard = function (tableEl, cfg) {
     const got = Risk.readCard(tableEl);
-    const res = Risk.screen(got.title, cfg, got.dev);
+    const res = Risk.screen(got.name || got.title, cfg, got.dev);
     return {
       ok: !!got.title,
       title: got.title,
+      subtitle: got.subtitle,
+      name: got.name || got.title,
       icon: got.icon,
       dev: got.dev,
       official: res.official,

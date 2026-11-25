@@ -3215,7 +3215,9 @@
       let res = null;
       /* 【2.0.17.5 · m26374】带上配置：本地初筛要能吃到用户自定义词库与逐词停用。 */
       if (table) { try { res = RA.auditCard(table, this.cfg); } catch (e) { res = null; } }
-      const key = (res && res.ok) ? RA.cacheKey(res.title, res.icon, res.dev) : '';
+      /* 【2.0.18 · 用户 m27217】名称 = 主标题-副标题：缓存键、显示与 AI 核验都用它。 */
+      const cardName = (res && (res.name || res.title)) || '';
+      const key = (res && res.ok) ? RA.cacheKey(cardName, res.icon, res.dev) : '';
       if (!this._riskMap && key) this.loadRiskCache();
       const cached = (key && this._riskMap && this._riskMap[key]) || null;
       const aiSt = RA.aiState(cached);
@@ -3252,7 +3254,7 @@
       const badCount = ((titleState === 'bad' || titleState === 'warn') ? 1 : 0) + cmpBad
         + ((devState === 'bad' || devState === 'warn') ? 1 : 0)
         + ((policyState === 'bad' || policyState === 'warn') ? 1 : 0);
-      const sig = [res && res.ok ? 1 : 0, res && res.title, res && res.icon ? 1 : 0, titleState, iconState,
+      const sig = [res && res.ok ? 1 : 0, cardName, res && res.icon ? 1 : 0, titleState, iconState,
         devState, policyState, cmpBad, badCount, cached && cached.at, cached && cached.verdict,
         cached && cached.error, checking ? 1 : 0].join('|');
       if (el.getAttribute('data-kh-verdicts-sig') === sig) return;
@@ -3275,7 +3277,7 @@
       const flagTxt = badCount > 0 ? ('⚠' + badCount) : (waiting || checking ? '…' : (titleState === 'ok' ? '✓' : '?'));
       if (flag.className !== 'khin-risk-flag ' + flagCls) flag.className = 'khin-risk-flag ' + flagCls;
       if (String(flag.textContent || '') !== flagTxt) flag.textContent = flagTxt;
-      flag.title = String(V.riskTipPrefix || '') + '「' + res.title + '」'
+      flag.title = String(V.riskTipPrefix || '') + '「' + cardName + '」'
         + (badCount > 0 ? String(V.riskTipCount || '').replace('{n}', String(badCount)) : String(V.riskTipClean || ''));
 
       /* ② 体检条：标题 / 法人 / 隐私，一类一格，顺序固定；缺类不占位。 */
@@ -3285,12 +3287,14 @@
         ? String(V.riskOfficial || '开发者/主体「{d}」是「{w}」的官方主体，按官方处理')
           .replace('{d}', String(res.dev || '')).replace('{w}', res.official)
         : '';
+      /* 自定义词带的备注跟命中一起显示：用户能马上想起为什么加这个词。 */
+      const withNote = (s, h) => (h && h.note ? s + '（' + h.note + '）' : s);
       const localWhy = (res.hits || []).slice(0, 3).map((h) => {
-        if (h.kind !== 'brand') return String(V.riskSens || '{tag}：「{w}」').replace('{tag}', h.tag).replace('{w}', h.word);
+        if (h.kind !== 'brand') return withNote(String(V.riskSens || '{tag}：「{w}」').replace('{tag}', h.tag).replace('{w}', h.word), h);
         if (h.official) return officialWhy;
-        if (h.tag === '冒充') return String(V.riskFake || '与「{w}」同名，但开发者不是官方主体').replace('{w}', h.word);
-        if (h.tag === '同名') return String(V.riskSame || '').replace('{w}', h.word);
-        return String(V.riskBrand || '').replace('{w}', h.word);
+        if (h.tag === '冒充') return withNote(String(V.riskFake || '与「{w}」同名，但开发者不是官方主体').replace('{w}', h.word), h);
+        if (h.tag === '同名') return withNote(String(V.riskSame || '').replace('{w}', h.word), h);
+        return withNote(String(V.riskBrand || '').replace('{w}', h.word), h);
       }).join('；');
       const aiWhy = cached && !cached.error
         ? [String(cached.why || ''), cached.brand ? String(V.riskBrandShort || '蹭「{w}」').replace('{w}', cached.brand) : '',
@@ -3298,7 +3302,7 @@
         : '';
       const chips = [];
       chips.push({ name: V.vdTitle || '标题', state: titleState, row: table ? rowOfField(table, 'title') : null,
-        tip: [res.title, officialWhy, localWhy, aiWhy].filter(Boolean).join('\n') });
+        tip: [cardName, officialWhy, localWhy, aiWhy].filter(Boolean).join('\n') });
       if (devState) chips.push({ name: V.vdDev || '法人', state: devState, row: devRow || entRow, tip: '' });
       if (policyState) chips.push({ name: V.vdPolicy || '隐私', state: policyState, row: policyRow, tip: '' });
       let box = el.querySelector('.khin-verdicts');
@@ -3406,7 +3410,7 @@
         }
       }
       /* ④ 自动深查排队：本地结论已渲染，AI 结果后到再补 —— 不阻塞看清卡片。 */
-      if (auto && key && retry && !checking) this.riskEnqueue(key, res.title, res.icon, res.dev);
+      if (auto && key && retry && !checking) this.riskEnqueue(key, cardName, res.icon, res.dev);
     },
 
     /* ---------- 自动深查：缓存 / 串行队列 / 回填（2.0.17.3 · 用户 m25410） ---------- */

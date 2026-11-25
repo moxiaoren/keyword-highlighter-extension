@@ -286,6 +286,7 @@
    * brand = 知名品牌（判「同名 / 蹭品牌」），其余六类 = 敏感词类别。 */
   const RISK_CATS = ['brand', 'gamble', 'porn', 'fund', 'fraud', 'loan', 'other'];
   const RISK_WORD_MAX = 40;
+  const RISK_NOTE_MAX = 60;
   const RISK_CUSTOM_MAX = 600;
   function normalizeRiskWord(w) {
     return String(w == null ? '' : w).trim().slice(0, RISK_WORD_MAX);
@@ -308,7 +309,9 @@
       if (!w || !key || seen.has(key)) continue;
       seen.add(key);
       const cat = RISK_CATS.indexOf(String(it.cat || '')) >= 0 ? String(it.cat) : 'other';
-      out.custom.push({ w: w, cat: cat });
+      /* 【2.0.18 · 用户 m27217】备注跟着词走：导入导出与命中说明都带上它。 */
+      const note = String(it.note == null ? '' : it.note).trim().slice(0, RISK_NOTE_MAX);
+      out.custom.push({ w: w, cat: cat, note: note });
     }
     const ds = Array.isArray(src.disabled) ? src.disabled : [];
     const dseen = new Set();
