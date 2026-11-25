@@ -71,6 +71,7 @@ module.exports = async function run() {
     truthy(got.found, '有主标题就算找到了');
     eq(got.title, '微信');
     eq(got.icon, 'data:image/png;base64,AA');
+    eq(got.dev, '北京甲科技有限公司', '开发者/主体也要读出来：判定正版与冒充就靠它');
 
     const empty = H.el('div', {}, []);
     empty.innerHTML = '<table class="kh-table-fetch"><tbody>' +
@@ -110,7 +111,7 @@ module.exports = async function run() {
     truthy(panel.indexOf("'data-kh-verdicts-sig'") >= 0, '同一张卡重复渲染不能重画');
     truthy(panel.indexOf('.khin-verdicts') >= 0, '体检条要按一类一格渲染');
     truthy(panel.indexOf('.khin-ai-line') >= 0, '深查结论要固定占一行');
-    truthy(panel.indexOf('this.riskEnqueue(key, res.title, res.icon)') >= 0, '深查不用点，进卡即排队');
+    truthy(panel.indexOf('this.riskEnqueue(key, res.title, res.icon, res.dev)') >= 0, '深查不用点，进卡即排队（开发者一起带上）');
     truthy(panel.indexOf('khRiskAuditV1') >= 0, '结论要落本地缓存，重开面板能回填');
     truthy(panel.indexOf('MSG.RISK_SCAN') >= 0, '深查走一次性消息，不复用对话端口');
 
@@ -124,6 +125,42 @@ module.exports = async function run() {
     const sw = read('background/service-worker.js');
     truthy(sw.indexOf('[MSG.RISK_SCAN]') >= 0);
     truthy(sw.indexOf('self.KhAi.riskCheck') >= 0);
+  });
+
+  await test('★ 2.0.17.6 开发者/主体参与判定：正版不再被判蹭品牌，同名但不是官方主体算冒充（m26871）', () => {
+    /* ① 主体名自带品牌：支付宝（中国）网络技术有限公司做「支付宝」= 官方。 */
+    const a1 = R.screen('支付宝', {}, '支付宝（中国）网络技术有限公司');
+    eq(a1.level, 0);
+    eq(a1.official, '支付宝');
+    truthy(a1.hits.some((h) => h.official && h.tag === '官方'), '要说清是按官方处理的');
+
+    /* ② 主体名不带品牌，靠官方主体关键词表：腾讯做「微信」。 */
+    eq(R.screen('微信', {}, '深圳市腾讯计算机系统有限公司').level, 0);
+    /* ③ 名称含品牌 + 官方主体 = 正版（微信输入法）。 */
+    eq(R.screen('微信输入法', {}, '深圳市腾讯计算机系统有限公司').level, 0);
+    /* ④ 同名但开发者不是官方主体 = 冒充（2），不再只是「待核」。 */
+    const a4 = R.screen('微信', {}, '张三工作室');
+    eq(a4.level, 2);
+    truthy(a4.hits.some((h) => h.tag === '冒充'), '同名 + 非官方开发者要标成冒充');
+    /* ⑤ 没有开发者字段时维持旧口径：同名 2、含品牌 1。 */
+    eq(R.screen('微信', {}).level, 2);
+    eq(R.screen('微信分身版', {}).level, 1);
+    /* ⑥ 开发者与品牌无关时，不能因为主体名里恰好有别的字就放行。 */
+    eq(R.screen('微信分身版', {}, '记账小本工作室').level, 1);
+    /* ⑦ 敏感词优先：官方主体也洗不掉赌博词。 */
+    eq(R.screen('微信赌博', {}, '深圳市腾讯计算机系统有限公司').level, 2);
+    /* ⑧ 开发者进缓存键：同名不同开发者不能共用旧结论。 */
+    truthy(R.cacheKey('微信', '', '腾讯') !== R.cacheKey('微信', '', '张三工作室'), '换了开发者要换缓存键');
+    eq(R.cacheKey('微信', '', ''), R.cacheKey('微 信·', '', ''), '没有开发者时键仍按名称归一');
+
+    const panel = read('src/features/important-note.js');
+    truthy(panel.indexOf('RA.cacheKey(res.title, res.icon, res.dev)') >= 0, '面板的缓存键要带开发者');
+    truthy(panel.indexOf("dev: job.dev || ''") >= 0, '深查请求要把开发者一起发给后台');
+    truthy(panel.indexOf('V.riskOfficial') >= 0, '官方主体要在卡里说明，不只是静默放行');
+    const ai = read('background/ai.js');
+    truthy(ai.indexOf("'开发者/主体：' + dev") >= 0, '提示词要带开发者，否则模型仍会按名字判蹭牌');
+    const sw = read('background/service-worker.js');
+    truthy(sw.indexOf("dev: (msg && msg.dev) || ''") >= 0, '后台入口要透传开发者');
   });
 
   await test('★ 缓存键与状态换算：名称归一 + 图标指纹，过期一律当未查明', () => {

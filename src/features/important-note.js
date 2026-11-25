@@ -3215,7 +3215,7 @@
       let res = null;
       /* 【2.0.17.5 · m26374】带上配置：本地初筛要能吃到用户自定义词库与逐词停用。 */
       if (table) { try { res = RA.auditCard(table, this.cfg); } catch (e) { res = null; } }
-      const key = (res && res.ok) ? RA.cacheKey(res.title, res.icon) : '';
+      const key = (res && res.ok) ? RA.cacheKey(res.title, res.icon, res.dev) : '';
       if (!this._riskMap && key) this.loadRiskCache();
       const cached = (key && this._riskMap && this._riskMap[key]) || null;
       const aiSt = RA.aiState(cached);
@@ -3280,16 +3280,25 @@
 
       /* ② 体检条：标题 / 法人 / 隐私，一类一格，顺序固定；缺类不占位。 */
       const SYM = { ok: '✓', warn: '?', bad: '!', unknown: '—' };
-      const localWhy = (res.hits || []).slice(0, 3).map((h) => (h.kind === 'brand'
-        ? String(h.tag === '同名' ? V.riskSame : V.riskBrand || '').replace('{w}', h.word)
-        : String(V.riskSens || '{tag}：「{w}」').replace('{tag}', h.tag).replace('{w}', h.word))).join('；');
+      /* 【2.0.17.6 · 用户 m26871】开发者/主体是官方时，本地不再把正版写成「蹭品牌」。 */
+      const officialWhy = (res && res.official)
+        ? String(V.riskOfficial || '开发者/主体「{d}」是「{w}」的官方主体，按官方处理')
+          .replace('{d}', String(res.dev || '')).replace('{w}', res.official)
+        : '';
+      const localWhy = (res.hits || []).slice(0, 3).map((h) => {
+        if (h.kind !== 'brand') return String(V.riskSens || '{tag}：「{w}」').replace('{tag}', h.tag).replace('{w}', h.word);
+        if (h.official) return officialWhy;
+        if (h.tag === '冒充') return String(V.riskFake || '与「{w}」同名，但开发者不是官方主体').replace('{w}', h.word);
+        if (h.tag === '同名') return String(V.riskSame || '').replace('{w}', h.word);
+        return String(V.riskBrand || '').replace('{w}', h.word);
+      }).join('；');
       const aiWhy = cached && !cached.error
         ? [String(cached.why || ''), cached.brand ? String(V.riskBrandShort || '蹭「{w}」').replace('{w}', cached.brand) : '',
           (cached.cats || []).join('、')].filter(Boolean).join('；')
         : '';
       const chips = [];
       chips.push({ name: V.vdTitle || '标题', state: titleState, row: table ? rowOfField(table, 'title') : null,
-        tip: [res.title, localWhy, aiWhy].filter(Boolean).join('\n') });
+        tip: [res.title, officialWhy, localWhy, aiWhy].filter(Boolean).join('\n') });
       if (devState) chips.push({ name: V.vdDev || '法人', state: devState, row: devRow || entRow, tip: '' });
       if (policyState) chips.push({ name: V.vdPolicy || '隐私', state: policyState, row: policyRow, tip: '' });
       let box = el.querySelector('.khin-verdicts');
@@ -3356,6 +3365,10 @@
         headTxt = cached.verdict === 'risky' ? (V.riskHdBad || '发现风险')
           : cached.verdict === 'suspect' ? (V.riskHdWarn || '存疑') : (V.riskHdOk || '未发现风险');
         bodyTxt = aiWhy || '';
+      } else if (officialWhy) {
+        headTxt = V.riskHdOfficial || '官方主体';
+        bodyTxt = officialWhy;
+        tagTxt = V.riskLocal || '本地词库';
       } else if (localWhy) {
         headTxt = V.riskHdLocalHit || '本地初筛命中';
         bodyTxt = localWhy;
@@ -3393,7 +3406,7 @@
         }
       }
       /* ④ 自动深查排队：本地结论已渲染，AI 结果后到再补 —— 不阻塞看清卡片。 */
-      if (auto && key && retry && !checking) this.riskEnqueue(key, res.title, res.icon);
+      if (auto && key && retry && !checking) this.riskEnqueue(key, res.title, res.icon, res.dev);
     },
 
     /* ---------- 自动深查：缓存 / 串行队列 / 回填（2.0.17.3 · 用户 m25410） ---------- */
@@ -3424,13 +3437,13 @@
       } catch (e) { /* 存不下就少回填一次，不影响本次会话 */ }
     },
 
-    riskEnqueue(key, title, icon) {
+    riskEnqueue(key, title, icon, dev) {
       if (!key) return;
       if (this._riskPending && this._riskPending[key]) return;
       if (!this._riskQueue) this._riskQueue = [];
       if (!this._riskPending) this._riskPending = {};
       this._riskPending[key] = true;
-      this._riskQueue.push({ key: key, title: String(title || ''), icon: String(icon || '') });
+      this._riskQueue.push({ key: key, title: String(title || ''), icon: String(icon || ''), dev: String(dev || '') });
       this.riskPump();
     },
 
@@ -3465,7 +3478,7 @@
         if (!api) return resolve({ ok: false, error: '当前上下文没有后台通道' });
         const type = (KH.MSG && KH.MSG.RISK_SCAN) || 'kh:ai:riskScan';
         try {
-          api.sendMessage({ type: type, title: job.title, icon: job.icon }, (res) => {
+          api.sendMessage({ type: type, title: job.title, icon: job.icon, dev: job.dev || '' }, (res) => {
             void (chrome.runtime && chrome.runtime.lastError);
             resolve(res || { ok: false, error: '后台没有回执' });
           });

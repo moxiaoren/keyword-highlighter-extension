@@ -80,6 +80,77 @@
   Risk.SENSITIVE = SENSITIVE;
   /** 主标题字段的别名：与 compare/sources.js 的 title 同口径。 */
   Risk.TITLE_ALIASES = ['主标题', '标题', '应用名称', '应用名', '软件名称', 'APP名称', 'app名称'];
+  /** 开发者/主体字段的别名：优先走 Compare.Sources 的 dev / entity 口径，这里再兜住常见写法。 */
+  Risk.DEV_ALIASES = ['开发者', '开发者名称', '开发商', '开发公司', '研发商', '运营者', '运营主体', '公司名称'];
+
+  /* 【2.0.17.6 · 用户 m26871】品牌 → 官方主体关键词：名字对得上只说明「叫这个名字」，是不是官方要看谁在做。
+   * 两条判据，先①后②：
+   *   ① 主体名自带品牌名 —— 「支付宝（中国）网络技术有限公司」包含「支付宝」；
+   *   ② 主体名带这里登记的关键词 —— 「深圳市腾讯计算机系统有限公司」不含「微信」，但腾讯是微信的官方主体。
+   * 只收工商/集团层面的主体关键词，不收产品名，避免把「腾讯会议」判成「微信」的官方主体。 */
+  const OWNERS = {
+    '微信': ['腾讯', 'tencent'], wechat: ['腾讯', 'tencent'], weixin: ['腾讯'],
+    '支付宝': ['支付宝', '蚂蚁', '阿里巴巴', 'alibaba'], alipay: ['支付宝', '蚂蚁', '阿里巴巴', 'alibaba'],
+    '淘宝': ['淘宝', '阿里巴巴', 'alibaba'], taobao: ['淘宝', '阿里巴巴', 'alibaba'],
+    '天猫': ['天猫', '阿里巴巴', 'alibaba'], tmall: ['天猫', '阿里巴巴', 'alibaba'],
+    '京东': ['京东', 'jingdong'], jd: ['京东', 'jingdong'], jingdong: ['京东', 'jingdong'],
+    '拼多多': ['拼多多', '寻梦'], pinduoduo: ['拼多多', '寻梦'],
+    '抖音': ['字节', 'bytedance', '微播视界'], douyin: ['字节', 'bytedance', '微播视界'], tiktok: ['字节', 'bytedance'],
+    '快手': ['快手', '达佳'], kuaishou: ['快手', '达佳'],
+    '小红书': ['行吟', '小红书'],
+    '微博': ['新浪', 'sina', '微梦'], weibo: ['新浪', 'sina', '微梦'],
+    '哔哩哔哩': ['哔哩哔哩', '幻电', 'bilibili'], bilibili: ['哔哩哔哩', '幻电', 'bilibili'],
+    '知乎': ['知乎', '智者'], zhihu: ['知乎', '智者'],
+    '百度': ['百度', 'baidu'], baidu: ['百度', 'baidu'],
+    '腾讯': ['腾讯', 'tencent'], tencent: ['腾讯', 'tencent'],
+    '阿里巴巴': ['阿里巴巴', 'alibaba'], alibaba: ['阿里巴巴', 'alibaba'],
+    '美团': ['三快', '美团', 'meituan'], meituan: ['三快', '美团', 'meituan'],
+    '饿了么': ['拉扎斯', '饿了么'],
+    '滴滴': ['滴滴', '小桔', 'didi'], didi: ['滴滴', '小桔', 'didi'],
+    '携程': ['携程', 'ctrip'], ctrip: ['携程', 'ctrip'],
+    '去哪儿': ['去哪儿', 'qunar'], qunar: ['去哪儿', 'qunar'],
+    '高德': ['高德', 'amap'], amap: ['高德', 'amap'],
+    '华为': ['华为', 'huawei'], huawei: ['华为', 'huawei'],
+    '小米': ['小米', 'xiaomi'], xiaomi: ['小米', 'xiaomi'],
+    '苹果': ['苹果', 'apple'], apple: ['苹果', 'apple'],
+    '谷歌': ['谷歌', 'google'], google: ['谷歌', 'google'],
+    '微软': ['微软', 'microsoft'], microsoft: ['微软', 'microsoft'],
+    '亚马逊': ['亚马逊', 'amazon'], amazon: ['亚马逊', 'amazon'],
+    netflix: ['netflix'], '奈飞': ['netflix'],
+    paypal: ['paypal'], visa: ['visa'], mastercard: ['mastercard'],
+    '银联': ['银联', 'unionpay'], unionpay: ['银联', 'unionpay'], '云闪付': ['银联', 'unionpay'],
+    '12306': ['中国铁路', '12306'], '交管12123': ['公安部', '交管'], '反诈中心': ['公安部', '反诈'],
+    '王者荣耀': ['腾讯'], '企业微信': ['腾讯'], '和平精英': ['腾讯'],
+    '原神': ['米哈游', 'mihoyo'],
+    '钉钉': ['钉钉', '阿里巴巴', 'alibaba'], dingtalk: ['钉钉', '阿里巴巴', 'alibaba'],
+    '飞书': ['飞书', '字节', 'bytedance'],
+    chatgpt: ['openai'], openai: ['openai'],
+    deepseek: ['深度求索', 'deepseek'],
+    '文心一言': ['百度'], '通义千问': ['阿里巴巴', '阿里云'], kimi: ['月之暗面'],
+    '数字人民币': ['中国人民银行']
+  };
+
+  /** 开发者是不是该品牌的官方主体；是则回 {brand,owner}，否则 null。
+   *  判据要求「名称里确实出现了这个品牌」—— 只凭开发者是腾讯，不会把「记账小本」判成官方。 */
+  function officialOf(dev, n, lex) {
+    const d = Risk.normalizeName(dev);
+    if (!d || !n) return null;
+    for (let i = 0; i < lex.brands.length; i++) {
+      const raw = lex.brands[i];
+      const b = Risk.normalizeName(raw);
+      if (!b || b.length < 2) continue;
+      if (n.indexOf(b) < 0) continue;
+      /* ① 主体名自带品牌（「支付宝（中国）网络技术有限公司」）。 */
+      if (d.indexOf(b) >= 0) return { brand: raw, owner: String(dev).trim() };
+      /* ② 品牌登记过官方主体关键词（「深圳市腾讯计算机系统有限公司」对微信）。 */
+      const keys = OWNERS[b] || [];
+      for (let k = 0; k < keys.length; k++) {
+        const kw = Risk.normalizeName(keys[k]);
+        if (kw && d.indexOf(kw) >= 0) return { brand: raw, owner: String(dev).trim() };
+      }
+    }
+    return null;
+  }
 
   /** 归一：去空格/标点/括号并小写，让「微 信」「微信·」落在同一套比较上。 */
   Risk.normalizeName = function (name) {
@@ -131,14 +202,19 @@
    * 名称本地初筛。
    * @param {string} name
    * @param {Object} [cfg] 配置（带自定义词库）；不传 = 纯内置词库
-   * @returns {{level:number, verdict:string, hits:Array}}
-   *   level 2 = risky（命中禁止类词，或与品牌完全同名）；1 = suspect（名称里含品牌，疑似蹭）；0 = safe
+   * @param {string} [dev] 开发者 / 主体（抓取字段的「开发者」「备案主办单位」）；用来区分「正版」与「蹭品牌」
+   * @returns {{level:number, verdict:string, hits:Array, official:string}}
+   *   level 2 = risky（命中禁止类词，或与品牌同名/含品牌但不是官方主体）；1 = suspect（含品牌，暂无证据是官方）；
+   *   0 = safe（含「名称对得上品牌、开发者正是官方主体」的正版）
    */
-  Risk.screen = function (name, cfg) {
+  Risk.screen = function (name, cfg, dev) {
     const n = Risk.normalizeName(name);
     const hits = [];
-    if (!n) return { level: 0, verdict: 'safe', hits: hits };
+    const out = { level: 0, verdict: 'safe', hits: hits, official: '' };
+    if (!n) return out;
     const lex = Risk.lexicon(cfg);
+    const who = officialOf(dev, n, lex);
+    const devText = String(dev == null ? '' : dev).trim();
 
     for (let i = 0; i < lex.cats.length; i++) {
       const cat = lex.cats[i];
@@ -151,18 +227,43 @@
     }
 
     for (let i = 0; i < lex.brands.length; i++) {
-      const b = Risk.normalizeName(lex.brands[i]);
+      const raw = lex.brands[i];
+      const b = Risk.normalizeName(raw);
       if (!b) continue;
-      if (n === b) hits.push({ kind: 'brand', tag: '同名', word: lex.brands[i], exact: true });
-      else if (b.length >= 2 && n.indexOf(b) >= 0) hits.push({ kind: 'brand', tag: '蹭品牌', word: lex.brands[i], exact: false });
+      const mine = !!(who && Risk.normalizeName(who.brand) === b);
+      if (n === b) {
+        /* 同名：开发者是官方主体 → 正版；有开发者但不是官方 → 冒充；连开发者都没有 → 同名待核。 */
+        if (mine) hits.push({ kind: 'brand', tag: '官方', word: raw, exact: true, official: true });
+        else if (devText) hits.push({ kind: 'brand', tag: '冒充', word: raw, exact: true });
+        else hits.push({ kind: 'brand', tag: '同名', word: raw, exact: true });
+      } else if (b.length >= 2 && n.indexOf(b) >= 0) {
+        if (mine) hits.push({ kind: 'brand', tag: '官方', word: raw, exact: false, official: true });
+        else hits.push({ kind: 'brand', tag: '蹭品牌', word: raw, exact: false });
+      }
     }
 
     let level = 0;
+    let offWord = '';
     for (let i = 0; i < hits.length; i++) {
-      if (hits[i].kind === 'sensitive' || hits[i].tag === '同名') { level = 2; break; }
-      level = 1;
+      if (hits[i].kind === 'sensitive') { level = 2; break; }
     }
-    return { level: level, verdict: level >= 2 ? 'risky' : (level === 1 ? 'suspect' : 'safe'), hits: hits };
+    if (level < 2) {
+      /* 官方结论只在「没有别的非官方命中」时成立：叫「微信分身」但开发者是腾讯，仍要人看一眼。 */
+      let soft = false;
+      let off = false;
+      for (let i = 0; i < hits.length; i++) {
+        const h = hits[i];
+        if (h.kind !== 'brand') continue;
+        if (h.official) { off = true; if (!offWord) offWord = h.word; continue; }
+        if (h.tag === '冒充' || h.tag === '同名') { level = 2; break; }
+        soft = true;
+      }
+      if (level < 2) level = soft ? 1 : 0;
+    }
+    out.level = level;
+    out.verdict = level >= 2 ? 'risky' : (level === 1 ? 'suspect' : 'safe');
+    out.official = level <= 1 ? offWord : '';
+    return out;
   };
 
   /* ---------- 从卡片抓取表里取「主标题 / 图标」 ---------- */
@@ -213,6 +314,20 @@
     return false;
   }
 
+  /** 开发者/主体行：先认 Sources 的 dev（开发者）与 entity（备案主办单位），再用别名兜底。 */
+  function isDevLabel(label) {
+    const S = sources();
+    if (S && typeof S.fieldKey === 'function') {
+      try {
+        const k = S.fieldKey(label);
+        if (k === 'dev' || k === 'entity') return true;
+      } catch (e) { /* 落到别名 */ }
+    }
+    const k = keyOf(label);
+    for (let i = 0; i < Risk.DEV_ALIASES.length; i++) if (keyOf(Risk.DEV_ALIASES[i]) === k) return true;
+    return false;
+  }
+
   /** 从值格里取第一张图（站内相对地址补成绝对；data: 原样）。 */
   function firstImgSrc(td) {
     if (!td || !td.querySelector) return '';
@@ -230,7 +345,7 @@
    * @returns {{found:boolean,title:string,icon:string}}
    */
   Risk.readCard = function (tableEl) {
-    const out = { found: false, title: '', icon: '' };
+    const out = { found: false, title: '', icon: '', dev: '' };
     if (!tableEl || !tableEl.querySelectorAll) return out;
     const trs = tableEl.querySelectorAll('tr');
     for (let i = 0; i < trs.length; i++) {
@@ -250,6 +365,10 @@
           const src = firstImgSrc(tds.length > 1 ? tds[1] : tds[0]);
           if (src) out.icon = src;
         }
+        if (!out.dev && isDevLabel(label)) {
+          const d = cellText(tds.length > 1 ? tds[1] : null).trim();
+          if (d) out.dev = d;
+        }
       }
     }
     out.found = !!(out.title || out.icon);
@@ -262,11 +381,13 @@
    */
   Risk.auditCard = function (tableEl, cfg) {
     const got = Risk.readCard(tableEl);
-    const res = Risk.screen(got.title, cfg);
+    const res = Risk.screen(got.title, cfg, got.dev);
     return {
       ok: !!got.title,
       title: got.title,
       icon: got.icon,
+      dev: got.dev,
+      official: res.official,
       level: res.level,
       verdict: res.verdict,
       hits: res.hits
@@ -298,11 +419,13 @@
     } catch (e) { return 'u' + hash32(s); }
   };
 
-  /** 缓存键；没有主标题就没有键（裸图标判不出「蹭哪个名字」，不查）。 */
-  Risk.cacheKey = function (title, icon) {
+  /** 缓存键；没有主标题就没有键（裸图标判不出「蹭哪个名字」，不查）。
+   *  开发者进指纹：同名不同开发者是两种结论（正版 vs 冒充），不能共用旧缓存。 */
+  Risk.cacheKey = function (title, icon, dev) {
     const n = Risk.normalizeName(title);
     if (!n) return '';
-    return n + '#' + Risk.iconKey(icon);
+    const d = Risk.normalizeName(dev);
+    return n + '#' + Risk.iconKey(icon) + (d ? '#' + hash32(d) : '');
   };
 
   /**
