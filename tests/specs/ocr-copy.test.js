@@ -23,6 +23,8 @@ const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 const PLACEHOLDERS = ['n', 'host', 'matched', 'd', 'w', 'tag',
   /* 【2.0.8.19 · P4】软著比对结论行的字段名与两路原值（见 important-note.js 的 compareText） */
   'left', 'right', 'lv', 'rv', 'vals',
+  /* 【2.0.19 · 用户 m27658】深查依据里的相似应用名 */
+  'ref',
   /* 【2.0.8.21 缺陷②】未识别到授权书时点名的字段名（动态拼，不再写死三个） */
   'names',
   /* 【2.0.11 · T1】右键卡候选行：{name}=要固定的字段名（证书/备案/授权书…），

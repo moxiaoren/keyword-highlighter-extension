@@ -76,8 +76,21 @@
     }
   ];
 
+  /* 【2.0.19 · 用户 m27658】违规应用 / 平台名：风险主因是「跟这些应用长得像、名字像」，
+   * 而不是名称里某个词本身违规；命中即按「疑似仿冒违规应用」判高风险。
+   * 只收有公开案底的平台/产品名（博彩、资金盘、色情、诈骗仿冒），不收普通词，避免误伤。 */
+  const RISKY_APPS = [
+    { tag: '赌博', words: ['澳门赌场', '威尼斯人', '新葡京', '葡京娱乐', '银河娱乐', '永利皇宫',
+      '太阳城', '金沙娱乐', '缅北赌场', '皇冠体育', '亚博体育', '乐鱼体育', '爱游戏体育'] },
+    { tag: '色情低俗', words: ['草榴', '1024社区', '91视频', '91porn', '麻豆传媒', 'swag'] },
+    { tag: '资金盘', words: ['云数贸', '善心汇', '五行币', '雷达币', 'mmm互助', 'gec环保币', '趣步'] },
+    { tag: '诈骗', words: ['国家扶贫app', '乡村振兴app', '公安部app'] },
+    { tag: '违规贷款', words: ['秒贷', '现金贷app', '714高炮'] }
+  ];
+
   Risk.BRANDS = BRANDS;
   Risk.SENSITIVE = SENSITIVE;
+  Risk.APPS = RISKY_APPS;
   /** 主标题字段的别名：与 compare/sources.js 的 title 同口径。 */
   Risk.TITLE_ALIASES = ['主标题', '标题', '应用名称', '应用名', '软件名称', 'APP名称', 'app名称'];
   /** 开发者/主体字段的别名：优先走 Compare.Sources 的 dev / entity 口径，这里再兜住常见写法。 */
@@ -161,7 +174,7 @@
 
   /* 【2.0.17.5 · 用户 m26374】类别码与中文名的单一真源：码用于存配置，中文用于卡片与设置页下拉。 */
   Risk.CATS = (typeof KH !== 'undefined' && KH.Config && KH.Config.RISK_CATS) || ['brand', 'gamble', 'porn', 'fund', 'fraud', 'loan', 'other'];
-  Risk.CAT_LABEL = { brand: '品牌', gamble: '赌博', porn: '色情低俗', fund: '资金盘', fraud: '诈骗', loan: '违规贷款', other: '其它' };
+  Risk.CAT_LABEL = { app: '违规应用名', brand: '品牌', gamble: '赌博', porn: '色情低俗', fund: '资金盘', fraud: '诈骗', loan: '违规贷款', other: '其它' };
 
   /**
    * 生效词库 = 内置基线 − 用户停用 + 用户自定义。
@@ -178,7 +191,12 @@
       if (k) off[k] = true;
     }
     const keep = function (w) { return !off[Risk.normalizeName(w)]; };
-    const out = { brands: BRANDS.filter(keep), cats: [], notes: {} };
+    const out = { brands: BRANDS.filter(keep), apps: [], cats: [], notes: {} };
+    /* 【2.0.19 · 用户 m27658】违规应用名单独一组：判的是「像哪款违规应用」，与一般的违规词分开。 */
+    for (let i = 0; i < RISKY_APPS.length; i++) {
+      const ws = RISKY_APPS[i].words.filter(keep);
+      if (ws.length) out.apps.push({ tag: RISKY_APPS[i].tag, words: ws });
+    }
     for (let i = 0; i < SENSITIVE.length; i++) {
       out.cats.push({ tag: SENSITIVE[i].tag, cat: SENSITIVE[i].cat || '', words: SENSITIVE[i].words.filter(keep) });
     }
@@ -191,6 +209,13 @@
       const note = String(it.note == null ? '' : it.note).trim();
       if (note) out.notes[Risk.normalizeName(w)] = note;
       if (cat === 'brand') { out.brands.push(w); continue; }
+      if (cat === 'app') {
+        let ga = null;
+        for (let k = 0; k < out.apps.length; k++) if (out.apps[k].tag === '违规应用') { ga = out.apps[k]; break; }
+        if (!ga) { ga = { tag: '违规应用', words: [] }; out.apps.push(ga); }
+        ga.words.push(w);
+        continue;
+      }
       const tag = Risk.CAT_LABEL[cat] || '其它';
       let g = null;
       for (let k = 0; k < out.cats.length; k++) if (out.cats[k].tag === tag) { g = out.cats[k]; break; }
@@ -217,6 +242,17 @@
     const lex = Risk.lexicon(cfg);
     const who = officialOf(dev, n, lex);
     const devText = String(dev == null ? '' : dev).trim();
+
+    /* 【2.0.19 · 用户 m27658】主判相似：名称里出现已知违规应用/平台名 → 疑似仿冒，而不是词本身违规。 */
+    for (let i = 0; i < lex.apps.length; i++) {
+      const g = lex.apps[i];
+      for (let k = 0; k < g.words.length; k++) {
+        const w = Risk.normalizeName(g.words[k]);
+        if (w && w.length >= 2 && n.indexOf(w) >= 0) {
+          hits.push({ kind: 'app', tag: g.tag, word: g.words[k], note: lex.notes[w] || '' });
+        }
+      }
+    }
 
     for (let i = 0; i < lex.cats.length; i++) {
       const cat = lex.cats[i];
@@ -248,7 +284,7 @@
     let level = 0;
     let offWord = '';
     for (let i = 0; i < hits.length; i++) {
-      if (hits[i].kind === 'sensitive') { level = 2; break; }
+      if (hits[i].kind === 'sensitive' || hits[i].kind === 'app') { level = 2; break; }
     }
     if (level < 2) {
       /* 官方结论只在「没有别的非官方命中」时成立：叫「微信分身」但开发者是腾讯，仍要人看一眼。 */

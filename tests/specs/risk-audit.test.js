@@ -249,6 +249,35 @@ module.exports = async function run() {
     eq(norm({ remoteUrl: 'https://x.test/l.json' }).remoteUrl, 'https://x.test/l.json');
   });
 
+  await test('★ 2.0.19 风险主判「像不像某款违规应用」：违规应用名成组、可编辑、可停用（m27658）', () => {
+    truthy(R.APPS && R.APPS.length >= 3, '要有内置违规应用名基线');
+    const g = R.screen('澳门赌场 ios 版', {});
+    eq(g.level, 2, '名称含违规应用名 = 高风险');
+    truthy(g.hits.some((h) => h.kind === 'app' && h.word === '澳门赌场'), '命中要标明「像违规应用」，不是普通违规词');
+    eq(R.screen('记账小本', {}).level, 0, '普通名称不受影响');
+
+    const norm = KH.Config.normalizeRiskLexicon;
+    const cfg = { riskLexicon: norm({ custom: [{ w: '某某国际', cat: 'app', note: '见过换皮' }] }) };
+    const hit = R.screen('某某国际棋牌', cfg);
+    eq(hit.level, 2, '自定义违规应用名 = 高风险');
+    const appHit = (hit.hits || []).find((h) => h.kind === 'app' && h.word === '某某国际');
+    truthy(appHit, '自定义违规应用名要进 app 组');
+    eq(appHit.note, '见过换皮', '备注跟着命中走');
+    eq(R.screen('太阳城', { riskLexicon: norm({ disabled: ['太阳城'] }) }).level, 0, '内置违规应用名也能逐词停用');
+
+    const js = read('options/options.js');
+    truthy(js.indexOf("['app', '违规应用名（判仿冒）']") >= 0, '设置页下拉要有「违规应用名」一类');
+    truthy(js.indexOf("groups.push({ cat: 'app', tag: '违规应用名'") >= 0, '词表单列违规应用名一组');
+
+    const ai = read('background/ai.js');
+    truthy(ai.indexOf('换皮版本') >= 0, '深查提示词先比对「像哪款违规应用」');
+    truthy(ai.indexOf('"ref":"相似的违规应用名') >= 0, 'JSON 契约要带相似对象 ref');
+    truthy(ai.indexOf("ref: String(o.ref || o.similar || '')") >= 0, '解析要收下 ref');
+    const panel = read('src/features/important-note.js');
+    truthy(panel.indexOf("h.kind === 'app'") >= 0, '卡片把 app 命中单独讲');
+    truthy(panel.indexOf('cached.ref') >= 0, '深查依据显示相似对象');
+  });
+
   await test('★ 2.0.17.5 设置页有词库入口与深查开关，深查模型固定', () => {
     const html = read('options/options.html');
     ['pf-riskAuto', 'risk-lex-list', 'risk-lex-word', 'risk-lex-cat', 'btn-risk-lex-add', 'btn-risk-lex-import', 'btn-risk-lex-export', 'risk-lex-remote']

@@ -2026,9 +2026,10 @@
    * 导入 / 导出 JSON 让词表能跨机搬；D 档（远端订阅清单）只存地址，本版不联网拉取。
    * 归一的真源是 `KH.Config.normalizeRiskLexicon`（保存前归一、回显也走它），本文件不另写一套口径。 */
   let riskLexWired = false;
-  const RISK_CAT_LABEL = { brand: '品牌', gamble: '赌博', porn: '色情低俗', fund: '资金盘', fraud: '诈骗', loan: '违规贷款', other: '其它' };
+  const RISK_CAT_LABEL = { app: '违规应用名', brand: '品牌', gamble: '赌博', porn: '色情低俗', fund: '资金盘', fraud: '诈骗', loan: '违规贷款', other: '其它' };
   const RISK_CAT_OPTS = [
-    ['brand', '品牌（判同名 / 蹭品牌）'],
+    ['app', '违规应用名（判仿冒）'],
+    ['brand', '正规品牌（判同名 / 蹭品牌）'],
     ['gamble', '赌博'],
     ['porn', '色情低俗'],
     ['fund', '资金盘'],
@@ -2070,6 +2071,10 @@
     const builtins = [];
     const groups = [];
     (RA ? RA.BRANDS : []).forEach((w) => builtins.push(w));
+    /* 【2.0.19 · 用户 m27658】违规应用名单独一组：这一组判的是「像哪款违规应用」。 */
+    const appWords = [];
+    (RA && RA.APPS ? RA.APPS : []).forEach((g) => { (g.words || []).forEach((w) => appWords.push(w)); });
+    if (appWords.length) groups.push({ cat: 'app', tag: '违规应用名', words: appWords });
     groups.push({ cat: 'brand', tag: '品牌', words: (RA ? RA.BRANDS : []).slice() });
     (RA ? RA.SENSITIVE : []).forEach((g) => {
       const cat = Object.keys(RISK_CAT_LABEL).find((k) => RISK_CAT_LABEL[k] === g.tag) || 'other';

@@ -284,7 +284,7 @@
   }
   /* 【2.0.17.5 · 用户 m26374】风险词库的类别码（与设置页下拉、`Risk.CATS` 同源）。
    * brand = 知名品牌（判「同名 / 蹭品牌」），其余六类 = 敏感词类别。 */
-  const RISK_CATS = ['brand', 'gamble', 'porn', 'fund', 'fraud', 'loan', 'other'];
+  const RISK_CATS = ['app', 'brand', 'gamble', 'porn', 'fund', 'fraud', 'loan', 'other'];
   const RISK_WORD_MAX = 40;
   const RISK_NOTE_MAX = 60;
   const RISK_CUSTOM_MAX = 600;

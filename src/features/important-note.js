@@ -3290,6 +3290,8 @@
       /* 自定义词带的备注跟命中一起显示：用户能马上想起为什么加这个词。 */
       const withNote = (s, h) => (h && h.note ? s + '（' + h.note + '）' : s);
       const localWhy = (res.hits || []).slice(0, 3).map((h) => {
+        /* 【2.0.19 · 用户 m27658】违规应用命中优先讲「像哪款应用」，而不是只报一个词。 */
+        if (h.kind === 'app') return withNote(String(V.riskAppHit || '与违规应用「{w}」同名或高度相似').replace('{w}', h.word), h);
         if (h.kind !== 'brand') return withNote(String(V.riskSens || '{tag}：「{w}」').replace('{tag}', h.tag).replace('{w}', h.word), h);
         if (h.official) return officialWhy;
         if (h.tag === '冒充') return withNote(String(V.riskFake || '与「{w}」同名，但开发者不是官方主体').replace('{w}', h.word), h);
@@ -3297,7 +3299,8 @@
         return withNote(String(V.riskBrand || '').replace('{w}', h.word), h);
       }).join('；');
       const aiWhy = cached && !cached.error
-        ? [String(cached.why || ''), cached.brand ? String(V.riskBrandShort || '蹭「{w}」').replace('{w}', cached.brand) : '',
+        ? [String(cached.why || ''), cached.ref ? String(V.riskLike || '与「{ref}」高度相似').replace('{ref}', cached.ref) : '',
+          cached.brand ? String(V.riskBrandShort || '蹭「{w}」').replace('{w}', cached.brand) : '',
           (cached.cats || []).join('、')].filter(Boolean).join('；')
         : '';
       const chips = [];
