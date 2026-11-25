@@ -285,6 +285,35 @@ module.exports = async function run() {
     eq(j.judge.state, 'same', JSON.stringify(j.judge));
   });
 
+  await test('★ 2.0.17.5 进表值也当基准：证书 PDF 与授权书跨规则时不再报「还没读到值」（m26374）', () => {
+    const r = licRule();
+    const certRuleX = { meta: { pinId: 'cert', imgOcr: true, imgOcrKeyword: '著作权人#表|登记号#表', fetchLabels: '证书#图' } };
+    const list = [
+      { key: 'c1', ruleId: 'cert', rule: certRuleX, label: '证书', state: 'done', text: '中华人民共和国国家版权局' },
+      { key: 'a1', ruleId: 'r1', rule: r, label: '资质证书', state: 'done', text: LIC_AUTH }
+    ];
+    const A = KH.OcrAuto;
+    const rowsFor = A && A.rowsFor;
+    const Note = KH.ImportantNote;
+    const extraRows = Note && Note.ocrExtraRows;
+    const origItems = O.items;
+    try {
+      if (A) A.rowsFor = () => [];
+      if (Note) Note.ocrExtraRows = (meta) => (meta && String(meta.pinId) === 'cert'
+        ? [{ label: '著作权人', value: '湖南恒硕科技有限公司' }, { label: '登记号', value: '2018SR959779' }]
+        : []);
+      O.items = () => list;
+      const reqs = O.cmpReqs(r, '资质证书', null, LIC_AUTH);
+      const byName = {};
+      for (const q of reqs) byName[q.name] = q;
+      eq(byName['著作权人'].values.join('|'), '湖南恒硕科技有限公司', '★ 证书进表的值要能跨规则当授权书的基准');
+      eq(byName['登记号'].values.join('|'), '2018sr959779');
+    } finally {
+      O.items = origItems;
+      if (A) A.rowsFor = rowsFor;
+      if (Note) Note.ocrExtraRows = extraRows;
+    }
+  });
   await test('★ 2.0.16.4 同规则只有授权书自己 ⇒ 仍然报「没取到值」，不许自己比自己', () => {
     const r = licRule();
     const list = [ocrItem('资质证书', LIC_AUTH, 'http://x/lic-auth.png')];

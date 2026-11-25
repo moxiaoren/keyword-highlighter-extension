@@ -752,6 +752,22 @@ body {
 .kh-mini-btn:hover:not(:disabled) { border-color: var(--brand); color: var(--brand-deep); }
 .kh-mini-btn:disabled { opacity: .5; cursor: not-allowed; }
 
+/* 【2.0.17.5 · m26374】风险词库：新增行 + 分组词表（列表区限高滚动，词多也不把页面撑爆）。 */
+.kh-lex-add { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+.kh-lex-add .kh-input { flex: 1 1 220px; min-width: 0; height: 32px; }
+.kh-lex-add select.kh-input { flex: 0 0 132px; }
+.kh-lex-list { max-height: 260px; overflow: auto; border: 1px solid var(--border); border-radius: var(--r-sm); padding: 6px 10px; background: var(--card-2); }
+.kh-lex-grp { padding: 6px 0; border-top: 1px dashed var(--border); }
+.kh-lex-grp:first-child { border-top: none; padding-top: 0; }
+.kh-lex-grp-hd { display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 600; color: var(--text-2); margin-bottom: 4px; }
+.kh-lex-words { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.kh-lex-w { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text); white-space: nowrap; }
+.kh-lex-w input { margin: 0; }
+.kh-lex-w.is-off { color: var(--text-3); text-decoration: line-through; }
+.kh-lex-del { border: none; background: none; color: var(--text-3); cursor: pointer; font-size: 11px; padding: 0 2px; line-height: 1; }
+.kh-lex-del:hover { color: var(--danger); }
+.kh-lex-tag { font-size: 10px; color: var(--text-3); }
+
 /* 分享码文本框（2.0.16.8 · m21072）：长 base64 必须能整段看见、可全选复制 */
 .kh-share-code {
   width: 100%; box-sizing: border-box; margin-top: 8px; min-height: 64px;

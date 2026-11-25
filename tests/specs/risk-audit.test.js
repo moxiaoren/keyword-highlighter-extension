@@ -144,4 +144,41 @@ module.exports = async function run() {
     truthy(old.stale);
     eq(R.aiState(null).title, 'unknown', '没查过 = 未查明');
   });
+
+  await test('★ 2.0.17.5 自定义词生效、逐词停用生效，配置归一不漏（m26374）', () => {
+    const norm = KH.Config.normalizeRiskLexicon;
+    truthy(typeof norm === 'function', 'Config 要导出词库归一（设置页与判定侧共用一份）');
+    eq(R.screen('微信分身版', {}).level, 1, '基线：名称含品牌 = 待核');
+
+    const cfg = { riskLexicon: norm({ custom: [{ w: '极速下款', cat: 'loan' }], disabled: ['微信'] }) };
+    eq(R.screen('微信分身版', cfg).level, 0, '停用品牌后不再判它');
+    const hit = R.screen('极速下款宝', cfg);
+    eq(hit.level, 2, '自定义敏感词 = 高风险');
+    truthy(hit.hits.some((h) => h.tag === '违规贷款' && h.word === '极速下款'), '命中要落到对应类别');
+
+    const cur = { riskLexicon: norm({ custom: [{ w: '记账本', cat: 'brand' }] }) };
+    eq(R.screen('记账本', cur).level, 2, '自定义品牌也能判同名');
+
+    const dup = norm({ custom: [{ w: ' a ', cat: 'nope' }, { w: 'a', cat: 'fund' }], disabled: [' X ', 'x'] });
+    eq(dup.custom.length, 1, '同词只留一条');
+    eq(dup.custom[0].cat, 'other', '非法类别回 other');
+    eq(dup.disabled.length, 1, '停用清单也要按归一去重');
+    eq(norm({ remoteUrl: 'ftp://x' }).remoteUrl, '', '订阅地址只认 http(s)（D 档口子）');
+    eq(norm({ remoteUrl: 'https://x.test/l.json' }).remoteUrl, 'https://x.test/l.json');
+  });
+
+  await test('★ 2.0.17.5 设置页有词库入口与深查开关，深查模型固定', () => {
+    const html = read('options/options.html');
+    ['pf-riskAuto', 'risk-lex-list', 'risk-lex-word', 'risk-lex-cat', 'btn-risk-lex-add', 'btn-risk-lex-import', 'btn-risk-lex-export', 'risk-lex-remote']
+      .forEach((id) => truthy(html.indexOf('id="' + id + '"') >= 0, '设置页缺 #' + id));
+    const js = read('options/options.js');
+    truthy(js.indexOf('renderRiskLexicon()') >= 0, '词表要能回显');
+    truthy(js.indexOf('KH.Config.normalizeRiskLexicon') >= 0, '保存前走同一份归一');
+    truthy(js.indexOf("riskLexSave({ disabled: off })") >= 0, '取消勾选 = 停用该词');
+    truthy(js.indexOf("saveNested({ importantNote: { riskAuto: ra.checked === true } })") >= 0, '深查开关写 importantNote.riskAuto');
+
+    const ai = read('background/ai.js');
+    truthy(ai.indexOf("const RISK_MODEL = 'deepseek::deepseek-v4.1-flash-1017';") >= 0, '深查模型固定为 deepseek v4.1 flash 1017');
+    truthy(ai.indexOf('self.KhTaiji.chat({ model: RISK_MODEL') >= 0, '深查请求要带上这个模型');
+  });
 };

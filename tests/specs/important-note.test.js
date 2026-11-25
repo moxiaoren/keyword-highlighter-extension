@@ -765,6 +765,12 @@ module.exports = async function run() {
       '★ 缺值只报值本身');
     truthy(src.indexOf('x.tried') >= 0, '★ 比对缺项要读试过的值');
     truthy(src.indexOf('V.imgCmpNoValue') >= 0, '★ 基准没到时要说明「还没读到值」');
+    truthy(src.indexOf('if (cmpLine && tip !== cmpLine)') >= 0, '★ 2.0.17.5 比对提示只拼一次，悬停不重复');
+    /* 【2.0.17.5 · 用户 m26340】深查结论块要看得清：徽标 + 结论短语 + 依据三层，不再是一行灰字。 */
+    truthy(src.indexOf('khin-ai-badge') >= 0, '深查块要有状态徽标（形状可辨，不只靠颜色）');
+    truthy(src.indexOf('khin-ai-hdt') >= 0, '深查块要有结论短语层');
+    truthy(src.indexOf('V.riskHdScan') >= 0, '结论短语走文案单源');
+    truthy(src.indexOf('RA.auditCard(table, this.cfg)') >= 0, '本地初筛要吃用户自定义词库');
     truthy(src.indexOf('okVals') >= 0, '★ 比对一致时也要展示内容本身（值），不是只给字段名');
     truthy(src.indexOf('it.keywordBare || it.keyword') >= 0, '★ 命中词回显裸词，不带 #表 等后缀');
     /* 【2.0.16.10 · 用户 m22896】PDF 文字栏也要标命中词（旧实现 hits 恒空 ⇒ 一片纯文本）。 */

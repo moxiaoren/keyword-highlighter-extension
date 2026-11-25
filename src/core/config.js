@@ -282,6 +282,50 @@
     }
     return out;
   }
+  /* 【2.0.17.5 · 用户 m26374】风险词库的类别码（与设置页下拉、`Risk.CATS` 同源）。
+   * brand = 知名品牌（判「同名 / 蹭品牌」），其余六类 = 敏感词类别。 */
+  const RISK_CATS = ['brand', 'gamble', 'porn', 'fund', 'fraud', 'loan', 'other'];
+  const RISK_WORD_MAX = 40;
+  const RISK_CUSTOM_MAX = 600;
+  function normalizeRiskWord(w) {
+    return String(w == null ? '' : w).trim().slice(0, RISK_WORD_MAX);
+  }
+  /**
+   * 风险词库的**唯一归一**（读路径 `Risk.lexicon` 与设置页回显共用）。
+   * 只做形状清洗：自定义词去空/去重（按归一后比对，避免「微 信」「微信」两条）、类别非法回 other、
+   * 停用清单同样按归一写法去重，`remoteUrl` 只认 http(s)。
+   * @param {*} raw 存储里的 riskLexicon
+   */
+  function normalizeRiskLexicon(raw) {
+    const src = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
+    const out = { custom: [], disabled: [], remoteUrl: '' };
+    const seen = new Set();
+    const list = Array.isArray(src.custom) ? src.custom : [];
+    for (let i = 0; i < list.length && out.custom.length < RISK_CUSTOM_MAX; i++) {
+      const it = list[i] || {};
+      const w = normalizeRiskWord(it.w);
+      const key = normalizeRiskWord(it.w).toLowerCase();
+      if (!w || !key || seen.has(key)) continue;
+      seen.add(key);
+      const cat = RISK_CATS.indexOf(String(it.cat || '')) >= 0 ? String(it.cat) : 'other';
+      out.custom.push({ w: w, cat: cat });
+    }
+    const ds = Array.isArray(src.disabled) ? src.disabled : [];
+    const dseen = new Set();
+    for (let i = 0; i < ds.length; i++) {
+      const w = riskKey(ds[i]);
+      if (!w || dseen.has(w)) continue;
+      dseen.add(w);
+      out.disabled.push(w);
+    }
+    const u = String(src.remoteUrl == null ? '' : src.remoteUrl).trim();
+    if (/^https?:\/\//i.test(u)) out.remoteUrl = u.slice(0, 300);
+    return out;
+  }
+  function riskKey(v) {
+    return normalizeRiskWord(v).toLowerCase();
+  }
+
   /**
    * 面板图片尺寸 / 正文字号的**唯一归一函数**（读路径 `important-note.js` 与设置页共用）。
    * 取数口径两条一致：
@@ -443,6 +487,13 @@
         riskAuto: true
       },
 
+      /* 【2.0.17.5 · 用户 m26374】风险词库（C 档：内置基线 + 自定义 + 逐词停用）。
+       * 内置词表是源码常量（`src/features/risk-audit.js`），这里只存**用户改动**：
+       *   custom: [{ w, cat }] 自定义词（cat 见 RISK_CATS）；
+       *   disabled: 被停用的内置词（存归一后的写法，判定时同样归一后比对）；
+       *   remoteUrl: D 档口子（远端订阅清单地址），本版只存不拉。 */
+      riskLexicon: { custom: [], disabled: [], remoteUrl: '' },
+
       /** 重要笔记面板的**默认宽度**（px；T26 / 用户 2026-10-12：200 → 250）。
        *  单一真源：面板侧把它写成 CSS 变量 `--khin-panel-w`（`panel.render`），面板右下角仍可临时
        *  拖动调整（拖动改的是内联宽度，不改这里）。范围 200–1200、坏值回默认的口径见
@@ -545,6 +596,11 @@
 
     /** 面板默认宽度的唯一归一 + 它的边界常量（设置页 / 面板 / 读路径共用一份；见文件顶部） */
     normalizePanelWidth,
+    /** 【2.0.17.5 · m26374】风险词库：类别码 + 唯一归一（设置页回显 / 判定侧 `Risk.lexicon` 共用） */
+    RISK_CATS,
+    RISK_WORD_MAX,
+    normalizeRiskLexicon,
+
     /** 【2.0.8.6 需求①】图文合并的唯一归一（设置页回显 / 读路径消费共用一份） */
     normalizeImgMerge,
     MERGE_TITLE_MAX,
@@ -697,6 +753,16 @@
         if (!nowCh || typeof nowCh !== 'object' || ENTITY_CHANNEL_KEYS.some((k) => nowCh[k] !== wantCh[k])) {
           cfg.importantNote.entityChannels = wantCh;
           if (nowCh !== undefined) changed.invalid.push('importantNote.entityChannels');
+        }
+      }
+
+      /* ②e2c 【2.0.17.5 · 用户 m26374】风险词库：只清洗形状，不改语义（自定义词去重、类别非法回 other、
+       * 停用词按归一写法收）。判定侧 `Risk.screen` 拿到的就是这份清洗过的数据。 */
+      {
+        const lx = normalizeRiskLexicon(cfg.riskLexicon);
+        if (JSON.stringify(lx) !== JSON.stringify(cfg.riskLexicon || null)) {
+          cfg.riskLexicon = lx;
+          changed.invalid.push('riskLexicon');
         }
       }
 

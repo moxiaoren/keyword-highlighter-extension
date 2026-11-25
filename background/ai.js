@@ -55,6 +55,10 @@
 
   /** 图标字节上限：站点单文件 5MB（模板 mFileSize ?? 5），超过就不带图，只按名称核验。 */
   const ICON_MAX = 5 * 1024 * 1024;
+  /* 【2.0.17.5 · 用户 m26306】深查固定用这个模型（站点 tmpl 里 imageInput=true 的那个，
+   * 名字就是用户在设置页看到的那一条）。**不跟随面板下拉**：核验要稳定可复现，
+   * 换模型只换这一处；站点若改名，就代表这条链路要重新对齐。 */
+  const RISK_MODEL = 'deepseek::deepseek-v4.1-flash-1017';
 
   /** Uint8Array → base64（分块，避免 apply 参数爆炸）。 */
   function b64Of(u8) {
@@ -162,7 +166,7 @@
       const data = await iconDataUrl(icon);
       if (data) files.push({ name: 'icon.png', data: data });
     }
-    const r = await self.KhTaiji.chat({ messages: [{ role: 'user', content: prompt }], webSearch: true, files: files });
+    const r = await self.KhTaiji.chat({ model: RISK_MODEL, messages: [{ role: 'user', content: prompt }], webSearch: true, files: files });
     if (!r || !r.ok) return r || { ok: false, error: '没有回执' };
     const got = parseRisk(r.text);
     if (!got || !got.verdict) {

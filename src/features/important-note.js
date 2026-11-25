@@ -395,33 +395,37 @@
     .khin-vd.is-warn { background: #fef5e7; color: #b45309; }
     .khin-vd.is-bad { background: #ffe9e9; color: #c62828; }
     .khin-vd.is-unknown { background: #fff; border-color: #e3e8f0; border-style: dashed; color: #94a3b8; }
-    /* 深查块：左侧竖线区分状态（蓝=进行中、红=有风险、绿=干净），横铺卡宽。 */
+    /* 深查块（2.0.17.5 · 用户 m26340）：徽标 + 结论 + 依据三层；状态用「形状 + 颜色 + 文案」三重冗余。 */
     .khin-ai-line {
-      display: flex; align-items: flex-start; gap: 6px; margin: 4px 0 0; padding: 3px 6px;
-      font-size: 10px; line-height: 15px; color: #64748b;
-      border-left: 2px solid #2f6fb5; border-radius: 0 6px 6px 0;
-      background: linear-gradient(90deg, rgba(47,111,181,.07), rgba(47,111,181,0));
+      display: flex; align-items: flex-start; gap: 6px; margin: 5px 0 0; padding: 6px 7px;
+      border-radius: 7px; background: #f6f8fb; border: 1px solid #e6ebf3; border-left: 3px solid #94a3b8;
     }
-    .khin-ai-line.is-ok {
-      border-left-color: #2e7d32;
-      background: linear-gradient(90deg, rgba(46,125,50,.07), rgba(46,125,50,0));
+    .khin-ai-line.is-ok { background: #f2f9f4; border-color: #dbeee1; border-left-color: #3f8f5f; }
+    .khin-ai-line.is-warn { background: #fdf8ee; border-color: #f3e4c8; border-left-color: #c07d16; }
+    .khin-ai-line.is-bad { background: #fdf1f1; border-color: #f5d8d8; border-left-color: #c0392b; }
+    .khin-ai-line.is-scan { background: #f3f7fd; border-color: #dfe8f5; border-left-color: #2f6fb5; }
+    .khin-ai-badge {
+      flex: 0 0 auto; width: 15px; height: 15px; margin-top: 1px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 9.5px; font-weight: 700; line-height: 1; color: #fff; background: #94a3b8;
     }
-    .khin-ai-line.is-bad {
-      border-left-color: #c62828;
-      background: linear-gradient(90deg, rgba(198,40,40,.08), rgba(198,40,40,0));
+    .khin-ai-line.is-ok .khin-ai-badge { background: #3f8f5f; }
+    .khin-ai-line.is-warn .khin-ai-badge { background: #c07d16; }
+    .khin-ai-line.is-bad .khin-ai-badge { background: #c0392b; }
+    .khin-ai-line.is-scan .khin-ai-badge { background: #2f6fb5; }
+    .khin-ai-main { flex: 1 1 auto; min-width: 0; }
+    .khin-ai-hd { display: flex; align-items: center; gap: 5px; min-width: 0; }
+    .khin-ai-hdt { font-size: 11px; font-weight: 600; color: #334155; white-space: nowrap; }
+    .khin-ai-tag {
+      flex: 0 0 auto; font-size: 9px; line-height: 13px; color: #64748b;
+      border: 1px solid #dde5f0; border-radius: 7px; padding: 0 5px; background: #fff;
     }
-    .khin-ai-line.is-unknown { border-left-color: #cbd5e1; background: transparent; }
-    .khin-ai-dot { flex: 0 0 auto; width: 5px; height: 5px; margin-top: 5px; border-radius: 50%; background: #2f6fb5; }
-    .khin-ai-line.is-ok .khin-ai-dot { background: #2e7d32; }
-    .khin-ai-line.is-bad .khin-ai-dot { background: #c62828; }
-    .khin-ai-line.is-unknown .khin-ai-dot { background: #cbd5e1; }
-    .khin-ai-txt { flex: 1 1 auto; min-width: 0; }
-    .khin-ai-line b { font-weight: 600; color: #334155; }
+    .khin-ai-txt { margin: 2px 0 0; font-size: 10.5px; line-height: 15px; color: #52607a; word-break: break-word; }
     .khin-ai-more {
-      border: 0; background: none; color: #2f6fb5; font: inherit; font-size: 10px;
-      cursor: pointer; padding: 0 2px; flex: 0 0 auto;
+      flex: 0 0 auto; border: 0; background: none; color: #2f6fb5; font: inherit; font-size: 10px;
+      cursor: pointer; padding: 1px 2px; margin-top: 1px;
     }
-    .khin-ai-why { display: block; margin: 1px 0 0; color: #94a3b8; }
+    .khin-ai-why2 { margin: 2px 0 0 21px; font-size: 9.5px; line-height: 14px; color: #8b97ab; word-break: break-word; }
     .khin-item.khin-folded .khin-ai-line { display: none; }
     /* 点体检格的定位闪光：滚到对应行后闪一下，帮眼睛落点。 */
     @keyframes kh-flash { 0%, 100% { background: transparent; } 30% { background: rgba(47,111,181,.16); } }
@@ -874,7 +878,10 @@
      * 比对结论排在前面：它是用户新配的那件事（致方/承诺方是否就是那两家），命中词只是细节。 */
     const cmpLine = cmpTipOf(it);
     let tip = got ? got.tip : null;
-    if (cmpLine) tip = tip ? cmpLine + '\n' + tip : cmpLine;
+    /* 【2.0.17.5 · 用户 m26374】同一句话只写一次：`stateOfImg/stateOfPdf` 在「比对不一致 / 一致」
+     * 两态下已经把 `cmpTipOf` 当 tip 返回，这里再拼一次，悬停就出现两遍
+     * （用户报的「命中、比对描述为什么显示两次」）。 */
+    if (cmpLine && tip !== cmpLine) tip = tip ? cmpLine + '\n' + tip : cmpLine;
     /* 【2.0.6.2 需求④】只写**真正变了的**属性：旧写法每次都 `remove` 三态再 `add` 一遍，
      * 即使状态没变也会让 `class` 属性连跳两次；而调度器的 MutationObserver 恰好盯着 `class`
      * （`attributeFilter:['class']`）⇒ 自己触发自己，页面越静它越扫，用户看到的就是"没操作也在闪/在重建"。 */
@@ -3206,7 +3213,8 @@
       if (!head) return;
       const table = el.querySelector('table.kh-table-fetch');
       let res = null;
-      if (table) { try { res = RA.auditCard(table); } catch (e) { res = null; } }
+      /* 【2.0.17.5 · m26374】带上配置：本地初筛要能吃到用户自定义词库与逐词停用。 */
+      if (table) { try { res = RA.auditCard(table, this.cfg); } catch (e) { res = null; } }
       const key = (res && res.ok) ? RA.cacheKey(res.title, res.icon) : '';
       if (!this._riskMap && key) this.loadRiskCache();
       const cached = (key && this._riskMap && this._riskMap[key]) || null;
@@ -3312,59 +3320,78 @@
         box.appendChild(chip);
       }
 
-      /* ③ 深查块：进行中 / 有风险 / 干净三种形态，横铺卡宽，左竖线区分状态。 */
+      /* ③ 深查块：徽标 + 结论 + 依据（2.0.17.5 · 用户 m26340「看不清、要美观易读」）。
+       * 三层固定结构：状态徽标（形状也能区分，不只靠颜色）→ 结论短语（11px 粗）→ 依据（10.5px 灰）。
+       * 深查与本地初筛共用这一块，右上角小标签说明结论来自哪一路。 */
       let line = el.querySelector('.khin-ai-line');
       if (!line) {
         line = doc.createElement('div');
         line.className = 'khin-ai-line';
-        line.innerHTML = '<span class="khin-ai-dot"></span><span class="khin-ai-txt"></span>';
+        line.innerHTML = '<span class="khin-ai-badge"></span>'
+          + '<div class="khin-ai-main"><div class="khin-ai-hd"><span class="khin-ai-hdt"></span><span class="khin-ai-tag"></span></div>'
+          + '<div class="khin-ai-txt"></div></div>'
+          + '<button type="button" class="khin-ai-more"></button>';
         el.appendChild(line);
       }
       const lineCls = (cached && !cached.error && cached.verdict)
-        ? (cached.verdict === 'risky' ? 'is-bad' : (cached.verdict === 'safe' ? 'is-ok' : ''))
-        : 'is-unknown';
+        ? (cached.verdict === 'risky' ? 'is-bad' : (cached.verdict === 'safe' ? 'is-ok' : 'is-warn'))
+        : (checking || waiting ? 'is-scan' : 'is-unknown');
       if (line.className !== 'khin-ai-line ' + lineCls) line.className = 'khin-ai-line ' + lineCls;
+      const badge = line.querySelector('.khin-ai-badge');
+      const hdt = line.querySelector('.khin-ai-hdt');
+      const tagEl = line.querySelector('.khin-ai-tag');
       const txt = line.querySelector('.khin-ai-txt');
+      const more = line.querySelector('.khin-ai-more');
+      const SYM2 = { 'is-ok': '✓', 'is-bad': '!', 'is-warn': '?', 'is-scan': '…', 'is-unknown': '—' };
       let headTxt = '';
       let bodyTxt = '';
+      let tagTxt = V.riskAiHead || 'AI 深查';
       if (checking || waiting) {
-        headTxt = V.riskScanningHead || 'AI 正在核对';
+        headTxt = V.riskHdScan || '正在核验';
         bodyTxt = V.riskScanning || '名称与图标是否仿冒知名应用，并查资金盘 / 博彩 / 诈骗等';
       } else if (cached && cached.error) {
-        headTxt = V.riskUnknownHead || 'AI 未查明';
+        headTxt = V.riskHdUnknown || '未查明';
         bodyTxt = String(cached.error || '');
       } else if (cached && cached.verdict) {
-        headTxt = V.riskAiHead || 'AI 深查';
-        bodyTxt = (cached.verdict === 'risky' ? (V.riskAiBad || '发现风险')
-          : cached.verdict === 'suspect' ? (V.riskAiWarn || '存疑') : (V.riskAiOk || '未发现风险'))
-          + (aiWhy ? '：' + aiWhy : '');
+        headTxt = cached.verdict === 'risky' ? (V.riskHdBad || '发现风险')
+          : cached.verdict === 'suspect' ? (V.riskHdWarn || '存疑') : (V.riskHdOk || '未发现风险');
+        bodyTxt = aiWhy || '';
       } else if (localWhy) {
-        headTxt = V.riskLocal || '本地词库';
+        headTxt = V.riskHdLocalHit || '本地初筛命中';
         bodyTxt = localWhy;
+        tagTxt = V.riskLocal || '本地词库';
       } else {
-        headTxt = V.riskLocal || '本地词库';
+        headTxt = V.riskHdLocal || '本地初筛';
         bodyTxt = auto ? (V.riskQueued || '未发现命中词，AI 核验排队中') : (V.riskAutoOff || '未发现命中词（自动深查已关）');
+        tagTxt = V.riskLocal || '本地词库';
       }
-      txt.innerHTML = '<b></b> ';
-      txt.firstChild.textContent = headTxt;
-      txt.appendChild(doc.createTextNode(bodyTxt));
-      if (aiWhy) {
-        const more = doc.createElement('button');
-        more.type = 'button';
-        more.className = 'khin-ai-more';
-        more.textContent = V.riskWhy || '依据';
-        more.addEventListener('click', (e) => {
-          e.stopPropagation();
-          let why = line.querySelector('.khin-ai-why');
-          if (why) { why.remove(); return; }
-          why = doc.createElement('span');
-          why.className = 'khin-ai-why';
-          why.textContent = aiWhy;
-          txt.appendChild(why);
-        });
-        line.appendChild(more);
+      if (badge) badge.textContent = SYM2[lineCls] || '';
+      if (hdt) hdt.textContent = headTxt;
+      if (tagEl) tagEl.textContent = tagTxt;
+      if (txt) {
+        txt.textContent = bodyTxt;
+        txt.style.display = bodyTxt ? '' : 'none';
       }
-
+      /* 「依据」= 模型原始回执（存进缓存才给）：结论之外还能看到它到底回了什么。 */
+      const rawWhy = String((cached && cached.text) || '').trim();
+      if (more) {
+        if (rawWhy && cached && cached.verdict) {
+          more.textContent = V.riskWhy || '依据';
+          more.style.display = '';
+          more.onclick = (e) => {
+            e.stopPropagation();
+            let why2 = line.querySelector('.khin-ai-why2');
+            if (why2) { why2.remove(); return; }
+            why2 = doc.createElement('div');
+            why2.className = 'khin-ai-why2';
+            why2.textContent = rawWhy.slice(0, 400);
+            if (line.parentNode) line.parentNode.insertBefore(why2, line.nextSibling);
+          };
+        } else {
+          more.style.display = 'none';
+          more.onclick = null;
+        }
+      }
       /* ④ 自动深查排队：本地结论已渲染，AI 结果后到再补 —— 不阻塞看清卡片。 */
       if (auto && key && retry && !checking) this.riskEnqueue(key, res.title, res.icon);
     },
@@ -3418,9 +3445,10 @@
           try { res = await this.riskAsk(job); } catch (e) { res = { ok: false, error: String((e && e.message) || e) }; }
           if (!this._riskMap) this._riskMap = {};
           if (res && res.ok && res.data) {
-            this._riskMap[job.key] = Object.assign({ at: Date.now() }, res.data);
+            /* 原始回执一起存：卡片的「依据」就是它，解析失败时用户也能自己看模型说了什么。 */
+            this._riskMap[job.key] = Object.assign({ at: Date.now(), text: String((res && res.text) || '').slice(0, 400) }, res.data);
           } else {
-            this._riskMap[job.key] = { at: Date.now(), verdict: '', iconRisk: 'unknown', error: String((res && res.error) || '没拿到结论') };
+            this._riskMap[job.key] = { at: Date.now(), verdict: '', iconRisk: 'unknown', error: String((res && res.error) || '没拿到结论'), text: String((res && res.text) || '').slice(0, 400) };
           }
           if (this._riskPending) delete this._riskPending[job.key];
           this.saveRiskCache();

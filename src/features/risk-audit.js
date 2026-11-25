@@ -88,19 +88,60 @@
       .replace(/[\s\u3000·．.\-_—–~!！?？,，、:：;；/\\|'"“”‘’()（）\[\]【】《》<>+*&#@$%^&]/g, '');
   };
 
+  /* 【2.0.17.5 · 用户 m26374】类别码与中文名的单一真源：码用于存配置，中文用于卡片与设置页下拉。 */
+  Risk.CATS = (typeof KH !== 'undefined' && KH.Config && KH.Config.RISK_CATS) || ['brand', 'gamble', 'porn', 'fund', 'fraud', 'loan', 'other'];
+  Risk.CAT_LABEL = { brand: '品牌', gamble: '赌博', porn: '色情低俗', fund: '资金盘', fraud: '诈骗', loan: '违规贷款', other: '其它' };
+
+  /**
+   * 生效词库 = 内置基线 − 用户停用 + 用户自定义。
+   * 停用按**归一后**比对（用户存的是小写去空白的写法），所以「微 信」停不掉「微信」这种事不会发生。
+   * @param {Object} [cfg] 整份配置（读 `cfg.riskLexicon`）；不传 = 纯内置
+   * @returns {{brands:string[], cats:Array<{tag:string,words:string[]}>}}
+   */
+  Risk.lexicon = function (cfg) {
+    const lx = (cfg && cfg.riskLexicon) || {};
+    const off = {};
+    const ds = Array.isArray(lx.disabled) ? lx.disabled : [];
+    for (let i = 0; i < ds.length; i++) {
+      const k = Risk.normalizeName(ds[i]);
+      if (k) off[k] = true;
+    }
+    const keep = function (w) { return !off[Risk.normalizeName(w)]; };
+    const out = { brands: BRANDS.filter(keep), cats: [] };
+    for (let i = 0; i < SENSITIVE.length; i++) {
+      out.cats.push({ tag: SENSITIVE[i].tag, cat: SENSITIVE[i].cat || '', words: SENSITIVE[i].words.filter(keep) });
+    }
+    const list = Array.isArray(lx.custom) ? lx.custom : [];
+    for (let i = 0; i < list.length; i++) {
+      const it = list[i] || {};
+      const w = String(it.w == null ? '' : it.w).trim();
+      if (!w || !keep(w)) continue;
+      const cat = Risk.CATS.indexOf(String(it.cat || '')) >= 0 ? String(it.cat) : 'other';
+      if (cat === 'brand') { out.brands.push(w); continue; }
+      const tag = Risk.CAT_LABEL[cat] || '其它';
+      let g = null;
+      for (let k = 0; k < out.cats.length; k++) if (out.cats[k].tag === tag) { g = out.cats[k]; break; }
+      if (!g) { g = { tag: tag, cat: cat, words: [] }; out.cats.push(g); }
+      g.words.push(w);
+    }
+    return out;
+  };
+
   /**
    * 名称本地初筛。
    * @param {string} name
+   * @param {Object} [cfg] 配置（带自定义词库）；不传 = 纯内置词库
    * @returns {{level:number, verdict:string, hits:Array}}
    *   level 2 = risky（命中禁止类词，或与品牌完全同名）；1 = suspect（名称里含品牌，疑似蹭）；0 = safe
    */
-  Risk.screen = function (name) {
+  Risk.screen = function (name, cfg) {
     const n = Risk.normalizeName(name);
     const hits = [];
     if (!n) return { level: 0, verdict: 'safe', hits: hits };
+    const lex = Risk.lexicon(cfg);
 
-    for (let i = 0; i < SENSITIVE.length; i++) {
-      const cat = SENSITIVE[i];
+    for (let i = 0; i < lex.cats.length; i++) {
+      const cat = lex.cats[i];
       for (let k = 0; k < cat.words.length; k++) {
         const w = Risk.normalizeName(cat.words[k]);
         if (w && n.indexOf(w) >= 0) {
@@ -109,11 +150,11 @@
       }
     }
 
-    for (let i = 0; i < BRANDS.length; i++) {
-      const b = Risk.normalizeName(BRANDS[i]);
+    for (let i = 0; i < lex.brands.length; i++) {
+      const b = Risk.normalizeName(lex.brands[i]);
       if (!b) continue;
-      if (n === b) hits.push({ kind: 'brand', tag: '同名', word: BRANDS[i], exact: true });
-      else if (b.length >= 2 && n.indexOf(b) >= 0) hits.push({ kind: 'brand', tag: '蹭品牌', word: BRANDS[i], exact: false });
+      if (n === b) hits.push({ kind: 'brand', tag: '同名', word: lex.brands[i], exact: true });
+      else if (b.length >= 2 && n.indexOf(b) >= 0) hits.push({ kind: 'brand', tag: '蹭品牌', word: lex.brands[i], exact: false });
     }
 
     let level = 0;
@@ -219,9 +260,9 @@
    * 一张卡片的完整本地初筛：有主标题才判（没有名称无从判断），图标只带出去给 AI 深查。
    * @returns {{ok:boolean,title:string,icon:string,level:number,verdict:string,hits:Array}}
    */
-  Risk.auditCard = function (tableEl) {
+  Risk.auditCard = function (tableEl, cfg) {
     const got = Risk.readCard(tableEl);
-    const res = Risk.screen(got.title);
+    const res = Risk.screen(got.title, cfg);
     return {
       ok: !!got.title,
       title: got.title,

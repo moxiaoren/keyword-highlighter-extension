@@ -2011,10 +2011,193 @@
   $('pf-policyRenderTab').checked = ((cfg.policy || {}).renderTab !== false);
     /* 【2.0.8.4 需求④】AI 助手的接口配置（与上面那块"重要笔记"同属样式/配置页）。 */
     renderAiForm();
+    /* 【2.0.17.5 · m26374】AI 深查开关 + 风险词库（内置基线 + 自定义 + 逐词停用）。 */
+    $('pf-riskAuto').checked = ((cfg.importantNote || {}).riskAuto !== false);
+    renderRiskLexicon();
+    wireRiskLexiconButtons();
     /* 【2.0.8.6 需求①】图文合并的标题表（字段 → 自定义标题 + 默认不展示）。 */
     renderMergeForm();
     /* 【T5】校验中心：只画不判，口径全在 compare/center.js 的 summary(cfg)。 */
     renderCheckCenter();
+  }
+
+  /* ---- 【2.0.17.5 · 用户 m26374】风险词库 ----
+   * C 档口径：内置词表（源码常量）直接生效，用户只能**逐词停用**；自定义词可增删；
+   * 导入 / 导出 JSON 让词表能跨机搬；D 档（远端订阅清单）只存地址，本版不联网拉取。
+   * 归一的真源是 `KH.Config.normalizeRiskLexicon`（保存前归一、回显也走它），本文件不另写一套口径。 */
+  let riskLexWired = false;
+  const RISK_CAT_LABEL = { brand: '品牌', gamble: '赌博', porn: '色情低俗', fund: '资金盘', fraud: '诈骗', loan: '违规贷款', other: '其它' };
+  const RISK_CAT_OPTS = [
+    ['brand', '品牌（判同名 / 蹭品牌）'],
+    ['gamble', '赌博'],
+    ['porn', '色情低俗'],
+    ['fund', '资金盘'],
+    ['fraud', '诈骗'],
+    ['loan', '违规贷款'],
+    ['other', '其它']
+  ];
+
+  function riskLexOf() {
+    const n = KH.Config.normalizeRiskLexicon;
+    return (typeof n === 'function') ? n(cfg.riskLexicon) : (cfg.riskLexicon || { custom: [], disabled: [], remoteUrl: '' });
+  }
+
+  function riskLexSave(patch) {
+    const next = KH.Config.normalizeRiskLexicon(Object.assign({}, riskLexOf(), patch || {}));
+    return saveNested({ riskLexicon: next }).then(renderRiskLexicon);
+  }
+
+  function riskLexEl(tag, cls, props) {
+    const el = document.createElement(tag);
+    if (cls) el.className = cls;
+    Object.keys(props || {}).forEach((k) => {
+      if (k === 'text') el.textContent = props[k];
+      else el.setAttribute(k, props[k]);
+    });
+    return el;
+  }
+
+  function renderRiskLexicon() {
+    const box = $('risk-lex-list');
+    if (!box) return;
+    if (!riskLexWired) { riskLexWired = true; wireRiskLexicon(); }
+    const lx = riskLexOf();
+    const RA = KH.RiskAudit;
+    const norm = (w) => (RA && RA.normalizeName ? RA.normalizeName(w) : String(w || '').toLowerCase());
+    const off = {};
+    (lx.disabled || []).forEach((w) => { const k = norm(w); if (k) off[k] = true; });
+    const customs = lx.custom || [];
+    const builtins = [];
+    const groups = [];
+    (RA ? RA.BRANDS : []).forEach((w) => builtins.push(w));
+    groups.push({ cat: 'brand', tag: '品牌', words: (RA ? RA.BRANDS : []).slice() });
+    (RA ? RA.SENSITIVE : []).forEach((g) => {
+      const cat = Object.keys(RISK_CAT_LABEL).find((k) => RISK_CAT_LABEL[k] === g.tag) || 'other';
+      groups.push({ cat: cat, tag: g.tag, words: g.words.slice() });
+    });
+    customs.forEach((c) => {
+      const cat = RISK_CAT_LABEL[c.cat] ? c.cat : 'other';
+      let g = groups.find((x) => x.cat === cat);
+      if (!g) { g = { cat: cat, tag: RISK_CAT_LABEL[cat], words: [], custom: true }; groups.push(g); }
+      if (g.words.indexOf(c.w) < 0) g.words.push(c.w);
+    });
+    box.innerHTML = '';
+    let total = 0;
+    let offN = 0;
+    groups.forEach((g) => {
+      if (!g.words.length) return;
+      const wrap = riskLexEl('div', 'kh-lex-grp');
+      const hd = riskLexEl('div', 'kh-lex-grp-hd', { text: g.tag + ' · ' + g.words.length });
+      wrap.appendChild(hd);
+      const words = riskLexEl('div', 'kh-lex-words');
+      g.words.forEach((w) => {
+        const isCustom = customs.some((c) => norm(c.w) === norm(w));
+        const on = !off[norm(w)];
+        total += 1;
+        if (!on) offN += 1;
+        const row = riskLexEl('label', 'kh-lex-w' + (on ? '' : ' is-off'), { 'data-w': w, 'data-custom': isCustom ? '1' : '0' });
+        const cb = riskLexEl('input', '', { type: 'checkbox' });
+        cb.checked = on;
+        row.appendChild(cb);
+        row.appendChild(document.createTextNode(w));
+        if (isCustom) {
+          row.appendChild(riskLexEl('span', 'kh-lex-tag', { text: '自定义' }));
+          const del = riskLexEl('button', 'kh-lex-del', { type: 'button', 'data-del': w, title: '删掉这个词' });
+          del.textContent = '✕';
+          row.appendChild(del);
+        }
+        words.appendChild(row);
+      });
+      wrap.appendChild(words);
+      box.appendChild(wrap);
+    });
+    if (!total) box.appendChild(riskLexEl('p', 'kh-muted', { text: '词表是空的。' }));
+    const sum = $('risk-lex-sum');
+    if (sum) sum.textContent = '内置 ' + builtins.length + ' 个 · 自定义 ' + customs.length + ' 个 · 已停用 ' + offN + ' 个';
+    const rem = $('risk-lex-remote');
+    if (rem && document.activeElement !== rem) rem.value = lx.remoteUrl || '';
+    const sel = $('risk-lex-cat');
+    if (sel && !sel.options.length) {
+      RISK_CAT_OPTS.forEach((pair) => sel.appendChild(riskLexEl('option', '', { value: pair[0], text: pair[1] })));
+    }
+  }
+
+  function wireRiskLexicon() {
+    const box = $('risk-lex-list');
+    if (box) {
+      box.addEventListener('change', (e) => {
+        const cb = e.target;
+        if (!cb || cb.type !== 'checkbox') return;
+        const row = cb.parentNode;
+        const w = row ? row.getAttribute('data-w') : '';
+        if (!w) return;
+        const off = [];
+        const all = box.querySelectorAll('.kh-lex-w');
+        for (let i = 0; i < all.length; i++) {
+          const c = all[i].querySelector('input');
+          if (c && !c.checked) off.push(all[i].getAttribute('data-w'));
+        }
+        riskLexSave({ disabled: off });
+      });
+      box.addEventListener('click', (e) => {
+        const btn = e.target && e.target.getAttribute ? e.target : null;
+        const w = btn ? btn.getAttribute('data-del') : '';
+        if (!w) return;
+        const cur = riskLexOf();
+        riskLexSave({ custom: cur.custom.filter((c) => c.w !== w) });
+      });
+      return;
+    }
+    /* 词表容器还没画出来时（首屏之前）不接事件 —— renderRiskLexicon 会在画出来后再进来一次。 */
+  }
+
+  function wireRiskLexiconButtons() {
+    const add = $('btn-risk-lex-add');
+    if (add) {
+      add.addEventListener('click', () => {
+        const input = $('risk-lex-word');
+        const sel = $('risk-lex-cat');
+        const w = String((input && input.value) || '').trim();
+        if (!w) { D.toast('先填一个词'); return; }
+        const cat = (sel && sel.value) || 'other';
+        const cur = riskLexOf();
+        const next = cur.custom.filter((c) => c.w !== w).concat([{ w: w, cat: cat }]);
+        riskLexSave({ custom: next }).then(() => { if (input) input.value = ''; });
+      });
+    }
+    const exp = $('btn-risk-lex-export');
+    if (exp) {
+      exp.addEventListener('click', () => {
+        KH.Store.download('risk-lexicon-' + stamp() + '.json', JSON.stringify(riskLexOf(), null, 2), 'application/json');
+      });
+    }
+    const imp = $('btn-risk-lex-import');
+    const file = $('risk-lex-file');
+    if (imp && file) {
+      imp.addEventListener('click', () => file.click());
+      file.addEventListener('change', () => {
+        const f = file.files && file.files[0];
+        if (!f) return;
+        const rd = new FileReader();
+        rd.onload = () => {
+          try {
+            const data = JSON.parse(String(rd.result || '{}'));
+            riskLexSave({ custom: data.custom || [], disabled: data.disabled || [], remoteUrl: data.remoteUrl || '' })
+              .then(() => D.toast('词表已导入'));
+          } catch (err) { D.toast('这个文件不是有效的词表 JSON'); }
+          file.value = '';
+        };
+        rd.readAsText(f);
+      });
+    }
+    const rem = $('risk-lex-remote');
+    if (rem) rem.addEventListener('change', () => riskLexSave({ remoteUrl: String(rem.value || '').trim() }));
+    const ra = $('pf-riskAuto');
+    if (ra) {
+      ra.addEventListener('change', () => {
+        saveNested({ importantNote: { riskAuto: ra.checked === true } });
+      });
+    }
   }
 
   /* ---- 【2.0.8.6 需求①】图文合并 ----

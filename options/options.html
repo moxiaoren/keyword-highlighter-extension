@@ -393,6 +393,36 @@
         <label class="kh-check"><input type="checkbox" id="pf-policyRenderTab" checked> 隐私政策链接读不到正文时，自动开一张后台标签页（读完立刻关）</label>
         <p class="kh-muted">靠脚本渲染的政策页（Vue / React 壳页）静态抓不到正文，扩展会开一张<strong>后台</strong>标签页（不抢前台、不换你当前的页），读完立刻关掉；同一时刻最多一张，每个链接只会尝试一次。关掉后只读你已经打开的那张页，读不到就提示你手动打开。</p>
       </div>
+
+      <!-- 【2.0.17.5 · 用户 m26374】风险词库（C 档）：内置基线 + 自定义 + 逐词停用 + 导入导出；
+           D 档（远端订阅清单）只留接口位，本版不联网拉取。 -->
+      <div class="kh-sub-card">
+        <h3 class="kh-sub">风险词库（重要笔记卡片初筛）</h3>
+        <label class="kh-check"><input type="checkbox" id="pf-riskAuto"> 主标题 / 图标自动 AI 深查（联网，每张卡一次，结果缓存 30 天）</label>
+        <p class="kh-muted">打开后，卡片一进来就自动核验「名称与图标是否仿冒知名品牌」，以及资金盘 / 赌博 / 诈骗 / 色情低俗 / 违规贷款等风险；结论回填到卡片底部的深查行。模型固定 <strong>DeepSeek-V4.1-flash-1017</strong>。关掉后只保留下面本地词库的结论，不发任何请求。</p>
+
+        <div class="kh-ent-head">
+          <h4 class="kh-ent-title">本地词表 <span class="kh-ent-sum" id="risk-lex-sum">—</span></h4>
+          <div class="kh-ent-bulk">
+            <button class="kh-mini-btn" id="btn-risk-lex-export" type="button">导出 JSON</button>
+            <button class="kh-mini-btn" id="btn-risk-lex-import" type="button">导入 JSON</button>
+            <input type="file" id="risk-lex-file" accept="application/json,.json" hidden>
+          </div>
+        </div>
+        <p class="kh-muted">内置词直接生效；<strong>取消勾选即停用</strong>（只改本机，不动内置表）。自定义词可加可删。</p>
+        <div class="kh-lex-add">
+          <input class="kh-input" id="risk-lex-word" type="text" maxlength="40" placeholder="加一个词（品牌名或某类话术）">
+          <select class="kh-input" id="risk-lex-cat"></select>
+          <button class="kh-mini-btn" id="btn-risk-lex-add" type="button">添加</button>
+        </div>
+        <div class="kh-lex-list" id="risk-lex-list"></div>
+        <div class="kh-form-row">
+          <div class="kh-form-fld">
+            <label class="kh-fld-label" for="risk-lex-remote">远端订阅清单（预留接口，本版不联网拉取）</label>
+            <input class="kh-input" id="risk-lex-remote" type="text" placeholder="https://…（留空＝只用本机词表）">
+          </div>
+        </div>
+      </div>
     </section>
 
 
@@ -973,6 +1003,8 @@
   <script src="../src/build-info.js"></script>
   <script src="../src/core/protocol.js"></script>
   <script src="../src/core/config.js"></script>
+  <!-- 【2.0.17.5 · m26374】风险词库：设置页要读内置词表来画可停用清单。 -->
+  <script src="../src/features/risk-audit.js"></script>
   <script src="../src/features/compare/center.js"></script>
   <script src="../src/core/scope.js"></script>
   <script src="../src/platform/storage.js"></script>

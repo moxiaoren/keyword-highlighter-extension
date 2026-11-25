@@ -903,6 +903,40 @@
       }
       if (alt.length === 1) out.push(alt[0]);
     }
+    /* 【2.0.17.5 · 用户 m26374/m26410】「进表值」也算基准：证书是 PDF、著作权人/登记号
+     * 已经抽进卡片表格（用户现场：值看得见，`#比` 却说「还没读到值」）。
+     * 只认按字段名匹配到的进表行；跨规则时仍要求全表唯一（两个不同值不猜，维持原判）。 */
+    if (!out.length) {
+      const Note = KH.ImportantNote;
+      const extraOf = (Note && typeof Note.ocrExtraRows === 'function') ? Note.ocrExtraRows : null;
+      const byRule = new Map();
+      for (const it of list) {
+        if (!it || it.state !== 'done' || !it.text) continue;
+        const rid = String(it.ruleId || '');
+        const rm = (it.rule && it.rule.meta) || null;
+        if (!rid || !rm) continue;
+        if (!byRule.has(rid)) byRule.set(rid, rm);
+      }
+      if (extraOf && byRule.size) {
+        const vals = [];
+        for (const pair of byRule) {
+          const rid = pair[0];
+          const rm = pair[1];
+          let rows = [];
+          try { rows = extraOf(Object.assign({}, rm, { pinId: rid })) || []; } catch (e) { rows = []; }
+          for (const r of rows) {
+            const lab = keyOf(r && r.label);
+            if (!lab) continue;
+            if (lab !== want && !(want.length >= 2 && lab.indexOf(want) === 0)) continue;
+            const v = String((r && r.value) || '').trim();
+            if (!v || v.length < NEED_MIN_LEN) continue;
+            const k = keyOf(v);
+            if (vals.indexOf(v.toLowerCase()) < 0) vals.push(v.toLowerCase());
+          }
+        }
+        if (vals.length === 1 && seen.indexOf(keyOf(vals[0])) < 0) out.push(vals[0]);
+      }
+    }
     if (!out.length) {
       const defs = (A.DEFS || []);
       for (let d = 0; d < defs.length && !out.length; d++) {

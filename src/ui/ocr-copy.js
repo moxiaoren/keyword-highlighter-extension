@@ -162,6 +162,14 @@
     riskBusy: '上一个问题还没答完，稍等再点。',
     riskNoPort: '面板连不上后台，重开面板再试。',
     riskWorking: '正在联网核验…',
+  /* 【2.0.17.5 · 用户 m26340】深查结论块改成「徽标 + 结论短语 + 依据」，这些是结论短语。 */
+  riskHdScan: '正在核验',
+  riskHdBad: '发现风险',
+  riskHdWarn: '存疑',
+  riskHdOk: '未发现风险',
+  riskHdUnknown: '未查明',
+  riskHdLocalHit: '本地初筛命中',
+  riskHdLocal: '本地初筛',
     /* 【2.0.17.3 · 用户 m25410】体检条三格 + 行内纯符号 + 自动深查块的文案 */
     vdTitle: '标题',
     vdDev: '法人',
