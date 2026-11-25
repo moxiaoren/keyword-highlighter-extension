@@ -220,7 +220,8 @@
       const data = await iconDataUrl(icon);
       if (data) files.push({ name: 'icon.png', data: data });
     }
-    const r = await self.KhTaiji.chat({ model: RISK_MODEL, messages: [{ role: 'user', content: prompt }], webSearch: true, files: files });
+    /* 【2.0.18.3 · m28516】深查收进一个固定对话窗（后台给的 tab<id>#risk）。 */
+    const r = await self.KhTaiji.chat({ model: RISK_MODEL, chatId: String(p.chatId || ''), messages: [{ role: 'user', content: prompt }], webSearch: true, files: files });
     if (!r || !r.ok) return r || { ok: false, error: '没有回执' };
     const got = parseRisk(r.text);
     if (!got || !got.verdict) {

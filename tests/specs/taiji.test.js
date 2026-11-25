@@ -87,6 +87,12 @@ function loadTaiji(opts) {
     if (u.indexOf('/api/chat/tmpl') >= 0) return jsonRes(o.tmpl === undefined ? TM_OK : o.tmpl);
     if (u.indexOf('/api/chat/session') >= 0) return jsonRes(o.session === undefined ? { code: 0, data: { id: 1001 } } : o.session);
     if (u.indexOf('/api/chat/completions') >= 0) {
+      /* 【2.0.18.3】也接受数组：按顺序取（测「先成功后失败」这种多次问答的场景）。 */
+      if (Array.isArray(o.chat)) {
+        const seq = o.chat[Math.min(o.chatAt || 0, o.chat.length - 1)];
+        o.chatAt = (o.chatAt || 0) + 1;
+        return seq;
+      }
       return o.chat || sseRes([
         'data: {"type":"string","data":"\u003cthink\u003e我先想一想"}\n\n',
         'data: {"type":"string","data":"\u003c/think\u003e你好呀"}\n\n',
@@ -381,6 +387,80 @@ module.exports = async function run() {
     truthy(bad.error.indexOf('重新登录') >= 0, '会话失效要指向设置页重新登录：' + bad.error);
   });
 
+  await test('★ 2.0.18.3 · 对话窗复用：同一 chatId 只建一次站点会话、只发这一句（用户 m28365）', async () => {
+    const h = loadTaiji({ session: { code: 0, data: { id: 3003 } } });
+    const ask = (chatId, txt) => h.T.chat({
+      chatId: chatId,
+      messages: [
+        { role: 'user', content: '第一句' },
+        { role: 'assistant', content: '第一答' },
+        { role: 'user', content: txt }
+      ]
+    });
+    const sessCalls = () => h.calls.filter((c) => c.url.indexOf('/api/chat/session') >= 0);
+    const sends = () => h.calls.filter((c) => c.url.indexOf('/api/chat/completions') >= 0);
+    const r1 = await ask('c-1', '第一句');
+    truthy(r1.ok, '第一次要成功：' + (r1.error || ''));
+    const r2 = await ask('c-1', '第二句');
+    truthy(r2.ok, '第二次要成功：' + (r2.error || ''));
+    eq(sessCalls().length, 1, '同一个 chatId 下只能建一次站点会话（否则站点每句一个对话窗）');
+    eq(sends().length, 2, '两次都要真发');
+    eq(sends()[0].body.sessionId, 3003, '第一次用新会话');
+    eq(sends()[1].body.sessionId, 3003, '第二次接着同一个会话');
+    eq(sends()[1].body.text, '第二句', '复用会话时只发这一句，别把历史再贴一遍');
+    truthy(sends()[0].body.text.indexOf('第一句') >= 0, '建新会话那次要带历史（新会话也得有上下文）');
+    /* 「清理」= 后台 resetSession(本标签页的键)：站点侧开新对话窗 */
+    await h.T.resetSession('c-1');
+    const r3 = await ask('c-1', '第三句');
+    truthy(r3.ok, '清理后要能继续：' + (r3.error || ''));
+    eq(sessCalls().length, 2, '清理之后要重新建站点会话');
+    eq(sends()[2].body.sessionId, 3003, '新会话的 id 由站点给（假站点固定回 3003）');
+    truthy(sends()[2].body.text.indexOf('第一句') >= 0, '新会话要带完整历史，不能只发这一句');
+    /* 换模型必须换会话：键里带模型，否则新模型接在旧会话的上下文上会串 */
+    const r4 = await h.T.chat({ chatId: 'c-1', model: 'anthropic::claude-sonnet-5', messages: [{ role: 'user', content: '第四句' }] });
+    truthy(r4.ok, '换模型也要能发：' + (r4.error || ''));
+    eq(sessCalls().length, 3, '换模型必须重新建会话');
+    /* 不带 chatId（设置页测试连接 / 风险深查那种一次性调用）不参与复用 */
+    await h.T.chat({ messages: [{ role: 'user', content: '第五句' }] });
+    eq(sessCalls().length, 4, '没有 chatId 时不要复用别人的会话');
+  });
+
+  await test('★ 2.0.18.3 · 站点会话过期时自动换新会话重发一次（不把「会话过期」丢给用户）', async () => {
+    const mkOk = () => sseRes(['data: {"type":"string","data":"好"}\n\n']);
+    const errRes = sseRes(['data: {"code":401,"msg":"会话不存在"}\n\n']);
+    const h = loadTaiji({ session: { code: 0, data: { id: 4004 } }, chat: [mkOk(), errRes, mkOk()] });
+    const one = (txt) => h.T.chat({ chatId: 'c-9', messages: [{ role: 'user', content: txt }] });
+    const sessCalls = () => h.calls.filter((c) => c.url.indexOf('/api/chat/session') >= 0);
+    const sends = () => h.calls.filter((c) => c.url.indexOf('/api/chat/completions') >= 0);
+    const r1 = await one('问一句');
+    truthy(r1.ok, '第一次正常：' + (r1.error || ''));
+    eq(sessCalls().length, 1, '第一次建一个会话');
+    const r2 = await one('再问一句');
+    truthy(r2.ok, '旧会话过期后应自动换新会话并把这一句答出来：' + (r2.error || ''));
+    eq(sessCalls().length, 2, '过期后要换新会话');
+    eq(sends().length, 3, '第一次 1 次 + 第二次 2 次（失败一次后重发一次）');
+    eq(sends()[2].body.sessionId, 4004, '重发用新会话');
+    truthy(sends()[2].body.text.indexOf('再问一句') >= 0, '重发要带上这一句');
+  });
+
+  await test('★ 2.0.18.3 · 接线：会话键按标签页派生、清理/关页才断；深查走固定键（m28516）', () => {
+    const panel = read('src/features/important-note.js');
+    truthy(panel.indexOf('aiChatId') < 0, '面板不再自己造会话标识（悬窗重建会断）');
+    truthy(panel.indexOf("action: 'new'") >= 0, '清理时要通知后台清会话缓存');
+    const sw = read('background/service-worker.js');
+    truthy(sw.indexOf('function tabChatOf(') >= 0, '后台按 sender.tab.id 派生会话键');
+    truthy(sw.indexOf('chatId: tabChatOf(port.sender)') >= 0, '对话请求要带标签页会话键');
+    truthy(sw.indexOf('riskChatOf(port.sender)') >= 0, '深查走自己那条固定键');
+    truthy(sw.indexOf('resetSession(tabChatOf(port.sender))') >= 0, '清理只重置本标签页的对话');
+    truthy(sw.indexOf('chrome.tabs.onRemoved.addListener') >= 0, '关标签页要清掉它的会话');
+    const tj = read('background/taiji.js');
+    truthy(tj.indexOf('T.resetSession') >= 0, 'taiji 要暴露 resetSession');
+    truthy(tj.indexOf('chrome.storage.session') >= 0, '会话缓存要落 storage.session（后台回收后还能续）');
+    truthy(tj.indexOf('lastUserText') >= 0, '复用会话时只发这一句');
+    const aiSrc = read('background/ai.js');
+    truthy(aiSrc.indexOf('chatId: String(p.chatId ||') >= 0, '深查把 chatId 传给太极通路');
+  });
+
   await test('法人兜底 repOf：只输出名字或「不确定」，格式不对就是没查到', async () => {
     const good = await loadTaiji({ chat: sseRes(['data: {"type":"string","data":"梁娟。"}\n\n']) }).T.repOf('南京石诚星桥科技有限公司');
     truthy(good.ok, '正常回复要能抠出人名');
@@ -482,7 +562,7 @@ module.exports = async function run() {
     truthy(note.indexOf('V.aiModeTaiji') >= 0, '状态带要用太极AI 的名字');
     truthy(note.indexOf('V.aiOpenOptions') >= 0, '没登录时的按钮是「去设置」');
     truthy(note.indexOf('openAiWeb') < 0, 'openAiWeb（开对话页）必须随通路一起删掉');
-    truthy(note.indexOf("action: 'new'") < 0, '清空对话不再发 new（太极AI 每问都新建会话）');
+    truthy(note.indexOf("action: 'new'") >= 0, '【2.0.18.3】清理要通知后台清会话缓存（现在一个对话窗到底，不再每问新建）');
     /* 【2.0.18 · m24086/m24077/m24105】发消息要带上模型、联网开关与图片（不再只有 messages） */
     truthy(note.indexOf("action: 'ask', messages: messages,") >= 0, '发消息走 ask，并带上模型/联网/图片');
     truthy(note.indexOf('webSearch: !!this.aiWeb') >= 0, '联网搜索开关要跟着消息发出去');

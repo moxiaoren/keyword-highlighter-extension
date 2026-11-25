@@ -446,6 +446,87 @@
   }
   T.flatten = flatten;
 
+  /* 【2.0.18.3 · m28365 / m28516】对话窗复用：原来每问一句都 createSession，站点侧就成了「每句话一个会话」。
+   * 会话身份挂在**标签页**上（键由后台按 sender.tab.id 派生，形如 tab12，深查再加 #risk）：
+   * 面板/悬窗重建、后台被回收都不影响；只有点「清理」或关掉标签页才断。
+   * 内存 Map 是快路，同时落 chrome.storage.session（MV3 后台被回收还能续上；没有该 API 时纯内存）。
+   * 命中缓存只发「这一句」（站点记着上文）；没命中（首次 / 换模型 / 新标签页）才把历史摊平整段发过去。 */
+  const SESS_MAX = 8;
+  const SESS = new Map();          // chatId -> { key, id }
+  const SESS_NS = 'aiSessions';
+
+  function sessArea() {
+    try {
+      const st = (typeof chrome !== 'undefined' && chrome.storage) ? chrome.storage.session : null;
+      return (st && typeof st.get === 'function') ? st : null;
+    } catch (e) { return null; }
+  }
+
+  function sessKey(chatId, model, webSearch, nativeTools) {
+    if (!chatId) return '';
+    return String(chatId) + '|' + String(model) + '|' + (webSearch ? '1' : '0') + '|' + (nativeTools || []).join(',');
+  }
+
+  async function sessLoad() {
+    const area = sessArea();
+    if (!area) return;
+    try {
+      const got = await area.get(SESS_NS);
+      const raw = got && got[SESS_NS];
+      if (!raw || typeof raw !== 'object') return;
+      Object.keys(raw).forEach((k) => {
+        const it = raw[k] || {};
+        if (it.id && !SESS.has(k)) SESS.set(k, { key: String(it.key || ''), id: Number(it.id) || 0 });
+      });
+    } catch (e) { /* 读不到就当没有 */ }
+  }
+
+  async function sessSave() {
+    const area = sessArea();
+    if (!area) return;
+    const out = {};
+    SESS.forEach((v, k) => { out[k] = { key: v.key, id: v.id }; });
+    try { await area.set({ [SESS_NS]: out }); } catch (e) { /* 写不进不影响本次复用 */ }
+  }
+
+  /** 命中就回站点 sessionId，否则 0（0 = 这一轮要新建会话）。 */
+  async function sessGet(chatId, key) {
+    if (!chatId) return 0;
+    if (!SESS.has(chatId)) await sessLoad();
+    const it = SESS.get(chatId);
+    if (!it || !it.id || it.key !== key) return 0;
+    SESS.delete(chatId);
+    SESS.set(chatId, it);          // 触一下 LRU 顺序
+    return it.id;
+  }
+
+  async function sessSet(chatId, key, id) {
+    if (!chatId) return;
+    SESS.delete(chatId);
+    SESS.set(chatId, { key: String(key || ''), id: Number(id) || 0 });
+    while (SESS.size > SESS_MAX) SESS.delete(SESS.keys().next().value);
+    await sessSave();
+  }
+
+  /** 这一轮真正要问的那句话（面板把「只发图」的指令写在最后一条 user 里）。 */
+  function lastUserText(messages) {
+    if (!Array.isArray(messages)) return '';
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i] || {};
+      if (m.role !== 'user') continue;
+      const c = String(m.content == null ? '' : m.content).trim();
+      if (c) return c;
+    }
+    return '';
+  }
+
+  /** 清理一个标签页（或全部）的会话缓存：只传 chatId 就只清那条，不传清空。 */
+  T.resetSession = async function (chatId) {
+    const k = String(chatId || '');
+    if (!k) SESS.clear(); else SESS.delete(k);
+    await sessSave();
+  };
+
   /** 读 SSE：每行 data: {...}；type=string 是增量，type=object 是汇总（aiText/用量）。 */
   async function readStream(out) {
     const ctype = String((out.res.headers && out.res.headers.get('content-type')) || '');
@@ -521,6 +602,8 @@
     const tj = ai.taiji || {};
     const override = (payload.override && typeof payload.override === 'object') ? payload.override : {};
     const model = String(override.model || payload.model || tj.model || '').trim();
+    /* 【2.0.18.3 · m28516】会话键由后台按标签页派生；空串＝不复用（设置页测试连接这类一次性调用）。 */
+    const chatId = String(payload.chatId || '').trim();
     try {
       const text = flatten(Array.isArray(payload.messages) ? payload.messages : []);
       /* 【2.0.18 · m24105】图片：站点收 files:[{name,data}]，data 是 **dataURL**（站点前端用
@@ -560,32 +643,54 @@
       }
       const webSearch = !!payload.webSearch && !imgOnly;
       const nativeTools = Array.isArray(payload.nativeTools) ? payload.nativeTools.filter(x => typeof x === 'string').slice(0, 4) : [];
-      const sid = await createSession(useModel, null, { webSearch: webSearch, nativeTools: nativeTools });
+      /* 【2.0.18.3 · m28365】对话窗复用（见 SESS 的说明）：命中缓存就接着站点的那个会话问。 */
+      const skey = sessKey(chatId, useModel, webSearch, nativeTools);
+      const cachedId = await sessGet(chatId, skey);
+      /* 命中缓存 = 站点记着上文，只发这一句；否则把整段历史摊平发过去，新会话也自带上下文。 */
+      const turnText = cachedId ? (lastUserText(payload.messages) || askText) : askText;
       /* 【2.0.16.7 · m20800】站点字段是 int64：sessionId 必须以整数发，发字符串会被判「参数解析失败」code=3。 */
-      const sidNum = typeof sid === 'number' ? sid : Number(String(sid).trim());
-      if (!isFinite(sidNum)) return { ok: false, error: '站点给的会话 id 不是数字（' + sid + '），没法继续' };
-      /* 【2.0.18 · m24077】请求体补齐站点真实字段：webSearch 是布尔，nativeTools 是数组；
-       * thinking / reasoningEffort 是站点必带项（不传后端会按旧默认值走）。 */
-      const body = {
-        text: askText,
-        sessionId: sidNum,
-        model: useModel,
-        thinking: false,
-        webSearch: webSearch,
-        nativeTools: nativeTools,
-        nativeToolOptions: {},
-        reasoningEffort: ''
+      const numId = (v) => (typeof v === 'number' ? v : Number(String(v == null ? '' : v).trim()));
+      const sendTurn = (sidNum, bodyText) => {
+        /* 【2.0.18 · m24077】请求体补齐站点真实字段：webSearch 是布尔，nativeTools 是数组；
+         * thinking / reasoningEffort 是站点必带项（不传后端会按旧默认值走）。 */
+        const body = {
+          text: bodyText,
+          sessionId: sidNum,
+          model: useModel,
+          thinking: false,
+          webSearch: webSearch,
+          nativeTools: nativeTools,
+          nativeToolOptions: {},
+          reasoningEffort: ''
+        };
+        if (files.length) body.files = files;
+        return api('/api/chat/completions', {
+          method: 'POST',
+          body: body,
+          idleMs: Number(payload.timeoutMs) > 0 ? Number(payload.timeoutMs) : IDLE_MS
+        }).then(readStream);
       };
-      if (files.length) body.files = files;
-      const out = await api('/api/chat/completions', {
-        method: 'POST',
-        body: body,
-        idleMs: Number(payload.timeoutMs) > 0 ? Number(payload.timeoutMs) : IDLE_MS
-      });
-      const got = await readStream(out);
+      const turn = async (reuse) => {
+        if (reuse) return sendTurn(cachedId, turnText);
+        const sid = await createSession(useModel, null, { webSearch: webSearch, nativeTools: nativeTools });
+        const sidNum = numId(sid);
+        if (!isFinite(sidNum)) throw new Error('站点给的会话 id 不是数字（' + sid + '），没法继续');
+        if (skey) await sessSet(chatId, skey, sidNum);
+        return sendTurn(sidNum, askText);
+      };
+      let got;
+      try {
+        got = await turn(!!cachedId);
+      } catch (e1) {
+        /* 复用的会话可能已在站点侧过期：只在这一种情况下换新会话重发一次（带完整历史）。 */
+        if (!cachedId || !/会话|session/i.test(errText(e1))) throw e1;
+        await T.resetSession(chatId);
+        got = await turn(false);
+      }
       if (!got.text) return { ok: false, error: '站点没有返回内容' };
       return { ok: true, text: got.text.slice(0, MAX_REPLY), usage: got.usage };
     } catch (err) {
+      /* 这里不清会话缓存：网络/超时之类的失败不该让用户丢掉整段对话（会话过期由上面的重试兜住）。 */
       const needLogin = !!(err && err.needLogin);
       const extra = needLogin ? '（会话失效，请到设置页重新登录）' : '';
       /* needLogin 要回给面板：它据此把「去登录」按钮改成指向设置页。 */

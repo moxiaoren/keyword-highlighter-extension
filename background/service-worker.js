@@ -703,7 +703,7 @@ const HANDLERS = {
   [MSG.AI_TAIJI_LOGOUT]: () => self.KhAi.taijiLogout(),
   /* 【2.0.17.3 · 用户 m25410】自动深查：一次问一张卡（不用长连接，面板随时关都不影响已发出的那条）。
    * 面板侧串行排队、结果落 chrome.storage.local；这里只负责取图标字节 + 走太极AI 联网核验。 */
-  [MSG.RISK_SCAN]: (msg) => self.KhAi.riskCheck({ title: (msg && msg.title) || '', icon: (msg && msg.icon) || '', dev: (msg && msg.dev) || '' }),
+  [MSG.RISK_SCAN]: (msg, sender) => self.KhAi.riskCheck({ title: (msg && msg.title) || '', icon: (msg && msg.icon) || '', dev: (msg && msg.dev) || '', chatId: riskChatOf(sender) }),
   /* 【2.0.19 · 用户 m28030】自定义网页 AI：设置页的「测试」与「点选元素」都从这里走。
    * 不带网址参数——一定是用户本机保存的那个，避免设置页被别的页面借去开任意标签页。 */
   [MSG.WEB_AI_PICK]: (msg) => self.KhWebAi.pick({ tabId: (msg && msg.tabId) || 0 }),
@@ -766,6 +766,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   return true; // 异步响应
 });
 
+/* 【2.0.18.3 · m28516】会话身份挂标签页：面板/悬窗重建都不断，只有点「清理」或关掉标签页才断。
+ * 深查单独一把键（+ #risk），免得几十段 JSON 挤进助手那段对话里。 */
+function tabChatOf(sender) {
+  const tab = sender && sender.tab;
+  return (tab && typeof tab.id === 'number') ? 'tab' + tab.id : '';
+}
+function riskChatOf(sender) {
+  return tabChatOf(sender) + '#risk';
+}
+
 /* ---------------- 【2.0.8.5】AI 助手长连接（流式回包） ----------------
  * 为什么不用 sendMessage：`sendMessage` 只能"一问一答"一次回执，而网页对话是**边生成边出字**，
  * 面板要一行行地显示出来（否则要等十几秒才蹦出整段，体验差）。
@@ -786,12 +796,13 @@ chrome.runtime.onConnect.addListener((port) => {
   port.onMessage.addListener((msg) => {
     const m = msg || {};
     if (m.action === 'new') {
-      /* 【2.0.16.4】只剩太极AI：清空对话是面板本地的事，后台不需要做任何事
-       * （老实现在这里会去开 chat.deepseek.com 标签页 —— 用户明确要求永不出现）。 */
+      /* 【2.0.16.4】只剩太极AI：清空面板对话本身是面板的事；
+       * 【2.0.18.3 · m28365】但后台现在会复用站点会话（一个对话窗到底），所以这里要顺手把缓存的
+       * sessionId 清掉，下一句才会在站点侧开新会话。 */
+      try { if (self.KhTaiji && self.KhTaiji.resetSession) self.KhTaiji.resetSession(tabChatOf(port.sender)); } catch (e) { /* 没加载 */ }
       try { port.postMessage({ type: 'newChat', ok: true }); } catch (e) { /* 面板已关 */ }
       return;
-    }
-    /* 【2.0.18 · m24086】面板里直接换模型：写 ai.taiji.model（和设置页同一个键），
+    }    /* 【2.0.18 · m24086】面板里直接换模型：写 ai.taiji.model（和设置页同一个键），
      * 之后所有走 AI.chat 的请求读到的都是新模型，不必再去设置页。 */
     if (m.action === 'setModel') {
       const want = String(m.model || '').trim();
@@ -817,7 +828,7 @@ chrome.runtime.onConnect.addListener((port) => {
       riskBusy = true;
       const postR = (obj) => { try { port.postMessage(obj); } catch (e) { /* 面板已关 */ } };
       Promise.resolve()
-        .then(() => self.KhAi.riskCheck({ title: m.title, icon: m.icon }))
+        .then(() => self.KhAi.riskCheck({ title: m.title, icon: m.icon, dev: m.dev || '', chatId: riskChatOf(port.sender) }))
         .then((r) => {
           riskBusy = false;
           if (r && r.ok) postR({ type: 'done', text: r.text });
@@ -857,6 +868,8 @@ chrome.runtime.onConnect.addListener((port) => {
           messages: m.messages,
           model: m.model || '',
           webSearch: !!m.webSearch,
+          /* 【2.0.18.3 · m28516】按标签页复用站点会话：悬窗重建也不会每句一个新对话窗。 */
+          chatId: tabChatOf(port.sender),
           files: Array.isArray(m.files) ? m.files : [],
           nativeTools: Array.isArray(m.nativeTools) ? m.nativeTools : []
         });
@@ -886,6 +899,13 @@ chrome.runtime.onConnect.addListener((port) => {
 chrome.tabs.onRemoved.addListener((tabId) => {
   try { self.OcrHost.cancelTab(tabId); } catch (e) { /* ignore */ }
   TabDisabled.clearTab(tabId).catch(() => {});
+  /* 【2.0.18.3 · m28516】关掉标签页 = 下次新对话，不带上文：会话缓存也一起清（深查那条单独一把键）。 */
+  try {
+    if (self.KhTaiji && self.KhTaiji.resetSession) {
+      self.KhTaiji.resetSession('tab' + tabId);
+      self.KhTaiji.resetSession('tab' + tabId + '#risk');
+    }
+  } catch (e) { /* 通道没加载 */ }
 });
 
 /* ---------------- 存储变更 → 图标 ---------------- */

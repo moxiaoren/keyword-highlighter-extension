@@ -2798,6 +2798,7 @@
     aiEl: null,
     aiListEl: null,
     aiPort: null,
+    /* 【2.0.18.3 · m28516】会话标识由后台按标签页派生：面板/悬窗重建都不会开新对话窗，这里不再存 chatId。 */
     /* 【2.0.18】面板内换模型 / 联网搜索开关 / 待发图片（m24086 / m24077 / m24105） */
     aiModel: '',
     aiModels: [],
@@ -4511,8 +4512,10 @@
           e.stopPropagation();
           this.aiMsgs = [];
           this.renderAiList();
-          /* 【2.0.16.4】只剩太极AI：对话在后台每问都新建会话，清空面板**不用**通知后台
-           * （老的网页对话要让它同步开新对话，那条通路已删）。 */
+          /* 【2.0.18.3 · m28516】后台按标签页复用站点会话，所以「清理」只要通知后台清掉本页那条。 */
+          if (this.aiPort) {
+            try { this.aiPort.postMessage({ action: 'new' }); } catch (e) { /* 连接断了，下一次发送会重连 */ }
+          }
         });
         input.addEventListener('keydown', (e) => {
           e.stopPropagation();
