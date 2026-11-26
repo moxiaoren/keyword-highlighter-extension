@@ -2083,6 +2083,19 @@
 
   /* ------------------------------------------------- 多行表格渲染（唯一实现） */
 
+  /** 缩略图 → 占位小牌（2.0.19.1）：只认 `restoreImgs` 生成的固定形状（src/alt 均已转义）。
+   *  `data-khimg` / `data-khimg-name` 是面板点击委托的唯一约定（和 `data-khpdf` 同一思路）。 */
+  function imgToPlaceholder(html) {
+    return String(html).replace(
+      /<img src="([^"]*)" alt="([^"]*)" loading="lazy">/g,
+      (m, src, alt) => {
+        const name = alt && alt.trim() ? alt : '';
+        return '<span class="khin-imgph" data-khimg="' + src + '" data-khimg-name="' + alt + '">'
+          + '🖼 ' + (name || '图片') + '</span>';
+      }
+    );
+  }
+
   const escHtml = (s) => {
     const d = document.createElement('div');
     d.textContent = (s == null ? '' : String(s));
@@ -2425,7 +2438,7 @@
    * 【2.0.2.19 需求②】同值合并走 `rowsToTableHtml` 那一处（唯一实现），这里只把 OCR 行标成
    * `ocr:true` —— 合并时字段名的先后由它决定（见那一处的注释）。
    */
-  function computeBlock(textNode, rawLabels, scope, box, extras) {
+  function computeBlock(textNode, rawLabels, scope, box, extras, opts) {
     const fetched = extractCached(textNode, rawLabels, scope, box);
     /* 【2.0.16.6】`suspect` / `suspectTip` 由 `ocrExtraRows` 挂在行上（非枚举，只在运行期）：
      * 渲染层据此标「⚠」，值本身一个字不改。 */
@@ -2436,11 +2449,14 @@
     if (!fetched.length && !extraItems.length) return null;
     const optOf = {};
     for (const it of parseLabels(rawLabels)) optOf[it.label] = it;
-    return rowsToTableHtml(fetched.map(f => ({
+    const html = rowsToTableHtml(fetched.map(f => ({
       label: f.label, rows: f.rows,
       /* `all` 下同名标签会带层级后缀 → 先按原样查，再退回"剥掉后缀"查 */
       opt: optOf[f.label] || optOf[baseLabelOf(f.label)]
     })).concat(extraItems));
+    /* 【2.0.19.1 · m01400 第 3 条】这条规则选了「图片按占位展示」：把已渲染好的缩略图换成一枚
+     * 小占位（带文件名）。只认 `restoreImgs` 产出的那一种固定形状，页面内容不进这条正则。 */
+    return (opts && opts.imgPlaceholder) ? imgToPlaceholder(html) : html;
   }
 
   /** 命中格在**根表格**里所在的行号（缓存键的一部分；见 `blockFor`） */
@@ -2515,19 +2531,23 @@
    * 因此按 `(层表格, scope, label)` 在 `box.cells` 里再缓存一层 ⇒ 不会退化成每行一次全表扫描。
    * 【性能实测】`_e2e` 的 800 行 / 3000 行重页面预算用例仍绿（见 R3 报告）。
    */
-  function blockFor(textNode, rawLabels, cache, scope, extras) {
+  function blockFor(textNode, rawLabels, cache, scope, extras, opts) {
     const sc = scopeOf(scope);
+    const ph = !!(opts && opts.imgPlaceholder);
     /* 【2.0.2.17 需求⑥】带 OCR 附加行时**绕开缓存**：缓存键是 `(表格, 行, labels, scope)`，
      * 而 OCR 行按**命中所属规则**不同而不同 —— 同一格被两个关键词用到会串味。附加行为空时照常吃缓存。 */
     const hasExtra = !!(extras && extras.length);
-    if (!cache || !textNode || hasExtra) return computeBlock(textNode, rawLabels, sc, null, extras);
+    if (!cache || !textNode || hasExtra) return computeBlock(textNode, rawLabels, sc, null, extras, opts);
     const root = fetchRoot(textNode);
-    if (!root) return computeBlock(textNode, rawLabels, sc, null, extras);
+    if (!root) return computeBlock(textNode, rawLabels, sc, null, extras, opts);
     const box = cacheBox(cache, textNode);
-    if (!box) return computeBlock(textNode, rawLabels, sc, null, extras);
-    const k = String(rawLabels == null ? '' : rawLabels) + '\u0001' + sc + '\u0001' + rowKeyOf(root, textNode);
+    if (!box) return computeBlock(textNode, rawLabels, sc, null, extras, opts);
+    /* 缓存键要带占位开关：同一次重建里两条规则可能共用同一张表、同一组标签，
+     * 但一条要占位、一条要缩略图 —— 不带就会串味（后渲染的那条拿到前一条的 HTML）。 */
+    const k = String(rawLabels == null ? '' : rawLabels) + '\u0001' + sc + '\u0001'
+      + rowKeyOf(root, textNode) + (ph ? '\u0001ph' : '');
     if (box.html.has(k)) return box.html.get(k);
-    const v = computeBlock(textNode, rawLabels, sc, box, extras);
+    const v = computeBlock(textNode, rawLabels, sc, box, extras, opts);
     box.html.set(k, v);
     return v;
   }

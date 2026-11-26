@@ -239,6 +239,8 @@
        * 缺键 / 非法值 → `'auto'`；显式 `self` 绝不翻回 `auto`（与 fetchEnabled 同一套写法）。
        * `csv: 0`：不进 CSV（仍是 18 列契约）。 */
       fetchScope: KH.Config.normalizeFetchScope(f.fetchScope),
+      /* 【2.0.19.1 · m01400 第 3 条】图片按占位展示：写路径与读路径同一判据（只认 true）。 */
+      imgPlaceholder: f.imgPlaceholder === true,
 
       createdAt: f.createdAt || Date.now(),
       updatedAt: f.updatedAt || Date.now()

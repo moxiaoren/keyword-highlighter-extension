@@ -987,6 +987,47 @@
     return out;
   }
 
+  /** 同一张卡片**抓取表**里的值（2.0.19.1 · 用户 m01400 第 4 条）。
+   * 现场：授权书的「著作权人 / 登记号」是页面自动抓进表的固定内容（不是 OCR 条目），
+   * 面板上明明看得见，`#比` 却说「还没读到值」—— 因为 certBaselineValues 只读 ImgOcr 条目。
+   * 这里补一层：从锚点往上找到**这张卡**（第一个含 `table.kh-table-fetch` 的祖先），
+   * 按 `td.kh-table-label` 匹配字段名，取同一行第二格；**跳过锚点自己所在的行**
+   * （拿授权书自身的值去比就是假通过，与 m07238 口径一致）。图片与 PDF 授权书都走这一层。 */
+  function cardFetchedValues(anchor, wantName) {
+    try {
+      if (!anchor || typeof anchor.getRootNode !== 'function') return [];
+      const TN = KH.TextNorm;
+      const keyOf = (s) => (TN && typeof TN.keyOf === 'function'
+        ? TN.keyOf(s) : String(s == null ? '' : s).replace(WHITE_ALL, '').toLowerCase());
+      const want = keyOf(wantName);
+      if (!want) return [];
+      let card = anchor;
+      while (card && card.parentNode) {
+        const root = card.getRootNode ? card.getRootNode() : null;
+        if (card === root) break;
+        if (typeof card.querySelector === 'function' && card.querySelector('table.kh-table-fetch')) break;
+        card = card.parentNode;
+      }
+      if (!card || typeof card.querySelectorAll !== 'function') return [];
+      const out = [];
+      const rows = card.querySelectorAll('table.kh-table-fetch tr');
+      for (const tr of rows) {
+        if (tr.contains(anchor)) continue;
+        const label = tr.querySelector('td.kh-table-label');
+        const cells = tr.querySelectorAll('td');
+        if (!label || cells.length < 2) continue;
+        const lab = keyOf(label.textContent);
+        if (!lab) continue;
+        if (lab !== want && !(want.length >= 2 && lab.indexOf(want) === 0)) continue;
+        const v = String(cells[1].textContent || '').trim();
+        if (!v || v.length < NEED_MIN_LEN || v.indexOf('\u0001') >= 0) continue;
+        if (out.indexOf(v) < 0) out.push(v);
+        if (out.length >= 6) break;
+      }
+      return out;
+    } catch (e) { return []; }
+  }
+
   /** 一个字段在**当前格**上的取值 ∪ **证书图进表的值**（用户 m07238 口径）。
    * 前一半沿用 `needInfo`（`Fetch.extractFor` + `!`/`^`/`%` 修饰 + 进表行）；
    * 后一半读同一份 `OcrAuto.rowsFor`，不依赖「面板这一轮是否已经算好」（避免时序空值）。 */
@@ -997,6 +1038,9 @@
     try { vals = needInfo(anchor, sub, field, { withCmp: true }).values || []; } catch (e) { vals = []; }
     let base = [];
     try { base = certBaselineValues(meta, rawSpec, selfText); } catch (e) { base = []; }
+    /* 【2.0.19.1 · m01400 第 4 条】页面自动抓进表的固定内容也是基准（授权书的著作权人/登记号
+     * 常常只有这一路来源）。只读同一张卡、且跳过锚点自己那一行。 */
+    try { base = base.concat(cardFetchedValues(anchor, cmpNameOf(rawSpec))); } catch (e) { /* 保持原基准 */ }
     const TN = KH.TextNorm;
     const keyOf = (s) => (TN && typeof TN.keyOf === 'function'
       ? TN.keyOf(s) : String(s == null ? '' : s).replace(WHITE_ALL, '').toLowerCase());

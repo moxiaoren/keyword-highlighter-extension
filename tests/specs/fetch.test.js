@@ -1043,6 +1043,38 @@ module.exports = async function run() {
     truthy(diff.indexOf('李四') >= 0 && diff.indexOf('张三') >= 0, '两条都要在：' + diff);
   });
 
+  /* 【2.0.19.1 · m01400 第 3 条】抓取字段里的图片可以只显示占位（缩略图强占高度宽度）。
+   * 占位必须带原图地址与文件名，否则点开看不了大图。 */
+  suite('fetch · 图片按占位展示（每条规则一个开关）');
+
+  await test('★ 勾了占位：输出 khin-imgph 占位（带原图地址/文件名），不再输出 <img>', () => {
+    const img = H.el('img');
+    img.setAttribute('src', 'https://cdn.test/shot.png');
+    img.setAttribute('alt', '应用截图.png');
+    const t = table([['关键词', 'x'], ['应用截图', { html: [img] }]]);
+    const tn = t.rows[0].children[0].childNodes[0];
+    const plain = String(F.blockFor(tn, '应用截图'));
+    truthy(plain.indexOf('<img') >= 0, '不勾占位时照旧出缩略图：' + plain.slice(0, 200));
+    const ph = String(F.blockFor(tn, '应用截图', new WeakMap(), 'self', [], { imgPlaceholder: true }));
+    truthy(ph.indexOf('khin-imgph') >= 0, '★ 勾了要出占位元素：' + ph.slice(0, 300));
+    truthy(ph.indexOf('<img') < 0, '★ 占位模式下不许再出现 <img>（那还是会下载/占位）：' + ph.slice(0, 300));
+    truthy(ph.indexOf('data-khimg="https://cdn.test/shot.png"') >= 0, '占位要带原图地址（点开看大图）');
+    truthy(ph.indexOf('应用截图.png') >= 0, '占位要显示文件名');
+  });
+
+  await test('★ 同一张表两条规则：一条占位一条缩略图不许串味（缓存键要区分）', () => {
+    const img = H.el('img');
+    img.setAttribute('src', 'https://cdn.test/b.png');
+    img.setAttribute('alt', 'b.png');
+    const t = table([['关键词', 'x'], ['应用截图', { html: [img] }]]);
+    const tn = t.rows[0].children[0].childNodes[0];
+    const cache = new WeakMap();
+    const a = String(F.blockFor(tn, '应用截图', cache, 'self', [], { imgPlaceholder: true }));
+    const b = String(F.blockFor(tn, '应用截图', cache, 'self', [], {}));
+    truthy(a.indexOf('khin-imgph') >= 0, '先按占位取：' + a.slice(0, 160));
+    truthy(b.indexOf('<img') >= 0, '★ 再按缩略图取必须拿到 <img>，不能命中占位那份缓存：' + b.slice(0, 200));
+  });
+
   suite('fetch · 假表格（无 <table>）');
 
   await test('★ div/flex 假表格：按标签找元素取右邻兄弟', () => {

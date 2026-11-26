@@ -262,6 +262,9 @@
           /** 抓取后续字段：允许"普通词 + 抓取"组合（旧版 _extractFetched 的用法）；
            * 模块未启用（`fetchEnabled === false`）→ 归一成空串＝这条规则没有抓取字段 */
           fetchLabels: fetchOn ? (kw.fetchLabels == null ? '' : String(kw.fetchLabels)) : '',
+          /* 【2.0.19.1 · m01400 第 3 条】图片按占位展示：跟着这条规则一起进运行期 meta，
+           * 面板渲染抓取表时据此把小图换成占位（点开仍看大图）。 */
+          imgPlaceholder: fetchOn ? kw.imgPlaceholder === true : false,
           display: String(kw.text == null ? '' : kw.text),
           groupId: kw.groupId || null
         }, v.meta, ocrMeta(kw), { important: v.meta.important || wantFetch })

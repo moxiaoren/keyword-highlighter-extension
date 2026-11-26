@@ -536,13 +536,25 @@
      * 三态与图片一致（蓝=正在读 / 红=命中 / 绿=读完没命中），配色也沿用同一组
      * （用户口径：「识别时蓝色框，无命中绿色框，命中时增加红框」）。 */
     .khin-pdf {
-      display: inline-block; vertical-align: middle; margin: 3px 6px 3px 0;
-      padding: 1px 7px; border-radius: 4px; cursor: pointer; user-select: none;
-      font-size: 10px; font-weight: 700; letter-spacing: .4px; line-height: 16px;
+      /* 【2.0.19.1 · m01400 第 2 条 A】占位牌收窄：原来 1px 7px + 字距 .4px 在表格里仍显宽，
+       * 用户要"PDF 占位符缩小宽度"。改成贴着字，三态边框还在（状态判读不受影响）。 */
+      display: inline-block; vertical-align: middle; margin: 2px 4px 2px 0;
+      padding: 0 6px; border-radius: 3px; cursor: pointer; user-select: none;
+      font-size: 10px; font-weight: 700; letter-spacing: 0; line-height: 14px;
       color: #475569; background: #eef2f7; box-shadow: inset 0 0 0 2px #cbd5e1;
       white-space: nowrap;
     }
     .khin-pdf:hover { background: #e3e9f2; }
+    /* 【2.0.19.1 · m01400 第 3 条】「图片按占位展示」的小牌：比缩略图省地方得多，
+     * 但保留可点（点开仍是完整大图 + 全文栏），文件名放不下时省略号收尾。 */
+    .khin-imgph {
+      display: inline-block; vertical-align: middle; margin: 2px 4px 2px 0;
+      padding: 0 6px; border-radius: 3px; cursor: pointer; user-select: none;
+      max-width: 22em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      font-size: 10px; line-height: 16px; color: #475569;
+      background: #f1f5f9; box-shadow: inset 0 0 0 1px #cbd5e1;
+    }
+    .khin-imgph:hover { background: #e3e9f2; }
     /* 【2.0.14.6 · m13311】先占位、后认领：地址还没抓回来时是这张灰牌（不参与红/绿判定） */
     .khin-pdf.khin-pdf-pending { box-shadow: inset 0 0 0 2px #94a3b8; color: #64748b; }
     .khin-pdf.khin-pdfbusy { box-shadow: inset 0 0 0 2px #3b82f6; color: #1d4ed8; }
@@ -1265,7 +1277,8 @@
    *
    * v1.99.99.12 又按用户实测微调三处：
    *   · **容器收紧 + 容器内点击一律不退出**：整块内容（[上一张][图][下一张] + 下方工具条）是一个
-   *     **有界的容器**(`.kh-lb-stage`)，容器**内部**任何点击都不关；只有点容器外的暗色遮罩（或 Esc）才关。
+   *     **图片本体 / 控件栏 / 全文栏**之内点不关；点在图片周围的空白（或 Esc、关闭键）才关。
+   *     【2.0.19.1 · m01400 第 1 条】容器外观已去掉（只剩图片 + 底部控件栏），旧口径「容器内不关」随之作废。
    *     （原来"点遮罩即关"的判定范围是整屏，紧贴图片的空白也会误关。）
    *   · 左右按钮**贴着图片**（容器内 flex 排布、间距 12px），不再钉在视口两端；
    *   · **放大后图片不再压住按钮**：图片 z-index 低于按钮与工具条（`transform` 不改布局盒，
@@ -1284,21 +1297,20 @@
   const LIGHTBOX_STYLE = `
     /* 2.0.16.8（用户 m21072）：打开大图不再压暗整页 —— 用户要一边看大图一边对面板里的重要笔记。
      * 遮罩仍铺满视口（点空白关闭的判定靠它），但改成透明；层级必须降到面板（2147483646）之下，
-     * 否则透明遮罩照样吃掉面板的点击。浮层感由 .kh-lb-stage 的实心底色 + 描边 + 外发光环承担。 */
+     * 否则透明遮罩照样吃掉面板的点击。2.0.19.1 起不再有容器外观（无底色/描边/外环）。 */
     .kh-lb { position: fixed; inset: 0; z-index: 2147483400; background: transparent;
       display: flex; align-items: center; justify-content: center; cursor: default; }
     .kh-lb[hidden] { display: none !important; }
     /* 容器：有界的一块（图片 + 左右按钮 + 下方工具条）。**容器内点击一律不关** —— 关闭只认容器外的遮罩。
      * v1.99.99.18 用户反馈："明确大图容器范围，目前没有做区分" → 容器给**实心底色 + 边框 + 圆角阴影**，
      * 与暗色遮罩明显区分；按钮也改成**不透明底色 + 描边 + 白字**，避免"按钮和图片颜色接近时看不清"。 */
+    /* 【2.0.19.1 · m01400 第 1 条】大图模式不再有容器：舞台只负责排版（图片 + 下方控件栏），
+     * 没有底色、描边、阴影、内边距 —— 用户原话"去掉容器，只保留图片"。关闭仍是「点图片外」。 */
     .kh-lb-stage {
-      display: flex; flex-direction: column; align-items: center; gap: 10px;
-      padding: 12px; max-width: 96vw; max-height: 96vh;
-      position: relative;              /* T41：全文栏的定位祖先 —— 坐标按容器算，不再按整个视口算 */
-      border: 1px solid rgba(255,255,255,.3); border-radius: 12px;
-      background: rgba(22,26,34,.96);                      /* 实心底色：一眼看出"这是插件的容器" */
-      /* 2.0.16.8：没有暗色遮罩之后，浮层边界全靠自带描边与品牌色外环在白页上也说得清。 */
-      box-shadow: 0 18px 60px rgba(0,0,0,.38), 0 0 0 1px rgba(0,0,0,.28), 0 0 0 4px rgba(47,111,181,.22);
+      display: flex; flex-direction: column; align-items: center; gap: 8px;
+      max-width: 96vw; max-height: 96vh;
+      position: relative;
+      padding: 0; border: 0; background: transparent; box-shadow: none;
       cursor: default;
     }
     .kh-lb-row { position: relative; display: flex; align-items: center; gap: 12px; }
@@ -1313,19 +1325,21 @@
     .kh-lb img.kh-lb-dragging { cursor: grabbing; transition: none; }
     /* 左右翻页：紧贴图片两侧（容器内 flex），大点击区（48×48）；层级高于图片。
      * 底色**不透明**（rgba(0,0,0,.42) 那种会被浅色图片透上来）→ 用实心底 + 亮描边 + 白字。 */
+    /* 【2.0.19.1】翻页键现在在底部控件栏里：与其它按钮同高的小胶囊，不再是压在图片两侧的 48px 圆键。 */
     .kh-lb-nav {
       position: relative; z-index: 2;
       flex: 0 0 auto;
-      width: 48px; height: 48px; padding: 0;
+      width: 34px; height: 26px; padding: 0;
       display: flex; align-items: center; justify-content: center;
-      border: 1px solid rgba(255,255,255,.45); border-radius: 50%;
+      border: 1px solid rgba(255,255,255,.45); border-radius: 999px;
       background: #39404e; color: #fff;
       text-shadow: 0 1px 2px rgba(0,0,0,.6);
-      box-shadow: 0 2px 10px rgba(0,0,0,.45);
-      font: inherit; font-size: 24px; line-height: 1; cursor: pointer; }
+      font: inherit; font-size: 16px; line-height: 1; cursor: pointer; }
     .kh-lb-nav:hover { background: #4b5464; border-color: rgba(255,255,255,.75); }
     .kh-lb-nav[hidden] { display: none !important; }
-    .kh-lb-bar { position: relative; z-index: 2; display: flex; align-items: center; gap: 8px;
+    /* 控件栏：居中一行，允许换行（窄视口下不溢出屏幕） */
+    .kh-lb-bar { position: relative; z-index: 2; display: flex; align-items: center; justify-content: center;
+      flex-wrap: wrap; gap: 8px; max-width: 96vw;
       font-size: 12px; color: #e8eef7; cursor: default; }
     /* 工具条按钮：同样改成实心底色（原来是透明底 + 半透明边框，压在图上会糊成一片） */
     .kh-lb-btn, .kh-lb-open { height: 26px; padding: 0 10px; border: 1px solid rgba(255,255,255,.45);
@@ -1336,7 +1350,6 @@
     .kh-lb-btn:hover, .kh-lb-open:hover { background: #4b5464; border-color: rgba(255,255,255,.75); }
     .kh-lb-idx { min-width: 40px; text-align: center; opacity: .9; font-variant-numeric: tabular-nums; }
     .kh-lb-sep { opacity: .35; }
-    .kh-lb-hint { opacity: .75; }
     /* 全文栏（2.0.1.15 需求 5 → T41 视觉重做 → T46 锚点修正 → 2.0.2.1 需求 4）：**独立的可拖动悬浮容器**。
      *   · position: fixed ⇒ 坐标按**视口**算（不再借 .kh-lb-row 当定位祖先）：拖到哪儿就停在哪儿，
      *     行变宽/变窄也不跟着飘。左/上/高由 JS 写（dockSide() 默认停靠、拖动时实时改写）。
@@ -1427,16 +1440,18 @@
     .kh-ocr-table td.kh-ocr-wide { padding-right: 0; color: rgba(255,255,255,.92); }
     /* 【2.0.6.5 需求②】灯箱里的 PDF 占位牌：不加载任何源文件，只告诉用户"这份是 PDF"，
      * 全文与命中在右侧那一栏。 */
+    /* 【2.0.19.1 · m01400 第 2 条 A】占位牌明显做小：原来 420×300 在无容器的舞台上像一块大白板，
+     * 用户要"PDF 占位符缩小宽度"。改成一块窄牌（180 宽、按内容高），正文仍去右侧全文栏看。 */
     .kh-lb-pdfbox {
       display: flex; flex-direction: column; align-items: center; justify-content: center;
-      gap: 10px; width: min(420px, 70vw); height: min(300px, 55vh); border-radius: 10px;
-      background: rgba(255,255,255,.06); box-shadow: inset 0 0 0 2px rgba(255,255,255,.22);
+      gap: 6px; width: min(200px, 60vw); min-height: 96px; padding: 14px 12px; border-radius: 8px;
+      background: rgba(22,26,34,.9); box-shadow: inset 0 0 0 1px rgba(255,255,255,.2);
       color: rgba(255,255,255,.9); user-select: none;
     }
     .kh-lb-pdfbox[hidden] { display: none; }
-    .kh-lb-pdfmark { font-size: 30px; font-weight: 800; letter-spacing: 2px; color: #f87171; }
+    .kh-lb-pdfmark { font-size: 18px; font-weight: 800; letter-spacing: 1px; color: #f87171; }
     .kh-lb-pdfname {
-      font-size: 12px; color: rgba(255,255,255,.72); max-width: 88%; text-align: center;
+      font-size: 11px; color: rgba(255,255,255,.72); max-width: 100%; text-align: center;
       word-break: break-all;
     }
     /* 【2.0.16.8 · 用户 m22343】PDF 本体进容器：字节由后台取回（带 cookie），这里用 blob: 交给
@@ -1449,7 +1464,7 @@
     }
     .kh-lb-pdfframe[hidden] { display: none; }
     .kh-lb-pdfstate {
-      font-size: 12px; line-height: 1.5; color: rgba(255,255,255,.72); max-width: 88%;
+      font-size: 11px; line-height: 1.5; color: rgba(255,255,255,.72); max-width: 100%;
       text-align: center; word-break: break-all;
     }
     /* 【已删】原来这里有一条 has-side 后代选择器（"全文栏出现就把图片收窄"）：
@@ -1576,13 +1591,13 @@
         '<div class="kh-lb" hidden>' +
         '<div class="kh-lb-stage">' +
         '<div class="kh-lb-row">' +
-        '<button class="kh-lb-nav kh-lb-prev" type="button" title="上一张（←）" aria-label="上一张">‹</button>' +
+        /* 【2.0.19.1 · m01400 第 1 条】上一张/下一张已合并到下方控件栏（不再贴着图两侧），
+         * 这里只留图片本身 —— 大图模式不再有"容器"外观。 */
         /* 【2.0.6.5 需求②】PDF 条目在灯箱里不渲染源文件（用户口径：无需展示 pdf 源文件），
          * 只摆一块占位牌，右侧全文栏照常给抽出来的全文与命中词。 */
         '<div class="kh-lb-pdfbox" hidden><span class="kh-lb-pdfmark">PDF</span><span class="kh-lb-pdfname"></span><span class="kh-lb-pdfstate"></span></div>' +
         '<iframe class="kh-lb-pdfframe" hidden title="PDF"></iframe>' +
         '<img class="kh-lb-img" alt="">' +
-        '<button class="kh-lb-nav kh-lb-next" type="button" title="下一张（→）" aria-label="下一张">›</button>' +
         /* 全文栏（T46）：DOM 顺序 = 图 → 导航（‹/›）→ 浮层。浮层排在行内最后，与两个导航键共用
          * 同一个定位祖先（.kh-lb-row 的 position:relative），右缘只可能落在导航外侧的间隙里 ——
          * 上一版把它挂成容器的直接子元素（行与工具条之后）时，真机实测它压住 › 按钮达 48px
@@ -1598,7 +1613,10 @@
         '<span class="kh-lb-side-rs"></span>' +
         '</div>' +
         '</div>' +
+        /* 控件栏：图片下方**居中**一行 —— 翻页 ‹ › 与缩放/旋转/全文栏/关闭并入同一条。
+         * 原来 ‹ › 贴在图两侧、工具条在下面，改成一条后看图区只剩图片本身。 */
         '<div class="kh-lb-bar">' +
+        '<button class="kh-lb-nav kh-lb-prev" type="button" title="上一张（←）" aria-label="上一张">‹</button>' +
         '<span class="kh-lb-idx"></span>' +
         '<span class="kh-lb-sep">|</span>' +
         '<button class="kh-lb-btn kh-lb-out" type="button" title="缩小（-）">－</button>' +
@@ -1611,7 +1629,9 @@
         '<button class="kh-lb-btn kh-lb-close" type="button"></button>' +
         '<span class="kh-lb-sep">|</span>' +
         '<button class="kh-lb-open" type="button">在新标签页打开</button>' +
-        '<span class="kh-lb-hint">滚轮缩放；拖动图片可平移；拖动全文栏标题可移动，双击复位；点图片外区域或按 Esc 关闭</span>' +
+        '<button class="kh-lb-nav kh-lb-next" type="button" title="下一张（→）" aria-label="下一张">›</button>' +
+        /* 【2.0.19.1 · m01400 第 1 条】操作提示整句删掉（用户点名要删）：
+         * 滚轮/拖动/双击复位都是手势，写在界面上只占地方。 */
         '</div>';
       const box = sr.querySelector('.kh-lb');
       const img = sr.querySelector('.kh-lb-img');
@@ -2102,15 +2122,24 @@
        * 所以判定改成以**按下的位置**为准（pointerdown 记一次，click 只读它），抬手落点不再决定关不关。 */
       const stage = sr.querySelector('.kh-lb-stage');
       const bar = sr.querySelector('.kh-lb-bar');
+      /* 【2.0.19.1 · m01400 第 1 条】容器外观去掉之后，"点图片外退出"必须按**看得见的东西**判：
+       * 图片本体、PDF 占位牌、底部控件栏、全文栏 —— 这四块之内不关，其余（图片周围那片空白）一律关。
+       * 旧写法用 stage.contains 兜住整个舞台，舞台透明了还照旧判就会「怎么点都不关」。 */
+      const pdfCard = sr.querySelector('.kh-lb-pdfbox');
+      const keepers = [img, bar, side, pdfCard];
+      const inKeep = (t) => {
+        if (!t) return false;
+        for (const k of keepers) { if (k && (k === t || k.contains(t))) return true; }
+        return false;
+      };
       let pressInStage = false;
       box.addEventListener('pointerdown', (e) => {
-        const t = e.target;
-        pressInStage = !!(t && stage.contains(t));
+        pressInStage = inKeep(e.target);
       });
       box.addEventListener('click', (e) => {
         const t = e.target;
-        if (pressInStage) return;                           /* 按下在容器内 ⇒ 这一下不算"点遮罩" */
-        if (t && stage.contains(t)) return;
+        if (pressInStage) return;                           /* 按下在图片/控件里 ⇒ 这一下不算"点外面" */
+        if (inKeep(t)) return;
         /* 浮层现在就在容器内的行里，下面这条是兜底（T46 之前它在容器外，必须单列）—— 少了它，
          * 在栏里点一下选词就会被当成"点到容器外"而把灯箱关掉（这栏存在的意义就是让人读和抄）。 */
         if (t && side.contains(t)) return;
@@ -2891,10 +2920,16 @@
           openLightbox(ps, pAlt, [entry], 0);
           return;
         }
-        if (!t || t.tagName !== 'IMG' || !t.src) return;
+        /* 【2.0.19.1 · m01400 第 3 条】「图片按占位展示」的小牌同样点得开：它带
+         * `data-khimg` 地址与 `data-khimg-name` 文件名，走同一条灯箱（相册里连占位图一起翻）。
+         * 只查自身与父亲（与上面 PDF 小标同一个写法：meta-check 对带 kh- 的 closest 直接红灯）。 */
+        const phEl = (t && t.classList && t.classList.contains('khin-imgph')) ? t
+          : ((t && t.parentNode && t.parentNode.classList && t.parentNode.classList.contains('khin-imgph')) ? t.parentNode : null);
+        if (!phEl && (!t || t.tagName !== 'IMG' || !t.src)) return;
         e.preventDefault();
-        const scope = (t.closest && (t.closest('td, th') || t.closest('table'))) || null;
-        const all = scope ? Array.prototype.slice.call(scope.querySelectorAll('img')) : [t];
+        const openEl = phEl || t;
+        const scope = (openEl.closest && (openEl.closest('td, th') || openEl.closest('table'))) || null;
+        const all = scope ? Array.prototype.slice.call(scope.querySelectorAll('img, span.khin-imgph[data-khimg]')) : [openEl];
         /* OCR 结果按 `src` 建索引：相册条目带上识别全文，灯箱右侧才能显示（用户 m00631 口径）。
          * `imgItems` 就是本面板当前的 OCR 条目；两边都过 `absSrc` 归一，防"相对 vs 绝对"对不上。
          * 【2.0.2.7 用户 m00292】命中词另建一份同键索引：灯箱「识别原文」栏要把它们标出来
@@ -2912,13 +2947,17 @@
         let index = 0;
         for (let i = 0; i < all.length; i++) {
           const im = all[i];
-          const s = im.src || '';                            // 用**解析后**的绝对地址，和 t.src 同一口径
+          /* 缩略图取解析后的 src；占位小牌取 data-khimg（同一条归一化路径，防"相对 vs 绝对"对不上） */
+          const isPh = !!(im.classList && im.classList.contains('khin-imgph'));
+          const rawSrc = isPh ? (im.getAttribute('data-khimg') || '') : (im.src || '');
+          const s = isPh ? absSrc(rawSrc) : rawSrc;
           if (!s || !LIGHTBOX_SRC_OK.test(s)) continue;       // 占位/非法协议不进相册
-          if (im === t) index = list.length;
+          if (im === openEl) index = list.length;
           const k = absSrc(s);
           /* 条目没有文本时再问一次缓存（2.0.2.15 需求①：在大图里认过的图，下次打开还得看得见全文） */
           const cachedText = (KH.ImgOcr && typeof KH.ImgOcr.textOf === 'function') ? KH.ImgOcr.textOf(s) : '';
-          list.push({ src: s, alt: im.getAttribute('alt') || '',
+          list.push({ src: s, alt: (isPh ? (im.getAttribute('data-khimg-name') || '')
+            : (im.getAttribute('alt') || '')),
             text: textBySrc.get(k) || cachedText || '', hits: hitsBySrc.get(k) || [] });
         }
         if (!list.length) return;
@@ -6035,7 +6074,10 @@
     for (const h of list) {
       try {
         h.meta.fetchHtml = (KH.Fetch && h.textNode)
-          ? (KH.Fetch.blockFor(h.textNode, h.meta.fetchLabels, fetchCache, h.meta.fetchScope, ocrExtraRows(h.meta)) || '')
+          /* 【2.0.19.1 · m01400 第 3 条】图片按占位展示：这条规则勾了才把缩略图换成小占位，
+           * 未勾（缺键）一律照旧显示缩略图 —— 存量配置行为不变。 */
+          ? (KH.Fetch.blockFor(h.textNode, h.meta.fetchLabels, fetchCache, h.meta.fetchScope,
+            ocrExtraRows(h.meta), { imgPlaceholder: !!(h.meta && h.meta.imgPlaceholder) }) || '')
           : '';
       } catch (err) {
         h.meta.fetchHtml = '';

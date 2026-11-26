@@ -2023,19 +2023,21 @@ module.exports = async function runContent(ctx) {
     truthy(!/translate\(0px, *0px\)/.test(dragged.tf), '拖动后位移不该还是 0：' + dragged.tf);
     falsy(dragged.hidden, '拖动过程/之后都不该退出大图模式');
 
-    // 点**容器内**（图片与按钮之间的留白）也不该退出（v1.99.99.12 用户口径："点击容器内都不会退出"）
+    /* 【2.0.19.1 · m01400 第 1 条】大图模式去掉容器外观：图片周围那片空白**就是**"图片外"，
+     * 点它应该退出（旧口径"点容器内留白不退出"随容器一起作废）。 */
     const pad = await page.evaluate(() => {
-      const st = document.getElementById('kh-note-lightbox').shadowRoot.querySelector('.kh-lb-stage').getBoundingClientRect();
-      return { x: Math.round(st.left + 4), y: Math.round(st.top + 4) };
+      const im = document.getElementById('kh-note-lightbox').shadowRoot.querySelector('.kh-lb-img').getBoundingClientRect();
+      return { x: Math.round(im.left - 10), y: Math.round(im.top - 10) };
     });
+    truthy(pad.x > 2 && pad.y > 2, '空白采样点应落在视口内，实际 ' + JSON.stringify(pad));
     await page.mouse.click(pad.x, pad.y);
-    await page.waitForTimeout(200);
-    falsy((await lbState()).hidden, '点容器内的留白也不该退出大图模式（实际 ' + JSON.stringify(pad) + '）');
+    await page.waitForTimeout(250);
+    truthy((await lbState()).hidden, '点图片外的空白应退出大图模式（不再有容器内留白），实际 ' + JSON.stringify(pad));
 
-    // 点图片**以外**的遮罩区域 → 退出
+    // 点更远处的遮罩区域同样退出
     await page.mouse.click(12, 12);
     await page.waitForTimeout(250);
-    truthy((await lbState()).hidden, '点图片以外的遮罩区域才应退出大图模式');
+    truthy((await lbState()).hidden, '点图片以外区域应退出大图模式');
 
     await page.mouse.click(img.x, img.y);
     await page.waitForTimeout(300);
@@ -2049,7 +2051,7 @@ module.exports = async function runContent(ctx) {
   /* ------------------------------------------- 7e. 灯箱相册：同单元格才算"一组" */
   group('7c2. 看大图：同单元格才算相册（缩放 / 旋转 / 上一张下一张）', { aspects: ['interact'] });
 
-  await test('★ 同格两张图 → 可翻页（按钮在图片两侧）；异格单张 → 隐藏上下张；缩放/旋转/复位可用', async () => {
+  await test('★ 同格两张图 → 可翻页（按钮在下方控件栏居中）；异格单张 → 隐藏上下张；缩放/旋转/复位可用', async () => {
     await fresh('lightbox-gallery.html');
     /* 抓取重建后的 DOM 里图片是否还在 <td> 里，是"按单元格归组"的前提，先测出来 */
     const readImgs = () => page.evaluate(() => {
@@ -2089,16 +2091,21 @@ module.exports = async function runContent(ctx) {
         idx: sr.querySelector('.kh-lb-idx').textContent,
         prevHidden: sr.querySelector('.kh-lb-prev').hidden,
         nextHidden: sr.querySelector('.kh-lb-next').hidden,
-        /* 左右翻页按钮的位置（v1.99.99.12 用户要求"适当靠近图片本身"）：应紧贴图片两侧、竖直对齐图片中心 */
+        /* 【2.0.19.1 · m01400 第 1 条】翻页键已并入下方控件栏：位置改成"在栏里、栏在图下方、
+         * 与图水平居中对齐"，尺寸也从小圆键降为与其它按钮同高的小胶囊。 */
         nav: (function () {
           const im = sr.querySelector('.kh-lb-img').getBoundingClientRect();
-          const pr = sr.querySelector('.kh-lb-prev').getBoundingClientRect();
-          const nx = sr.querySelector('.kh-lb-next').getBoundingClientRect();
+          const bar = sr.querySelector('.kh-lb-bar');
+          const br = bar.getBoundingClientRect();
+          const pr = sr.querySelector('.kh-lb-prev');
+          const nx = sr.querySelector('.kh-lb-next');
+          const prr = pr.getBoundingClientRect();
+          const nxr = nx.getBoundingClientRect();
           return {
-            prevW: Math.round(pr.width), nextW: Math.round(nx.width),
-            gapLeft: Math.round(im.left - pr.right), gapRight: Math.round(nx.left - im.right),
-            cxPrev: Math.round(pr.top + pr.height / 2), cxNext: Math.round(nx.top + nx.height / 2),
-            imgMid: Math.round(im.top + im.height / 2),
+            prevW: Math.round(prr.width), nextW: Math.round(nxr.width),
+            inBar: bar.contains(pr) && bar.contains(nx),
+            below: Math.round(br.top - im.bottom),
+            barMid: Math.round(br.left + br.width / 2), imgMid: Math.round(im.left + im.width / 2),
             stage: (function () { const s = sr.querySelector('.kh-lb-stage').getBoundingClientRect(); return { w: Math.round(s.width), h: Math.round(s.height) }; })(),
             vw: window.innerWidth
           };
@@ -2124,15 +2131,15 @@ module.exports = async function runContent(ctx) {
     eq(s.idx, '1 / 2', '同格两张 → 相册索引 1 / 2');
     eq(s.prevHidden, false, '同格两张 → 「上一张」应可见');
     eq(s.nextHidden, false, '同格两张 → 「下一张」应可见');
-    /* v1.99.99.12 用户口径：翻页按钮要**靠近图片本身**（原来钉在视口两端太分离）、点击区够大 */
+    /* 【2.0.19.1 · m01400 第 1 条】翻页键在底部控件栏里、与图片水平居中；点击区仍要够大 */
     console.log('        翻页按钮位置: ' + JSON.stringify(s.nav));
-    truthy(s.nav.prevW >= 40 && s.nav.nextW >= 40, '翻页按钮点击区应够大（≥40px），实际 ' + JSON.stringify(s.nav));
-    truthy(s.nav.gapLeft >= 0 && s.nav.gapLeft <= 30, '「上一张」应紧贴图片左侧（间隔 ≤30px），实际 ' + s.nav.gapLeft);
-    truthy(s.nav.gapRight >= 0 && s.nav.gapRight <= 30, '「下一张」应紧贴图片右侧（间隔 ≤30px），实际 ' + s.nav.gapRight);
-    truthy(Math.abs(s.nav.cxPrev - s.nav.imgMid) <= 6 && Math.abs(s.nav.cxNext - s.nav.imgMid) <= 6,
-      '左右按钮应与图片竖直居中对齐，实际 ' + JSON.stringify(s.nav));
-    truthy(s.nav.stage.w < s.nav.vw - 40, '容器应是有界的一块（不是整屏），实际 ' + JSON.stringify(s.nav.stage));
-    /* v1.99.99.18：容器要有可辨识的底色/边框；按钮底色**不透明**且白字（图片再花也看得清） */
+    truthy(s.nav.prevW >= 28 && s.nav.nextW >= 28, '翻页按钮点击区应够大（≥28px），实际 ' + JSON.stringify(s.nav));
+    truthy(s.nav.inBar, '上一张/下一张必须在下方控件栏里（不再贴图片两侧），实际 ' + JSON.stringify(s.nav));
+    truthy(s.nav.below >= 0, '控件栏应在图片**下方**，实际间距 ' + s.nav.below);
+    truthy(Math.abs(s.nav.barMid - s.nav.imgMid) <= 8,
+      '控件栏应与图片水平居中对齐，实际 ' + JSON.stringify(s.nav));
+    truthy(s.nav.stage.w < s.nav.vw - 40, '舞台宽度仍应给视口留边（不是整屏），实际 ' + JSON.stringify(s.nav.stage));
+    /* 容器外观必须真的消失（用户原话"去掉容器，只保留图片"），并且那句操作提示也要没了 */
     const look = await page.evaluate(() => {
       const sr = document.getElementById('kh-note-lightbox').shadowRoot;
       const cs = (sel) => getComputedStyle(sr.querySelector(sel));
@@ -2140,13 +2147,18 @@ module.exports = async function runContent(ctx) {
       const alpha = (c) => { const m = /rgba?\(([^)]+)\)/.exec(c); const p = m ? m[1].split(',').map((x) => parseFloat(x)) : []; return p.length === 4 ? p[3] : 1; };
       return {
         stageBg: st.backgroundColor, stageBorder: st.borderTopWidth + ' ' + st.borderTopStyle,
+        stageShadow: st.boxShadow, stagePad: st.paddingTop,
+        hasHint: !!sr.querySelector('.kh-lb-hint'),
         navBg: nav.backgroundColor, navA: alpha(nav.backgroundColor), navColor: nav.color,
         btnBg: btn.backgroundColor, btnA: alpha(btn.backgroundColor)
       };
     });
-    console.log('        容器/按钮观感: ' + JSON.stringify(look));
-    truthy(look.stageBg !== 'rgba(0, 0, 0, 0)', '大图容器要有可辨识的底色（用户要求"明确容器范围"），实际 ' + look.stageBg);
-    truthy(look.stageBorder.indexOf('0px') !== 0, '大图容器要有边框，实际 ' + look.stageBorder);
+    console.log('        舞台/按钮观感: ' + JSON.stringify(look));
+    eq(look.stageBg, 'rgba(0, 0, 0, 0)', '大图舞台不该再有底色（容器外观已去掉），实际 ' + look.stageBg);
+    eq(look.stageBorder, '0px none', '大图舞台不该再有边框，实际 ' + look.stageBorder);
+    eq(look.stagePad, '0px', '大图舞台不该再有内边距（图片直接贴内容区），实际 ' + look.stagePad);
+    falsy(look.hasHint, '那句"滚轮缩放；拖动图片可平移…"的操作提示应已删除');
+    truthy(look.btnA === 1 && look.navA === 1, '控件栏按钮底色必须不透明（图片再花也看得清），实际 ' + JSON.stringify(look));
     eq(look.navA, 1, '左右翻页按钮底色必须**不透明**（否则和图片颜色混在一起看不清），实际 ' + look.navBg);
     eq(look.navColor.replace(/\s/g, ''), 'rgb(255,255,255)', '翻页按钮应是白字，实际 ' + look.navColor);
     eq(look.btnA, 1, '工具条按钮底色也必须不透明，实际 ' + look.btnBg);

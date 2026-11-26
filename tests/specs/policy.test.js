@@ -19,7 +19,7 @@ const ROOT = path.join(__dirname, '..', '..');
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 
 /** 后台模块用独立沙盒加载；fetch 由每条用例替换。 */
-function loadPolicy(fetchImpl, extraChrome, kh) {
+function loadPolicy(fetchImpl, extraChrome, kh, extraSandbox) {
   const mem = {};
   const chrome = Object.assign({
     storage: {
@@ -54,6 +54,8 @@ function loadPolicy(fetchImpl, extraChrome, kh) {
     TextDecoder: TextDecoder,
     fetch: fetchImpl
   };
+  /* 【2.0.19.1】调用方可以注入 self.OcrHost 等后台单例（PDF 抽字走它） */
+  if (extraSandbox) Object.assign(sandbox, extraSandbox);
   sandbox.self = sandbox;
   /* 【2.0.16.4】policy 的「读不到时自动开后台标签页」开关要通过 KH.Config.load() 读，
    * 这里允许调用方注入自己的 KH 桩（例如关掉开关的那个用例）。 */
@@ -601,5 +603,47 @@ module.exports = async function run() {
     const js = read('options/options.js');
     truthy(/id="rst-cache"/.test(html), '设置页要有「读正文缓存」勾选（隐私说明里写了可清空）');
     truthy(/POLICY_CACHE_CLEAR/.test(js), '勾了要真发消息请后台清，不能只改文案');
+  });
+
+  /* ---------------- 【2.0.19.1 · m01400 第 5 条】PDF 形式的隐私政策 ----------------
+   * 用户案例 1（citic-wealth 的 .pdf）本地实测能抽出 36,315 字，浏览器 PDF 查看器里
+   * document.body.innerText 却是空的 ⇒ 必须在后台取字节、交离屏 offscreen/pdf-text.js 抽字。 */
+  const PDF_BODY = '本政策说明我们如何收集与使用个人信息：收集设备信息、日志信息与账号信息，'
+    + '并说明保存期限、共享情形、注销渠道与投诉方式，请在使用前完整阅读并理解。';
+
+  await test('★ 地址是 .pdf：取字节交离屏抽正文，不再叫 HTML 抓取', async () => {
+    const asked = [];
+    let net = 0;
+    const { Policy } = loadPolicy(async () => { net++; throw new Error('不该走 HTML 抓取'); }, null, {}, {
+      OcrHost: { ask: async (req) => { asked.push(req); return { text: PDF_BODY, warnings: ['7 个字体没有 ToUnicode 映射'] }; } }
+    });
+    const r = await Policy.fetchText('https://p.test/files/PRIVACY.PDF', { hints: ['设备信息'] });
+    truthy(r.ok, '文本型 PDF 要读成功：' + JSON.stringify(r).slice(0, 300));
+    eq(r.via, 'pdf', '来源要写 pdf');
+    truthy(String(r.text).indexOf('设备信息') >= 0, '正文要带出 PDF 里的字');
+    eq(asked.length, 1, '只问离屏一次');
+    eq(asked[0].type, 'kh:ocr:pdf', '★ 复用 OCR_PDF 通道（离线引擎读不了 PDF）');
+    eq(asked[0].src, 'https://p.test/files/PRIVACY.PDF', '把原地址原样交过去');
+    eq(net, 0, 'PDF 已抽到正文 ⇒ 后面的 HTML 链路一条都不该试');
+  });
+
+  await test('★ 扫描件 PDF（抽不到字）：如实失败并说原因，不冒充「政策里没有」', async () => {
+    const { Policy } = loadPolicy(async () => { throw new Error('不该联网'); }, null, {}, {
+      OcrHost: { ask: async () => ({ text: '   ' }) }
+    });
+    const r = await Policy.fetchText('https://p.test/files/scan.pdf');
+    falsy(r.ok, '抽不到字就是失败：' + JSON.stringify(r).slice(0, 300));
+    truthy(/扫描件|PDF/.test(String(r.reason || '')), '原因要说清是 PDF 抽不出字：' + r.reason);
+  });
+
+  await test('★ 普通网页不走 PDF 通道（别为每张卡都启动离屏）', async () => {
+    let asked = 0;
+    const { Policy } = loadPolicy(page('<html><body><h1>某某隐私政策</h1><p>' + PDF_BODY + '</p></body></html>'), null, {}, {
+      OcrHost: { ask: async () => { asked++; return { text: PDF_BODY }; } }
+    });
+    const r = await Policy.fetchText('https://p.test/privacy.html');
+    truthy(r.ok, JSON.stringify(r).slice(0, 200));
+    eq(asked, 0, '★ 不是 .pdf 就一次都不该问离屏');
+    eq(r.via, 'fetch', '普通网页来源仍是 fetch');
   });
 };

@@ -8,8 +8,11 @@
  * 这里锁住修复后的口径：失败也要有 src（或退化成序号键），条目必须在、原因必须如实。
  */
 'use strict';
+const fs = require('fs');
+const path = require('path');
 const H = require('../harness');
 const { suite, test, eq, truthy } = H;
+const read = (rel) => fs.readFileSync(path.join(__dirname, '..', '..', rel), 'utf8');
 
 /** 造一个假 <img>（垫片元素 + 只读属性；`visibleEnough` 在垫片里因为没有 getBoundingClientRect 会放行） */
 function fakeImg(attrs) {
@@ -869,5 +872,19 @@ module.exports = async function run() {
     truthy(order[0].indexOf('PRIOcert') >= 0 || order[0].indexOf('PRIOapp') >= 0, '★ 第一张必须是两类证书之一');
     truthy(order[order.length - 1].indexOf('PRIOauth') >= 0, '★ 授权书必须排在最后');
     KH.features.get('img-ocr').clear(null, { reason: 'destroy' });
+  });
+
+  /* 【2.0.19.1 · m01400 第 4 条】授权书比对基准：卡片上「自动抓取进表」的固定内容也算。
+   * 用户的现场是：著作权人/登记号已经在抓取表里（页面自动抓的），图片动态词却报「没读到」——
+   * 因为 certBaselineValues 只读 ImgOcr 条目（OCR/PDF），读不到 Fetch 抓进表的值。 */
+  await test('★ 2.0.19.1 抓取表值进基准：跳过锚点自己那一行，防「拿授权书自己当答案」', () => {
+    const src = read('src/features/img-ocr.js');
+    truthy(src.indexOf('function cardFetchedValues(anchor, wantName)') >= 0, '要有独立取值函数（别塞进 certBaselineValues 里）');
+    truthy(src.indexOf("querySelector('table.kh-table-fetch')") >= 0, '★ 只认抓取表（合并行不是抓取表，别混）');
+    truthy(src.indexOf('if (tr.contains(anchor)) continue;') >= 0,
+      '★ 锚点自己那一行必须跳过：否则授权书能从自己那张图/那行里读到值，比对变成假通过');
+    truthy(src.indexOf('base = base.concat(cardFetchedValues(anchor, cmpNameOf(rawSpec)))') >= 0,
+      '★ 接在 certBaselineValues 之后并入基准（原有四层来源不许动）');
+    truthy(src.indexOf("cells[1]") >= 0, '取右邻格的值（kh-table-label 的兄弟格）');
   });
 };

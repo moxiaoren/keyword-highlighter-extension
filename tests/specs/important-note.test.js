@@ -1628,6 +1628,35 @@ module.exports = async function run() {
       '★ 浮层盒模型要含边框：否则 style.width 与渲染宽度永远差 2px，读回就再叠一次');
   });
 
+  /* 【2.0.19.1 · m01400 第 1 条】大图模式去掉容器：只留图片、翻页进底栏、提示删除、
+   * 点图片外（含原容器内空白）退出；图片占位可点击看大图。 */
+  await test('★ 2.0.19.1 大图模式无容器：舞台透明、翻页在底栏、提示已删、点图外关闭', () => {
+    const src = read('src/features/important-note.js');
+    truthy(src.indexOf('kh-lb-hint') < 0, '★ 那句「滚轮缩放；拖动图片可平移…」必须整条删掉（含样式与 DOM）');
+    truthy(/\.kh-lb-stage \{[^}]*background: transparent;/.test(src), '★ 舞台不再有底色（容器外观去掉）');
+    truthy(/\.kh-lb-stage \{[^}]*border: 0;/.test(src), '★ 舞台不再有边框');
+    /* 翻页键必须在底栏里：以 .kh-lb-bar 后的 DOM 片段为准 */
+    const barAt = src.indexOf('kh-lb-bar');
+    truthy(barAt > 0 && src.indexOf("kh-lb-prev", barAt) > 0 && src.indexOf("kh-lb-next", barAt) > 0,
+      '★ 上一张/下一张要移进控件栏（底栏 DOM 里各出现一次）');
+    truthy(src.indexOf('const keepers = [img, bar, side, pdfCard];') >= 0,
+      '★ 关闭判定改成「图片/控件栏/全文栏/PDF 牌之外都关」（不再有容器内留白）');
+    truthy(src.indexOf('if (pressInStage) return;') >= 0, '按下在保留区内部时，抬起不关（避免拖图误关）');
+    truthy(src.indexOf('if (inKeep(t)) return;') >= 0, '抬起落在保留区里也不关');
+  });
+
+  await test('★ 2.0.19.1 图片占位：渲染在抓取层、点击仍能开大图看原图', () => {
+    const f = read('src/features/fetch.js');
+    truthy(f.indexOf('function imgToPlaceholder(html)') >= 0, '占位渲染必须有一处集中实现');
+    truthy(/khin-imgph" data-khimg="/.test(f), '★ 占位元素要带原图地址，否则点开看不了大图');
+    truthy(f.indexOf("return (opts && opts.imgPlaceholder) ? imgToPlaceholder(html) : html;") >= 0,
+      '开关只在收尾一处生效（别在每个分支里各判一次）');
+    truthy(f.indexOf("(ph ? '\\u0001ph' : '')") >= 0, '★ 缓存键要区分占位/缩略图，否则同表两条规则串味');
+    const src = read('src/features/important-note.js');
+    truthy(src.indexOf('imgPlaceholder: !!(h.meta && h.meta.imgPlaceholder)') >= 0, '面板要把 meta 开关传下去');
+    truthy(src.indexOf("span.khin-imgph[data-khimg]") >= 0, '★ 灯箱相册要同时收 <img> 与占位，点占位能看原图');
+  });
+
   /* 【2.0.19 · 体检】深查队列与结论落盘：关掉自动深查后已排队的卡不许继续发；
    * 落盘要防抖并合并磁盘现值（all_frames 下每个 frame 各持一份内存表）。 */
   await test('★ 2.0.19 深查关掉后清队、结论落盘防抖并合并磁盘（体检）', () => {

@@ -83,6 +83,35 @@ module.exports = async function run() {
     eq(!!missing.meta.important, true, '缺键时仍照旧进面板');
   });
 
+  /* ================================= 【2.0.19.1 · m01400 第 3 条】图片占位开关 */
+
+  suite('2.0.19.1 · 图片按占位展示：只在启用抓取且显式勾选时成立');
+
+  await test('★ 编译层：fetchEnabled 关 ⇒ 占位也不成立；勾选才进 meta', () => {
+    const on = C.dispatch({ id: 'k', text: '甲', fetchLabels: '应用截图', fetchEnabled: true, imgPlaceholder: true }, CFG);
+    eq(on.meta.imgPlaceholder, true, '★ 勾选了就要进 meta（fetch.js 据此渲染占位）');
+
+    const off = C.dispatch({ id: 'k', text: '甲', fetchLabels: '应用截图', fetchEnabled: true }, CFG);
+    eq(off.meta.imgPlaceholder, false, '缺键 ⇒ false（存量行为：仍显示缩略图）');
+
+    const bad = C.dispatch({ id: 'k', text: '甲', fetchLabels: '应用截图', fetchEnabled: true, imgPlaceholder: 'yes' }, CFG);
+    eq(bad.meta.imgPlaceholder, false, '坏值一律按 false，不做真值推断');
+
+    const noFetch = C.dispatch({ id: 'k', text: '甲', fetchLabels: '应用截图', fetchEnabled: false, imgPlaceholder: true }, CFG);
+    eq(noFetch.meta.imgPlaceholder, false, '★ 没有抓取就没有图，占位也不该成立');
+  });
+
+  await test('★ 读/写两路都保留这个键（字段表遍历用例已覆盖，这里锁值类型是布尔）', () => {
+    const r = Config.normalize({ keywords: [{ id: 'a', text: 'x', fetchLabels: '甲', imgPlaceholder: true }] });
+    eq(r.config.keywords[0].imgPlaceholder, true, '读路径保留 true');
+    eq(Config.normalize({ keywords: [{ id: 'b', text: 'x', fetchLabels: '甲' }] }).config.keywords[0].imgPlaceholder, false,
+      '读路径缺键 ⇒ false');
+    eq(S.sanitizeKeyword({ text: 'x', fetchLabels: '甲', imgPlaceholder: true }, {}).imgPlaceholder, true,
+      '写路径保留布尔');
+    eq(S.sanitizeKeyword({ text: 'x', fetchLabels: '甲', imgPlaceholder: '1' }, {}).imgPlaceholder, false,
+      '写路径坏值 ⇒ false');
+  });
+
   /* ========================================================== ② 迁移规则 */
 
   suite('K71 · fetchEnabled 的迁移：缺键按 fetchLabels 反推，键存在一律尊重');

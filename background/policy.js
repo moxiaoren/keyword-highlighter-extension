@@ -22,7 +22,7 @@
  *
  * 口径与已知限制（都要在悬停里如实写出来，不许假装成功）：
  *   · 优先 HTML 正文文字；需要时才真开一张后台标签页（active:false，不抢前台）；
- *   · PDF / 图片形式的政策抓不到（如实返回 ok:false + 原因）；
+ *   · PDF 形式的政策（2.0.19.1 起）：取字节交离屏 offscreen/pdf-text.js 抽正文；扫描件抽不出字时如实返回原因；
  *   · 同源接口只做 GET、只带页面 URL 上已有的参数，不猜参数、不跨域；
  *   · 抓回来的是**整页文字**（含导航），匹配用子串，所以多出来的导航文字不影响判定；
  *   · 不猜、不补：抓不到就返回失败，由面板退回「卡片抓取值」并在悬停里写明。
@@ -69,6 +69,30 @@
     return PARAM_DRIVEN_RE.test(String(html || ''));
   }
   const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
+
+  /* 【2.0.19.1 · 用户 m01570】隐私政策本身是 PDF 时（开发者只给一条 .pdf 链接）以前直接判「读不出文字」。
+   * 现在取字节交给离屏的 offscreen/pdf-text.js 抽正文 —— 那是重要笔记 PDF 条目已经在用的同一套实现，
+   * 走的也是同一个离屏通道（OcrHost.ask → {to:'offscreen', type: OCR_PDF}），不另建文档、不引新依赖。
+   * 为什么不能在这里解：Flate/ToUnicode 解析在后台与内容脚本里都没有实现，只有离屏有。 */
+  const MSG = (self.KH && self.KH.MSG) || {};
+  const PDF_URL_RE = /\.pdf(?:$|[?#])/i;
+  async function pdfTextOf(url) {
+    const host = self.OcrHost;
+    if (!host || typeof host.ask !== 'function') {
+      return { ok: false, reason: '读 PDF 需要离屏解析能力，但后台缺少 OcrHost' };
+    }
+    try {
+      const r = await host.ask({ type: MSG.OCR_PDF || 'kh:ocr:pdf', src: url });
+      const text = String((r && r.text) || '');
+      const warn = (r && Array.isArray(r.warnings) && r.warnings.length) ? ('；' + r.warnings.join('；')) : '';
+      if (flatLite(text).length < MIN_TEXT) {
+        return { ok: false, reason: 'PDF 里几乎抽不到文字（可能是扫描件）' + warn };
+      }
+      return { ok: true, text: text.slice(0, MAX_TEXT), len: text.length, warning: warn };
+    } catch (e) {
+      return { ok: false, reason: 'PDF 解析失败：' + String((e && e.message) || e) };
+    }
+  }
 
   const ENTITIES = {
     nbsp: ' ', amp: '&', lt: '<', gt: '>', quot: '"', apos: "'",
@@ -860,10 +884,24 @@
     const tried = [];
     let pageUrl = u;
 
+    /* 【2.0.19.1 · 用户 m01570】地址本身是 .pdf：先抽 PDF 正文，抽不到再按网页兜底
+     * （有的 .pdf 地址回的其实是 HTML 错误页 / 登录页）。 */
+    if (PDF_URL_RE.test(u) || (alt && PDF_URL_RE.test(alt))) {
+      for (let i = 0; i < order.length && via === 'fetch'; i++) {
+        tried.push(order[i]);
+        const got = await pdfTextOf(order[i]);
+        if (got.ok) { text = got.text; via = 'pdf'; }
+        else if (!hardReason) hardReason = got.reason || '';
+      }
+    }
+    /* PDF 已经抽到正文时，后面的网页链路一条都不用再试。 */
+    if (via === 'pdf' && flatLite(text).length >= MIN_TEXT) hardReason = '';
+
     /* 两个协议各试一次：http 站被浏览器升级成 https 时，https 会撞证书错误；
      * 反过来把 https 链接降成 http 也能救「只在 http 上活着」的老站点。
      * 一旦某个协议读到正文（≥ MIN_TEXT）就停，不拿后面的失败覆盖已有正文。 */
     for (let i = 0; i < order.length; i++) {
+      if (via === 'pdf' && flatLite(text).length >= MIN_TEXT) break;
       const cu = order[i];
       tried.push(cu);
       try {
@@ -883,7 +921,10 @@
         }
         body = body.slice(0, MAX_TEXT);
         if (p.type.indexOf('pdf') >= 0) {
-          if (!flatLite(text).length) hardReason = '链接是 PDF，读不出文字';
+          /* 响应头声明是 PDF（地址不一定带 .pdf）：同样走离屏抽字，别把字节硬解成乱码。 */
+          const got = await pdfTextOf(cu);
+          if (got.ok) { text = got.text; via = 'pdf'; break; }
+          if (!flatLite(text).length) hardReason = got.reason || '链接是 PDF，读不出文字';
         } else if (!isText && !isJson && !isHtml) {
           if (!flatLite(text).length) hardReason = '链接不是网页（' + p.type + '）';
         } else if (flatLite(body).length > flatLite(text).length || (!html && (isHtml || !!unwrapped))) {
