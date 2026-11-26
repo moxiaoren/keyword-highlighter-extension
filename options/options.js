@@ -2001,9 +2001,9 @@
     $('pf-notePaged').checked = !!(cfg.importantNote || {}).pagedTabs;
     /* 【2.0.15 · 问题②】同法人校验回显（默认关）。 */
     $('pf-noteEntityCheck').checked = !!(cfg.importantNote || {}).entityCheck;
-    /* 【2.0.16.7 · m20763】四条通道开关回显：只有明确的 false 算关，缺键按开。 */
+    /* 【2.0.19】两条通道开关回显：只有明确的 false 算关，缺键按开。 */
     const ech = (cfg.importantNote || {}).entityChannels || {};
-    [['sogou', 'pf-ent-sogou'], ['aiqicha', 'pf-ent-aiqicha'], ['so360', 'pf-ent-so360'], ['ai', 'pf-ent-ai']].forEach((pair) => {
+    [['sogou', 'pf-ent-sogou'], ['ai', 'pf-ent-ai']].forEach((pair) => {
       const box = $(pair[1]);
       if (box) box.checked = ech[pair[0]] !== false;
     });
@@ -2437,11 +2437,11 @@
     syncEntityChannelBoxes();
   });
 
-  /* 【2.0.16.7 · m20763 / m20998】四条法人通道单独开关：关掉的通道后台不发请求、也不计入「等齐」。
-   * 存储侧只做一层合并 ⇒ entityChannels 必须整份写（四把开关一起带上）。
-   * 界面口径：总闸关着时整张清单置灰（还能改，只是不生效），标题旁一直显示「已开 n/4」。 */
-  const ENT_CHANNEL_BOXES = [['sogou', 'pf-ent-sogou', '搜狗企业卡'], ['aiqicha', 'pf-ent-aiqicha', '爱企查'], ['so360', 'pf-ent-so360', '360 搜索'], ['ai', 'pf-ent-ai', '太极AI 推断']];
-  const ENT_CHANNEL_ALL_ON = { sogou: true, aiqicha: true, so360: true, ai: true };
+  /* 【2.0.19】两条法人通道单独开关：关掉的通道后台不发请求、也不计入「等齐」。
+   * 存储侧只做一层合并 ⇒ entityChannels 必须整份写（两把开关一起带上）。
+   * 界面口径：总闸关着时整张清单置灰（还能改，只是不生效），标题旁一直显示「已开 n/2」。 */
+  const ENT_CHANNEL_BOXES = [['sogou', 'pf-ent-sogou', '搜狗企业卡'], ['ai', 'pf-ent-ai', '太极AI 推断']];
+  const ENT_CHANNEL_ALL_ON = { sogou: true, ai: true };
 
   /** 读当前界面上的四把开关（缺键按开，与 config.normalizeEntityChannels 同口径）。 */
   function entChannelsNow() {
@@ -2450,7 +2450,7 @@
     return cur;
   }
 
-  /** 总闸 → 清单可编辑性 + 批量按钮可用性 + 「已开 n/4」摘要。回显与每次改动后都调它。 */
+  /** 总闸 → 清单可编辑性 + 批量按钮可用性 + 「已开 n/2」摘要。回显与每次改动后都调它。 */
   function syncEntityChannelBoxes() {
     const on = $('pf-noteEntityCheck') && $('pf-noteEntityCheck').checked === true;
     let n = 0;
@@ -2464,7 +2464,7 @@
     if (list) list.classList.toggle('is-disabled', !on);
     ['btn-ent-all-on', 'btn-ent-all-off'].forEach((id) => { const b = $(id); if (b) b.disabled = !on; });
     const sum = $('ent-ch-summary');
-    if (sum) sum.textContent = on ? '已开 ' + n + ' / 4' : '总闸关着（已开 ' + n + ' / 4，暂不查询）';
+    if (sum) sum.textContent = on ? '已开 ' + n + ' / 2' : '总闸关着（已开 ' + n + ' / 2，暂不查询）';
   }
 
   /** 整份写回（storage 一层合并：少一个键就会把兄弟开关打回默认）。 */
@@ -2484,14 +2484,14 @@
     });
   });
 
-  /* 批量：全部打开 / 全部关闭（一眼能改完，不用逐个点四次）。 */
+  /* 批量：全部打开 / 全部关闭（一眼能改完，不用逐个点两次）。 */
   $('btn-ent-all-on').addEventListener('click', async () => {
     ENT_CHANNEL_BOXES.forEach((pair) => { const b = $(pair[1]); if (b) b.checked = true; });
-    await saveEntityChannels(Object.assign({}, ENT_CHANNEL_ALL_ON), '已保存：四条渠道全部打开');
+    await saveEntityChannels(Object.assign({}, ENT_CHANNEL_ALL_ON), '已保存：两条渠道全部打开');
   });
   $('btn-ent-all-off').addEventListener('click', async () => {
     ENT_CHANNEL_BOXES.forEach((pair) => { const b = $(pair[1]); if (b) b.checked = false; });
-    await saveEntityChannels({ sogou: false, aiqicha: false, so360: false, ai: false }, '已保存：四条渠道全部关闭');
+    await saveEntityChannels({ sogou: false, ai: false }, '已保存：两条渠道全部关闭');
   });
 
   /* ---- 【2.0.16.4 · m19483】只剩太极AI：改了任一项都清掉上一次的结论，免得"刚才通了"被当成本次结果。 ---- */

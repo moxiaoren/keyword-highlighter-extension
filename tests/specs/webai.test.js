@@ -82,4 +82,15 @@ module.exports = async function run() {
     const sw = read('background/service-worker.js');
     truthy(sw.indexOf('自定义网页通道不转发图片') >= 0, '带图时要明确告诉用户没转发');
   });
+
+  /* 【2.0.19 · 体检】设置页写「钉住（不自动回收）」、PRIVACY 写「用完关掉」：不钉住就必须真关，
+   * 而且只关我们新开的那张（复用它原有标签页时关掉 = 把用户的页面弄丢）。 */
+  await test('★ 2.0.19 取消钉住时用完关页：只关自己开的，复用的不动（体检）', () => {
+    const src = read('background/webai.js');
+    truthy(src.indexOf('chrome.tabs.remove(') >= 0, '★ 不钉住时要有真正的关闭动作');
+    truthy(src.indexOf('return { id: t.id, created: false };') >= 0, '★ 复用已有标签页要标 created=false');
+    truthy(src.indexOf('return { id: tab.id, created: true };') >= 0, '★ 自己新开的标 created=true');
+    truthy(src.indexOf('if (c.keepTab === false && state.created) closeTab(state.id);') >= 0,
+      '★ 只有 keepTab=false 且自己开的才关');
+  });
 };

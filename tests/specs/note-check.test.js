@@ -346,113 +346,6 @@ module.exports = async function run() {
     eq(Entity.parseRep('<div>甲公司 基本信息 ' + pad + ' 法定代表人：李四</div>', '甲公司'), '');
   });
 
-  /* ---- 2026-11-16 爱企查通道（用户登录后免费查法人；不新增权限，开后台标签页读 DOM） ---- */
-
-  suite('entity · 爱企查通道（后台标签页读 DOM）');
-
-  await test('pickRep：标签旁的候选里挑人名（跳过机构词、单字、公司名本身）', () => {
-    eq(Entity.pickRep([{ v: '法定代表人' }, { v: '科技有限公司' }, { v: '叶' }, { v: '叶天' }]), '叶天');
-    eq(Entity.pickRep([{ v: '李四' }], '武汉壹捌壹零企业管理有限公司'), '李四');
-    eq(Entity.pickRep([{ v: '武汉壹捌壹零企业管理有限公司' }], '武汉壹捌壹零企业管理有限公司'), '', '公司名本身不是法人');
-    eq(Entity.pickRep([]), '');
-    eq(Entity.pickRep(['张三']), '张三', '裸字符串也认');
-    eq(Entity.pickRep([{ v: '阿依古丽·买买提' }]), '阿依古丽·买买提', '少数民族名带 · 也认');
-  });
-
-  await test('爱企查：没登录 ⇒ 快速失败并关掉标签页，绝不猜人名', async () => {
-    const created = [];
-    const removed = [];
-    const E = loadEntity({ chrome: {
-      tabs: {
-        create: async (o) => { created.push(o.url); return { id: 71 }; },
-        update: async (id, o) => { created.push(o.url); },
-        remove: async (id) => { removed.push(id); }
-      },
-      scripting: {
-        executeScript: async () => [{ result: { url: 'https://aiqicha.baidu.com/s?q=x', links: [], gate: false, needLogin: true } }]
-      }
-    } });
-    let err = '';
-    try { await E.fromAiqicha('武汉壹捌壹零企业管理有限公司'); } catch (e) { err = String(e && e.message || e); }
-    truthy(/没登录/.test(err), '要说清是没登录：' + err);
-    deepEq(removed, [71], '失败也要把后台标签页关掉');
-    truthy(/aiqicha\.baidu\.com\/s\?q=/.test(created[0]), '先开搜索页');
-  });
-
-  await test('爱企查：被人机验证拦住 ⇒ 快速失败并关标签页', async () => {
-    const removed = [];
-    const E = loadEntity({ chrome: {
-      tabs: {
-        create: async () => ({ id: 72 }),
-        update: async () => {},
-        remove: async (id) => { removed.push(id); }
-      },
-      scripting: {
-        executeScript: async () => [{ result: { url: 'https://aiqicha.baidu.com/cbae/tr', links: [], gate: true, needLogin: false } }]
-      }
-    } });
-    /* 【2026-11-22】现在会耐心等挑战页自己过；单测把耐心压到 80ms，仍要「等不到就失败」。 */
-    E._aiqGateMs = 80;
-    let err = '';
-    try { await E.fromAiqicha('杭州矩远科技有限公司'); } catch (e) { err = String(e && e.message || e); }
-    truthy(/验证/.test(err), '要说清是人机验证：' + err);
-    deepEq(removed, [72]);
-  });
-
-  await test('爱企查：登录态下走「搜索页 → 详情页」拿到法人（标签页必关）', async () => {
-    const seen = [];
-    const removed = [];
-    const E = loadEntity({ chrome: {
-      tabs: {
-        create: async (o) => { seen.push('create'); return { id: 73 }; },
-        update: async (id, o) => { seen.push('detail:' + o.url); },
-        remove: async (id) => { removed.push(id); }
-      },
-      scripting: {
-        /* 第一次问：搜索结果页（有一条同名链接）；之后问：详情页（标签 + 相邻值）。 */
-        executeScript: async (o) => {
-          if (o.func.name === 'aiqSearchProbe') {
-            return [{ result: { url: 'https://aiqicha.baidu.com/s?q=x', gate: false, needLogin: false,
-              links: [{ href: 'https://aiqicha.baidu.com/company_detail_92224280590439', text: '武汉壹捌壹零企业管理有限公司' }] } }];
-          }
-          return [{ result: { url: 'https://aiqicha.baidu.com/company_detail_92224280590439',
-            title: '武汉壹捌壹零企业管理有限公司 - 壹捌壹零 - 爱企查',
-            cands: [{ v: '为叶天。经营范围包括一般' }, { v: '叶天' }] } }];
-        }
-      }
-    } });
-    const r = await E.fromAiqicha('武汉壹捌壹零企业管理有限公司');
-    eq(r.rep, '叶天');
-    eq(r.source, 'aiqicha');
-    truthy(/company_detail_/.test(seen.join('|')), '要去详情页，不能在搜索页读');
-    deepEq(removed, [73], '拿到结果也要关标签页');
-  });
-
-  await test('爱企查：详情页标题不是这家公司 ⇒ 不认（防串页）', async () => {
-    const removed = [];
-    const E = loadEntity({ chrome: {
-      tabs: {
-        create: async () => ({ id: 74 }),
-        update: async () => {},
-        remove: async (id) => { removed.push(id); }
-      },
-      scripting: {
-        executeScript: async (o) => {
-          if (o.func.name === 'aiqSearchProbe') {
-            return [{ result: { url: 'https://aiqicha.baidu.com/s?q=x', gate: false, needLogin: false,
-              links: [{ href: 'https://aiqicha.baidu.com/company_detail_1', text: '杭州矩远科技有限公司' }] } }];
-          }
-          return [{ result: { url: 'https://aiqicha.baidu.com/company_detail_1',
-            title: '别家公司 - 爱企查', cands: [{ v: '王五' }] } }];
-        }
-      }
-    } });
-    let err = '';
-    try { await E.fromAiqicha('杭州矩远科技有限公司'); } catch (e) { err = String(e && e.message || e); }
-    truthy(err.length > 0, '串页要报错，不能把别家的法人当结果');
-    deepEq(removed, [74]);
-  });
-
   await test('查不到会记 6 小时负缓存：同一家公司第二次不再打网络', async () => {
     const first = await Entity.lookup({ name: '杭州某某某科技有限公司' });
     falsy(first.ok, '单测环境不联网，第一次必然查不到');
@@ -529,15 +422,15 @@ module.exports = async function run() {
   });
 
   /* ------------------------------------------------------------------
-   * 【2.0.16.7 · m20763】四条法人通道可以单独关；关掉的不发请求、不计入「等齐」。
+   * 【2.0.16.7 · m20763】法人通道可以单独关（2.0.19 起两条）；关掉的不发请求、不计入「等齐」。
    * 口径：只有明确的 false 算关，缺键/坏值一律按开（老配置照旧全开）。 */
 
   suite('entity · 2.0.16.7 通道开关（用户 m20763）');
 
   await test('★ 通道归一：缺键按开、只有明确的 false 才关', () => {
-    deepEq(KH.Config.normalizeEntityChannels({}), { sogou: true, aiqicha: true, so360: true, ai: true }, '缺键一律按开');
+    deepEq(KH.Config.normalizeEntityChannels({}), { sogou: true, ai: true }, '缺键一律按开');
     deepEq(KH.Config.normalizeEntityChannels({ ai: false, so360: 'no', sogou: 0 }),
-      { sogou: true, aiqicha: true, so360: true, ai: false }, '只有布尔 false 算关，坏值按开');
+      { sogou: true, ai: false }, '只有布尔 false 算关，坏值按开；老键忽略');
     /* 跨 realm：vm 沙盒里的函数 `instanceof Function` 恒 false，只能看 typeof。 */
     eq(typeof Entity.readChannels, 'function', 'readChannels 要暴露给单测');
   });
@@ -545,7 +438,7 @@ module.exports = async function run() {
   await test('★ 全关时一条请求都不发，如实说「所有法人通道都已关闭」', async () => {
     let hits = 0;
     const E = loadEntity({
-      kh: { Config: { load: async () => ({ config: { importantNote: { entityChannels: { sogou: false, aiqicha: false, so360: false, ai: false } } } }) } },
+      kh: { Config: { load: async () => ({ config: { importantNote: { entityChannels: { sogou: false, ai: false } } } }) } },
       fetch: async () => { hits += 1; throw new Error('不该联网'); }
     });
     const r = await E.lookup({ name: '全关测试科技有限公司' });
@@ -554,26 +447,13 @@ module.exports = async function run() {
     eq(hits, 0, '一条请求都不该发');
   });
 
-  await test('★ 只开 360：不去打搜狗、也不开爱企查标签页', async () => {
-    const urls = [];
-    const E = loadEntity({
-      kh: { Config: { load: async () => ({ config: { importantNote: { entityChannels: { sogou: false, aiqicha: false, so360: true, ai: false } } } }) } },
-      fetch: async (u) => { urls.push(String(u)); return { ok: true, text: async () => '<html></html>' }; }
-    });
-    E._sogouHeadstartMs = 10;
-    const r = await E.lookup({ name: '只开360测试科技有限公司' });
-    falsy(r.ok, '空页面查不到法人');
-    truthy(urls.length > 0, '360 这条要真的跑');
-    truthy(urls.every((u) => u.indexOf('so.com') >= 0), '只许打 360：' + urls.join(','));
-  });
-
   await test('★ 面板结论里要写清来源：渠道 → 名字 → 「（来源：…）」', () => {
     const src = read('src/features/important-note.js');
     truthy(src.indexOf('entSourceLabel(src)') >= 0, '渠道要能翻成名字（认不出就留空，不编）');
     truthy(src.indexOf("'（来源：'") >= 0, '结论里要写出「来源：…」，否则用户分不清是搜狗还是 AI 推断');
   });
 
-  await test('★ 来源文案齐了：四条通道 + 缓存各有一个名字', () => {
+  await test('★ 来源文案齐了：两条通道 + 历史来源 + 缓存各有一个名字', () => {
     const V = KH.OcrCopy.VIEW;
     truthy(V.entSrcSogou && V.entSrcAiqicha && V.entSrcSo360 && V.entSrcAi && V.entSrcCache, '缺哪个面板都会写成空（来源消失）');
   });

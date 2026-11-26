@@ -670,12 +670,12 @@ const HANDLERS = {
    * 只做转发，不在这里拼提示词（"纯自由对话，不带页面内容"的口径由面板那边只发用户输入保证）。 */
   [MSG.AI_CHAT]: (msg) => self.KhAi.chat(msg || {}),
 
-  /* ---- 【2.0.8.8 需求③】查法定代表人（免费免登陆：爱企查 → 必应，见 background/entity.js）----
+  /* ---- 【2.0.8.8 需求③】查法定代表人（2.0.19 起：搜狗企业卡 → 太极AI 推断，见 background/entity.js）----
    * 只读查询：失败一律回 `{ok:false,error}`，面板据此保持原底色（用户口径：未查明不改色）。 */
   [MSG.ENTITY_LOOKUP]: (msg, sender) => {
     const name = String((msg && msg.name) || '').trim();
     const p = self.KH.Entity.lookup(msg || {});
-    /* 【用户 m07376 问题二】面板只等 20 秒，而爱企查标签页常常要更久。
+    /* 【用户 m07376 问题二】面板只等 20 秒，而联网通道常常要更久。
      * 结果晚到也要送回去：同一标签页里的面板收到 ENTITY_READY 就地重画，
      * 用户不用关卡片重开（以前只写后台缓存，面板停在「⏱ 超时」）。 */
     const tabId = (sender && sender.tab && sender.tab.id) || 0;
@@ -755,6 +755,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
    * onMessage 是"所有扩展上下文都能收到"的，不在这里挡掉，背景自己就会把
    * `{to:'offscreen', type: ocr:image}` 当成"内容脚本的识别请求"再转发一次 → 无限自圈。 */
   if (msg && msg.to) return false;
+  /* 【2.0.19 体检】纵深防御：只认本扩展自己的上下文（内容脚本/设置页/offscreen 的 sender.id 都是本扩展）。
+   * 现在没有 externally_connectable，外部扩展本就连不进来；真加了别的入口时这一道能兜住。 */
+  if (sender && sender.id && sender.id !== chrome.runtime.id) return false;
   /* 【2.0.19 · m28030】点选元素的结果由页面直接发回：交给正在等的那次 pick，不算普通请求。 */
   if (msg && msg.type === MSG.WEB_AI_PICKED) { try { self.KhWebAi.picked(msg); } catch (e) { /* ignore */ } return false; }
   const handler = msg && HANDLERS[msg.type];
@@ -787,6 +790,11 @@ function riskChatOf(sender) {
  *   { type:'error', error, needLogin }
  * 同一条连接上可以连续问多轮；面板关掉（port 断开）时把没结束的请求标记为放弃。 */
 chrome.runtime.onConnect.addListener((port) => {
+  /* 【2.0.19 体检】长连接同样只收本扩展的页面（纵深防御，理由见 onMessage 的同名校验）。 */
+  try {
+    const sid = port && port.sender && port.sender.id;
+    if (sid && sid !== chrome.runtime.id) { try { port.disconnect(); } catch (e) {} return; }
+  } catch (e) { /* 拿不到 sender 就按原来的路走 */ }
   if (!port || port.name !== ((MSG && MSG.AI_PORT) || 'kh:ai')) return;
   let busy = false;
   /* 【2.0.18 · m24795】「AI 深查」单独占一条（和对话互不影响，但同一条连接上不许并发）。 */

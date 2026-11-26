@@ -242,11 +242,13 @@
     const base = originOf(url);
     if (!base) return { saved: 0, names: [], reason: '站点地址解析不出来' };
     let lines = [];
-    try {
-      if (out && out.res && out.res.headers && typeof out.res.headers.getSetCookie === 'function') {
-        lines = out.res.headers.getSetCookie() || [];
-      }
-    } catch (e) { lines = []; }
+    /* 【2.0.19 体检】Headers.getSetCookie 是 Chrome 113 才有的：低版本上拿不到 Set-Cookie，
+     * 旧代码会误报成「站点没有下发」，用户永远登不上还查不出原因。版本不够就直说。 */
+    const canReadSetCookie = !!(out && out.res && out.res.headers && typeof out.res.headers.getSetCookie === 'function');
+    if (!canReadSetCookie) {
+      return { saved: 0, names: [], reason: '浏览器版本过低：读不到登录回执里的 Set-Cookie（需要 Chrome 113 及以上）' };
+    }
+    try { lines = out.res.headers.getSetCookie() || []; } catch (e) { lines = []; }
     if (!lines.length) return { saved: 0, names: [], reason: '站点没有下发会话 cookie' };
     if (!api) return { saved: 0, names: [], reason: '扩展没有 cookies 权限（更新到 2.0.16.4 后请允许一次）' };
     const names = [];
@@ -727,7 +729,7 @@
   T.pickName = pickName;
 
   /**
-   * 用模型补法人检索：只在本地三条通道（搜狗/爱企查/360）都没结论时调用。
+   * 用模型补法人检索：只在搜狗通道没结论时调用。
    * 返回 {ok:true, rep} 或 {ok:false, error}；人名格式由 entity.js 用 personOk 再验一次。
    */
   T.repOf = async function (name, timeoutMs) {

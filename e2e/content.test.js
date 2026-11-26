@@ -3435,8 +3435,31 @@ module.exports = async function runContent(ctx) {
           await new Promise((r) => setTimeout(r, 300));
           clip = await navigator.clipboard.readText().catch((e) => 'err:' + (e && e.message));
         }
+        /* 【2.0.19 · 体检 / 用户 m00292】浮层不许跟着图片缩放/拖动漂移。
+         * 缩放与拖动都会连续触发 apply()；旧实现每次把读回的 offsetWidth 当基准 ⇒ 宽度 +2px/次、
+         * 左缘跟着往左挪，看起来就像"浮层跟着图片缩放和拖动跑"。这里真滚轮 + 真拖一遍再量。 */
+        const pr0 = pane.getBoundingClientRect();
+        const aimg = sr.querySelector('.kh-lb-img');
+        const ir0 = aimg.getBoundingClientRect();
+        for (let k = 0; k < 3; k++) {
+          const ir = aimg.getBoundingClientRect();
+          const cx = ir.left + ir.width / 2, cy = ir.top + ir.height / 2;
+          sr.querySelector('.kh-lb').dispatchEvent(new WheelEvent('wheel', {
+            deltaY: -120, clientX: cx, clientY: cy, cancelable: true, bubbles: true
+          }));
+          await new Promise((r) => setTimeout(r, 90));
+          aimg.dispatchEvent(new PointerEvent('pointerdown', { button: 0, clientX: cx, clientY: cy, bubbles: true, pointerId: 1 }));
+          aimg.dispatchEvent(new PointerEvent('pointermove', { clientX: cx + 12, clientY: cy + 8, bubbles: true, pointerId: 1 }));
+          aimg.dispatchEvent(new PointerEvent('pointerup', { clientX: cx + 12, clientY: cy + 8, bubbles: true, pointerId: 1 }));
+          await new Promise((r) => setTimeout(r, 90));
+        }
+        const pr1 = pane.getBoundingClientRect();
+        const paneDrift = {
+          w0: pr0.width, w1: pr1.width, x0: pr0.left, x1: pr1.left,
+          zoomed: aimg.getBoundingClientRect().width > ir0.width + 1
+        };
         sr.querySelector('.kh-lb').click();       // 点容器外 = 关灯箱，别留给后面的用例
-        return { err: null, before: before, after: after, again: again, copyOk: copyOk, clip: clip };
+        return { err: null, before: before, after: after, again: again, copyOk: copyOk, clip: clip, paneDrift: paneDrift };;
       });
       truthy(!lb.err, '开大图取证失败：' + JSON.stringify(lb));
       truthy(lb.before.hidden === false,
@@ -3451,6 +3474,12 @@ module.exports = async function runContent(ctx) {
       truthy(lb.again.hidden === false, '★ 再点 ⇒ 弹回来（开关双向，否则收起就取不回来）');
       truthy(lb.copyOk, '全文栏里要有一键复制（识别结果取走的正路）');
       includes(String(lb.clip), '华为', '★ 一键复制要真的把全文写进剪贴板；实际 ' + JSON.stringify(String(lb.clip).slice(0, 80)));
+      /* 【2.0.19 · 体检 / m00292】浮层宽度/位置都不许跟着缩放与拖动跑。 */
+      truthy(lb.paneDrift.zoomed, '★ 三轮滚轮要真的把图放大（否则下面两条是空跑）：' + JSON.stringify(lb.paneDrift));
+      eq(Math.round(lb.paneDrift.w1), Math.round(lb.paneDrift.w0),
+        '★ 缩放/拖动图片时浮层宽度不许变（旧实现每次 apply +2px，拖一下就宽一圈）：' + JSON.stringify(lb.paneDrift));
+      eq(Math.round(lb.paneDrift.x1), Math.round(lb.paneDrift.x0),
+        '★ 浮层左缘也不许漂（宽度一变 left 就跟着挪）：' + JSON.stringify(lb.paneDrift));
 
       /* 文字高亮：命中驱动之后，**真命中**的核心词照旧有高亮（2 处），
        * 但「图片命中」本身绝不产生额外区间（识别出来的字不在 DOM 里）。 */

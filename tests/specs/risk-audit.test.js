@@ -228,6 +228,40 @@ module.exports = async function run() {
     eq(R.aiState(null).title, 'unknown', '没查过 = 未查明');
   });
 
+  await test('★ 2.0.19 风险缓存剔除：过期直接删、超上限删最旧，页脚写回前也裁（体检）', () => {
+    eq(R.CACHE_MAX, 300, '条数上限是常量，便于以后按数据调');
+    const now = Date.now();
+    const cache = {
+      fresh1: { at: now - 1000, verdict: 'safe' },
+      fresh2: { at: now - 2000, verdict: 'risky' },
+      old1: { at: now - R.AI_TTL - 5000, verdict: 'safe' },
+      noAt: { verdict: 'safe' }
+    };
+    const r1 = R.trimCache(cache, now, 10);
+    eq(r1.expired, 2, '过期条目 + 没有时间的条目一起删');
+    eq(r1.overflow, 0);
+    eq(r1.kept, 2);
+    falsy('old1' in cache);
+    falsy('noAt' in cache);
+    truthy('fresh1' in cache && 'fresh2' in cache, '新鲜条目要留着');
+
+    /* 超上限：按 at 从旧到新删，直到等于上限。 */
+    const many = {};
+    for (let i = 0; i < 8; i++) many['k' + i] = { at: now - i * 1000 };
+    const r2 = R.trimCache(many, now, 3);
+    eq(r2.removed, 5);
+    eq(r2.overflow, 5);
+    eq(r2.kept, 3);
+    truthy('k0' in many && 'k1' in many && 'k2' in many, '留下的是最新的三条');
+    falsy('k7' in many, '最旧的先走');
+    eq(R.trimCache(many, now, 3).removed, 0, '再裁一次不该再删（幂等）');
+    eq(R.trimCache(null, now).removed, 0, '坏数据不炸');
+
+    const panel = read('src/features/important-note.js');
+    truthy(panel.indexOf('RA.trimCache(this._riskMap)') >= 0, '写缓存前要裁');
+    truthy(panel.indexOf("RA.trimCache(this._riskMap).removed > 0") >= 0, '读缓存裁出东西要回写');
+  });
+
   await test('★ 2.0.17.5 自定义词生效、逐词停用生效，配置归一不漏（m26374）', () => {
     const norm = KH.Config.normalizeRiskLexicon;
     truthy(typeof norm === 'function', 'Config 要导出词库归一（设置页与判定侧共用一份）');
@@ -294,7 +328,7 @@ module.exports = async function run() {
     truthy(ai.indexOf('self.KhTaiji.chat({ model: RISK_MODEL') >= 0, '深查请求要带上这个模型');
   });
 
-  await test('★ 2.0.18.2 内网 / 非 https 的图标不外送，fetch 也不带凭据（m27947）', () => {
+  await test('★ 2.0.18.2 内网 / 非 https 的图标不外送，fetch 也不带凭据（m27947）', async () => {
     const vm = require('vm');
     const sandbox = {
       console: console,
@@ -320,6 +354,40 @@ module.exports = async function run() {
       'https://[::1]/a.png'].forEach((u) => eq(AI.iconSkip(u), 'private', '应判为内网：' + u));
     eq(AI.iconSkip('http://cdn.example.com/a.png'), 'scheme', '非 https 不取');
     eq(AI.iconSkip(''), 'empty');
+
+    /* 【2.0.19 体检】配置读取要有短缓存，且 storage.onChanged 一变就失效。 */
+    let gets = 0;
+    let invalidate = null;
+    const sb2 = {
+      console: console, URL: URL, Promise: Promise,
+      chrome: {
+        storage: {
+          local: { get: () => { gets += 1; return Promise.resolve({ ai: { channel: 'taiji' } }); } },
+          onChanged: { addListener: (fn) => { invalidate = fn; } }
+        }
+      }
+    };
+    sb2.self = sb2;
+    sb2.KH = { Config: { merge: (x) => x, normalize: (c) => ({ config: c }), storageKeys: () => ['ai'] } };
+    sb2.KhTaiji = { chat: async () => ({ ok: true, text: 'hi' }) };
+    vm.createContext(sb2);
+    vm.runInContext(read('background/ai.js'), sb2, { filename: 'background/ai.js' });
+    const A2 = sb2.KhAi;
+    await A2.chat({ messages: [] });
+    await A2.chat({ messages: [] });
+    eq(gets, 1, '同一秒内连查几张卡只读一次整库');
+    truthy(typeof invalidate === 'function', '要订阅 storage 变更');
+    invalidate({ ai: { channel: 'taiji' } }, 'local');
+    await A2.chat({ messages: [] });
+    eq(gets, 2, '设置一改（onChanged）下一次就真读');
+    /* 深查往 khRiskAuditV1 回写是高频事件：它不是配置，不许把缓存清掉（否则 3s 缓存在串行深查里等于没做）。 */
+    invalidate({ khRiskAuditV1: { k: { at: 1 } } }, 'local');
+    await A2.chat({ messages: [] });
+    eq(gets, 2, '风险结论回写不该让配置缓存失效');
+    invalidate({ khRiskAuditV1: {} }, 'sync');
+    await A2.chat({ messages: [] });
+    eq(gets, 2, '别的存储域（sync）也不该让 local 缓存失效');
+
     const ai = read('background/ai.js');
     truthy(ai.indexOf("credentials: 'omit'") >= 0, '下载图标不许带凭据');
     truthy(ai.indexOf("credentials: 'include'") < 0, '已删掉 credentials include');

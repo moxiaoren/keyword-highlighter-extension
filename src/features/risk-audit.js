@@ -506,5 +506,40 @@
     return out;
   };
 
+  /* ---------- 缓存淘汰（2.0.19 体检） ----------
+   * 结论按卡片写进 chrome.storage.local `khRiskAuditV1`，从前只判过期、从不删：
+   * 过期条目下次进卡本来就会重查（important-note 的 retry 判据），留着只会让这个键
+   * 长期只增不减。两道闸：①超过 AI_TTL 的条目直接删（行为等价）；
+   * ②仍超过 CACHE_MAX 条时按 at 从旧到新删到上限。 */
+  Risk.CACHE_MAX = 300;
+
+  /**
+   * 就地裁掉过期与超限的缓存条目。
+   * @param {Object} cache 键 → { at:number, ... }
+   * @param {number} [now] 便于单测注入时间
+   * @param {number} [max] 便于单测收紧上限
+   * @returns {{removed:number, kept:number, expired:number, overflow:number}}
+   */
+  Risk.trimCache = function (cache, now, max) {
+    const out = { removed: 0, kept: 0, expired: 0, overflow: 0 };
+    if (!cache || typeof cache !== 'object') return out;
+    const t = Number(now) > 0 ? Number(now) : Date.now();
+    const cap = Number(max) > 0 ? Math.floor(max) : Risk.CACHE_MAX;
+    const keys = Object.keys(cache);
+    for (let i = 0; i < keys.length; i++) {
+      const it = cache[keys[i]];
+      const at = (it && typeof it === 'object') ? Number(it.at) || 0 : 0;
+      if (!at || t - at > Risk.AI_TTL) { delete cache[keys[i]]; out.removed += 1; out.expired += 1; }
+    }
+    const left = Object.keys(cache);
+    if (left.length > cap) {
+      left.sort((x, y) => (Number(cache[x] && cache[x].at) || 0) - (Number(cache[y] && cache[y].at) || 0));
+      const drop = left.length - cap;
+      for (let i = 0; i < drop; i++) { delete cache[left[i]]; out.removed += 1; out.overflow += 1; }
+    }
+    out.kept = Object.keys(cache).length;
+    return out;
+  };
+
   KH.RiskAudit = Risk;
 })();

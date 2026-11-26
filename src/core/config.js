@@ -201,11 +201,11 @@
   function normalizePinOrder(value) { return pinOrderKeys(value).join(', '); }
 
   /* ---- 法人查询的联网通道开关（2.0.16.7 · 用户 m20763：「这种链路可以选择打开和关闭」）----
-   * 四条通道各自能关：搜狗移动版企业卡 / 爱企查 / 360 搜索 / 太极AI 兜底。
+   * 两条通道各自能关：搜狗移动版企业卡 / 太极AI 兜底。
    * 口径：**只有明确的 false 算关**，缺键与坏值一律按开 —— 关通道是用户主动的动作，
    * 不该被一个脏值静默打开或静默关掉；全关也是合法配置（面板会如实写「所有通道都已关闭」）。 */
-  const ENTITY_CHANNEL_KEYS = ['sogou', 'aiqicha', 'so360', 'ai'];
-  const ENTITY_CHANNEL_DEFAULT = { sogou: true, aiqicha: true, so360: true, ai: true };
+  const ENTITY_CHANNEL_KEYS = ['sogou', 'ai'];
+  const ENTITY_CHANNEL_DEFAULT = { sogou: true, ai: true };
   function normalizeEntityChannels(raw) {
     const src = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
     const out = {};
@@ -499,12 +499,12 @@
          * 默认关：关着时渲染路径与旧版一致；开着才建 .khin-ptabs。 */
         pagedTabs: false,
         /* 【2.0.15 · 问题②】同法人校验（开发者 / 核准主体两边查法定代表人）。
-         * 默认关：爱企查这条链路经常查不到（未登录 / 验证 / 改版），用户要求改成可选打开；
+         * 默认关：公开渠道经常查不到（未登录 / 验证 / 改版），用户要求改成可选打开；
          * 关着时面板不发起任何查询，也不写「未查明」标记。 */
         entityCheck: false,
-        /* 【2.0.16.7 · 用户 m20763】四条联网通道各自能关（默认全开＝与旧版行为一致）：
+        /* 【2.0.16.7 · 用户 m20763】联网通道各自能关（2.0.19 起只剩搜狗 / 太极AI，默认全开）：
          * 关掉的通道一个请求都不发；全关时面板写「法人通道都已关闭」。 */
-        entityChannels: { sogou: true, aiqicha: true, so360: true, ai: true },
+        entityChannels: { sogou: true, ai: true },
         /* 【2.0.17.3 · 用户 m25410】主标题 / 图标的 AI 深查**固定自动做**，不用手动点。
          * 默认开；每条卡只查一次、结果按「名称 + 图标指纹」缓存 30 天（`Risk.cacheKey`）。
          * 关掉后不自动发请求，卡上只保留本地词库的结论。 */

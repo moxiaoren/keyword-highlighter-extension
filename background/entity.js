@@ -2,16 +2,12 @@
  * background/entity.js · 【2.0.8.8 需求③】免费免登陆查「法定代表人」
  * ----------------------------------------------------------------------------
  * 用户口径：「在免费免登陆渠道搜索这两个公司是否同法人」。
- * 通道（2026-11-22 实测后定型，按「便宜且快」排）：
- *   ① 搜狗移动版企业卡：`m.sogou.com/web/searchList.jsp?keyword=` 的 HTML 里直接内联企业卡，
+ * 通道（2.0.19 起只剩两条）：
+ *   ① 搜狗移动版企业卡：m.sogou.com/web/searchList.jsp 的 HTML 里直接内联企业卡，
  *      纯 fetch、免登录、约 1 秒（见 parseCard / fromSogouM）；桌面版会 302 到验证码，别用；
- *   ② 爱企查：用你浏览器里已有的登录态开一个**不激活的后台标签页**，等 JS 渲染后读 DOM
- *      （同 URL 的 fetch 直出 HTML 是 30KB 空壳，取不到「法定代表人」；搜索页结果也是 JS 渲染的）；
- *      见到 /cbae/ 挑战页不再立刻放弃，给它 6 秒自己跳回来（2026-11-22 用户报「一直无法核实」）；
- *   ③ 360 搜索兜底，换三种问法（见 SO360_QUERIES）；
- *   · 必应结果页是 JS 空壳 —— 已下线；
- *   · 360 的企业卡（`企业名称 … 统一社会信用代码 … 法定代表人 李广朝他投资的 1 家公司`）
- *     与 chinaz / 企查查的工商摘要都还能解析到人名；
+ *   ② 太极AI 兜底（可选开关）：前一条查不到时问模型，source 标 ai，面板上显示成推断值；
+ *   · 爱企查与 360 两条通道已于 2.0.19 下线（用户口径「这两太不稳定」）：前者要登录态、
+ *     经常撞人机验证；后者对冷门公司常把别家的法人安过来。
  *   · 解析必须「公司名紧贴法定代表人」（nearName 的 45 字 / 无公司名间隔口径），
  *     否则宁可标「未查明」，绝不把一个别家公司的法人安到这家头上。
  *
@@ -48,8 +44,6 @@
   const MAX_ENTRIES = 200;
   const TIMEOUT_MS = 12000;
   const GAP_MS = 1200;
-/* 360 让爱企查先跑多久：给足登录态标签页首屏渲染的时间，又不至于整轮变慢。 */
-const SO360_HEADSTART_MS = 1200;
   const MAX_HTML = 400000;
   const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
 
@@ -257,11 +251,6 @@ const SO360_HEADSTART_MS = 1200;
    *   ③ 「公司名 法定代表人」——兜底。
    * 三种都只接受「公司名紧贴法定代表人」的解析（见 nearName 的收紧口径）。
    */
-  const SO360_QUERIES = [
-    function (name) { return name + ' 法人'; },
-    function (name) { return '"' + name + '" 法定代表人'; },
-    function (name) { return name + ' 法定代表人'; }
-  ];
 
   /* ---------------- 搜狗移动版企业卡（2026-11-22 实测可用） ----------------
    * 桌面版 `www.sogou.com/web?query=` 会 302 到 `/captcha/`（连打两次就被拦），
@@ -345,217 +334,8 @@ const SO360_HEADSTART_MS = 1200;
     return { rep: rep, source: 'sogou', url: url };
   }
 
-  /* ---------------- 爱企查（走你浏览器里已有的登录态） ----------------
-   * 【2026-11-16 实证】用户登录爱企查后回传的实测：
-   *   · 详情页 DOM 里**有**「法定代表人」（段落形如「…法定代表人为叶天。经营范围…」）；
-   *   · 但同一个详情页 fetch 直出的 HTML 只有 30KB 空壳，没有这四个字 —— SSR 取不到数；
-   *   · 搜索页 fetch 直出 256KB 也没有 company_detail_ 链接（登录态下的结果靠 JS 渲染）。
-   *  ⇒ 只能开一个**不激活的后台标签页**，等 JS 渲染出来读 DOM，读完立刻关掉。
-   * 不需要新增权限：host_permissions 已是 <all_urls>，scripting 与 tabs 的创建/关闭都在现有权限内。
-   * 失败时如实抛错（未登录 / 要验证 / 没这家公司 / 没读出人名），绝不猜一个法人。 */
-
-  /* 整个爱企查通道的时间预算：超了就放弃，把 20s 的查人窗口留给 360。 */
-  const AIQ_BUDGET_MS = 9000;
-  const AIQ_POLL_MS = 400;
-  /* 【2026-11-22 用户报「一直无法核实或超时」】以前一见到 /cbae/ 就抛错放弃。可这道挑战页
-   * 在真实登录态下 1–3 秒会自己跳回来 —— 一见到就判死，等于这条通道**从来没工作过**。
-   * 现在给它一段耐心：期间继续轮询，出现验证码/滑块或超时才判失败。
-   *（单测用 Entity._aiqGateMs 把这段等待压到毫秒级。） */
-  const AIQ_GATE_WAIT_MS = 6000;
-  const AIQ_LOGIN_WAIT_MS = 2500;
-
-  function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
-
-  function aiqReady() {
-    return !!(self.chrome && chrome.tabs && chrome.scripting
-      && typeof chrome.tabs.create === 'function'
-      && typeof chrome.scripting.executeScript === 'function');
-  }
-
-  async function aiqRunInTab(tabId, fn, args) {
-    try {
-      const out = await chrome.scripting.executeScript({ target: { tabId: tabId }, func: fn, args: args || [] });
-      return (out && out[0] && out[0].result) || null;
-    } catch (e) {
-      /* 页面还在加载时 executeScript 会报「Cannot access contents」，继续轮询就行。 */
-      return null;
-    }
-  }
-
-  /* 下面两个函数会被序列化进页面执行，所以必须自包含（不能引用外层变量）。 */
-
-  /** 搜索结果页：有没有指向 company_detail_ 的链接、链接文字是不是这家公司。 */
-  function aiqSearchProbe() {
-    function norm(s) {
-      return String(s == null ? '' : s).replace(/[\s\u00a0\u3000]/g, '')
-        .replace(/（[^）]*）|\([^)]*\)/g, '');
-    }
-    const links = [];
-    const as = document.querySelectorAll('a[href*="company_detail_"], a[href*="company-detail"], a[href*="companydetail"]');
-    for (let i = 0; i < as.length && links.length < 60; i++) {
-      const href = String(as[i].href || '').split('#')[0];
-      if (!href) continue;
-      links.push({ href: href, text: norm(as[i].textContent).slice(0, 80) });
-    }
-    const body = (document.body && (document.body.innerText || document.body.textContent)) || '';
-    return {
-      url: String(location.href),
-      gate: String(location.href).indexOf('/cbae/') >= 0,
-      needLogin: links.length === 0 && /登录后(?:查看|可见)|请先登录|百度账号登录/.test(body.slice(0, 3000)),
-      empty: /没有找到|暂无相关|未找到/.test(body.slice(0, 3000)),
-      captcha: /验证码|拖动滑块|请完成验证/.test(body.slice(0, 3000)),
-      links: links
-    };
-  }
-
-  /** 详情页：把「法定代表人」旁边/简介句里的人名候选都交回去，由 background 侧用 personOk 校验。 */
-  function aiqDetailProbe() {
-    const cands = [];
-    function push(v, via) {
-      let s = String(v == null ? '' : v).replace(/[\s\u00a0\u3000]+/g, ' ').trim();
-      if (!s) return;
-      s = s.replace(/^[：:为\s]+/, '');
-      const tok = (s.split(/[，,。；;、|\s]/)[0] || '').trim();
-      if (!tok || tok.length > 20) return;
-      cands.push({ v: tok, via: via });
-    }
-    /* ① 标签 + 相邻值：<span>法定代表人</span><span>张三</span> 或 <th>/<td>。 */
-    const all = document.querySelectorAll('span,div,td,th,dt,dd,p,label,em,i,b,strong,a');
-    for (let i = 0; i < all.length && i < 6000; i++) {
-      const el = all[i];
-      if (el.children && el.children.length) continue;
-      const t = String(el.textContent || '').replace(/[\s\u00a0\u3000]/g, '');
-      if (t !== '法定代表人' && t !== '法定代表人：' && t !== '法定代表人:') continue;
-      const sib = el.nextElementSibling;
-      if (sib) push(sib.textContent, 'sib');
-      const par = el.parentElement;
-      if (par) push(String(par.textContent || '').replace(/法定代表人[：:]?/, ''), 'parent');
-    }
-    /* ② 简介句：「…法定代表人为叶天。经营范围包括一般项目…」 */
-    const body = (document.body && (document.body.innerText || document.body.textContent)) || '';
-    const m = body.match(/法定代表人[：:]?\s*为?\s*([\u4e00-\u9fa5·]{2,10})/);
-    if (m) push(m[1], 'text');
-    return {
-      url: String(location.href),
-      title: String(document.title || ''),
-      captcha: /验证码|拖动滑块|请完成验证/.test(body.slice(0, 3000)),
-      cands: cands.slice(0, 10)
-    };
-  }
-
   /**
-   * 从候选里挑一个人名（纯函数，单测直接调）。
-   * 口径：逐个过 personOk（2–5 字中文 / 少数民族名带 ·、剔除机构词与标签词、不等于公司名本身）。
-   * @param {Array<{v:string}>|string[]} cands
-   * @param {string} selfName 查询的公司名
-   */
-  Entity.pickRep = function (cands, selfName) {
-    const list = Array.isArray(cands) ? cands : [];
-    for (let i = 0; i < list.length; i++) {
-      const raw = list[i] && typeof list[i] === 'object' ? list[i].v : list[i];
-      const v = String(raw == null ? '' : raw).trim();
-      if (personOk(v, selfName)) return v;
-    }
-    return '';
-  };
-
-  async function fromAiqicha(name) {
-    if (!aiqReady()) throw new Error('爱企查通道要标签页与脚本权限');
-    const want = normName(name);
-    const deadline = Date.now() + AIQ_BUDGET_MS;
-    let tabId = 0;
-    const gateMs = Number(Entity._aiqGateMs) > 0 ? Number(Entity._aiqGateMs) : AIQ_GATE_WAIT_MS;
-    let gateSince = 0;
-    let loginSince = 0;
-    try {
-      const tab = await chrome.tabs.create({
-        url: 'https://aiqicha.baidu.com/s?q=' + encodeURIComponent(name),
-        active: false
-      });
-      tabId = (tab && tab.id) || 0;
-      if (!tabId) throw new Error('爱企查标签页没开起来');
-
-      /* ① 等搜索结果，挑一条链接文字等于（或包含）查询名的。 */
-      let target = '';
-      while (Date.now() < deadline) {
-        await sleep(AIQ_POLL_MS);
-        const st = await aiqRunInTab(tabId, aiqSearchProbe, []);
-        if (!st) continue;
-        if (st.gate) {
-          if (!gateSince) gateSince = Date.now();
-          if (st.captcha || Date.now() - gateSince > gateMs) {
-            throw new Error('爱企查要求人机验证（登录态可能失效）');
-          }
-          continue;
-        }
-        gateSince = 0;
-        if (st.needLogin) {
-          if (!loginSince) loginSince = Date.now();
-          if (Date.now() - loginSince > AIQ_LOGIN_WAIT_MS) throw new Error('爱企查没登录（在浏览器里登录后再试）');
-          continue;
-        }
-        loginSince = 0;
-        const links = st.links || [];
-        if (!links.length) {
-          if (st.empty) throw new Error('爱企查没搜到这家公司');
-          continue;
-        }
-        const exact = links.filter(function (l) { return l.text && normName(l.text) === want; });
-        const loose = links.filter(function (l) {
-          const t = normName(l.text || '');
-          return t && (t.indexOf(want) >= 0 || want.indexOf(t) >= 0);
-        });
-        const pick = exact[0] || loose[0];
-        if (pick) { target = pick.href; break; }
-        /* 有链接但没有一家对得上：搜索页把相似公司列出来了，别乱点。 */
-        throw new Error('爱企查搜索里没有同名公司');
-      }
-      if (!target) throw new Error('爱企查搜索页没等到结果');
-
-      /* ② 进详情页，等「法定代表人」渲染出来。 */
-      await chrome.tabs.update(tabId, { url: target });
-      while (Date.now() < deadline) {
-        await sleep(AIQ_POLL_MS);
-        const st = await aiqRunInTab(tabId, aiqDetailProbe, []);
-        if (!st) continue;
-        if (String(st.url || '').indexOf('/cbae/') >= 0) {
-          if (!gateSince) gateSince = Date.now();
-          if (st.captcha || Date.now() - gateSince > gateMs) throw new Error('爱企查要求人机验证（登录态可能失效）');
-          continue;
-        }
-        gateSince = 0;
-        const titleOk = normName(st.title || '').indexOf(want) >= 0;
-        if (!titleOk) continue;
-        const rep = Entity.pickRep(st.cands, name);
-        if (rep) return { rep: rep, source: 'aiqicha', url: target };
-      }
-      throw new Error('爱企查详情页没读出法定代表人');
-    } finally {
-      if (tabId) { try { await chrome.tabs.remove(tabId); } catch (e) { /* 关不掉也不影响结果 */ } }
-    }
-  }
-
-  async function fromSo360(name) {
-    const errors = [];
-    for (let i = 0; i < SO360_QUERIES.length; i++) {
-      /* 同一站点连打三枪不礼貌：换问法之间留 600ms。 */
-      if (i) await new Promise(function (r) { setTimeout(r, 600); });
-      const url = 'https://www.so.com/s?q=' + encodeURIComponent(SO360_QUERIES[i](name));
-      try {
-        const html = await getHtml(url);
-        const rep = Entity.parseRep(html, name);
-        if (rep) return { rep: rep, source: 'so360', url: url };
-      } catch (err) {
-        errors.push(String((err && err.message) || err));
-      }
-    }
-    throw new Error(errors.length
-      ? ('360 搜索没给出法定代表人（' + errors[0] + '）')
-      : '360 搜索结果里没有这家公司的法定代表人');
-  }
-
-  /**
-   * 【2.0.16】第四条通道：太极AI 补法人。只在前三条（搜狗/爱企查/360）都没结论时才有意义。
+   * 【2.0.16】第四条通道：太极AI 补法人。只在搜狗这条主通道没结论时才有意义。
    * 模型会「猜」，所以结果必须过 personOk 再交出去，source 标成 'ai' —— 面板上一眼能看出这是推断值。
    */
   async function fromAi(name) {
@@ -601,15 +381,16 @@ const SO360_HEADSTART_MS = 1200;
     } catch (e) { /* 写缓存失败不影响本次结果 */ }
   }
 
-  /* 【2.0.16.7 · m20763】四条法人通道的开关：只有明确的 false 算关，缺键/坏值一律按开（老配置照旧全开）。 */
+  /* 【2.0.19】通道开关只剩两条（搜狗 / 太极AI）：只有明确的 false 算关，缺键/坏值一律按开。
+   * 老配置里的 aiqicha / so360 键直接忽略（那两条已经下线）。 */
   async function readChannels() {
-    const DEF = { sogou: true, aiqicha: true, so360: true, ai: true };
+    const DEF = { sogou: true, ai: true };
     try {
       const C = (typeof self !== 'undefined' && self.KH && self.KH.Config) || null;
       if (!C || typeof C.load !== 'function') return DEF;
       const got = await C.load();
       const ch = (got && got.config && got.config.importantNote && got.config.importantNote.entityChannels) || {};
-      return { sogou: ch.sogou !== false, aiqicha: ch.aiqicha !== false, so360: ch.so360 !== false, ai: ch.ai !== false };
+      return { sogou: ch.sogou !== false, ai: ch.ai !== false };
     } catch (e) { return DEF; }
   }
   Entity.readChannels = readChannels;
@@ -631,27 +412,19 @@ const SO360_HEADSTART_MS = 1200;
       return { ok: true, rep: hit.rep, source: hit.source || 'cache', cached: true, name: name };
     }
     /* 【2026-11-16】查不到也缓存：同一张卡反复重建、同一家公司在很多卡片里出现，
-     * 每次都连打三个 360 问法太浪费，也容易被对方限速。 */
+     * 每次都连打搜狗 + 太极AI 太浪费，也容易被对方限速。 */
     if (hit && hit.miss && (Date.now() - (hit.at || 0)) < (hit.soft ? SOFT_MISS_TTL_MS : MISS_TTL_MS)) {
       return { ok: false, error: hit.error || '未查到', name: name, cached: true };
     }
     /* 只查单位：个人当主体时，面板那边直接按「本人就是法人」处理，不该来打网络。 */
     const errors = [];
-    /* 2026-11-16：爱企查优先（用浏览器里的登录态开后台标签页读 DOM，最准），360 兜底。
-     * 【2026-11-22 起】搜狗移动版企业卡（纯 fetch、约 1 秒）插到最前面当主力，见下面 run(fromSogouM)。
-     * 【2026-11-18 用户问题二】两条通道原来是**串行**的：爱企查 9s 预算用满再交给 360 打三枪，
-     * 合计常常超过面板 20s 的等待，卡片就留一个「⏱ 超时」。现在同时起跑：
-     * 爱企查先跑，360 延后 SO360_HEADSTART_MS 再上（爱企查先出结论就不白打 360），
-     * 谁先给出结论用谁，慢的那条自己结束。 */
-    /* 【2026-11-22】三条通道按「便宜且快」排：
-     *   ① 搜狗移动版企业卡（纯 fetch、约 1 秒、免登录）；
-     *   ② 爱企查（后台标签页读 DOM，登录态下最准，现在会耐心等 /cbae/ 挑战自己过）；
-     *   ③ 360 三问法兜底。
-     * 搜狗先跑 SOGOU_HEADSTART_MS；还没结论就把②③一起放出去（不白等），谁先给出人名用谁。
-     * 搜狗失败**不提前收工**：等三家都放出去且都没有结论才返回失败，否则主通道一被拦就白瞎。 */
+    /* 【2.0.19】只剩两条通道：
+     *   ① 搜狗移动版企业卡（纯 fetch、约 1 秒、免登录）先跑，见下面 run(fromSogouM)；
+     *   ② 太极AI 兜底（可选开关，结果标 source:ai）。
+     * 搜狗失败**不提前收工**：等两条都放出去且都没有结论才返回失败。 */
     /* 【2.0.16.7 · m20763】关掉的通道既不跑、也不计入「等齐」，所以全关要在起跑前就说清楚。 */
     const chans = await readChannels();
-    const enabled = [chans.sogou, chans.aiqicha, chans.so360, chans.ai].filter(Boolean);
+    const enabled = [chans.sogou, chans.ai].filter(Boolean);
     if (!enabled.length) return { ok: false, error: '所有法人通道都已关闭（在设置页「同法人校验」里打开）', name: name };
     const r = await new Promise(function (resolve) {
       let done = false;
@@ -682,25 +455,10 @@ const SO360_HEADSTART_MS = 1200;
         });
       };
       if (chans.sogou) { pending += 1; opened += 1; run(fromSogouM, true); }
-      /* 其余三条等搜狗先手（搜狗关掉就没必要白等）；关掉的直接跳过。 */
+      /* 太极AI 等搜狗先手（搜狗关掉就没必要白等）；关掉的直接跳过。 */
       const startLater = function () {
         if (done) return;
-        if (chans.aiqicha) { pending += 1; opened += 1; run(fromAiqicha, true); }
-        if (chans.so360) { pending += 1; opened += 1; run(fromSo360, false); }
-        /* 第四条：太极AI（用户口径「这个也能辅助法人检索」）。和本地通道并发起跑，
-         * 只有本地都空手才用它；它慢也不拖主路径 —— 本地上任何一家先出来就 finish 收工。 */
-        if (chans.ai) {
-          pending += 1; opened += 1;
-          Promise.resolve().then(function () { return fromAi(name); }).then(function (out) {
-            if (out && out.rep) aiOut = out;
-            pending -= 1;
-            maybeDone();
-          }).catch(function (err) {
-            errors.push('太极AI：' + String((err && err.message) || err));
-            pending -= 1;
-            maybeDone();
-          });
-        }
+        if (chans.ai) { pending += 1; opened += 1; run(fromAi, false); }
       };
       if (chans.sogou && headstartMs > 0) setTimeout(startLater, headstartMs);
       else startLater();
@@ -716,8 +474,6 @@ const SO360_HEADSTART_MS = 1200;
     return { ok: false, error: errText, name: name };
   };
 
-  /* 通道单独暴露：单测要验证「未登录 / 要验证 ⇒ 快速失败并关标签」这条链，不必真开标签页。 */
-  Entity.fromAiqicha = fromAiqicha;
   /* 新通道也单独暴露：真机排障要看「搜狗这一步到底有没有打开/被拦」。 */
   Entity.fromSogouM = fromSogouM;
   /* AI 兜底同样单测要直接打（不必真连站点）。 */

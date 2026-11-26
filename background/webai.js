@@ -60,18 +60,25 @@
     });
   }
 
-  /* 找到（或新建）承载这个 AI 页的标签页，返回 tabId。 */
+  /* 找到（或新建）承载这个 AI 页的标签页，返回 { id, created }。
+   * 【2.0.19 体检】created 用来区分「我们新开的」和「复用你原来就有的」：
+   * 取消钉住（keepTab=false）时只能关前者，绝不能把你自己的标签页关掉。 */
   async function ensureTab(url, keep) {
     let tabs = [];
     try { tabs = await chrome.tabs.query({}); } catch (e) { tabs = []; }
     for (let i = 0; i < tabs.length; i++) {
       const t = tabs[i];
-      if (t && !t.incognito && t.url && samePage(t.url, url)) return t.id;
+      if (t && !t.incognito && t.url && samePage(t.url, url)) return { id: t.id, created: false };
     }
     const tab = await chrome.tabs.create({ url: url, active: false, pinned: !!keep });
     const ok = await waitTabComplete(tab.id);
     if (!ok) throw new Error('页面 20 秒内没有加载完（网址或内网连通性可能有问题）');
-    return tab.id;
+    return { id: tab.id, created: true };
+  }
+
+  function closeTab(tabId) {
+    if (!tabId) return;
+    try { chrome.tabs.remove(tabId, () => { void chrome.runtime.lastError; }); } catch (e) { /* 关不掉就留着 */ }
   }
 
   async function run(tabId, func, args) {
@@ -158,9 +165,22 @@
     return '';
   };
 
-  /* 主入口：问一句，等它稳定，返回整段回答。 */
+  /* 主入口：问一句，等它稳定，返回整段回答。
+   * 【2.0.19 体检】keepTab=false（设置页「钉住」没勾）时，本次用完就关掉**我们新开的**那张后台页：
+   *   ① 设置页与 PRIVACY 都写着「不钉住 / 用完关掉」——不关就是空承诺；
+   *   ② 写进输入框的问题会留在页面上，关掉才不留痕。
+   * 复用你原有标签页（created=false）时绝不动它。 */
   W.ask = async function (opts) {
     const o = opts || {};
+    const c = o.custom || {};
+    const state = { id: 0, created: false };
+    try { return await askOnce(o, state); }
+    finally {
+      if (c.keepTab === false && state.created) closeTab(state.id);
+    }
+  };
+
+  async function askOnce(o, state) {
     const c = o.custom || {};
     const url = okUrl(c.url);
     if (!url) return { ok: false, error: '还没在设置页填「自定义网页 AI」的网址' };
@@ -171,8 +191,12 @@
     const idleMs = Math.max(400, Number(c.idleMs) || 1200);
 
     let tabId = 0;
-    try { tabId = await ensureTab(url, c.keepTab !== false); }
-    catch (e) { return { ok: false, error: errText(e) }; }
+    try {
+      const t = await ensureTab(url, c.keepTab !== false);
+      tabId = t.id;
+      state.id = t.id;
+      state.created = t.created;
+    } catch (e) { return { ok: false, error: errText(e) }; }
 
     let base = '';
     try {
@@ -220,13 +244,15 @@
     const url = okUrl(c.url);
     if (!url) return { ok: false, error: '请先填网址（要 http:// 或 https://）' };
     let tabId = 0;
-    try { tabId = await ensureTab(url, c.keepTab !== false); }
+    let created = false;
+    try { const t = await ensureTab(url, c.keepTab !== false); tabId = t.id; created = t.created; }
     catch (e) { return { ok: false, error: errText(e) }; }
     try {
       const r = await run(tabId, probePage, [{ inputSel: c.input || '', sendSel: c.send || '', answerSel: c.answer || '' }]);
       if (!r || !r.ok) return { ok: false, error: (r && r.error) || '读不到页面' };
       return { ok: true, title: r.title, input: !!r.input, send: !!r.send, answer: !!r.answer };
     } catch (e) { return { ok: false, error: errText(e) }; }
+    finally { if (c.keepTab === false && created) closeTab(tabId); }
   };
 
   /* ---------------- 「点选元素」：注入一层遮罩，点哪儿就把哪儿的 CSS 路径带回来 ----------------

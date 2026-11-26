@@ -19,8 +19,34 @@
 
   const AI = {};
 
+  /* 【2.0.19 体检】深查是串行跑的，每张卡都 get(null) 一次 = 把整库（政策缓存、笔记）
+   * 复制进 JS。配置是低频变更：3s 短缓存 + storage.onChanged 立即失效，不靠猜过期。 */
+  const CFG_TTL = 3000;
+  let cfgCache = null;
+  let cfgAt = 0;
+  let cfgGen = 0;            /* 配置代：变更事件一来就 ++，在飞的 get 不许把旧值写回缓存 */
+  try {
+    if (chrome.storage && chrome.storage.onChanged && chrome.storage.onChanged.addListener) {
+      chrome.storage.onChanged.addListener((changes, area) => {
+        try {
+          if (area !== 'local') return;
+          /* 【2.0.19 体检】深查每张卡都会写 khRiskAuditV1：不过滤键名的话，缓存刚建就被这次写入清掉，
+           * 3s 缓存在最需要它的串行深查里等于没做。这里只认配置键（Config.storageKeys）。 */
+          const C = self.KH && self.KH.Config;
+          const keys = (C && typeof C.storageKeys === 'function') ? C.storageKeys() : null;
+          if (!keys || !keys.length) { cfgGen++; cfgCache = null; return; }
+          for (let i = 0; i < keys.length; i++) {
+            if (changes && changes[keys[i]]) { cfgGen++; cfgCache = null; return; }
+          }
+        } catch (e) { /* 变更事件坏掉就只靠 TTL */ }
+      });
+    }
+  } catch (e) { /* 没有变更事件就只靠 TTL */ }
+
   /** 当前配置里的 `ai` 段（读 storage → Config.merge/normalize 这条唯一归一）。 */
   function readConfig() {
+    if (cfgCache && (Date.now() - cfgAt) < CFG_TTL) return Promise.resolve(cfgCache);
+    const gen = cfgGen;
     return Promise.resolve()
       .then(() => chrome.storage.local.get(null))
       .then((all) => {
@@ -28,7 +54,10 @@
         if (!C || typeof C.merge !== 'function') return {};
         const merged = C.merge(all || {});
         const normalized = (typeof C.normalize === 'function') ? C.normalize(merged).config : merged;
-        return (normalized && normalized.ai) || {};
+        const ai = (normalized && normalized.ai) || {};
+        /* 读的过程中配置被改过（gen 变了）⇒ 这份结果已经过期，不许写回缓存。 */
+        if (gen === cfgGen) { cfgCache = ai; cfgAt = Date.now(); }
+        return ai;
       })
       .catch(() => ({}));
   }

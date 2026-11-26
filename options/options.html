@@ -352,7 +352,7 @@
             <input class="kh-input" type="number" id="ai-web-idle" min="400" max="10000" step="100">
           </div>
           <div class="kh-form-fld">
-            <label class="kh-check"><input type="checkbox" id="ai-web-keep"> 把通道标签页钉住（不自动回收）</label>
+            <label class="kh-check"><input type="checkbox" id="ai-web-keep"> 把通道标签页钉住（不勾选：用完自动关闭插件开的那张）</label>
           </div>
         </div>
         <div class="kh-ai-actions">
@@ -417,7 +417,7 @@
       <div class="kh-sub-card">
         <h3 class="kh-sub">自动核对（可选，涉及联网）</h3>
         <label class="kh-check"><input type="checkbox" id="pf-noteEntityCheck"> 同法人校验（开发者与核准主体的法定代表人是否一致）</label>
-        <p class="kh-muted">这是<strong>总闸</strong>：关着时下面四条渠道都不跑，也不联网；打开后才去查两边的法定代表人，并在面板标「同法人 / 不同法人 / 未查明」。</p>
+        <p class="kh-muted">这是<strong>总闸</strong>：关着时下面两条渠道都不跑，也不联网；打开后才去查两边的法定代表人，并在面板标「同法人 / 不同法人 / 未查明」。</p>
 
         <div class="kh-ent-head">
           <h4 class="kh-ent-title">查询渠道 <span class="kh-ent-sum" id="ent-ch-summary">—</span></h4>
@@ -426,9 +426,8 @@
             <button class="kh-mini-btn" id="btn-ent-all-off" type="button">全部关闭</button>
           </div>
         </div>
-        <p class="kh-muted">搜狗先跑；爱企查与 360 紧接着<strong>同时</strong>查，谁先给出结果就用谁；三家都空手时才用太极AI 推断。关掉的渠道<strong>不发请求</strong>，也不计入等待。</p>
-        <!-- 2.0.16.7 · 用户 m20998：不要四个裸复选框，要能看懂「谁快、谁准、谁兜底、要付什么代价」。
-             行内顺序与 background/entity.js 的竞速一致：搜狗立即 → 爱企查/360 并行 → 太极AI 兜底。 -->
+        <p class="kh-muted">搜狗先跑；还没结论时才用太极AI 推断。关掉的渠道<strong>不发请求</strong>，也不计入等待。</p>
+        <!-- 2.0.19：爱企查/360 已下线，只留「快」的搜狗与「兜底」的太极AI。 -->
         <ul class="kh-ent-list" id="pf-entity-channels">
           <li class="kh-ent-row">
             <label class="kh-check"><input type="checkbox" id="pf-ent-sogou" checked> 搜狗企业卡</label>
@@ -437,25 +436,13 @@
             <span class="kh-ent-cost">联网</span>
           </li>
           <li class="kh-ent-row">
-            <label class="kh-check"><input type="checkbox" id="pf-ent-aiqicha" checked> 爱企查</label>
-            <span class="kh-ent-tag">较准</span>
-            <span class="kh-ent-desc">百度的官方企业信息；需要你在浏览器里登录过爱企查。</span>
-            <span class="kh-ent-cost">开后台标签页</span>
-          </li>
-          <li class="kh-ent-row">
-            <label class="kh-check"><input type="checkbox" id="pf-ent-so360" checked> 360 搜索</label>
-            <span class="kh-ent-tag">并行</span>
-            <span class="kh-ent-desc">三问法搜公开页，偶尔会遇到人机验证。</span>
-            <span class="kh-ent-cost">联网</span>
-          </li>
-          <li class="kh-ent-row">
             <label class="kh-check"><input type="checkbox" id="pf-ent-ai" checked> 太极AI 推断</label>
             <span class="kh-ent-tag">兜底</span>
-            <span class="kh-ent-desc">前三条都查不到时才用；面板里会标「太极AI 推断」，仅供参考。</span>
+            <span class="kh-ent-desc">搜狗查不到时才用；面板里会标「太极AI 推断」，仅供参考。</span>
             <span class="kh-ent-cost">公司名发到站点</span>
           </li>
         </ul>
-        <p class="kh-muted">四条全关时面板只会说一句「所有法人通道都已关闭」，不会联网。</p>
+        <p class="kh-muted">两条全关时面板只会说一句「所有法人通道都已关闭」，不会联网。</p>
       </div>
 
       <div class="kh-sub-card">

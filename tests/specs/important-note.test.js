@@ -1613,4 +1613,31 @@ module.exports = async function run() {
     if (dA.parentNode) dA.parentNode.removeChild(dA);
     if (dB.parentNode) dB.parentNode.removeChild(dB);
   });
+
+  /* 【2.0.19 · 体检 / 用户 m00292】全文栏宽度自增：dockSide 曾把读回的 side.offsetWidth 当基准，
+   * 而浮层是 content-box（写 340 渲染成 342）⇒ 每次 apply() 长 2px 并把左缘往左挪；
+   * 滚轮缩放与拖动图片都会连续触发 apply()，用户看到的就是"浮层跟着图片缩放/拖动跑"。 */
+  await test('★ 2.0.19 全文栏宽度不再自增：缩放/拖动图片时浮层不漂（m00292 体检）', () => {
+    const src = read('src/features/important-note.js');
+    truthy(src.indexOf('(side.offsetWidth || 340)') < 0,
+      '★ 停靠基准不许读回渲染宽度（自己叠自己的差值 ⇒ 每触发一次 apply 长 2px）');
+    truthy(/const w = Math\.min\(Math\.max\(220, custom \? custom\.w : 340\), Math\.max\(220, vw - 24\)\)/.test(src),
+      '★ 基准宽度只用常量 340（自定义尺寸走 _sideSize）：夹紧值不许写回');
+    truthy(src.indexOf('host._sideW') < 0, '★ 不再缓存停靠基准：它会把窄视口夹紧到的 276 永久固化，双击复位也回不到 340');
+    truthy(/\.kh-lb-side \{[^}]*box-sizing: border-box;/.test(src),
+      '★ 浮层盒模型要含边框：否则 style.width 与渲染宽度永远差 2px，读回就再叠一次');
+  });
+
+  /* 【2.0.19 · 体检】深查队列与结论落盘：关掉自动深查后已排队的卡不许继续发；
+   * 落盘要防抖并合并磁盘现值（all_frames 下每个 frame 各持一份内存表）。 */
+  await test('★ 2.0.19 深查关掉后清队、结论落盘防抖并合并磁盘（体检）', () => {
+    const src = read('src/features/important-note.js');
+    truthy(src.indexOf('if (ncNow && ncNow.riskAuto === false) { this._riskQueue = []; break; }') >= 0,
+      '★ riskPump 每一轮都要重读 riskAuto：关掉开关后已排队的卡立即停发');
+    truthy(src.indexOf('this._riskSaveTimer = setTimeout(() => { this._riskSaveTimer = 0; this.riskFlush(); }, 400);') >= 0,
+      '★ 回写要合帧：50 张卡不该产生 50 次整表序列化');
+    truthy(src.indexOf("api.get('khRiskAuditV1', (v) => {") >= 0,
+      '★ 写盘前先读磁盘现值：整表覆盖会丢掉别的 frame 刚写下的结论');
+    truthy(src.indexOf('(Number(s.at) || 0) > (Number(has.at) || 0)') >= 0, '★ 同 key 取 at 新的那条');
+  });
 };

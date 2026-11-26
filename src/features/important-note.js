@@ -1351,6 +1351,9 @@
      *   · 外壳只管分栏与圆角：标题栏（也是**拖动抓手**）与两个按钮固定，**滚动只在正文区**（.kh-lb-side-t）。 */
     .kh-lb-side {
       position: fixed; left: 0; top: 0; z-index: 3;
+      /* 【2.0.19 · 体检】宽度必须含边框：dockSide 写的是 style.width，若盒模型是 content-box，
+       * 设 340 会渲染成 342（左右各 1px 边框）—— 于是「读回 offsetWidth 再写回去」每跑一次长 2px。 */
+      box-sizing: border-box;
       width: 340px; max-width: calc(100vw - 16px); min-width: 220px; min-height: 140px;
       display: flex; flex-direction: column; overflow: hidden;
       border-radius: 12px; background: rgba(22,26,34,.97);
@@ -1889,12 +1892,20 @@
       const dockSide = () => {
         const vw = window.innerWidth, vh = window.innerHeight;
         const custom = host._sideSize || null;
-        const w = Math.min(Math.max(220, custom ? custom.w : (side.offsetWidth || 340)), Math.max(220, vw - 24));
+        /* 【2.0.19 · 体检 / 用户 m00292】基准宽度只能是**自己记下的值**，绝不许读 side.offsetWidth。
+         * 那是"上一次写完之后的渲染结果"：只要它与写进去的 px 差 1–2px（边框、取整），
+         * 每次 apply() 就会把这个差值再叠一遍 —— 而滚轮缩放、拖动图片都会连续触发 apply()，
+         * 于是浮层一路变宽、左缘一路往左挪，看起来就像"浮层跟着图片缩放和拖动跑"。
+         * 基准默认 340（唯一真源见 .kh-lb-side 的 width），用户拖过右下抓手则用 _sideSize。 */
+        /* 【2.0.19 体检】基准只能是常量 340：把它写成「上次夹紧后的值」会让窄视口下的 276 永久留存，
+         * 窗口再放宽也回不到 340（双击复位同样失效）。w 是视口的纯函数，本来就不会漂。 */
+        const w = Math.min(Math.max(220, custom ? custom.w : 340), Math.max(220, vw - 24));
         const h = Math.min(Math.max(140, custom ? custom.h : Math.min(560, vh - 128)), Math.max(140, vh - 24));
-        side.style.width = Math.round(w) + 'px';
+        const wOut = Math.round(w), hOut = Math.round(h);
+        side.style.width = wOut + 'px';
         side.style.left = Math.round(Math.max(12, vw - w - 24)) + 'px';
         side.style.top = '88px';
-        side.style.height = Math.round(h) + 'px';
+        side.style.height = hOut + 'px';
       };
 
       /* 拖动全文栏（需求 4）：抓手 = 标题栏。坐标走**视口**（.kh-lb-side 是 position:fixed）。
@@ -3426,6 +3437,10 @@
       this._riskLoading = true;
       const done = (obj) => {
         this._riskMap = Object.assign({}, obj || {});
+        /* 【2.0.19 体检】读出来先裁一遍：过期条目本来就会重查，留着只让这个键只增不减。 */
+        try {
+          if (RA && typeof RA.trimCache === 'function' && RA.trimCache(this._riskMap).removed > 0) this.saveRiskCache();
+        } catch (e) { /* 裁不动就按原样用 */ }
         this._riskLoading = false;
         try { this.refresh(); } catch (e) { /* 面板已关 */ }
       };
@@ -3436,14 +3451,43 @@
       } catch (e) { done(null); }
     },
 
+    /* 【2.0.19 体检】落盘改成「防抖 + 先并再写」：
+     *   · 深查每张卡回写一次整表（300 条约 100–250KB），50 张卡就是 50 次全量序列化；
+     *   · 内容脚本 all_frames=true，每个 frame 各持一份内存表，整表覆盖会丢掉别的 frame 刚写下的结论，
+     *     丢掉下次还得重查 = 把主标题+开发者重复发给站点，与「每张卡只查一次」对不上。
+     * 所以先 400ms 合帧，落盘前把磁盘现值按 key 并进来（同 key 取 at 新的），再裁到上限写回。 */
     saveRiskCache() {
       try {
         const api = (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) ? chrome.storage.local : null;
         if (!api) return;
-        const o = {};
-        o.khRiskAuditV1 = this._riskMap || {};
-        api.set(o);
+        if (this._riskSaveTimer) clearTimeout(this._riskSaveTimer);
+        this._riskSaveTimer = setTimeout(() => { this._riskSaveTimer = 0; this.riskFlush(); }, 400);
       } catch (e) { /* 存不下就少回填一次，不影响本次会话 */ }
+    },
+
+    /** 真正写盘：读磁盘现值 → 按 at 合并 → 裁上限 → 整表写。读不到就不写（宁可少回填，不覆盖别人的结论）。 */
+    riskFlush() {
+      try {
+        const api = (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) ? chrome.storage.local : null;
+        if (!api) return;
+        api.get('khRiskAuditV1', (v) => {
+          try {
+            if (!this._riskMap) this._riskMap = {};
+            const disk = (v && v.khRiskAuditV1 && typeof v.khRiskAuditV1 === 'object') ? v.khRiskAuditV1 : {};
+            Object.keys(disk).forEach((k) => {
+              const s = disk[k] || {};
+              const has = this._riskMap[k];
+              if (!has || (Number(s.at) || 0) > (Number(has.at) || 0)) this._riskMap[k] = s;
+            });
+            try {
+              if (RA && typeof RA.trimCache === 'function') RA.trimCache(this._riskMap);
+            } catch (e) { /* 裁不动就整表写 */ }
+            const o = {};
+            o.khRiskAuditV1 = this._riskMap;
+            api.set(o);
+          } catch (e) { /* 合并失败就少回填一次 */ }
+        });
+      } catch (e) { /* 读不到磁盘现值就不写 */ }
     },
 
     riskEnqueue(key, title, icon, dev) {
@@ -3462,6 +3506,9 @@
       this._riskRunning = true;
       try {
         while (this._riskQueue && this._riskQueue.length) {
+          /* 【2.0.19 体检】每轮都重读开关：用户关掉自动深查后，已排队的那批卡不许继续发请求。 */
+          const ncNow = this.cfg && this.cfg.importantNote;
+          if (ncNow && ncNow.riskAuto === false) { this._riskQueue = []; break; }
           const job = this._riskQueue.shift();
           let res = null;
           try { res = await this.riskAsk(job); } catch (e) { res = { ok: false, error: String((e && e.message) || e) }; }
@@ -3801,7 +3848,7 @@
 
     /** 需求③：开发者 / 核准主体 两边查法定代表人，再判断是否同一人。 */
     paintEntity(el, table, fields, NC) {
-      /* 【2.0.15 · 问题②】同法人校验改成可选打开、**默认关闭**：爱企查这条链路经常
+      /* 【2.0.15 · 问题②】同法人校验改成可选打开、**默认关闭**：法人链路经常
        * 查不到（未登录 / 验证 / 改版），以前每张卡都挂一个「？未查明」等于噪音。
        * 关着时这里直接收工 —— 不联网、不涂色、也不写未查明标记。 */
       const nc = this.cfg && this.cfg.importantNote;
@@ -3850,9 +3897,9 @@
         if (el && el.isConnected === false) return;
         if (table && table.isConnected === false) return;
         const verdict = KH.Compare.legalRep({ name: dev, rep: reps[0] }, { name: ent, rep: reps[1] }).state;
-        /* 查不到法人时把失败原因跟在后面（爱企查要登录 / 超时 / 站点改版），面板不再只有一个「未查明」。 */
+        /* 查不到法人时把失败原因跟在后面（要登录 / 超时 / 站点改版），面板不再只有一个「未查明」。 */
         const why = (s) => (s.rep ? '' : (s.error ? '（' + s.error + '）' : ''));
-        /* 【2.0.16.7 · m20763】四条通道各自出结果，界面必须写清是哪一条给的：
+        /* 【2.0.16.7 · m20763】每条通道各自出结果，界面必须写清是哪一条给的：
          * 「AI 推断」仍然要标（不能误当成工商登记），只是统一进「来源：…」。 */
         const srcMark = (s) => {
           const label = this.entSourceLabel(s.source);
@@ -3917,7 +3964,7 @@
         let settled = false;
         let timer = 0;
         /* 【2.0.14 · 问题②】把失败原因也带回面板：以前只回空串，界面永远写「未查明」，
-         * 用户分不出是没登录爱企查、被拦、还是链路根本没通。 */
+         * 用户分不出是站点要登录、被拦、还是链路根本没通。 */
         const finish = (v, timedOut, error, source) => {
           if (settled) return;
           settled = true;

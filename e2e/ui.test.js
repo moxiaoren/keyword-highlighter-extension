@@ -320,36 +320,39 @@ module.exports = async function runUi(ctx) {
     eq(await waitFS(11), 11, '收尾写回 11');
   });
 
-  await test('★ 2.0.16.7 法人通道开关：四条各自可关、落进 importantNote.entityChannels，校验关着时置灰', async () => {
-    const ids = ['pf-ent-sogou', 'pf-ent-aiqicha', 'pf-ent-so360', 'pf-ent-ai'];
+  await test('★ 2.0.19 法人通道开关：两条各自可关、落进 importantNote.entityChannels，校验关着时置灰', async () => {
+    const ids = ['pf-ent-sogou', 'pf-ent-ai'];
     const shape = await opt.evaluate((list) => list.map((id) => {
       const el = document.getElementById(id);
       return el ? { id: id, checked: el.checked, disabled: el.disabled, type: el.type } : null;
     }), ids);
     ids.forEach((id, i) => truthy(shape[i], '设置页要有通道开关 #' + id));
-    eq(shape.map((s) => s.type).join(','), 'checkbox,checkbox,checkbox,checkbox', '四个都要是复选框');
-    eq(shape.map((s) => s.checked).join(','), 'true,true,true,true', '默认全开（老行为不变）');
+    eq(shape.map((s) => s.type).join(','), 'checkbox,checkbox', '两个都要是复选框');
+    eq(shape.map((s) => s.checked).join(','), 'true,true', '默认全开（老行为不变）');
     const checkOn = await opt.evaluate(() => document.getElementById('pf-noteEntityCheck').checked);
-    eq(shape.map((s) => s.disabled).join(','), checkOn ? 'false,false,false,false' : 'true,true,true,true',
+    eq(shape.map((s) => s.disabled).join(','), checkOn ? 'false,false' : 'true,true',
       '同法人校验关着时通道开关要置灰（实际 enabled=' + checkOn + '）');
+    /* 2.0.19 起只剩两条通道：爱企查 / 360 已删（用户 m00790：这两太不稳定）。 */
+    const gone = await opt.evaluate(() => [!!document.getElementById('pf-ent-aiqicha'), !!document.getElementById('pf-ent-so360')]);
+    eq(gone.join(','), 'false,false', '爱企查 / 360 的开关必须删掉');
 
     const readCh = () => opt.evaluate(() => new Promise((res) => chrome.storage.local.get(['importantNote'], (r) => res((r.importantNote || {}).entityChannels || null))));
     const waitCh = async (want) => {
       for (let i = 0; i < 15; i++) {
         const v = await readCh();
-        if (v && v.ai === want.ai && v.sogou === want.sogou && v.aiqicha === want.aiqicha && v.so360 === want.so360) return v;
+        if (v && v.ai === want.ai && v.sogou === want.sogou) return v;
         await opt.waitForTimeout(100);
       }
       return await readCh();
     };
-    /* 先把校验打开（关着时开关是灰的，点不动），这时四个通道应可用。 */
+    /* 先把校验打开（关着时开关是灰的，点不动），这时两个通道应可用。 */
     await opt.evaluate(() => {
       const el = document.getElementById('pf-noteEntityCheck');
       if (!el.checked) { el.checked = true; el.dispatchEvent(new Event('change', { bubbles: true })); }
     });
     await opt.waitForTimeout(200);
     const nowDisabled = await opt.evaluate((list) => list.map((id) => document.getElementById(id).disabled), ids);
-    eq(nowDisabled.join(','), 'false,false,false,false', '打开同法人校验后四条通道要可点');
+    eq(nowDisabled.join(','), 'false,false', '打开同法人校验后两条通道要可点');
 
     /* 关掉太极AI 这条：要整份写进 entityChannels（storage 侧一层合并，写半截会丢兄弟键）。 */
     await opt.evaluate(() => {
@@ -357,21 +360,21 @@ module.exports = async function runUi(ctx) {
       el.checked = false;
       el.dispatchEvent(new Event('change', { bubbles: true }));
     });
-    const saved = await waitCh({ sogou: true, aiqicha: true, so360: true, ai: false });
-    truthy(saved, '四个通道要落进 importantNote.entityChannels');
+    const saved = await waitCh({ sogou: true, ai: false });
+    truthy(saved, '两个通道要落进 importantNote.entityChannels');
     eq(saved && saved.ai, false, '★ 关掉太极AI 要存成 false');
-    eq([saved.sogou, saved.aiqicha, saved.so360].join(','), 'true,true,true', '其余三条不许被顺手关掉（整份写入）');
+    eq(saved && saved.sogou, true, '其余一条不许被顺手关掉（整份写入）');
 
-    /* 收尾：四条恢复全开、校验恢复关闭，别把设置留给后面的用例。 */
+    /* 收尾：两条恢复全开、校验恢复关闭，别把设置留给后面的用例。 */
     await opt.evaluate(() => {
-      ['pf-ent-sogou', 'pf-ent-aiqicha', 'pf-ent-so360', 'pf-ent-ai'].forEach((id) => {
+      ['pf-ent-sogou', 'pf-ent-ai'].forEach((id) => {
         const el = document.getElementById(id);
         if (!el.checked) { el.checked = true; el.dispatchEvent(new Event('change', { bubbles: true })); }
       });
       const c = document.getElementById('pf-noteEntityCheck');
       if (c.checked) { c.checked = false; c.dispatchEvent(new Event('change', { bubbles: true })); }
     });
-    await waitCh({ sogou: true, aiqicha: true, so360: true, ai: true });
+    await waitCh({ sogou: true, ai: true });
   });
 
   await test('★ 2.0.2.6 置顶排序：下拉框选词 → 胶囊展示 → 落盘是关键词 id', async () => {
