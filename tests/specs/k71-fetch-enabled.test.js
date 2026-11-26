@@ -112,6 +112,34 @@ module.exports = async function run() {
       '写路径坏值 ⇒ false');
   });
 
+  /* ============================== 【2.0.19.2 · m02412 需求①】展示字数（1–200，其余 0） */
+
+  suite('2.0.19.2 · 展示字数：读/写/编译三路同一条判据');
+
+  await test('★ 三路都夹在 0–200：缺键/坏值/负数 ⇒ 0，999 ⇒ 200', () => {
+    const kw = (v) => ({ id: 'k', text: '甲', fetchLabels: '著作权人', fetchEnabled: true, valueChars: v });
+    // 编译层（进运行期 meta）
+    eq(C.dispatch(kw(30), CFG).meta.valueChars, 30, '编译层保留 30');
+    eq(C.dispatch(kw(0), CFG).meta.valueChars, 0, '0 = 不裁');
+    eq(C.dispatch(kw(undefined), CFG).meta.valueChars, 0, '缺键 ⇒ 0（存量行为不变）');
+    eq(C.dispatch(kw('abc'), CFG).meta.valueChars, 0, '坏值 ⇒ 0');
+    eq(C.dispatch(kw(999), CFG).meta.valueChars, 200, '超上限夹到 200');
+    eq(C.dispatch(kw(-5), CFG).meta.valueChars, 0, '负数 ⇒ 0');
+    eq(C.dispatch({ id: 'k', text: '甲', fetchLabels: '著作权人', fetchEnabled: false, valueChars: 30 }, CFG)
+      .meta.valueChars, 0, '没启用抓取就没有表可裁 ⇒ 0');
+    // 读路径
+    const nr = (v) => Config.normalize({ keywords: [kw(v)] }).config.keywords[0].valueChars;
+    eq(nr(30), 30, '读路径保留 30');
+    eq(nr(undefined), 0, '读路径缺键 ⇒ 0');
+    eq(nr('abc'), 0, '读路径坏值 ⇒ 0');
+    eq(nr(999), 200, '读路径夹到 200');
+    // 写路径
+    const nw = (v) => S.sanitizeKeyword({ text: 'x', fetchLabels: '甲', valueChars: v }, {}).valueChars;
+    eq(nw(30), 30, '写路径保留 30');
+    eq(nw('abc'), 0, '写路径坏值 ⇒ 0');
+    eq(nw(999), 200, '写路径夹到 200');
+  });
+
   /* ========================================================== ② 迁移规则 */
 
   suite('K71 · fetchEnabled 的迁移：缺键按 fetchLabels 反推，键存在一律尊重');

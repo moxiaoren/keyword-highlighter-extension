@@ -182,6 +182,28 @@
   function pad2(n) { return (n < 10 ? '0' : '') + n; }
   function fmtDate(t) { return t.y + '-' + pad2(t.m) + '-' + pad2(t.d); }
 
+  /* 【2.0.19.2 需求⑥】期限进表统一成「至 yyyy-mm-dd」：取原文里**最后一个**日期当终期。
+   * 为什么取最后一个：期限常写成「2024年1月1日 至 2027年12月31日」「自 2024-01-01 起至
+   * 2027-12-31 止」，终期都在后面；termCalc 推算出的起止也是后一个才是到期日。
+   * 一个日期都读不到（「长期」「自动续约」「待补…」）就原样返回，不猜日期。 */
+  function termEnd(v) {
+    var s = String(v == null ? '' : v);
+    if (!s) return s;
+    /* 「长期」「待补：盖章日期」「次数不限」这类没有终期的，原样留着 —— 写成「至 2025-03-01」
+     * 会把开始日误当成到期日（比不格式化更糟）。 */
+    if (/长期|待补|不限/.test(s)) return s;
+    var best = null;
+    var re = new RegExp(DATE_NUM.source + '|' + DATE_CN.source, 'g');
+    var m;
+    while ((m = re.exec(s))) {
+      var one = dateOf(m[0]);
+      if (one) best = one;
+      if (re.lastIndex === m.index) re.lastIndex++;   // 空匹配保护，别死循环
+    }
+    if (!best) return s;
+    return '至 ' + fmtDate(best);
+  }
+
   function addMonths(t, n) {
     var m0 = (t.m - 1) + n;
     var y = t.y + Math.floor(m0 / 12);
@@ -1169,6 +1191,7 @@
     kindOf: kindOf,
     fieldsOf: function (doc) { return (SETS[doc] || []).slice(); },
     termCalc: termCalc,
+    termEnd: termEnd,
     DEFS: DEFS,
     LABELS: LABELS
   };

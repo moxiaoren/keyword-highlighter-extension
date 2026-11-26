@@ -212,15 +212,12 @@ module.exports = async function run() {
     falsy(ctrl.el.querySelector('.kh-lbl-legend'), '后缀图例搬进「修改」弹窗，添加弹窗里不再重复');
 
     const box = ctrl.el.classList.contains('kh-cand-clamp') ? ctrl.el : ctrl.el.querySelector('.kh-cand-clamp');
-    truthy(box, '抓取字段的框要带 `kh-cand-clamp`（默认单行裁切）');
-    falsy(box.classList.contains('is-open'), '默认不展开（尺寸和普通输入框一样高）');
-    const toggle = ctrl.el.querySelector('.kh-clamp-btn');
-    truthy(toggle, '要有「展开/收起」钮');
-    toggle.dispatchEvent({ type: 'click' });
-    truthy(box.classList.contains('is-open'), '点一下展开（词多时能一次看全）');
-    toggle.dispatchEvent({ type: 'click' });
-    falsy(box.classList.contains('is-open'), '再点收回单行');
-    eq(ctrl.read(), '名称#图|备注', '展开收起不许动值');
+    truthy(box, '抓取字段的框要带 `kh-cand-clamp`（单行收纳）');
+    /* 【2.0.19.2 需求③】「展开/收起」按钮已删（用户 m02484/m02683）：框永远一个输入框那么高、
+     * 不换行、不拉长；看全走「修改」弹窗。这里锁住"按钮不许回来"。 */
+    falsy(ctrl.el.querySelector('.kh-clamp-btn'), '★ 不许再有「展开」按钮（看全走「修改」弹窗）');
+    falsy(box.classList.contains('is-open'), '默认单行（尺寸和普通输入框一样高）');
+    eq(ctrl.read(), '名称#图|备注', '只读展示不许动值');
     ctrl.el.querySelector('.kh-list-btn').dispatchEvent({ type: 'click' });
     truthy(lastModalEl().querySelector('.kh-lbl-legend'), '「修改」弹窗里要带后缀图例（语法说明不丢）');
     KH.ui.Modal.closeAll();

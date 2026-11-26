@@ -544,12 +544,39 @@ module.exports = async function run() {
     const note = fs.readFileSync(path.join(root, 'src/features/important-note.js'), 'utf8');
     truthy(note.indexOf('KH.OcrAuto') >= 0, 'ocrExtraRows 要读 KH.OcrAuto');
     truthy(note.indexOf('autoApi.rowsFor(it)') >= 0, '逐条目抽行');
-    truthy(note.indexOf("pushRow(ar.label, ar.value, ar.src, 'auto')") >= 0, '自动行要带 kind:auto');
+    truthy(note.indexOf("pushRow(ar.label, ar.value, ar.src, 'auto', ar.doc)") >= 0, '自动行要带 kind:auto 与文档细类');
     truthy(note.indexOf('if (!words.length && !autoOn) return [];') >= 0, '词表为空时不能提前返回');
     const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
     const js = (manifest.content_scripts[0] || {}).js || [];
     const iAuto = js.indexOf('src/features/ocr-auto.js');
     truthy(iAuto >= 0, 'manifest 要加载 ocr-auto.js');
     truthy(iAuto < js.indexOf('src/features/important-note.js'), '必须在 important-note 之前加载');
+  });
+
+  await test('★ 2.0.19.2 期限统一「至 yyyy-mm-dd」：取终期，长期/待补不硬塞日期（m02412 ⑥）', () => {
+    eq(A.termEnd('2024-01-01 至 2026-12-31'), '至 2026-12-31', '区间取后一个');
+    eq(A.termEnd('2026-01-02 至 2029-01-02（有效期3年）'), '至 2029-01-02', 'termCalc 的推算值也取终期');
+    eq(A.termEnd('自2024年1月1日起至2027年12月31日止'), '至 2027-12-31', '中文年月日');
+    eq(A.termEnd('长期（自 2025-03-01 起，有效期1年）'), '长期（自 2025-03-01 起，有效期1年）', '长期不许当成到期日');
+    eq(A.termEnd('待补：盖章日期（有效期1年）'), '待补：盖章日期（有效期1年）', '待补原样');
+    eq(A.termEnd('没有任何日期'), '没有任何日期', '读不到就原样');
+    eq(A.termEnd(''), '');
+  });
+
+  await test('★ 2.0.19.2 期限行可按规则关掉 / 点名只抓哪几个（m02412 ⑥）', () => {
+    const root = path.join(__dirname, '..', '..');
+    const note = fs.readFileSync(path.join(root, 'src/features/important-note.js'), 'utf8');
+    truthy(note.indexOf('const TERM_RE = /期限|有效期|到期日/;') >= 0, '期限行按标签识别');
+    truthy(note.indexOf('const on6 = m6.autoTerm !== false;') >= 0, '每条规则一个开关');
+    truthy(note.indexOf("if (!allow6.length) allow6 = ['授权期限'];") >= 0, '列表为空回到默认');
+    truthy(note.indexOf('row.value = KH.OcrAuto.termEnd(row.value);') >= 0, '进表前统一格式');
+    const map = fs.readFileSync(path.join(root, 'src/ui/fieldmap.js'), 'utf8');
+    truthy(map.indexOf("key: 'autoTerm'") >= 0 && map.indexOf("key: 'autoTermLabels'") >= 0, '设置页有两个控件');
+    const cfg = fs.readFileSync(path.join(root, 'src/core/config.js'), 'utf8');
+    truthy(cfg.indexOf('if (o.autoTerm !== false) o.autoTerm = true;') >= 0, '读路径归一');
+    const store = fs.readFileSync(path.join(root, 'src/platform/storage.js'), 'utf8');
+    truthy(store.indexOf('autoTerm: f.autoTerm !== false,') >= 0, '写路径同判据');
+    const comp = fs.readFileSync(path.join(root, 'src/core/compiler.js'), 'utf8');
+    truthy(comp.indexOf('autoTermLabels: String(kw.autoTermLabels') >= 0, '跟着规则进 meta');
   });
 };

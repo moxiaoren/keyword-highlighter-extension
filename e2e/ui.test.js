@@ -2707,16 +2707,29 @@ module.exports = async function runUi(ctx) {
     const wantChips = WORDS.split('|').length;
     eq(chips, wantChips, wantChips + ' 个词应全部变成胶囊，实测 ' + chips);
 
-    // 展开（点「展开」），整列不许被内容撑宽，三列也不许换行
-    await opt.evaluate(() => {
+    // 【2.0.19.2 需求③】「展开」按钮已删：词再多也是**单行收纳**，框不换行、不拉长（看全走「修改」弹窗）
+    const noClamp = await opt.evaluate(() => document.querySelectorAll('.kh-cand-box .kh-clamp-btn').length);
+    eq(noClamp, 0, '不许再有「展开」按钮（看全搬进「修改」弹窗）');
+    const oneLine = await opt.evaluate(() => {
       const box = document.querySelector('.kh-cand-box[data-for="fld-imgOcrKeyword"]');
-      const btn = box.querySelector('.kh-clamp-btn');
-      if (btn && btn.textContent === '展开') btn.click();
+      const prev = box.querySelector('.kh-lbl-preview');
+      const field = box.querySelector('.kh-cand-field');
+      const cs = getComputedStyle(field);
+      return {
+        boxH: Math.round(box.getBoundingClientRect().height),
+        fieldH: Math.round(field.getBoundingClientRect().height),
+        wrap: cs.flexWrap,
+        chips: box.querySelectorAll('.kh-lbl-chip').length,
+        cut: prev ? Math.round(prev.scrollWidth - prev.clientWidth) : 0
+      };
     });
-    await opt.waitForTimeout(400);
+    eq(oneLine.wrap, 'nowrap', '胶囊行不许换行：' + JSON.stringify(oneLine));
+    /* 标签行与「修改」按钮留在框上方（位置不许变，用户 m03024），所以量的是**框内那一行**：
+     * 它必须还是一个输入框高，词再多也不许把框撑高。 */
+    truthy(oneLine.fieldH <= 34, '框内那一行必须还是一个输入框高（不拉长）：' + JSON.stringify(oneLine));
+    truthy(oneLine.boxH <= 60, '盒子总高不许再多出一行：' + JSON.stringify(oneLine));
+    truthy(oneLine.chips >= wantChips, '词一个都不能少（只是被收纳）：' + JSON.stringify(oneLine));
     const after = await opt.evaluate(colsOf);
-    const openCls = await opt.evaluate(() => document.querySelector('.kh-cand-box[data-for="fld-imgOcrKeyword"]').className);
-    truthy(/is-open/.test(openCls), '点展开后应带 is-open：' + openCls);
     const ws = after.map((c) => c.w);
     truthy(Math.max(...ws) - Math.min(...ws) <= 1, '三列应等宽（不许某一列被内容撑宽）：' + JSON.stringify(after));
     truthy(after[0].top === after[1].top && after[1].top === after[2].top,
@@ -2729,9 +2742,9 @@ module.exports = async function runUi(ctx) {
       const cr = card.getBoundingClientRect();
       return { boxW: Math.round(b.width), cardW: Math.round(cr.width), over: Math.round(b.right - cr.right), pageOver: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1 };
     });
-    truthy(geo.boxW <= geo.cardW + 1, '展开后候选框不许比所在卡片宽：box ' + geo.boxW + ' / card ' + geo.cardW);
-    truthy(geo.over <= 0, '展开后右边界不许出卡片：over ' + geo.over);
-    eq(geo.pageOver, false, '展开后整页不许横向溢出');
+    truthy(geo.boxW <= geo.cardW + 1, '候选框不许比所在卡片宽：box ' + geo.boxW + ' / card ' + geo.cardW);
+    truthy(geo.over <= 0, '右边界不许出卡片：over ' + geo.over);
+    eq(geo.pageOver, false, '整页不许横向溢出');
     await closeEditor();
   });
 

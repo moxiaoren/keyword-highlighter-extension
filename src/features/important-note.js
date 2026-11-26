@@ -5952,7 +5952,7 @@
     try { list = KH.ImgOcr.items() || []; } catch (e) { return []; }
     const out = [];
     const seen = new Set();
-    const pushRow = (label, value, src, kind) => {
+    const pushRow = (label, value, src, kind, doc) => {
       /* 【2026-11-11 需求④】进表前按字段语义收窄：授权方/被授权方只留公司名、登记号只留代码。
        * 放在这一处，三条取值路径（表格格 / 文本行 / 下一行）一起生效。 */
       const v = kvTrimValue(label, value);
@@ -5985,6 +5985,9 @@
         value: { src: String(src == null ? '' : src), label: label, kind: kind || 'static' },
         enumerable: false
       });
+      /* 【2.0.19.2 · m02412 需求⑤】文档类型（cert / amend / auth …）也挂在行上（不可枚举）：
+       * 进表后要拿它判「这张图是变更证明」。行对外形状仍是 {label, value}。 */
+      if (doc) Object.defineProperty(row, 'doc', { value: String(doc), enumerable: false });
       out.push(row);
     };
     for (const it of list) {
@@ -6002,7 +6005,7 @@
         if (!autoOn) return;
         let autoRows = [];
         try { autoRows = autoApi.rowsFor(it) || []; } catch (e) { autoRows = []; }
-        for (const ar of autoRows) pushRow(ar.label, ar.value, ar.src, 'auto');
+        for (const ar of autoRows) pushRow(ar.label, ar.value, ar.src, 'auto', ar.doc);
       };
       if (Array.isArray(it.matched) && !it.matched.length) { pushAutoRows(); continue; }
       const matchers = matchersFor(it.label);
@@ -6050,9 +6053,58 @@
       if (autoOn) {
         let autoRows = [];
         try { autoRows = autoApi.rowsFor(it) || []; } catch (e) { autoRows = []; }
-        for (const ar of autoRows) pushRow(ar.label, ar.value, ar.src, 'auto');
+        for (const ar of autoRows) pushRow(ar.label, ar.value, ar.src, 'auto', ar.doc);
       }
     }
+    /* 【2.0.19.2 · m02412 需求⑤】同一登记号既有证书又有「变更或补充证明」时，**旧主体不进表**：
+     * 用户现场（图二）：证书写 上海能诚商务咨询有限公司、变更证明写「变更后内容：上海能诚一数健康
+     * 科技有限公司」，两条都进表 ⇒ 动态词比对拿到的是旧著作权人。
+     * 判据只用**同一登记号**（不是公司名远近）：变更证明自己就带登记号，这是唯一可靠的配对依据。
+     * 只在"确实读到变更后主体"时才压旧值，抽不到就两边都留着 —— 宁可多一行，也不静默删证据。 */
+    try {
+      const amendRegs = new Set();
+      const certRegBySrc = new Map();
+      const OWNER_RE = /著作权人|版权所有人|版权人/;
+      for (const row of out) {
+        const doc = row.doc || '';
+        if (doc !== 'amend' && doc !== 'cert') continue;
+        const src = row.from && row.from.src;
+        if (!src) continue;
+        if (row.label === '登记号' && row.value) {
+          if (doc === 'cert') certRegBySrc.set(src, String(row.value));
+          else amendRegs.add(String(row.value));
+        }
+      }
+      if (amendRegs.size) {
+        for (let i = out.length - 1; i >= 0; i--) {
+          const row = out[i];
+          if (row.doc !== 'cert' || !OWNER_RE.test(String(row.label || ''))) continue;
+          const reg = certRegBySrc.get(row.from && row.from.src);
+          if (reg && amendRegs.has(reg)) out.splice(i, 1);
+        }
+      }
+    } catch (e) { /* 保底：任何异常都不动表（宁可多一行旧主体，也不丢用户已经看到的内容） */ }
+    /* 【2.0.19.2 需求⑥】期限行：每条抓取规则能单独关掉、也能点名只抓哪几个期限字段，
+     * 进表的值统一成「至 yyyy-mm-dd」（终期）。用户口径 m02473：「自动抓取的期限字段改为可配置
+     * （指定哪些抓、哪些不抓），进表统一为『至yyyy-mm-dd』」。 */
+    try {
+      const TERM_RE = /期限|有效期|到期日/;
+      const m6 = meta || {};
+      const on6 = m6.autoTerm !== false;
+      let allow6 = String(m6.autoTermLabels == null ? '授权期限' : m6.autoTermLabels)
+        .split(/[,，、;；|]/).map((x) => x.trim()).filter(Boolean);
+      if (!allow6.length) allow6 = ['授权期限'];
+      for (let i = out.length - 1; i >= 0; i--) {
+        const row = out[i];
+        const lab = String((row && row.label) || '');
+        if (!TERM_RE.test(lab)) continue;
+        const keep = on6 && allow6.some((a) => lab === a || lab.indexOf(a) >= 0);
+        if (!keep) { out.splice(i, 1); continue; }
+        if (KH.OcrAuto && typeof KH.OcrAuto.termEnd === 'function') {
+          try { row.value = KH.OcrAuto.termEnd(row.value); } catch (e2) { /* 原样保留 */ }
+        }
+      }
+    } catch (e) { /* 保底：期限过滤出问题也不动表 */ }
     return out;
   }
 
@@ -6077,7 +6129,11 @@
           /* 【2.0.19.1 · m01400 第 3 条】图片按占位展示：这条规则勾了才把缩略图换成小占位，
            * 未勾（缺键）一律照旧显示缩略图 —— 存量配置行为不变。 */
           ? (KH.Fetch.blockFor(h.textNode, h.meta.fetchLabels, fetchCache, h.meta.fetchScope,
-            ocrExtraRows(h.meta), { imgPlaceholder: !!(h.meta && h.meta.imgPlaceholder) }) || '')
+            ocrExtraRows(h.meta), {
+              imgPlaceholder: !!(h.meta && h.meta.imgPlaceholder),
+              /* 【2.0.19.2 · m02412 需求①】展示字数：卡片里的值最多显示 N 个字（0 = 不裁）。 */
+              valueChars: Number((h.meta && h.meta.valueChars) || 0) || 0
+            }) || '')
           : '';
       } catch (err) {
         h.meta.fetchHtml = '';

@@ -1669,4 +1669,18 @@ module.exports = async function run() {
       '★ 写盘前先读磁盘现值：整表覆盖会丢掉别的 frame 刚写下的结论');
     truthy(src.indexOf('(Number(s.at) || 0) > (Number(has.at) || 0)') >= 0, '★ 同 key 取 at 新的那条');
   });
+
+  /* 【2.0.19.2 · m02412 需求⑤】软著证书 + 变更/补充证明同时出纸：同登记号时旧的著作权人要退场。
+   * 判据只认「同一登记号」——不同登记号属于另一件作品，不能互相替换。 */
+  await test('★ 2.0.19.2 变更证明优先：同登记号的旧著作权人不再进表（m02412 ⑤）', () => {
+    const src = read('src/features/important-note.js');
+    truthy(src.indexOf('const amendRegs = new Set();') >= 0, '先收集变更证明里的登记号');
+    truthy(src.indexOf('const certRegBySrc = new Map();') >= 0, '证书侧要能按图回查登记号');
+    truthy(src.indexOf("if (doc === 'cert') certRegBySrc.set(src, String(row.value));") >= 0);
+    truthy(src.indexOf("else amendRegs.add(String(row.value));") >= 0);
+    truthy(src.indexOf('const OWNER_RE = /著作权人|版权所有人|版权人/;') >= 0, '著作权人按标签识别');
+    truthy(src.indexOf('if (reg && amendRegs.has(reg)) out.splice(i, 1);') >= 0, '★ 只有同登记号才删旧主体');
+    truthy(src.indexOf('if (amendRegs.size) {') >= 0, '没有变更证明时保持原样');
+    truthy(src.indexOf("pushRow(ar.label, ar.value, ar.src, 'auto', ar.doc)") >= 0, '★ 行要带文档细类才分得清证书与变更证明');
+  });
 };

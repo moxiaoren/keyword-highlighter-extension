@@ -854,15 +854,10 @@
 /* 字号/尺寸按钮带前缀（A / ▭），值最长 3 位 ⇒ 给一点内距，别在 24px 里挤成一团 */
 .kh-rt-toolbar .kh-tool-field .kh-num-btn { min-width: 28px; padding: 0 6px; }
 
-/* 票 #63：「抓取后续字段」默认单行裁切（宽度高度都不变），词多点「展开」看全。
- * 裁切只作用在胶囊行上（不碰外壳宽度：这个字段本身已经是整行 `width: 2`）。
- * 展开态用 `is-open`，**不借 `.kh-fld-wide`** —— 后者是"字段占整行"的既有语义，这里两件事不是一回事。 */
-/* 「展开/收起」是标签行里的**小字按钮**：高度必须不超过普通标签（16px），
- * 否则带裁切钮的字段比同排字段高 2px，`_e2e/ui.test.js` 的「行对齐」断言会红（2.0.2.12 实测）。 */
-.kh-clamp-btn { height: 16px; line-height: 1; min-width: 0; padding: 0 5px; font-size: var(--fs-xs); }
-.kh-clamp-btn[hidden] { display: none; }
-/* 2.0.2.11 票 #63/#66：候选框默认**就一个输入框高**（胶囊多了、长了也不许把框撑高），
- * 冗余部分裁掉，点「展开」才换行全显。
+/* 【2.0.19.2 需求③】「展开/收起」按钮**已删**（用户 m02484：「完全可以把这个删掉呀。反正有修改
+ * 按钮了。可以在修改弹窗里面看完整的」）；再次确认（m02683）：「锁住那几个框默认只展示框的长度，
+ * 不要换行和拉长。相当于把展开的功能放在修改」。
+ * ⇒ 候选框永远**一个输入框那么高、单行、不换行、不撑宽**，多出来的词靠省略号收尾，看全走「修改」弹窗。
  * 关键三点：① 胶囊行自己 `overflow:hidden` 且能被压到 0 宽（`flex:1 1 auto` + `min-width:0`），
  * 否则它会把框撑宽、把 `+` 顶出去；② 框本身不许换行；③ `+` 不参与压缩（永远看得见）。 */
 .kh-cand-clamp .kh-cand-field { flex-wrap: nowrap; overflow: hidden; }
@@ -870,23 +865,12 @@
   flex: 1 1 auto; min-width: 0; overflow: hidden; flex-wrap: nowrap;
 }
 .kh-cand-clamp .kh-cand-field > .kh-cand-add { flex: 0 0 auto; }
-/* 展开态：胶囊行恢复换行 —— 词多时一次看全（框高此时允许长） */
-.kh-cand-clamp.is-open .kh-cand-field { flex-wrap: wrap; overflow: visible; }
-.kh-cand-clamp.is-open .kh-cand-field > .kh-lbl-preview { flex-wrap: wrap; overflow: visible; }
-/* 「展开」＝**完整展示**（用户 m02382）：① 字段从半行让到整行，长词不再挤在 148px 里；
- * ② 胶囊名字取消 12em 上限与省略号，允许在胶囊内换行 —— 否则长词永远是「2018年第一季度华…」。
- * 【2.0.6.2 需求②】展开态必须和文本态**同一口径**（`:874` 早有 `min-width:0; contain:inline-size`），
- * 否则一长就把模块撑宽：`flex:1 1 100%` 只管"占满"，`min-width:auto` 仍按内容最小宽算，
- * 而 `.kh-editor-col` / `.kh-editor-sec` / `.kh-fld` / `.kh-fld-sub` 一条 overflow 都没有 ⇒ 溢出到弹窗正文。
- * `contain: inline-size` 让宽度只跟父容器算（高度照常随内容长），这是 2.0.2.16/2.0.2.18 两次实测出来的写法。 */
-.kh-cand-clamp.is-open { flex: 1 1 100%; min-width: 0; max-width: 100%; contain: inline-size; }
-.kh-cand-clamp.is-open .kh-lbl-name { max-width: none; white-space: normal; overflow-wrap: anywhere; }
-/* 抓取字段的胶囊带后缀徽标（`#图3` / `%4`）：胶囊本身不参与压缩，否则徽标会被裁掉 */
-.kh-cand-token .kh-lbl-chip { flex: 0 0 auto; }
-/* 展开态例外：名字已经能在胶囊里换行（上一行），胶囊必须允许被压到容器宽，
- * 否则一个没有分隔符的超长词只能整块溢出（折叠态被 `:834` 的 `overflow:hidden` 压住，看不出来）。 */
-.kh-cand-clamp.is-open .kh-lbl-chip,
-.kh-cand-clamp.is-open.kh-cand-token .kh-lbl-chip { flex: 0 1 auto; min-width: 0; }
+/* 抓取字段的胶囊带后缀徽标（`#图3` / `%4`）：以前是 `flex:0 0 auto`（不参与压缩），词一多就整颗被裁、
+ * 连徽标一起消失，也经常被误判成"换行挤压"的根因 ⇒ 现在允许收缩到省略号，徽标本身仍不压（见下一条）。 */
+.kh-cand-token .kh-lbl-chip { flex: 0 1 auto; min-width: 0; }
+.kh-cand-clamp .kh-lbl-name { max-width: 10em; }
+.kh-cand-token .kh-lbl-suffix { flex: 0 0 auto; max-width: 7em; overflow: hidden; text-overflow: ellipsis; }
+
 
 /* ==== 【2.0.2.16 需求②】候选框的**文本态**：点框面空白处 ⇒ 胶囊还原成一整串文本（`|` 分隔），
  * 回车 / 点框外再收成胶囊。四个候选框（关键词 / 标题关键词 / 字段 / 图片命中关键词）共用这一份
@@ -1009,6 +993,9 @@
  * 弹窗正文只有约 490px。以前写死不换行，长字段名的「指向」按钮会把**词**压到看不清。
  * 现在允许换行：挤不下时按钮整块落到第二行，词输入框先保住 11em 的可读宽度。 */
 .kh-lrow-main { display: flex; align-items: center; gap: 6px; min-width: 0; flex-wrap: wrap; }
+/* 【2.0.19.2 需求③】第二行：指向 / 进表 / 比对 / 和谁比 落在这里，名字不再被挤成折行（m02412） */
+.kh-lrow-sub { display: flex; align-items: center; gap: 6px; min-width: 0; flex-wrap: wrap; padding-left: 18px; margin-top: 4px; }
+.kh-lrow-sub:empty { display: none; }
 .kh-list-cb { flex: 0 0 auto; margin: 0; }
 /* 【2.0.10 需求②】拖动排序：把手只在左边缘（整行可拖会抢输入框的选字），
  * 拖动中整行半透明，落点用内阴影在行的上/下边画一条线。 */

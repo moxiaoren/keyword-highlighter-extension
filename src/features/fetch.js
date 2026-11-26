@@ -971,13 +971,24 @@
   /* 【2.0.8.14 需求①】字符类必须**排斥全部后缀记号**（`@ # ^ ! ~ * %`）：
    * 旧写法只排 `@ # ^`，于是 `名称@2~!` 的 `@` 会把 `2~!` 整串当表达式捕获 ⇒ 判非法、
    * `@2` 静默失效、`~`/`!` 也跟着被吞（用户实测：「@2 会被误读，从而都失效」）。 */
-  const OFFSET_SUFFIX_RE = /@\s*([^@#^!~*%]*)$/;
+  /* 【2.0.19.2 需求②】`>` 是「取锚点之后」的记号，必须同 `^` 一样从各后缀的字符类里排斥，
+   * 否则 `名称@2>甲方` 会被 `@` 表达式整串吃成 `2>甲方`（判非法 ⇒ `@2` 与新记号一起静默失效）。 */
+  const OFFSET_SUFFIX_RE = /@\s*([^@#^!~*%<>]*)$/;
   /* `!` = 去内部空白；`^` = 取锚点之前的文本；`%` = 字符截取（%N 前N字 / %a-b 第a到b字）
    * —— 都从末尾剥，可与 # / @ 任意混写。三者的字符类互斥，避免 `名称@2^锚` 这种写法被 `@` 表达式吞掉。
    * 【2.0.8.14 需求①】同 OFFSET：`~`/`*` 也要排斥，否则 `%3~`、`^锚*` 会被一起吃掉。 */
   const STRIP_SUFFIX_RE = /\s*!\s*$/;
-  const ANCHOR_SUFFIX_RE = /\^\s*([^\^%!@#~*]+)$/;
-  const SLICE_SUFFIX_RE = /%\s*([^%!@#^~*]*)$/;
+  const ANCHOR_SUFFIX_RE = /\^\s*([^\^%!@#~*<>]+)$/;
+  /* 【2.0.19.2 需求②】锚点三种方向：
+   *   `^甲方`     = 取「甲方」**之前**（2.0.2.4 起的老写法，语义不变）
+   *   `>甲方`     = 取「甲方」**之后**（到本格末尾；trim 两端）
+   *   `^甲方>乙方` = 取两者**之间**（各取首次出现，甲方在前、乙方在其后）
+   * 为什么用 `>` 而不是把 `^` 写两遍：字段名本身可能带 `^`/任意汉字，
+   * `甲^乙` 与「字段名甲 + 锚点乙」在语法上**不可区分**，会让老配置静默改义。
+   * `>` 此前不参与任何后缀语义，配上 `^` 一起读也很直观（从甲之后到乙之前）。 */
+  const ANCHOR_BETWEEN_RE = /\^\s*([^\^%!@#~*<>]+?)\s*>\s*([^\^%!@#~*<>]+)$/;
+  const ANCHOR_AFTER_RE = />\s*([^\^%!@#~*<>]+)$/;
+  const SLICE_SUFFIX_RE = /%\s*([^%!@#^~*<>]*)$/;
   /* 【2.0.8.8 需求④】`~` = 该字段内容格**不完整展示**（只裁显示，值不变）。放最后匹配，不影响既有后缀。 */
   const CLIP_SUFFIX_RE = /~\s*$/;
   /* 【2026-11-16】抓取字段之间的比对标记：`#比` / `#比=对象`（必须在最末）。 */
@@ -1004,6 +1015,9 @@
     let simple = false;
     let stripSpace = false;
     let anchor = '';
+    /* 2.0.19.2 需求②：锚点方向。'before'（默认，老行为）/ 'after' / 'between' */
+    let anchorMode = '';
+    let anchorTo = '';
     let sliceSpec = '';
     let clip = false;
     let link = false;
@@ -1014,6 +1028,23 @@
         cmpOn = true;
         cmpTarget = String(mcmp[1] || '').trim();
         s = s.slice(0, mcmp.index).replace(/^[ \u3000]+|[ \u3000]+$/g, '');
+        continue;
+      }
+      /* 【2.0.19.2 需求②】锚点方向必须在 `~`/`*`/`%/`@` 之前剥：
+       * 它们的字符类都是"一直吃到末尾"，先剥的话 `>甲方` 会被当成链接模板/表达式的一部分。 */
+      const mb = ANCHOR_BETWEEN_RE.exec(s);
+      if (mb && mb[1].trim() && mb[2].trim()) {
+        anchor = mb[1].trim();
+        anchorTo = mb[2].trim();
+        anchorMode = 'between';
+        s = s.slice(0, mb.index).replace(/^[ \u3000]+|[ \u3000]+$/g, '');
+        continue;
+      }
+      const maf = ANCHOR_AFTER_RE.exec(s);
+      if (maf && maf[1].trim()) {
+        anchor = maf[1].trim();
+        anchorMode = 'after';
+        s = s.slice(0, maf.index).replace(/^[ \u3000]+|[ \u3000]+$/g, '');
         continue;
       }
       /* `~` 必须**最先**剥：其它后缀的正则都允许"尾巴上还有别的字符"，
@@ -1032,7 +1063,7 @@
         /* 【2.0.8.14 需求①】`*` 后面紧跟**别的后缀记号**（`*~@2` / `*!%3`）时不能当模板开头：
          * 模板是 `\S*` 贪婪的，会把 `~@2` 整串吞进 linkTpl ⇒ `@2` 被误读成超链接后缀、其它后缀全失效。
          * 这种情况只摘掉 `*` 本身（`*` 仍然生效），后面的记号留给各自的规则继续剥。 */
-        if (/^[~@#^!%]/.test(tpl)) {
+        if (/^[~@#^!%<>]/.test(tpl)) {
           link = true;
           linkTpl = '';
           s = s.slice(0, mlk.index) + s.slice(mlk.index + 1);
@@ -1095,12 +1126,13 @@
         /* `^锚文本` = 取锚点**首次出现之前**的文本（trim）。锚点是字面文本：不走正则、区分大小写。
          * `^` 后面没有实义字符（如标签就叫 `备注^`）⇒ **不当后缀**，`^` 留作标签自己的字符。 */
         anchor = ma[1];
+        anchorMode = 'before';
         s = s.slice(0, ma.index).replace(/^[ \u3000]+|[ \u3000]+$/g, '');
         continue;
       }
       break;
     }
-    return { label: s, simple: simple, imgOnly: imgOnly, imgLimit: imgLimit, imgPick: imgPick, noImg: noImg, offset: offset, offsetInvalid: isOffsetInvalid(offset), stripSpace: stripSpace, anchor: anchor, sliceSpec: sliceSpec, clip: clip, link: link, linkTpl: linkTpl, cmpOn: cmpOn, cmpTarget: cmpTarget };
+    return { label: s, simple: simple, imgOnly: imgOnly, imgLimit: imgLimit, imgPick: imgPick, noImg: noImg, offset: offset, offsetInvalid: isOffsetInvalid(offset), stripSpace: stripSpace, anchor: anchor, anchorMode: anchorMode, anchorTo: anchorTo, sliceSpec: sliceSpec, clip: clip, link: link, linkTpl: linkTpl, cmpOn: cmpOn, cmpTarget: cmpTarget };
   }
 
   /**
@@ -1122,7 +1154,13 @@
      * 不剥掉就会越标越多（`@abc（无效）（无效）`）。剥掉后展示串幂等。 */
     if (it.offset) out.push('@' + String(it.offset).replace(/（无效）$/, '') + (it.offsetInvalid ? '（无效）' : ''));
     if (it.stripSpace) out.push('!');
-    if (it.anchor) out.push('^' + it.anchor);
+    /* 2.0.19.2 需求②：方向不同、展示串也不同，且必须能被 `parseLabelSpec` 读回同一语义
+     * （单测把两者对照钉住：suffixTextOf 的产物再解析必须得到同样的 anchor/anchorMode/anchorTo）。 */
+    if (it.anchor) {
+      if (it.anchorMode === 'after') out.push('>' + it.anchor);
+      else if (it.anchorMode === 'between' && it.anchorTo) out.push('^' + it.anchor + '>' + it.anchorTo);
+      else out.push('^' + it.anchor);
+    }
     if (it.sliceSpec) out.push('%' + it.sliceSpec);
     if (it.clip) out.push('~');
     if (it.link) out.push('*' + (it.linkTpl || ''));
@@ -1146,7 +1184,11 @@
     else if (it.imgLimit) out.push('图最多 ' + it.imgLimit + ' 张');
     else if (it.simple) out.push('只读右邻一格');
     if (it.stripSpace) out.push('去空格');
-    if (it.anchor) out.push('截到「' + it.anchor + '」之前');
+    if (it.anchor) {
+      if (it.anchorMode === 'after') out.push('取「' + it.anchor + '」之后');
+      else if (it.anchorMode === 'between' && it.anchorTo) out.push('取「' + it.anchor + '」到「' + it.anchorTo + '」之间');
+      else out.push('截到「' + it.anchor + '」之前');
+    }
     const sp = String(it.sliceSpec || '');
     if (sp) out.push(/^\d+\s*-\s*\d+$/.test(sp) ? ('取第 ' + sp.replace(/\s*-\s*/, '–') + ' 个字') : ('取前 ' + sp + ' 个字'));
     if (it.clip) out.push('只显示一行');
@@ -1157,11 +1199,21 @@
   /* `^` 对**单段文本**做「锚点之前」截取。
    *  锚点找不到（或本身为空）→ **保留全文**（`@`/`%` 同款容错：绝不报错、绝不变空值）。
    *  锚点在开头 → 结果是空串（前面确实什么都没有，这是真实结果，不是容错分支）。 */
-  function applyAnchor(t, anchor) {
+  function applyAnchor(t, anchor, mode, anchorTo) {
     if (anchor == null || anchor === '') return t;
     const s = String(t);
     const i = s.indexOf(anchor);
     if (i < 0) return t;
+    /* 【2.0.19.2 需求②】方向：默认/'' = 之前（老行为，逐字节不变）；
+     * `after` = 锚点之后到本格末尾；`between` = 甲之后到**甲后面第一个**乙之前。
+     * 乙找不到 / 乙在甲之前 ⇒ 保留全文（与"锚点找不到"同一条容错，绝不返回空串）。 */
+    if (mode === 'after') return s.slice(i + anchor.length).trim();
+    if (mode === 'between') {
+      if (anchorTo == null || anchorTo === '') return t;
+      const j = s.indexOf(anchorTo, i + anchor.length);
+      if (j < 0) return t;
+      return s.slice(i + anchor.length, j).trim();
+    }
     return s.slice(0, i).trim();
   }
 
@@ -1189,7 +1241,7 @@
   /* 对一行值格文本应用字段级修饰：`!` 去内部空白 → `^` 按锚点切 → `%` 字符截取（顺序固定，与书写顺序无关）。 */
   function modText(t, item) {
     if (item.stripSpace) t = String(t).replace(/\s+/g, '');
-    if (item.anchor) t = applyAnchor(t, item.anchor);
+    if (item.anchor) t = applyAnchor(t, item.anchor, item.anchorMode, item.anchorTo);
     if (item.sliceSpec) t = applySlice(t, item.sliceSpec);
     return t;
   }
@@ -2184,7 +2236,11 @@
    * 会把「基本信息 / 驳回字段：X / 32位包:」也刷上底色（用户反馈："每列第一个单元格都标了底色"）。
    * 因此用标记类把两类表分开，只给**字段 label 格**上色。
    */
-  function rowsToTableHtml(multi) {
+  function rowsToTableHtml(multi, opts) {
+    /* 【2.0.19.2 · m02412 需求①】「展示字数」：这条规则填了 N（1–200）⇒ 卡片里的值只显示前 N 个字
+     * 加省略号、并且单行（与 `~` 后缀同一套裁切样式），悬停 title 仍是全文、复制/进表也是全文。
+     * 填 0 / 缺键 = 不按字数裁，沿用原来的自适应一行。 */
+    const lim = Math.max(0, Math.min(200, Math.round(Number(opts && opts.valueChars) || 0)));
     const items = (multi || []).map((m) => {
       const opt = m.opt || null;                 // 该字段的图片选项（仅图片 / 前 N 张）
       const budget = { n: 0 };                   // "前 N 张"是**整字段**的前 N 张（跨单元格累计）
@@ -2282,7 +2338,7 @@
      * 必须多包一层 div：直接对 `td` 用 max-height / line-clamp 在真浏览器里不生效
      * （表格单元格的 display 被规整成 table-cell，clamp 只认 -webkit-box 子元素）。
      * 悬停 `title` 给全文（去掉图片占位符、空白折成一格，避免多行塞进属性）。 */
-    const clipOn = (it) => !!(it && it.opt && it.opt.clip);
+    const clipOn = (it) => !!(lim > 0 || (it && it.opt && it.opt.clip));
     /* 【2.0.8.12 需求①】`*`：把这一格的内容做成超链接。两条路径：
      *  ① 值本身是 http(s) 网址 → 直接当 href；
      *  ② 写了模板（`*https://x/?q={v}`）→ 用 URL 编码后的值替换 `{v}`。
@@ -2304,8 +2360,14 @@
       ? '<span class="kh-val-suspect" title="' + escHtml(it.suspectTip || '') + '">⚠</span>'
       : '';
     const valInner = (it, raw) => {
-      const html = escHtml(raw);
       const href = hrefOf(it, raw);
+      /* 展示字数：先把图片占位符压成空白再数字数（占位符是内部标记，不该算进"字数"）。
+       * 超了才换成"前 N 字 + …"，并且**丢掉链接/图片**（截断后的残句点开也没用）。 */
+      let html = escHtml(raw);
+      if (lim > 0) {
+        const plain = stripImgPlaceholders(String(raw == null ? '' : raw)).replace(/\s+/g, ' ').trim();
+        if (plain.length > lim) html = escHtml(plain.slice(0, lim)) + '…';
+      }
       const body = (href
         ? '<a class="kh-val-link" href="' + escHtml(href) + '" target="_blank" rel="noopener noreferrer">' + html + '</a>'
         : html) + suspectTag(it);
@@ -2453,7 +2515,7 @@
       label: f.label, rows: f.rows,
       /* `all` 下同名标签会带层级后缀 → 先按原样查，再退回"剥掉后缀"查 */
       opt: optOf[f.label] || optOf[baseLabelOf(f.label)]
-    })).concat(extraItems));
+    })).concat(extraItems), opts);
     /* 【2.0.19.1 · m01400 第 3 条】这条规则选了「图片按占位展示」：把已渲染好的缩略图换成一枚
      * 小占位（带文件名）。只认 `restoreImgs` 产出的那一种固定形状，页面内容不进这条正则。 */
     return (opts && opts.imgPlaceholder) ? imgToPlaceholder(html) : html;

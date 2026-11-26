@@ -49,4 +49,34 @@ module.exports = async function run() {
     eq(F.suffixTextOf(bad), '@abc（无效）', '展示串如实标无效，让人看得见');
     eq(F.suffixTextOf(F.parseLabelSpec('字段 @abc（无效）')), '@abc（无效）', '标了无效再读回来仍是无效');
   });
+
+  /* 【2.0.19.2 需求②】锚点三种方向：^甲 之前（老写法）、>甲 之后、^甲>乙 之间。
+   * 为什么不是把 ^ 写两遍：字段名本身可以带 ^ 与任意汉字，甲^乙 与「字段名甲 + 锚点乙」
+   * 在语法上不可区分，那样改会让老配置静默改义 —— 所以方向用 > 这个此前不参与语义的记号。 */
+  await test('★ 2.0.19.2 锚点三方向：写法 ⇄ 解析往返逐字相同', () => {
+    for (const sfx of ['^甲方', '>甲方', '^甲方>乙方', '>：', '@2 >甲方', '! >甲方']) {
+      const spec = F.parseLabelSpec('字段 ' + sfx);
+      eq(spec.label, '字段', '标签与方向后缀要分得开：' + sfx);
+      eq(F.suffixTextOf(spec), sfx, '往返不一致：' + sfx);
+      eq(F.suffixTextOf(F.parseLabelSpec('字段 ' + F.suffixTextOf(spec))), sfx, '再往返一次要稳定：' + sfx);
+    }
+    eq(F.parseLabelSpec('字段 ^甲>乙').anchor, '甲');
+    eq(F.parseLabelSpec('字段 ^甲>乙').anchorTo, '乙');
+    eq(F.parseLabelSpec('字段 ^甲>乙').anchorMode, 'between');
+    eq(F.parseLabelSpec('字段 >甲').anchorMode, 'after');
+    eq(F.parseLabelSpec('字段 ^甲').anchorMode, 'before');
+  });
+
+
+  await test('★ 2.0.19.2 老写法不被改义：单独的收尾 ^ 仍属于标签本身', () => {
+    eq(F.parseLabelSpec('备注^').label, '备注^', '备注^ 不是「取备注之后」，是标签就叫 备注^');
+    eq(F.parseLabelSpec('备注^').anchor, '', '没有锚点');
+    eq(F.parseLabelSpec('备注^').anchorMode, '', '也没有方向');
+  });
+
+  await test('★ 2.0.19.2 人话把方向说清（按钮上不让人背语法）', () => {
+    truthy(F.describeSuffix(F.parseLabelSpec('字段 >甲方')).indexOf('之后') >= 0);
+    const b = F.describeSuffix(F.parseLabelSpec('字段 ^甲方>乙方'));
+    truthy(b.indexOf('甲方') >= 0 && b.indexOf('乙方') >= 0 && b.indexOf('之间') >= 0, b);
+  });
 };

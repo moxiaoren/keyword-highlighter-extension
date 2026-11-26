@@ -390,27 +390,14 @@
          * 词多到看不全时点「展开」占整行（用户口径 m01713：「宽度高度都默认不变，超出隐藏超出部分，
          * 但支持手动展开/收起」）。展开态只是给盒子加 `.kh-fld-wide`，不另造一套渲染。
          * 后缀徽标同样只在 `spec.token` 时画（解析走 `labelSegs`，与「字段」控件同一份语法）。 */
+        /* 【2.0.19.2 需求③】「展开/收起」按钮**已删**。用户口径 m02484：「完全可以把这个删掉呀。
+         * 反正有修改按钮了。可以在修改弹窗里面看完整的。」所以多出来的词不再换行铺开，
+         * 改成**单行收纳 + 省略号**（看全走「修改」弹窗：整列表能一次看全、还能批量改）。
+         * `spec.clamp` 仍然保留 —— 盒子照旧带 `kh-cand-clamp`，那份 CSS 现在只负责"单行不换行"。 */
+        /* 标签行保持原样：「修改」按钮就在标签这一行的右端（用户 m03024 原话「修改按钮的位置不要变」）。
+         * 单行收纳改的是**框内**的胶囊排布（nowrap + 省略），不去动框外那一行。 */
         let headEl = labelEl;
-        let clampBtn = null;
-        if (spec.clamp) {
-          clampBtn = h('button', {
-            class: 'kh-mini-btn kh-clamp-btn', type: 'button', text: '展开',
-            title: '词多了看不全：展开占整行 / 再点收起'
-          });
-          /* 默认先藏：只有**真的**看不全才需要这颗按钮（每个候选框都挂一颗「展开」很吵） */
-          clampBtn.hidden = true;
-          clampBtn.addEventListener('click', (ev) => {
-            if (ev && typeof ev.stopPropagation === 'function') ev.stopPropagation();
-            /* 展开态用 `is-open`：`.kh-fld-wide` 是"字段占整行"的既有语义（这个字段本来就是 width:2），
-             * 借用它会让"展开"在这个字段上完全没有视觉变化。 */
-            const on = box.classList.toggle('is-open');
-            clampBtn.textContent = on ? '收起' : '展开';
-            clampBtn.hidden = false;
-          });
-          headEl = h('div', { class: 'kh-fld-labelrow' }, [labelEl, listBtn, clampBtn].filter(Boolean));
-        }
-        /* 没有「展开」「批量」的候选框（核心词 / 标题词）：只有「修改」时也要单独起标题行 */
-        if (headEl === labelEl && listBtn) headEl = h('div', { class: 'kh-fld-labelrow' }, [labelEl, listBtn]);
+        if (listBtn) headEl = h('div', { class: 'kh-fld-labelrow' }, [labelEl, listBtn]);
         /* 后缀图例跟着「修改」弹窗走：添加关键词的弹窗里不重复展示后缀相关内容 */
         if (spec.token && !spec.listEdit) kids.push(legendEl());
         const boxCls = fldCls + ' kh-cand-box'
@@ -479,7 +466,6 @@
             textTip.hidden = false;
             tip.hidden = true; tip.textContent = '';
             inp.classList.remove('is-editing');
-            if (clampBtn) clampBtn.hidden = true;   // 文本态自己会长高，不需要「展开」
             autoGrow();
             return;
           }
@@ -510,7 +496,9 @@
               /* 【2026-11-02 需求】列表模式：框面只显示条目名，**不画后缀徽标** ——
                * 后缀内容一律进「修改」弹窗看（否则这一格看起来还是一堆 "#图3 / @截图"）。 */
               suffix: spec.listEdit ? '' : tok.suffix,
-              chipTitle: spec.listEdit ? '点一下打开列表管理' : '点一下改这一个候选',
+              /* 【2.0.19.2 需求③】悬停就给出**完整原文**（含后缀/指向），长词被省略号截断后能看全；
+               * 以前这里是一句泛化提示，等于把「看清这一条」的唯一通路也堵上了。 */
+              chipTitle: spec.listEdit ? list[i] : '点一下改这一个候选',
               delTitle: '删掉这个候选：' + list[i],
               onDelete: () => {
                 /* 先 commit（把待定文本并进 `raw`）再按序号删：段序号才是稳的 */
@@ -544,31 +532,14 @@
            * 而且它的匹配本来就不是字面匹配（大小写不敏感、非全词、剔空白，见 `img-ocr.js` 的 judge）。 */
           const warn = !spec.token && !spec.suffixChip && !regexOn() && /[\\^$.*+?()[\]{}]/.test(String(st.raw));
           tip.hidden = !warn;
+          /* 【2.0.19.2 需求③】没有「展开」按钮了，这里不再判溢出 */
           tip.textContent = warn ? '普通匹配按字面找词：这里写的 . * + ? ( ) [ ] { } \\ ^ $ 都只是普通字符；要当正则用请勾上「正则」' : '';
-          refreshClamp();
           /* 【2.0.7.2 需求①·根因】把**当前整串**挂到框上：别的控件（尤其同一张表单里的
            * 「抓取后续字段」）要靠它知道"到底配了哪些字段"。为什么不能读 `input.value`：
            * 候选框常态是**胶囊**，那个 `input` 只活在点 `+` 弹出的小浮层里、平时是空的 ——
            * 读它永远得到空串 ⇒ 批量弹窗的「设为该字段」下拉框恒为灰、`@截图` 被当普通词
            * （用户报的正是这两条）。`draw()` 是唯一重画入口，所以这里永远不会读到旧值。 */
           try { box.setAttribute('data-raw', st.displayRaw()); } catch (e) { /* 垫片没有 setAttribute 就算了 */ }
-        };
-        /* 展开按钮只在**真的看不全**时出现（用户口径 m02382：胶囊多了、长了也要维持一个输入框的样子，
-         * 冗余的不展示；展开后才全显）。判据是胶囊行有没有溢出。
-         * ⚠️ 必须等一次布局：刚 append 的胶囊这一刻还没排版，直接量 `scrollWidth` 会永远得 0 ⇒ 判成
-         * "没溢出"、按钮永不出现。所以量测放在 rAF 里（垫片没有 rAF 就同步量）。 */
-        const refreshClamp = () => {
-          if (!clampBtn) return;
-          const measure = () => {
-            if (box.classList.contains('is-open')) { clampBtn.hidden = false; return; }
-            /* 两种态各看各的溢出源：胶囊态看胶囊行/外壳（文本态自己长高，不参与） */
-            const over = textMode
-              ? false
-              : ((prev.scrollWidth > prev.clientWidth + 1) || (frame.scrollWidth > frame.clientWidth + 1));
-            clampBtn.hidden = !over;
-          };
-          if (typeof requestAnimationFrame === 'function') requestAnimationFrame(measure);
-          else measure();
         };
         /** 进文本态：把已确定的整串摊进 textarea（`|` 原样保留，`read()` 仍返回原文） */
         const enterText = () => {
@@ -1197,6 +1168,10 @@
               }
             });
             const main = h('div', { class: 'kh-lrow-main' }, [cb, nameInp]);
+            /* 【2.0.19.2 需求③】图片关键词 / 图片动态词这一族改成**两行**：第一行只放「名字 + ×」，
+             * 指向 / 进表 / 比对 / 和谁比 全部下到第二行。用户原话：「因为有指向字段，导致元素有时候会
+             * 挤压换行」。以前全挤一行，名字被压到看不清、窄一点就折行。 */
+            const subParts = [];
             /* 【2.0.13 批3】命中说明行：只在「命中在名字以外」（@指向 / 取值后缀 / 进表）时出现 */
             const why = h('div', { class: 'kh-list-why', hidden: true });
             row._why = why;
@@ -1249,9 +1224,7 @@
               row._cmpCb = cmpCb;
               row._cmpLab = cmpLab;
               row._paintCmp = paintCmp;
-              main.appendChild(scopeBtn);
-              main.appendChild(markLab);
-              main.appendChild(cmpLab);
+              subParts.push(scopeBtn, markLab, cmpLab);
             }
             let detail = null;
             if (hasSuffix) {
@@ -1324,13 +1297,14 @@
               row._paintCmpSel = paintSel;
               cmpSels.push(paintSel);
               paintSel();
-              main.appendChild(cmpLab);
-              main.appendChild(sel);
+              subParts.push(cmpLab, sel);
             }
             const del = h('button', { class: 'kh-mini-btn kh-list-del', type: 'button', text: '×', title: '删掉这一条' });
             del.addEventListener('click', () => dropRow(row));
             main.appendChild(del);
-            const shell = h('div', { class: 'kh-lrow' + (isTok ? ' kh-lrow-tok' : '') }, detail ? [main, why, detail] : [main, why]);
+            const sub = subParts.length ? h('div', { class: 'kh-lrow-sub' }, subParts) : null;
+            const shell = h('div', { class: 'kh-lrow' + (isTok ? ' kh-lrow-tok' : '') },
+              (detail ? [main, sub, why, detail] : [main, sub, why]).filter(Boolean));
             /* 【2.0.10 需求②】拖动排序：把手只在左边缘（整行 draggable 会抢走输入框的选字手感）。
              * 落点用行高的一半判断插前/插后，松手时重排 `rows` 与 DOM 两处，写回走整串重排。 */
             const grip = h('span', { class: 'kh-lrow-grip', text: '⠿', title: '按住拖动，调整这一条的展示顺序' });
@@ -1564,6 +1538,23 @@
             ops.push(mkBtn('设为比对', () => {
               forPicked((row) => { row.cmp = true; if (row._paintCmp) row._paintCmp(); });
             }, '勾上后：同一张图上这些项都得在（词本身 / 字段抓到的值）——全在＝一致，缺哪个会点名'));
+          }
+          /* 【2.0.19.2 需求③】抓取字段这一族也要批量条：用户报的痛点是「改起来繁琐（尤其批量改）」。
+           * 能一次清掉的就清掉（后缀是最常要统一改的东西）；「取值方式」是逐条不同的小表单（锚文本、
+           * 截取长度、图张数各不相同），批量套一个值等于替用户改判据，所以不放进批量条。 */
+          if (isTok) {
+            ops.push(mkBtn('清空后缀', () => {
+              const list = pickedRows();
+              if (!list.length) { D().toast('先勾选要改的条目'); return; }
+              for (const row of list) {
+                if (row.gone) continue;
+                row.spec = specOf(String(row.name == null ? '' : row.name));
+                row.dirty = true;
+              }
+              dirty = true;
+              renderAll();
+              D().toast('已清空 ' + list.length + ' 条的取值后缀（只留字段名）');
+            }, '把勾选行的取值后缀（#图3 / %4 / ^锚点 / ! / ~ / *）一次清掉，只留字段名'));
           }
           /* 左「批量改」/ 右「危险区」：删除永远在最后一格，且和改指向隔开至少一条分隔线。 */
           const opsBar = h('div', { class: 'kh-list-ops' }, [

@@ -335,6 +335,25 @@ module.exports = async function run() {
     truthy(html.indexOf('第一行') >= 0 && html.indexOf('第二行') >= 0);
   });
 
+  await test('★ 2.0.19.2 展示字数：超了就前 N 字 + 省略号，悬停 title 仍是全文（m02412 ①）', () => {
+    const long = '上海能诚商务咨询有限公司（变更前主体名称，很长很长很长）';
+    const rows = [[{ t: long, rs: 1, cs: 1 }]];
+    const clipped = F.rowsToTableHtml([{ label: '著作权人', rows }], { valueChars: 8 });
+    truthy(clipped.indexOf('>上海能诚商务咨询…<') >= 0, '值格应只留前 8 个字 + 省略号：' + clipped);
+    truthy(clipped.indexOf('kh-val-clip') >= 0, '按字数裁时也要单行（复用 ~ 的裁切样式）');
+    truthy(clipped.indexOf('kh-val-box') >= 0, '单行裁切靠 kh-val-box 包一层（td 上 clamp 不生效）');
+    truthy(clipped.indexOf('title="' + long + '"') >= 0, '悬停 title 必须是全文，一个字都不能少');
+    // 0 / 缺键 / 坏值 = 不裁（存量行为）
+    for (const opts of [undefined, {}, { valueChars: 0 }, { valueChars: 'abc' }, { valueChars: -3 }]) {
+      const keep = F.rowsToTableHtml([{ label: '著作权人', rows }], opts);
+      truthy(keep.indexOf('>' + long + '<') >= 0, '不配展示字数时值必须原样：' + JSON.stringify(opts));
+    }
+    // 上限 200：填 999 只按 200 裁（不会因为一个手滑的数字把整段吞掉）
+    const big = '啊'.repeat(300);
+    const capped = F.rowsToTableHtml([{ label: '备注', rows: [[{ t: big, rs: 1, cs: 1 }]] }], { valueChars: 999 });
+    truthy(capped.indexOf('啊'.repeat(200) + '…') >= 0, '999 应被夹到 200');
+  });
+
   await test('★ 真实多列格保留 rowspan/colspan', () => {
     const rows = [
       [{ t: 'A', rs: 1, cs: 1 }, { t: 'B', rs: 2, cs: 1 }],
@@ -1003,6 +1022,24 @@ module.exports = async function run() {
     const flat = JSON.stringify(got[0].rows);
     truthy(flat.indexOf('甲类') >= 0, flat);
     falsy(flat.indexOf('乙类') >= 0, '简单模式不应把更右的也抓进来');
+  });
+
+  /* 【2.0.19.2 需求②】锚点方向在 `rowsForItem` → `transformRows` 里生效，所以这里走真表格端到端。 */
+  await test('★ 2.0.19.2 锚点三方向取值：之前 / 之后 / 两者之间（找不到锚点保留全文）', () => {
+    const t = table([
+      ['关键词', 'x'],
+      ['著作权人', '标签：值甲值乙值丙']
+    ]);
+    const tn = t.rows[0].children[0].childNodes[0];
+    const flat = (sfx) => JSON.stringify(F.extractFor(tn, '著作权人' + sfx));
+    truthy(flat('^：').indexOf('标签') >= 0, '^：= 取冒号之前：' + flat('^：'));
+    eq(flat('^：').indexOf('值甲'), -1, '之前的部分里不该有冒号后面的内容');
+    truthy(flat('>：').indexOf('值甲值乙值丙') >= 0, '>：= 取冒号之后：' + flat('>：'));
+    eq(flat('>：').indexOf('标签：'), -1, '之后的部分里不该有标签');
+    truthy(flat('^：>值乙').indexOf('值甲') >= 0, '^甲>乙 = 取两者之间：' + flat('^：>值乙'));
+    eq(flat('^：>值乙').indexOf('值乙'), -1, '之间不含右锚点本身');
+    truthy(flat('>不存在的锚点').indexOf('标签：值甲值乙值丙') >= 0, '锚点找不到 ⇒ 保留全文（绝不返回空值）');
+    truthy(flat('^甲>不存在的乙').indexOf('标签：值甲值乙值丙') >= 0, '右锚点找不到 ⇒ 保留全文');
   });
 
   await test('blockFor：抓到内容返回表格 HTML，抓不到返回 null', () => {
