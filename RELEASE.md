@@ -58,7 +58,7 @@ node "C:/Users/caitiff/.dsh/profiles/desktop/node_modules/answer-me-with-html/sk
 
 | 脚本 | 作用 | 典型用法 |
 |---|---|---|
-| `scripts/release.js` | **稳定版完整流水线**：门禁 → 打包 → 签名 crx → 生成 `latest.json` / `update.xml` → 汇总 | `node scripts/release.js --channel stable`（或 `--promote`） |
+| `scripts/release.js` | **稳定版完整流水线**：门禁 → 打包 → 签名 crx → 生成 `latest.json` / `update.xml` → 汇总 | `node scripts/release.js --promote`（**稳定版必须带 `--promote`**：它顺带出同号 beta 镜像；只写 `--channel stable` 会把测试通道留在旧号） |
 | `scripts/release-guard.js` | **发版事务护栏**（两个 release 脚本共用）：①工作树不干净拒绝发版 ②线上同名版本已存在拒绝覆盖 ③成功后自动打 tag（只打本地，推不推由人决定） | 由 `release.js` / `release-beta.js` 自动调用；应急绕过 `--allow-dirty` / `--allow-reuse` |
 | `scripts/changelog.js` | 从 `src/ui/changelog.js` 生成仓库根 `CHANGELOG.md`（最近 30 版）；`--check` 只核对不同步则退出码 1，已接进出包前置 | `node scripts/changelog.js` / `node scripts/changelog.js --check` |
 | `scripts/release-beta.js` | **测试版流水线**（与正式版完全分离）：复用 `package.js` 的门禁与打包 → 改 manifest 三处 → 重打成测试版 zip → 用测试版密钥签 crx → 写 `latest-beta.json` / `update-beta.xml` | `node scripts/release-beta.js` |
@@ -80,7 +80,7 @@ node "C:/Users/caitiff/.dsh/profiles/desktop/node_modules/answer-me-with-html/sk
 | 参数 | 含义 |
 |---|---|
 | `--channel beta` | **已移除（2026-10-05）**：本脚本只发稳定版，传它**直接报错**并指路（绝不静默当成"发稳定版"）。测试版唯一实现是 `scripts/release-beta.js`（CI 也走它，见 `release.yml:126`） |
-| `--channel stable` / `--promote` | 发稳定通道（写 `latest.json` + `update.xml`） |
+| `--channel stable` / `--promote` | 发稳定通道（写 `latest.json` + `update.xml`）。**只有 `--promote` 会顺带跑 `release-beta.js --skip-gates` 出同号测试包**；`--channel stable` 不碰 `update-beta.xml`，测试版用户收不到这一版（2026-11-26 事故） |
 | `--with-crx` | 已无意义（旧参数，静默忽略）：稳定通道总是打 crx；测试版 crx 由 `release-beta.js` 出 |
 | `--key <pem>` | 指定签名密钥（默认 `release/key.pem`；**必须与线上同一把**） |
 | `--no-crx` | **已移除（2026-10-05）**：发版一律出 crx（它是唯一交付物），传它**直接报错**并指路 |
@@ -96,8 +96,13 @@ node scripts/publish-gh.js --beta-only --skip-assets   # 站点资产有变时�
 GH_TOKEN=… node scripts/gh-release.js                  # 建 v<ver>-beta Release（pre-release）
 
 # 测好后晋级稳定版（同一个版本号，走另一条通道）
-node scripts/release.js --promote --key release/key.pem
+node scripts/release.js --promote --key release/key.pem   # --promote 必带：同时出同号 beta 镜像
 node scripts/publish-gh.js
+
+# 若已经用 --channel stable 发了稳定版（漏了 beta 镜像）——补发：
+node scripts/release-beta.js --skip-gates
+node scripts/publish-gh.js --beta-only --skip-assets
+GH_TOKEN=… node scripts/gh-release.js
 ```
 
 > 测试版与稳定版是**两个扩展**（各自 ID、各自 storage、各自更新源）——晋级不会自动搬过去，

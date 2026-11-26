@@ -432,6 +432,22 @@ async function fetchPublished() {
     if (!WITH_ZIP) log('    latest.json 的 zip / sha256 已置空（本次不发 zip）');
   }
 
+  /* 测试通道是否跟着走（2026-11-26 事故：稳定版 2.0.19 跑的是 --channel stable 而非 --promote，
+   * beta 包没出，线上 update-beta.xml 停在 2.0.18.3 ⇒ 装测试版的用户永远收不到这一版。
+   * 两条通道是两个扩展（不同 ID / 不同 update_url），稳定版发得再对也碰不到 beta 用户。
+   * 这里只告警不中止：稳定版本身仍然有效，补发 beta 是另一条独立命令。 */
+  if (!PROMOTE) {
+    try {
+      const bj = JSON.parse(fs.readFileSync(path.join(REL, 'latest-beta.json'), 'utf8'));
+      if (String(bj.version) !== String(VERSION)) {
+        log('');
+        log('⚠️ 测试通道未同步：release/latest-beta.json 仍是 ' + bj.version + '（本次稳定版 ' + VERSION + '）');
+        log('   装测试版的人读 update-beta.xml，更新源停在旧号 → 他们收不到这一版。');
+        log('   补救：node scripts/release-beta.js --skip-gates → publish-gh.js --beta-only → gh-release.js');
+      }
+    } catch (e) { /* 没有 beta 清单就不提 */ }
+  }
+
   /* crx 的落盘位置与站点位置（2026-10-05 干跑修正）：
    *   站点路径 = CRX_DIR + CRX_NAME（稳定版 CRX_DIR='release/'，沿用线上 codebase 约定）
    *   本地路径 = 'release/' + 站点路径 ⇒ 实际在 release/release/…（见第⑤步的 fs.renameSync）
