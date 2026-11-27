@@ -213,8 +213,12 @@ module.exports = async function run() {
     face.setAttribute('data-for', 'fld-fetchLabels');
     face.setAttribute('data-raw', longName);
     const modal = openList(KH.ui.Fields.create(FM.byKey('imgOcrKeyword'), '核心词@' + longName, {}));
-    const btn = modal.querySelector('.kh-lrow-scope');
-    truthy(btn, '图片命中词的行里要有「指向」按钮');
+    /* 【2.0.19.6 · m04768】指向控件搬进右栏：点行（摘要按钮）→ 面板里的「指向」按钮 */
+    const rowBtn = modal.querySelector('.kh-lrow-fx');
+    truthy(rowBtn, '图片命中词的行里要有摘要按钮');
+    rowBtn.dispatchEvent({ type: 'click' });
+    const btn = modal.querySelector('.kh-wb-scope');
+    truthy(btn, '右栏里要有「指向」按钮');
     const txt = String(btn.textContent);
     truthy(txt.length <= 9, '按钮文字必须是短摘要（≤8 字 + 省略号），实际：' + txt);
     truthy(txt.indexOf('…') >= 0, '截断要有可见省略号：' + txt);
@@ -240,8 +244,11 @@ module.exports = async function run() {
     face.setAttribute('data-for', 'fld-fetchLabels');
     face.setAttribute('data-raw', '文本字段#0|截图#图');
     const modal = openList(KH.ui.Fields.create(FM.byKey('imgOcrKeyword'), '核心词@截图', {}));
-    const btn = modal.querySelector('.kh-lrow-scope');
-    truthy(btn, '要有「指向」按钮');
+    const rowBtn2 = modal.querySelector('.kh-lrow-fx');
+    truthy(rowBtn2, '要有摘要按钮');
+    rowBtn2.dispatchEvent({ type: 'click' });
+    const btn = modal.querySelector('.kh-wb-scope');
+    truthy(btn, '右栏里要有「指向」按钮');
     btn.dispatchEvent({ type: 'click' });
     const panel = modal.querySelector('.kh-scope-panel');
     truthy(panel && panel.hidden === false, '点「指向」要打开面板');

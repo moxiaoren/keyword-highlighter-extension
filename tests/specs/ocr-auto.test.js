@@ -570,8 +570,8 @@ module.exports = async function run() {
     truthy(note.indexOf('const allow6 = [];') >= 0, '★ 名单来自字段串，不再来自关键词级开关');
     truthy(note.indexOf('if (!sp6 || !sp6.term) continue;') >= 0, '只有写了 #期 的字段才进名单');
     truthy(note.indexOf('(sp6.termLabels || []).forEach') >= 0, '别名跟着字段走');
-    truthy(note.indexOf('const keep = allow6.length ? allow6.some((a) => lab === a || lab.indexOf(a) >= 0) : true;') >= 0,
-      '★ 一个字段都没写 ⇒ keep 恒真（老行为不变，不让存量用户突然丢期限）');
+    truthy(note.indexOf('const keep = allow6.length ? allow6.some((a) => lab === a || lab.indexOf(a) >= 0) : false;') >= 0,
+      '★ 一个字段都没写 ⇒ 一行期限都不收（2.0.19.6 用户 m04768：没配置就不该有）');
     truthy(note.indexOf('row.value = KH.OcrAuto.termEnd(row.value);') >= 0, '进表前统一格式');
     const map = fs.readFileSync(path.join(root, 'src/ui/fieldmap.js'), 'utf8');
     truthy(map.indexOf("key: 'autoTerm'") < 0 && map.indexOf("key: 'autoTermLabels'") < 0,

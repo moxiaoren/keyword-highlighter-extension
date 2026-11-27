@@ -6075,7 +6075,9 @@
       const TERM_RE = /期限|有效期|到期日/;
       const m6 = meta || {};
       /* 【2.0.19.3 · m03229 ④】改成**字段级**：抓取字段里写了 `#期` 才自动收期限行（`#期=别名` 补证书里的叫法）。
-       * 一个字段都没写 ⇒ 沿用老行为（期限行照留），存量配置不会突然少一行。 */
+       * 【2.0.19.6 · 用户 m04768】一个字段都没写 ⇒ **一行期限都不收**。原话：「既然改成了可配置，
+       * 历史的词没配置，就不应该再有。只有去配置了才有。」——期限从"默认全抓"改成"点名才抓"。
+       * 只有期限类标签受这条影响；著作权人 / 登记号是证书写死的两行，不受影响。 */
       const allow6 = [];
       try {
         const P = KH.Fetch && KH.Fetch.parseLabelSpec;
@@ -6088,12 +6090,12 @@
             (sp6.termLabels || []).forEach((a) => { const v = String(a || '').trim(); if (v) allow6.push(v); });
           }
         }
-      } catch (e0) { /* 解析不出来就当没写（= 老行为） */ }
+      } catch (e0) { /* 解析不出来就当没写（= 不抓） */ }
       for (let i = out.length - 1; i >= 0; i--) {
         const row = out[i];
         const lab = String((row && row.label) || '');
         if (!TERM_RE.test(lab)) continue;
-        const keep = allow6.length ? allow6.some((a) => lab === a || lab.indexOf(a) >= 0) : true;
+        const keep = allow6.length ? allow6.some((a) => lab === a || lab.indexOf(a) >= 0) : false;
         if (!keep) { out.splice(i, 1); continue; }
         if (KH.OcrAuto && typeof KH.OcrAuto.termEnd === 'function') {
           try { row.value = KH.OcrAuto.termEnd(row.value); } catch (e2) { /* 原样保留 */ }

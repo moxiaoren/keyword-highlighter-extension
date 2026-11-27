@@ -1849,25 +1849,44 @@ module.exports = async function runUi(ctx) {
     await opt.click('.kh-cand-box[data-for="fld-imgOcrKeyword"] .kh-list-btn');
     await opt.waitForTimeout(300);
     const rows = await opt.evaluate(() => [...document.querySelectorAll('.kh-modal .kh-lrow')].map((r) => {
-      const markT = r.querySelector('.kh-lrow-mark:not(.kh-lrow-cmp) .kh-lrow-mark-t');
-      const cmpT = r.querySelector('.kh-lrow-cmp .kh-lrow-mark-t');
-      const cmpCb = r.querySelector('.kh-lrow-cmp input[type="checkbox"]');
+      const fx = r.querySelector('.kh-lrow-fx');
       return {
         name: (r.querySelector('.kh-lrow-name') || {}).value || '',
-        mark: markT ? markT.textContent : '',
-        cmp: cmpT ? cmpT.textContent : '',
-        cmpOn: !!(cmpCb && cmpCb.checked),
-        boxes: r.querySelectorAll('.kh-lrow-mark-cb').length
+        fx: fx ? fx.textContent : '',
+        boxes: r.querySelectorAll('.kh-lrow-mark-cb').length,
+        hasFx: !!fx
       };
     }));
     eq(rows.length, 1, '弹窗里就一条词：' + JSON.stringify(rows));
-    eq(rows[0].mark, '进表', '「进表」勾选还在原位');
-    eq(rows[0].cmp, '比对', '「比对」与「进表」并排出现');
-    eq(rows[0].boxes, 2, '一行正好两枚勾选框');
-    eq(rows[0].cmpOn, false, '存量词默认不参与比对（不勾 = 旧行为）');
+    truthy(rows[0].hasFx, '行里要有摘要按钮（指向/进表/比对写在它上面）');
+    truthy(String(rows[0].fx).trim().length > 0, '摘要不能是空的：' + rows[0].fx);
+    eq(rows[0].boxes, 0, '行内不再放勾选框（2.0.19.6 统一收进右栏）');
 
-    await opt.evaluate(() => { document.querySelector('.kh-modal .kh-lrow-cmp input').click(); });
-    await opt.waitForTimeout(120);
+    /* 点这一行 ⇒ 右栏出现「进表 / 比对」两个勾选 */
+    await opt.evaluate(() => { document.querySelector('.kh-modal .kh-lrow-fx').click(); });
+    await opt.waitForTimeout(200);
+    const panelK11 = await opt.evaluate(() => {
+      const labels = [...document.querySelectorAll('.kh-modal .kh-wb-form label.kh-sfx-check')];
+      const cmp = labels.find((l) => /比对/.test(l.textContent || ''));
+      const mark = labels.find((l) => /进表/.test(l.textContent || ''));
+      return {
+        n: labels.length,
+        hasMark: !!mark,
+        hasCmp: !!cmp,
+        markOn: !!(mark && mark.querySelector('input') && mark.querySelector('input').checked),
+        cmpOn: !!(cmp && cmp.querySelector('input') && cmp.querySelector('input').checked)
+      };
+    });
+    eq(panelK11.n, 2, '右栏正好两项：进表 / 比对');
+    truthy(panelK11.hasMark && panelK11.hasCmp, '两项都要在：' + JSON.stringify(panelK11));
+    eq(panelK11.cmpOn, false, '存量词默认不参与比对（不勾 = 旧行为）');
+
+    await opt.evaluate(() => {
+      const lab = [...document.querySelectorAll('.kh-modal .kh-wb-form label.kh-sfx-check')].find((l) => /比对/.test(l.textContent || ''));
+      const cb = lab && lab.querySelector('input');
+      if (cb) cb.click();
+    });
+    await opt.waitForTimeout(150);
     /* 列表弹窗改了行 = dirty：按 Esc 会先弹「有未保存的修改」而不是关窗（批2 的既有行为），
      * 所以这里走它自己的「保存」（onSave: commit），让改动真的写回字段。 */
     await opt.evaluate(() => {
@@ -1903,13 +1922,16 @@ module.exports = async function runUi(ctx) {
     await opt.waitForTimeout(700);
     await opt.click('.kh-cand-box[data-for="fld-imgOcrKeyword"] .kh-list-btn');
     await opt.waitForTimeout(300);
+    await opt.evaluate(() => { document.querySelector('.kh-modal .kh-lrow-fx').click(); });
+    await opt.waitForTimeout(200);
     const again = await opt.evaluate(() => {
-      const cb = document.querySelector('.kh-modal .kh-lrow-cmp input');
-      const lab = document.querySelector('.kh-modal .kh-lrow-cmp');
-      return { on: !!(cb && cb.checked), lit: !!(lab && lab.classList.contains('is-on')) };
+      const lab = [...document.querySelectorAll('.kh-modal .kh-wb-form label.kh-sfx-check')].find((l) => /比对/.test(l.textContent || ''));
+      const cb = lab && lab.querySelector('input');
+      const fx = document.querySelector('.kh-modal .kh-lrow-fx');
+      return { on: !!(cb && cb.checked), fx: fx ? fx.textContent : '' };
     });
-    eq(again.on, true, '重开后勾选态要还原');
-    eq(again.lit, true, '勾上时勾选框要有 is-on 高亮（不靠记性）');
+    eq(again.on, true, '重开后勾选态要还原（右栏读）');
+    truthy(/比对/.test(again.fx), '行摘要也要写出「比对」（不靠记性）：' + again.fx);
 
     await opt.keyboard.press('Escape');
     await opt.waitForTimeout(200);
@@ -1941,30 +1963,43 @@ module.exports = async function runUi(ctx) {
     await set('fetchLabels', '开发者|著作权人');
     await opt.click('.kh-cand-box[data-for="fld-fetchLabels"] .kh-list-btn');
     await opt.waitForTimeout(300);
+    /* 【2.0.19.6 · m04768】比对也搬进右栏：行里只有「取值」按钮，点它选中这一行 */
     const before = await opt.evaluate(() => {
       const rows = [...document.querySelectorAll('.kh-modal .kh-lrow')];
       const r0 = rows[0] || {};
-      const cb = r0.querySelector ? r0.querySelector('.kh-lrow-cmp input[type="checkbox"]') : null;
-      const lab = r0.querySelector ? r0.querySelector('.kh-lrow-cmp .kh-lrow-mark-t') : null;
-      const sel = r0.querySelector ? r0.querySelector('.kh-lrow-cmp-sel') : null;
       return {
         n: rows.length,
-        cmp: lab ? lab.textContent : '',
-        on: !!(cb && cb.checked),
-        selHidden: sel ? !!sel.hidden : null,
-        hasSel: !!sel
+        hasCmpInline: !!(r0.querySelector && r0.querySelector('.kh-lrow-cmp')),
+        hasSfx: !!(r0.querySelector && r0.querySelector('.kh-lrow-suffix'))
       };
     });
     eq(before.n, 2, '两条抓取字段：' + JSON.stringify(before));
-    eq(before.cmp, '比对', '抓取字段行也要有「比对」勾选');
-    eq(before.selHidden, true, '没勾「比对」时不显示「和谁比」');
-    eq(before.on, false, '存量字段默认不参与比对');
+    eq(before.hasCmpInline, false, '行内不再放「比对」（2.0.19.6 收进右栏）');
+    truthy(before.hasSfx, '行里要有「取值：…」按钮，点它进右栏');
 
-    /* 勾上 ⇒ 行内出现「和谁比」，候选来自**其它**抓取字段（不含自己）。 */
-    await opt.evaluate(() => { document.querySelector('.kh-modal .kh-lrow-cmp input').click(); });
-    await opt.waitForTimeout(150);
+    await opt.evaluate(() => {
+      const r0 = document.querySelector('.kh-modal .kh-lrow');
+      const b = r0 && r0.querySelector('.kh-lrow-suffix');
+      if (b) b.click();
+    });
+    await opt.waitForTimeout(250);
+    const before2 = await opt.evaluate(() => {
+      const sel = document.querySelector('.kh-modal .kh-wb-cmpsel');
+      const lab = [...document.querySelectorAll('.kh-modal .kh-wb-form label.kh-sfx-check')].find((l) => /比对/.test(l.textContent || ''));
+      return { hasCmp: !!lab, selHidden: sel ? !!sel.hidden : null, hasSel: !!sel };
+    });
+    truthy(before2.hasCmp, '右栏要有「比对」勾选');
+    eq(before2.selHidden, true, '没勾「比对」时不显示「和谁比」');
+
+    /* 勾上 ⇒ 右栏出现「和谁比」，候选来自**其它**抓取字段（不含自己）。 */
+    await opt.evaluate(() => {
+      const lab = [...document.querySelectorAll('.kh-modal .kh-wb-form label.kh-sfx-check')].find((l) => /比对/.test(l.textContent || ''));
+      const cb = lab && lab.querySelector('input');
+      if (cb) cb.click();
+    });
+    await opt.waitForTimeout(200);
     const opts0 = await opt.evaluate(() => {
-      const sel = document.querySelector('.kh-modal .kh-lrow-cmp-sel');
+      const sel = document.querySelector('.kh-modal .kh-wb-cmpsel');
       if (!sel) return null;
       return { hidden: !!sel.hidden, opts: [...sel.options].map((o) => ({ v: o.value, t: o.textContent })) };
     });
@@ -1973,7 +2008,8 @@ module.exports = async function runUi(ctx) {
     eq(opts0.opts.map((o) => o.v).join(','), ',著作权人', '首项是提示、候选只有另一个字段（不含自己）');
 
     await opt.evaluate(() => {
-      const sel = document.querySelector('.kh-modal .kh-lrow-cmp-sel');
+      const sel = document.querySelector('.kh-modal .kh-wb-cmpsel');
+      if (!sel) return;
       sel.value = '著作权人';
       sel.dispatchEvent(new Event('change', { bubbles: true }));
     });
@@ -2011,10 +2047,16 @@ module.exports = async function runUi(ctx) {
     await opt.waitForTimeout(700);
     await opt.click('.kh-cand-box[data-for="fld-fetchLabels"] .kh-list-btn');
     await opt.waitForTimeout(300);
-    const again = await opt.evaluate(() => {
+    await opt.evaluate(() => {
       const r0 = document.querySelector('.kh-modal .kh-lrow');
-      const cb = r0 && r0.querySelector('.kh-lrow-cmp input');
-      const sel = r0 && r0.querySelector('.kh-lrow-cmp-sel');
+      const b = r0 && r0.querySelector('.kh-lrow-suffix');
+      if (b) b.click();
+    });
+    await opt.waitForTimeout(250);
+    const again = await opt.evaluate(() => {
+      const lab = [...document.querySelectorAll('.kh-modal .kh-wb-form label.kh-sfx-check')].find((l) => /比对/.test(l.textContent || ''));
+      const cb = lab && lab.querySelector('input');
+      const sel = document.querySelector('.kh-modal .kh-wb-cmpsel');
       return { on: !!(cb && cb.checked), target: sel ? sel.value : '', hidden: sel ? !!sel.hidden : null };
     });
     eq(again.on, true, '重开后勾选态要还原');
@@ -2584,8 +2626,9 @@ module.exports = async function runUi(ctx) {
     const i1 = i0 === 0 ? 1 : 0;
     await rowsOf().nth(i0).locator('.kh-lrow-suffix').click();
     await opt.waitForTimeout(220);
-    eq(await opt.locator('.kh-wb-form').count(), 1, '点一行，右侧要装出这一行的表单');
-    await opt.locator('.kh-wb-form .kh-sfx-offset').fill('2');
+    /* 抓取字段的右栏现在是两块：取值设置 + 比对/和谁比（2.0.19.6 统一口径） */
+    eq(await opt.locator('.kh-wb-form').count(), 2, '点一行，右侧要装出取值表单 + 比对表单');
+    await opt.locator('.kh-wb-form .kh-sfx-offset').first().fill('2');
     await opt.waitForTimeout(220);
     const sfx0 = await rowsOf().nth(i0).locator('.kh-lrow-suffix').textContent();
     truthy(/第 2 格/.test(String(sfx0)), '这一行的取值说明要跟着变：' + sfx0);

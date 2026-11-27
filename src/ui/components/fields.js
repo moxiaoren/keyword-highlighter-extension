@@ -1193,6 +1193,122 @@
             paintActive();
             paintDetail();
           }
+          /* 【2.0.19.6 · 用户 m04768】图片命中词 / 图片动态词也走右栏：指向 · 进表 · 比对
+           * 从行内搬进面板，行里只留一句摘要。五类列表弹窗因此是同一副骨架
+           * （左列表 + 右详情 + 底部批量），逻辑与外观都不再分两套。
+           * 行内旧控件的 DOM 只在非工作台时构造（见 buildRow 里的 workbench 判断），
+           * 所以这里的小勾选框各管一行，状态仍写回 row.mark / row.cmp，存储口径不变。 */
+          function wbGroup(title, kids) {
+            return h('div', { class: 'kh-sfx-group' }, [h('div', { class: 'kh-sfx-group-t', text: title })].concat(kids.filter(Boolean)));
+          }
+          function buildKvPanel(row) {
+            const wrap = h('div', { class: 'kh-wb-form' });
+            const grid = h('div', { class: 'kh-sfx-grid' });
+            const scopeBtn = h('button', { class: 'kh-btn kh-wb-scope', type: 'button', text: scopeLabel(row) });
+            scopeBtn.title = scopeTitleOf(row);
+            scopeBtn.addEventListener('click', () => openScope(row));
+            row._scopeBtn2 = scopeBtn;
+            const markCb = h('input', { type: 'checkbox' });
+            markCb.checked = !!row.mark;
+            const markRow = h('label', { class: 'kh-sfx-check' }, [markCb, h('span', { text: '进表：图里「这个词：值」并进抓取表' })]);
+            markCb.addEventListener('change', () => {
+              row.mark = !!markCb.checked;
+              row.dirty = true;
+              dirty = true;
+              if (row._paintMark) row._paintMark();
+              paintSummary(row);
+            });
+            const cmpCb = h('input', { type: 'checkbox' });
+            cmpCb.checked = !!row.cmp;
+            const cmpRow = h('label', { class: 'kh-sfx-check' }, [cmpCb, h('span', { text: '比对：这张图上必须有它（词本身，或字段抓到的值）' })]);
+            cmpCb.addEventListener('change', () => {
+              row.cmp = !!cmpCb.checked;
+              row.dirty = true;
+              dirty = true;
+              if (row._paintCmp) row._paintCmp();
+              paintSummary(row);
+            });
+            grid.appendChild(wbGroup('指向（命中在哪儿）', [scopeBtn]));
+            grid.appendChild(wbGroup('进表 / 比对', [markRow, cmpRow]));
+            wrap.appendChild(grid);
+            return wrap;
+          }
+          /* 抓取字段的「和谁比」：必须指定对象，勾上就露出下拉（与行内旧控件同一份判据） */
+          function buildCmpPanel(row) {
+            const wrap = h('div', { class: 'kh-wb-form' });
+            const cmpCb = h('input', { type: 'checkbox' });
+            cmpCb.checked = !!row.cmp;
+            const cmpRow = h('label', { class: 'kh-sfx-check' }, [cmpCb, h('span', { text: '比对：这一行的值要和另一行比（同名或同法人＝一致）' })]);
+            const sel = h('select', { class: 'kh-input kh-wb-cmpsel' });
+            sel.title = '和哪一行比？只能选这个关键词里已填的抓取字段';
+            const paintSel = () => {
+              const names = [];
+              for (const r of rows) {
+                if (r === row || r.gone) continue;
+                const n = String(r.name == null ? '' : r.name).trim();
+                if (n && names.indexOf(n) < 0) names.push(n);
+              }
+              sel.textContent = '';
+              sel.appendChild(h('option', { value: '', text: row.cmpTarget ? '（重新选）' : '和谁比…' }));
+              let has = false;
+              for (const n of names) {
+                const o = h('option', { value: n, text: n });
+                if (n === row.cmpTarget) { o.selected = true; has = true; }
+                sel.appendChild(o);
+              }
+              if (row.cmpTarget && !has) {
+                const o = h('option', { value: row.cmpTarget, text: row.cmpTarget + '（已不在列表）' });
+                o.selected = true;
+                sel.appendChild(o);
+              }
+              sel.value = row.cmpTarget || '';
+              sel.hidden = !row.cmp;
+              sel.classList.toggle('is-warn', !!row.cmp && !row.cmpTarget);
+              cmpCb.checked = !!row.cmp;
+            };
+            cmpCb.addEventListener('change', () => {
+              row.cmp = !!cmpCb.checked;
+              if (!row.cmp) row.cmpTarget = '';
+              row.dirty = true;
+              dirty = true;
+              paintSel();
+            });
+            sel.addEventListener('change', () => {
+              row.cmpTarget = String(sel.value == null ? '' : sel.value).trim();
+              row.dirty = true;
+              dirty = true;
+              paintSel();
+            });
+            row._paintCmpSel = paintSel;
+            cmpSels.push(paintSel);
+            paintSel();
+            wrap.appendChild(h('div', { class: 'kh-sfx-grid' }, [wbGroup('比对（这个字段）', [cmpRow, sel])]));
+            return wrap;
+          }
+          /* 普通词条（标题关键词 / 核心关键词）只有名字，右栏就不再是空面板 */
+          function buildWordPanel(row) {
+            const wrap = h('div', { class: 'kh-wb-form' });
+            const inp = h('input', { class: 'kh-input', type: 'text', value: String(row.name || '') });
+            inp.placeholder = '这一条的名字';
+            inp.addEventListener('input', () => {
+              row.name = String(inp.value == null ? '' : inp.value);
+              row.dirty = true;
+              dirty = true;
+              if (row._nameInp && row._nameInp !== inp) row._nameInp.value = row.name;
+            });
+            wrap.appendChild(h('div', { class: 'kh-sfx-grid' }, [wbGroup('名字', [inp,
+              h('div', { class: 'kh-sfx-hint', text: '只改这一条；回车在列表里再加一条' })])]));
+            return wrap;
+          }
+          function kvSummary(row) {
+            const bits = [String(scopeLabel(row) || '全部')];
+            if (row.mark) bits.push('进表');
+            if (row.cmp) bits.push('比对');
+            return bits.join(' · ');
+          }
+          function paintSummary(row) {
+            if (row && row._fxBtn) row._fxBtn.textContent = kvSummary(row);
+          }
           function paintDetail() {
             if (!detailBody) return;
             detailBody.textContent = '';
@@ -1200,17 +1316,34 @@
             if (!activeRow || activeRow.gone) {
               detailBody.appendChild(h('div', {
                 class: 'kh-wb-empty',
-                text: hasSuffix ? '点左边任意一行，在这里改它的取值方式' : '这一列没有可改的设置'
+                text: (hasSuffix || isKv) ? '点左边任意一行，在这里改它' : '点左边任意一行看它'
               }));
               return;
             }
-            const form = buildSuffix(activeRow);
-            form.hidden = false;
             detailBody.appendChild(h('div', { class: 'kh-wb-detail-head' }, [
               h('span', { class: 'kh-wb-detail-name', text: String(activeRow.name || '（没名字）') }),
               h('span', { class: 'kh-wb-detail-hint', text: '改这里只影响这一行；要一次改多条走底部「批量设置…」' })
             ]));
-            detailBody.appendChild(form);
+            /* 按行型装配：图片词 = 指向/进表/比对（+ 有后缀时再叠取值）；
+             * 抓取字段 = 取值 + 比对（和谁比）；普通词条 = 名字。 */
+            if (isKv && !hasSuffix) detailBody.appendChild(buildKvPanel(activeRow));
+            else if (isKv) {
+              detailBody.appendChild(buildKvPanel(activeRow));
+              const form = buildSuffix(activeRow);
+              form.hidden = false;
+              detailBody.appendChild(form);
+            } else if (isFetchList) {
+              const form = buildSuffix(activeRow);
+              form.hidden = false;
+              detailBody.appendChild(form);
+              detailBody.appendChild(buildCmpPanel(activeRow));
+            } else if (hasSuffix) {
+              const form = buildSuffix(activeRow);
+              form.hidden = false;
+              detailBody.appendChild(form);
+            } else {
+              detailBody.appendChild(buildWordPanel(activeRow));
+            }
           }
           function openBatch() {
             if (!pickedRows().length) { D().toast('先在左边勾选要一起改的行'); return; }
@@ -1381,6 +1514,18 @@
                 if (v === 'keep') return null;
                 return (r) => { r.mark = v === 'on'; };
               });
+              const cmpk = mkItem('比对（这张图上必须有）', onOff);
+              appliers.push(() => {
+                const v = cmpk.sel.value;
+                if (v === 'keep') return null;
+                return (r) => { r.cmp = v === 'on'; if (!r.cmp) r.cmpTarget = ''; };
+              });
+              const scopeK = mkItem('指向', [['keep', '不改'], ['clear', '清空指向（＝全部字段）']]);
+              appliers.push(() => {
+                const v = scopeK.sel.value;
+                if (v === 'keep') return null;
+                return (r) => { r.scopes = []; };
+              });
             }
 
             const cancelB = h('button', { class: 'kh-btn', type: 'button', text: '取消' });
@@ -1396,11 +1541,14 @@
               }
               if (!fns.length) { D().toast('上面还没有选任何要改的项'); return; }
               targets.forEach((r) => {
+                /* 纯图片词（没有 @指向 后缀）也可能被勾选，取值项写进一个空 spec 不影响存储 */
+                if (isKv && !r.spec) r.spec = {};
                 if (!r.spec) return;
                 fns.forEach((fn) => fn(r));
                 r.dirty = true;
                 dirty = true;
                 paintSuffixBtn(r);
+                if (r._fxBtn) paintSummary(r);
               });
               batchMode = false;
               paintActive();
@@ -1448,6 +1596,7 @@
                 dropRow(row);
               }
             });
+            row._nameInp = nameInp;
             const main = h('div', { class: 'kh-lrow-main' }, [cb, nameInp]);
             /* 【2.0.19.2 需求③】图片关键词 / 图片动态词这一族改成**两行**：第一行只放「名字 + ×」，
              * 指向 / 进表 / 比对 / 和谁比 全部下到第二行。用户原话：「因为有指向字段，导致元素有时候会
@@ -1456,7 +1605,7 @@
             /* 【2.0.13 批3】命中说明行：只在「命中在名字以外」（@指向 / 取值后缀 / 进表）时出现 */
             const why = h('div', { class: 'kh-list-why', hidden: true });
             row._why = why;
-            if (isKv) {
+            if (isKv && !workbench) {
               const scopeBtn = h('button', { class: 'kh-mini-btn kh-lrow-scope', type: 'button', text: scopeLabel(row) });
               scopeBtn.title = scopeTitleOf(row);
               scopeBtn.addEventListener('click', () => openScope(row));
@@ -1507,6 +1656,16 @@
               row._paintCmp = paintCmp;
               subParts.push(scopeBtn, markLab, cmpLab);
             }
+            /* 【2.0.19.6】工作台下：行里只留一句摘要，点它＝选中这一行（控制在右栏） */
+            if (isKv && workbench) {
+              const fxBtn = h('button', {
+                class: 'kh-mini-btn kh-lrow-fx', type: 'button',
+                text: kvSummary(row), title: '在右侧改这一行的指向 / 进表 / 比对'
+              });
+              fxBtn.addEventListener('click', () => { selectRow(row); });
+              row._fxBtn = fxBtn;
+              main.appendChild(fxBtn);
+            }
             let detail = null;
             if (hasSuffix) {
               const sfxBtn = h('button', {
@@ -1520,7 +1679,7 @@
               sfxBtn.addEventListener('click', () => { selectRow(row); });
               main.appendChild(sfxBtn);
             }
-            if (isFetchList) {
+            if (isFetchList && !workbench) {
               /* 【2026-11-16 用户拍板·方案 A】与图片词的「比对」同一套外观，区别只有一条：
                * 这里**必须指定对象**（用户原话「配置对比，必须指定对象」），所以勾上就露出下拉。
                * 没选对象时下拉标黄并写「和谁比…」——不判，也不假装一致。 */
@@ -1592,7 +1751,7 @@
               if (!t) return;
               const tag = String(t.tagName || '').toLowerCase();
               if (tag === 'input' || tag === 'select' || tag === 'textarea' || tag === 'option') return;
-              if (hasSuffix) selectRow(row);
+              if (hasSuffix || isKv) selectRow(row);
             });
             /* 【2.0.10 需求②】拖动排序：把手只在左边缘（整行 draggable 会抢走输入框的选字手感）。
              * 落点用行高的一半判断插前/插后，松手时重排 `rows` 与 DOM 两处，写回走整串重排。 */
@@ -1920,10 +2079,10 @@
             return serialize(row);
           };
           const tip = isKv
-            ? '每行一条；「指向」用可搜索多选设置，#表 表示命中后并入抓取表；勾「比对」表示这张图上必须有它（全在＝一致）。没改过的条目保存时原样保留。'
+            ? '每行一条；点任意一行，在右侧改它的 @指向 / 进表 / 比对（勾选多行走底部「批量设置…」）。没改过的条目保存时原样保留。'
             : isTok
               ? '每行一个抓取字段；点任意一行，在右侧改它的取值方式（不用手敲 #图3 / ^[复制] / %1-3）；勾选多行后走底部「批量设置…」。'
-              : '每行一条，保存时用 | 连接。';
+              : '每行一条；点任意一行，在右侧改它的名字，保存时用 | 连接。';
           /* 【2026-11-14 批1】三类行型各说一句话：这一屏到底是「词条」「抓取字段」还是「图片词」，
            * 以前只能靠经验看后缀差别。副标题只讲**怎么录**，不重复图例（图例在底部可展开）。 */
           const rowType = isTok ? 'tok' : (isKv ? 'kv' : 'plain');
@@ -1931,8 +2090,8 @@
           const rowTypeHint = isTok
             ? '每行一个字段；点一行在右侧改取值，回车添加下一条'
             : (isKv
-              ? '每行一条；可设 @指向，勾「进表」把命中值并入抓取表'
-              : '每行一条，回车添加下一条，保存时用 | 连接');
+              ? '每行一条；点一行在右侧改 @指向 / 进表 / 比对，回车添加下一条'
+              : '每行一条；点一行在右侧改名字，回车添加下一条');
           const kickerEl = h('div', { class: 'kh-list-kicker' }, [
             h('span', { class: 'kh-list-type', 'data-rowtype': rowType, text: rowTypeName }),
             h('span', { class: 'kh-list-kicker-t', text: rowTypeHint })
@@ -1951,16 +2110,19 @@
           /* 【2.0.20 · 用户 m04287 方案 A】抓取字段用两栏工作台：左列表一行一个字段，
            * 右边是这一行的取值设置 + 批量入口；行里不再就地展开详情。
            * 词条 / 图片词仍是原来的单栏（它们没有「取值」这一层，改了只会更麻烦）。 */
-          const workbench = isTok;
+          const workbench = true;
           const listCol = h('div', { class: 'kh-wb-list' }, [opsBar, bulkWarn, issueEl, listEl, noResEl]);
           const detailCol = h('div', { class: 'kh-wb-detail' }, [
             detailBody,
+            /* 指向面板（可搜索 + 多选）跟着右栏走：点行里的「指向」就在表单下面展开，
+             * 不再甩到弹窗最底下（那里要先滚一屏才看得见）。批量时也复用这一份。 */
+            scopePanel,
             h('div', { class: 'kh-wb-batchbar' }, [
               batchCount,
               batchTip,
               mkBtn('批量设置…', () => openBatch(), '一次改多条：每一项都能选「不改」，只写你点名的'),
-              mkBtn('只读右邻一格', () => quickBatch('simple'), '把勾选的行都改成只读右邻这一格'),
-              mkBtn('关掉期限', () => quickBatch('noterm'), '把勾选的行都关掉自动抓期限')
+              hasSuffix ? mkBtn('只读右邻一格', () => quickBatch('simple'), '把勾选的行都改成只读右邻这一格') : null,
+              hasSuffix ? mkBtn('关掉期限', () => quickBatch('noterm'), '把勾选的行都关掉自动抓期限') : null
             ])
           ]);
           const body = h('div', { class: 'kh-list-box' + (workbench ? ' kh-list-wb' : ''), 'data-rowtype': rowType }, workbench
