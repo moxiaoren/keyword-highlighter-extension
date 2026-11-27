@@ -1639,10 +1639,14 @@ module.exports = async function run() {
     const barAt = src.indexOf('kh-lb-bar');
     truthy(barAt > 0 && src.indexOf("kh-lb-prev", barAt) > 0 && src.indexOf("kh-lb-next", barAt) > 0,
       '★ 上一张/下一张要移进控件栏（底栏 DOM 里各出现一次）');
-    truthy(src.indexOf('const keepers = [img, bar, side, pdfCard];') >= 0,
-      '★ 关闭判定改成「图片/控件栏/全文栏/PDF 牌之外都关」（不再有容器内留白）');
-    truthy(src.indexOf('if (pressInStage) return;') >= 0, '按下在保留区内部时，抬起不关（避免拖图误关）');
-    truthy(src.indexOf('if (inKeep(t)) return;') >= 0, '抬起落在保留区里也不关');
+    /* 【2.0.19.5 · 用户 m04179】口径再次反转：单击一律不关（页面滚动条、悬浮播放器要能照常点），
+     * 退出只认 document 上的左键双击，落点在自家控件里就不关。 */
+    truthy(src.indexOf("document.addEventListener('dblclick', onDocDbl, true);") >= 0,
+      '★ 退出只认 document 上的左键双击');
+    truthy(src.indexOf('for (const n of path) { if (n === host) return; }') >= 0,
+      '★ 双击落点在自家宿主（图/栏/全文栏/PDF 牌）里就不关');
+    falsy(src.indexOf('const keepers = [img, bar, side, pdfCard];') >= 0, '旧的「保留区单击不关」判定已删');
+    truthy(src.indexOf('const lbClose = sr.querySelector(' + "'.kh-lb-close');") >= 0, '关闭按钮仍在（显式退出）');
   });
 
   await test('★ 2.0.19.1 图片占位：渲染在抓取层、点击仍能开大图看原图', () => {

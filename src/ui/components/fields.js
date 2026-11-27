@@ -655,6 +655,12 @@
           noResBtn.addEventListener('click', () => { filter.value = ''; applyFilter(); });
           /* 【#116】指向诊断条：写错的 `@字段名` 以前静默不生效，在这里当场列出来。 */
           const issueEl = h('div', { class: 'kh-issue-list', hidden: true });
+          /* 【2.0.20 · 用户 m04287 方案 A】字段·修改改成「左列表 + 右详情」工作台：
+           * 列表一行一个字段（只留 勾选/名字/取值摘要），点哪一行右边就显示那一行的取值设置；
+           * 批量设置也在右边这块面板里做（底部条上的「批量设置…」）。行内不再展开详情。 */
+          const detailBody = h('div', { class: 'kh-wb-detail-body' });
+          const batchCount = h('span', { class: 'kh-wb-batchcount' });
+          const batchTip = h('span', { class: 'kh-wb-batchtip' });
           /* 【2.0.8.21 缺陷③】`knownFields()` 读到的「抓取后续字段」原文，留给诊断去解析**值规格**：
            * 名字对得上不代表拿得到文字（`#图` 只取图片、`@0` 位置写坏），这种也要提示。 */
           const countEl = h('span', { class: 'kh-list-count' });
@@ -762,6 +768,10 @@
             countEl.textContent = '共 ' + alive().length + ' 条' + mid + '，已选 ' + pickedRows().length + ' 条';
             paintBulk();
             refreshIssues();
+            /* 2.0.20 方案 A：底部批量条只在真勾了东西时说话 */
+            const nSel = pickedRows().length;
+            batchCount.textContent = nSel ? ('已勾选 ' + nSel + ' 条') : '';
+            batchTip.textContent = nSel ? '只改点名的项，其余不动' : '勾左边任意行 → 批量改';
           };
 
           /* 【#116 需求】指向诊断：`@字段名` 写错时以前整条静默不生效（`splitScope` 只把配不上的
@@ -954,7 +964,8 @@
           /* ---------- 抓取字段后缀：结构化编辑（不再手敲 #图3 / ^[复制] / %1-3） ---------- */
           const buildSuffix = (row) => {
             const sp = row.spec;
-            const detail = h('div', { class: 'kh-lrow-detail', hidden: true });
+            /* 2.0.20 方案 A：这块表单不再挂在行里，改成右侧详情面板的内容（点行才建） */
+            const detail = h('div', { class: 'kh-wb-form' });
             /* 2.0.11 批2：位置与图片分成两组 —— 原来「取哪一格」里既放位置又放图片选项，
              * 「@2 值格」另起一组，说的其实是同一件事（从哪取），用户要自己猜两组谁优先。
              * 合并后：位置只看 offset（留空＝右邻），图片只看 imgModeSel；`#1` 收敛成位置组里的一个勾选。
@@ -1155,25 +1166,256 @@
               group('期限（这个字段）', [h('label', { class: 'kh-sfx-check' }, [termCb, h('span', { text: '自动抓期限（#期，从授权书/合作协议里抽，进表写成「至 yyyy-mm-dd」）' })]),
                 termAliasInp])
             ]));
-            /* 2.0.11 批2：一份取值可以一次套到多条上（原来只能一条条点开、逐项重设） */
-            const applyBtn = h('button', { class: 'kh-mini-btn kh-sfx-apply', type: 'button', text: '把这套取值应用到勾选的条目' });
-            applyBtn.title = '先把要一起改的条目在列表里勾上，再点这里；只改取值方式，不改名称';
-            applyBtn.addEventListener('click', () => {
-              const targets = pickedRows().filter((r) => r !== row && r.spec);
-              if (!targets.length) { D().toast('先在列表里勾选要一起改的条目'); return; }
-              const keys = ['noImg', 'imgOnly', 'imgLimit', 'imgPick', 'simple', 'offset', 'offsetInvalid', 'stripSpace', 'anchor', 'sliceSpec', 'clip', 'clipChars', 'ph', 'term', 'termLabels', 'link', 'linkTpl'];
-              targets.forEach((tr) => {
-                keys.forEach((k) => { tr.spec[k] = Array.isArray(row.spec[k]) ? row.spec[k].slice() : row.spec[k]; });
-                tr.dirty = true;
-                dirty = true;
-                if (typeof tr._refreshSuffix === 'function') tr._refreshSuffix();
-                paintSuffixBtn(tr);
-              });
-              D().toast('已把取值应用到 ' + targets.length + ' 条');
-            });
-            detail.appendChild(h('div', { class: 'kh-sfx-applybar' }, [applyBtn]));
+            /* 2.0.11 批2 的「把这套取值应用到勾选」已并进底部批量条（2.0.20 方案 A），
+             * 这里不再单独出一道按钮 —— 一处按钮只做一件事，列表行里也不再重复七份。 */
             return detail;
           };
+
+          /* ---------- 右侧详情 / 批量设置（2.0.20 · m04287 方案 A） ---------- */
+          /* 取值相关的可批量键：与 parseLabelSpec 的返回字段一一对应（新增后缀记号要同步加进来） */
+          const SFX_KEYS = ['noImg', 'imgOnly', 'imgLimit', 'imgPick', 'simple', 'offset', 'offsetInvalid', 'stripSpace', 'anchor', 'anchorMode', 'anchorTo', 'sliceSpec', 'clip', 'clipChars', 'ph', 'term', 'termLabels', 'link', 'linkTpl'];
+          let activeRow = null;
+          let batchMode = false;
+          function paintActive() {
+            for (const r of rows) {
+              if (r.el && r.el.classList) r.el.classList.toggle('is-active', !batchMode && r === activeRow);
+            }
+          }
+          function paintDetailName(row) {
+            if (!detailBody || !row) return;
+            const el = detailBody.querySelector ? detailBody.querySelector('.kh-wb-detail-name') : null;
+            if (el) el.textContent = String(row.name || '（没名字）');
+          }
+          function selectRow(row) {
+            if (!row || row.gone) return;
+            activeRow = row;
+            batchMode = false;
+            paintActive();
+            paintDetail();
+          }
+          function paintDetail() {
+            if (!detailBody) return;
+            detailBody.textContent = '';
+            if (batchMode) { detailBody.appendChild(buildBatch()); return; }
+            if (!activeRow || activeRow.gone) {
+              detailBody.appendChild(h('div', {
+                class: 'kh-wb-empty',
+                text: hasSuffix ? '点左边任意一行，在这里改它的取值方式' : '这一列没有可改的设置'
+              }));
+              return;
+            }
+            const form = buildSuffix(activeRow);
+            form.hidden = false;
+            detailBody.appendChild(h('div', { class: 'kh-wb-detail-head' }, [
+              h('span', { class: 'kh-wb-detail-name', text: String(activeRow.name || '（没名字）') }),
+              h('span', { class: 'kh-wb-detail-hint', text: '改这里只影响这一行；要一次改多条走底部「批量设置…」' })
+            ]));
+            detailBody.appendChild(form);
+          }
+          function openBatch() {
+            if (!pickedRows().length) { D().toast('先在左边勾选要一起改的行'); return; }
+            batchMode = true;
+            paintActive();
+            paintDetail();
+          }
+          /* 一句话的批量：把勾选行统一成某一个常见状态（不打开批量面板） */
+          function quickBatch(kind) {
+            const targets = pickedRows();
+            if (!targets.length) { D().toast('先在左边勾选要一起改的行'); return; }
+            targets.forEach((r) => {
+              if (!r.spec) return;
+              if (kind === 'simple') { r.spec.simple = true; r.spec.offset = ''; r.spec.offsetInvalid = false; }
+              else if (kind === 'noterm') { r.spec.term = false; }
+              r.dirty = true;
+              dirty = true;
+              paintSuffixBtn(r);
+            });
+            if (activeRow && targets.indexOf(activeRow) >= 0) paintDetail();
+            syncCount();
+            D().toast('已改 ' + targets.length + ' 行');
+          }
+          /* 批量面板：每一项的第一档永远是「不改」。只有被改动过的项才写进每一行，
+           * 其余原样 —— 这样「一次改多条」不会把别人辛苦配的细节一起覆盖掉。 */
+          function buildBatch() {
+            const form = h('div', { class: 'kh-wb-batch' });
+            const appliers = [];
+            const grid = h('div', { class: 'kh-sfx-grid' });
+            const mkItem = (label, opts) => {
+              const sel = h('select', { class: 'kh-input' });
+              for (const o of opts) sel.appendChild(h('option', { value: o[0], text: o[1] }));
+              sel.value = 'keep';
+              const extra = h('div', { class: 'kh-wb-bextra' });
+              grid.appendChild(h('div', { class: 'kh-sfx-group kh-wb-bgroup' }, [
+                h('div', { class: 'kh-sfx-label', text: label }), sel, extra
+              ]));
+              return { sel: sel, extra: extra };
+            };
+            const onOff = [['keep', '不改'], ['on', '打开'], ['off', '关闭']];
+
+            const pos = mkItem('从哪取（位置）', [['keep', '不改'], ['def', '右邻这一格（默认）'], ['one', '只读右邻一格（#1）'], ['off', '按偏移取']]);
+            const posInp = h('input', { class: 'kh-input', type: 'text', placeholder: '如 2 或 1-3' });
+            posInp.hidden = true;
+            pos.extra.appendChild(posInp);
+            pos.sel.addEventListener('change', () => { posInp.hidden = pos.sel.value !== 'off'; });
+            appliers.push(() => {
+              const v = pos.sel.value;
+              if (v === 'keep') return null;
+              if (v === 'def') return (r) => { r.spec.simple = false; r.spec.offset = ''; r.spec.offsetInvalid = false; };
+              if (v === 'one') return (r) => { r.spec.simple = true; r.spec.offset = ''; r.spec.offsetInvalid = false; };
+              const off = String(posInp.value == null ? '' : posInp.value).replace(/\s+/g, '');
+              return (r) => { r.spec.simple = false; r.spec.offset = off; r.spec.offsetInvalid = false; };
+            });
+
+            const img = mkItem('要哪种图', [['keep', '不改'], ['both', '图与文字都留'], ['none', '不要图片（#0）'], ['only', '只要图片（#图）'], ['lim', '图片最多 N 张（#图N）'], ['n', '图上文字与图最多 N 张（#N）'], ['pick', '指定第几张（#图1,3）']]);
+            const imgN = h('input', { class: 'kh-input kh-sfx-num', type: 'number', min: '1', step: '1', value: '2' });
+            const imgPick = h('input', { class: 'kh-input', type: 'text', placeholder: '如 1,3' });
+            imgN.hidden = true; imgPick.hidden = true;
+            img.extra.appendChild(imgN); img.extra.appendChild(imgPick);
+            img.sel.addEventListener('change', () => {
+              const v = img.sel.value;
+              imgN.hidden = !(v === 'lim' || v === 'n');
+              imgPick.hidden = v !== 'pick';
+            });
+            appliers.push(() => {
+              const v = img.sel.value;
+              if (v === 'keep') return null;
+              return (r) => {
+                r.spec.noImg = v === 'none';
+                r.spec.imgOnly = (v === 'only' || v === 'lim' || v === 'pick');
+                r.spec.imgLimit = (v === 'lim' || v === 'n') ? Math.max(0, parseInt(imgN.value, 10) || 0) : 0;
+                r.spec.imgPick = v === 'pick'
+                  ? String(imgPick.value == null ? '' : imgPick.value).split(/[,，\s]+/).map((x) => parseInt(x, 10))
+                    .filter((x, i, arr) => x >= 1 && x <= 99 && arr.indexOf(x) === i).sort((a, b) => a - b).slice(0, 12)
+                  : [];
+                if (v === 'none' || v === 'both') r.spec.imgLimit = 0;
+              };
+            });
+
+            const clip = mkItem('内容格只显示一行', [['keep', '不改'], ['off', '关闭'], ['on', '打开（不限字数）'], ['lim', '打开并限字数']]);
+            const clipN = h('input', { class: 'kh-input kh-sfx-num', type: 'number', min: '1', max: '200', step: '1', placeholder: '字数' });
+            clipN.hidden = true;
+            clip.extra.appendChild(clipN);
+            clip.sel.addEventListener('change', () => { clipN.hidden = clip.sel.value !== 'lim'; });
+            appliers.push(() => {
+              const v = clip.sel.value;
+              if (v === 'keep') return null;
+              return (r) => {
+                r.spec.clip = v !== 'off';
+                const n = parseInt(clipN.value, 10);
+                r.spec.clipChars = (v === 'lim' && n >= 1 && n <= 200) ? n : 0;
+              };
+            });
+
+            const ph = mkItem('图片按占位展示（#占）', onOff);
+            appliers.push(() => {
+              const v = ph.sel.value;
+              if (v === 'keep') return null;
+              return (r) => { r.spec.ph = v === 'on'; };
+            });
+
+            const strip = mkItem('去掉内部空白', onOff);
+            appliers.push(() => {
+              const v = strip.sel.value;
+              if (v === 'keep') return null;
+              return (r) => { r.spec.stripSpace = v === 'on'; };
+            });
+
+            const term = mkItem('自动抓期限（#期）', onOff);
+            const termAlias = h('input', { class: 'kh-input', type: 'text', placeholder: '证书里还叫什么？如 授权期限,合作期限' });
+            termAlias.hidden = true;
+            term.extra.appendChild(termAlias);
+            term.sel.addEventListener('change', () => { termAlias.hidden = term.sel.value !== 'on'; });
+            appliers.push(() => {
+              const v = term.sel.value;
+              if (v === 'keep') return null;
+              return (r) => {
+                r.spec.term = v === 'on';
+                if (v === 'on') {
+                  const a = String(termAlias.value == null ? '' : termAlias.value).split(/[,，、\s]+/).map((x) => x.trim()).filter(Boolean).slice(0, 4);
+                  if (a.length) r.spec.termLabels = a;
+                }
+              };
+            });
+
+            const link = mkItem('内容格做成超链接', onOff);
+            const linkTpl = h('input', { class: 'kh-input', type: 'text', placeholder: '可选：https://example.com/?q={v}' });
+            linkTpl.hidden = true;
+            link.extra.appendChild(linkTpl);
+            link.sel.addEventListener('change', () => { linkTpl.hidden = link.sel.value !== 'on'; });
+            appliers.push(() => {
+              const v = link.sel.value;
+              if (v === 'keep') return null;
+              return (r) => {
+                r.spec.link = v === 'on';
+                r.spec.linkTpl = v === 'on' ? String(linkTpl.value == null ? '' : linkTpl.value).trim() : '';
+              };
+            });
+
+            const anchor = mkItem('截到某个词之前', [['keep', '不改'], ['clear', '清空'], ['set', '设为指定词']]);
+            const anchorInp = h('input', { class: 'kh-input', type: 'text', placeholder: '如 ： 或 [复制]' });
+            anchorInp.hidden = true;
+            anchor.extra.appendChild(anchorInp);
+            anchor.sel.addEventListener('change', () => { anchorInp.hidden = anchor.sel.value !== 'set'; });
+            appliers.push(() => {
+              const v = anchor.sel.value;
+              if (v === 'keep') return null;
+              return (r) => {
+                r.spec.anchor = v === 'clear' ? '' : String(anchorInp.value == null ? '' : anchorInp.value).trim();
+                if (!r.spec.anchor) { r.spec.anchorMode = ''; r.spec.anchorTo = ''; }
+                else r.spec.anchorMode = 'before';
+              };
+            });
+
+            if (isFetchList) {
+              const cmp = mkItem('比对（这张图上必须有）', onOff);
+              appliers.push(() => {
+                const v = cmp.sel.value;
+                if (v === 'keep') return null;
+                return (r) => { r.cmp = v === 'on'; if (!r.cmp) r.cmpTarget = ''; };
+              });
+            }
+            if (isKv) {
+              const mark = mkItem('进表', onOff);
+              appliers.push(() => {
+                const v = mark.sel.value;
+                if (v === 'keep') return null;
+                return (r) => { r.mark = v === 'on'; };
+              });
+            }
+
+            const cancelB = h('button', { class: 'kh-btn', type: 'button', text: '取消' });
+            cancelB.addEventListener('click', () => { batchMode = false; paintActive(); paintDetail(); });
+            const applyB = h('button', { class: 'kh-btn kh-btn-primary', type: 'button', text: '应用到勾选的行' });
+            applyB.addEventListener('click', () => {
+              const targets = pickedRows();
+              if (!targets.length) { D().toast('先在左边勾选要一起改的行'); return; }
+              const fns = [];
+              for (let i = 0; i < appliers.length; i++) {
+                const fn = appliers[i]();
+                if (fn) fns.push(fn);
+              }
+              if (!fns.length) { D().toast('上面还没有选任何要改的项'); return; }
+              targets.forEach((r) => {
+                if (!r.spec) return;
+                fns.forEach((fn) => fn(r));
+                r.dirty = true;
+                dirty = true;
+                paintSuffixBtn(r);
+              });
+              batchMode = false;
+              paintActive();
+              paintDetail();
+              syncCount();
+              D().toast('已改 ' + targets.length + ' 行');
+            });
+            form.appendChild(h('div', { class: 'kh-wb-bhead' }, [
+              h('b', { text: '批量设置' }),
+              h('span', { class: 'kh-wb-bhint', text: '只有你改动的项才写进去，其余保持原样；名称不在这里改' })
+            ]));
+            form.appendChild(grid);
+            form.appendChild(h('div', { class: 'kh-wb-bfoot' }, [cancelB, applyB]));
+            return form;
+          }
 
           /* ---------- 行 ---------- */
           function buildRow(row) {
@@ -1270,15 +1512,12 @@
               const sfxBtn = h('button', {
                 class: 'kh-mini-btn kh-lrow-suffix', type: 'button',
                 text: (typeof F.describeSuffix === 'function' ? ('取值：' + (F.describeSuffix(row.spec) || '默认（右邻这一格）')) : ('后缀：' + ((typeof F.suffixTextOf === 'function' ? F.suffixTextOf(row.spec) : '') || '无'))),
-                title: '展开设置取值方式（当前写法：' + ((typeof F.suffixTextOf === 'function' ? F.suffixTextOf(row.spec) : '') || '无') + '）'
+                title: '在右侧改这一行的取值方式（当前写法：' + ((typeof F.suffixTextOf === 'function' ? F.suffixTextOf(row.spec) : '') || '无') + '）'
               });
-              sfxBtn.title = '点开展开后缀设置（不用手敲 # 与 %）';
-              detail = buildSuffix(row);
+              sfxBtn.title = '点这一行，在右边改取值方式（不用手敲 # 与 %）';
               row._suffixBtn = sfxBtn;
-              sfxBtn.addEventListener('click', () => {
-                detail.hidden = !detail.hidden;
-                sfxBtn.classList.toggle('is-open', !detail.hidden);
-              });
+              /* 2.0.20 方案 A：点「取值」＝选中这一行，右侧面板显示它（不再就地展开） */
+              sfxBtn.addEventListener('click', () => { selectRow(row); });
               main.appendChild(sfxBtn);
             }
             if (isFetchList) {
@@ -1346,8 +1585,15 @@
              * 「模块有多长」都撑不开第二个行。原来单独一行的 sub 会随内容换行、把行高撑成 76px。 */
             const sub = subParts.length ? h('div', { class: 'kh-lrow-sub' }, subParts) : null;
             if (sub) main.insertBefore(sub, del);
-            const shell = h('div', { class: 'kh-lrow' + (isTok ? ' kh-lrow-tok' : '') },
-              (detail ? [main, why, detail] : [main, why]).filter(Boolean));
+            const shell = h('div', { class: 'kh-lrow' + (isTok ? ' kh-lrow-tok' : '') }, [main, why]);
+            /* 2.0.20 方案 A：整行点一下＝在右侧改它。输入框/下拉/勾选框自己的点击不抢。 */
+            shell.addEventListener('click', (ev) => {
+              const t = ev && ev.target;
+              if (!t) return;
+              const tag = String(t.tagName || '').toLowerCase();
+              if (tag === 'input' || tag === 'select' || tag === 'textarea' || tag === 'option') return;
+              if (hasSuffix) selectRow(row);
+            });
             /* 【2.0.10 需求②】拖动排序：把手只在左边缘（整行 draggable 会抢走输入框的选字手感）。
              * 落点用行高的一半判断插前/插后，松手时重排 `rows` 与 DOM 两处，写回走整串重排。 */
             const grip = h('span', { class: 'kh-lrow-grip', text: '⠿', title: '按住拖动，调整这一条的展示顺序' });
@@ -1446,6 +1692,9 @@
             }
             applyFilter();
             syncCount();
+            /* 2.0.20 方案 A：行被重建后，选中高亮与右侧详情要跟着换成新的行元素 */
+            paintActive();
+            if (detailBody && detailBody.firstChild) paintDetail();
           }
 
           function addRow(data, afterRow, opts) {
@@ -1673,42 +1922,52 @@
           const tip = isKv
             ? '每行一条；「指向」用可搜索多选设置，#表 表示命中后并入抓取表；勾「比对」表示这张图上必须有它（全在＝一致）。没改过的条目保存时原样保留。'
             : isTok
-              ? '每行一个抓取字段；点行里的「取值：…」展开设置，不用手敲 #图3 / ^[复制] / %1-3；勾「不完整展示」= 内容格折 3 行。'
+              ? '每行一个抓取字段；点任意一行，在右侧改它的取值方式（不用手敲 #图3 / ^[复制] / %1-3）；勾选多行后走底部「批量设置…」。'
               : '每行一条，保存时用 | 连接。';
           /* 【2026-11-14 批1】三类行型各说一句话：这一屏到底是「词条」「抓取字段」还是「图片词」，
            * 以前只能靠经验看后缀差别。副标题只讲**怎么录**，不重复图例（图例在底部可展开）。 */
           const rowType = isTok ? 'tok' : (isKv ? 'kv' : 'plain');
           const rowTypeName = isTok ? '抓取字段' : (isKv ? '图片词' : '词条');
           const rowTypeHint = isTok
-            ? '每行一个字段名 + 取值后缀，回车添加下一条'
+            ? '每行一个字段；点一行在右侧改取值，回车添加下一条'
             : (isKv
               ? '每行一条；可设 @指向，勾「进表」把命中值并入抓取表'
               : '每行一条，回车添加下一条，保存时用 | 连接');
-          const body = h('div', { class: 'kh-list-box', 'data-rowtype': rowType }, [
-            h('div', { class: 'kh-list-kicker' }, [
-              h('span', { class: 'kh-list-type', 'data-rowtype': rowType, text: rowTypeName }),
-              h('span', { class: 'kh-list-kicker-t', text: rowTypeHint })
-            ]),
-            /* 头两行整块吸顶：列表再长，「快加」框与筛选也不滚出视野（主路径是录词，addbar 在前）。 */
-            h('div', { class: 'kh-list-head' }, [
-              h('div', { class: 'kh-list-addbar' }, [addInp, addBtn2]),
-              h('div', { class: 'kh-list-toolbar' }, [
-                filter,
-                mkBtn('全选', () => pick('all')),
-                mkBtn('反选', () => pick('inv')),
-                countEl
-              ])
-            ]),
-            scopePanel,
-            opsBar,
-            bulkWarn,
-            issueEl,
-            listEl,
-            noResEl,
-            h('div', { class: 'kh-list-foot' }, [h('span', { class: 'kh-list-tip', text: tip })]),
-            isTok ? legendEl() : null
+          const kickerEl = h('div', { class: 'kh-list-kicker' }, [
+            h('span', { class: 'kh-list-type', 'data-rowtype': rowType, text: rowTypeName }),
+            h('span', { class: 'kh-list-kicker-t', text: rowTypeHint })
           ]);
+          /* 头两行整块吸顶：列表再长，「快加」框与筛选也不滚出视野（主路径是录词，addbar 在前）。 */
+          const headEl2 = h('div', { class: 'kh-list-head' }, [
+            h('div', { class: 'kh-list-addbar' }, [addInp, addBtn2]),
+            h('div', { class: 'kh-list-toolbar' }, [
+              filter,
+              mkBtn('全选', () => pick('all')),
+              mkBtn('反选', () => pick('inv')),
+              countEl
+            ])
+          ]);
+          const footEl = h('div', { class: 'kh-list-foot' }, [h('span', { class: 'kh-list-tip', text: tip })]);
+          /* 【2.0.20 · 用户 m04287 方案 A】抓取字段用两栏工作台：左列表一行一个字段，
+           * 右边是这一行的取值设置 + 批量入口；行里不再就地展开详情。
+           * 词条 / 图片词仍是原来的单栏（它们没有「取值」这一层，改了只会更麻烦）。 */
+          const workbench = isTok;
+          const listCol = h('div', { class: 'kh-wb-list' }, [opsBar, bulkWarn, issueEl, listEl, noResEl]);
+          const detailCol = h('div', { class: 'kh-wb-detail' }, [
+            detailBody,
+            h('div', { class: 'kh-wb-batchbar' }, [
+              batchCount,
+              batchTip,
+              mkBtn('批量设置…', () => openBatch(), '一次改多条：每一项都能选「不改」，只写你点名的'),
+              mkBtn('只读右邻一格', () => quickBatch('simple'), '把勾选的行都改成只读右邻这一格'),
+              mkBtn('关掉期限', () => quickBatch('noterm'), '把勾选的行都关掉自动抓期限')
+            ])
+          ]);
+          const body = h('div', { class: 'kh-list-box' + (workbench ? ' kh-list-wb' : ''), 'data-rowtype': rowType }, workbench
+            ? [kickerEl, headEl2, h('div', { class: 'kh-wb-body' }, [listCol, detailCol]), footEl, isTok ? legendEl() : null]
+            : [kickerEl, headEl2, scopePanel, opsBar, bulkWarn, issueEl, listEl, noResEl, footEl, isTok ? legendEl() : null]);
           renderAll();
+          paintDetail();
           const commit = () => {
             if (!dirty) return true;                   // 没动过 ⇒ 不写回，原串一个字节都不碰
               const live = alive();
@@ -1768,7 +2027,7 @@
           listModal = ui.Modal.open({
             title: spec.label + ' · 修改',
             body,
-            size: 'md',
+            size: workbench ? 'lg' : 'md',
             /* 页面里的「快速添加」把编辑器挂在 ShadowRoot 上：列表弹窗必须跟着挂进去，
              * 否则会落到 document.body 上、拿不到组件样式（被页面样式冲掉）。 */
             mount: (() => {

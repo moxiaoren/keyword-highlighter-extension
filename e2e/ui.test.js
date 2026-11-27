@@ -2579,18 +2579,24 @@ module.exports = async function runUi(ctx) {
     await openLabels();
     truthy((await idxOf('计费方式改')) >= 0, '改名要真的写回');
 
-    /* ④ 批量设取值：改一行的位置，勾另一行应用过去 */
+    /* ④ 批量设取值（2.0.20 方案 A）：右边改这一行的位置，勾另一行后走底部「批量设置…」 */
     const i0 = await idxOf('计费方式改');
     const i1 = i0 === 0 ? 1 : 0;
     await rowsOf().nth(i0).locator('.kh-lrow-suffix').click();
-    await opt.waitForTimeout(200);
-    await rowsOf().nth(i0).locator('.kh-sfx-offset').fill('2');
-    await opt.waitForTimeout(200);
+    await opt.waitForTimeout(220);
+    eq(await opt.locator('.kh-wb-form').count(), 1, '点一行，右侧要装出这一行的表单');
+    await opt.locator('.kh-wb-form .kh-sfx-offset').fill('2');
+    await opt.waitForTimeout(220);
     const sfx0 = await rowsOf().nth(i0).locator('.kh-lrow-suffix').textContent();
     truthy(/第 2 格/.test(String(sfx0)), '这一行的取值说明要跟着变：' + sfx0);
     await rowsOf().nth(i1).locator('input.kh-list-cb').check();
-    await rowsOf().nth(i0).locator('.kh-sfx-apply').click();
-    await opt.waitForTimeout(250);
+    await opt.locator('.kh-wb-batchbar button', { hasText: '批量设置' }).click();
+    await opt.waitForTimeout(220);
+    await opt.locator('.kh-wb-batch select').first().selectOption('off');
+    await opt.waitForTimeout(120);
+    await opt.locator('.kh-wb-batch .kh-wb-bextra input').first().fill('2');
+    await opt.locator('.kh-wb-batch .kh-wb-bfoot .kh-btn-primary').click();
+    await opt.waitForTimeout(260);
     const sfx1 = await rowsOf().nth(i1).locator('.kh-lrow-suffix').textContent();
     eq(String(sfx1), String(sfx0), '批量设取值要一模一样：' + sfx1 + ' vs ' + sfx0);
 

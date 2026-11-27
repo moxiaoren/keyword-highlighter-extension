@@ -2023,21 +2023,27 @@ module.exports = async function runContent(ctx) {
     truthy(!/translate\(0px, *0px\)/.test(dragged.tf), '拖动后位移不该还是 0：' + dragged.tf);
     falsy(dragged.hidden, '拖动过程/之后都不该退出大图模式');
 
-    /* 【2.0.19.1 · m01400 第 1 条】大图模式去掉容器外观：图片周围那片空白**就是**"图片外"，
-     * 点它应该退出（旧口径"点容器内留白不退出"随容器一起作废）。 */
+    /* 【2.0.19.5 · 用户 m04179】退出改成「左键双击空白区」，单击一律不关；且单击必须能穿透到
+     * 页面（用户要在大图开着时拖滚动条、移动悬浮播放器）。这里同时验「不关」与「页面真收到点击」。 */
     const pad = await page.evaluate(() => {
       const im = document.getElementById('kh-note-lightbox').shadowRoot.querySelector('.kh-lb-img').getBoundingClientRect();
+      window.__khBlankClicks = 0;
+      document.addEventListener('click', () => { window.__khBlankClicks++; }, true);
       return { x: Math.round(im.left - 10), y: Math.round(im.top - 10) };
     });
     truthy(pad.x > 2 && pad.y > 2, '空白采样点应落在视口内，实际 ' + JSON.stringify(pad));
     await page.mouse.click(pad.x, pad.y);
     await page.waitForTimeout(250);
-    truthy((await lbState()).hidden, '点图片外的空白应退出大图模式（不再有容器内留白），实际 ' + JSON.stringify(pad));
-
-    // 点更远处的遮罩区域同样退出
+    falsy((await lbState()).hidden, '单击图片外的空白**不该**退出大图模式（改为双击才退）');
     await page.mouse.click(12, 12);
     await page.waitForTimeout(250);
-    truthy((await lbState()).hidden, '点图片以外区域应退出大图模式');
+    falsy((await lbState()).hidden, '单击更远处区域同样不该退出');
+    const passThrough = await page.evaluate(() => window.__khBlankClicks || 0);
+    truthy(passThrough >= 2, '大图开着时单击应穿透到页面（用户要拖滚动条/移动播放器），实际页面收到 ' + passThrough + ' 次');
+
+    await page.mouse.dblclick(pad.x, pad.y);
+    await page.waitForTimeout(300);
+    truthy((await lbState()).hidden, '左键双击空白区应退出大图模式，实际 ' + JSON.stringify(pad));
 
     await page.mouse.click(img.x, img.y);
     await page.waitForTimeout(300);
@@ -2140,7 +2146,12 @@ module.exports = async function runContent(ctx) {
      * 旧断言「栏与图片居中对齐」已作废 —— 面板占位把舞台让开时，那条就把栏带到了左边，
      * 正是用户说的「位置偏左」。现在只认视口中线。 */
     truthy(Math.abs(s.nav.barMid - s.nav.vw / 2) <= 10,
-      '控件栏应在视口水平居中（与图片位置无关），实际 ' + JSON.stringify(s.nav));
+      '控件栏应在视口水平居中，实际 ' + JSON.stringify(s.nav));
+    /* 【2.0.19.5 · 用户 m04179】图与栏必须同一条中轴：让位逻辑删掉后两者都按视口居中。 */
+    truthy(Math.abs(s.nav.imgMid - s.nav.vw / 2) <= 10,
+      '图片也应视口居中（不被面板挤偏），实际 ' + JSON.stringify(s.nav));
+    truthy(Math.abs(s.nav.imgMid - s.nav.barMid) <= 10,
+      '图片与控件栏必须对齐（同一条中轴），实际 ' + JSON.stringify(s.nav));
     truthy(s.nav.barBottom <= s.nav.vh && s.nav.barBottom >= s.nav.vh - 90,
       '控件栏应贴视口底部（约 22px 边距），实际 ' + JSON.stringify(s.nav));
     truthy(s.nav.stage.w < s.nav.vw - 40, '舞台宽度仍应给视口留边（不是整屏），实际 ' + JSON.stringify(s.nav.stage));
@@ -3475,7 +3486,7 @@ module.exports = async function runContent(ctx) {
           w0: pr0.width, w1: pr1.width, x0: pr0.left, x1: pr1.left,
           zoomed: aimg.getBoundingClientRect().width > ir0.width + 1
         };
-        sr.querySelector('.kh-lb').click();       // 点容器外 = 关灯箱，别留给后面的用例
+        sr.querySelector('.kh-lb-close').click();       // 点容器外 = 关灯箱，别留给后面的用例
         return { err: null, before: before, after: after, again: again, copyOk: copyOk, clip: clip, paneDrift: paneDrift };;
       });
       truthy(!lb.err, '开大图取证失败：' + JSON.stringify(lb));
@@ -3671,7 +3682,7 @@ module.exports = async function runContent(ctx) {
         const sr = box && box.shadowRoot;
         const pane = sr && sr.querySelector('.kh-lb-side');
         const text = (sr && sr.querySelector('.kh-lb-side-t') || {}).textContent || '';
-        if (sr) sr.querySelector('.kh-lb').click();
+        if (sr) sr.querySelector('.kh-lb-close').click();
         return (pane && !pane.hidden) ? text : '';
       });
       includes(paneText, '一对一', '★ 点开大图后右栏应显示这张图的识别全文（默认可见）');
@@ -3704,7 +3715,7 @@ module.exports = async function runContent(ctx) {
         const sr = box && box.shadowRoot;
         const pane = sr && sr.querySelector('.kh-lb-side');
         const text = (sr && sr.querySelector('.kh-lb-side-t') || {}).textContent || '';
-        if (sr) sr.querySelector('.kh-lb').click();
+        if (sr) sr.querySelector('.kh-lb-close').click();
         return (pane && !pane.hidden) ? text : '';
       });
       includes(paneText, '一对一', '未命中只是"不标命中"，识别全文照样在大图右栏里（那是可取走的识别结果）');
@@ -3819,7 +3830,7 @@ module.exports = async function runContent(ctx) {
         btn.click();
         await new Promise((r) => setTimeout(r, 80));
         const back = !pane.hidden;
-        sr.querySelector('.kh-lb').click();       // 关灯箱，别留给后面的用例
+        sr.querySelector('.kh-lb-close').click();       // 关灯箱，别留给后面的用例
         return { hidden: hidden, text: text, back: back };
       });
       lightboxOpen = false;
@@ -3842,7 +3853,7 @@ module.exports = async function runContent(ctx) {
         await page.evaluate(() => {
           const box = document.getElementById('kh-note-lightbox');
           const sr = box && box.shadowRoot;
-          if (sr) sr.querySelector('.kh-lb').click();
+          if (sr) sr.querySelector('.kh-lb-close').click();
         }).catch(() => {});
       }
       await api.setConfig(CONFIG);

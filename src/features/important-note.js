@@ -1299,7 +1299,10 @@
      * 遮罩仍铺满视口（点空白关闭的判定靠它），但改成透明；层级必须降到面板（2147483646）之下，
      * 否则透明遮罩照样吃掉面板的点击。2.0.19.1 起不再有容器外观（无底色/描边/外环）。 */
     .kh-lb { position: fixed; inset: 0; z-index: 2147483400; background: transparent;
-      display: flex; align-items: center; justify-content: center; cursor: default; }
+      display: flex; align-items: center; justify-content: center; cursor: default;
+      /* 【2.0.19.5 · 用户 m04179】遮罩层**不拦截指针**：大图开着时页面其它内容照常可操作
+       * （拖动滚动条、移动悬浮播放器/面板）。只有下面几块自家控件自己收事件。 */
+      pointer-events: none; }
     .kh-lb[hidden] { display: none !important; }
     /* 容器：有界的一块（图片 + 左右按钮 + 下方工具条）。**容器内点击一律不关** —— 关闭只认容器外的遮罩。
      * v1.99.99.18 用户反馈："明确大图容器范围，目前没有做区分" → 容器给**实心底色 + 边框 + 圆角阴影**，
@@ -1311,7 +1314,7 @@
       max-width: 96vw; max-height: 96vh;
       position: relative;
       padding: 0; border: 0; background: transparent; box-shadow: none;
-      cursor: default;
+      cursor: default; pointer-events: none;   /* 空白处让给页面（见 .kh-lb 注释） */
     }
     .kh-lb-row { position: relative; display: flex; align-items: center; gap: 12px; }
     /* 图片（2.0.1.15 需求 5 案④）：**大图尺寸完全不变** —— 全文栏移出这一行之后，行里只剩
@@ -1321,7 +1324,8 @@
       position: relative; z-index: 1;                 /* 图片在下层：放大溢出时不许压住按钮 */
       border-radius: 6px; box-shadow: 0 12px 40px rgba(0,0,0,.45); background: #fff;
       transform-origin: center center; transition: transform .12s ease-out;
-      cursor: grab; touch-action: none; -webkit-user-drag: none; user-select: none; }
+      cursor: grab; touch-action: none; -webkit-user-drag: none; user-select: none;
+      pointer-events: auto; }
     .kh-lb img.kh-lb-dragging { cursor: grabbing; transition: none; }
     /* 左右翻页：紧贴图片两侧（容器内 flex），大点击区（48×48）；层级高于图片。
      * 底色**不透明**（rgba(0,0,0,.42) 那种会被浅色图片透上来）→ 用实心底 + 亮描边 + 白字。 */
@@ -1349,7 +1353,7 @@
       padding: 6px 10px; border: 1px solid rgba(255,255,255,.22); border-radius: 12px;
       background: rgba(18,22,30,.82); box-shadow: 0 6px 20px rgba(0,0,0,.35);
       -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
-      font-size: 12px; color: #e8eef7; cursor: default; }
+      font-size: 12px; color: #e8eef7; cursor: default; pointer-events: auto; }
     /* 工具条按钮：同样改成实心底色（原来是透明底 + 半透明边框，压在图上会糊成一片） */
     .kh-lb-btn, .kh-lb-open { height: 26px; padding: 0 10px; border: 1px solid rgba(255,255,255,.45);
       border-radius: 999px; background: #39404e; color: #fff;
@@ -1372,7 +1376,7 @@
      *     层级也仍高于图与导航（图 z-index:1、导航 z-index:2、本层 z-index:3）⇒ 放大溢出盖不住它。
      *   · 外壳只管分栏与圆角：标题栏（也是**拖动抓手**）与两个按钮固定，**滚动只在正文区**（.kh-lb-side-t）。 */
     .kh-lb-side {
-      position: fixed; left: 0; top: 0; z-index: 3;
+      position: fixed; left: 0; top: 0; z-index: 3; pointer-events: auto;
       /* 【2.0.19 · 体检】宽度必须含边框：dockSide 写的是 style.width，若盒模型是 content-box，
        * 设 340 会渲染成 342（左右各 1px 边框）—— 于是「读回 offsetWidth 再写回去」每跑一次长 2px。 */
       box-sizing: border-box;
@@ -1455,7 +1459,7 @@
       display: flex; flex-direction: column; align-items: center; justify-content: center;
       gap: 6px; width: min(200px, 60vw); min-height: 96px; padding: 14px 12px; border-radius: 8px;
       background: rgba(22,26,34,.9); box-shadow: inset 0 0 0 1px rgba(255,255,255,.2);
-      color: rgba(255,255,255,.9); user-select: none;
+      color: rgba(255,255,255,.9); user-select: none; pointer-events: auto;
     }
     .kh-lb-pdfbox[hidden] { display: none; }
     .kh-lb-pdfmark { font-size: 18px; font-weight: 800; letter-spacing: 1px; color: #f87171; }
@@ -1720,35 +1724,17 @@
        * 容器盖在面板上就等于把参照物挡掉了。做法：量面板实测矩形，把舞台挪到面板另一侧的空档里
        * （宽屏才并排；窄屏直接居中覆盖 —— 硬挤会把图压成一条）。面板可能在左也可能在右（可拖），
        * 所以两侧都要算，选空间大的一侧。量不到面板（收起成 FAB/宽度为 0）就不动，保持居中。 */
+      /* 【2.0.19.5 · 用户 m04179】图片与控件菜单必须**同一条中轴**：两者都按视口居中。
+       * 旧版为了让开重要笔记面板，把舞台整体推到面板另一侧（paddingLeft/Right + 固定宽），
+       * 而控件栏固定按视口居中 ⇒ 图与栏各居各的，看起来"偏移、没对齐"。
+       * 用户明确「这个不是常驻模块，不应该影响大图和大图菜单的位置」，所以让位逻辑整段删掉：
+       * 面板仍浮在上层（z-index 更高），要看面板时它盖在图上，但**不改变**图与栏的位置。 */
       const avoidPanel = () => {
         const stageEl = box.querySelector('.kh-lb-stage');
         box.style.paddingLeft = '';
         box.style.paddingRight = '';
         box.style.justifyContent = '';
         if (stageEl) { stageEl.style.maxWidth = ''; stageEl.style.width = ''; }
-        const hostEl = document.getElementById(HOST_ID);
-        const wrap = hostEl && hostEl.shadowRoot && hostEl.shadowRoot.querySelector('.khin-wrap');
-        if (!stageEl || !wrap) return;
-        const pr = wrap.getBoundingClientRect();
-        const vw = window.innerWidth;
-        if (!pr.width || !pr.height || vw < 1100) return;    // 窄屏：并排放不下，退回居中覆盖
-        const pad = 24;
-        const roomRight = vw - pr.right - pad * 2;
-        const roomLeft = pr.left - pad * 2;
-        if (pr.left < vw / 2 && roomRight >= 420) {
-          box.style.justifyContent = 'flex-start';
-          box.style.paddingLeft = Math.round(pr.right + pad) + 'px';
-          /* 【2.0.19.4 · 用户 m03704】舞台要**吃掉让开后的整块空档**：
-           * 只设 max-width 时小图会贴着面板左缘（用户看到的「位置偏左」）；
-           * 给了固定 width，舞台内部的 align-items:center 才会把图放在这块空档的正中。 */
-          stageEl.style.maxWidth = Math.round(roomRight) + 'px';
-          stageEl.style.width = Math.round(roomRight) + 'px';
-        } else if (pr.left >= vw / 2 && roomLeft >= 420) {
-          box.style.justifyContent = 'flex-end';
-          box.style.paddingRight = Math.round(vw - pr.left + pad) + 'px';
-          stageEl.style.maxWidth = Math.round(roomLeft) + 'px';
-          stageEl.style.width = Math.round(roomLeft) + 'px';
-        }
       };
       /* 【2.0.16.8 · 用户 m22343】PDF 本体：后台带 cookie 取字节 → 页面侧建 blob: → 内建阅读器渲染。
        * 取不到不抛（跨域/登录/过期都很常见）：把原因写进缓存，占位牌显示出来，右侧识别文字照常可读。 */
@@ -2130,38 +2116,20 @@
       img.addEventListener('lostpointercapture', endDrag);
       img.addEventListener('dblclick', (e) => { e.preventDefault(); resetView(); });
 
-      /* 关闭：只在**按下点也在容器（图片 + 翻页键 + 工具条 + 浮层）以外**时，抬手/点击才关。
-       * v1.99.99.12 用户口径："减小容器范围，改成点击容器内都不会退出"；T46 真机又抓到两个反向误关：
-       *   · 在浮层里按下、往容器外拖（选词 / 滚动惯性）松手 —— click 的目标会退化成公共祖先 .kh-lb 自己，
-       *     容器里查不到它 ⇒ 被当成"点遮罩"把灯箱关掉；
-       *   · 从被浮层盖住的地方起手拖动、松手落在容器外 —— 同上。
-       * 所以判定改成以**按下的位置**为准（pointerdown 记一次，click 只读它），抬手落点不再决定关不关。 */
-      const stage = sr.querySelector('.kh-lb-stage');
-      const bar = sr.querySelector('.kh-lb-bar');
-      /* 【2.0.19.1 · m01400 第 1 条】容器外观去掉之后，"点图片外退出"必须按**看得见的东西**判：
-       * 图片本体、PDF 占位牌、底部控件栏、全文栏 —— 这四块之内不关，其余（图片周围那片空白）一律关。
-       * 旧写法用 stage.contains 兜住整个舞台，舞台透明了还照旧判就会「怎么点都不关」。 */
-      const pdfCard = sr.querySelector('.kh-lb-pdfbox');
-      const keepers = [img, bar, side, pdfCard];
-      const inKeep = (t) => {
-        if (!t) return false;
-        for (const k of keepers) { if (k && (k === t || k.contains(t))) return true; }
-        return false;
-      };
-      let pressInStage = false;
-      box.addEventListener('pointerdown', (e) => {
-        pressInStage = inKeep(e.target);
-      });
-      box.addEventListener('click', (e) => {
-        const t = e.target;
-        if (pressInStage) return;                           /* 按下在图片/控件里 ⇒ 这一下不算"点外面" */
-        if (inKeep(t)) return;
-        /* 浮层现在就在容器内的行里，下面这条是兜底（T46 之前它在容器外，必须单列）—— 少了它，
-         * 在栏里点一下选词就会被当成"点到容器外"而把灯箱关掉（这栏存在的意义就是让人读和抄）。 */
-        if (t && side.contains(t)) return;
-        if (bar && t && bar.contains(t)) return;
+      /* 关闭口径见下一条注释（2.0.19.5 起只认 document 上的左键双击）。 */
+      /* 【2.0.19.5 · 用户 m04179】退出只认「左键双击空白区」，单击一律不关：
+       *   · 遮罩层已 pointer-events:none（页面滚动条、悬浮播放器照常可操作），所以空白处的
+       *     点击根本到不了这里 —— 双击监听只能挂在 document 上；
+       *   · 用 composedPath 判落点：路径里出现自家宿主（图片/控件栏/全文栏/PDF 牌）就不关，
+       *     其余（页面任意空白、页面元素）双击即关。单击不做任何事。 */
+      const onDocDbl = (e) => {
+        if (box.hidden) return;
+        if (e.button != null && e.button !== 0) return;
+        const path = (e.composedPath && e.composedPath()) || [];
+        for (const n of path) { if (n === host) return; }
         close();
-      });
+      };
+      document.addEventListener('dblclick', onDocDbl, true);
       const lbClose = sr.querySelector('.kh-lb-close');
       lbClose.textContent = KH.OcrCopy.VIEW.lbClose;
       lbClose.title = KH.OcrCopy.VIEW.lbClose;

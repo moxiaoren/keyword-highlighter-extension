@@ -134,33 +134,51 @@ module.exports = async function run() {
 
   /* ── 批 2：结构归并（还是只动呈现，存储串与解析顺序不变） ───────────────── */
 
-  await test('★ 后缀面板：预览排在最前，「取哪一格」与「@值格」合成一组', () => {
+  await test('★ 2.0.20 工作台后缀面板：预览排在最前，「取哪一格」与「@值格」合成一组', () => {
     const modal = openList(mkTok('开发者'));
-    const detail = modal.querySelector('.kh-lrow-detail');
-    truthy(detail, '抓取字段行要带后缀面板');
+    /* 【2.0.20 · m04287 方案 A】表单不再在行内，点一行才在右侧装出来 */
+    truthy(modal.querySelector('.kh-wb-empty'), '没选中时右侧是空态');
+    modal.querySelector('.kh-lrow').dispatchEvent({ type: 'click' });
+    const detail = modal.querySelector('.kh-wb-form');
+    truthy(detail, '选中行后右侧要带后缀面板');
+    const act = modal.querySelectorAll('.kh-lrow').filter((el) => el.classList.contains('is-active'));
+    eq(act.length, 1, '同一时刻只有一行高亮（垫片不解析 .a.b，按 classList 数）');
     const kids = detail.children.map((el) => el.className || '');
     const iPrev = kids.findIndex((c) => /kh-sfx-preview/.test(c));
     const iGrid = kids.findIndex((c) => /kh-sfx-grid/.test(c));
     truthy(iPrev >= 0 && iGrid >= 0, '预览块与设置区都在：' + kids.join(' / '));
-    truthy(iPrev < iGrid, '预览要排在设置前面（展开就能看到取到的值）');
+    truthy(iPrev < iGrid, '预览要排在设置前面（选中就能看到取到的值）');
     const labels = detail.querySelectorAll('.kh-sfx-label').map((el) => String(el.textContent));
     truthy(labels.some((t) => t.indexOf('从哪取') >= 0), '位置组改成「从哪取（位置）」：' + labels.join(' / '));
     truthy(labels.some((t) => t.indexOf('要哪种图') >= 0), '图选项单独一组「要哪种图」');
     falsy(labels.some((t) => t.indexOf('取哪一格') >= 0), '旧的「取哪一格」要消失（和 @ 讲的是同一件事）');
     falsy(labels.some((t) => t.indexOf('值格位置') >= 0), '旧的「值格位置 @」要消失（已并入位置组）');
     truthy(detail.querySelectorAll('.kh-sfx-check').length >= 1, '#1 变成位置组里的一个勾选');
-    truthy(detail.querySelector('.kh-sfx-apply') !== null, '要有「把这套取值应用到勾选的条目」');
+    /* 行内那个「把这套取值应用到勾选的条目」已撤掉：批量统一走底部「批量设置…」，
+     * 否则 7 行就是 7 个重复按钮。 */
+    falsy(detail.querySelector('.kh-sfx-apply'), '行内不再常驻批量应用按钮');
     KH.ui.Modal.closeAll();
   });
 
-  await test('★ 批量设取值：没勾选任何条目时先说清怎么用', () => {
+  await test('★ 2.0.20 批量设置：没勾选时先说清怎么用，每项第一档都是「不改」', () => {
     const modal = openList(mkTok('开发者'));
-    const btn = modal.querySelector('.kh-sfx-apply');
-    truthy(btn, '按钮要在');
+    const btn = Array.from(modal.querySelectorAll('.kh-wb-batchbar button')).filter((b) => /批量设置/.test(String(b.textContent)))[0];
+    truthy(btn, '底部批量条要有「批量设置…」');
     btn.dispatchEvent({ type: 'click' });
     const toastEl = document.body.querySelector('.kh-toast');
     truthy(toastEl, '点它要有提示（不能静默）');
-    truthy(/勾选/.test(String(toastEl.textContent)), '提示要说清「先勾选要一起改的条目」：' + toastEl.textContent);
+    truthy(/勾选/.test(String(toastEl.textContent)), '提示要说清「先勾选要一起改的行」：' + toastEl.textContent);
+    /* 勾一行再打开：每一项的第一档必须是「不改」，否则「批量」会把没点名的设置一起抹掉 */
+    const cb0 = modal.querySelector('.kh-lrow .kh-list-cb');
+    cb0.checked = true;
+    cb0.dispatchEvent({ type: 'change' });   // picked 由 change 事件置位，直接设 checked 不够
+    btn.dispatchEvent({ type: 'click' });
+    const batch = modal.querySelector('.kh-wb-batch');
+    truthy(batch, '勾选后要能打开批量面板');
+    const sels = batch.querySelectorAll('select');
+    truthy(sels.length >= 6, '批量面板要覆盖主要设置：' + sels.length);
+    truthy(sels.every((s) => String(s.childNodes[0].textContent).indexOf('不改') >= 0),
+      '每一项的第一档都必须是「不改」');
     KH.ui.Modal.closeAll();
   });
 
