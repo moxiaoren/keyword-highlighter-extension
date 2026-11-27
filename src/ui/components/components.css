@@ -865,11 +865,12 @@
   flex: 1 1 auto; min-width: 0; overflow: hidden; flex-wrap: nowrap;
 }
 .kh-cand-clamp .kh-cand-field > .kh-cand-add { flex: 0 0 auto; }
-/* 抓取字段的胶囊带后缀徽标（`#图3` / `%4`）：以前是 `flex:0 0 auto`（不参与压缩），词一多就整颗被裁、
- * 连徽标一起消失，也经常被误判成"换行挤压"的根因 ⇒ 现在允许收缩到省略号，徽标本身仍不压（见下一条）。 */
-.kh-cand-token .kh-lbl-chip { flex: 0 1 auto; min-width: 0; }
-.kh-cand-clamp .kh-lbl-name { max-width: 10em; }
-.kh-cand-token .kh-lbl-suffix { flex: 0 0 auto; max-width: 7em; overflow: hidden; text-overflow: ellipsis; }
+/* 【2.0.19.3 回调 · 用户 m03266 第 1 条】上一版为了让"词多也不撑宽"把胶囊改成 `flex:0 1 auto`，
+ * 结果每个胶囊都被压成一条细线 —— 用户原话：「展示挤了很多压缩且啥也看不清的胶囊」。
+ * 回调口径：**胶囊按正常尺寸显示，放得下几个就显示几个，放不下的整颗被框裁掉**，绝不压缩变形；
+ * 看全走「修改」弹窗。所以这里恢复 `flex:0 0 auto`（不参与收缩），窄配也没有 max-width 截名字。 */
+.kh-cand-token .kh-lbl-chip { flex: 0 0 auto; }
+.kh-cand-token .kh-lbl-suffix { flex: 0 0 auto; }
 
 
 /* ==== 【2.0.2.16 需求②】候选框的**文本态**：点框面空白处 ⇒ 胶囊还原成一整串文本（`|` 分隔），

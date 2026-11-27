@@ -986,6 +986,23 @@
              * 抓到的值一个字不改。存进字段串的 `~` 后缀里，老配置没有它 ⇒ 默认完整展示。 */
             const clipCb = h('input', { type: 'checkbox' });
             clipCb.checked = !!sp.clip;
+            /* 【2.0.19.3 · m03229 ③】展示字数：只在勾了「只显示一行」时可用，存成字段串的 `~N`。 */
+            const clipCharsInp = h('input', {
+              class: 'kh-input kh-sfx-num', type: 'number', min: '1', max: '200', step: '1',
+              value: sp.clipChars ? String(sp.clipChars) : '', placeholder: '字数，如 30'
+            });
+            clipCharsInp.hidden = !sp.clip;
+            /* 【2.0.19.3 · m03229 ②】图片按占位展示：**这个字段**的图换成小牌（带文件名），存成 `#占`。 */
+            const phCb = h('input', { type: 'checkbox' });
+            phCb.checked = !!sp.ph;
+            /* 【2.0.19.3 · m03229 ④】自动抓期限：**这个字段**从授权书/合作协议里收期限，存成 `#期`（可带别名）。 */
+            const termCb = h('input', { type: 'checkbox' });
+            termCb.checked = !!sp.term;
+            const termAliasInp = h('input', {
+              class: 'kh-input', type: 'text', value: (sp.termLabels || []).join(','),
+              placeholder: '证书里还叫什么？如 授权期限,合作期限'
+            });
+            termAliasInp.hidden = !sp.term;
             /* 【2.0.8.12 需求①】内容格做成超链接：`*` 后缀。值本身是网址就直链；
              * 想拼成别的地址（例如包名 → 应用市场页）就在模板里写 `{v}`，值会被 URL 编码后填进去。 */
             const linkCb = h('input', { type: 'checkbox' });
@@ -1013,6 +1030,12 @@
               anchorInp.value = String(sp.anchor || '');
               stripCb.checked = !!sp.stripSpace;
               clipCb.checked = !!sp.clip;
+              clipCharsInp.value = sp.clipChars ? String(sp.clipChars) : '';
+              clipCharsInp.hidden = !sp.clip;
+              phCb.checked = !!sp.ph;
+              termCb.checked = !!sp.term;
+              termAliasInp.value = (sp.termLabels || []).join(',');
+              termAliasInp.hidden = !sp.term;
               linkCb.checked = !!sp.link;
               linkTplInp.value = String(sp.linkTpl || '');
               const smA = /^\s*(\d+)\s*-\s*(\d+)\s*$/.exec(String(sp.sliceSpec || ''));
@@ -1072,6 +1095,14 @@
               sp.offsetInvalid = false;
               sp.stripSpace = !!stripCb.checked;
               sp.clip = !!clipCb.checked;
+              const ccn = parseInt(clipCharsInp.value, 10);
+              sp.clipChars = (sp.clip && ccn >= 1 && ccn <= 200) ? ccn : 0;
+              clipCharsInp.hidden = !sp.clip;
+              sp.ph = !!phCb.checked;
+              sp.term = !!termCb.checked;
+              sp.termLabels = String(termAliasInp.value == null ? '' : termAliasInp.value)
+                .split(/[,，、\s]+/).map((x) => x.trim()).filter(Boolean).slice(0, 4);
+              termAliasInp.hidden = !sp.term;
               sp.link = !!linkCb.checked;
               sp.linkTpl = String(linkTplInp.value == null ? '' : linkTplInp.value).trim();
               linkTplInp.hidden = !sp.link;
@@ -1097,6 +1128,10 @@
             sliceB.addEventListener('input', compose);
             stripCb.addEventListener('change', compose);
             clipCb.addEventListener('change', compose);
+            clipCharsInp.addEventListener('input', compose);
+            phCb.addEventListener('change', compose);
+            termCb.addEventListener('change', compose);
+            termAliasInp.addEventListener('input', compose);
             linkCb.addEventListener('change', compose);
             linkTplInp.addEventListener('input', compose);
             sampleInp.addEventListener('input', paintPreview);
@@ -1108,13 +1143,17 @@
               group('从哪取（位置）', [offsetInp,
                 h('label', { class: 'kh-sfx-check' }, [simpleCb, h('span', { text: '只读右邻一格（#1）' })]),
                 h('div', { class: 'kh-sfx-hint', text: '留空 = 右邻这一格；写 2 = 右邻第 2 格' })]),
-              group('要哪种图', [imgModeSel, imgN, imgPickInp]),
+              group('要哪种图', [imgModeSel, imgN, imgPickInp,
+                h('label', { class: 'kh-sfx-check' }, [phCb, h('span', { text: '图片按占位展示（#占，带文件名，点开仍看大图）' })])]),
               group('取什么内容', [anchorInp, sliceMode, sliceA, sliceB,
                 h('label', { class: 'kh-sfx-check' }, [clipCb, h('span', { text: '内容格只显示一行（悬停看全文）' })]),
+                clipCharsInp,
                 h('label', { class: 'kh-sfx-check' }, [linkCb, h('span', { text: '内容格做成超链接（值是网址就直链；也可在下面写模板）' })]),
                 linkTplInp
               ]),
-              group('怎么清理', [h('label', { class: 'kh-sfx-check' }, [stripCb, h('span', { text: '去掉内部空白（包名这类用）' })])])
+              group('怎么清理', [h('label', { class: 'kh-sfx-check' }, [stripCb, h('span', { text: '去掉内部空白（包名这类用）' })])]),
+              group('期限（这个字段）', [h('label', { class: 'kh-sfx-check' }, [termCb, h('span', { text: '自动抓期限（#期，从授权书/合作协议里抽，进表写成「至 yyyy-mm-dd」）' })]),
+                termAliasInp])
             ]));
             /* 2.0.11 批2：一份取值可以一次套到多条上（原来只能一条条点开、逐项重设） */
             const applyBtn = h('button', { class: 'kh-mini-btn kh-sfx-apply', type: 'button', text: '把这套取值应用到勾选的条目' });
@@ -1122,7 +1161,7 @@
             applyBtn.addEventListener('click', () => {
               const targets = pickedRows().filter((r) => r !== row && r.spec);
               if (!targets.length) { D().toast('先在列表里勾选要一起改的条目'); return; }
-              const keys = ['noImg', 'imgOnly', 'imgLimit', 'imgPick', 'simple', 'offset', 'offsetInvalid', 'stripSpace', 'anchor', 'sliceSpec', 'clip', 'link', 'linkTpl'];
+              const keys = ['noImg', 'imgOnly', 'imgLimit', 'imgPick', 'simple', 'offset', 'offsetInvalid', 'stripSpace', 'anchor', 'sliceSpec', 'clip', 'clipChars', 'ph', 'term', 'termLabels', 'link', 'linkTpl'];
               targets.forEach((tr) => {
                 keys.forEach((k) => { tr.spec[k] = Array.isArray(row.spec[k]) ? row.spec[k].slice() : row.spec[k]; });
                 tr.dirty = true;
@@ -2130,11 +2169,14 @@
     else if (it.imgOnly) s = it.imgLimit ? '#图' + it.imgLimit : '#图';
     else if (it.imgLimit) s = '#' + it.imgLimit;
     else if (it.simple) s = '#1';
+    /* 【2.0.19.3 · m03229 ②④】字段级的两条 `#` 标记：`#占` / `#期[=别名]`（解析端从末尾逐个剥，顺序随意） */
+    if (it.ph) s += '#占';
+    if (it.term) s += '#期' + ((it.termLabels && it.termLabels.length) ? ('=' + it.termLabels.join(',')) : '');
     if (it.offset) s += '@' + it.offset;
     if (it.stripSpace) s += '!';
     if (it.anchor) s += '^' + it.anchor;
     if (it.sliceSpec) s += '%' + it.sliceSpec;
-    if (it.clip) s += '~';
+    if (it.clip) s += it.clipChars ? ('~' + it.clipChars) : '~';
     if (it.link) s += '*' + (it.linkTpl || '');
     return s;
   }

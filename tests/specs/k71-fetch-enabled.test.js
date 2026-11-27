@@ -83,61 +83,31 @@ module.exports = async function run() {
     eq(!!missing.meta.important, true, '缺键时仍照旧进面板');
   });
 
-  /* ================================= 【2.0.19.1 · m01400 第 3 条】图片占位开关 */
+  /* ================= 【2.0.19.3 · m03229 ②③④】三个配置从关键词级降为字段级 */
 
-  suite('2.0.19.1 · 图片按占位展示：只在启用抓取且显式勾选时成立');
+  suite('2.0.19.3 · 图片占位/展示字数/自动抓期限改成字段级（关键词级键已删除）');
 
-  await test('★ 编译层：fetchEnabled 关 ⇒ 占位也不成立；勾选才进 meta', () => {
-    const on = C.dispatch({ id: 'k', text: '甲', fetchLabels: '应用截图', fetchEnabled: true, imgPlaceholder: true }, CFG);
-    eq(on.meta.imgPlaceholder, true, '★ 勾选了就要进 meta（fetch.js 据此渲染占位）');
-
-    const off = C.dispatch({ id: 'k', text: '甲', fetchLabels: '应用截图', fetchEnabled: true }, CFG);
-    eq(off.meta.imgPlaceholder, false, '缺键 ⇒ false（存量行为：仍显示缩略图）');
-
-    const bad = C.dispatch({ id: 'k', text: '甲', fetchLabels: '应用截图', fetchEnabled: true, imgPlaceholder: 'yes' }, CFG);
-    eq(bad.meta.imgPlaceholder, false, '坏值一律按 false，不做真值推断');
-
-    const noFetch = C.dispatch({ id: 'k', text: '甲', fetchLabels: '应用截图', fetchEnabled: false, imgPlaceholder: true }, CFG);
-    eq(noFetch.meta.imgPlaceholder, false, '★ 没有抓取就没有图，占位也不该成立');
+  await test('★ 关键词级三件套不再进 meta（改由字段串的 #占 / ~N / #期 承担）', () => {
+    const m = C.dispatch({
+      id: 'k', text: '甲', fetchEnabled: true, fetchLabels: '著作权人~30|应用截图#占|授权期限#期',
+      imgPlaceholder: true, valueChars: 30, autoTerm: false, autoTermLabels: '合作期限'
+    }, CFG).meta;
+    eq(m.imgPlaceholder, undefined, '★ imgPlaceholder 不再是关键词级配置');
+    eq(m.valueChars, undefined, '★ valueChars 不再是关键词级配置');
+    eq(m.autoTerm, undefined, '★ autoTerm 不再是关键词级配置');
+    eq(m.autoTermLabels, undefined, '★ autoTermLabels 不再是关键词级配置');
+    eq(m.fetchLabels, '著作权人~30|应用截图#占|授权期限#期', '三个选项原样留在字段串里（唯一真源）');
   });
 
-  await test('★ 读/写两路都保留这个键（字段表遍历用例已覆盖，这里锁值类型是布尔）', () => {
-    const r = Config.normalize({ keywords: [{ id: 'a', text: 'x', fetchLabels: '甲', imgPlaceholder: true }] });
-    eq(r.config.keywords[0].imgPlaceholder, true, '读路径保留 true');
-    eq(Config.normalize({ keywords: [{ id: 'b', text: 'x', fetchLabels: '甲' }] }).config.keywords[0].imgPlaceholder, false,
-      '读路径缺键 ⇒ false');
-    eq(S.sanitizeKeyword({ text: 'x', fetchLabels: '甲', imgPlaceholder: true }, {}).imgPlaceholder, true,
-      '写路径保留布尔');
-    eq(S.sanitizeKeyword({ text: 'x', fetchLabels: '甲', imgPlaceholder: '1' }, {}).imgPlaceholder, false,
-      '写路径坏值 ⇒ false');
-  });
-
-  /* ============================== 【2.0.19.2 · m02412 需求①】展示字数（1–200，其余 0） */
-
-  suite('2.0.19.2 · 展示字数：读/写/编译三路同一条判据');
-
-  await test('★ 三路都夹在 0–200：缺键/坏值/负数 ⇒ 0，999 ⇒ 200', () => {
-    const kw = (v) => ({ id: 'k', text: '甲', fetchLabels: '著作权人', fetchEnabled: true, valueChars: v });
-    // 编译层（进运行期 meta）
-    eq(C.dispatch(kw(30), CFG).meta.valueChars, 30, '编译层保留 30');
-    eq(C.dispatch(kw(0), CFG).meta.valueChars, 0, '0 = 不裁');
-    eq(C.dispatch(kw(undefined), CFG).meta.valueChars, 0, '缺键 ⇒ 0（存量行为不变）');
-    eq(C.dispatch(kw('abc'), CFG).meta.valueChars, 0, '坏值 ⇒ 0');
-    eq(C.dispatch(kw(999), CFG).meta.valueChars, 200, '超上限夹到 200');
-    eq(C.dispatch(kw(-5), CFG).meta.valueChars, 0, '负数 ⇒ 0');
-    eq(C.dispatch({ id: 'k', text: '甲', fetchLabels: '著作权人', fetchEnabled: false, valueChars: 30 }, CFG)
-      .meta.valueChars, 0, '没启用抓取就没有表可裁 ⇒ 0');
-    // 读路径
-    const nr = (v) => Config.normalize({ keywords: [kw(v)] }).config.keywords[0].valueChars;
-    eq(nr(30), 30, '读路径保留 30');
-    eq(nr(undefined), 0, '读路径缺键 ⇒ 0');
-    eq(nr('abc'), 0, '读路径坏值 ⇒ 0');
-    eq(nr(999), 200, '读路径夹到 200');
-    // 写路径
-    const nw = (v) => S.sanitizeKeyword({ text: 'x', fetchLabels: '甲', valueChars: v }, {}).valueChars;
-    eq(nw(30), 30, '写路径保留 30');
-    eq(nw('abc'), 0, '写路径坏值 ⇒ 0');
-    eq(nw(999), 200, '写路径夹到 200');
+  await test('★ 读/写两路都不再补这四个键（老配置里的值也不提升）', () => {
+    const r0 = Config.normalize({ keywords: [{ id: 'a', text: 'x', fetchLabels: '甲' }] });
+    eq(r0.config.keywords[0].imgPlaceholder, undefined, '读路径不再**补** imgPlaceholder');
+    eq(r0.config.keywords[0].valueChars, undefined, '读路径不再补 valueChars');
+    eq(r0.config.keywords[0].autoTerm, undefined, '读路径不再补 autoTerm');
+    const w0 = S.sanitizeKeyword({ text: 'x', fetchLabels: '甲' }, {});
+    eq(w0.imgPlaceholder, undefined, '写路径不再落 imgPlaceholder');
+    eq(w0.valueChars, undefined, '写路径不再落 valueChars');
+    eq(w0.autoTerm, undefined, '写路径不再落 autoTerm');
   });
 
   /* ========================================================== ② 迁移规则 */

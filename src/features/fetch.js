@@ -990,9 +990,17 @@
   const ANCHOR_AFTER_RE = />\s*([^\^%!@#~*<>]+)$/;
   const SLICE_SUFFIX_RE = /%\s*([^%!@#^~*<>]*)$/;
   /* 【2.0.8.8 需求④】`~` = 该字段内容格**不完整展示**（只裁显示，值不变）。放最后匹配，不影响既有后缀。 */
-  const CLIP_SUFFIX_RE = /~\s*$/;
+  const CLIP_SUFFIX_RE = /~\s*(\d{0,3})\s*$/;
   /* 【2026-11-16】抓取字段之间的比对标记：`#比` / `#比=对象`（必须在最末）。 */
   const CMP_SUFFIX_RE = /(?:#|＃)\s*(?:比|cmp)\s*(?:=\s*([^|｜\s~@#!%^]+))?\s*$/i;
+  /* 【2.0.19.3 · m03229 ②③④】三个**字段级**选项（跟着字段串走，不再挂关键词上 ——
+   * 用户原话：「这应该是针对某一个抓取字段修改的配置」）：
+   *   `#占` = 这个字段里的图按小占位展示（带文件名，点开仍看大图）
+   *   `~N`  = 只显示一行，并限制显示 N 个字（1–200；只写 `~` 沿用老行为 = 只折一行不数字数）
+   *   `#期` = 这个字段自动抓期限（`#期=别名,别名` 可补证书里对它的叫法）
+   * 必须在图片选项之前剥：`#` 后不是「图/数字」时 IMG_SUFFIX_RE 也会命中 `#`。 */
+  const PH_SUFFIX_RE = /(?:#|＃)\s*占\s*$/;
+  const TERM_SUFFIX_RE = /(?:#|＃)\s*期\s*(?:=\s*([^|｜\s~@#!%^*<>]+))?\s*$/;
   /* 【2.0.8.12 需求①】`*` = 该字段内容格**做成超链接**（值本身是网址就直链，否则按模板拼）。
    *  `*` 后面紧跟的是可选的链接模板（`{v}` 会被替换成 URL 编码后的值）；只放行 http/https，
    *  其它协议（javascript: / data: …）一律不生成链接 —— 笔记里的值来自任意网页，不能当可执行入口。 */
@@ -1020,6 +1028,11 @@
     let anchorTo = '';
     let sliceSpec = '';
     let clip = false;
+    /* 2.0.19.3：字段级显示/进表选项 */
+    let clipChars = 0;
+    let ph = false;
+    let term = false;
+    let termLabels = [];
     let link = false;
     let linkTpl = '';
     for (let guard = 0; guard < 8; guard++) {
@@ -1032,6 +1045,20 @@
       }
       /* 【2.0.19.2 需求②】锚点方向必须在 `~`/`*`/`%/`@` 之前剥：
        * 它们的字符类都是"一直吃到末尾"，先剥的话 `>甲方` 会被当成链接模板/表达式的一部分。 */
+      /* 【2.0.19.3】`#占` / `#期` 与 `#比` 同族：都是 `#` 收尾标记，紧跟比对之后、图片选项之前剥。 */
+      const mph = PH_SUFFIX_RE.exec(s);
+      if (mph) {
+        ph = true;
+        s = s.slice(0, mph.index).replace(/^[ \u3000]+|[ \u3000]+$/g, '');
+        continue;
+      }
+      const mtm = TERM_SUFFIX_RE.exec(s);
+      if (mtm) {
+        term = true;
+        termLabels = String(mtm[1] || '').split(/[,，、]/).map((x) => x.trim()).filter(Boolean).slice(0, 4);
+        s = s.slice(0, mtm.index).replace(/^[ \u3000]+|[ \u3000]+$/g, '');
+        continue;
+      }
       const mb = ANCHOR_BETWEEN_RE.exec(s);
       if (mb && mb[1].trim() && mb[2].trim()) {
         anchor = mb[1].trim();
@@ -1053,6 +1080,8 @@
       const mc = CLIP_SUFFIX_RE.exec(s);
       if (mc) {
         clip = true;
+        const cn = parseInt(mc[1] || '', 10);
+        clipChars = (cn >= 1 && cn <= 200) ? cn : 0;
         s = s.slice(0, mc.index).replace(/^[ 　]+|[ 　]+$/g, '');
         continue;
       }
@@ -1132,7 +1161,7 @@
       }
       break;
     }
-    return { label: s, simple: simple, imgOnly: imgOnly, imgLimit: imgLimit, imgPick: imgPick, noImg: noImg, offset: offset, offsetInvalid: isOffsetInvalid(offset), stripSpace: stripSpace, anchor: anchor, anchorMode: anchorMode, anchorTo: anchorTo, sliceSpec: sliceSpec, clip: clip, link: link, linkTpl: linkTpl, cmpOn: cmpOn, cmpTarget: cmpTarget };
+    return { label: s, simple: simple, imgOnly: imgOnly, imgLimit: imgLimit, imgPick: imgPick, noImg: noImg, offset: offset, offsetInvalid: isOffsetInvalid(offset), stripSpace: stripSpace, anchor: anchor, anchorMode: anchorMode, anchorTo: anchorTo, sliceSpec: sliceSpec, clip: clip, clipChars: clipChars, ph: ph, term: term, termLabels: termLabels, link: link, linkTpl: linkTpl, cmpOn: cmpOn, cmpTarget: cmpTarget };
   }
 
   /**
@@ -1162,7 +1191,9 @@
       else out.push('^' + it.anchor);
     }
     if (it.sliceSpec) out.push('%' + it.sliceSpec);
-    if (it.clip) out.push('~');
+    if (it.clip) out.push(it.clipChars ? ('~' + it.clipChars) : '~');
+    if (it.ph) out.push('#占');
+    if (it.term) out.push('#期' + (it.termLabels && it.termLabels.length ? ('=' + it.termLabels.join(',')) : ''));
     if (it.link) out.push('*' + (it.linkTpl || ''));
     return out.join(' ');
   }
@@ -1191,7 +1222,9 @@
     }
     const sp = String(it.sliceSpec || '');
     if (sp) out.push(/^\d+\s*-\s*\d+$/.test(sp) ? ('取第 ' + sp.replace(/\s*-\s*/, '–') + ' 个字') : ('取前 ' + sp + ' 个字'));
-    if (it.clip) out.push('只显示一行');
+    if (it.clip) out.push(it.clipChars ? ('只显示一行、最多 ' + it.clipChars + ' 字') : '只显示一行');
+    if (it.ph) out.push('图片按占位展示');
+    if (it.term) out.push('自动抓期限');
     if (it.link) out.push(it.linkTpl ? '做成链接（用模板）' : '做成链接');
     return out.join(' · ');
   }
@@ -2240,7 +2273,12 @@
     /* 【2.0.19.2 · m02412 需求①】「展示字数」：这条规则填了 N（1–200）⇒ 卡片里的值只显示前 N 个字
      * 加省略号、并且单行（与 `~` 后缀同一套裁切样式），悬停 title 仍是全文、复制/进表也是全文。
      * 填 0 / 缺键 = 不按字数裁，沿用原来的自适应一行。 */
-    const lim = Math.max(0, Math.min(200, Math.round(Number(opts && opts.valueChars) || 0)));
+    /* 【2.0.19.3 · m03229 ③】展示字数改成**字段级**（`~N` 后缀），关键词级的 `valueChars` 只留作兼容兜底。 */
+    const limG = Math.max(0, Math.min(200, Math.round(Number(opts && opts.valueChars) || 0)));
+    const limOf = (it) => {
+      const n = Math.max(0, Math.min(200, Math.round(Number(it && it.opt && it.opt.clipChars) || 0)));
+      return n || limG;
+    };
     const items = (multi || []).map((m) => {
       const opt = m.opt || null;                 // 该字段的图片选项（仅图片 / 前 N 张）
       const budget = { n: 0 };                   // "前 N 张"是**整字段**的前 N 张（跨单元格累计）
@@ -2338,7 +2376,7 @@
      * 必须多包一层 div：直接对 `td` 用 max-height / line-clamp 在真浏览器里不生效
      * （表格单元格的 display 被规整成 table-cell，clamp 只认 -webkit-box 子元素）。
      * 悬停 `title` 给全文（去掉图片占位符、空白折成一格，避免多行塞进属性）。 */
-    const clipOn = (it) => !!(lim > 0 || (it && it.opt && it.opt.clip));
+    const clipOn = (it) => !!(limOf(it) > 0 || (it && it.opt && it.opt.clip));
     /* 【2.0.8.12 需求①】`*`：把这一格的内容做成超链接。两条路径：
      *  ① 值本身是 http(s) 网址 → 直接当 href；
      *  ② 写了模板（`*https://x/?q={v}`）→ 用 URL 编码后的值替换 `{v}`。
@@ -2361,6 +2399,7 @@
       : '';
     const valInner = (it, raw) => {
       const href = hrefOf(it, raw);
+      const lim = limOf(it);
       /* 展示字数：先把图片占位符压成空白再数字数（占位符是内部标记，不该算进"字数"）。
        * 超了才换成"前 N 字 + …"，并且**丢掉链接/图片**（截断后的残句点开也没用）。 */
       let html = escHtml(raw);
@@ -2368,6 +2407,9 @@
         const plain = stripImgPlaceholders(String(raw == null ? '' : raw)).replace(/\s+/g, ' ').trim();
         if (plain.length > lim) html = escHtml(plain.slice(0, lim)) + '…';
       }
+      /* 【2.0.19.3 · m03229 ②】`#占` = **这个字段**里的图换成小占位牌（带文件名），点开仍看大图。
+       * 只认 escHtml → restoreImgs 产出的固定形状，页面内容不进这条正则。 */
+      if (it && it.opt && it.opt.ph) html = imgToPlaceholder(html);
       const body = (href
         ? '<a class="kh-val-link" href="' + escHtml(href) + '" target="_blank" rel="noopener noreferrer">' + html + '</a>'
         : html) + suspectTag(it);
@@ -2518,7 +2560,7 @@
     })).concat(extraItems), opts);
     /* 【2.0.19.1 · m01400 第 3 条】这条规则选了「图片按占位展示」：把已渲染好的缩略图换成一枚
      * 小占位（带文件名）。只认 `restoreImgs` 产出的那一种固定形状，页面内容不进这条正则。 */
-    return (opts && opts.imgPlaceholder) ? imgToPlaceholder(html) : html;
+    return html;
   }
 
   /** 命中格在**根表格**里所在的行号（缓存键的一部分；见 `blockFor`） */
@@ -2595,7 +2637,6 @@
    */
   function blockFor(textNode, rawLabels, cache, scope, extras, opts) {
     const sc = scopeOf(scope);
-    const ph = !!(opts && opts.imgPlaceholder);
     /* 【2.0.2.17 需求⑥】带 OCR 附加行时**绕开缓存**：缓存键是 `(表格, 行, labels, scope)`，
      * 而 OCR 行按**命中所属规则**不同而不同 —— 同一格被两个关键词用到会串味。附加行为空时照常吃缓存。 */
     const hasExtra = !!(extras && extras.length);
@@ -2607,7 +2648,7 @@
     /* 缓存键要带占位开关：同一次重建里两条规则可能共用同一张表、同一组标签，
      * 但一条要占位、一条要缩略图 —— 不带就会串味（后渲染的那条拿到前一条的 HTML）。 */
     const k = String(rawLabels == null ? '' : rawLabels) + '\u0001' + sc + '\u0001'
-      + rowKeyOf(root, textNode) + (ph ? '\u0001ph' : '');
+      + rowKeyOf(root, textNode);
     if (box.html.has(k)) return box.html.get(k);
     const v = computeBlock(textNode, rawLabels, sc, box, extras, opts);
     box.html.set(k, v);

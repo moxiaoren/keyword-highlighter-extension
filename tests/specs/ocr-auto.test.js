@@ -563,20 +563,24 @@ module.exports = async function run() {
     eq(A.termEnd(''), '');
   });
 
-  await test('★ 2.0.19.2 期限行可按规则关掉 / 点名只抓哪几个（m02412 ⑥）', () => {
+  await test('★ 2.0.19.3 期限抓取是字段级（#期）：没字段声明就沿用老行为（m03229 ④）', () => {
     const root = path.join(__dirname, '..', '..');
     const note = fs.readFileSync(path.join(root, 'src/features/important-note.js'), 'utf8');
     truthy(note.indexOf('const TERM_RE = /期限|有效期|到期日/;') >= 0, '期限行按标签识别');
-    truthy(note.indexOf('const on6 = m6.autoTerm !== false;') >= 0, '每条规则一个开关');
-    truthy(note.indexOf("if (!allow6.length) allow6 = ['授权期限'];") >= 0, '列表为空回到默认');
+    truthy(note.indexOf('const allow6 = [];') >= 0, '★ 名单来自字段串，不再来自关键词级开关');
+    truthy(note.indexOf('if (!sp6 || !sp6.term) continue;') >= 0, '只有写了 #期 的字段才进名单');
+    truthy(note.indexOf('(sp6.termLabels || []).forEach') >= 0, '别名跟着字段走');
+    truthy(note.indexOf('const keep = allow6.length ? allow6.some((a) => lab === a || lab.indexOf(a) >= 0) : true;') >= 0,
+      '★ 一个字段都没写 ⇒ keep 恒真（老行为不变，不让存量用户突然丢期限）');
     truthy(note.indexOf('row.value = KH.OcrAuto.termEnd(row.value);') >= 0, '进表前统一格式');
     const map = fs.readFileSync(path.join(root, 'src/ui/fieldmap.js'), 'utf8');
-    truthy(map.indexOf("key: 'autoTerm'") >= 0 && map.indexOf("key: 'autoTermLabels'") >= 0, '设置页有两个控件');
+    truthy(map.indexOf("key: 'autoTerm'") < 0 && map.indexOf("key: 'autoTermLabels'") < 0,
+      '★ 关键词级两个控件已删除（改到字段的「修改」弹窗里）');
     const cfg = fs.readFileSync(path.join(root, 'src/core/config.js'), 'utf8');
-    truthy(cfg.indexOf('if (o.autoTerm !== false) o.autoTerm = true;') >= 0, '读路径归一');
+    truthy(cfg.indexOf('o.autoTerm') < 0, '读路径不再归一 autoTerm');
     const store = fs.readFileSync(path.join(root, 'src/platform/storage.js'), 'utf8');
-    truthy(store.indexOf('autoTerm: f.autoTerm !== false,') >= 0, '写路径同判据');
+    truthy(store.indexOf('autoTerm:') < 0, '写路径不再落 autoTerm');
     const comp = fs.readFileSync(path.join(root, 'src/core/compiler.js'), 'utf8');
-    truthy(comp.indexOf('autoTermLabels: String(kw.autoTermLabels') >= 0, '跟着规则进 meta');
+    truthy(comp.indexOf('autoTerm') < 0, 'meta 里不再有 autoTerm');
   });
 };

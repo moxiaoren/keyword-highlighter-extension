@@ -828,27 +828,9 @@
             o.fetchScope = sc;
           }
 
-          /* ③d 图片按占位展示（2.0.19.1 · m01400 第 3 条）：只认布尔真值，缺键/坏值一律 false
-           * （默认仍是缩略图，存量配置行为不变）。 */
-          if (o.imgPlaceholder !== true) o.imgPlaceholder = false;
-
-          /* ③e 展示字数（2.0.19.2 · m02412 需求①）：读路径归一。整数字面量 1–200 才生效，
-           * 其余（缺键 / 坏值 / 负数 / 小数 / 500）一律 0 = 不按字数裁 —— 存量配置行为不变。
-           * 写路径 `storage.newKeyword` 用**同一条判据**（见那里的注释）。 */
-          {
-            const n = Math.round(Number(o.valueChars));
-            o.valueChars = Number.isFinite(n) && n > 0 ? Math.min(200, n) : 0;
-          }
-
-          /* ③f 自动抓期限（2.0.19.2 · m02412 需求⑥）：缺键＝开（存量行为不变：授权书本来就补期限行）；
-           * 只有布尔 false 算关。字段名列表去空格、最多 8 个、单个最长 20 字，空表回到默认「授权期限」。 */
-          if (o.autoTerm !== false) o.autoTerm = true;
-          {
-            const list = String(o.autoTermLabels == null ? '' : o.autoTermLabels)
-              .split(/[,，、;；|]/).map((x) => x.trim()).filter(Boolean)
-              .map((x) => x.slice(0, 20)).slice(0, 8);
-            o.autoTermLabels = list.length ? list.join(',') : '授权期限';
-          }
+          /* 【2.0.19.3 · m03229 ②③④】原先在这里归一的 imgPlaceholder / valueChars / autoTerm /
+           * autoTermLabels 四个**关键词级**键已删除 —— 三者改成字段级，跟着抓取字段串的
+           * `#占` / `~N` / `#期` 走（解析在 `fetch.js` 的 parseLabelSpec，界面在字段·修改弹窗）。 */
 
           /* ③a 图片识别（OCR）**前置条件**兜底（用户确认口径）：
            *   图片命中是「抓取后续字段」的一个分支 —— 图片正是从**这些字段的值格**里取的，

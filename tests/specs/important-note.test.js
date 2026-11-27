@@ -1649,11 +1649,11 @@ module.exports = async function run() {
     const f = read('src/features/fetch.js');
     truthy(f.indexOf('function imgToPlaceholder(html)') >= 0, '占位渲染必须有一处集中实现');
     truthy(/khin-imgph" data-khimg="/.test(f), '★ 占位元素要带原图地址，否则点开看不了大图');
-    truthy(f.indexOf("return (opts && opts.imgPlaceholder) ? imgToPlaceholder(html) : html;") >= 0,
-      '开关只在收尾一处生效（别在每个分支里各判一次）');
-    truthy(f.indexOf("(ph ? '\\u0001ph' : '')") >= 0, '★ 缓存键要区分占位/缩略图，否则同表两条规则串味');
+    truthy(f.indexOf('if (it && it.opt && it.opt.ph) html = imgToPlaceholder(html);') >= 0,
+      '★ 2.0.19.3 起占位是字段级（#占），不再按整条规则一刀切');
+    truthy(f.indexOf('const limOf = (it) => {') >= 0, '★ 2.0.19.3 起展示字数也是字段级（~N），缓存键天然区分');
     const src = read('src/features/important-note.js');
-    truthy(src.indexOf('imgPlaceholder: !!(h.meta && h.meta.imgPlaceholder)') >= 0, '面板要把 meta 开关传下去');
+    truthy(src.indexOf('imgPlaceholder: !!(h.meta') < 0, '★ 关键词级 imgPlaceholder 已删除，面板不再传');
     truthy(src.indexOf("span.khin-imgph[data-khimg]") >= 0, '★ 灯箱相册要同时收 <img> 与占位，点占位能看原图');
   });
 

@@ -239,23 +239,8 @@
        * 缺键 / 非法值 → `'auto'`；显式 `self` 绝不翻回 `auto`（与 fetchEnabled 同一套写法）。
        * `csv: 0`：不进 CSV（仍是 18 列契约）。 */
       fetchScope: KH.Config.normalizeFetchScope(f.fetchScope),
-      /* 【2.0.19.1 · m01400 第 3 条】图片按占位展示：写路径与读路径同一判据（只认 true）。 */
-      imgPlaceholder: f.imgPlaceholder === true,
-      /* 【2.0.19.2 · m02412 需求①】展示字数：读路径（Config.normalize）同一条判据 ——
-       * 整数 1–200 才生效，其余一律 0（不按字数裁）。 */
-      valueChars: (() => {
-        const n = Math.round(Number(f.valueChars));
-        return Number.isFinite(n) && n > 0 ? Math.min(200, n) : 0;
-      })(),
-      /* 【2.0.19.2 · m02412 需求⑥】自动抓期限：写路径与读路径同一条判据
-       * （缺键/坏值＝开；字段名列表空＝默认「授权期限」）。 */
-      autoTerm: f.autoTerm !== false,
-      autoTermLabels: (() => {
-        const list = String(f.autoTermLabels == null ? '' : f.autoTermLabels)
-          .split(/[,，、;；|]/).map((x) => x.trim()).filter(Boolean)
-          .map((x) => x.slice(0, 20)).slice(0, 8);
-        return list.length ? list.join(',') : '授权期限';
-      })(),
+      /* 【2.0.19.3 · m03229 ②③④】imgPlaceholder / valueChars / autoTerm / autoTermLabels
+       * 四个关键词级键已删除：都改成字段级（#占 / ~N / #期），写路径不需要再归一。 */
 
       createdAt: f.createdAt || Date.now(),
       updatedAt: f.updatedAt || Date.now()

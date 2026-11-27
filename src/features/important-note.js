@@ -1337,9 +1337,14 @@
       font: inherit; font-size: 16px; line-height: 1; cursor: pointer; }
     .kh-lb-nav:hover { background: #4b5464; border-color: rgba(255,255,255,.75); }
     .kh-lb-nav[hidden] { display: none !important; }
-    /* 控件栏：居中一行，允许换行（窄视口下不溢出屏幕） */
+    /* 控件栏：居中一行，允许换行（窄视口下不溢出屏幕）。
+     * 【2.0.19.3 · 用户 m03485】图片不要容器，但控件条自己要有底子 —— 否则浅色页面上
+     * 白字按钮等于裸奔。所以底色只给 bar，舞台（.kh-lb-stage）保持透明。 */
     .kh-lb-bar { position: relative; z-index: 2; display: flex; align-items: center; justify-content: center;
-      flex-wrap: wrap; gap: 8px; max-width: 96vw;
+      flex-wrap: wrap; gap: 8px; max-width: min(96vw, 900px);
+      padding: 6px 10px; border: 1px solid rgba(255,255,255,.22); border-radius: 12px;
+      background: rgba(18,22,30,.82); box-shadow: 0 6px 20px rgba(0,0,0,.35);
+      -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
       font-size: 12px; color: #e8eef7; cursor: default; }
     /* 工具条按钮：同样改成实心底色（原来是透明底 + 半透明边框，压在图上会糊成一片） */
     .kh-lb-btn, .kh-lb-open { height: 26px; padding: 0 10px; border: 1px solid rgba(255,255,255,.45);
@@ -6090,15 +6095,26 @@
     try {
       const TERM_RE = /期限|有效期|到期日/;
       const m6 = meta || {};
-      const on6 = m6.autoTerm !== false;
-      let allow6 = String(m6.autoTermLabels == null ? '授权期限' : m6.autoTermLabels)
-        .split(/[,，、;；|]/).map((x) => x.trim()).filter(Boolean);
-      if (!allow6.length) allow6 = ['授权期限'];
+      /* 【2.0.19.3 · m03229 ④】改成**字段级**：抓取字段里写了 `#期` 才自动收期限行（`#期=别名` 补证书里的叫法）。
+       * 一个字段都没写 ⇒ 沿用老行为（期限行照留），存量配置不会突然少一行。 */
+      const allow6 = [];
+      try {
+        const P = KH.Fetch && KH.Fetch.parseLabelSpec;
+        if (typeof P === 'function') {
+          for (const raw of String(m6.fetchLabels == null ? '' : m6.fetchLabels).split(/[|｜\n]/).map((x) => x.trim()).filter(Boolean)) {
+            const sp6 = P(raw);
+            if (!sp6 || !sp6.term) continue;
+            const lab6 = String(sp6.label || '').trim();
+            if (lab6) allow6.push(lab6);
+            (sp6.termLabels || []).forEach((a) => { const v = String(a || '').trim(); if (v) allow6.push(v); });
+          }
+        }
+      } catch (e0) { /* 解析不出来就当没写（= 老行为） */ }
       for (let i = out.length - 1; i >= 0; i--) {
         const row = out[i];
         const lab = String((row && row.label) || '');
         if (!TERM_RE.test(lab)) continue;
-        const keep = on6 && allow6.some((a) => lab === a || lab.indexOf(a) >= 0);
+        const keep = allow6.length ? allow6.some((a) => lab === a || lab.indexOf(a) >= 0) : true;
         if (!keep) { out.splice(i, 1); continue; }
         if (KH.OcrAuto && typeof KH.OcrAuto.termEnd === 'function') {
           try { row.value = KH.OcrAuto.termEnd(row.value); } catch (e2) { /* 原样保留 */ }
@@ -6126,14 +6142,10 @@
     for (const h of list) {
       try {
         h.meta.fetchHtml = (KH.Fetch && h.textNode)
-          /* 【2.0.19.1 · m01400 第 3 条】图片按占位展示：这条规则勾了才把缩略图换成小占位，
-           * 未勾（缺键）一律照旧显示缩略图 —— 存量配置行为不变。 */
+          /* 【2.0.19.3 · m03229 ②③】图片占位与展示字数都改成**字段级**（跟着字段串的 `#占` / `~N` 走），
+           * 这里不再传关键词级开关 —— 否则等于给整条规则的所有字段一起生效。 */
           ? (KH.Fetch.blockFor(h.textNode, h.meta.fetchLabels, fetchCache, h.meta.fetchScope,
-            ocrExtraRows(h.meta), {
-              imgPlaceholder: !!(h.meta && h.meta.imgPlaceholder),
-              /* 【2.0.19.2 · m02412 需求①】展示字数：卡片里的值最多显示 N 个字（0 = 不裁）。 */
-              valueChars: Number((h.meta && h.meta.valueChars) || 0) || 0
-            }) || '')
+            ocrExtraRows(h.meta)) || '')
           : '';
       } catch (err) {
         h.meta.fetchHtml = '';

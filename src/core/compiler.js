@@ -262,14 +262,8 @@
           /** 抓取后续字段：允许"普通词 + 抓取"组合（旧版 _extractFetched 的用法）；
            * 模块未启用（`fetchEnabled === false`）→ 归一成空串＝这条规则没有抓取字段 */
           fetchLabels: fetchOn ? (kw.fetchLabels == null ? '' : String(kw.fetchLabels)) : '',
-          /* 【2.0.19.1 · m01400 第 3 条】图片按占位展示：跟着这条规则一起进运行期 meta，
-           * 面板渲染抓取表时据此把小图换成占位（点开仍看大图）。 */
-          imgPlaceholder: fetchOn ? kw.imgPlaceholder === true : false,
-          /* 【2.0.19.2 · m02412 需求①】展示字数跟着规则进运行期 meta（0 = 不按字数裁）。 */
-          valueChars: fetchOn ? (Math.min(200, Math.max(0, Math.round(Number(kw.valueChars) || 0)))) : 0,
-          /* 【2.0.19.2 · m02412 需求⑥】期限行开关 + 只抓哪些字段名，跟着规则进运行期 meta。 */
-          autoTerm: fetchOn ? kw.autoTerm !== false : true,
-          autoTermLabels: String(kw.autoTermLabels == null ? '' : kw.autoTermLabels).trim() || '授权期限',
+          /* 【2.0.19.3 · m03229 ②③④】图片占位 / 展示字数 / 自动抓期限 不再是关键词级配置：
+           * 它们写在抓取字段串里（`#占` / `~N` / `#期`），随 fetchLabels 一起进 meta，无需单独带上。 */
           display: String(kw.text == null ? '' : kw.text),
           groupId: kw.groupId || null
         }, v.meta, ocrMeta(kw), { important: v.meta.important || wantFetch })
