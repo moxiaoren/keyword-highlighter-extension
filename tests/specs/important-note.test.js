@@ -1716,4 +1716,58 @@ module.exports = async function run() {
     truthy(src.indexOf('if (amendRegs.size) {') >= 0, '没有变更证明时保持原样');
     truthy(src.indexOf("pushRow(ar.label, ar.value, ar.src, 'auto', ar.doc)") >= 0, '★ 行要带文档细类才分得清证书与变更证明');
   });
+
+  /* 【2.0.19.10 · 用户 m06263/m06306】两条报障的行为锚：
+   *   ① 比对高亮要标「抓到的内容」，不是字段名（著作权人 / 登记号 只是配置里的名字）；
+   *   ② 勾了「#占」的字段，图是 span.khin-imgph[data-khimg] —— 三态框与行结论必须照样落。
+   * 源码契约锁不住这两件事（选择器差一个 span 也能过），所以这里直接跑内核。 */
+  await test('★ 2.0.19.10 比对高亮只标抓到的值，不标字段名（m06263）', () => {
+    const it = {
+      src: 'https://cdn.test/cert.png', state: 'done',
+      text: '著作权人：成都香城智慧城市科技有限责任公司 登记号：2026SR1047740',
+      matched: [],
+      cmp: { state: 'same', items: [
+        { name: '著作权人', kind: 'need', ok: true, tried: ['成都香城智慧城市科技有限责任公司'], values: 1 },
+        { name: '登记号', kind: 'need', ok: true, tried: ['2026SR1047740'], values: 1 }
+      ] },
+      cmpReqs: [
+        { name: '著作权人', kind: 'need', values: ['成都香城智慧城市科技有限责任公司'] },
+        { name: '登记号', kind: 'need', values: ['2026SR1047740'] }
+      ]
+    };
+    const hits = KH.ImportantNote.ocrHits(it);
+    truthy(hits.indexOf('成都香城智慧城市科技有限责任公司') >= 0, '★ 抓到的值要标');
+    truthy(hits.indexOf('2026SR1047740') >= 0, '★ 抓到的登记号要标');
+    falsy(hits.indexOf('著作权人') >= 0, '★ 字段名不许当成被比的内容标出来');
+    falsy(hits.indexOf('登记号') >= 0, '★ 字段名不许当成被比的内容标出来');
+    /* 静态词比对（kind==='word'）反过来：词本身就是要比的那段字，必须标。 */
+    const w = { text: '图上有 a公司 字样', matched: [], cmp: { state: 'same', items: [{ name: 'a公司', kind: 'word', ok: true }] }, cmpReqs: [] };
+    truthy(KH.ImportantNote.ocrHits(w).indexOf('a公司') >= 0, '★ 静态词比对仍要标词本身');
+  });
+
+  await test('★ 2.0.19.10 图片占位也能挂三态框与行结论（m06306）', () => {
+    const ph = H.el('span', { class: 'khin-imgph', 'data-khimg': 'https://cdn.test/cert.png', 'data-khimg-name': 'cert.png' });
+    const im = H.el('img', { src: 'https://cdn.test/shot.png' });
+    const tr = H.el('tr', {}, [H.el('td', {}, [H.txt('著作权人')]), H.el('td', {}, [ph, im])]);
+    const body = H.el('div', {}, [H.el('table', {}, [H.el('tbody', {}, [tr])])]);
+    const it = {
+      src: 'https://cdn.test/cert.png', state: 'done',
+      text: '著作权人：成都香城智慧城市科技有限责任公司',
+      matched: [{ text: '一对一' }],
+      cmp: { state: 'same', items: [{ name: '著作权人', kind: 'need', ok: true, tried: ['成都香城智慧城市科技有限责任公司'], values: 1 }] },
+      cmpReqs: [{ name: '著作权人', kind: 'need', values: ['成都香城智慧城市科技有限责任公司'] }]
+    };
+    KH.ImportantNote.applyImgMarksTo(body, [it]);
+    truthy(String(ph.className).indexOf('khin-imghit') >= 0, '★ 占位图要有绿/红框（原来是 img 专属，span 上一个类都挂不上）');
+    truthy(/比对一致/.test(String(ph.getAttribute('title') || '')), '★ 悬停要能说出比对结论');
+    eq(tr.getAttribute('data-kh-imgcmp-sig'), 'same|著作权人|', '★ 这一行也要有比对结论（行底色与 ✔ 徽标的判据）');
+    /* 状态回落到「还在识别」时：框要换成忙碌态，旧行结论必须撤掉（否则会留一条已经不成立的绿行）。 */
+    KH.ImportantNote.applyImgMarksTo(body, [{ src: 'https://cdn.test/cert.png', state: 'pending', matched: [] }]);
+    truthy(String(ph.className).indexOf('khin-imgbusy') >= 0, '★ 重新排队时框要回到忙碌态');
+    falsy(tr.getAttribute('data-kh-imgcmp-sig'), '★ 结论不再成立时要撤掉行签名');
+    /* CSS 侧：三态框的选择器不许再限定 img.，否则 span 挂上类也没有描边。 */
+    const src = read('src/features/important-note.js');
+    truthy(/\.khin-item-note \.khin-imghit \{/.test(src), '★ 三态框选择器不能再限定 img.');
+    falsy(/\.khin-item-note img\.khin-imghit/.test(src), '★ 旧写法（img.khin-imghit）已撤');
+  });
 };

@@ -528,16 +528,18 @@
      * 加一层红色边框"）—— 这是"这张图里有你要的词"的唯一视觉提示（2.0.2.15 起也是**唯一**的图片
      * 命中显示面：底部那个「🖼 图片」分区已随右键识别折进主模块一并删除）。
      * 用 outline 而不是 border：outline 不参与布局，图不会被挤动一格（点开大图还能看原文里标出来的词）。 */
-    .khin-item-note img.khin-imghit { outline: 2px solid #ef4444; outline-offset: 1px; }
+    /* 【2.0.19.10 · 用户 m06263】三态框的落点不止 img：勾了「#占」时图是
+     * span.khin-imgph[data-khimg]，同一个落点必须一样有框（选择器不再限定 img）。 */
+    .khin-item-note .khin-imghit { outline: 2px solid #ef4444; outline-offset: 1px; }
     /* 【2.0.6.1 需求⑧】图片 OCR 边框三态（用户原话：识别中蓝、命中红、没命中绿）。
      * 仍是 outline（不参与布局、不挤动图）：蓝=排队/识别中，绿=已识别但没命中（含识别失败，
      * 失败原因走 title，不另占一态）。 */
-    .khin-item-note img.khin-imgbusy { outline: 2px solid #3b82f6; outline-offset: 1px; }
-    .khin-item-note img.khin-imgmiss { outline: 2px solid #22c55e; outline-offset: 1px; }
+    .khin-item-note .khin-imgbusy { outline: 2px solid #3b82f6; outline-offset: 1px; }
+    .khin-item-note .khin-imgmiss { outline: 2px solid #22c55e; outline-offset: 1px; }
     /* 【2.0.16.2 · 用户 m18606】识别**失败**不能借用绿框（用户原话：「ocr检测失败，不应该标绿框。
      * 会造成理解错误」）。绿框=「读完了、词不在图上」，失败=「根本没读出字」——两者混在一起会让人
      * 以为词确实不存在。失败单列一态：灰色虚线，既不像红框那样暗示命中，也不像绿框那样暗示查过了。 */
-    .khin-item-note img.khin-imgfail { outline: 2px dashed #9ca3af; outline-offset: 1px; }
+    .khin-item-note .khin-imgfail { outline: 2px dashed #9ca3af; outline-offset: 1px; }
     /* 【2.0.6.5 需求②】PDF 占位：不展示源文件，只留一枚可点开的痕迹。
      * 三态与图片一致（蓝=正在读 / 红=命中 / 绿=读完没命中），配色也沿用同一组
      * （用户口径：「识别时蓝色框，无命中绿色框，命中时增加红框」）。 */
@@ -973,6 +975,13 @@
       const s = absSrc(im.currentSrc || im.getAttribute('src') || im.src);
       markOneImg(im, s ? (at.get(s) || null) : null);
     }
+    /* 【2.0.19.10 · 用户 m06263】勾了 `#占` 的字段里图是 `<span class="khin-imgph" data-khimg>`，
+     * 原来这里只扫 `<img>` ⇒ 占位图既没有红/绿框、也没有悬停结论，看起来就是「命中/比对不生效」。
+     * 占位与缩略图是同一个落点，只有取地址的方式不同（一个 src、一个 data-khimg）。 */
+    for (const ph of bodyEl.querySelectorAll('span.khin-imgph[data-khimg]')) {
+      const s = absSrc(ph.getAttribute('data-khimg'));
+      markOneImg(ph, s ? (at.get(s) || null) : null);
+    }
     if (atPdf.size) {
       for (const el of bodyEl.querySelectorAll('[data-khpdf]')) {
         const s = absSrc(el.getAttribute('data-khpdf'));
@@ -1035,6 +1044,9 @@
       }
     };
     for (const im of bodyEl.querySelectorAll('img')) collect(im, im.currentSrc || im.getAttribute('src') || im.src);
+    /* 【2.0.19.10 · 用户 m06263】占位图也是这一行里的落点：不扫它，勾了 `#占` 就没有行底色、
+     * 没有 ✔ 一致 / ⚠ 待确认，用户看到的就是「比对结论不显示」。 */
+    for (const ph of bodyEl.querySelectorAll('span.khin-imgph[data-khimg]')) collect(ph, ph.getAttribute('data-khimg'));
     for (const el of bodyEl.querySelectorAll('[data-khpdf]')) collect(el, el.getAttribute('data-khpdf'));
 
     /* 撤销上一轮画过、这一轮不再成立的行（换关键词 / 删掉比对项后不许留旧结论）。
@@ -1127,9 +1139,14 @@
       seen[s] = 1;
       out.push(s);
     };
-    /* 比对项名（著作权人 / 登记号）本身常写在被比对象里（PDF 是「著作权人：X」那种行） */
+    /* 【2.0.19.10 · 用户 m06263】比对项**名字**不是被比的内容。用户原话：
+     * 「高亮的是著作权人和登记号，而不是抓取到的内容」。只有静态词比对（`kind === 'word'`，
+     * 词本身就是要比的那段字）才标名字；字段型比对（`kind === 'need'`）只标**值**：
+     * 先用判定时试过的 `tried`，下面的 `cmpReqs` 与「本图结构化行」两支会把值补齐。 */
     for (const one of ((it && it.cmp && it.cmp.items) || [])) {
-      if (one && one.name) need(one.name);
+      if (!one) continue;
+      if (one.kind === 'word') { if (one.name) need(one.name); continue; }
+      for (const v of (one.tried || [])) need(v);
     }
     /* 【2.0.14.6 · 用户 m13328】对比只在**一致**时不让图片变红框；识别原文的高亮两种情况都要有。
      * 所以这里不再按 `cmp.items[].ok` 过滤：值来自 ①这张图/PDF 自己抽出的结构化行（不一致时也写着值）
