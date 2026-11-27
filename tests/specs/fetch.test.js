@@ -1084,7 +1084,7 @@ module.exports = async function run() {
    * 用户原话：「这个应该是针对某一个抓取字段修改的配置」。 */
   suite('fetch · 字段级显示选项（#占 占位 / ~N 限字数）');
 
-  await test('★ 字段写了 #占：只有这个字段出 khin-imgph（带原图地址/文件名），别的字段照旧出 <img>', () => {
+  await test('★ 字段写了 #占：只有这个字段出 khin-imgph（带原图地址），别的字段照旧出 <img>', () => {
     const img = H.el('img');
     img.setAttribute('src', 'https://cdn.test/shot.png');
     img.setAttribute('alt', '应用截图.png');
@@ -1098,7 +1098,13 @@ module.exports = async function run() {
     const ph = String(F.blockFor(tn, '应用截图#占|图标', new WeakMap(), 'self'));
     truthy(ph.indexOf('khin-imgph') >= 0, '★ 写了 #占 要出占位元素：' + ph.slice(0, 300));
     truthy(ph.indexOf('data-khimg="https://cdn.test/shot.png"') >= 0, '占位要带原图地址（点开看大图）');
-    truthy(ph.indexOf('应用截图.png') >= 0, '占位要显示文件名');
+    /* 【2.0.19.9 · 用户 m05814】牌面上不许有文件名之类的真实文本：
+     * 读表格文字的环节（比对基准、进表取值）会把它当成字段值，导致「勾了占位后 OCR 命中/比对失效」。
+     * 文件名只能待在 title 与 data-khimg-name 上（悬停、灯箱照旧看得到）。 */
+    truthy(ph.indexOf('data-khimg-name="应用截图.png"') >= 0, '文件名要留在 data 上，灯箱标题才拿得到');
+    truthy(ph.indexOf('title="应用截图.png"') >= 0, '文件名要留在 title 上（悬停可看）');
+    falsy(/>应用截图\.png</.test(ph), '★ 占位牌面不许把文件名写成正文（会被当成字段值）：' + ph.slice(0, 400));
+    truthy(/khin-imgph"[^>]*><\/span>/.test(ph), '★ 占位元素必须是空标签：图标由 CSS ::before 画，textContent 留空才不污染取值');
     truthy(ph.indexOf('src="https://cdn.test/icon.png"') >= 0, '★ 同一条规则里别的字段不许被连带占位：' + ph.slice(0, 400));
   });
 

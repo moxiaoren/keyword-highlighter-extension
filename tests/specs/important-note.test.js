@@ -1667,6 +1667,29 @@ module.exports = async function run() {
     truthy(src.indexOf("span.khin-imgph[data-khimg]") >= 0, '★ 灯箱相册要同时收 <img> 与占位，点占位能看原图');
   });
 
+  await test('★ 2.0.19.9 占位只留一个图标、PDF 牌更窄、AI 深查结论可选中复制', () => {
+    const f = read('src/features/fetch.js');
+    const src = read('src/features/important-note.js');
+    /* ① 图片占位：牌面文本必须为空 —— 图标走 CSS ::before。
+     * 牌面上任何真实字符（文件名、🖼）都会被读表格文字的环节当成字段值，
+     * 这正是用户说的「勾了图片占位之后 OCR 命中、比对就不生效了」。 */
+    truthy(/\.khin-imgph::before \{ content: '🖼'; \}/.test(src), '★ 图标要由伪元素画，元素文本留空');
+    truthy(/\.khin-imgph \{[^}]*padding: 0 2px;/.test(src), '★ 占位牌要窄（只有 2px 内边距，容不下文件名）');
+    falsy(/\.khin-imgph \{[^}]*max-width: 22em/.test(src), '★ 宽度上限已撤（那是给文件名留的）');
+    falsy(/\.khin-imgph \{[^}]*text-overflow: ellipsis/.test(src), '★ 不再需要省略号（牌面没有文字了）');
+    /* ② PDF 牌：两边 3px、字号 9px。仍写 PDF —— 三态边框与命中判读靠它。 */
+    truthy(/\.khin-pdf \{[^}]*padding: 0 3px;/.test(src), '★ PDF 牌再收窄一档（0 3px）');
+    truthy(/\.khin-pdf \{[^}]*font-size: 9px;/.test(src), '★ PDF 牌字号 9px');
+    truthy(/\.khin-pdf \{[^}]*letter-spacing: 0;/.test(src), '★ 字距归零，否则看起来还是宽');
+    /* ③ AI 深查：结论块放开文本选择（此前全继承外壳的 user-select:none，框选不到）。 */
+    truthy(/\.khin-ai-txt,/.test(src) && /user-select: text/.test(src), '★ AI 结论正文要能选中');
+    truthy(/\.khin-ai, \.khin-ai-main, \.khin-ai-hd/.test(src), '★ 结论外壳也要放开（否则子节点被父级挡住）');
+    truthy(/\.khin-ai-badge, \.khin-ai-more \{ user-select: none;/.test(src), '★ 徽标与折叠按钮保持不可选，免得拖选时误点');
+    truthy(/\.khin-ai ::selection \{/.test(src), '★ 选中高亮要跟笔记正文一致');
+    truthy(/\+ '"><\/span>';/.test(f), '★ 占位元素收尾必须是空内容（图标不写在 HTML 里）');
+    falsy(f.indexOf('>🖼<') >= 0, '★ 图标不许写进 HTML 文本');
+  });
+
   /* 【2.0.19 · 体检】深查队列与结论落盘：关掉自动深查后已排队的卡不许继续发；
    * 落盘要防抖并合并磁盘现值（all_frames 下每个 frame 各持一份内存表）。 */
   await test('★ 2.0.19 深查关掉后清队、结论落盘防抖并合并磁盘（体检）', () => {

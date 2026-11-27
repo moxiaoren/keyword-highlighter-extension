@@ -2175,8 +2175,14 @@
       /<img src="([^"]*)" alt="([^"]*)" loading="lazy">/g,
       (m, src, alt) => {
         const name = alt && alt.trim() ? alt : '';
-        return '<span class="khin-imgph" data-khimg="' + src + '" data-khimg-name="' + alt + '">'
-          + '🖼 ' + (name || '图片') + '</span>';
+        /* 【2.0.19.9 · 用户 m05814】两个问题一起解：
+         *  ① 太宽 —— 文件名会把占位撑成小胶囊；现在牌面只有一个图标（图标由 CSS ::before 画）。
+         *  ② 勾了占位后 OCR 命中/比对失效 —— 牌面原来写着「🖼 文件名」，那是**真实文本**，
+         *     任何读表格文字的环节（比对基准、进表取值）都会把它当成字段值 ⇒ 永远对不上。
+         *     现在元素文本**留空**（等同「这张图没有文字」，与占位前的语义一致），
+         *     文件名只放 title 与 data-khimg-name（悬停/灯箱照旧看得到）。 */
+        return '<span class="khin-imgph" data-khimg="' + src + '" data-khimg-name="' + alt + '"'
+          + ' title="' + (name || '图片') + '"></span>';
       }
     );
   }

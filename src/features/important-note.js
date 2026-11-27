@@ -487,11 +487,17 @@
     .khin-tag-item:hover { background: #f1f5f9; }
     .khin-tag-item.khin-tag-on { background: #eaf1fb; color: #2f6fb5; font-weight: 600; }
     /* 内容 / 标签可选中复制；外壳保持 user-select:none 仅避免误选 */
+    /* 【2.0.19.9 · 用户 m05814】AI 深查结论也要能选、能复制：结论块（.khin-ai-*）此前
+     * 全继承外壳的 user-select:none，用户框选不到文字。这里与笔记正文同一口径放开文本选择；
+     * 只有徽标（.khin-ai-badge）与折叠按钮保持不可选，免得拖选时点到它们。 */
     .khin-item-note, .khin-item-tags, .khin-item-kw, .khin-item-adj, .kh-table,
-    .khin-tag-list-h, .khin-tag-item {
+    .khin-tag-list-h, .khin-tag-item,
+    .khin-ai, .khin-ai-main, .khin-ai-hd, .khin-ai-hdt, .khin-ai-txt, .khin-ai-why2,
+    .khin-ai-tag, .khin-ai-line {
       user-select: text; -webkit-user-select: text;
     }
-    .khin-item-note ::selection, .kh-table ::selection { background: #a6d3ff; color: inherit; }
+    .khin-ai-badge, .khin-ai-more { user-select: none; -webkit-user-select: none; }
+    .khin-item-note ::selection, .kh-table ::selection, .khin-ai ::selection { background: #a6d3ff; color: inherit; }
     /* 重要笔记正文：**必须保留换行**（旧版 v1.8.3 教训；Markdown 渲染会在行间产生 \\n 文本节点）
      * 字号走 CSS 变量（2026-10-09 用户裁决：默认比上一版再小一号，并在设置页可配）。
      * 变量由 panel.render() 从 config.importantNote.fontSize 写到 host 上（同 --kh-img-size 手法）。 */
@@ -538,9 +544,11 @@
     .khin-pdf {
       /* 【2.0.19.1 · m01400 第 2 条 A】占位牌收窄：原来 1px 7px + 字距 .4px 在表格里仍显宽，
        * 用户要"PDF 占位符缩小宽度"。改成贴着字，三态边框还在（状态判读不受影响）。 */
-      display: inline-block; vertical-align: middle; margin: 2px 4px 2px 0;
-      padding: 0 6px; border-radius: 3px; cursor: pointer; user-select: none;
-      font-size: 10px; font-weight: 700; letter-spacing: 0; line-height: 14px;
+      /* 【2.0.19.9 · 用户 m05814】再收窄一档：两边内边距减半、字号降 1px、字距归零，
+         牌面仍写 PDF（三态边框与命中判读靠它，不能缩成图标）。 */
+      display: inline-block; vertical-align: middle; margin: 2px 3px 2px 0;
+      padding: 0 3px; border-radius: 3px; cursor: pointer; user-select: none;
+      font-size: 9px; font-weight: 700; letter-spacing: 0; line-height: 13px;
       color: #475569; background: #eef2f7; box-shadow: inset 0 0 0 2px #cbd5e1;
       white-space: nowrap;
     }
@@ -548,12 +556,16 @@
     /* 【2.0.19.1 · m01400 第 3 条】「图片按占位展示」的小牌：比缩略图省地方得多，
      * 但保留可点（点开仍是完整大图 + 全文栏），文件名放不下时省略号收尾。 */
     .khin-imgph {
-      display: inline-block; vertical-align: middle; margin: 2px 4px 2px 0;
-      padding: 0 6px; border-radius: 3px; cursor: pointer; user-select: none;
-      max-width: 22em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      /* 【2.0.19.9 · 用户 m05814】只留一个图标，牌面宽度按 1 个字算：文件名不再写在牌上
+         （改放 title 与 data-khimg-name，悬停/灯箱照样能看到），图多时卡片也不再被撑宽。 */
+      display: inline-block; vertical-align: middle; margin: 2px 3px 2px 0;
+      padding: 0 2px; border-radius: 3px; cursor: pointer; user-select: none;
       font-size: 10px; line-height: 16px; color: #475569;
       background: #f1f5f9; box-shadow: inset 0 0 0 1px #cbd5e1;
     }
+    /* 图标画在伪元素上：元素自身的 textContent 必须为空（见 fetch.js imgToPlaceholder 的说明），
+       否则「🖼」会被读值/比对链当成字段值。 */
+    .khin-imgph::before { content: '🖼'; }
     .khin-imgph:hover { background: #e3e9f2; }
     /* 【2.0.14.6 · m13311】先占位、后认领：地址还没抓回来时是这张灰牌（不参与红/绿判定） */
     .khin-pdf.khin-pdf-pending { box-shadow: inset 0 0 0 2px #94a3b8; color: #64748b; }
