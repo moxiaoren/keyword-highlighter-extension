@@ -1341,9 +1341,13 @@
             const del = h('button', { class: 'kh-mini-btn kh-list-del', type: 'button', text: '×', title: '删掉这一条' });
             del.addEventListener('click', () => dropRow(row));
             main.appendChild(del);
+            /* 【2.0.19.4 · 用户 m03704】一行一个字段，行内绝不换行：指向 / 进表 / 比对 / 和谁比
+             * 全部并进 main 这一行（名字左边、操作右边），超长由 CSS 省略 —— 行高恒定，
+             * 「模块有多长」都撑不开第二个行。原来单独一行的 sub 会随内容换行、把行高撑成 76px。 */
             const sub = subParts.length ? h('div', { class: 'kh-lrow-sub' }, subParts) : null;
+            if (sub) main.insertBefore(sub, del);
             const shell = h('div', { class: 'kh-lrow' + (isTok ? ' kh-lrow-tok' : '') },
-              (detail ? [main, sub, why, detail] : [main, sub, why]).filter(Boolean));
+              (detail ? [main, why, detail] : [main, why]).filter(Boolean));
             /* 【2.0.10 需求②】拖动排序：把手只在左边缘（整行 draggable 会抢走输入框的选字手感）。
              * 落点用行高的一半判断插前/插后，松手时重排 `rows` 与 DOM 两处，写回走整串重排。 */
             const grip = h('span', { class: 'kh-lrow-grip', text: '⠿', title: '按住拖动，调整这一条的展示顺序' });

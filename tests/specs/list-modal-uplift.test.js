@@ -202,7 +202,10 @@ module.exports = async function run() {
     truthy(txt.indexOf('…') >= 0, '截断要有可见省略号：' + txt);
     truthy(String(btn.title || '').indexOf(longName) >= 0, '完整字段名要在 title 里能读回：' + btn.title);
     const css = read('src/ui/components/components.css');
-    truthy(/\.kh-lrow-main \{[^}]*flex-wrap: wrap/.test(css), '这一行要允许换行，否则按钮只能挤词');
+    /* 【2.0.19.4 · 用户 m03704】口径反转：一行必须恒为一行（不再允许换行），
+     * 长名字靠固定宽度 + 省略号收口，而不是把按钮甩到第二行把行高撑成两倍。 */
+    truthy(/\.kh-lrow-main \{[^}]*flex-wrap: nowrap/.test(css), '这一行必须禁止换行（一行一个字段，m03704）');
+    truthy(/\.kh-lrow-main \{[^}]*overflow: hidden/.test(css), '禁止换行的同时要裁掉溢出，否则会横向撑破弹窗');
     truthy(/\.kh-lrow-scope \{\s*flex: 0 1 auto; min-width: 0; max-width: min\(10em, 44%\)/.test(css),
       '指向按钮的上限要跟字号走、且不超过行宽 44%');
     truthy(/\.kh-scope-opt > span \{ min-width: 0; overflow-wrap: anywhere; \}/.test(css), '指向面板里的长字段名要能折行');

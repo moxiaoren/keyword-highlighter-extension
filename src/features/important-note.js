@@ -1340,8 +1340,12 @@
     /* 控件栏：居中一行，允许换行（窄视口下不溢出屏幕）。
      * 【2.0.19.3 · 用户 m03485】图片不要容器，但控件条自己要有底子 —— 否则浅色页面上
      * 白字按钮等于裸奔。所以底色只给 bar，舞台（.kh-lb-stage）保持透明。 */
-    .kh-lb-bar { position: relative; z-index: 2; display: flex; align-items: center; justify-content: center;
-      flex-wrap: wrap; gap: 8px; max-width: min(96vw, 900px);
+    /* 【2.0.19.4 · 用户 m03704】控件栏**脱离舞台、固定在视口底部居中**：
+     * 舞台会为了不压住重要笔记面板整体让开（左右留白），若栏跟着舞台走就会偏到一侧 ——
+     * 用户要的是「菜单始终居中」，与图片、与全文栏的显隐都无关。 */
+    .kh-lb-bar { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%);
+      z-index: 2; display: flex; align-items: center; justify-content: center;
+      flex-wrap: nowrap; gap: 8px; max-width: min(96vw, 900px);
       padding: 6px 10px; border: 1px solid rgba(255,255,255,.22); border-radius: 12px;
       background: rgba(18,22,30,.82); box-shadow: 0 6px 20px rgba(0,0,0,.35);
       -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
@@ -1620,9 +1624,12 @@
         '</div>' +
         /* 控件栏：图片下方**居中**一行 —— 翻页 ‹ › 与缩放/旋转/全文栏/关闭并入同一条。
          * 原来 ‹ › 贴在图两侧、工具条在下面，改成一条后看图区只剩图片本身。 */
+        /* 【2.0.19.4 · 用户 m03704】控件栏顺序改成「翻页一组 | 缩放一组 … | 打开」，
+         * 且整条栏固定在**视口居中**（CSS position:fixed），不受舞台让开面板的位移影响。 */
         '<div class="kh-lb-bar">' +
         '<button class="kh-lb-nav kh-lb-prev" type="button" title="上一张（←）" aria-label="上一张">‹</button>' +
         '<span class="kh-lb-idx"></span>' +
+        '<button class="kh-lb-nav kh-lb-next" type="button" title="下一张（→）" aria-label="下一张">›</button>' +
         '<span class="kh-lb-sep">|</span>' +
         '<button class="kh-lb-btn kh-lb-out" type="button" title="缩小（-）">－</button>' +
         '<button class="kh-lb-btn kh-lb-in" type="button" title="放大（+）">＋</button>' +
@@ -1634,7 +1641,6 @@
         '<button class="kh-lb-btn kh-lb-close" type="button"></button>' +
         '<span class="kh-lb-sep">|</span>' +
         '<button class="kh-lb-open" type="button">在新标签页打开</button>' +
-        '<button class="kh-lb-nav kh-lb-next" type="button" title="下一张（→）" aria-label="下一张">›</button>' +
         /* 【2.0.19.1 · m01400 第 1 条】操作提示整句删掉（用户点名要删）：
          * 滚轮/拖动/双击复位都是手势，写在界面上只占地方。 */
         '</div>';
@@ -1719,7 +1725,7 @@
         box.style.paddingLeft = '';
         box.style.paddingRight = '';
         box.style.justifyContent = '';
-        if (stageEl) stageEl.style.maxWidth = '';
+        if (stageEl) { stageEl.style.maxWidth = ''; stageEl.style.width = ''; }
         const hostEl = document.getElementById(HOST_ID);
         const wrap = hostEl && hostEl.shadowRoot && hostEl.shadowRoot.querySelector('.khin-wrap');
         if (!stageEl || !wrap) return;
@@ -1732,11 +1738,16 @@
         if (pr.left < vw / 2 && roomRight >= 420) {
           box.style.justifyContent = 'flex-start';
           box.style.paddingLeft = Math.round(pr.right + pad) + 'px';
+          /* 【2.0.19.4 · 用户 m03704】舞台要**吃掉让开后的整块空档**：
+           * 只设 max-width 时小图会贴着面板左缘（用户看到的「位置偏左」）；
+           * 给了固定 width，舞台内部的 align-items:center 才会把图放在这块空档的正中。 */
           stageEl.style.maxWidth = Math.round(roomRight) + 'px';
+          stageEl.style.width = Math.round(roomRight) + 'px';
         } else if (pr.left >= vw / 2 && roomLeft >= 420) {
           box.style.justifyContent = 'flex-end';
           box.style.paddingRight = Math.round(vw - pr.left + pad) + 'px';
           stageEl.style.maxWidth = Math.round(roomLeft) + 'px';
+          stageEl.style.width = Math.round(roomLeft) + 'px';
         }
       };
       /* 【2.0.16.8 · 用户 m22343】PDF 本体：后台带 cookie 取字节 → 页面侧建 blob: → 内建阅读器渲染。

@@ -1050,6 +1050,15 @@
          * 有一半重合 ⇒ 整段照加 ⇒ 拼出双写。判据仍是几何的：本段左边界落在上一段右边界之内
          * 才算接缝（`p.x < prevX2`），再按原文相等裁掉右块头上与左块尾部重合的那几个字。
          * 没 cells 的分段（tesseract 路径）拿不到右边界 ⇒ 不做接缝裁剪，保持旧行为。 */
+        /* 【2.0.19.4 需求④】先做**带一个字噪声**的接缝裁剪：它只认原文重合，与坐标无关
+         * （真机里两块的重叠带坐标对不上，几何判据放过了双写）。裁完还有剩余再走几何那条。 */
+        if (t) {
+          const fz = fuzzySeamCut(acc, t);
+          if (fz) {
+            t = t.slice(fz);
+            cs = cs.filter((c) => Number(c.x2) > (prevX2 === null ? -Infinity : prevX2));
+          }
+        }
         if (prevX2 !== null && t && Number(p.x) < prevX2 - 0.5) {
           const cut = seamCut(acc, t);
           if (cut) {
@@ -1242,6 +1251,26 @@
     const n = String(t == null ? '' : t);
     const max = Math.min(s.length, n.length, 24);
     for (let k = max; k >= 2; k--) if (s.slice(s.length - k) === n.slice(0, k)) return k;
+    return 0;
+  }
+
+  /**
+   * 【2.0.19.4 需求④】接缝的**带一个字噪声**版本：右块开头多认/认错一个字符时（真机：整行尾巴
+   * 「…登记办法》的」在下一块又读成「已办法》的」），逐字相等（`seamCut`）吃不到，拼出来就是
+   * 「…登记办法》的已办法》的」。判据仍只认原文：允许右段**跳过开头 1–2 个字**再与左段尾部逐字
+   * 相等，重合 ≥4 字才算（比 `seamCut` 的 2 字严，因为这里放宽了起点，不放宽长度）。
+   * 返回要从 `t` 头上裁掉的字数（含被跳过的那 1–2 个噪声字）；不吃就返回 0。
+   */
+  function fuzzySeamCut(acc, t) {
+    const s = String(acc == null ? '' : acc);
+    const n = String(t == null ? '' : t);
+    const maxOff = Math.min(2, Math.max(0, n.length - 4));
+    for (let off = 0; off <= maxOff; off++) {
+      const max = Math.min(s.length, n.length - off, 24);
+      for (let k = max; k >= 4; k--) {
+        if (s.slice(s.length - k) === n.slice(off, off + k)) return off + k;
+      }
+    }
     return 0;
   }
 
@@ -1705,6 +1734,7 @@
     layoutChunks: layoutChunks, planChunks: planChunks,
     bandPlan: bandPlan, denseBandPlans: denseBandPlans, DENSE_BANDS: DENSE_BANDS,
     overlapBands: overlapBands, mergeOverlap: mergeOverlap, keyOf: keyOf, stitchRows: stitchRows,
+    fuzzySeamCut: fuzzySeamCut,
     isFrameBox: isFrameBox, joinParts: joinParts,
     /* 【2.0.6.5 需求③】并排多张纸：装饰高框 / 拆 run 两条纯判据（真机读数见本节头注） */
     medianOf: medianOf, isTallNoise: isTallNoise, splitLinesRuns: splitLinesRuns,

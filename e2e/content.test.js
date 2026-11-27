@@ -2106,6 +2106,7 @@ module.exports = async function runContent(ctx) {
             inBar: bar.contains(pr) && bar.contains(nx),
             below: Math.round(br.top - im.bottom),
             barMid: Math.round(br.left + br.width / 2), imgMid: Math.round(im.left + im.width / 2),
+            barBottom: Math.round(br.bottom), vh: window.innerHeight,
             stage: (function () { const s = sr.querySelector('.kh-lb-stage').getBoundingClientRect(); return { w: Math.round(s.width), h: Math.round(s.height) }; })(),
             vw: window.innerWidth
           };
@@ -2135,9 +2136,13 @@ module.exports = async function runContent(ctx) {
     console.log('        翻页按钮位置: ' + JSON.stringify(s.nav));
     truthy(s.nav.prevW >= 28 && s.nav.nextW >= 28, '翻页按钮点击区应够大（≥28px），实际 ' + JSON.stringify(s.nav));
     truthy(s.nav.inBar, '上一张/下一张必须在下方控件栏里（不再贴图片两侧），实际 ' + JSON.stringify(s.nav));
-    truthy(s.nav.below >= 0, '控件栏应在图片**下方**，实际间距 ' + s.nav.below);
-    truthy(Math.abs(s.nav.barMid - s.nav.imgMid) <= 8,
-      '控件栏应与图片水平居中对齐，实际 ' + JSON.stringify(s.nav));
+    /* 【2.0.19.4 · 用户 m03704】控件栏固定在**视口底部居中**，与图片、与全文栏都无关。
+     * 旧断言「栏与图片居中对齐」已作废 —— 面板占位把舞台让开时，那条就把栏带到了左边，
+     * 正是用户说的「位置偏左」。现在只认视口中线。 */
+    truthy(Math.abs(s.nav.barMid - s.nav.vw / 2) <= 10,
+      '控件栏应在视口水平居中（与图片位置无关），实际 ' + JSON.stringify(s.nav));
+    truthy(s.nav.barBottom <= s.nav.vh && s.nav.barBottom >= s.nav.vh - 90,
+      '控件栏应贴视口底部（约 22px 边距），实际 ' + JSON.stringify(s.nav));
     truthy(s.nav.stage.w < s.nav.vw - 40, '舞台宽度仍应给视口留边（不是整屏），实际 ' + JSON.stringify(s.nav.stage));
     /* 容器外观必须真的消失（用户原话"去掉容器，只保留图片"），并且那句操作提示也要没了 */
     const look = await page.evaluate(() => {

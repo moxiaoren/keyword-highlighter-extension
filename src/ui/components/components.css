@@ -990,12 +990,13 @@
  * `display:flex` 是**作者样式**，会压过浏览器默认的 `[hidden]{display:none}`
  * ⇒ 行根本没被藏起来，搜索看着一点作用都没有。这里补一条兜底。 */
 .kh-lrow[hidden] { display: none; }
-/* 【2.0.16.8 · m21101】这一行挤着 勾选框 + 词输入框 + 指向 + 进表 + 比对 + 取值，
- * 弹窗正文只有约 490px。以前写死不换行，长字段名的「指向」按钮会把**词**压到看不清。
- * 现在允许换行：挤不下时按钮整块落到第二行，词输入框先保住 11em 的可读宽度。 */
-.kh-lrow-main { display: flex; align-items: center; gap: 6px; min-width: 0; flex-wrap: wrap; }
-/* 【2.0.19.2 需求③】第二行：指向 / 进表 / 比对 / 和谁比 落在这里，名字不再被挤成折行（m02412） */
-.kh-lrow-sub { display: flex; align-items: center; gap: 6px; min-width: 0; flex-wrap: wrap; padding-left: 18px; margin-top: 4px; }
+/* 【2.0.19.4 · 用户 m03704】一行 = 一个字段，**永不换行**：
+ * 不管名字、取值说明、指向、和谁比有多长，都只在同一行里省略，行高恒定（30px 内容 + 内边距）。
+ * 用户原话「不管每个模块有多长，都不影响一个词一行」。
+ * 做法：main 强制 nowrap，可压缩的只有名字输入框，其余部件 flex:0 0 auto 由 CSS 省略号收口。 */
+.kh-lrow-main { display: flex; align-items: center; gap: 6px; min-width: 0; flex-wrap: nowrap; overflow: hidden; }
+/* 指向 / 进表 / 比对 / 和谁比 并进同一行（2.0.19.4 起不再单独占第二行） */
+.kh-lrow-sub { display: flex; align-items: center; gap: 6px; min-width: 0; flex-wrap: nowrap; flex: 1 1 auto; overflow: hidden; padding-left: 0; margin-top: 0; }
 .kh-lrow-sub:empty { display: none; }
 .kh-list-cb { flex: 0 0 auto; margin: 0; }
 /* 【2.0.10 需求②】拖动排序：把手只在左边缘（整行可拖会抢输入框的选字），
@@ -1009,7 +1010,9 @@
 .kh-lrow.is-dragging { opacity: .5; }
 .kh-lrow.drop-before { box-shadow: inset 0 2px 0 0 var(--brand); }
 .kh-lrow.drop-after { box-shadow: inset 0 -2px 0 0 var(--brand); }
-.kh-lrow-main .kh-list-val { flex: 1 1 11em; min-width: 0; }
+/* 【2.0.19.4 · m03704】名字给**固定宽**：各行的「取值…」左边缘才会对齐，看着才规整。
+ * 名字超出宽度就框内横向滚动（点进去能看全），不再靠挤压其它部件。 */
+.kh-lrow-main .kh-list-val { flex: 0 0 12em; min-width: 0; }
 /* 指向按钮不再写死 180px：上限跟着字号走（em），且最多吃掉行宽的 44% ——
  * 固定像素在窄弹窗里占比过大，正是「词被压没」的直接原因。 */
 .kh-lrow-scope {
@@ -1031,14 +1034,14 @@
 .kh-lrow-mark.is-on { color: var(--success-strong); background: var(--success-soft); border-color: var(--success-strong); }
 .kh-lrow-mark.is-on .kh-lrow-mark-t { font-weight: 600; }
 .kh-lrow-suffix {
-  flex: 0 0 auto; max-width: 220px; overflow: hidden;
+  flex: 0 1 auto; max-width: 15em; overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap;
 }
 .kh-lrow-suffix.is-open { color: var(--brand-deep); background: var(--brand-soft); }
 /* 【2026-11-16】抓取字段的「和谁比」：勾上「比对」才出现。
  * 没选对象时标黄——但文案本身就写着「和谁比…」，不靠颜色也读得出来。 */
 .kh-lrow-cmp-sel {
-  flex: 0 0 auto; max-width: 168px; height: 22px; padding: 0 4px;
+  flex: 0 1 auto; min-width: 6em; max-width: 9em; height: 22px; padding: 0 4px;
   font-size: 11px; line-height: 20px;
 }
 .kh-lrow-cmp-sel.is-warn { border-color: var(--warning); color: var(--warn-ink); background: var(--warning-soft); }

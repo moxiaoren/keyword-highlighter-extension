@@ -414,6 +414,20 @@ module.exports = async function run() {
     eq(P.stitchRows([{ t: '' }, null]).length, 0, '空文本不进行');
   });
 
+  await test('★ 2.0.19.4 需求④：接缝处多认一个字也不许写出双份（真机「的办法》的已办法》的」）', () => {
+    const P = loadOffscreen({ lines: () => null }).self.__khOcrPure;
+    eq(P.fuzzySeamCut('根据《办法》的', '已办法》的'), 5, '右段跳过 1 个噪声字后与左段尾部逐字重合 ⇒ 整段裁掉');
+    eq(P.fuzzySeamCut('abcdef', 'abcdef'), 6, '完全重合也裁（不依赖坐标）');
+    eq(P.fuzzySeamCut('abcdef', 'xyz'), 0, '对不上就不动');
+    eq(P.fuzzySeamCut('ab', 'cdab'), 0, '重合不足 4 字不裁（宁可留重复也不吃内容）');
+    const out = P.stitchRows([
+      { t: '根据《计算机软件保护条例》和《计算机软件著作权登记办法》的', conf: 95, x: 10, y: 100, y2: 140, ci: 0 },
+      { t: '已办法》的', conf: 90, x: 400, y: 102, y2: 142, ci: 1 }
+    ]);
+    eq(out.length, 1, '同一行仍是一行');
+    eq(out[0].t, '根据《计算机软件保护条例》和《计算机软件著作权登记办法》的', '★ 双写的尾巴被裁掉');
+  });
+
   await test('★ 不变量 2：4 万像素高的长图必须整张覆盖（T23：块数上限 8 → 40）', () => {
     const P = loadOffscreen({ lines: () => null }).self.__khOcrPure;
     const plan = P.planChunks(1080, 40000);
