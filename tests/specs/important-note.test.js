@@ -1647,6 +1647,12 @@ module.exports = async function run() {
       '★ 双击落点在自家宿主（图/栏/全文栏/PDF 牌）里就不关');
     falsy(src.indexOf('const keepers = [img, bar, side, pdfCard];') >= 0, '旧的「保留区单击不关」判定已删');
     truthy(src.indexOf('const lbClose = sr.querySelector(' + "'.kh-lb-close');") >= 0, '关闭按钮仍在（显式退出）');
+    /* 【2.0.19.7 · 用户 m05263】遮罩给页面让出指针后，PDF 的 iframe 必须自己把指针要回来，
+     * 否则内建阅读器整块惰性（滚不动/点不了/缩放失效）——用户原话「大图模式 pdf 不兼容」。 */
+    truthy(/\.kh-lb-pdfframe \{[^}]*pointer-events: auto;/.test(src),
+      '★ PDF 的 iframe 要有 pointer-events:auto（遮罩层是 none，子元素各自要回来）');
+    truthy(/\.kh-lb-stage \{[^}]*pointer-events: none;/.test(src),
+      '★ 舞台本身仍不能拦截指针（页面滚动条、悬浮播放器要能操作）');
   });
 
   await test('★ 2.0.19.1 图片占位：渲染在抓取层、点击仍能开大图看原图', () => {

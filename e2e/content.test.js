@@ -2118,6 +2118,17 @@ module.exports = async function runContent(ctx) {
           };
         })(),
         tf: im.style.transform,
+        /* 【2.0.19.7 · 用户 m05263】PDF 走内建阅读器（.kh-lb-pdfframe 这块 iframe）。
+         * 遮罩层给页面让出了指针（.kh-lb / .kh-lb-stage 都是 none），子元素必须各自要回来 ——
+         * 漏了 iframe 就会「大图模式 pdf 不兼容」：滚不动、点不了、缩放失效。 */
+        pe: (function () {
+          const pf = sr.querySelector('.kh-lb-pdfframe');
+          const st = sr.querySelector('.kh-lb-stage');
+          return {
+            pdf: pf ? getComputedStyle(pf).pointerEvents : '(无 iframe)',
+            stage: st ? getComputedStyle(st).pointerEvents : '(无舞台)'
+          };
+        })(),
       };
     });
     const clickBar = async (sel) => {
@@ -2147,7 +2158,10 @@ module.exports = async function runContent(ctx) {
      * 正是用户说的「位置偏左」。现在只认视口中线。 */
     truthy(Math.abs(s.nav.barMid - s.nav.vw / 2) <= 10,
       '控件栏应在视口水平居中，实际 ' + JSON.stringify(s.nav));
-    /* 【2.0.19.5 · 用户 m04179】图与栏必须同一条中轴：让位逻辑删掉后两者都按视口居中。 */
+    /* 【2.0.19.7 · 用户 m05263】PDF 的 iframe 要自己把指针要回来；舞台本身仍不拦截（页面要能操作）。 */
+    eq(s.pe.pdf, 'auto', 'PDF 的 iframe 必须可点（pointer-events:auto），实际 ' + JSON.stringify(s.pe));
+    eq(s.pe.stage, 'none', '舞台本身不能拦截指针（页面滚动条/悬浮播放器要能拖），实际 ' + JSON.stringify(s.pe));
+    /* 【2.0.19.5 · 用户 m04179】图与栏必须同一条中轴线：让位逻辑删掉后两者都按视口居中。 */
     truthy(Math.abs(s.nav.imgMid - s.nav.vw / 2) <= 10,
       '图片也应视口居中（不被面板挤偏），实际 ' + JSON.stringify(s.nav));
     truthy(Math.abs(s.nav.imgMid - s.nav.barMid) <= 10,

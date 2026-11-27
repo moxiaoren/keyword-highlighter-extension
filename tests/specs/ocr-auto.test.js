@@ -563,15 +563,33 @@ module.exports = async function run() {
     eq(A.termEnd(''), '');
   });
 
-  await test('★ 2.0.19.3 期限抓取是字段级（#期）：没字段声明就沿用老行为（m03229 ④）', () => {
+  await test('★ 2.0.19.7 期限行归属：按 字段名 / 默认名 / 别名 认，认不出才丢（m05263）', () => {
+    const A2 = A;
+    eq(typeof A2.termLabelFor, 'function', 'termLabelFor 必须挂出来（归属判据要能单测）');
+    /* 没配 #期 ⇒ 一行都不收（2.0.19.6 的默认关不退回） */
+    eq(A2.termLabelFor('授权期限', [], []), '', '没字段声明 ⇒ 丢');
+    /* 字段就叫授权期限：默认名直接命中 */
+    eq(A2.termLabelFor('授权期限', ['授权期限'], []), '授权期限', '字段名与默认名相同');
+    /* ★ 用户报障那条：字段起名「有效期#期」，抽出来的行仍叫「授权期限」 */
+    eq(A2.termLabelFor('授权期限', ['有效期'], []), '有效期', '★ 名字对不上也要收，并改成用户起的名字');
+    eq(A2.termLabelFor('有效期', ['有效期'], []), '有效期', '标签本身就是字段名');
+    /* 别名：证书里可能写作「合作期限」 */
+    eq(A2.termLabelFor('合作期限', ['授权期限'], ['合作期限']), '合作期限', '#期=别名 要能认出来');
+    eq(A2.termLabelFor('营业期限', ['授权期限'], ['合作期限']), '', '既不是默认名、也不在名单里 ⇒ 不收');
+    /* 多个 #期 字段时不改名，避免两行同名 */
+    eq(A2.termLabelFor('授权期限', ['授权期限', '合作期限'], []), '授权期限', '多字段保持默认名');
+    eq(A2.termLabelFor('', ['有效期'], []), '', '空标签不收');
+  });
+
+  await test('★ 2.0.19.3 期限抓取是字段级（#期）：名单来自字段串，进表统一格式（m03229 ④）', () => {
     const root = path.join(__dirname, '..', '..');
     const note = fs.readFileSync(path.join(root, 'src/features/important-note.js'), 'utf8');
     truthy(note.indexOf('const TERM_RE = /期限|有效期|到期日/;') >= 0, '期限行按标签识别');
-    truthy(note.indexOf('const allow6 = [];') >= 0, '★ 名单来自字段串，不再来自关键词级开关');
+    truthy(note.indexOf('const names6 = [];') >= 0, '★ 名单来自字段串，不再来自关键词级开关');
     truthy(note.indexOf('if (!sp6 || !sp6.term) continue;') >= 0, '只有写了 #期 的字段才进名单');
     truthy(note.indexOf('(sp6.termLabels || []).forEach') >= 0, '别名跟着字段走');
-    truthy(note.indexOf('const keep = allow6.length ? allow6.some((a) => lab === a || lab.indexOf(a) >= 0) : false;') >= 0,
-      '★ 一个字段都没写 ⇒ 一行期限都不收（2.0.19.6 用户 m04768：没配置就不该有）');
+    truthy(note.indexOf('if (!want) { out.splice(i, 1); continue; }') >= 0,
+      '★ 归属判据给空 ⇒ 一行期限都不收（2.0.19.6 用户 m04768：没配置就不该有）');
     truthy(note.indexOf('row.value = KH.OcrAuto.termEnd(row.value);') >= 0, '进表前统一格式');
     const map = fs.readFileSync(path.join(root, 'src/ui/fieldmap.js'), 'utf8');
     truthy(map.indexOf("key: 'autoTerm'") < 0 && map.indexOf("key: 'autoTermLabels'") < 0,

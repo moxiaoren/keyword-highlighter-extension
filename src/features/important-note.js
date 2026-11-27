@@ -1469,11 +1469,14 @@
     }
     /* 【2.0.16.8 · 用户 m22343】PDF 本体进容器：字节由后台取回（带 cookie），这里用 blob: 交给
      * 浏览器内建 PDF 阅读器渲染 —— 不引 pdf.js、零新增体积；取不到时退回上面的占位牌并写原因。 */
+    /* 【2.0.19.7 · 用户 m05263】遮罩层给页面让出了指针（.kh-lb / .kh-lb-stage 都是 pointer-events:none），
+     * 子元素必须各自把指针要回来 —— 之前只写了 img / bar / side / pdfbox，漏了这块 iframe，
+     * 于是 PDF 内建阅读器整块惰性：滚不动、点不了、缩放失效。 */
     .kh-lb-pdfframe {
       width: min(84vw, 900px); height: min(78vh, 860px);
       border: 0; border-radius: 6px; background: #fff;
       box-shadow: 0 12px 40px rgba(0,0,0,.45);
-      position: relative; z-index: 1;
+      position: relative; z-index: 1; pointer-events: auto;
     }
     .kh-lb-pdfframe[hidden] { display: none; }
     .kh-lb-pdfstate {
@@ -6078,7 +6081,8 @@
        * 【2.0.19.6 · 用户 m04768】一个字段都没写 ⇒ **一行期限都不收**。原话：「既然改成了可配置，
        * 历史的词没配置，就不应该再有。只有去配置了才有。」——期限从"默认全抓"改成"点名才抓"。
        * 只有期限类标签受这条影响；著作权人 / 登记号是证书写死的两行，不受影响。 */
-      const allow6 = [];
+      const names6 = [];   /* 带 `#期` 的字段名（= 进表后这一行想叫的名字） */
+      const alias6 = [];   /* `#期=别名`：证书里还可能叫的别的写法 */
       try {
         const P = KH.Fetch && KH.Fetch.parseLabelSpec;
         if (typeof P === 'function') {
@@ -6086,8 +6090,8 @@
             const sp6 = P(raw);
             if (!sp6 || !sp6.term) continue;
             const lab6 = String(sp6.label || '').trim();
-            if (lab6) allow6.push(lab6);
-            (sp6.termLabels || []).forEach((a) => { const v = String(a || '').trim(); if (v) allow6.push(v); });
+            if (lab6 && names6.indexOf(lab6) < 0) names6.push(lab6);
+            (sp6.termLabels || []).forEach((a) => { const v = String(a || '').trim(); if (v && alias6.indexOf(v) < 0) alias6.push(v); });
           }
         }
       } catch (e0) { /* 解析不出来就当没写（= 不抓） */ }
@@ -6095,8 +6099,17 @@
         const row = out[i];
         const lab = String((row && row.label) || '');
         if (!TERM_RE.test(lab)) continue;
-        const keep = allow6.length ? allow6.some((a) => lab === a || lab.indexOf(a) >= 0) : false;
-        if (!keep) { out.splice(i, 1); continue; }
+        /* 【2.0.19.7 · 用户 m05263】归属判据收在 ocr-auto.termLabelFor 里（纯函数，可单测）：
+         * 旧判据只认"字段名 == 行标签"，而行标签固定是「授权期限」⇒ 字段起名「有效期#期」就整行被删，
+         * 用户看到的就是"配了不生效"。返回 '' = 这次不抓这一行。 */
+        const want = (KH.OcrAuto && typeof KH.OcrAuto.termLabelFor === 'function')
+          ? KH.OcrAuto.termLabelFor(lab, names6, alias6) : '';
+        if (!want) { out.splice(i, 1); continue; }
+        if (want !== lab) {
+          /* 改成用户起的字段名；已经有同名的行就不改（宁可留着「授权期限」，也不制造两行同名） */
+          const taken = out.some((r) => r !== row && String((r && r.label) || '') === want);
+          if (!taken) row.label = want;
+        }
         if (KH.OcrAuto && typeof KH.OcrAuto.termEnd === 'function') {
           try { row.value = KH.OcrAuto.termEnd(row.value); } catch (e2) { /* 原样保留 */ }
         }

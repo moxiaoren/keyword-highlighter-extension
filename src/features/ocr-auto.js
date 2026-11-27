@@ -204,6 +204,29 @@
     return '至 ' + fmtDate(best);
   }
 
+  /* 【2.0.19.7 · 用户 m05263】这一行期限归不归某个抓取字段，以及进表后叫什么名字。
+   * 为什么需要它：抽出来的期限行标签是**写死的**
+   *   label = BY_ID.term.label = '授权期限'（见下面的授权书模板），
+   * 而用户可以把字段起名叫「有效期#期」「合作期限#期」。旧判据拿"字段名"去和这个写死的标签比，
+   * 名字对不上就把行删了 —— 表现出来就是"配置了不生效（以前默认全抓，所以能抓到）"。
+   * 现在的口径：
+   *   · 一个字段都没写 #期 ⇒ 返回 ''（整行丢掉，等同 2.0.19.6 的默认关）；
+   *   · 标签命中默认名「授权期限」、或命中任一字段名、或命中 `#期=别名` ⇒ 收下；
+   *   · 收下时若只配了一个字段、且它不叫默认名，就把行名改成用户起的名字
+   *     （配什么名字，卡片上就显示什么）；多个 #期 字段时保持默认名，避免两行同名。
+   * 返回 '' = 丢掉这一行；否则返回这一行该用的标签。 */
+  function termLabelFor(lab, names, aliases) {
+    var s = String(lab == null ? '' : lab);
+    var def = '授权期限';
+    var ns = (names || []).map(function (x) { return String(x == null ? '' : x).trim(); }).filter(Boolean);
+    var as = (aliases || []).map(function (x) { return String(x == null ? '' : x).trim(); }).filter(Boolean);
+    if (!ns.length) return '';
+    var hit = function (a) { return !!a && (s === a || s.indexOf(a) >= 0); };
+    if (!(s === def || ns.some(hit) || as.some(hit))) return '';
+    if (s === def && ns.length === 1 && ns[0] !== def) return ns[0];
+    return s;
+  }
+
   function addMonths(t, n) {
     var m0 = (t.m - 1) + n;
     var y = t.y + Math.floor(m0 / 12);
@@ -1192,6 +1215,7 @@
     fieldsOf: function (doc) { return (SETS[doc] || []).slice(); },
     termCalc: termCalc,
     termEnd: termEnd,
+    termLabelFor: termLabelFor,
     DEFS: DEFS,
     LABELS: LABELS
   };
