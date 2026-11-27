@@ -115,6 +115,13 @@
    * 二次判定会把同一家公司读成不一致（自动化比对整片翻红）。 */
   Sources.cellValue = function (td) {
     if (!td) return '';
+    /* 【2.0.19.8 · 用户 m05608】「只显示一行 / 限 N 字」只裁**显示**：
+     * 值格若被裁过，DOM 里是「前 N 字 + …」，拿 textContent 当值会让政策正文只剩 11 字、
+     * 隐私政策链接变成半截 URL（fetch 直接报 Failed to parse URL）。
+     * 裁切时 Fetch 把完整值写进 data-khfull，这里优先取它。 */
+    const fullEl = td.querySelector ? td.querySelector('[data-khfull]') : null;
+    const fullV = fullEl ? String(fullEl.getAttribute('data-khfull') || '') : '';
+    if (fullV) return fullV.trim();
     let v = String(td.textContent || '').trim();
     const boxes = td.querySelectorAll
       ? td.querySelectorAll('.kh-evidence, .kh-verdict, .kh-policy-flag, .kh-table-more')

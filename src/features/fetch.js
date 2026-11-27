@@ -2415,7 +2415,11 @@
         : html) + suspectTag(it);
       if (!clipOn(it)) return body;
       const full = stripImgPlaceholders(raw).replace(/\s+/g, ' ').trim();
-      return '<div class="kh-val-box" title="' + escHtml(full) + '">' + body + '</div>';
+      /* 【2.0.19.8 · 用户 m05608】裁切只影响**看**，不许影响**用**：
+       * 值格以后会被 readFields / 比对基准 / 隐私政策链接读取，若它们拿 textContent，
+       * 读到的就是「前 N 字 + …」⇒ 政策正文只剩 11 字、链接变成半截 URL 发不出去。
+       * 所以把完整值同时写进 data-khfull，读取方优先用它。 */
+      return '<div class="kh-val-box" data-khfull="' + escHtml(full) + '" title="' + escHtml(full) + '">' + body + '</div>';
     };
     const valCell = (it, attrs, raw) =>
       '<td' + (attrs || '') + (clipOn(it) ? ' class="kh-val-clip"' : '') + '>' + valInner(it, raw) + '</td>';

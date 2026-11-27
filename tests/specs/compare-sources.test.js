@@ -35,6 +35,19 @@ module.exports = async function run() {
       eq(S.fieldKeysOf(td)[0], 'policy');
     });
 
+    test('★ 2.0.19.8 值格被「只显示一行」裁过：取值必须回到 data-khfull 的全文', () => {
+      /* 用户 m05608：卡片值限了字数后，隐私政策比对拿 textContent 当正文，只剩 11 字。 */
+      const d = card('<table class="kh-table-fetch"><tbody>' +
+        '<tr><td class="kh-table-label">隐私政策</td><td class="kh-val-clip">' +
+        '<div class="kh-val-box" data-khfull="https://oanew.xdtzjt.cn:3102/public/privacy-policy" ' +
+        'title="https://oanew.xdtzjt.cn:3102/public/privacy-policy">https://oa…</div></td></tr>' +
+        '</tbody></table>');
+      const t = tableOf(d);
+      const td = t.querySelectorAll('tr')[0].querySelectorAll('td')[1];
+      eq(S.cellValue(td), 'https://oanew.xdtzjt.cn:3102/public/privacy-policy');
+      eq(S.readFields(t).policy, 'https://oanew.xdtzjt.cn:3102/public/privacy-policy');
+    });
+
     test('合并行：一个值被多个字段名共用，任一侧都能取到', () => {
       const d = H.el('div', {}, []);
       d.innerHTML = KH.Fetch.rowsToTableHtml([
@@ -49,6 +62,16 @@ module.exports = async function run() {
       eq(S.readFields(t).dev, '北京甲科技有限公司');
       eq(S.readFields(t).entity, '北京甲科技有限公司');
       eq(S.field(t, '开发者').value, '北京甲科技有限公司');
+    });
+
+    test('★ 2.0.19.8 集成：真按 ~N 渲染过的政策格，readFields 仍拿到完整 URL', () => {
+      const d = H.el('div', {}, []);
+      d.innerHTML = KH.Fetch.rowsToTableHtml([
+        { label: '隐私政策', rows: [[{ t: 'https://oanew.xdtzjt.cn:3102/public/privacy-policy' }]],
+          opt: { clip: true, clipChars: 8 } }
+      ]);
+      const f = S.readFields(tableOf(d));
+      eq(f.policy, 'https://oanew.xdtzjt.cn:3102/public/privacy-policy', '裁切只裁显示，取值必须是全文');
     });
 
     test('field：行在值空也算 found（区分「没这一行」与「这一行是空的」）', () => {

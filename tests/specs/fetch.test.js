@@ -1123,6 +1123,9 @@ module.exports = async function run() {
     const bodyText = short.replace(/\s(title|data-[a-z-]+)="[^"]*"/g, '');
     truthy(bodyText.indexOf('…') >= 0 && bodyText.indexOf('用于测试') < 0, '★ 正文超出部分要省略：' + bodyText.slice(0, 300));
     truthy(short.indexOf('title="这是一段很长很长的备注文字用于测试"') >= 0, '悬停要给全文：' + short.slice(0, 300));
+    /* 【2.0.19.8 · 用户 m05608】裁切只影响看、不影响用：完整值必须留在 data-khfull 上，
+     * 否则隐私政策正文只剩 11 字、链接变成半截 URL（fetch 报 Failed to parse URL）。 */
+    truthy(short.indexOf('data-khfull="这是一段很长很长的备注文字用于测试"') >= 0, '★ 完整值要写进 data-khfull：' + short.slice(0, 300));
     const full = String(F.blockFor(tn, '备注', new WeakMap(), 'self'));
     truthy(full.indexOf('用于测试') >= 0, '不写字数就照旧全文');
   });

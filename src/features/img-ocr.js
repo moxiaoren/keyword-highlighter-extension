@@ -1019,7 +1019,10 @@
         const lab = keyOf(label.textContent);
         if (!lab) continue;
         if (lab !== want && !(want.length >= 2 && lab.indexOf(want) === 0)) continue;
-        const v = String(cells[1].textContent || '').trim();
+        /* 【2.0.19.8 · 用户 m05608】被「只显示一行」裁过的值格，textContent 是残句；
+         * 完整值在 data-khfull 上，基准必须用完整的那个。 */
+        const fullEl = cells[1].querySelector ? cells[1].querySelector('[data-khfull]') : null;
+        const v = String((fullEl && fullEl.getAttribute('data-khfull')) || cells[1].textContent || '').trim();
         if (!v || v.length < NEED_MIN_LEN || v.indexOf('\u0001') >= 0) continue;
         if (out.indexOf(v) < 0) out.push(v);
         if (out.length >= 6) break;

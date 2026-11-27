@@ -886,5 +886,8 @@ module.exports = async function run() {
     truthy(src.indexOf('base = base.concat(cardFetchedValues(anchor, cmpNameOf(rawSpec)))') >= 0,
       '★ 接在 certBaselineValues 之后并入基准（原有四层来源不许动）');
     truthy(src.indexOf("cells[1]") >= 0, '取右邻格的值（kh-table-label 的兄弟格）');
+    /* 【2.0.19.8 · 用户 m05608】被裁切的值格，基准必须读 data-khfull 里的全文。 */
+    truthy(src.indexOf("querySelector('[data-khfull]')") >= 0, '★ 基准要优先读 data-khfull');
+    truthy(src.indexOf("fullEl.getAttribute('data-khfull')") >= 0);
   });
 };
